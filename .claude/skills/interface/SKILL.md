@@ -42,6 +42,7 @@ await stop();
 | `?transcribing` | a transcription part way, no words past the edge |
 | `?growing` | a transcript that really grows, job events every 900 ms |
 | `?found` | a search that runs and really finishes, clips and all |
+| `?rendering` | a render running on the first clip, with progress |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:

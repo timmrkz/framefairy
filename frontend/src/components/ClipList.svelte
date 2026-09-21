@@ -78,10 +78,12 @@
   {/each}
   <!-- The rows that are not there yet, after whatever is. They are as many
        as the search was asked for, so the list does not fill out from four
-       rows to twelve, and the light passing over them is the only thing
-       that says it is still working. -->
+       rows to twelve, and the shimmer over them is the only thing that
+       says it is still working. Each row starts its light a moment after
+       the one above, so the light runs down the column as a wave rather
+       than every row flashing together. -->
   {#each ghosts as row (row)}
-    <li class="ghost waiting"></li>
+    <li class="ghost waiting" style="--wait-in: {row * 110}ms"></li>
   {/each}
 </ol>
 
@@ -233,8 +235,8 @@
     gap: 6px;
   }
 
-  /* A card that is not there yet: the size of a clip, with the same light
-     passing over it as over the places under the video preview. */
+  /* A card that is not there yet: the size of a clip, wearing the same
+     shimmer as every other place in the app waiting to be filled. */
   .ghost {
     height: 56px;
     background: var(--ink-2);

@@ -195,6 +195,14 @@ messages, pull request text, code comments and chat replies.
   mark only appears while the pointer is on that area. No mark explains
   two areas, and nothing explains itself in a bubble that belongs to
   something else.
+- **Work in hand looks the same wherever it is.** There is one way of
+  showing that something is running and one way of showing how far it has
+  come, and every part of the app uses them: the beam round the control the
+  work was started from with the motes it sheds, the fill for how far, the
+  shimmer over a place waiting to be filled, and the pulse on a dot for work
+  running somewhere else. They are in `Busy.svelte` and `app.css`. A new
+  kind of loading is not a new animation, it is one of these five in a new
+  place.
 - **Consistency over novelty.** A visual treatment used in one place must be
   used for every equivalent element, or not at all. Reuse existing patterns,
   for example the `--ink-3` background for a selected row, before inventing

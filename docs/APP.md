@@ -186,14 +186,14 @@ place.
 
 - **The transcription is the head of the clip list**, in the shape
   everything else in that pane has: the head says **Transcribing**, the one
-  button says **Pause**, and the line under them fills up as it goes. Paused,
+  button says **Pause**, and that button fills up as it goes. Paused,
   the head says so and the button says **Continue**, which picks up where it
   stopped, also after a restart. The info mark beside the head says what is
   happening and how long it has to go, and goes back to saying what the clip
   list is once there are clips to list.
 - **What is not there yet says so by waiting.** The part of the clip
   timeline the transcript has not reached and the rows the clip list will
-  have are places waiting to be filled: a soft light passes over them, the
+  have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the edge is taken from the waveform
   itself, so the light never lies over a waveform that is already drawn. The
@@ -466,6 +466,53 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Work in hand
+
+Everything that runs says so the same way, wherever it runs. There are four
+things and no others, and each one means one thing.
+
+- **The beam.** Light runs clockwise round the edge of the control the work
+  was started from, for as long as the work runs. **New** while clips are
+  being found, **Cancel** while a job winds down, **Pause** while the
+  transcription stops, **Render** while a clip is being made, **Check
+  again** while the tools are looked for. The control that started the work
+  is the one that says how it is going, so nothing is drawn across the list
+  or the page for it, and nothing moves when work starts or ends.
+- **The motes.** Specks of that light drift up through the control, behind
+  its own words. They are the beam's, not a thing of their own, and they
+  are why a control with nothing to report is still alive to look at.
+- **The fill.** How far the work has come, when that is known. Inside the
+  control it is a wash with a bright head at the front, so where the work
+  has got to is a line rather than the place one shade becomes another. In
+  Activity, where a job has no control of its own, the same fill lies in a
+  track of its own, with a light travelling over what is already done. Work that cannot
+  say how far it has come shuttles across that track instead of standing at
+  a number it does not have.
+- **The shimmer.** A place that is not filled yet: the rows the clip list
+  will have, the part of the clip timeline the transcript has not reached,
+  the stretch on the range picker while clips are being found for it. A
+  band of light leans across the place and then rests before it comes
+  again, and in a list each row starts a moment after the row above it, so
+  the light runs down the column as a wave rather than every row flashing
+  together.
+- **The pulse.** Work running somewhere else. The dot beside an episode in
+  the sidebar and the dot on **Activity** on the rail keep their size and
+  their place, and a ring widens out of them and fades.
+
+The colours are the app's own throughout, mixed from the accent, so
+changing it in the settings moves the beam, the fill and the shimmer with
+everything else. On a control that is already the app's colour the light is
+white instead, because the app's colour cannot be seen on itself. With
+**Reduce motion** on in the system nothing moves: the beam is a steady rim,
+the motes are not drawn, and the shimmer and the fill stand still.
+
+`frontend/src/components/Busy.svelte` is the whole of the beam, the motes
+and the fill inside a control. The track, the shimmer and the pulse are in
+`frontend/src/app.css`, because they are worn by things that are not
+controls. The track is `.progress` there and not `.bar`, because the bar is
+the one across the top of the window, and while the two shared a name the
+bar was picking up the track's rounded corners.
+
 ### What the window may ask for
 
 Every call that names a file is checked against the library before anything
@@ -477,7 +524,8 @@ asks.
 ### Activity
 
 Everything that runs in the background, with progress, a log per job and
-**Cancel**, which says it heard you while the job winds down. One job is one
+**Cancel**, which wears the beam while the job winds down so the click is
+seen at once. One job is one
 row, parted from the next by a line across the page, and clicking a finished
 row opens its log. Transcription runs in its own lane, so finding and
 rendering clips never wait for it.
@@ -551,7 +599,7 @@ interface's types.
 | Folder | What |
 | --- | --- |
 | `frontend/src/screens/` | the workspace, activity and settings |
-| `frontend/src/components/` | player, timelines, clip list, progress bar |
+| `frontend/src/components/` | player, timelines, clip list, work in hand |
 | `frontend/src/lib/` | calls into Go and the shared state |
 | `frontend/src/app.css` | colours, sizes and the base styles |
 

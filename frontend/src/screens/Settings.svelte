@@ -3,6 +3,7 @@
   import { wearColour } from "../lib/colour";
   import { api, errorText, type Check, type Settings, type TrainingStatus } from "../lib/api";
   import Confirm from "../components/Confirm.svelte";
+  import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
 
   let settings = $state<Settings | null>(null);
@@ -83,7 +84,9 @@
     <div class="row">
       <h2>Setup</h2>
       <span class="grow"></span>
-      <button onclick={check} disabled={checking}>{checking ? "Checking" : "Check again"}</button>
+      <button class="check" onclick={check} disabled={checking}
+        >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
+      >
     </div>
     <ul>
       {#each checks as c (c.name)}
@@ -260,6 +263,12 @@
 
   /* The one way to throw the records away: a quiet mark that turns red
      under the pointer, the same as the trash can on a clip. */
+  /* Room for the longer wording, so the row keeps still while the tools
+     are being looked for. */
+  .check {
+    min-width: 116px;
+  }
+
   .drop {
     display: flex;
     align-items: center;
