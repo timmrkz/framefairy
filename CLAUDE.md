@@ -276,7 +276,11 @@ messages, pull request text, code comments and chat replies.
   by then it is their bug.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
-  without ffmpeg. Run `make test` before every push.
+  without ffmpeg. Run `make test` before every push **that touches Go**. A
+  change only to `frontend/` or `docs/` runs `npx svelte-check` and builds
+  the preview, and nothing else: the Go tests fuzz for ten thousand
+  executions a target and take minutes, and no line of CSS can move them.
+  CI runs everything anyway, on both systems.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has

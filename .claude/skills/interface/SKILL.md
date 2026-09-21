@@ -185,7 +185,13 @@ Anything that assumes a seek worked will be wrong while transcribing.
 ## Before saying it is done
 
 - `cd frontend && npx svelte-check --threshold error`
-- `make test`, then `make`, both from the top. Both must be clean.
+- Build the preview, and the motion bench if the change touches any of the
+  five ways work in hand is shown.
+- `make test` and `make` only if the change touches Go. A change only to
+  `frontend/` or `docs/` does not: the Go tests fuzz for ten thousand
+  executions a target and take minutes, and no line of CSS can move them.
+  CI runs everything anyway, on both systems. Waiting on them in a cloud
+  session is Tim waiting.
 - Say what to look at and what should happen, in the app, in the order
   Tim would do it. He is the one who can see it.
 - Name what you could not verify. A fix reported as certain and found

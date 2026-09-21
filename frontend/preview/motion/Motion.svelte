@@ -53,7 +53,7 @@
       name: "The breath and the wave",
       from: "the two above, together",
       step: 800,
-      what: "The place dims to half and comes back while a wave goes over it, and the wave is half as wide again as the place, so it has no edges to catch. Two seconds and two and a half, so the wave lands at a different point of every breath.",
+      what: "The two above exactly as they are, at the same time. The only change to either is that the wave is half as wide again as the place it crosses, so it has no edges to catch.",
     },
     {
       key: "foil",
@@ -424,21 +424,16 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -20%;
-    width: 140%;
+    left: -25%;
+    width: 150%;
     background: linear-gradient(
       90deg,
-      transparent 0%,
-      var(--accent-wash) 24%,
-      var(--accent-hi) 43%,
-      rgba(255, 255, 255, 0.34) 50%,
-      var(--accent-hi) 57%,
-      var(--accent-wash) 76%,
-      transparent 100%
+      transparent,
+      var(--accent-wash),
+      transparent
     );
-    opacity: 0.5;
     transform: translateX(-100%);
-    animation: bothwave 2.5s linear infinite;
+    animation: bothwave 2s linear infinite;
     animation-delay: var(--wait-in, 0ms);
   }
 
@@ -446,7 +441,7 @@
     0% {
       transform: translateX(-100%);
     }
-    55% {
+    50% {
       transform: translateX(100%);
     }
     100% {

@@ -495,21 +495,20 @@ things and no others, and each one means one thing.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
   the stretch on the range picker while clips are being found for it. Two
-  things at once, and neither of them ours. The place breathes, which is
-  what [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton)
-  and Tailwind ship as `animate-pulse`: it dims to half and comes back,
-  two seconds, in and out. And a wave goes over it, which is
+  things at once, and neither of them ours, each exactly as the people who
+  made it ship it. The place breathes, which is what
+  [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton) and
+  Tailwind ship as `animate-pulse`: it dims and comes back, two seconds,
+  in and out. And a wave goes over it, which is
   [MUI's Skeleton](https://mui.com/material-ui/react-skeleton/): a soft
-  highlight that crosses once and then waits out the rest of its round.
-  The wave is half as wide again as the place it crosses, so it has no
-  edges to catch and reads as the light going over rather than as a stripe
-  sliding past, which is the thing that was wrong with every earlier
-  attempt. The two rounds are two and two and a half seconds, so the wave
-  lands at a different point of every breath. In a list each row starts a
-  step after the row above it, so the light runs down the column rather
-  than every row flashing together. `make motion` stands this beside the
-  four other ways it is commonly done, each named and copied faithfully,
-  so the choice can be made by looking rather than by describing.
+  highlight over in half the round, then still for the other half, two
+  seconds at one speed. The only change to either is that the wave is half
+  as wide again as the place it crosses, so it has no edges to catch. In a
+  list each row starts a step after the row above it, so the light runs
+  down the column rather than every row flashing together. `make motion`
+  stands this beside the four other ways it is commonly done, each named
+  and copied faithfully, so the choice can be made by looking rather than
+  by describing.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and
   their place, and a ring widens out of them and fades.

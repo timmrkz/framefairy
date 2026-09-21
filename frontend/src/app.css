@@ -310,21 +310,14 @@ input[type="text"] {
 }
 
 /* Something that is not there yet: the shimmer. Two things at once, and
-   neither of them ours.
+   neither of them ours, each exactly as the people who made it ship it.
 
    The place breathes, which is what shadcn/ui and Tailwind ship as
-   animate-pulse: it dims to half and comes back, two seconds, in and out.
-   And a wave goes over it, which is MUI's Skeleton: a soft highlight that
-   crosses once and then waits out the rest of its round.
-
-   The wave is wider than the place it crosses, half as wide again, so it
-   has no edges to catch and reads as the light going over rather than as
-   a stripe sliding past. That was the thing to get right: a narrow band
-   is a stripe on a box however it is dressed up.
-
-   The two rounds are two and two and a half seconds, so the wave lands at
-   a different point of every breath and the pair takes ten seconds to
-   come back to itself.
+   animate-pulse: it dims and comes back, two seconds, in and out. And a
+   wave goes over it, which is MUI's Skeleton: a soft highlight over in
+   half the round, then still for the other half, two seconds at one
+   speed. The only change to either is that the wave is half as wide again
+   as the place it crosses, so it has no edges to catch.
 
    The place breathing is the place's own opacity, which gives it a
    surface of its own for as long as it waits. That is safe here and only
@@ -347,23 +340,16 @@ input[type="text"] {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -20%;
-  width: 140%;
+  left: -25%;
+  width: 150%;
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    var(--accent-wash) 24%,
-    var(--accent-hi) 43%,
-    rgba(255, 255, 255, 0.34) 50%,
-    var(--accent-hi) 57%,
-    var(--accent-wash) 76%,
-    transparent 100%
+    transparent,
+    var(--accent-wash),
+    transparent
   );
-  /* Half strength, because the breath under it takes the place to half and
-     the wave would go with it and disappear. */
-  opacity: 0.5;
   transform: translateX(-100%);
-  animation: wave 2.5s linear infinite;
+  animation: wave 2s linear infinite;
   animation-delay: var(--wait-in, 0ms);
   pointer-events: none;
 }
@@ -382,7 +368,7 @@ input[type="text"] {
   0% {
     transform: translateX(-100%);
   }
-  55% {
+  50% {
     transform: translateX(100%);
   }
   100% {
@@ -398,7 +384,6 @@ input[type="text"] {
 
   .waiting::after {
     transform: none;
-    opacity: 0.5;
   }
 }
 
