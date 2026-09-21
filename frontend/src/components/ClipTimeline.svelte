@@ -946,6 +946,19 @@
     {#if time >= view.from && time <= view.to}
       <div class="at" class:shown={lensShown} style="left: {x(centre)}%">
         <div class="playhead"></div>
+        <!-- The head is its own element rather than something drawn on the
+             line, because it stands above the track and the track is what
+             takes the drag. Drawn but not grabbable, its top five pixels
+             did nothing: the eye saw a handle and the hand went through it.
+             It scrubs the same way the track does, so where a drag starts
+             makes no difference to what it does. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="head"
+          onpointerdown={scrub}
+          ondblclick={fitView}
+          title="Drag to move the playhead"
+        ></div>
         <button
           class="grip"
           aria-label="The words at the playhead"
@@ -1310,19 +1323,28 @@
     pointer-events: none;
   }
 
-  .playhead::before {
-    content: "";
+  /* The same head, in the same place, as the line used to draw on itself.
+     It is an element of its own now so it can take the drag: it stands
+     above the track, the track is what scrubs, and a head that is drawn
+     outside it is a handle the hand goes straight through. */
+  .head {
     position: absolute;
-    top: 0;
-    left: -4px;
+    top: -5px;
+    left: -5px;
     width: 10px;
     height: 9px;
     border-radius: 2px 2px 1px 1px;
     background: var(--accent-hi);
+    cursor: pointer;
+    touch-action: none;
   }
 
   .over.scrubbing .playhead,
-  .over.scrubbing .playhead::before {
+  .over.scrubbing .head {
     background: #fff;
+  }
+
+  .over.scrubbing .head {
+    cursor: grabbing;
   }
 </style>
