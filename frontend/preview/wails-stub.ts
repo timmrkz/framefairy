@@ -132,6 +132,7 @@ export const Call = {
     const found = location.search.includes("found");
     const paused = location.search.includes("paused");
     const carriedOn = () => !!(window as any).__carriedOn;
+    const stopped = () => !!(window as any).__stopped;
     const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
     const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < 2500;
     const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= 2500;
@@ -295,6 +296,9 @@ export const Call = {
           ]);
         }
         if (q.includes("transcribing")) {
+          // Stopped, so the job is gone and only the saved transcript is
+          // left. That is the moment the edge used to jump backwards.
+          if (stopped()) return Promise.resolve([]);
           return Promise.resolve([
             {
               id: "t1",
@@ -304,7 +308,9 @@ export const Call = {
               state: "running",
               queued: "",
               lane: "transcribe",
-              progress: { stage: "asr", text: "Listening", fraction: 0.23, remaining: 276 },
+              // Ahead of the 1200 the episode reports, because the saved
+              // transcript is rewritten whole and lands seconds apart.
+              progress: { stage: "asr", text: "Listening", fraction: 0.23, remaining: 276, covered: 1800 },
             },
           ]);
         }
@@ -352,6 +358,9 @@ export const Call = {
         // One file per second, so a test can see the frame follow the
         // playhead.
         return Promise.resolve(`/eps/still-${Math.round(Number(args[1]) || 0)}.jpg`);
+      case "CancelJob":
+        (window as any).__stopped = true;
+        return Promise.resolve(null);
       case "Transcribe":
         (window as any).__carriedOn = true;
         return Promise.resolve({ id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe" });
@@ -368,6 +377,33 @@ export const Events = {
   // tell.
   On(name: string, fn: (ev: unknown) => void): () => void {
     if (name !== "job") return () => {};
+    // A transcription that reports where it got to, well ahead of the saved
+    // transcript, and that really stops when it is stopped. The job list is
+    // only ever kept current by these events, so without them a cancelled
+    // job stays in the window's hands and the pause cannot be tested at all.
+    if (location.search.includes("transcribing")) {
+      const timer = setInterval(() => {
+        const gone = !!(window as any).__stopped;
+        fn({
+          data: {
+            job: {
+              id: "t1",
+              episode: "/eps/ep.mp4",
+              kind: "transcribe",
+              label: "Transcribe",
+              state: gone ? "cancelled" : "running",
+              queued: "",
+              lane: "transcribe",
+              progress: gone
+                ? undefined
+                : { stage: "asr", text: "Listening", fraction: 0.23, remaining: 276, covered: 1800 },
+            },
+            event: { kind: "progress", text: "Listening", elapsed: 1 },
+          },
+        });
+      }, 400);
+      return () => clearInterval(timer);
+    }
     if (location.search.includes("found")) {
       const timer = setInterval(() => {
         const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;

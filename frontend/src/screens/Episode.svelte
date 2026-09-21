@@ -21,7 +21,7 @@
     type WindowView,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
-  import { Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
+  import { Heard, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -198,7 +198,20 @@
   // the transcript keeps to covered, because that is what is on disk: a
   // search that started on this number would read a transcript that stops
   // short of the stretch it was asked for.
-  const heard = $derived(Math.max(covered, transcribing?.progress?.covered ?? 0));
+  // The mark the edge is drawn from. It only ever grows, because it says
+  // how much of the episode has been read and reading does not unhappen.
+  // Pausing showed that plainly: the live number disappears at the one
+  // moment the saved one is at its most stale, and the edge walked
+  // backwards by however much had not been written down. Heard in flow.ts
+  // holds the rule, with the orderings that break it written out beside it.
+  const mark = new Heard();
+  // What makes the mark meaningless: a transcript that is out of date and
+  // will be read again, or a work folder that is no longer there. Not while
+  // the episode is still loading, when nothing is known yet.
+  const restarted = $derived(!!status && (status.transcriptStale || !status.work));
+  const heard = $derived(
+    mark.seen(path, covered, transcribing?.progress?.covered ?? null, restarted),
+  );
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(

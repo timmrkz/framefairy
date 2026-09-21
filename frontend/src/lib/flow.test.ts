@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  Heard,
   Newest,
   nextWindow,
   pictureIsStale,
@@ -225,5 +226,95 @@ describe("only the newest answer counts", () => {
     asks.keep(failed);
     const next = asks.send();
     expect(asks.keep(next)).toBe(true);
+  });
+});
+
+describe("the transcript's edge only ever moves forward", () => {
+  // The edge says how much of the episode has been read. Reading does not
+  // unhappen, so no ordering of what the Go side reports may walk it back.
+  const ep = "/eps/ep.mp4";
+
+  test("it follows the work while the transcription runs", () => {
+    const h = new Heard();
+    expect(h.seen(ep, 0, 12, false)).toBe(12);
+    expect(h.seen(ep, 0, 30, false)).toBe(30);
+    // The save lands, far behind the work, and changes nothing.
+    expect(h.seen(ep, 24, 42, false)).toBe(42);
+  });
+
+  test("pausing does not rewind it", () => {
+    // This is the bug as it was seen. The job reported 300 seconds, the
+    // transcript on disk had only been written at 240, and the moment the
+    // job stopped the live number was gone.
+    const h = new Heard();
+    expect(h.seen(ep, 240, 300, false)).toBe(300);
+    expect(h.seen(ep, 240, null, false)).toBe(300);
+  });
+
+  test("carrying on from a pause does not rewind it either", () => {
+    // A transcription that carries on starts again from the end of the
+    // saved transcript, which is behind where the work had got to. Those
+    // seconds were heard, so the edge stands still until the work passes
+    // them rather than jumping back and climbing twice.
+    const h = new Heard();
+    h.seen(ep, 240, 300, false);
+    expect(h.seen(ep, 240, 240, false)).toBe(300);
+    expect(h.seen(ep, 240, 280, false)).toBe(300);
+    expect(h.seen(ep, 240, 310, false)).toBe(310);
+  });
+
+  test("an older answer landing after a newer one does not rewind it", () => {
+    // Every refresh is a call of its own and nothing says they come back in
+    // the order they went out.
+    const h = new Heard();
+    expect(h.seen(ep, 600, null, false)).toBe(600);
+    expect(h.seen(ep, 120, null, false)).toBe(600);
+  });
+
+  test("whatever order the two numbers arrive in, the answer is the same", () => {
+    // The job and the episode refresh land independently, so this walks
+    // every interleaving of a plausible run and insists the result never
+    // decreases and always ends at the furthest either of them reached.
+    const saved = [0, 0, 60, 60, 120, 180, 180];
+    const running = [10, 45, 45, 90, 150, 150, 200];
+    for (let shift = 0; shift < saved.length; shift++) {
+      const h = new Heard();
+      let last = 0;
+      let most = 0;
+      for (let i = 0; i < saved.length; i++) {
+        // The saved number lags by shift steps, which is what a save
+        // landing late looks like.
+        const s = saved[Math.max(0, i - shift)];
+        const r = running[i];
+        most = Math.max(most, s, r);
+        const got = h.seen(ep, s, r, false);
+        expect(got, `shift ${shift} step ${i}`).toBeGreaterThanOrEqual(last);
+        last = got;
+      }
+      expect(last, `shift ${shift}`).toBe(most);
+    }
+  });
+
+  test("another episode starts the mark over", () => {
+    const h = new Heard();
+    h.seen(ep, 0, 900, false);
+    expect(h.seen("/eps/zwei.mp4", 0, 5, false)).toBe(5);
+    // And going back does not bring the first one's mark with it.
+    expect(h.seen(ep, 0, 3, false)).toBe(3);
+  });
+
+  test("a transcript being read again starts the mark over", () => {
+    // The file changed, so the old mark is about a transcript that no
+    // longer exists.
+    const h = new Heard();
+    h.seen(ep, 600, null, false);
+    expect(h.seen(ep, 0, 10, true)).toBe(10);
+    expect(h.seen(ep, 0, 20, false)).toBe(20);
+  });
+
+  test("a work folder that is gone starts the mark over", () => {
+    const h = new Heard();
+    h.seen(ep, 600, null, false);
+    expect(h.seen(ep, 0, null, true)).toBe(0);
   });
 });
