@@ -141,8 +141,12 @@
     pointer-events: auto;
   }
 
+  /* The lift is a layer over the row rather than a grey of its own, so it
+     is the same step on an ordinary row and on the chosen one. Named as a
+     grey it was exactly the colour of the row the trash can appears on,
+     which is the one row it is ever seen against. */
   .drop:hover:not(:disabled) {
-    background: var(--ink-2);
+    background: var(--lift-err);
     color: var(--err);
   }
 

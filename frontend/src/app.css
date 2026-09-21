@@ -23,6 +23,20 @@
   --warn: #d2a441;
   --err: #e0605a;
 
+  /* What a control lays over whatever it sits on while the pointer is on
+     it. It is a layer and not a colour on purpose. A control that names a
+     grey can only be right on one background, and these sit on several: a
+     row is --ink-1, the row under the pointer is --ink-2, the chosen row is
+     --ink-3. The trash can on a clip named --ink-2 and so was invisible on
+     the row it appears on, and darker than the chosen row, which is a hover
+     that sinks. A layer mixes with what is under it, so the step is the
+     same wherever the control stands. */
+  --lift: rgba(255, 255, 255, 0.08);
+  /* The same, for a control that takes something away. It says what the
+     control does as well as that the pointer is on it, which is what the
+     warning outline does on a button in a box. */
+  --lift-err: color-mix(in srgb, var(--err) 22%, transparent);
+
   --radius-s: 4px;
   --radius-m: 8px;
   --control-h: 32px;
@@ -187,7 +201,7 @@ button.quiet {
 }
 
 button.quiet:hover:not(:disabled) {
-  background: var(--ink-2);
+  background: var(--lift);
 }
 
 input[type="number"] {
