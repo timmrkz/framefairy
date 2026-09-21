@@ -60,11 +60,14 @@
       Light runs clockwise round the edge of the control the work was started
       from, for as long as the work runs, and specks of that light drift up
       through the control behind its own words. It is not one turn at one
-      speed: a round is three turns, the comet gets away quickly, drifts
-      through the long side, tugs back twice and catches up at the end, and a
-      broad faint wash goes round twice in the same time. So the slow part
+      speed: a round is three turns, the comet gets away, eases through the
+      long side, presses on again and comes round the last turn quickly, and
+      a broad faint wash goes round twice in the same time. So the slow part
       falls somewhere else on the edge each turn and the two are never in the
-      same place twice. On a control that is already the app's colour the
+      same place twice. It never stands still and it never goes back: the
+      slowest stretch is still two thirds of the round's own pace, because a
+      light that stops on a border reads as a fault and one that backs up
+      reads as a stutter. On a control that is already the app's colour the
       light is white, because the app's colour cannot be seen on itself.
     </p>
     <div class="row wrap">
@@ -114,15 +117,19 @@
   <section>
     <h2>The shimmer</h2>
     <p class="muted">
-      A place that is not filled yet, under two lights that are not the same
-      light and not on the same clock. The wash is broad and slow and leans
-      one way. The glint is narrow and bright, leans the other way, crosses
-      in a third of the time and then waits. Their rounds are 3.7 and 2.3
-      seconds, so the pair never comes round to the same picture: sometimes
-      the glint rides the wash, sometimes it crosses an empty place, and now
-      and then the two lean through each other. In a list each row starts a
-      step after the row above it, so the light runs down the column as a
-      wave rather than every row flashing together.
+      A place that is not filled yet, lit like a card of foil tipped against
+      the light. Two sheets lie over it, both far larger than it, so what is
+      on screen is a piece of something big and never the whole of anything.
+      One carries two sets of stripes crossed over each other, in the app's
+      colour and a step to each side of it round the hues, cut to the shape
+      of a soft lens so the colour is only where the light is: stripes over
+      the whole surface are brushed metal, lit everywhere and going nowhere.
+      The other is a narrow white gleam, the way the edge of a card catches
+      the sun before its face does. They drift and swing opposite ways on
+      rounds of 9.7 and 6.3 seconds, which come back together once every ten
+      minutes, so the place is never twice the same and the eye finds no loop
+      to learn. In a list each row is tipped at its own angle, so the light
+      runs down the column rather than every row flashing together.
     </p>
     <div class="shim">
       <ol>

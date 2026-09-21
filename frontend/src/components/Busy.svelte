@@ -80,10 +80,11 @@
   /* Twice as wide as the control and square, so it covers every corner
      whatever shape the control is, and the same light reaches all four.
      There are two of these turning, the bright comet and a broad faint
-     wash behind it, at three turns and two turns of the same round. Both
-     are short arcs of the circle: a wide button's long edge is nearly half
-     the circle from the middle, so an arc of half the circle would light
-     a whole edge at once and read as a border that is simply on. They
+     wash behind it, at three turns and two turns of the same round, so
+     they are never in the same place twice inside a round. Both are short
+     arcs of the circle: a wide button's long edge is nearly half the
+     circle from the middle, so an arc of half the circle would light a
+     whole edge at once and read as a border that is simply on. They
      are never in the same place twice inside a round, so the rim never
      shows the same picture twice, and the round is three times what one
      turn used to be. */
@@ -101,10 +102,13 @@
   }
 
   /* The comet. Three turns to the round, and not at one speed: it gets
-     away quickly, drifts through the long side, tugs back twice and
-     catches up at the end, so the slow part falls somewhere else on the
-     edge each time round. A plain turn for an engine that cannot read the
-     curve, then the curve. */
+     away, eases through the long side, presses on again and comes round
+     the last turn quickly, so the slow part falls somewhere else on the
+     edge each time round. It never stops and it never goes back: the
+     slowest stretch is still two thirds of the round's own pace, because
+     a light that hesitates on a border reads as a fault and a light that
+     backs up reads as a stutter. A plain turn for an engine that cannot
+     read the curve, then the curve. */
   .ring::before {
     background: conic-gradient(
       from 0deg,
@@ -119,22 +123,17 @@
     animation-timing-function: linear;
     animation-timing-function: linear(
       0,
-      0.065 5%,
-      0.145 13%,
-      0.208 22%,
-      0.252 30%,
-      0.329 37%,
-      0.385 41%,
-      0.37 44%,
-      0.436 50%,
-      0.527 57%,
-      0.583 64%,
-      0.618 71%,
-      0.696 77%,
-      0.756 81%,
-      0.738 84%,
-      0.822 90%,
-      0.912 95%,
+      0.061 6%,
+      0.174 15%,
+      0.275 26%,
+      0.337 35%,
+      0.404 43%,
+      0.496 51%,
+      0.601 58%,
+      0.701 67%,
+      0.769 76%,
+      0.834 84%,
+      0.923 92%,
       1
     );
   }

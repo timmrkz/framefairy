@@ -473,10 +473,15 @@ things and no others, and each one means one thing.
 
 - **The beam.** Light runs clockwise round the edge of the control the work
   was started from, for as long as the work runs. A round is three turns and
-  not at one speed: the comet gets away quickly, drifts through the long
-  side, tugs back twice and catches up at the end, so the slow part falls
-  somewhere else on the edge each turn, and a broad faint wash goes round
-  twice in the same time, so the two are never in the same place twice. **New** while clips are
+  not at one speed: the comet gets away, eases through the long side,
+  presses on again and comes round the last turn quickly, so the slow part
+  falls somewhere else on the edge each turn, and a broad faint wash goes
+  round twice in the same time, so the two are never in the same place
+  twice. It never stands still and it never goes back. The slowest stretch
+  is still two thirds of the round's own pace, because a light that stops
+  on a border reads as a fault and one that backs up reads as a stutter.
+  Sampled out of the browser over a round: three turns, no step backwards,
+  and between 0.69 and 1.50 of the even pace. **New** while clips are
   being found, **Cancel** while a job winds down, **Pause** while the
   transcription stops, **Render** while a clip is being made, **Check
   again** while the tools are looked for. The control that started the work
@@ -494,17 +499,24 @@ things and no others, and each one means one thing.
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
-  the stretch on the range picker while clips are being found for it. Two
-  lights cross it and they are not the same light and not on the same
-  clock. The wash is broad and slow and leans one way. The glint is narrow
-  and bright, leans the other way, goes over in a third of the time and
-  then waits. Their rounds are 3.7 and 2.3 seconds, which share no whole
-  number of rounds anybody sits through, so the pair never comes round to
-  the same picture: sometimes the glint rides the wash, sometimes it
-  crosses an empty place, and now and then the two lean through each other
-  and the place lights up in both directions at once. In a list each row
-  starts a step after the row above it, so the light runs down the column
-  as a wave rather than every row flashing together.
+  the stretch on the range picker while clips are being found for it. It is
+  lit like a card of foil tipped against the light. Two sheets lie over the
+  place, both far larger than it, so what is on screen is a piece of
+  something big and never the whole of anything, which is why foil looks
+  deep and a sliding band looks flat. One sheet carries two sets of stripes
+  crossed over each other, in the app's colour and a step to each side of
+  it round the hues, cut to the shape of a soft lens so the colour is only
+  where the light is: stripes over the whole surface are brushed metal, lit
+  everywhere and going nowhere. The other is a narrow white gleam, the way
+  the edge of a card catches the sun before its face does. They drift and
+  swing opposite ways on rounds of 9.7 and 6.3 seconds, which come back
+  together once every ten minutes, so the place is never twice the same and
+  the eye finds no loop to learn, and their light adds where they cross,
+  because both are screened onto the dark rather than laid over it. In a
+  list each row is tipped at its own angle, so the light runs down the
+  column rather than every row flashing together. The trick is the trading
+  card one, crossed bands and a glare sliding opposite ways, from
+  [simeydotme/pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css).
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and
   their place, and a ring widens out of them and fades.
