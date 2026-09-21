@@ -13,6 +13,7 @@
 # a session without a screen can look at a change. Build output like any
 # other.
 /frontend/preview/dist/
+/frontend/preview/dist-motion/
 
 # Programs built by hand with go build
 /framefairy

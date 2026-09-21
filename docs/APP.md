@@ -506,6 +506,19 @@ white instead, because the app's colour cannot be seen on itself. With
 **Reduce motion** on in the system nothing moves: the beam is a steady rim,
 the motes are not drawn, and the shimmer and the fill stand still.
 
+All five on one page, without starting five jobs in the app and catching
+each at the right moment:
+
+```
+make motion
+```
+
+It opens a page in the browser with every one of them running, at every
+share and in every kind of control, and a colour picker at the top so the
+whole set can be seen in another accent. It is preview material in
+`frontend/preview/motion/` and never goes into the app: the product only
+serves making shorts.
+
 `frontend/src/components/Busy.svelte` is the whole of the beam, the motes
 and the fill inside a control. The track, the shimmer and the pulse are in
 `frontend/src/app.css`, because they are worn by things that are not

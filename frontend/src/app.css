@@ -343,7 +343,7 @@ input[type="text"] {
   /* Where it stands before its own light has started, which is what a row
      waiting its turn in a list shows. Without it the band sits at the left
      edge of the row, unskewed, until the delay runs out. */
-  transform: translateX(-120%) skewX(-14deg);
+  transform: translateX(-110%) skewX(-14deg);
   /* One run, then a rest. The rest is inside the keyframes rather than in
      animation-delay, because a delay only holds the first round. The delay
      is what sets one row off after the row above it. */
@@ -354,13 +354,13 @@ input[type="text"] {
 
 @keyframes shimmer {
   0% {
-    transform: translateX(-120%) skewX(-14deg);
+    transform: translateX(-110%) skewX(-14deg);
   }
-  80% {
-    transform: translateX(220%) skewX(-14deg);
+  88% {
+    transform: translateX(200%) skewX(-14deg);
   }
   100% {
-    transform: translateX(220%) skewX(-14deg);
+    transform: translateX(200%) skewX(-14deg);
   }
 }
 

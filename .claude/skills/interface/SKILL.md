@@ -52,6 +52,26 @@ events the way the Go side does.
 `frontend/preview/dist/` is build output and is not in the repository.
 Write one-off probes outside the repository, in the scratchpad.
 
+## The motion bench
+
+`make motion` opens every way the app shows work in hand on one page: the
+beam and its motes, the fill in a control and as a track, the shimmer and
+the pulse, each at every share and in every kind of control, with a colour
+picker so the whole set can be seen in another accent. It is the fastest
+way to look at a change to any of them, because nothing has to be started
+and nothing has to be caught at the right moment.
+
+It is built from `frontend/preview/motion/` by
+`frontend/preview/motion.config.ts` and it uses the app's own `app.css` and
+the app's own `Busy.svelte`, so what it shows is what the workspace shows.
+Build it for a probe with
+
+```
+npx vite build --config frontend/preview/motion.config.ts
+```
+
+Anything added to the five belongs on that page in the same change.
+
 ## Measure the right thing
 
 **`getBoundingClientRect` gives the layout position. It cannot see a

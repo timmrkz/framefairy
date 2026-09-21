@@ -79,11 +79,14 @@
   <!-- The rows that are not there yet, after whatever is. They are as many
        as the search was asked for, so the list does not fill out from four
        rows to twelve, and the shimmer over them is the only thing that
-       says it is still working. Each row starts its light a moment after
-       the one above, so the light runs down the column as a wave rather
-       than every row flashing together. -->
+       says it is still working. Each row starts its light a step after the
+       one above, so the light runs down the column as a wave rather than
+       every row flashing together. The step is a twelfth of the shimmer's
+       own round, and twelve is what a search is asked for, so with a full
+       list the column always carries light somewhere while each row still
+       rests. -->
   {#each ghosts as row (row)}
-    <li class="ghost waiting" style="--wait-in: {row * 110}ms"></li>
+    <li class="ghost waiting" style="--wait-in: {row * 200}ms"></li>
   {/each}
 </ol>
 
