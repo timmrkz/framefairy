@@ -2,6 +2,7 @@
 #
 #   make            project packages, the interface and all three programs
 #   make run        build, then start the app
+#   make motion     the five ways the app shows work in hand, in a browser
 #   make test       all tests
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the system tools that are missing (macOS)
@@ -57,7 +58,7 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run test fuzz check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run motion test fuzz check tools models clean help toolchain modules $(PROGRAMS)
 
 all: toolchain $(PROGRAMS)
 	@echo "Ready: $(PROGRAMS)"
@@ -121,6 +122,11 @@ $(BIN)/framefairy-train$(EXE): modules
 run: all
 	@$(BIN)/framefairy-app$(EXE)
 
+# Every way the app says work is in hand, on one page, in a browser. It is
+# preview material and never goes into the app.
+motion: frontend/node_modules/.package-lock.json
+	@cd frontend && npx vite --config preview/motion.config.ts
+
 test: toolchain modules fuzz
 	@if command -v $(NPM) >/dev/null 2>&1; then \
 		$(MAKE) -s --no-print-directory frontend/node_modules/.package-lock.json && \
@@ -152,6 +158,6 @@ models:
 	@sh scripts/models.sh
 
 clean:
-	@rm -rf $(BIN) $(STAMPS) frontend/node_modules
+	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion
 	@$(GO) clean -fuzzcache
-	@echo "Removed bin/, .build/, frontend/node_modules/ and the fuzz corpus"
+	@echo "Removed bin/, .build/, frontend/node_modules/, the preview builds and the fuzz corpus"

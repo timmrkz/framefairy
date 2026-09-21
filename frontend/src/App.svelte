@@ -277,9 +277,11 @@
       >
         <span class="mark">
           <Icon name="activity" />
-          <!-- Work in hand is one dot on the icon. It sits over the icon, so
-               nothing on the rail moves when a job starts or ends. -->
-          {#if jobs.busy}<span class="busy"></span>{/if}
+          <!-- Work in hand is one dot on the icon, the same dot as beside
+               an episode in the list and pulsing the same way. It sits
+               over the icon, so nothing on the rail moves when a job
+               starts or ends. -->
+          {#if jobs.busy}<span class="dot busy"></span>{/if}
         </span>
         <span class="label">Activity</span>
       </button>
@@ -675,8 +677,6 @@
     right: -3px;
     width: 7px;
     height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
   }
 
   .version {

@@ -186,14 +186,14 @@ place.
 
 - **The transcription is the head of the clip list**, in the shape
   everything else in that pane has: the head says **Transcribing**, the one
-  button says **Pause**, and the line under them fills up as it goes. Paused,
+  button says **Pause**, and that button fills up as it goes. Paused,
   the head says so and the button says **Continue**, which picks up where it
   stopped, also after a restart. The info mark beside the head says what is
   happening and how long it has to go, and goes back to saying what the clip
   list is once there are clips to list.
 - **What is not there yet says so by waiting.** The part of the clip
   timeline the transcript has not reached and the rows the clip list will
-  have are places waiting to be filled: a soft light passes over them, the
+  have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the edge is taken from the waveform
   itself, so the light never lies over a waveform that is already drawn. The
@@ -466,6 +466,87 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Work in hand
+
+Everything that runs says so the same way, wherever it runs. There are four
+things and no others, and each one means one thing.
+
+- **The beam.** Light runs clockwise round the edge of the control the work
+  was started from, for as long as the work runs. A round is five turns and
+  no two of them alike: the comet gets away, eases right off through one
+  long side, comes back hard through the next, sits down again and finishes
+  quickly, so the slow part falls somewhere else on the edge each turn, and
+  a broad faint wash goes round three times in the same time, so the two
+  are never in the same place twice. It never stands still and it never
+  goes back, because a light that hesitates on a border reads as broken and
+  one that backs up reads as a stutter. Sampled out of the browser over a
+  round: five turns, no step backwards, and between 0.59 and 1.63 of the
+  even pace.
+- **The motes.** Specks of that light drift up through the control, behind
+  its own words. They are the beam's, not a thing of their own, and they
+  are why a control with nothing to report is still alive to look at.
+- **The fill.** How far the work has come, when that is known. Inside the
+  control it is a wash with a bright head at the front, so where the work
+  has got to is a line rather than the place one shade becomes another. In
+  Activity, where a job has no control of its own, the same fill lies in a
+  track of its own, with a light travelling over what is already done. Work that cannot
+  say how far it has come shuttles across that track instead of standing at
+  a number it does not have.
+- **The shimmer.** A place that is not filled yet: the rows the clip list
+  will have, the part of the clip timeline the transcript has not reached,
+  the stretch on the range picker while clips are being found for it. The
+  place itself dims and comes back, two seconds, in and out. It is
+  `animate-pulse`, which is what
+  [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton) and
+  Tailwind ship and what most of the web wears, and it is the whole of it:
+  no band, no sweep, no light crossing anything. In a list each row starts
+  a step after the row above it, so the breath runs down the column rather
+  than every row rising and falling together. Four brighter ways of doing
+  this were tried and looked at side by side, and this is the one that was
+  chosen. They all stay in `make motion` to be compared again, where they
+  cost the app nothing.
+- **The pulse.** Work running somewhere else. The dot beside an episode in
+  the sidebar and the dot on **Activity** on the rail keep their size and
+  their place, and a ring widens out of them and fades.
+
+The colours are the app's own throughout, mixed from the accent, so
+changing it in the settings moves the beam, the fill and the shimmer with
+everything else. On a control that is already the app's colour the light is
+white instead, because the app's colour cannot be seen on itself. With
+**Reduce motion** on in the system nothing moves: the beam is a steady rim,
+the motes are not drawn, and the shimmer and the fill stand still.
+
+All five on one page, without starting five jobs in the app and catching
+each at the right moment:
+
+```
+make motion
+```
+
+It opens a page in the browser with every one of them running, at every
+share and in every kind of control, and a colour picker at the top so the
+whole set can be seen in another accent. The shimmer stands there five
+ways: react-loading-skeleton's sweep, MUI's wave, the breath that
+shadcn/ui and Tailwind ship and that the app wears, the breath and the
+wave together, and a foil of our own. It is preview material in
+`frontend/preview/motion/` and never goes into the app: the product only
+serves making shorts.
+
+All of it is the stylesheet's. Nothing here runs JavaScript, nothing asks
+for a frame and nothing measures anything: every moving part animates a
+transform or an opacity, which the compositor carries without painting
+again, and the one curve that is not a plain ease is a CSS `linear()`.
+Measured in headless Chromium: 60 frames a second with 114 of them running
+at once on the bench, 60 with a search running in the workspace, and no
+animation at all at rest.
+
+`frontend/src/components/Busy.svelte` is the whole of the beam, the motes
+and the fill inside a control. The track, the shimmer and the pulse are in
+`frontend/src/app.css`, because they are worn by things that are not
+controls. The track is `.progress` there and not `.bar`, because the bar is
+the one across the top of the window, and while the two shared a name the
+bar was picking up the track's rounded corners.
+
 ### What the window may ask for
 
 Every call that names a file is checked against the library before anything
@@ -477,7 +558,8 @@ asks.
 ### Activity
 
 Everything that runs in the background, with progress, a log per job and
-**Cancel**, which says it heard you while the job winds down. One job is one
+**Cancel**, which wears the beam while the job winds down so the click is
+seen at once. One job is one
 row, parted from the next by a line across the page, and clicking a finished
 row opens its log. Transcription runs in its own lane, so finding and
 rendering clips never wait for it.
@@ -551,7 +633,7 @@ interface's types.
 | Folder | What |
 | --- | --- |
 | `frontend/src/screens/` | the workspace, activity and settings |
-| `frontend/src/components/` | player, timelines, clip list, progress bar |
+| `frontend/src/components/` | player, timelines, clip list, work in hand |
 | `frontend/src/lib/` | calls into Go and the shared state |
 | `frontend/src/app.css` | colours, sizes and the base styles |
 

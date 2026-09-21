@@ -19,6 +19,12 @@
   --accent: #942192;
   --accent-hi: #b02cae;
   --accent-wash: rgba(148, 33, 146, 0.22);
+  /* The two the moving lights are made of. The brightest point of the
+     app's colour, which is the head of a fill and the head of the beam,
+     and the faintest, which is the colour a place waiting to be filled
+     rests at between one pass of the shimmer and the next. */
+  --accent-lit: #e07fde;
+  --accent-faint: rgba(148, 33, 146, 0.07);
   --ok: #5fa37a;
   --warn: #d2a441;
   --err: #e0605a;
@@ -81,6 +87,8 @@
   :root {
     --accent-hi: color-mix(in srgb, var(--accent) 82%, white);
     --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
+    --accent-lit: color-mix(in srgb, var(--accent) 45%, white);
+    --accent-faint: color-mix(in srgb, var(--accent) 7%, transparent);
   }
 }
 
@@ -209,79 +217,136 @@ input[type="text"] {
   gap: 8px;
 }
 
-.bar {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--ink-3);
+/* How far work has come: the fill. It is the same thing wherever it is,
+   a capsule of the app's colour with a bright head at the front and a
+   light travelling over what is already done, so it lives even while the
+   number stands still. Here it is a bar of its own, for work with no
+   control to sit in. Inside a control it is the fill in Busy.svelte. */
+.progress {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line);
   overflow: hidden;
 }
 
-.bar > i {
+.progress > i {
   display: block;
+  position: relative;
   height: 100%;
-  background: var(--accent);
-  transition: width 0.3s linear;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hi) 100%);
+  /* The head of the fill, a line of light with a glow around it, so where
+     the work has got to is something to look at rather than a change of
+     shade to squint at. */
+  box-shadow:
+    inset -2px 0 var(--accent-lit),
+    0 0 10px var(--accent-wash);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.bar.unknown > i {
-  width: 30% !important;
-  animation: slide 1.2s ease-in-out infinite;
+/* The light over what is done. */
+.progress > i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 100%
+  );
+  animation: sheen 2.4s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
 
-@keyframes slide {
+@keyframes sheen {
   from {
     transform: translateX(-100%);
   }
   to {
-    transform: translateX(340%);
+    transform: translateX(100%);
+  }
+}
+
+/* Work that cannot say how far it has come: the capsule shuttles across
+   the track and stretches as it goes, so the bar is never a number that
+   is missing, it is a thing in motion. */
+.progress.unknown > i {
+  width: 38% !important;
+  transform-origin: left center;
+  animation: shuttle 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  transition: none;
+}
+
+.progress.unknown > i::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes shuttle {
+  0% {
+    transform: translateX(-105%) scaleX(0.55);
+  }
+  50% {
+    transform: translateX(75%) scaleX(1.35);
+  }
+  100% {
+    transform: translateX(270%) scaleX(0.55);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bar.unknown > i {
+  .progress > i::after,
+  .progress.unknown > i {
     animation: none;
+  }
+
+  .progress.unknown > i {
     width: 100% !important;
     opacity: 0.4;
   }
 }
 
-/* Something that is not there yet: a light passes over the place it will
-   be, the way a page shows what it is still loading. The same light the
-   window on the range picker shows while clips are being found. */
+/* Something that is not there yet: the shimmer. The place itself dims and
+   comes back, two seconds, in and out. It is animate-pulse, which is what
+   shadcn/ui and Tailwind ship and what most of the web wears, and it is
+   the whole of it: no band, no sweep, no light crossing anything.
+
+   Four brighter ways of doing this were tried and looked at side by side,
+   and this is the one that was chosen. They are all still in `make
+   motion` to be compared again, where they cost the app nothing.
+
+   The place breathing is the place's own opacity, which gives it a
+   surface of its own for as long as it waits. That is safe here and only
+   here: the surface is there the whole time rather than arriving with a
+   fade, so nothing steps. See the whole-pixel rule in CLAUDE.md.
+
+   The same breath lies over the stretch the transcript has not reached
+   and over the clips that have not been found. */
 .waiting {
-  position: relative;
-  overflow: hidden;
+  animation: breath 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* What sets one row of a list off after the row above it. */
+  animation-delay: var(--wait-in, 0ms);
 }
 
-.waiting::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 55%;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.13) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  animation: passing 2.2s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes passing {
-  from {
-    transform: translateX(-100%);
+/* Tailwind's own number here is 0.5. This is the 0.45 that stood on the
+   bench and was picked, and the two cannot be told apart. */
+@keyframes breath {
+  0%,
+  100% {
+    opacity: 1;
   }
-  to {
-    transform: translateX(250%);
+  50% {
+    opacity: 0.45;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .waiting::after {
+  .waiting {
     animation: none;
+    opacity: 0.75;
   }
 }
 
@@ -298,8 +363,40 @@ input[type="text"] {
   background: var(--ok);
 }
 
+/* Work running somewhere else: the pulse. The dot keeps its size and its
+   place, and a ring of the same colour widens out of it and fades, once
+   every couple of seconds, so a job running behind the window is seen
+   from the corner of the eye and nothing on the rail moves for it. */
 .dot.busy {
+  position: relative;
   background: var(--accent);
+}
+
+.dot.busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--accent-hi);
+  animation: pulse 1.9s cubic-bezier(0.25, 0, 0.3, 1) infinite;
+}
+
+@keyframes pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  to {
+    transform: scale(2.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.busy::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .dot.warn {
@@ -317,6 +414,38 @@ input[type="text"] {
 
 .scroll {
   overflow: auto;
+}
+
+/* A control with work running in it carries the beam, and the beam is
+   drawn inside the control: over its own background, under its own words.
+   A stacking context of the control's own is what puts it there, and the
+   rounded corners clip it. Both belong to the control rather than to the
+   beam, because only the control knows them. */
+button:has(> .beam) {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  /* The light the control wears: its brightest point, and the two ends of
+     the wash the fill lays over what is done. On a control that is
+     already the app's colour they are white, because the app's colour
+     cannot be seen on itself. */
+  --lit: var(--accent-lit);
+  --wash-from: var(--accent-faint);
+  --wash-to: var(--accent-wash);
+}
+
+button.primary:has(> .beam) {
+  --lit: #fff;
+  --wash-from: rgba(255, 255, 255, 0.08);
+  --wash-to: rgba(255, 255, 255, 0.3);
+}
+
+/* A control that cannot be pressed while its own work runs still has to be
+   seen working. Its words say what is happening, Cancelling or Rendering,
+   so nothing is lost by leaving it at its full strength, and the beam
+   would have gone dim with it. */
+button:has(> .beam):disabled {
+  opacity: 1;
 }
 
 /* What explains an area waits until the pointer is on that area. The area
