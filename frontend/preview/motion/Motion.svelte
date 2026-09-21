@@ -23,6 +23,40 @@
 
   const ghosts = [0, 1, 2, 3, 4, 5];
 
+  // The four ways a place waiting to be filled can say so. Three are other
+  // people's, copied as they ship them, with the app's colours in place of
+  // theirs. The fourth is ours.
+  const ways = [
+    {
+      key: "sweep",
+      name: "The sweep",
+      from: "react-loading-skeleton",
+      step: 800,
+      what: "A highlight as wide as the place itself, soft at both ends, crossing once every second and a half and easing at each end. Wide is the point: a highlight with no edges to catch reads as the place brightening rather than as a stripe sliding past.",
+    },
+    {
+      key: "wave",
+      name: "The wave",
+      from: "MUI Skeleton, animation=\"wave\"",
+      step: 800,
+      what: "The same idea with a rest in it: over in half the round, then still for the other half. Two seconds, at one speed.",
+    },
+    {
+      key: "breath",
+      name: "The breath",
+      from: "shadcn/ui and Tailwind, animate-pulse",
+      step: 800,
+      what: "No light at all. The place itself dims to half and comes back, two seconds, in and out. What most of the web wears in 2026.",
+    },
+    {
+      key: "foil",
+      name: "The foil",
+      from: "ours, after simeydotme/pokemon-cards-css",
+      step: 1600,
+      what: "A grating of fine lines cut to the shape of a lens, wandering over the place with a white gleam going the other way. Two rounds that come back together once every ten minutes.",
+    },
+  ];
+
   // What wears what, in the app. The same table is in docs/APP.md.
   const map = [
     ["The beam", "New, Cancel, Pause, Render, Check again, and the pause mark in the clip list head"],
@@ -114,33 +148,30 @@
   </section>
 
   <section>
-    <h2>The shimmer</h2>
+    <h2>The shimmer, four ways</h2>
     <p class="muted">
-      A place that is not filled yet, lit like a card of foil tipped against
-      the light. Two things make foil foil. It is a grating, many fine lines
-      close together each throwing back a slightly different colour, so what
-      you see is lines and not a cloud. And the colour lives inside the
-      reflection: lay the lines over a whole surface and you get brushed
-      metal, lit everywhere and going nowhere. So a sheet three times the
-      size of the place carries the lines, a soft lens is cut out of it, and
-      what is seen is that lens wandering over a dark surface carrying its
-      lines with it. A second sheet is one narrow white gleam going the other
-      way, the way the edge of a card catches the sun before its face does.
-      Their rounds are 9.7 and 6.3 seconds and come back together once every
-      ten minutes, and in a list each row is a step further into the round
-      than the one above, so every card is tipped at its own angle.
+      A place that is not filled yet. Three of these are what other people
+      ship, copied faithfully and named. The fourth is ours. Pick one and it
+      becomes the only one, everywhere a place waits: the clips not found
+      yet, the part of the clip timeline the transcript has not reached, the
+      stretch on the range picker while a search runs.
     </p>
-    <div class="shim">
-      <ol>
-        {#each ghosts as row (row)}
-          <li class="ghost waiting" style="--wait-in: {row * 1600}ms"></li>
-        {/each}
-      </ol>
-      <div class="blocks">
-        <div class="block wide-block waiting" style="--wait-in: 3200ms"></div>
-        <div class="block waiting" style="--wait-in: 6400ms"></div>
+
+    {#each ways as way (way.key)}
+      <div class="way">
+        <div class="row wayhead">
+          <h3>{way.name}</h3>
+          <span class="muted">{way.from}</span>
+          {#if way.key === "sweep"}<span class="now">in the app now</span>{/if}
+        </div>
+        <p class="muted small">{way.what}</p>
+        <ol class="cards">
+          {#each ghosts as row (row)}
+            <li class="ghost {way.key}" style="--wait-in: {row * way.step}ms"></li>
+          {/each}
+        </ol>
       </div>
-    </div>
+    {/each}
   </section>
 
   <section>
@@ -252,46 +283,242 @@
     gap: var(--gap);
   }
 
-  .shim {
+  .way {
     display: flex;
-    gap: var(--gap);
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: var(--gap);
+    border-top: 1px solid var(--line);
   }
 
-  ol {
+  .wayhead {
+    gap: 10px;
+  }
+
+  h3 {
+    font-size: var(--size-m);
+  }
+
+  .small {
+    font-size: var(--size-s);
+    max-width: 78ch;
+  }
+
+  .now {
+    padding: 2px 8px;
+    border-radius: var(--radius-s);
+    background: var(--accent-wash);
+    box-shadow: inset 0 0 0 1px var(--accent);
+    font-size: var(--size-s);
+  }
+
+  /* Six cards of the size the clip list holds open, so every way is judged
+     on the thing it will actually lie on. */
+  .cards {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--gap);
-    width: 280px;
   }
 
-  /* The same card the clip list holds open for a clip on its way. */
   .ghost {
+    position: relative;
     height: 56px;
     border-radius: var(--radius-m);
     background: var(--ink-2);
     box-shadow: inset 0 0 0 1px var(--ink-3);
+    overflow: hidden;
   }
 
-  .blocks {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap);
-    flex: 1;
+  /* The sweep, react-loading-skeleton. This one is app.css's, so the card
+     only needs the class the app gives it. */
+  .ghost.sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-repeat: no-repeat;
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--accent-faint) 22%,
+      var(--accent-wash) 42%,
+      rgba(255, 255, 255, 0.13) 50%,
+      var(--accent-wash) 58%,
+      var(--accent-faint) 78%,
+      transparent 100%
+    );
+    transform: translateX(-100%);
+    animation: sweep 1.5s ease-in-out infinite;
+    animation-delay: var(--wait-in, 0ms);
   }
 
-  .block {
-    height: 112px;
-    border-radius: var(--radius-m);
-    background: var(--ink-1);
-    border: 1px solid var(--line);
+  @keyframes sweep {
+    to {
+      transform: translateX(100%);
+    }
   }
 
-  .wide-block {
-    height: 56px;
+  /* The wave, MUI Skeleton. Over in half the round, still for the rest. */
+  .ghost.wave::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--accent-wash),
+      transparent
+    );
+    transform: translateX(-100%);
+    animation: wave 2s linear infinite;
+    animation-delay: var(--wait-in, 0ms);
+  }
+
+  @keyframes wave {
+    0% {
+      transform: translateX(-100%);
+    }
+    50% {
+      transform: translateX(100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* The breath, shadcn/ui and Tailwind. No light, the place itself dims. */
+  .ghost.breath {
+    animation: breath 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation-delay: var(--wait-in, 0ms);
+  }
+
+  @keyframes breath {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  /* The foil, ours. A grating cut to the shape of a lens, with a white
+     gleam going the other way. */
+  .ghost.foil {
+    isolation: isolate;
+    --foil-1: rgba(150, 80, 240, 0.34);
+    --foil-2: rgba(240, 96, 165, 0.31);
+    --foil-3: rgba(205, 88, 232, 0.27);
+  }
+
+  .ghost.foil::before,
+  .ghost.foil::after {
+    content: "";
+    position: absolute;
+    mix-blend-mode: screen;
+    animation-iteration-count: infinite;
+  }
+
+  .ghost.foil::before {
+    top: -160%;
+    left: -110%;
+    width: 320%;
+    height: 420%;
+    background-image: repeating-linear-gradient(
+      100deg,
+      transparent 0px,
+      var(--foil-1) 2px,
+      transparent 5px,
+      var(--foil-3) 9px,
+      transparent 13px,
+      var(--foil-2) 18px,
+      transparent 21px,
+      rgba(255, 255, 255, 0.24) 26px,
+      transparent 31px,
+      var(--foil-2) 37px,
+      transparent 40px,
+      var(--foil-3) 46px,
+      transparent 51px,
+      var(--foil-1) 58px,
+      transparent 61px,
+      transparent 70px
+    );
+    -webkit-mask-image: radial-gradient(
+      11% 26% at 50% 50%,
+      #000 0%,
+      rgba(0, 0, 0, 0.66) 42%,
+      transparent 78%
+    );
+    -webkit-mask-repeat: no-repeat;
+    mask-image: radial-gradient(
+      11% 26% at 50% 50%,
+      #000 0%,
+      rgba(0, 0, 0, 0.66) 42%,
+      transparent 78%
+    );
+    mask-repeat: no-repeat;
+    transform: translate3d(-17%, -6%, 0) rotate(-7deg);
+    animation-name: foil;
+    animation-duration: 9.7s;
+    animation-timing-function: cubic-bezier(0.42, 0, 0.35, 1);
+    animation-delay: var(--wait-in, 0ms);
+  }
+
+  .ghost.foil::after {
+    top: -90%;
+    left: -80%;
+    width: 260%;
+    height: 300%;
+    background-image: radial-gradient(
+      4% 90% at 50% 50%,
+      rgba(255, 255, 255, 0.32) 0%,
+      rgba(255, 255, 255, 0.1) 44%,
+      rgba(255, 255, 255, 0) 78%
+    );
+    background-repeat: no-repeat;
+    transform: translate3d(12%, 6%, 0) rotate(11deg);
+    animation-name: glare;
+    animation-duration: 6.3s;
+    animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1);
+    animation-delay: calc(var(--wait-in, 0ms) * 1.7);
+  }
+
+  @keyframes foil {
+    0% {
+      transform: translate3d(-17%, -6%, 0) rotate(-7deg);
+    }
+    27% {
+      transform: translate3d(-3%, 5%, 0) rotate(4deg);
+    }
+    53% {
+      transform: translate3d(15%, -5%, 0) rotate(11deg);
+    }
+    74% {
+      transform: translate3d(2%, 6%, 0) rotate(2deg);
+    }
+    100% {
+      transform: translate3d(-17%, -6%, 0) rotate(-7deg);
+    }
+  }
+
+  @keyframes glare {
+    0% {
+      transform: translate3d(12%, 6%, 0) rotate(11deg) scale(1);
+    }
+    31% {
+      transform: translate3d(-1%, -6%, 0) rotate(2deg) scale(1.2);
+    }
+    58% {
+      transform: translate3d(-16%, 5%, 0) rotate(-9deg) scale(0.9);
+    }
+    81% {
+      transform: translate3d(-3%, -2%, 0) rotate(-1deg) scale(1.1);
+    }
+    100% {
+      transform: translate3d(12%, 6%, 0) rotate(11deg) scale(1);
+    }
   }
 
   .dots {

@@ -25,14 +25,6 @@
      rests at between one pass of the shimmer and the next. */
   --accent-lit: #e07fde;
   --accent-faint: rgba(148, 33, 146, 0.07);
-  /* The foil. A place waiting to be filled is lit like a card tipped
-     against the light: bands of the app's colour a step to each side of
-     itself, so the sheen has the spread real foil has without the app
-     growing a second colour. The plain values are for an engine that
-     cannot work a colour out from another one. */
-  --foil-1: rgba(150, 80, 240, 0.34);
-  --foil-2: rgba(240, 96, 165, 0.31);
-  --foil-3: rgba(205, 88, 232, 0.27);
   --ok: #5fa37a;
   --warn: #d2a441;
   --err: #e0605a;
@@ -97,18 +89,6 @@
     --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
     --accent-lit: color-mix(in srgb, var(--accent) 45%, white);
     --accent-faint: color-mix(in srgb, var(--accent) 7%, transparent);
-  }
-}
-
-/* The foil's three, worked out from the app's colour where the engine can:
-   one step anticlockwise round the hues, one clockwise, and the colour
-   itself lifted. Changing the accent in the settings moves the sheen with
-   everything else. */
-@supports (color: oklch(from red l c h)) {
-  :root {
-    --foil-1: oklch(from var(--accent) 0.68 0.25 calc(h - 34) / 0.34);
-    --foil-2: oklch(from var(--accent) 0.76 0.22 calc(h + 32) / 0.31);
-    --foil-3: oklch(from var(--accent) 0.72 0.24 calc(h + 2) / 0.27);
   }
 }
 
@@ -329,175 +309,57 @@ input[type="text"] {
   }
 }
 
-/* Something that is not there yet: the shimmer. Not a band crossing a box,
-   which is a thing you have seen the whole of in half a second, but a card
-   of foil tipped against the light.
+/* Something that is not there yet: the shimmer. This is the sweep that
+   react-loading-skeleton ships and that most of the web wears, in the
+   app's own colour: a highlight as wide as the place itself, soft at both
+   ends, crossing once every second and a half and easing at each end.
 
-   Two things make foil foil. It is a grating: many fine lines, close
-   together, each throwing back a slightly different colour, so what you
-   see is lines and not a cloud. And the colour lives inside the
-   reflection: lay the lines over a whole surface and you get brushed
-   metal, lit everywhere and going nowhere.
+   Wide is the point. A narrow band slides past and reads as a stripe on a
+   box. A highlight the width of the place has no edges to catch, so what
+   is seen is the place brightening and dimming as the light goes over it,
+   which is what a real surface does.
 
-   So the lines here are cut to the shape of the light that falls on them.
-   A sheet three times the size of the place carries a grating of thin
-   lines, seventy pixels to the round, whose colour walks out to one side
-   of the app's own and back through the other, with one white line in it.
-   A soft lens is cut out of the sheet, and what is seen is that lens
-   wandering over a dark surface, carrying its lines with it. A second
-   sheet is one narrow white gleam going the other way, the way the edge of
-   a card catches the sun before its face does.
-
-   The two drift and swing on rounds of 9.7 and 6.3 seconds, which come
-   back together once every ten minutes, so the place is never twice the
-   same and the eye finds no loop to learn. Their light adds where they
-   cross, because both are screened onto the dark rather than laid over it.
-
-   The lines are measured in pixels and not in parts of the place, so a
-   clip card and the whole clip timeline wear foil of the same grain.
-
-   The trick is the trading card one, a grating and a glare sliding
-   opposite ways, from simeydotme/pokemon-cards-css. See docs/APP.md.
-
-   The same foil lies over the stretch the transcript has not reached and
-   over the clips that have not been found. */
+   The same light lies over the stretch the transcript has not reached and
+   over the clips that have not been found. Other ways of doing this, and
+   where each comes from, stand side by side in `make motion`. */
 .waiting {
   position: relative;
   overflow: hidden;
-  /* So the two sheets add their light to this place and not to the page
-     behind it. */
-  isolation: isolate;
+}
+
+.waiting::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    var(--accent-faint) 50%,
+    var(--accent-faint) 22%,
+    var(--accent-wash) 42%,
+    rgba(255, 255, 255, 0.13) 50%,
+    var(--accent-wash) 58%,
+    var(--accent-faint) 78%,
     transparent 100%
   );
-}
-
-.waiting::after,
-.waiting::before {
-  content: "";
-  position: absolute;
-  mix-blend-mode: screen;
-  pointer-events: none;
-  animation-iteration-count: infinite;
-}
-
-/* The grating, on a sheet far larger than the place, with a lens cut out
-   of it so the lines are only where the light is. */
-.waiting::before {
-  top: -160%;
-  left: -110%;
-  width: 320%;
-  height: 420%;
-  background-image: repeating-linear-gradient(
-    100deg,
-    transparent 0px,
-    var(--foil-1) 2px,
-    transparent 5px,
-    var(--foil-3) 9px,
-    transparent 13px,
-    var(--foil-2) 18px,
-    transparent 21px,
-    rgba(255, 255, 255, 0.24) 26px,
-    transparent 31px,
-    var(--foil-2) 37px,
-    transparent 40px,
-    var(--foil-3) 46px,
-    transparent 51px,
-    var(--foil-1) 58px,
-    transparent 61px,
-    transparent 70px
-  );
-  /* One lens, not a field of them. A mask repeats by default, and a
-     repeating lens is a lattice, which is brushed metal rather than
-     foil: lit everywhere and going nowhere. */
-  -webkit-mask-image: radial-gradient(
-    11% 26% at 50% 50%,
-    #000 0%,
-    rgba(0, 0, 0, 0.66) 42%,
-    transparent 78%
-  );
-  -webkit-mask-repeat: no-repeat;
-  mask-image: radial-gradient(
-    11% 26% at 50% 50%,
-    #000 0%,
-    rgba(0, 0, 0, 0.66) 42%,
-    transparent 78%
-  );
-  mask-repeat: no-repeat;
-  transform: translate3d(-17%, -6%, 0) rotate(-7deg);
-  animation-name: foil;
-  animation-duration: 9.7s;
-  animation-timing-function: cubic-bezier(0.42, 0, 0.35, 1);
+  transform: translateX(-100%);
+  animation: waiting 1.5s ease-in-out infinite;
+  /* What sets one row of a list off after the row above it. */
   animation-delay: var(--wait-in, 0ms);
+  pointer-events: none;
 }
 
-/* The edge catching the light, going the other way: one narrow white
-   streak, leaning as the sheet under it leans. */
-.waiting::after {
-  top: -90%;
-  left: -80%;
-  width: 260%;
-  height: 300%;
-  background-image: radial-gradient(
-    4% 90% at 50% 50%,
-    rgba(255, 255, 255, 0.32) 0%,
-    rgba(255, 255, 255, 0.1) 44%,
-    rgba(255, 255, 255, 0) 78%
-  );
-  background-repeat: no-repeat;
-  transform: translate3d(12%, 6%, 0) rotate(11deg);
-  animation-name: glare;
-  animation-duration: 6.3s;
-  animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1);
-  /* Its own head start, so two places waiting side by side are never
-     tipped at the same angle. */
-  animation-delay: calc(var(--wait-in, 0ms) * 1.7);
-}
-
-@keyframes foil {
-  0% {
-    transform: translate3d(-17%, -6%, 0) rotate(-7deg);
-  }
-  27% {
-    transform: translate3d(-3%, 5%, 0) rotate(4deg);
-  }
-  53% {
-    transform: translate3d(15%, -5%, 0) rotate(11deg);
-  }
-  74% {
-    transform: translate3d(2%, 6%, 0) rotate(2deg);
-  }
-  100% {
-    transform: translate3d(-17%, -6%, 0) rotate(-7deg);
+@keyframes waiting {
+  to {
+    transform: translateX(100%);
   }
 }
 
-@keyframes glare {
-  0% {
-    transform: translate3d(12%, 6%, 0) rotate(11deg) scale(1);
-  }
-  31% {
-    transform: translate3d(-1%, -6%, 0) rotate(2deg) scale(1.2);
-  }
-  58% {
-    transform: translate3d(-16%, 5%, 0) rotate(-9deg) scale(0.9);
-  }
-  81% {
-    transform: translate3d(-3%, -2%, 0) rotate(-1deg) scale(1.1);
-  }
-  100% {
-    transform: translate3d(12%, 6%, 0) rotate(11deg) scale(1);
-  }
-}
-
-/* Still, and still lit, so a place waiting to be filled still says so. */
 @media (prefers-reduced-motion: reduce) {
-  .waiting::after,
-  .waiting::before {
+  .waiting::after {
     animation: none;
+    transform: none;
+    opacity: 0.5;
   }
 }
 

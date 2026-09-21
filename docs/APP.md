@@ -495,28 +495,19 @@ things and no others, and each one means one thing.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
   the stretch on the range picker while clips are being found for it. It is
-  lit like a card of foil tipped against the light. Two things make foil
-  foil. It is a grating, many fine lines close together, each throwing back
-  a slightly different colour, so what is seen is lines and not a cloud.
-  And the colour lives inside the reflection: lay the lines over a whole
-  surface and the result is brushed metal, lit everywhere and going
-  nowhere. So a sheet three times the size of the place carries a grating
-  of thin lines, seventy pixels to the round, whose colour walks out to one
-  side of the app's own and back through the other with one white line in
-  it. A soft lens is cut out of the sheet, and what is seen is that lens
-  wandering over a dark surface, carrying its lines with it. A second sheet
-  is one narrow white gleam going the other way, the way the edge of a card
-  catches the sun before its face does. The two drift and swing on rounds
-  of 9.7 and 6.3 seconds, which come back together once every ten minutes,
-  so the place is never twice the same and the eye finds no loop to learn,
-  and their light adds where they cross because both are screened onto the
-  dark rather than laid over it. The lines are measured in pixels and not
-  in parts of the place, so a clip card and the whole clip timeline wear
-  foil of the same grain. In a list each row is a step further into the
-  round than the one above, so every card is tipped at its own angle. The
-  trick is the trading card one, a grating and a glare sliding opposite
-  ways, from
-  [simeydotme/pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css).
+  the sweep that
+  [react-loading-skeleton](https://github.com/dvtng/react-loading-skeleton)
+  ships and that most of the web wears, in the app's own colour: a
+  highlight as wide as the place itself, soft at both ends, crossing once
+  every second and a half and easing at each end. Wide is the point. A
+  narrow band slides past and reads as a stripe on a box, while a highlight
+  with no edges to catch reads as the place brightening and dimming as the
+  light goes over it, which is what a real surface does. In a list each row
+  starts a step after the row above it, so the light runs down the column
+  rather than every row flashing together. `make motion` stands this beside
+  the three other ways it is commonly done, each named and copied
+  faithfully, so the choice can be made by looking rather than by
+  describing.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and
   their place, and a ring widens out of them and fades.
@@ -537,7 +528,9 @@ make motion
 
 It opens a page in the browser with every one of them running, at every
 share and in every kind of control, and a colour picker at the top so the
-whole set can be seen in another accent. It is preview material in
+whole set can be seen in another accent. The shimmer stands there four
+ways: the sweep the app wears, MUI's wave, the breath that shadcn/ui and
+Tailwind ship, and a foil of our own. It is preview material in
 `frontend/preview/motion/` and never goes into the app: the product only
 serves making shorts.
 
