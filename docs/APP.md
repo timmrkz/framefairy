@@ -432,9 +432,15 @@ place.
       for. The magnifier never moves the playhead, and past the end of the
       transcript there is nothing to magnify, so it is off there and says
       so.
-    - The clip lies over the waveform in the accent colour. A hatched block
-      inside it is a stretch the clip leaves out, usually dead air the
-      engine found: playing jumps it, and the render does too.
+    - **The clip is one thing, holes and all.** Two rules in the accent run
+      above and below it from its first piece to its last, whatever is cut
+      out in between, so a clip with a cut in it reads as one clip and not
+      as two standing in a row. The accent wash inside the rules says
+      which parts are kept. A stretch the clip leaves out, usually dead
+      air the engine found, is the track's own background with an accent
+      line at each end, the way an editor marks the place two shots were
+      joined: what is not in the clip looks like everything else that is
+      not in the clip. Playing jumps it, and the render does too.
     - **The cuts can be changed.** Each one carries a handle on either edge,
       in the accent's lighter shade so it is not taken for the clip's own
       edge. Dragging a handle moves that edge of the cut, a double-click on
@@ -467,10 +473,19 @@ place.
       preview as they are spoken, and the words to correct are in the lens,
       so the waveform has the whole track to itself.
     - The waveform is drawn the way an editor draws one: one column of the
-      screen per column of the picture, each the loudest reading that falls
-      in it, each a whole pixel wide. Nothing is ever drawn between two
-      pixels, so it keeps the same weight at every zoom instead of
-      brightening and dimming as it is pinched.
+      screen per column of the picture, each a whole pixel wide. Nothing is
+      ever drawn between two pixels, so it keeps the same weight at every
+      zoom instead of brightening and dimming as it is pinched.
+    - **Zoomed out a column is the loudest reading in it**, because a peak
+      that was averaged away is a peak nobody can see. **Zoomed in past the
+      measurement the outline runs between the readings.** Loudness is
+      read every hundredth of a second and no finer, so a second of it on
+      a retina screen is a hundred readings across eight hundred pixels:
+      squared off, that is eight pixels of one height, a cliff, and eight
+      more. The engine says how fine its measurement was by never
+      answering with more parts than it read, and the timeline joins them
+      rather than squaring them off. It invents no detail, it stops
+      pretending each hundredth of a second was flat.
     - The times sit at the top of both tracks, in the same quiet grey, a
       step above the lines around them and below the waveform inside them.
     - Click a word in the lens to correct it. Enter saves, Escape cancels.

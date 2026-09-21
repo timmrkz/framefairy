@@ -204,7 +204,11 @@
 
   const editable = $derived(!!clip && !locked && !saving && !cutSaving);
 
-  // The pieces as they are drawn, with a cut being moved applied.
+  // The pieces as they are drawn, with a cut being moved or drawn applied.
+  // A cut being drawn takes its stretch out of the pieces at once rather
+  // than being a block laid over them, so the wash parts under the hand and
+  // the count under the timeline follows the drag. What is happening is
+  // shown while it happens.
   const drawnPieces = $derived.by(() => {
     const out = pieces.map((p) => ({ start: p.start, end: p.end }));
     const m = movingCut;
@@ -212,8 +216,26 @@
       out[m.index].end = m.from;
       out[m.index + 1].start = m.to;
     }
+    const d = drawnCut;
+    if (d) {
+      const i = out.findIndex((p) => d.from > p.start && d.to < p.end);
+      if (i >= 0) {
+        const after = { start: d.to, end: out[i].end };
+        out[i] = { start: out[i].start, end: d.from };
+        out.splice(i + 1, 0, after);
+      }
+    }
     return out;
   });
+
+  // The clip from its first piece to its last, cuts and all. It is one
+  // clip however many holes are in it, and the rules above and below say
+  // so by running the whole way.
+  const wholeClip = $derived(
+    drawnPieces.length
+      ? { start: drawnPieces[0].start, end: drawnPieces[drawnPieces.length - 1].end }
+      : null,
+  );
 
   // The cuts as they are drawn, in the order the engine counts them.
   const cuts = $derived(
@@ -999,6 +1021,17 @@
     {#each ticks as t (t)}
       <span class="num time" style="left: {x(t)}%">{clock(t)}</span>
     {/each}
+    <!-- The clip, whole, from its first piece to its last. The rules above
+         and below run the length of it whatever is cut out in between,
+         because the holes are inside one clip and not between several: a
+         rule that broke at every cut would read as three clips standing in
+         a row. -->
+    {#if wholeClip}
+      <div
+        class="span"
+        style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
+      ></div>
+    {/if}
     {#each drawnPieces as p, i (i)}
       <div class="piece" style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"></div>
     {/each}
@@ -1009,6 +1042,7 @@
       <div
         class="cut"
         class:editable
+        class:drawing={!!drawnCut && Math.abs(c.from - drawnCut.from) < 0.001}
         style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
         title={editable
           ? "A stretch the clip leaves out. Drag an edge to change it, double-click to put it back."
@@ -1040,12 +1074,6 @@
           onpointerdown={(e) => grabCut(c.index, "to", e)}
         ></div>
       {/each}
-    {/if}
-    {#if drawnCut}
-      <div
-        class="cut drawing"
-        style="left: {x(drawnCut.from)}%; width: {x(drawnCut.to) - x(drawnCut.from)}%"
-      ></div>
     {/if}
     {#if clip && !locked}
       <div
@@ -1214,21 +1242,43 @@
     pointer-events: none;
   }
 
-  .piece {
+  /* The clip, whole. Two rules, above and below, from its first piece to
+     its last. They are what says this is one clip: they run the length of
+     it whether or not there are holes in it, and the vertical edges at
+     either end close it. Before this, every piece carried its own rules
+     and a clip with a cut in it read as two clips side by side. */
+  .span {
     position: absolute;
     top: 0;
     bottom: 0;
-    background: var(--accent-wash);
     border-top: 2px solid var(--accent);
     border-bottom: 2px solid var(--accent);
     pointer-events: none;
   }
 
+  /* What the clip keeps. The wash is the one thing that says which parts
+     of the span are in it, so nothing else needs to. */
+  .piece {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--accent-wash);
+    pointer-events: none;
+  }
+
+  /* A stretch the clip leaves out. It is the track's own background and
+     nothing else: what is not in the clip looks like everything else that
+     is not in the clip, which is the plainest way to say it. It used to
+     be hatched, and a hatch over a waveform is a second pattern laid on a
+     first, which is why the track read as a display with too few pixels.
+     The two edit points carry the meaning instead, the way an editor
+     marks the place two shots were joined. */
   .cut {
     position: absolute;
     top: 0;
     bottom: 0;
-    background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(255, 255, 255, 0.06) 5px 10px);
+    border-left: 1px solid var(--accent-hi);
+    border-right: 1px solid var(--accent-hi);
     pointer-events: none;
     z-index: 1;
   }
@@ -1241,14 +1291,12 @@
     pointer-events: auto;
   }
 
-  /* The block the hand is drawing, before the engine has been asked. It is
-     the same hatching over the accent wash, so it reads as the cut it is
-     about to become rather than as something else. */
+  /* The cut the hand is drawing, before the engine has been asked. It is
+     already a cut, because the wash parts under the hand as it moves, so
+     all it needs is to stand out as the one being worked on. */
   .cut.drawing {
-    background:
-      repeating-linear-gradient(135deg, transparent 0 5px, rgba(255, 255, 255, 0.12) 5px 10px),
-      var(--accent-wash);
-    outline: 1px solid var(--accent-hi);
+    border-left-width: 2px;
+    border-right-width: 2px;
     pointer-events: none;
   }
 
