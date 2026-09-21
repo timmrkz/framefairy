@@ -57,10 +57,16 @@ Start with [README.md](README.md). In short:
   pull requests on GitHub. After a merge he runs `git pull && make run`.
   Never hand him zip files or ask him to copy files around.
 - **Every piece of work becomes a pull request, always.** A branch he has to
-  find himself is work he cannot see. Open the pull request as soon as there
-  is a commit worth looking at, without being asked and without asking, and
-  keep pushing to it. Work with no pull request is work that has not been
-  handed over.
+  find himself is work he cannot see. Work with no pull request is work that
+  has not been handed over.
+- **The pull request comes first, not last.** Push the first commit and open
+  the pull request straight away, without being asked and without asking,
+  and then keep pushing to it. The first commit does not have to be worth
+  looking at and does not have to work. It exists so the pull request
+  exists, because that is where Tim follows the work as it happens. Waiting
+  until there is something good to show means he watches nothing for an hour
+  and then gets everything at once. A pull request opened late is the same
+  mistake as no pull request at all.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew, ffmpeg from the ffmpeg tap, llama.cpp and the models in
   `~/.framefairy/models`.
