@@ -1,0 +1,374 @@
+:root {
+  --ink-0: #16171a;
+  --ink-1: #1d1f23;
+  --ink-2: #262930;
+  --ink-3: #30343c;
+  --line: #3a3f48;
+  --text: #ebe8e3;
+  --muted: #9a9ea8;
+  /* A label that belongs in the background: the times on the range picker
+     and on the clip timeline. It sits one step above the lines around
+     those tracks and below the waveform inside them, so it can be read
+     without ever being the first thing the eye lands on. */
+  --faint: #4a505c;
+  /* The one colour the app is picked out in, set from the settings. The
+     other two are that colour and nothing else: a lighter one for what is
+     under the pointer or has the keyboard, and a wash for what is
+     chosen. The plain values are here for an engine that cannot mix
+     colours, and the mixed ones just below replace them where it can. */
+  --accent: #942192;
+  --accent-hi: #b02cae;
+  --accent-wash: rgba(148, 33, 146, 0.22);
+  --ok: #5fa37a;
+  --warn: #d2a441;
+  --err: #e0605a;
+
+  --radius-s: 4px;
+  --radius-m: 8px;
+  --control-h: 32px;
+  /* The bar at the top of the window. Where the system draws its own
+     title bar, which is everywhere but macOS, this is the whole story and
+     the bar is an ordinary header. On macOS the bar is the title bar, and
+     macOS decides how tall that is, so the shell sets this from what the
+     window answers and this number is only what the first frame uses. The
+     workspace works out its own height from the window and this either
+     way, so it is a number both sides read rather than one each. */
+  --bar-h: 44px;
+  /* The clip timeline at its smallest, with the range picker always half
+     of it. The range picker is the same episode seen from much further
+     away, so half the height is enough to read it, and the two together
+     read as one thing at two distances. */
+  --wave-min: 112px;
+  /* The row under the clip timeline. It holds the clip's title and why it
+     was chosen on two lines, and it is that tall whether a clip is chosen
+     or not, so selecting one never moves the tracks above it. */
+  --row-h: 44px;
+  /* The sidebar when it is closed, which is the column the workspace keeps
+     clear for it. */
+  --rail: 44px;
+  /* The settings column of the workspace, which together with the rail is
+     exactly as wide as the open sidebar, so the sidebar covers it and
+     nothing else. */
+  --settings-w: 204px;
+  /* One space between two things, everywhere: the columns of the
+     workspace, the video preview and the range picker under it, a row and
+     the next. A different number needs a reason, and inside a control is
+     the usual one. */
+  --gap: 12px;
+  /* Between the window and what is in it, which is not a gap between two
+     things and so is its own number. */
+  --edge: 24px;
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Ubuntu, sans-serif;
+  --size-s: 12px;
+  --size-m: 13px;
+  --size-l: 16px;
+  --size-xl: 22px;
+
+  color-scheme: dark;
+  font-family: var(--font);
+  font-size: var(--size-m);
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--ink-0);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One colour, two derivatives. Where the engine can mix colours these
+   follow whatever the accent is set to, so choosing a colour in the
+   settings moves everything that uses it. */
+@supports (color: color-mix(in srgb, red 50%, white)) {
+  :root {
+    --accent-hi: color-mix(in srgb, var(--accent) 82%, white);
+    --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* One control size everywhere, so controls in a row always line up. */
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+  height: var(--control-h);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  padding: 0 12px;
+}
+
+button {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  background: var(--ink-3);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hi);
+}
+
+/* A toggle that is on, for every control that stays switched on. */
+/* What cannot be taken back. It is not the highlighted answer and never
+   the one the keyboard starts on: it is marked as what it does, so it is
+   read before it is clicked rather than after. */
+button.danger {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--err);
+  border-color: var(--err);
+  color: #fff;
+}
+
+button.on {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--text);
+}
+
+button.on:hover:not(:disabled) {
+  background: var(--accent-wash);
+  border-color: var(--accent-hi);
+}
+
+button.quiet {
+  background: transparent;
+  border-color: transparent;
+}
+
+button.quiet:hover:not(:disabled) {
+  background: var(--ink-2);
+}
+
+input[type="number"] {
+  width: 80px;
+}
+
+input[type="text"] {
+  width: 100%;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 1px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-3);
+  overflow: hidden;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s linear;
+}
+
+.bar.unknown > i {
+  width: 30% !important;
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar.unknown > i {
+    animation: none;
+    width: 100% !important;
+    opacity: 0.4;
+  }
+}
+
+/* Something that is not there yet: a light passes over the place it will
+   be, the way a page shows what it is still loading. The same light the
+   window on the range picker shows while clips are being found. */
+.waiting {
+  position: relative;
+  overflow: hidden;
+}
+
+.waiting::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 55%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.13) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: passing 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes passing {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting::after {
+    animation: none;
+  }
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  flex: none;
+}
+
+.dot.ok {
+  background: var(--ok);
+}
+
+.dot.busy {
+  background: var(--accent);
+}
+
+.dot.warn {
+  background: var(--warn);
+}
+
+.dot.err {
+  background: var(--err);
+}
+
+.error {
+  color: var(--err);
+  white-space: pre-wrap;
+}
+
+.scroll {
+  overflow: auto;
+}
+
+/* What explains an area waits until the pointer is on that area. The area
+   is .asks, the mark in it is .ask, and .corner puts the mark in its top
+   right corner. One mark explains one thing, where that thing is. */
+/* Exactly as tall as the mark in it, never as tall as the line of text it
+   stands in. A box of 23 and a third pixels centred in a row of 32 puts
+   the mark a third of a pixel off, and a mark between two pixels is
+   painted in one place while it fades in and another once it is there,
+   which reads as the mark jumping as it arrives. */
+.ask {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  /* And painted the same way whether it is fading or arrived. A fade puts
+     an element on a surface of its own, and that surface starts on a whole
+     pixel, so a mark standing anywhere between two pixels is painted in
+     one place while it fades and another once it is there. Whole rows fix
+     the up and down of it, but a mark that follows a word cannot have a
+     whole number across: "Transcribing" ends where it ends. Asking for the
+     surface up front means there is never a moment where it is not there,
+     and so never a moment where the mark moves. */
+  will-change: opacity;
+}
+
+.asks:hover .ask,
+.asks:focus-within .ask {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A mark whose bubble is up stays where it is. The bubble hangs from the
+   window rather than from the area, so reaching into it takes the pointer
+   off the area, and a mark that vanished then would leave its own answer
+   pointing at nothing. */
+.ask:has([aria-expanded="true"]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ask.corner {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask {
+    transition: none;
+  }
+}

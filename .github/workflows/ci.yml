@@ -1,0 +1,58 @@
+# Runs on every pull request and on every push to main.
+# Linux: builds everything and runs all tests, including the ones that render.
+# macOS: builds everything and fails on any compiler or linker warning.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: System packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+      - name: Build
+        run: make
+      - name: Test
+        run: make test
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build without warnings
+        run: |
+          make 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if grep -iE "warning|deprecated" build.log; then
+            echo "The build printed warnings, see above."
+            exit 1
+          fi
+      - name: Test
+        run: make test
