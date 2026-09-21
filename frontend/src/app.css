@@ -30,9 +30,9 @@
      itself, so the sheen has the spread real foil has without the app
      growing a second colour. The plain values are for an engine that
      cannot work a colour out from another one. */
-  --foil-1: rgba(160, 94, 233, 0.28);
-  --foil-2: rgba(236, 104, 168, 0.25);
-  --foil-3: rgba(206, 96, 226, 0.22);
+  --foil-1: rgba(150, 80, 240, 0.34);
+  --foil-2: rgba(240, 96, 165, 0.31);
+  --foil-3: rgba(205, 88, 232, 0.27);
   --ok: #5fa37a;
   --warn: #d2a441;
   --err: #e0605a;
@@ -106,9 +106,9 @@
    everything else. */
 @supports (color: oklch(from red l c h)) {
   :root {
-    --foil-1: oklch(from var(--accent) 0.72 0.21 calc(h - 30) / 0.28);
-    --foil-2: oklch(from var(--accent) 0.78 0.19 calc(h + 30) / 0.25);
-    --foil-3: oklch(from var(--accent) 0.74 0.2 calc(h + 2) / 0.22);
+    --foil-1: oklch(from var(--accent) 0.68 0.25 calc(h - 34) / 0.34);
+    --foil-2: oklch(from var(--accent) 0.76 0.22 calc(h + 32) / 0.31);
+    --foil-3: oklch(from var(--accent) 0.72 0.24 calc(h + 2) / 0.27);
   }
 }
 
@@ -333,21 +333,30 @@ input[type="text"] {
    which is a thing you have seen the whole of in half a second, but a card
    of foil tipped against the light.
 
-   What makes foil foil is that the colour lives inside the reflection. Lay
-   stripes over the whole surface and you get brushed metal, lit everywhere
-   and going nowhere. So the stripes here are cut to the shape of the light
-   that falls on them: a sheet of crossed bands three times the size of the
-   place, with a soft lens cut out of it, and what is seen is that lens
-   wandering over a dark surface, carrying its colours with it. A second,
-   narrow light goes the other way, the way the edge of a card catches the
-   sun before the face of it does.
+   Two things make foil foil. It is a grating: many fine lines, close
+   together, each throwing back a slightly different colour, so what you
+   see is lines and not a cloud. And the colour lives inside the
+   reflection: lay the lines over a whole surface and you get brushed
+   metal, lit everywhere and going nowhere.
 
-   The two swing and drift on rounds of 9.7 and 6.3 seconds, which come
-   back together once every nine minutes, so the place is never twice the
+   So the lines here are cut to the shape of the light that falls on them.
+   A sheet three times the size of the place carries a grating of thin
+   lines, seventy pixels to the round, whose colour walks out to one side
+   of the app's own and back through the other, with one white line in it.
+   A soft lens is cut out of the sheet, and what is seen is that lens
+   wandering over a dark surface, carrying its lines with it. A second
+   sheet is one narrow white gleam going the other way, the way the edge of
+   a card catches the sun before its face does.
+
+   The two drift and swing on rounds of 9.7 and 6.3 seconds, which come
+   back together once every ten minutes, so the place is never twice the
    same and the eye finds no loop to learn. Their light adds where they
    cross, because both are screened onto the dark rather than laid over it.
 
-   The trick is the trading card one, crossed bands and a glare sliding
+   The lines are measured in pixels and not in parts of the place, so a
+   clip card and the whole clip timeline wear foil of the same grain.
+
+   The trick is the trading card one, a grating and a glare sliding
    opposite ways, from simeydotme/pokemon-cards-css. See docs/APP.md.
 
    The same foil lies over the stretch the transcript has not reached and
@@ -375,51 +384,47 @@ input[type="text"] {
   animation-iteration-count: infinite;
 }
 
-/* The reflection. Two sets of stripes crossed over each other, in the
-   app's colour and one step to each side of it round the hues, on a sheet
-   far larger than the place, with a lens cut out of it so the colour is
-   only where the light is. The stripes are in pixels rather than in parts
-   of the place, so a clip card and the whole clip timeline wear foil of
-   the same grain. */
+/* The grating, on a sheet far larger than the place, with a lens cut out
+   of it so the lines are only where the light is. */
 .waiting::before {
   top: -160%;
   left: -110%;
   width: 320%;
   height: 420%;
-  background-image:
-    repeating-linear-gradient(
-      101deg,
-      transparent 0px,
-      var(--foil-1) 13px,
-      transparent 34px,
-      var(--foil-3) 52px,
-      transparent 76px,
-      var(--foil-2) 96px,
-      transparent 124px
-    ),
-    repeating-linear-gradient(
-      -59deg,
-      transparent 0px,
-      var(--foil-2) 20px,
-      transparent 58px,
-      var(--foil-1) 92px,
-      transparent 146px
-    );
+  background-image: repeating-linear-gradient(
+    100deg,
+    transparent 0px,
+    var(--foil-1) 2px,
+    transparent 5px,
+    var(--foil-3) 9px,
+    transparent 13px,
+    var(--foil-2) 18px,
+    transparent 21px,
+    rgba(255, 255, 255, 0.24) 26px,
+    transparent 31px,
+    var(--foil-2) 37px,
+    transparent 40px,
+    var(--foil-3) 46px,
+    transparent 51px,
+    var(--foil-1) 58px,
+    transparent 61px,
+    transparent 70px
+  );
   /* One lens, not a field of them. A mask repeats by default, and a
      repeating lens is a lattice, which is brushed metal rather than
      foil: lit everywhere and going nowhere. */
   -webkit-mask-image: radial-gradient(
-    12% 22% at 50% 50%,
+    11% 26% at 50% 50%,
     #000 0%,
-    rgba(0, 0, 0, 0.6) 40%,
-    transparent 76%
+    rgba(0, 0, 0, 0.66) 42%,
+    transparent 78%
   );
   -webkit-mask-repeat: no-repeat;
   mask-image: radial-gradient(
-    12% 22% at 50% 50%,
+    11% 26% at 50% 50%,
     #000 0%,
-    rgba(0, 0, 0, 0.6) 40%,
-    transparent 76%
+    rgba(0, 0, 0, 0.66) 42%,
+    transparent 78%
   );
   mask-repeat: no-repeat;
   transform: translate3d(-17%, -6%, 0) rotate(-7deg);

@@ -60,15 +60,14 @@
       Light runs clockwise round the edge of the control the work was started
       from, for as long as the work runs, and specks of that light drift up
       through the control behind its own words. It is not one turn at one
-      speed: a round is three turns, the comet gets away, eases through the
-      long side, presses on again and comes round the last turn quickly, and
-      a broad faint wash goes round twice in the same time. So the slow part
-      falls somewhere else on the edge each turn and the two are never in the
-      same place twice. It never stands still and it never goes back: the
-      slowest stretch is still two thirds of the round's own pace, because a
-      light that stops on a border reads as a fault and one that backs up
-      reads as a stutter. On a control that is already the app's colour the
-      light is white, because the app's colour cannot be seen on itself.
+      speed: a round is five turns and no two of them alike, and a broad
+      faint wash goes round three times in the same time, so the two are
+      never in the same place twice. It never stands still and it never goes
+      back, because a light that hesitates on a border reads as broken and
+      one that backs up reads as a stutter: the slowest stretch is still
+      three fifths of the round's own pace and the quickest is a little over
+      one and a half. On a control that is already the app's colour the light
+      is white, because the app's colour cannot be seen on itself.
     </p>
     <div class="row wrap">
       <button><Busy />Cancel</button>
@@ -118,28 +117,28 @@
     <h2>The shimmer</h2>
     <p class="muted">
       A place that is not filled yet, lit like a card of foil tipped against
-      the light. Two sheets lie over it, both far larger than it, so what is
-      on screen is a piece of something big and never the whole of anything.
-      One carries two sets of stripes crossed over each other, in the app's
-      colour and a step to each side of it round the hues, cut to the shape
-      of a soft lens so the colour is only where the light is: stripes over
-      the whole surface are brushed metal, lit everywhere and going nowhere.
-      The other is a narrow white gleam, the way the edge of a card catches
-      the sun before its face does. They drift and swing opposite ways on
-      rounds of 9.7 and 6.3 seconds, which come back together once every ten
-      minutes, so the place is never twice the same and the eye finds no loop
-      to learn. In a list each row is tipped at its own angle, so the light
-      runs down the column rather than every row flashing together.
+      the light. Two things make foil foil. It is a grating, many fine lines
+      close together each throwing back a slightly different colour, so what
+      you see is lines and not a cloud. And the colour lives inside the
+      reflection: lay the lines over a whole surface and you get brushed
+      metal, lit everywhere and going nowhere. So a sheet three times the
+      size of the place carries the lines, a soft lens is cut out of it, and
+      what is seen is that lens wandering over a dark surface carrying its
+      lines with it. A second sheet is one narrow white gleam going the other
+      way, the way the edge of a card catches the sun before its face does.
+      Their rounds are 9.7 and 6.3 seconds and come back together once every
+      ten minutes, and in a list each row is a step further into the round
+      than the one above, so every card is tipped at its own angle.
     </p>
     <div class="shim">
       <ol>
         {#each ghosts as row (row)}
-          <li class="ghost waiting" style="--wait-in: {row * 400}ms"></li>
+          <li class="ghost waiting" style="--wait-in: {row * 1600}ms"></li>
         {/each}
       </ol>
       <div class="blocks">
-        <div class="block wide-block waiting" style="--wait-in: 800ms"></div>
-        <div class="block waiting" style="--wait-in: 1600ms"></div>
+        <div class="block wide-block waiting" style="--wait-in: 3200ms"></div>
+        <div class="block waiting" style="--wait-in: 6400ms"></div>
       </div>
     </div>
   </section>

@@ -80,7 +80,7 @@
   /* Twice as wide as the control and square, so it covers every corner
      whatever shape the control is, and the same light reaches all four.
      There are two of these turning, the bright comet and a broad faint
-     wash behind it, at three turns and two turns of the same round, so
+     wash behind it, at five turns and three turns of the same round, so
      they are never in the same place twice inside a round. Both are short
      arcs of the circle: a wide button's long edge is nearly half the
      circle from the middle, so an arc of half the circle would light a
@@ -97,18 +97,19 @@
     width: 200%;
     aspect-ratio: 1;
     transform: translate(-50%, -50%);
-    animation-duration: 3.9s;
+    animation-duration: 6.5s;
     animation-iteration-count: infinite;
   }
 
-  /* The comet. Three turns to the round, and not at one speed: it gets
-     away, eases through the long side, presses on again and comes round
-     the last turn quickly, so the slow part falls somewhere else on the
-     edge each time round. It never stops and it never goes back: the
-     slowest stretch is still two thirds of the round's own pace, because
-     a light that hesitates on a border reads as a fault and a light that
-     backs up reads as a stutter. A plain turn for an engine that cannot
-     read the curve, then the curve. */
+  /* The comet. Five turns to the round, and no two of them alike: it
+     gets away, eases right off through one long side, comes back hard
+     through the next, sits down again and finishes quickly. Slowest to
+     fastest is near three to one, which is enough to see without ever
+     looking like a fault. It never stops and it never goes back: a light
+     that hesitates on a border reads as broken and a light that backs up
+     reads as a stutter, so the slowest stretch is still three fifths of
+     the round's own pace. A plain turn for an engine that cannot read the
+     curve, then the curve. */
   .ring::before {
     background: conic-gradient(
       from 0deg,
@@ -123,35 +124,37 @@
     animation-timing-function: linear;
     animation-timing-function: linear(
       0,
-      0.061 6%,
-      0.174 15%,
-      0.275 26%,
-      0.337 35%,
-      0.404 43%,
-      0.496 51%,
-      0.601 58%,
-      0.701 67%,
-      0.769 76%,
-      0.834 84%,
-      0.923 92%,
+      0.073 7%,
+      0.206 16%,
+      0.294 26%,
+      0.366 38%,
+      0.43 46%,
+      0.534 54%,
+      0.681 63%,
+      0.764 72%,
+      0.823 82%,
+      0.883 90%,
+      0.956 96%,
       1
     );
   }
 
-  /* The wash behind it. Two turns to the round, at one speed, so it and
-     the comet meet at a different place every time. */
+  /* The wash behind it. Three turns to the round, at one speed, against
+     the comet's five, so the two meet at a different place every time and
+     the pair only comes back to where it started once in a round. */
   .ring::after {
     background: conic-gradient(
       from 0deg,
       transparent 0%,
-      transparent 42%,
-      var(--accent-wash) 53%,
-      var(--accent-wash) 59%,
-      transparent 70%,
+      transparent 40%,
+      var(--accent) 52%,
+      var(--accent) 58%,
+      transparent 71%,
       transparent 100%
     );
     animation-name: lap;
     animation-timing-function: linear;
+    opacity: 0.5;
   }
 
   @keyframes turn {
@@ -159,7 +162,7 @@
       transform: translate(-50%, -50%) rotate(0turn);
     }
     to {
-      transform: translate(-50%, -50%) rotate(3turn);
+      transform: translate(-50%, -50%) rotate(5turn);
     }
   }
 
@@ -168,7 +171,7 @@
       transform: translate(-50%, -50%) rotate(0turn);
     }
     to {
-      transform: translate(-50%, -50%) rotate(2turn);
+      transform: translate(-50%, -50%) rotate(3turn);
     }
   }
 

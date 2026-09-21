@@ -472,21 +472,16 @@ Everything that runs says so the same way, wherever it runs. There are four
 things and no others, and each one means one thing.
 
 - **The beam.** Light runs clockwise round the edge of the control the work
-  was started from, for as long as the work runs. A round is three turns and
-  not at one speed: the comet gets away, eases through the long side,
-  presses on again and comes round the last turn quickly, so the slow part
-  falls somewhere else on the edge each turn, and a broad faint wash goes
-  round twice in the same time, so the two are never in the same place
-  twice. It never stands still and it never goes back. The slowest stretch
-  is still two thirds of the round's own pace, because a light that stops
-  on a border reads as a fault and one that backs up reads as a stutter.
-  Sampled out of the browser over a round: three turns, no step backwards,
-  and between 0.69 and 1.50 of the even pace. **New** while clips are
-  being found, **Cancel** while a job winds down, **Pause** while the
-  transcription stops, **Render** while a clip is being made, **Check
-  again** while the tools are looked for. The control that started the work
-  is the one that says how it is going, so nothing is drawn across the list
-  or the page for it, and nothing moves when work starts or ends.
+  was started from, for as long as the work runs. A round is five turns and
+  no two of them alike: the comet gets away, eases right off through one
+  long side, comes back hard through the next, sits down again and finishes
+  quickly, so the slow part falls somewhere else on the edge each turn, and
+  a broad faint wash goes round three times in the same time, so the two
+  are never in the same place twice. It never stands still and it never
+  goes back, because a light that hesitates on a border reads as broken and
+  one that backs up reads as a stutter. Sampled out of the browser over a
+  round: five turns, no step backwards, and between 0.59 and 1.63 of the
+  even pace.
 - **The motes.** Specks of that light drift up through the control, behind
   its own words. They are the beam's, not a thing of their own, and they
   are why a control with nothing to report is still alive to look at.
@@ -500,22 +495,27 @@ things and no others, and each one means one thing.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
   the stretch on the range picker while clips are being found for it. It is
-  lit like a card of foil tipped against the light. Two sheets lie over the
-  place, both far larger than it, so what is on screen is a piece of
-  something big and never the whole of anything, which is why foil looks
-  deep and a sliding band looks flat. One sheet carries two sets of stripes
-  crossed over each other, in the app's colour and a step to each side of
-  it round the hues, cut to the shape of a soft lens so the colour is only
-  where the light is: stripes over the whole surface are brushed metal, lit
-  everywhere and going nowhere. The other is a narrow white gleam, the way
-  the edge of a card catches the sun before its face does. They drift and
-  swing opposite ways on rounds of 9.7 and 6.3 seconds, which come back
-  together once every ten minutes, so the place is never twice the same and
-  the eye finds no loop to learn, and their light adds where they cross,
-  because both are screened onto the dark rather than laid over it. In a
-  list each row is tipped at its own angle, so the light runs down the
-  column rather than every row flashing together. The trick is the trading
-  card one, crossed bands and a glare sliding opposite ways, from
+  lit like a card of foil tipped against the light. Two things make foil
+  foil. It is a grating, many fine lines close together, each throwing back
+  a slightly different colour, so what is seen is lines and not a cloud.
+  And the colour lives inside the reflection: lay the lines over a whole
+  surface and the result is brushed metal, lit everywhere and going
+  nowhere. So a sheet three times the size of the place carries a grating
+  of thin lines, seventy pixels to the round, whose colour walks out to one
+  side of the app's own and back through the other with one white line in
+  it. A soft lens is cut out of the sheet, and what is seen is that lens
+  wandering over a dark surface, carrying its lines with it. A second sheet
+  is one narrow white gleam going the other way, the way the edge of a card
+  catches the sun before its face does. The two drift and swing on rounds
+  of 9.7 and 6.3 seconds, which come back together once every ten minutes,
+  so the place is never twice the same and the eye finds no loop to learn,
+  and their light adds where they cross because both are screened onto the
+  dark rather than laid over it. The lines are measured in pixels and not
+  in parts of the place, so a clip card and the whole clip timeline wear
+  foil of the same grain. In a list each row is a step further into the
+  round than the one above, so every card is tipped at its own angle. The
+  trick is the trading card one, a grating and a glare sliding opposite
+  ways, from
   [simeydotme/pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css).
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and

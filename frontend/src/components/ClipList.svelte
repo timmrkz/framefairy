@@ -79,14 +79,14 @@
   <!-- The rows that are not there yet, after whatever is. They are as many
        as the search was asked for, so the list does not fill out from four
        rows to twelve, and the shimmer over them is the only thing that
-       says it is still working. Each row starts its light a step after the
-       one above, so the light runs down the column as a wave rather than
-       every row flashing together. The step is a twelfth of the shimmer's
-       own round, and twelve is what a search is asked for, so with a full
-       list the column always carries light somewhere while each row still
-       rests. -->
+       says it is still working. Each row is a step further into the
+       shimmer's round than the one above, so every card is tipped at its
+       own angle and the light runs down the column rather than the whole
+       column being one sheet. The step is a twelfth of the round, and
+       twelve is what a search is asked for, so a full list covers the
+       round exactly once. -->
   {#each ghosts as row (row)}
-    <li class="ghost waiting" style="--wait-in: {row * 200}ms"></li>
+    <li class="ghost waiting" style="--wait-in: {row * 800}ms"></li>
   {/each}
 </ol>
 
