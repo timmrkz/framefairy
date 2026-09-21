@@ -348,13 +348,47 @@ export const Call = {
         ]);
       }
       case "Waveform": {
-        const buckets = Number(args[3]) || 900;
         const from = Number(args[1]) || 0;
         const to = Number(args[2]) || 14423;
+        // Never more buckets than there are measurements, the way the Go
+        // side answers. Without this the stub hands back five buckets
+        // carrying the same ten milliseconds and the window has no way to
+        // know it.
+        const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
         // The peaks come from the transcript, so while it is being made
         // there is a waveform up to where it got to and silence after.
         const edge = location.search.includes("transcribing") ? 1200 : 14423;
-        return Promise.resolve(Array.from({ length: buckets }, (_, i) => (from + ((i + 0.5) * (to - from)) / buckets > edge ? -90 : -60 + 45 * Math.abs(Math.sin(i / 7)) * Math.abs(Math.cos(i / 31)))));
+        // Loudness is measured every ten milliseconds and no finer, and
+        // a bucket is the loudest measurement that falls in it. That is
+        // engine.FrameSeconds and Transcript.Peaks, and the stub has to do
+        // the same or it cannot be zoomed in past the measurement, which
+        // is the one place the waveform looked like a display with too few
+        // pixels. It used to answer with exactly as many smooth values as
+        // it was asked for, whatever the zoom, so the fault could not
+        // happen here at all.
+        const frame = 0.01;
+        // Speech, near enough: syllables about four a second inside a
+        // slower rise and fall, and a grain on top because loudness is not
+        // smooth from one ten milliseconds to the next. The grain is the
+        // part that matters here. A signal that barely moves between
+        // neighbouring frames cannot show a staircase however coarsely it
+        // is drawn, so a stub without it says every drawing is fine.
+        const loud = (t: number) => {
+          if (t > edge) return -90;
+          const said = Math.abs(Math.sin(t * 6.3)) * Math.abs(Math.cos(t * 0.7));
+          const grain = Math.abs(Math.sin(t * 997));
+          return -60 + 45 * said * (0.55 + 0.45 * grain);
+        };
+        const step = (to - from) / buckets;
+        return Promise.resolve(
+          Array.from({ length: buckets }, (_, i) => {
+            const first = Math.floor((from + i * step) / frame);
+            const last = Math.max(first + 1, Math.ceil((from + (i + 1) * step) / frame - 1e-9));
+            let peak = -90;
+            for (let k = first; k < last; k++) peak = Math.max(peak, loud(k * frame));
+            return peak;
+          }),
+        );
       }
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });

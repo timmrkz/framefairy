@@ -652,8 +652,10 @@
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
-  // screen per column of the picture, each the loudest reading that falls
-  // in it, each a whole pixel wide and a whole pixel tall.
+  // screen per column of the picture, each a whole pixel wide and a whole
+  // pixel tall. Zoomed out a column is the loudest reading that falls in
+  // it. Zoomed in past the measurement the outline runs between the
+  // readings instead, or the track steps in blocks eight pixels wide.
   //
   // It used to draw one bar per reading, wherever that reading landed,
   // which at most zooms is a bar a fraction of a pixel wide at a fractional
@@ -678,20 +680,50 @@
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--wave").trim() || "#6b7080";
 
-    // The loudest reading in each column, in decibels. Nothing at all where
+    // The level to draw in each column, in decibels. Nothing at all where
     // no reading falls, so a column past the end of the transcript stays
     // empty rather than reading as silence.
     const loudest = new Float32Array(w).fill(-Infinity);
     const step = (data.to - data.from) / Math.max(peaks.length, 1);
     const scale = w / span;
-    for (let i = 0; i < peaks.length; i++) {
-      const at = data.from + i * step;
-      const first = Math.floor((at - view.from) * scale);
-      if (first >= w) break;
-      const last = Math.max(first, Math.ceil((at + step - view.from) * scale) - 1);
-      if (last < 0) continue;
-      for (let x = Math.max(first, 0); x <= Math.min(last, w - 1); x++) {
-        if (peaks[i] > loudest[x]) loudest[x] = peaks[i];
+    // How many columns one reading has to itself.
+    const each = step * scale;
+    if (each > 1.5) {
+      // Zoomed in past the measurement. Loudness is measured every ten
+      // milliseconds and that is all there is, so a second of it on a
+      // retina screen is a hundred readings across eight hundred pixels:
+      // eight pixels of exactly one height, then a step, then eight more.
+      // That is what made the track look like a display with too few
+      // pixels, and no amount of asking for more buckets can fix it,
+      // because there is nothing finer to ask for.
+      //
+      // So the outline runs between the readings rather than standing
+      // still at each one. It invents no detail: it is the same readings,
+      // joined instead of squared off, which is what every editor draws
+      // once the zoom passes what it measured.
+      for (let x = 0; x < w; x++) {
+        // Where this column sits between two readings, taking a reading to
+        // stand at the middle of the ten milliseconds it measured.
+        const at = (view.from + x / scale - data.from) / step - 0.5;
+        const i = Math.floor(at);
+        if (i < -1 || i >= peaks.length) continue;
+        const a = peaks[Math.max(i, 0)];
+        const b = peaks[Math.min(i + 1, peaks.length - 1)];
+        loudest[x] = a + (b - a) * (at - i);
+      }
+    } else {
+      // Zoomed out, where several readings fall in one column. The loudest
+      // of them wins, which is what a waveform is for: a peak that was
+      // averaged away is a peak nobody can see.
+      for (let i = 0; i < peaks.length; i++) {
+        const at = data.from + i * step;
+        const first = Math.floor((at - view.from) * scale);
+        if (first >= w) break;
+        const last = Math.max(first, Math.ceil((at + step - view.from) * scale) - 1);
+        if (last < 0) continue;
+        for (let x = Math.max(first, 0); x <= Math.min(last, w - 1); x++) {
+          if (peaks[i] > loudest[x]) loudest[x] = peaks[i];
+        }
       }
     }
 

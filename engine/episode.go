@@ -232,7 +232,18 @@ func (t *Transcript) Duration() float64 {
 // Peaks gives the loudest reading in each of buckets equal parts of a
 // stretch, in dB, for drawing a waveform at any zoom. Parts outside the
 // transcript are silent at -90 dB.
+//
+// It never gives more parts than it measured. Loudness is read every
+// FrameSeconds and no finer, so five buckets inside one reading are five
+// copies of that reading, and whoever draws them cannot tell that from
+// five readings that happen to agree: a line drawn between them comes out
+// flat where the sound was rising. Answering with what there is says how
+// fine the measurement was, so the drawing can be as fine as the truth and
+// no finer.
 func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
+	if to > from {
+		buckets = min(buckets, max(int(math.Ceil((to-from)/FrameSeconds)), 1))
+	}
 	out := make([]float32, max(buckets, 0))
 	if buckets <= 0 || to <= from {
 		return out
@@ -240,7 +251,13 @@ func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 	step := (to - from) / float64(buckets)
 	for i := range out {
 		first := int(math.Floor((from + float64(i)*step - t.Start) / FrameSeconds))
-		last := int(math.Ceil((from + float64(i+1)*step - t.Start) / FrameSeconds))
+		// A hair off the end before rounding up. A bucket exactly one
+		// reading wide works out to a boundary like 7.000000000000001, and
+		// rounding that up takes in the reading after it: every part came
+		// back as the louder of itself and its neighbour, which fattens a
+		// waveform and fills in the dips between words. The hair is far
+		// smaller than any real boundary and far larger than the error.
+		last := int(math.Ceil((from+float64(i+1)*step-t.Start)/FrameSeconds - 1e-9))
 		peak := float32(-90)
 		if last <= 0 || first >= len(t.Frames) {
 			out[i] = peak

@@ -637,6 +637,9 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 // Waveform returns the loudest level in each of buckets parts of a stretch.
 // An episode waiting for its first transcription has no waveform yet, which
 // is an empty answer and not a failure.
+//
+// Peaks never answers with more buckets than it measured, so the window is
+// told how fine the measurement was and can draw that finely and no finer.
 func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
 	if !s.store.Known(path) {
 		return nil, os.ErrNotExist

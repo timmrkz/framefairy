@@ -133,6 +133,40 @@ func TestSilencesAndPeaks(t *testing.T) {
 	}
 }
 
+// Loudness is read every hundredth of a second and no finer, so asking for
+// more parts than that gives parts that share a reading. Five buckets
+// inside one reading are five copies of it, and a window drawing a line
+// between its buckets cannot tell that from five readings that agree: the
+// line comes out flat where the sound was rising, which is what made the
+// clip timeline look like a display with too few pixels. The answer says
+// how fine the measurement was by being that long.
+func TestPeaksNeverPromiseMoreThanWasMeasured(t *testing.T) {
+	tr := &Transcript{Frames: make([]float32, 500), Floor: -40}
+	for i := range tr.Frames {
+		tr.Frames[i] = float32(-60 + i%20)
+	}
+
+	// A tenth of a second holds ten readings, however many are asked for.
+	if got := tr.Peaks(0, 0.1, 4000); len(got) != 10 {
+		t.Errorf("a tenth of a second came back in %d parts, want 10", len(got))
+	}
+	// Asking for fewer than were measured is answered exactly.
+	if got := tr.Peaks(0, 5, 100); len(got) != 100 {
+		t.Errorf("100 parts of five seconds came back as %d", len(got))
+	}
+	// One reading is one part, never none.
+	if got := tr.Peaks(0, 0.004, 50); len(got) != 1 {
+		t.Errorf("four milliseconds came back in %d parts, want 1", len(got))
+	}
+	// And every part still carries the loudest reading in it.
+	fine := tr.Peaks(0, 0.1, 4000)
+	for i, level := range fine {
+		if level != tr.Frames[i] {
+			t.Errorf("part %d reads %v, the reading is %v", i, level, tr.Frames[i])
+		}
+	}
+}
+
 func TestSetRejectedKeepsTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "clips.json")
 	original := `{
