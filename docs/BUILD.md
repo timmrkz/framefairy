@@ -129,6 +129,11 @@ needs any of the rest:
 | `macos` | macOS | `make` with no warnings allowed, then `make unit` |
 | `macos-fuzz` | macOS | `make fuzz` |
 
+`scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
+whatever changed, because a mistake in them is silent: CI would go green
+having run less than it should. Run it by hand with
+`sh scripts/ci-needs-test.sh`.
+
 Run one after another this is about six minutes. Run together the answer
 comes when the slowest one does, which is the macOS build and tests.
 
@@ -136,6 +141,33 @@ Nothing is left out to make it quick. Every test that ran before still runs,
 on the same platforms, under the race detector, with the same `FUZZTIME`.
 The fuzzing is on both platforms because two of the targets are about paths
 and a case-insensitive filesystem is a different thing to explore.
+
+### What runs for a change
+
+On a pull request each job asks `scripts/ci-needs.sh` whether there is
+anything for it to do, so a typo in a README does not fuzz two platforms:
+
+| What changed | What runs |
+| --- | --- |
+| `docs/`, any `.md`, `.vscode/`, `.claude/` | nothing |
+| `frontend/` only | `interface`, `build`, `macos` |
+| Go files, `go.mod`, `go.sum` only | everything but `interface` |
+| anything else, or a mix | everything |
+
+Anything else means the `Makefile`, the workflow, `scripts/` and whatever is
+added next: they decide how the project is built, so none of them counts as
+harmless. A file the rules do not recognise runs everything too. The rules
+err towards running, because a test that runs when it need not costs a
+minute and one that does not run when it should have costs a broken main.
+
+A push to main narrows nothing. Whatever it touched, everything is built and
+tested, so main is always known to be sound and a mistake in the rules can
+never be what hides a break.
+
+Every job still runs and still reports, it just does nothing when there is
+nothing to do. That keeps the checks a branch rule can be built on, which a
+job skipped outright would not, and it costs no waiting: a job with nothing
+to do is back in seconds.
 
 A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never

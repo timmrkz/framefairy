@@ -6,8 +6,20 @@
 # links on macOS. Run one after another they take about six minutes, and the
 # answer arrives when the slowest one does instead.
 #
-# Nothing is left out to make it quick. Every test that ran before still
-# runs, on the same platforms, with the race detector and the same FUZZTIME.
+# On a pull request each job then asks scripts/ci-needs.sh whether there is
+# anything for it to do, so a change to the docs does not fuzz two platforms
+# and a change to the interface does not run the Go tests. The rules live in
+# that script rather than in here, and they err towards running: a test that
+# runs when it need not costs a minute, one that does not run when it should
+# have costs a broken main.
+#
+# Every job still runs and still reports, it just does nothing when there is
+# nothing to do. That keeps the checks a branch rule can be built on, which
+# a job skipped outright would not.
+#
+# A push to main narrows nothing. Whatever it touched, everything is built
+# and tested, so main is always known to be sound and a mistake in the rules
+# can never be what hides a break.
 name: CI
 
 on:
@@ -29,12 +41,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh interface >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Type check and interface tests
+        if: steps.needs.outputs.run == 'true'
         run: make interface
 
   # Builds everything, the interface included, which is what proves the
@@ -43,21 +61,34 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+        with:
+          fetch-depth: 2
+      # Always, whatever changed. A mistake in the rules that decide what
+      # runs is silent: CI goes green having run less than it should. This
+      # takes a second and it is the one thing nothing else would catch.
+      - name: Check the CI rules
+        run: sh scripts/ci-needs-test.sh
+      - id: needs
+        run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@v5
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: System packages
+        if: steps.needs.outputs.run == 'true'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
       - name: Build
+        if: steps.needs.outputs.run == 'true'
         run: make
 
   # Every Go test under the race detector, which also runs the seed corpus
@@ -67,16 +98,23 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
       - name: System packages
+        if: steps.needs.outputs.run == 'true'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
       - name: Go tests
+        if: steps.needs.outputs.run == 'true'
         run: make unit
 
   # Looking for new crashers, which is the part that does not need to hold
@@ -85,16 +123,23 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
       - name: System packages
+        if: steps.needs.outputs.run == 'true'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
       - name: Fuzz
+        if: steps.needs.outputs.run == 'true'
         run: make fuzz
 
   # Tim's platform, so the build has to be clean and the tests have to pass
@@ -103,16 +148,25 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
+      - id: needsgo
+        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@v5
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Build without warnings
+        if: steps.needs.outputs.run == 'true'
         run: |
           make 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
@@ -122,6 +176,7 @@ jobs:
             exit 1
           fi
       - name: Go tests
+        if: steps.needsgo.outputs.run == 'true'
         run: make unit
 
   # Fuzzing on macOS as well, because two of the targets are about paths and
@@ -132,9 +187,15 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
       - name: Fuzz
+        if: steps.needs.outputs.run == 'true'
         run: make fuzz
