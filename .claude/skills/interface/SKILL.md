@@ -209,6 +209,32 @@ cut found by where the pointer was, because the handler on the cut itself
 never ran once. Anything that has to answer a click on top of a drag
 surface is either decided by the surface or stops the pointer going down.
 
+**Two things that move together must move by the same means.** A `left`
+that is animated is worked out by the main thread on every frame, a
+`transform` is carried by the compositor. Put one of each side by side and
+they run on two clocks, one of them the clock that also has the app's own
+work on it, so one glides and the other steps and the distance between
+them changes. That is what Tim saw beside the transcript's edge. It shows
+in the harness as well, on an idle browser, as the line standing still on
+6 frames of 240 while the mark stood still on none.
+
+**Nothing checks that a call reaches its method.** The window calls the Go
+side by name and by position. TypeScript knows `api.ts` and nothing about
+`main.go`, Go knows its methods and nothing about who calls them, and a
+call one argument short is found by the hand that reaches for the control:
+`main.FrameFairy.CutClip expects 7 arguments, got 6`, with the engine, the
+tests and the fuzzing all green. `cmd/framefairy-app/bindings_test.go`
+parses both sides and walks the whole boundary now. Adding an argument to
+a method means adding it in `api.ts`, in whatever passes it down, and in
+`wails-stub.ts`, or the harness cannot reach the new behaviour at all.
+
+**A mark that stands for a moment is wider than the moment.** A handle is
+twelve pixels across and pulled six back, so the left of its box is six
+pixels before the time it stands for. A probe that worked out where to
+press from `getBoundingClientRect().left` landed six pixels early on every
+drag, and the cut came back a sixth of a second off: a real number, a real
+measurement, and the wrong answer. Take the middle of the box.
+
 **The webview cannot always read the episode file** while the machine is
 busy, so a seek is dropped silently and the picture stays where it was.
 Anything that assumes a seek worked will be wrong while transcribing.
