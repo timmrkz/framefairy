@@ -599,7 +599,15 @@
     if (zooming) {
       const at = timeAt(event.clientX);
       const share = Math.min(Math.max((at - view.from) / span, 0), 1);
-      const shown = span * Math.exp(event.deltaY * 0.01);
+      // The closest the timeline goes is a wall, not a slope. The width is
+      // held between the closest and the whole episode here, before the
+      // edges are worked out from it, because working them out from a
+      // width that is then held somewhere else leaves the width standing
+      // at the wall and the edges still moving: a pinch that could go no
+      // closer slid the view sideways instead of doing nothing. At the
+      // wall the width does not change, so neither edge moves either.
+      const most = Math.max(duration, loose);
+      const shown = Math.min(Math.max(span * Math.exp(event.deltaY * 0.01), nearest), most);
       showing(at - share * shown, at + (1 - share) * shown);
     } else {
       const shift = (along / Math.max(width, 1)) * span;

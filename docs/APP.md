@@ -509,7 +509,9 @@ place.
     - **Two fingers move along the episode**, the way an editing timeline
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
-      to the whole episode. A view moved by hand stays where it was put,
+      to the whole episode. **Both ends are walls.** A pinch that can go no
+      closer does nothing at all, rather than carrying on and sliding the
+      view sideways. A view moved by hand stays where it was put,
       wherever the playhead goes. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. A double-click lets
       go of the view, and so does clicking a clip in the list, the one that
