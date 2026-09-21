@@ -322,7 +322,10 @@ compile. There are no models in the cloud, which the tests do not need.
 
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
-- Run `make test` and `make` before pushing. Both must pass.
+- Run `make test` and `make` before pushing anything that touches Go. Both
+  must pass. A change only to `frontend/` or `docs/` does not run them, see
+  the tests rule above: waiting minutes on a fuzz run that no line of CSS
+  can move is Tim waiting.
 - The app cannot be started there, so there is no way to look at the
   window. Interface work goes through the skill in
   `.claude/skills/interface/`, which has the preview harness in
