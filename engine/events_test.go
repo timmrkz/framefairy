@@ -252,6 +252,34 @@ func TestDiffClip(t *testing.T) {
 	if cut.Unchanged || len(cut.PausesCut) != 1 || cut.PausesCut[0] != [2]float64{14, 16} {
 		t.Errorf("cut %+v", cut)
 	}
+
+	// A cut the model made and a person moved. The clip's own edges did not
+	// change and there are still as many cuts as before, so nothing above
+	// notices it, and the export reads Unchanged to decide whether a render
+	// is a full hit. Recorded as unchanged, this teaches the model that the
+	// cut it proposed was the one that was wanted, which is the opposite of
+	// what happened.
+	moved := DiffClip(proposal, [][2]float64{{10, 21.5}, {24, 30}}, [][2]int{{1, 4}}, [][2]int{{1, 4}})
+	if moved.Unchanged {
+		t.Errorf("a moved cut counts as an unchanged clip: %+v", moved)
+	}
+	if len(moved.PausesMoved) != 1 {
+		t.Fatalf("moved %+v", moved)
+	}
+	if moved.PausesMoved[0].Was != [2]float64{20, 25} || moved.PausesMoved[0].Now != [2]float64{21.5, 24} {
+		t.Errorf("the move was recorded as %+v", moved.PausesMoved[0])
+	}
+	// It is one cut moved, not one taken away and another made.
+	if len(moved.PausesCut) != 0 || len(moved.PausesRestored) != 0 {
+		t.Errorf("a moved cut was counted twice: %+v", moved)
+	}
+
+	// A cut nudged by a frame or two is the same cut, and a person who
+	// leaves it alone should not look like one who corrected it.
+	nudged := DiffClip(proposal, [][2]float64{{10, 20.02}, {25.01, 30}}, [][2]int{{1, 4}}, [][2]int{{1, 4}})
+	if !nudged.Unchanged || len(nudged.PausesMoved) != 0 {
+		t.Errorf("a cut within the tolerance counts as moved: %+v", nudged)
+	}
 }
 
 func TestTrimClipSnapsToWords(t *testing.T) {

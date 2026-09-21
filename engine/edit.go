@@ -554,6 +554,22 @@ func editPieces(planPath, clipID string, t *Transcript,
 	return nil
 }
 
+// Snap says whether a cut's edges are moved onto the words around them.
+//
+// ToWords is what the engine proposes and what a first drag does, because a
+// cut that lands between words is right nearly every time and nobody wants
+// to place one by hand. ToFrames leaves the edges exactly where they were
+// put, for the times when a word has to be clipped a little or a breath
+// kept, and then the picture is the only thing that says where the cut
+// belongs. A cut made to frames may stop inside a word, which is the whole
+// point of it.
+type Snap bool
+
+const (
+	ToWords  Snap = true
+	ToFrames Snap = false
+)
+
 // snapCut puts the edges of a cut where the render would cut them. A cut is
 // not a trim seen from the other side: a trim moves an edge to the nearest
 // word and keeps it, while a cut takes words away, so it has to be able to
@@ -599,9 +615,15 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 // CutClip takes a stretch out of the middle of a clip. A piece the cut lands
 // inside becomes two, and both keep the framing of the piece they came from,
 // so cutting never moves the picture. A piece the cut swallows whole goes.
-// The edges snap to words.
-func CutClip(planPath, clipID string, from, to float64, t *Transcript, keepPause float64) error {
-	from, to = snapCut(t, from, to, keepPause)
+// With ToWords the edges move onto the words around them, with ToFrames they
+// stay where they were put.
+func CutClip(planPath, clipID string, from, to float64, t *Transcript,
+	keepPause float64, snap Snap) error {
+	if snap == ToWords {
+		from, to = snapCut(t, from, to, keepPause)
+	} else {
+		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
+	}
 	if to-from < MinCut {
 		return renderErr("a cut has to take out more than that")
 	}
@@ -665,10 +687,16 @@ func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
 // MoveCut moves both edges of one of a clip's cuts, counted from the first.
 // The pieces either side give way to it, and neither may be squeezed out of
 // existence, so a cut that would swallow its neighbour is refused rather
-// than quietly dropping a piece. The edges snap to words.
+// than quietly dropping a piece. With ToWords the edges move onto the words
+// around them, with ToFrames they stay where they were put, which is how an
+// edge is walked a frame at a time.
 func MoveCut(planPath, clipID string, index int, from, to float64,
-	t *Transcript, keepPause float64) error {
-	from, to = snapCut(t, from, to, keepPause)
+	t *Transcript, keepPause float64, snap Snap) error {
+	if snap == ToWords {
+		from, to = snapCut(t, from, to, keepPause)
+	} else {
+		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
+	}
 	if to-from < MinCut {
 		return renderErr("a cut has to take out more than that")
 	}

@@ -1152,13 +1152,14 @@ func (s *FrameFairy) cutting(path, plan string) (*engine.Transcript, engine.Opti
 }
 
 // CutClip takes a stretch out of the middle of a clip and returns it as it
-// is now.
-func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, from, to float64) (ClipEntry, error) {
+// is now. With toWords the edges land on the words around them, without it
+// they stay exactly where the hand put them.
+func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, from, to float64, toWords bool) (ClipEntry, error) {
 	t, opts, err := s.cutting(path, plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.CutClip(plan, clipID, from, to, t, opts.KeepPause); err != nil {
+	if err := engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1178,13 +1179,14 @@ func (s *FrameFairy) JoinCut(ctx context.Context, path, plan, clipID string, at 
 }
 
 // MoveCut moves both edges of one of a clip's cuts and returns the clip as
-// it is now.
-func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, index int, from, to float64) (ClipEntry, error) {
+// it is now. With toWords the edges land on the words around them, without
+// it they stay exactly where they were put, a frame at a time.
+func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, index int, from, to float64, toWords bool) (ClipEntry, error) {
 	t, opts, err := s.cutting(path, plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause); err != nil {
+	if err := engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

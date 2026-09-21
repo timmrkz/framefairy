@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"encoding/json"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -76,7 +78,7 @@ func clipByID(t *testing.T, path, id string) Clip {
 // the piece rather than making a bare one.
 func TestACutInsideAPieceLeavesTwoWithTheSameFraming(t *testing.T) {
 	path := cutsPlanPath(t)
-	if err := CutClip(path, "01", 12, 13.5, cutsTranscript(), 0.1); err != nil {
+	if err := CutClip(path, "01", 12, 13.5, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	c := clipByID(t, path, "01")
@@ -105,7 +107,7 @@ func TestACutSnapsToTheWordsAroundIt(t *testing.T) {
 	path := cutsPlanPath(t)
 	tr := cutsTranscript()
 	// 12 to 13.5 is the pause between "zwei" at 11.5 and "drei" at 14.
-	if err := CutClip(path, "01", 12, 13.5, tr, 0.1); err != nil {
+	if err := CutClip(path, "01", 12, 13.5, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	cuts := ClipCuts(clipByID(t, path, "01"))
@@ -126,7 +128,7 @@ func TestACutSnapsToTheWordsAroundIt(t *testing.T) {
 // would burn in a line nobody says.
 func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 	path := cutsPlanPath(t)
-	if err := CutClip(path, "01", 12, 13.5, cutsTranscript(), 0.1); err != nil {
+	if err := CutClip(path, "01", 12, 13.5, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	c := clipByID(t, path, "01")
@@ -140,7 +142,7 @@ func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 	}
 
 	// Now cut the stretch the last two words are spoken in, and they go.
-	if err := CutClip(path, "01", 13.95, 16, cutsTranscript(), 0.1); err != nil {
+	if err := CutClip(path, "01", 13.95, 16, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	said = nil
@@ -159,7 +161,7 @@ func TestANudgeInsideAPauseTakesTheWholePause(t *testing.T) {
 	path := cutsPlanPath(t)
 	// The pause on clip 01 runs from the end of zwei at 11.5 to the start of
 	// drei at 14. The drag is a tenth of a second in the middle of it.
-	if err := CutClip(path, "01", 12.6, 12.7, cutsTranscript(), 0.1); err != nil {
+	if err := CutClip(path, "01", 12.6, 12.7, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	cuts := ClipCuts(clipByID(t, path, "01"))
@@ -178,7 +180,7 @@ func TestACutOverSpeechTakesWholeWords(t *testing.T) {
 	path := cutsPlanPath(t)
 	// The drag starts inside "drei", which runs 14 to 14.5, and ends inside
 	// "vier", which runs 15.2 to 15.8. Both go.
-	if err := CutClip(path, "01", 14.2, 15.5, cutsTranscript(), 0.1); err != nil {
+	if err := CutClip(path, "01", 14.2, 15.5, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	c := clipByID(t, path, "01")
@@ -198,6 +200,154 @@ func TestACutOverSpeechTakesWholeWords(t *testing.T) {
 	}
 }
 
+// Snapping to words is right nearly every time, and the times it is not are
+// the reason ToFrames exists: a word clipped a little short, a breath kept.
+// Then the edges stay exactly where they were put.
+func TestACutToFramesStaysWhereItWasPut(t *testing.T) {
+	path := cutsPlanPath(t)
+	// 12.34 to 13.21 is inside the pause but nowhere near either word, so
+	// snapping would move both edges and this must not.
+	if err := CutClip(path, "01", 12.34, 13.21, cutsTranscript(), 0.1, ToFrames); err != nil {
+		t.Fatal(err)
+	}
+	cuts := ClipCuts(clipByID(t, path, "01"))
+	if len(cuts) != 1 {
+		t.Fatalf("cuts %+v", cuts)
+	}
+	if cuts[0].From != 12.34 || cuts[0].To != 13.21 {
+		t.Errorf("the cut is %v to %v, not where it was put", cuts[0].From, cuts[0].To)
+	}
+}
+
+// To frames a cut may stop inside a word, which is what makes taking a
+// little more or a little less possible at all. The engine must not quietly
+// widen it back out to the whole word.
+func TestACutToFramesMayStopInsideAWord(t *testing.T) {
+	path := cutsPlanPath(t)
+	// "drei" runs 14 to 14.5. This clips the last tenth of it and no more.
+	if err := CutClip(path, "01", 14.35, 14.9, cutsTranscript(), 0.1, ToFrames); err != nil {
+		t.Fatal(err)
+	}
+	cuts := ClipCuts(clipByID(t, path, "01"))
+	if len(cuts) != 1 {
+		t.Fatalf("cuts %+v", cuts)
+	}
+	if cuts[0].From != 14.35 {
+		t.Errorf("the cut starts at %v, so it did not stop inside drei", cuts[0].From)
+	}
+	// A word is in the clip when the clip holds the moment it is spoken,
+	// which is the middle of it. That rule does not change because the cut
+	// was made to frames: drei is mostly still there, so it is still said.
+	var said []string
+	for _, w := range clipByID(t, path, "01").Words {
+		said = append(said, w.Text)
+	}
+	if got := strings.Join(said, " "); got != "eins zwei drei vier" {
+		t.Errorf("the clip says %q", got)
+	}
+}
+
+// Where a clipped word stops being said is the middle of it, because that is
+// the moment the clip either holds or does not. It is worth pinning: it is
+// what decides whether a caption shows a word the render only half plays.
+func TestAWordIsSaidWhileItsMiddleIsKept(t *testing.T) {
+	// "drei" runs 14 to 14.5, so its middle is at 14.25.
+	for _, c := range []struct {
+		name string
+		from float64
+		said bool
+	}{
+		{"cut after the middle", 14.3, true},
+		{"cut before the middle", 14.2, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := cutsPlanPath(t)
+			if err := CutClip(path, "01", c.from, 14.9, cutsTranscript(), 0.1, ToFrames); err != nil {
+				t.Fatal(err)
+			}
+			has := false
+			for _, w := range clipByID(t, path, "01").Words {
+				if w.Text == "drei" {
+					has = true
+				}
+			}
+			if has != c.said {
+				t.Errorf("cutting from %v says drei: %v", c.from, has)
+			}
+		})
+	}
+}
+
+// Walking an edge a frame at a time is what the arrow keys do, so a run of
+// small moves has to land exactly where the arithmetic says. Snapping would
+// pull every one of them back to the same word and the edge would never
+// move at all.
+func TestACutEdgeWalksAFrameAtATime(t *testing.T) {
+	path := cutsPlanPath(t)
+	tr := cutsTranscript()
+	if err := CutClip(path, "01", 12, 13.5, tr, 0.1, ToWords); err != nil {
+		t.Fatal(err)
+	}
+	// A frame at 25 per second, the step an arrow key takes.
+	const frame = 0.04
+	at := ClipCuts(clipByID(t, path, "01"))[0]
+	want := at.From
+	for i := 0; i < 5; i++ {
+		want = roundTo(want-frame, 3)
+		if err := MoveCut(path, "01", 0, want, at.To, tr, 0.1, ToFrames); err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		got := ClipCuts(clipByID(t, path, "01"))[0]
+		if got.From != want {
+			t.Fatalf("step %d put the edge at %v, not %v", i, got.From, want)
+		}
+		if got.To != at.To {
+			t.Errorf("step %d moved the other edge to %v", i, got.To)
+		}
+	}
+	// Five frames back from where the snapping left it.
+	if math.Abs(at.From-want-5*frame) > 0.001 {
+		t.Errorf("the edge walked from %v to %v", at.From, want)
+	}
+}
+
+// Everything that makes a clip unrenderable is still refused to frames.
+// Turning the snapping off is a choice about where the edges land, not a
+// way around the checks.
+func TestACutToFramesIsStillChecked(t *testing.T) {
+	tr := cutsTranscript()
+	refused := []struct {
+		name string
+		run  func(path string) error
+	}{
+		{"a cut that takes out nothing", func(p string) error {
+			return CutClip(p, "01", 12, 12.01, tr, 0.1, ToFrames)
+		}},
+		{"a cut that leaves the clip with nothing", func(p string) error {
+			return CutClip(p, "01", 9, 17, tr, 0.1, ToFrames)
+		}},
+		{"a cut that swallows the piece before it", func(p string) error {
+			return MoveCut(p, "02", 0, 19.5, 24.8, tr, 0.1, ToFrames)
+		}},
+		{"a cut that swallows the piece after it", func(p string) error {
+			return MoveCut(p, "02", 0, 20.65, 26.5, tr, 0.1, ToFrames)
+		}},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			path := cutsPlanPath(t)
+			before, _ := os.ReadFile(path)
+			if err := c.run(path); err == nil {
+				t.Fatalf("the edit was accepted")
+			}
+			after, _ := os.ReadFile(path)
+			if string(before) != string(after) {
+				t.Errorf("the plan changed:\n%s", after)
+			}
+		})
+	}
+}
+
 // A cut wide enough to swallow a piece takes the piece, rather than leaving
 // an empty one behind for the render to trip over.
 func TestACutThatSwallowsAPieceDropsIt(t *testing.T) {
@@ -205,7 +355,7 @@ func TestACutThatSwallowsAPieceDropsIt(t *testing.T) {
       {"start": 10.0, "end": 11.0}, {"start": 12.0, "end": 13.0},
       {"start": 14.0, "end": 16.0}], "words": []}]}`)
 	tr := &Transcript{Words: []Cue{{10, 10.8, "eins"}, {14.2, 15.8, "zwei"}}}
-	if err := CutClip(path, "01", 11.5, 13.5, tr, 0.1); err != nil {
+	if err := CutClip(path, "01", 11.5, 13.5, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	c := clipByID(t, path, "01")
@@ -251,7 +401,7 @@ func TestJoiningACutPutsTheStretchBack(t *testing.T) {
 func TestMovingACutMovesBothItsEdges(t *testing.T) {
 	path := cutsPlanPath(t)
 	tr := cutsTranscript()
-	if err := MoveCut(path, "02", 0, 20.65, 24.8, tr, 0.1); err != nil {
+	if err := MoveCut(path, "02", 0, 20.65, 24.8, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	c := clipByID(t, path, "02")
@@ -287,31 +437,31 @@ func TestARefusedCutLeavesThePlanAlone(t *testing.T) {
 		{"a cut that takes out nothing", func(p string) error {
 			// With no words there is no pause for the cut to grow into, so
 			// this stays the hair's breadth it was asked for.
-			return CutClip(p, "01", 12, 12.01, &Transcript{}, 0.1)
+			return CutClip(p, "01", 12, 12.01, &Transcript{}, 0.1, ToWords)
 		}},
 		{"a cut that falls outside the clip", func(p string) error {
-			return CutClip(p, "01", 40, 45, tr, 0.1)
+			return CutClip(p, "01", 40, 45, tr, 0.1, ToWords)
 		}},
 		{"a cut that leaves the clip with nothing", func(p string) error {
-			return CutClip(p, "01", 9, 17, tr, 0.1)
+			return CutClip(p, "01", 9, 17, tr, 0.1, ToWords)
 		}},
 		{"a cut that leaves the clip under a second", func(p string) error {
-			return CutClip(p, "02", 20.65, 25.9, tr, 0.1)
+			return CutClip(p, "02", 20.65, 25.9, tr, 0.1, ToWords)
 		}},
 		{"a clip that is not there", func(p string) error {
-			return CutClip(p, "99", 12, 13.5, tr, 0.1)
+			return CutClip(p, "99", 12, 13.5, tr, 0.1, ToWords)
 		}},
 		{"joining where there is no cut", func(p string) error {
 			return JoinCut(p, "02", 25.5, tr)
 		}},
 		{"a cut number the clip has not got", func(p string) error {
-			return MoveCut(p, "02", 4, 21.5, 23, tr, 0.1)
+			return MoveCut(p, "02", 4, 21.5, 23, tr, 0.1, ToWords)
 		}},
 		{"a cut that swallows the piece before it", func(p string) error {
-			return MoveCut(p, "02", 0, 19, 24.8, tr, 0.1)
+			return MoveCut(p, "02", 0, 19, 24.8, tr, 0.1, ToWords)
 		}},
 		{"a cut that swallows the piece after it", func(p string) error {
-			return MoveCut(p, "02", 0, 20.65, 27, tr, 0.1)
+			return MoveCut(p, "02", 0, 20.65, 27, tr, 0.1, ToWords)
 		}},
 	}
 	for _, c := range refused {
@@ -333,7 +483,7 @@ func TestARefusedCutLeavesThePlanAlone(t *testing.T) {
 // cost them. It is the same promise every other edit makes.
 func TestCuttingKeepsWhatTheLoaderDoesNotKnow(t *testing.T) {
 	path := cutsPlanPath(t)
-	if err := CutClip(path, "01", 12, 13.5, cutsTranscript(), 0.1); err != nil {
+	if err := CutClip(path, "01", 12, 13.5, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(path)
@@ -358,8 +508,8 @@ func TestACutRaisesTheRevision(t *testing.T) {
 	}
 	tr := cutsTranscript()
 	steps := []func() error{
-		func() error { return CutClip(path, "01", 12, 13.5, tr, 0.1) },
-		func() error { return MoveCut(path, "01", 0, 11.7, 13.8, tr, 0.1) },
+		func() error { return CutClip(path, "01", 12, 13.5, tr, 0.1, ToWords) },
+		func() error { return MoveCut(path, "01", 0, 11.7, 13.8, tr, 0.1, ToWords) },
 		func() error { return JoinCut(path, "01", 12.5, tr) },
 	}
 	for i, step := range steps {
@@ -391,4 +541,150 @@ func TestClipCutsAreTheGapsInOrder(t *testing.T) {
 			t.Errorf("cut %d is %+v, not %+v", i, got[i], want[i])
 		}
 	}
+}
+
+// The point of the app is that a person's cutting teaches the model, so
+// every change to a clip's cuts has to land in the training records as what
+// it was. A cut the model did not make, a cut of its that was thrown away
+// and a cut of its that was moved are three different lessons, and a clip
+// left alone must not look like any of them.
+//
+// This drives the app's own calls and reads decisions.jsonl back, because
+// the fields being right in DiffClip proves nothing about whether the edits
+// reach it.
+func trainingFixture(t *testing.T) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	was := TrainingDir()
+	SetTrainingDir(dir)
+	t.Cleanup(func() { SetTrainingDir(was) })
+
+	// One clip the model proposed in two pieces, so it has a cut of its own
+	// to throw away or move, and room either side to make a new one.
+	path := writePlanAt(t, `{
+  "source": "ep.mp4",
+  "plan_id": "p-train",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 12.0}, {"start": 14.0, "end": 20.0}],
+     "words": []}
+  ]
+}`)
+	rec := PlanRecord{
+		Schema: TrainingSchema, PlanID: "p-train",
+		Candidates: []RecordCandidate{{
+			CID: "01", Keep: [][2]int{{1, 4}},
+			Segments: [][2]float64{{10, 12}, {14, 20}},
+		}},
+	}
+	if err := appendRecord(filepath.Join(dir, "plans.jsonl"), rec); err != nil {
+		t.Fatal(err)
+	}
+	return path, dir
+}
+
+func lastDecision(t *testing.T, dir string) DecisionRecord {
+	t.Helper()
+	var last DecisionRecord
+	found := false
+	_ = readRecords(filepath.Join(dir, "decisions.jsonl"), func(line []byte) {
+		var d DecisionRecord
+		if json.Unmarshal(line, &d) == nil {
+			last, found = d, true
+		}
+	})
+	if !found {
+		t.Fatal("nothing was recorded")
+	}
+	return last
+}
+
+// The transcript for the fixture. The words sit either side of the model's
+// cut and inside the second piece, so a cut can be made where it made none.
+func trainingTranscript() *Transcript {
+	return &Transcript{Words: []Cue{
+		{10.1, 11.8, "eins"},
+		{14.1, 15.0, "zwei"}, {17.0, 18.0, "drei"}, {18.2, 19.8, "vier"},
+	}}
+}
+
+func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
+	t.Run("a cut the model did not make", func(t *testing.T) {
+		path, dir := trainingFixture(t)
+		// Between zwei and drei, inside the model's second piece, where it
+		// left the audio running.
+		if err := CutClip(path, "01", 15.5, 16.5, trainingTranscript(), 0.1, ToWords); err != nil {
+			t.Fatal(err)
+		}
+		d := lastDecision(t, dir)
+		if d.Event != DecisionEdited {
+			t.Fatalf("recorded as %q", d.Event)
+		}
+		if d.Changes == nil || d.Changes.Unchanged {
+			t.Fatalf("changes %+v", d.Changes)
+		}
+		if len(d.Changes.PausesCut) != 1 {
+			t.Fatalf("the new cut was not recorded: %+v", d.Changes)
+		}
+		if len(d.Changes.PausesRestored) != 0 || len(d.Changes.PausesMoved) != 0 {
+			t.Errorf("the new cut was counted as something else too: %+v", d.Changes)
+		}
+	})
+
+	t.Run("a cut of the model's thrown away", func(t *testing.T) {
+		path, dir := trainingFixture(t)
+		if err := JoinCut(path, "01", 13, trainingTranscript()); err != nil {
+			t.Fatal(err)
+		}
+		d := lastDecision(t, dir)
+		if d.Changes == nil || d.Changes.Unchanged {
+			t.Fatalf("changes %+v", d.Changes)
+		}
+		if len(d.Changes.PausesRestored) != 1 {
+			t.Fatalf("throwing the cut away was not recorded: %+v", d.Changes)
+		}
+		if d.Changes.PausesRestored[0] != [2]float64{12, 14} {
+			t.Errorf("the wrong cut was recorded: %+v", d.Changes.PausesRestored)
+		}
+		if len(d.Changes.PausesCut) != 0 || len(d.Changes.PausesMoved) != 0 {
+			t.Errorf("it was counted as something else too: %+v", d.Changes)
+		}
+	})
+
+	t.Run("a cut of the model's moved", func(t *testing.T) {
+		path, dir := trainingFixture(t)
+		// To frames, because moving a cut a little is exactly what the
+		// snapping would undo.
+		if err := MoveCut(path, "01", 0, 11.5, 14.6, trainingTranscript(), 0.1, ToFrames); err != nil {
+			t.Fatal(err)
+		}
+		d := lastDecision(t, dir)
+		if d.Changes == nil || d.Changes.Unchanged {
+			t.Fatalf("a moved cut was recorded as an untouched clip: %+v", d.Changes)
+		}
+		if len(d.Changes.PausesMoved) != 1 {
+			t.Fatalf("the move was not recorded: %+v", d.Changes)
+		}
+		move := d.Changes.PausesMoved[0]
+		if move.Was != [2]float64{12, 14} || move.Now != [2]float64{11.5, 14.6} {
+			t.Errorf("the move was recorded as %+v", move)
+		}
+		if len(d.Changes.PausesCut) != 0 || len(d.Changes.PausesRestored) != 0 {
+			t.Errorf("a moved cut was counted as one made and one thrown away: %+v", d.Changes)
+		}
+	})
+
+	t.Run("a clip left alone", func(t *testing.T) {
+		// The negative case, and the one that matters most: if an untouched
+		// clip ever looked edited, every render would teach the model that
+		// it got the cut wrong.
+		path, dir := trainingFixture(t)
+		if err := SetRejected(path, "01", false); err != nil {
+			t.Fatal(err)
+		}
+		d := lastDecision(t, dir)
+		if d.Changes == nil || !d.Changes.Unchanged {
+			t.Errorf("an untouched clip reads as changed: %+v", d.Changes)
+		}
+	})
 }

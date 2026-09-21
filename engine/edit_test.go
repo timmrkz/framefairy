@@ -327,12 +327,12 @@ func FuzzPlanEdits(f *testing.F) {
 			case 6:
 				// A cut takes a stretch out of the middle, so this is the
 				// one edit that makes pieces rather than only moving them.
-				_ = CutClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1)
+				_ = CutClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 7:
 				_ = JoinCut(path, clip, at(script[i+1]), tr)
 			case 8:
 				_ = MoveCut(path, clip, int(script[i+1])%4,
-					at(script[i+1]), at(script[i+2]), tr, 0.1)
+					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
 				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1)
 			case 1:

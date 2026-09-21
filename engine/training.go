@@ -195,6 +195,16 @@ type Changes struct {
 	LinesRemoved   []int        `json:"lines_removed"`
 	PausesCut      [][2]float64 `json:"pauses_cut"`
 	PausesRestored [][2]float64 `json:"pauses_restored"`
+	PausesMoved    []PauseMove  `json:"pauses_moved"`
+}
+
+// PauseMove is a cut the model proposed and a person kept but put somewhere
+// else. It is its own signal and not a cut plus a restore: the model was
+// right that something belonged here and wrong about where it fell, and
+// those are different lessons.
+type PauseMove struct {
+	Was [2]float64 `json:"was"`
+	Now [2]float64 `json:"now"`
 }
 
 // FinalRecord is a clip as the person left it.
@@ -458,6 +468,42 @@ func cutsMissing(a, b [][2]float64, from, to float64) [][2]float64 {
 	return out
 }
 
+// cutsMoved pairs each cut of the proposal with the cut of the final clip
+// that stands where it stood, and answers with the pairs whose edges are not
+// in the same place. Two cuts that overlap are the same cut, which is the
+// rule cutsMissing already works by: a cut with nothing overlapping it was
+// taken away or made, and one that overlaps was kept, whether or not it was
+// put somewhere else.
+//
+// Without this a moved cut is invisible. It is not in PausesCut and not in
+// PausesRestored, the clip's own edges have not moved and there are as many
+// cuts as before, so the clip reads as untouched and the export counts the
+// render as a full hit for a cut a person had to correct.
+func cutsMoved(before, after [][2]float64, from, to float64) []PauseMove {
+	out := []PauseMove{}
+	for _, was := range before {
+		if was[1] <= from || was[0] >= to {
+			continue
+		}
+		// The one it overlaps most, so a cut split in two is paired with
+		// the half that stands where it stood.
+		best, most := [2]float64{}, 0.0
+		for _, now := range after {
+			overlap := min(was[1], now[1]) - max(was[0], now[0])
+			if overlap > most {
+				best, most = now, overlap
+			}
+		}
+		if most <= 0 {
+			continue
+		}
+		if math.Abs(best[0]-was[0]) > cutTolerance || math.Abs(best[1]-was[1]) > cutTolerance {
+			out = append(out, PauseMove{Was: was, Now: best})
+		}
+	}
+	return out
+}
+
 func expandLines(ranges [][2]int) map[int]bool {
 	out := map[int]bool{}
 	for _, r := range ranges {
@@ -467,6 +513,12 @@ func expandLines(ranges [][2]int) map[int]bool {
 	}
 	return out
 }
+
+// cutTolerance is how far an edge may be from where the model put it and
+// still count as the same edge. It is the same number for the clip's own
+// edges and for the edges of a cut, because a hand is no steadier on one
+// than on the other.
+const cutTolerance = 0.05
 
 // DiffClip compares a final clip with its proposal.
 func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) *Changes {
@@ -481,6 +533,7 @@ func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) 
 	before, after := cutsOf(proposal), cutsOf(final)
 	c.PausesCut = cutsMissing(after, before, from, to)
 	c.PausesRestored = cutsMissing(before, after, from, to)
+	c.PausesMoved = cutsMoved(before, after, from, to)
 	was, now := expandLines(proposedLines), expandLines(finalLines)
 	for n := range now {
 		if !was[n] {
@@ -494,9 +547,9 @@ func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) 
 	}
 	sort.Ints(c.LinesAdded)
 	sort.Ints(c.LinesRemoved)
-	const tolerance = 0.05
-	c.Unchanged = math.Abs(c.StartShift) < tolerance && math.Abs(c.EndShift) < tolerance &&
-		len(c.PausesCut) == 0 && len(c.PausesRestored) == 0 && len(before) == len(after)
+	c.Unchanged = math.Abs(c.StartShift) < cutTolerance && math.Abs(c.EndShift) < cutTolerance &&
+		len(c.PausesCut) == 0 && len(c.PausesRestored) == 0 && len(c.PausesMoved) == 0 &&
+		len(before) == len(after)
 	return c
 }
 
