@@ -1,0 +1,2 @@
+Keeps this folder in the repository, so Go can embed it before the first build.
+make builds the interface into app/ next to this file.

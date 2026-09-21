@@ -1,0 +1,4 @@
+go test fuzz v1
+string("&amp;amp;")
+float64(0)
+float64(5)

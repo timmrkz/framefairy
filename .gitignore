@@ -1,0 +1,60 @@
+# Built by make
+/bin/
+/.build/
+
+# The built interface. make builds it from frontend/. Only dist/.keep is
+# in the repository, so Go can embed the folder before the first build.
+/cmd/framefairy-app/dist/*
+!/cmd/framefairy-app/dist/.keep
+/dist/
+/frontend/dist/
+
+# The preview of the interface, built by frontend/preview/vite.config.ts so
+# a session without a screen can look at a change. Build output like any
+# other.
+/frontend/preview/dist/
+
+# Programs built by hand with go build
+/framefairy
+/framefairy-app
+/framefairy-train
+*.exe
+*.test
+*.out
+
+# Installed packages of the interface
+node_modules/
+
+# Leftovers from the earlier layout
+/app/
+
+# Episode work folders and media, in case an episode ends up in here
+*.framefairy/
+*.mp4
+*.mov
+*.m4v
+*.mkv
+*.wav
+
+# Models
+*.gguf
+*.onnx
+*.tar.bz2
+
+# Datasets exported by framefairy-train
+/dataset/
+
+# Old Python parity checks
+parity/vectors.json
+__pycache__/
+
+# macOS, editors, logs, secrets. The one editor file in the repository is
+# .vscode/settings.json, which switches Go's C support on for the language
+# server, see docs/INSTALL.md.
+.DS_Store
+.idea/
+/.vscode/*
+!/.vscode/settings.json
+*.swp
+*.log
+.env

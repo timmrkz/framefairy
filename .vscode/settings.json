@@ -1,0 +1,9 @@
+{
+  // The speech library is native code, so Go's C support has to be on.
+  // Without this the language server drops every file of sherpa-onnx, and
+  // the asr package looks broken in the editor while make builds it fine.
+  // The Makefile sets the same for the build.
+  "go.toolsEnvVars": {
+    "CGO_ENABLED": "1"
+  }
+}
