@@ -130,6 +130,8 @@ export const Call = {
     // A search that really runs and really finishes, for testing what the
     // workspace does the moment the first clips arrive.
     const found = location.search.includes("found");
+    const paused = location.search.includes("paused");
+    const carriedOn = () => !!(window as any).__carriedOn;
     const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
     const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < 2500;
     const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= 2500;
@@ -151,6 +153,12 @@ export const Call = {
         }
         if (location.search.includes("transcribing")) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 1200, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true });
+        }
+        // What pausing leaves behind: clips already found, the episode read
+        // only part way, and nothing reading the rest. Until the mark in the
+        // clip list head stayed for it, this state had no way out.
+        if (paused) {
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
         }
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
       // Every search this window asks for, so a test can see the first one
@@ -274,6 +282,13 @@ export const Call = {
       case "Jobs": {
         const q = location.search;
         if (found) return Promise.resolve(searching() ? [planJob("running")] : done() ? [planJob("done")] : []);
+        // Paused, and then asked to carry on: the transcription runs again,
+        // which is what the mark in the clip list head has to bring about.
+        if (paused) {
+          return Promise.resolve(carriedOn()
+            ? [{ id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe", progress: { stage: "asr", text: "Listening", fraction: 0.28, remaining: 420 } }]
+            : []);
+        }
         if (growing) {
           return Promise.resolve([
             { id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe", progress: { stage: "asr", text: "Listening", fraction: grown / 14423, remaining: 600 } },
@@ -337,6 +352,9 @@ export const Call = {
         // One file per second, so a test can see the frame follow the
         // playhead.
         return Promise.resolve(`/eps/still-${Math.round(Number(args[1]) || 0)}.jpg`);
+      case "Transcribe":
+        (window as any).__carriedOn = true;
+        return Promise.resolve({ id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe" });
       default:
         return Promise.resolve(null);
     }

@@ -182,6 +182,14 @@
     api.cancelJob(working.id);
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
+
+  // A transcription that was stopped part way through. The episode still
+  // wants words, some of them are already read, and nothing is reading the
+  // rest. It is the state pausing leaves behind, and until it had a name
+  // there was no way back out of it: the mark that stops the transcription
+  // was only there while it ran, and once a clip existed the head never
+  // went back to being about words, so nothing ever offered to carry on.
+  const partly = $derived(needsWords && covered > 0 && !transcribing && !starting);
   // How far the audio has been heard, which is not the same as how far the
   // saved transcript reaches. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
@@ -1163,19 +1171,26 @@
             {#if lane.count}
               <span class="muted num">{shown.length}</span>
             {/if}
-            <!-- The transcription carrying on behind the clips. The head is
-                 about the list now, so this says the episode is still being
-                 read and stops it, and nothing else in the head moves for
-                 it: it is a mark, and a mark is one width. -->
-            {#if !aboutWords && transcribing}
+            <!-- The transcription going on behind the clips. The head is
+                 about the list now, so this says how the reading of the
+                 episode stands and is the one thing to do about it, and
+                 nothing else in the head moves for it: it is a mark, and a
+                 mark is one width.
+                 It is here while it runs and while it is stopped part way,
+                 because a control that only stops something is a trap: the
+                 mark said it would carry on where it left off, and then
+                 took itself away and left nothing that would. -->
+            {#if !aboutWords && (transcribing || partly)}
               <button
                 class="quiet glyph still"
-                onclick={pauseTranscribing}
+                onclick={transcribing ? pauseTranscribing : () => api.transcribe(path)}
                 disabled={pausing}
-                aria-label="Pause the transcription"
-                title={`Still transcribing the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`}
+                aria-label={transcribing ? "Pause the transcription" : "Carry on transcribing"}
+                title={transcribing
+                  ? `Still transcribing the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`
+                  : `The episode is only read as far as ${clock(covered)}. Carry on from there`}
               >
-                <Icon name={pausing ? "activity" : "pause"} size={13} />
+                <Icon name={pausing ? "activity" : transcribing ? "pause" : "play"} size={13} />
               </button>
             {/if}
             <span class="ask">
