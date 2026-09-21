@@ -2,7 +2,10 @@
 #
 #   make            project packages, the interface and all three programs
 #   make run        build, then start the app
-#   make test       all tests
+#   make test       all tests: unit, fuzz and interface
+#   make unit       the Go tests, under the race detector
+#   make fuzz       the fuzz targets, FUZZTIME executions each
+#   make interface  the interface type check and its own tests
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the system tools that are missing (macOS)
 #   make models     download the speech model and the language model
@@ -57,14 +60,14 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run test fuzz check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
 all: toolchain $(PROGRAMS)
 	@echo "Ready: $(PROGRAMS)"
 	@sh scripts/check.sh --quiet
 
 help:
-	@sed -n '1,11p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,14p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -121,7 +124,35 @@ $(BIN)/framefairy-train$(EXE): modules
 run: all
 	@$(BIN)/framefairy-app$(EXE)
 
-test: toolchain modules fuzz
+# Everything, in the order that puts the quickest answer first. The three
+# stand alone as well, because they do not need each other and CI runs them
+# on three machines at once: waiting for the fuzzing to finish before the
+# interface is type checked is waiting for nothing.
+test: unit fuzz interface
+
+# The tests run with the race detector, because the app is a queue of jobs
+# on their own goroutines and a window asking them things from another, and
+# a race there is a bug that only shows up on someone else's machine.
+#
+# This also runs the seed corpus of every fuzz target, so a machine that
+# only runs make unit still covers every case anyone has found so far. What
+# it does not do is look for new ones.
+unit: toolchain modules
+	@$(GO) test -race -ldflags '$(LDFLAGS)' ./...
+
+# The fuzzing runs without the race detector: it is the same code, many more
+# times over.
+#
+# Every fuzz target does FUZZTIME executions, one worker each, as many
+# targets at a time as the machine has cores. A new crasher is written to
+# testdata/fuzz/ next to the code, where it stays as a seed.
+fuzz: toolchain modules
+	@GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
+
+# The interface needs Node and nothing else, no Go and no system libraries,
+# which is why it is worth having on its own: it answers in well under a
+# minute while the Go work is still going.
+interface:
 	@if command -v $(NPM) >/dev/null 2>&1; then \
 		$(MAKE) -s --no-print-directory frontend/node_modules/.package-lock.json && \
 		out=$$(cd frontend && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }; \
@@ -129,18 +160,6 @@ test: toolchain modules fuzz
 		out=$$(cd frontend && $(NPM) run --silent test 2>&1) || { echo "$$out"; exit 1; }; \
 		printf 'ok  \tinterface rules\n'; \
 	fi
-
-# The tests run with the race detector, because the app is a queue of jobs
-# on their own goroutines and a window asking them things from another, and
-# a race there is a bug that only shows up on someone else's machine. The
-# fuzzing runs without it: it is the same code, many more times over.
-#
-# Every fuzz target does FUZZTIME executions, one worker each, as many
-# targets at a time as the machine has cores. A new crasher is written to
-# testdata/fuzz/ next to the code, where it stays as a seed.
-fuzz: toolchain modules
-	@$(GO) test -race -ldflags '$(LDFLAGS)' ./...
-	@GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
 
 check:
 	@sh scripts/check.sh || true

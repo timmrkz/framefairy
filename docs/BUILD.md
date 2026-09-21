@@ -39,7 +39,10 @@ installed only by the two targets below, and only when you call them.
 | --- | --- |
 | `make` | everything above |
 | `make run` | builds, then starts the app |
-| `make test` | all Go tests, a type check of the interface and its own tests |
+| `make test` | everything below: `unit`, `fuzz` and `interface` |
+| `make unit` | every Go test under the race detector, the fuzz seeds included |
+| `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
+| `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | macOS: installs what is missing with Homebrew: Go, llama.cpp, Node.js, and ffmpeg with libass from the ffmpeg tap. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, unless they are there. An interrupted download resumes |
@@ -92,7 +95,7 @@ four core machine and less on a laptop with more.
 ```
 make test                       # 10000 executions per target
 make test FUZZTIME=2000x        # quicker, while working on something else
-make fuzz FUZZTIME=2m           # the Go tests, then two minutes per target
+make fuzz FUZZTIME=2m           # two minutes per target, on its own
 FUZZJOBS=2 make fuzz            # leave some cores alone
 ```
 
@@ -110,6 +113,33 @@ Tests live next to what they test, so `transcript.go` is tested by
 gated on and off five times a second, because a steady tone measures the
 same wherever you start and would hide a start that is a few milliseconds
 out.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to
+main. It is six jobs on six machines, all at once, because none of them
+needs any of the rest:
+
+| Job | Machine | What it runs |
+| --- | --- | --- |
+| `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
+| `build` | Linux | `make`. The programs and the interface, which is what proves they still link |
+| `linux` | Linux | `make unit` |
+| `fuzz` | Linux | `make fuzz` |
+| `macos` | macOS | `make` with no warnings allowed, then `make unit` |
+| `macos-fuzz` | macOS | `make fuzz` |
+
+Run one after another this is about six minutes. Run together the answer
+comes when the slowest one does, which is the macOS build and tests.
+
+Nothing is left out to make it quick. Every test that ran before still runs,
+on the same platforms, under the race detector, with the same `FUZZTIME`.
+The fuzzing is on both platforms because two of the targets are about paths
+and a case-insensitive filesystem is a different thing to explore.
+
+A second push to a branch cancels the run the first one started, because its
+answer is about code nobody is waiting on any more. Pushes to main are never
+cancelled: every commit's result there is worth having on its own.
 
 ## No build warnings on macOS
 

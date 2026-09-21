@@ -326,7 +326,11 @@ compile. There are no models in the cloud, which the tests do not need.
   `frontend/preview/`, what to measure and how to prove a fix instead of
   claiming one. Read it before changing anything in `frontend/`.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
-  on Linux and builds on macOS without warnings.
+  on Linux and on macOS, where the build has to be clean of warnings, and
+  fuzzes on both. It is six jobs at once rather than one after another, so
+  the answer comes back in the time the slowest takes. `make test` runs the
+  lot locally, and `make unit`, `make fuzz` and `make interface` are the
+  three parts of it, see [docs/BUILD.md](docs/BUILD.md).
 
 ## Open work
 
