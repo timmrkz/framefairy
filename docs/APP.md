@@ -437,6 +437,12 @@ place.
       across the clip takes a stretch out by hand. Without shift the same
       drag moves the playhead, so nothing that worked before works
       differently, and a shift-click with no drag does nothing.
+    - **A stretch put back goes back in with the same gesture.** The
+      double-click that puts a cut back is remembered, so a second
+      double-click in the same place takes the stretch out again, edge for
+      edge. It is forgotten as soon as anything else about that clip
+      changes, because a stretch put back into a clip that has moved on is
+      not the stretch that was taken out.
     - **A cut lands on whole words.** The engine puts the edges where the
       render would cut them, so a cut dragged over a pause takes the whole
       pause and a cut dragged over speech takes whole words. A cut can
@@ -444,6 +450,14 @@ place.
       nobody said and the captions are built from the words. The timeline
       works the same snapping out while the hand is moving, so the block
       shown is the block the render will leave out.
+    - **Alt lands on the frame instead.** Holding alt while dragging, on a
+      handle or across the clip, leaves the edges exactly where the hand
+      put them, rounded to a whole frame of the episode and no further, for
+      a word clipped a little short or a breath worth keeping. A cut made
+      that way may stop inside a word, which is the point of it. The key is
+      read while the hand moves rather than when it goes down, so letting
+      go of alt part way through goes back to snapping and the block says
+      so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and the words to correct are in the lens,
       so the waveform has the whole track to itself.

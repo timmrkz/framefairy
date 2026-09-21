@@ -55,9 +55,12 @@
     ontrim?: (start: number, end: number) => Promise<void>;
     // The cuts inside the clip: taking a stretch out, putting one back, and
     // moving the edges of one that is already there.
-    oncut?: (from: number, to: number) => Promise<void>;
+    // toWords says whether the engine should put the edges on the words
+    // around them. Alt held while dragging says no: the edges land on the
+    // frame they were let go on and stay there.
+    oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
     onjoincut?: (at: number) => Promise<void>;
-    onmovecut?: (index: number, from: number, to: number) => Promise<void>;
+    onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
     onword?: (start: number, text: string) => Promise<void>;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
@@ -191,6 +194,14 @@
   // inside out.
   const leastCut = 0.05;
 
+  // A cut that is not snapped to words is snapped to the picture instead:
+  // a video is cut between frames and nowhere else, so an edge in the
+  // middle of one is an edge the render has to round anyway. Rounding here
+  // means the number on screen is the number that will be used.
+  function onFrame(t: number): number {
+    return Math.round(t / frame) * frame;
+  }
+
   const editable = $derived(!!clip && !locked && !saving && !cutSaving);
 
   // The pieces as they are drawn, with a cut being moved applied.
@@ -233,13 +244,18 @@
     };
     const startX = event.clientX;
     let moved = false;
+    // Read on every move rather than at the press, so letting go of alt
+    // part way through a drag goes back to snapping and the block says so
+    // before the hand lets go.
+    let toWords = !event.altKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
+      toWords = !e.altKey;
       const t = Math.min(Math.max(timeAt(e.clientX), wall.least), wall.most);
       const from = side === "from" ? Math.min(t, held.to - leastCut) : held.from;
       const to = side === "to" ? Math.max(t, held.from + leastCut) : held.to;
-      const [a, b] = snapCut(words, from, to, keepPause);
+      const [a, b] = toWords ? snapCut(words, from, to, keepPause) : [onFrame(from), onFrame(to)];
       movingCut = { index, from: a, to: b };
     };
     const up = async () => {
@@ -257,7 +273,8 @@
       }
       cutSaving = true;
       try {
-        await onmovecut?.(m.index, m.from, m.to);
+        undone = null;
+        await onmovecut?.(m.index, m.from, m.to, toWords);
       } finally {
         cutSaving = false;
         movingCut = null;
@@ -277,11 +294,22 @@
     const startX = event.clientX;
     const from = timeAt(startX);
     let moved = false;
+    let toWords = !event.altKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
+      toWords = !e.altKey;
       const t = timeAt(e.clientX);
-      const [a, b] = snapCut(words, Math.min(from, t), Math.max(from, t), keepPause);
+      const near = Math.min(from, t);
+      const far = Math.max(from, t);
+      // Snapping grows a cut to whole words, so it is never too short for
+      // the engine. Frames do not, and a cut of nothing would be refused
+      // with the plan untouched and a message for a drag of two pixels. So
+      // it is held open at the least a cut may be, the way the walls hold
+      // an edge that is being moved.
+      const [a, b] = toWords
+        ? snapCut(words, near, far, keepPause)
+        : [onFrame(near), Math.max(onFrame(far), onFrame(near) + leastCut)];
       drawnCut = { from: a, to: b };
     };
     const up = async () => {
@@ -295,7 +323,8 @@
       }
       cutSaving = true;
       try {
-        await oncut?.(d.from, d.to);
+        undone = null;
+        await oncut?.(d.from, d.to, toWords);
       } finally {
         cutSaving = false;
         drawnCut = null;
@@ -305,6 +334,14 @@
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
   }
+
+  // The cut that was last put back, so the same double-click in the same
+  // place can put it in again. Taking a stretch out is one double-click,
+  // and nothing that takes one click may cost more than one to undo. It
+  // belongs to the clip it was in, and it is forgotten the moment anything
+  // else about that clip's cuts changes, because a stretch put back into a
+  // clip that has moved on is not the stretch that was taken out.
+  let undone = $state<{ key: string; from: number; to: number } | null>(null);
 
   // A double-click puts a cut back, the way a double-click undoes an edit
   // point in an editing timeline. It is not a single click, because a cut
@@ -317,6 +354,22 @@
     cutSaving = true;
     try {
       await onjoincut((cut.from + cut.to) / 2);
+      undone = clip ? { key: clip.key, from: cut.from, to: cut.to } : null;
+    } finally {
+      cutSaving = false;
+    }
+  }
+
+  // Putting back what was just put back. The stretch is taken out again
+  // exactly as it was, edge for edge, so it is sent as it stands rather
+  // than snapped afresh: snapping it again would be snapping something
+  // already snapped, and on a cut made a frame at a time it would move.
+  async function cutAgain(was: { from: number; to: number }) {
+    if (!editable || !oncut) return;
+    undone = null;
+    cutSaving = true;
+    try {
+      await oncut(was.from, was.to, false);
     } finally {
       cutSaving = false;
     }
@@ -427,6 +480,14 @@
       const hit = cuts.find((c) => at >= c.from && at <= c.to);
       if (hit) {
         putCutBack(hit.index, event);
+        return;
+      }
+      // Nothing to put back here, but this is where something was just put
+      // back. The same gesture in the same place takes it out again.
+      const back = undone;
+      if (back && back.key === clip?.key && at >= back.from && at <= back.to) {
+        event.preventDefault();
+        cutAgain(back);
         return;
       }
     }
@@ -663,6 +724,9 @@
       if (Math.abs(draft.start - first) < 0.01 && Math.abs(draft.end - last) < 0.01) return;
       saving = true;
       try {
+        // A clip whose edges have moved is not the clip the stretch was
+        // taken out of, so there is nothing to put back any more.
+        undone = null;
         await ontrim?.(draft.start, draft.end);
         onseek(draft.start);
       } finally {
@@ -847,8 +911,9 @@
         and a double-click to fit the clip. The arrow keys step a frame, with shift a second. Drag
         a clip edge to trim it, and the magnifier shows the words. A hatched block inside a clip is
         a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
-        back, and hold shift while dragging across the clip to take a stretch out yourself. Cuts
-        land on whole words, so a cut over a pause takes the whole pause.
+        back, and double-click again to take it out once more. Hold shift while dragging across the
+        clip to take a stretch out yourself. Cuts land on whole words, so a cut over a pause takes
+        the whole pause. Hold alt while dragging to land on the frame instead.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way

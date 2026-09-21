@@ -510,10 +510,10 @@
   // The cuts inside a clip. All three answer with the clip as it is now,
   // because the engine puts the edges on words and the timeline has to draw
   // where they landed, not where the hand let go.
-  async function cut(clip: ClipEntry, from: number, to: number) {
+  async function cut(clip: ClipEntry, from: number, to: number, toWords: boolean) {
     problem = "";
     try {
-      const updated = await api.cutClip(path, clip.plan, clip.id, from, to);
+      const updated = await api.cutClip(path, clip.plan, clip.id, from, to, toWords);
       clips = clips.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
       problem = errorText(err);
@@ -530,10 +530,16 @@
     }
   }
 
-  async function moveCut(clip: ClipEntry, index: number, from: number, to: number) {
+  async function moveCut(
+    clip: ClipEntry,
+    index: number,
+    from: number,
+    to: number,
+    toWords: boolean,
+  ) {
     problem = "";
     try {
-      const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to);
+      const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to, toWords);
       clips = clips.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
       problem = errorText(err);
@@ -1254,10 +1260,11 @@
         bind:numbers
         onseek={(t) => player?.seek(t)}
         ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}
-        oncut={(from, to) => (current ? cut(current, from, to) : Promise.resolve())}
+        oncut={(from, to, toWords) =>
+          current ? cut(current, from, to, toWords) : Promise.resolve()}
         onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
-        onmovecut={(index, from, to) =>
-          current ? moveCut(current, index, from, to) : Promise.resolve()}
+        onmovecut={(index, from, to, toWords) =>
+          current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
       />
       <!-- One row under the clip up close, so the range picker and the

@@ -279,12 +279,22 @@ export const api = {
   // The cuts inside a clip: the stretches it leaves out. Making one, moving
   // one and putting one back. The edges land on words, so what comes back
   // is what to draw, never what was asked for.
-  cutClip: (path: string, plan: string, clip: string, from: number, to: number) =>
-    call<ClipEntry>("CutClip", path, plan, clip, from, to),
+  // toWords puts the edges on the words around them, which is what nearly
+  // every cut wants. Without it they stay exactly where the hand put them,
+  // a frame at a time, and a cut may then stop inside a word.
+  cutClip: (path: string, plan: string, clip: string, from: number, to: number, toWords: boolean) =>
+    call<ClipEntry>("CutClip", path, plan, clip, from, to, toWords),
   joinCut: (path: string, plan: string, clip: string, at: number) =>
     call<ClipEntry>("JoinCut", path, plan, clip, at),
-  moveCut: (path: string, plan: string, clip: string, index: number, from: number, to: number) =>
-    call<ClipEntry>("MoveCut", path, plan, clip, index, from, to),
+  moveCut: (
+    path: string,
+    plan: string,
+    clip: string,
+    index: number,
+    from: number,
+    to: number,
+    toWords: boolean,
+  ) => call<ClipEntry>("MoveCut", path, plan, clip, index, from, to, toWords),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),

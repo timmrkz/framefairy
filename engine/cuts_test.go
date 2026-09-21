@@ -674,6 +674,36 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		}
 	})
 
+	t.Run("a cut thrown away and made again", func(t *testing.T) {
+		// Double-clicking a cut puts it back, and double-clicking the same
+		// place puts it in again. A clip that ends where it started teaches
+		// nothing either way, so it has to read as untouched: the model's
+		// cut is back where the model put it, and two records of a hand
+		// moving through the same place must not add up to a correction.
+		path, dir := trainingFixture(t)
+		tr := trainingTranscript()
+		if err := JoinCut(path, "01", 13, tr); err != nil {
+			t.Fatal(err)
+		}
+		// Exactly the stretch that was put back, sent as it stands, which
+		// is what the timeline does: snapping something already snapped
+		// would move it.
+		if err := CutClip(path, "01", 12, 14, tr, 0.1, ToFrames); err != nil {
+			t.Fatal(err)
+		}
+		d := lastDecision(t, dir)
+		if d.Changes == nil || !d.Changes.Unchanged {
+			t.Errorf("a cut put back and made again reads as an edit: %+v", d.Changes)
+		}
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ClipCuts(clips[0]); len(got) != 1 || got[0] != (Cut{From: 12, To: 14}) {
+			t.Errorf("the cut came back as %+v", got)
+		}
+	})
+
 	t.Run("a clip left alone", func(t *testing.T) {
 		// The negative case, and the one that matters most: if an untouched
 		// clip ever looked edited, every render would teach the model that

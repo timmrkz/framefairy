@@ -245,11 +245,15 @@ export const Call = {
       // the way the Go side does, so the timeline draws where the edges
       // really landed rather than where the hand let go.
       case "CutClip": {
-        const [, , id, from, to] = args as [string, string, string, number, number];
-        const n = Number(id);
+        // The last argument is toWords. Without it the edges stay where
+        // they were put, which is how a cut lands on a frame rather than
+        // on a word, so the stub has to honour it or the harness cannot
+        // tell the two gestures apart.
+        const [, , id, from, to, toWords] = args as
+          [string, string, string, number, number, boolean];
         const [at] = starts[id] ?? [60];
         const said = words(at, at + 25);
-        const [a, b] = snapCut(said, from, to);
+        const [a, b] = toWords ? snapCut(said, from, to) : [from, to];
         return Promise.resolve(recut(id, (list) => applyCut(list, a, b)));
       }
       case "JoinCut": {
@@ -267,9 +271,10 @@ export const Call = {
         );
       }
       case "MoveCut": {
-        const [, , id, index, from, to] = args as [string, string, string, number, number, number];
+        const [, , id, index, from, to, toWords] = args as
+          [string, string, string, number, number, number, boolean];
         const [at] = starts[id] ?? [60];
-        const [a, b] = snapCut(words(at, at + 25), from, to);
+        const [a, b] = toWords ? snapCut(words(at, at + 25), from, to) : [from, to];
         return Promise.resolve(
           recut(id, (list) => {
             if (index < 0 || index + 1 >= list.length) return list;
