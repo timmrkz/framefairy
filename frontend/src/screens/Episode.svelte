@@ -104,12 +104,6 @@
   const needsWords = $derived(
     !!status && !status.missing && (!status.transcribed || status.transcriptStale),
   );
-  // The pane is the clip list. It is only about the transcription while
-  // there is no clip list to be about, which is before the first clips are
-  // found. The two run in lanes of their own and the transcription often
-  // outlasts the first search, and when it does the pane said
-  // Transcribing over a list of twelve clips and took New away with it.
-  // One lane's state does not belong on the other lane's head.
   // The pane is the clip list and nothing else. The transcription is worked
   // from the range picker, at the edge it moves, so none of it belongs in
   // this head: the two ran in lanes of their own and the head carried both,
@@ -185,6 +179,11 @@
   const heard = $derived(
     mark.seen(path, covered, transcribing?.progress?.covered ?? null, restarted),
   );
+  // Where the edge was when pause was pressed, or null while it is free to
+  // move. Held rather than followed, because what the work reports after
+  // the press is work nobody asked for any more.
+  let stoppedAt = $state<number | null>(null);
+  const shownHeard = $derived(stoppedAt ?? heard);
 
   // A search reads the transcript off disk, so it can only run where the
   // saved transcript reaches. It goes by covered and not by heard for that
@@ -438,8 +437,20 @@
 
   function pauseTranscribing() {
     if (!transcribing) return;
+    // The edge stops where it is, on the click. The recogniser is part way
+    // through a chunk and keeps reporting until it hears the stop, so
+    // without this the edge carries on for a second or two after the press
+    // and the click looks like it missed.
+    stoppedAt = heard;
     pausing = true;
     api.cancelJob(transcribing.id);
+  }
+
+  // Carrying on lets the edge go again. Asking for it here rather than
+  // through the action keeps the two halves of the one control together.
+  function carryOnTranscribing() {
+    stoppedAt = null;
+    api.transcribe(path).catch((err) => (problem = errorText(err)));
   }
 
   $effect(() => {
@@ -913,7 +924,7 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    covered={heard}
+    covered={shownHeard}
     bind:from
     bind:to
     {marks}
@@ -928,7 +939,8 @@
     transcribing={isTranscribing}
     {partly}
     {leftToGo}
-    ontranscription={() => (transcribing ? pauseTranscribing() : api.transcribe(path))}
+    holding={stoppedAt !== null}
+    ontranscription={() => (transcribing ? pauseTranscribing() : carryOnTranscribing())}
   />
 {/snippet}
 

@@ -181,7 +181,7 @@
           </span>
           <span class="grow"></span>
           <button
-            class="quiet drop"
+            class="quiet danger drop"
             disabled={training.plans + training.decisions === 0}
             title="Remove every training record"
             aria-haspopup="dialog"

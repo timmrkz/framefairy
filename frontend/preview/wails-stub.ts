@@ -416,6 +416,7 @@ export const Events = {
     if (!location.search.includes("growing")) return () => {};
     const started = ((window as any).__started ??= Date.now());
     const timer = setInterval(() => {
+      const gone = !!(window as any).__stopped;
       const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
       fn({
         data: {
@@ -424,10 +425,10 @@ export const Events = {
             episode: "/eps/ep.mp4",
             kind: "transcribe",
             label: "Transcribe",
-            state: "running",
+            state: gone ? "cancelled" : "running",
             queued: "",
             lane: "transcribe",
-            progress: { stage: "asr", text: "Listening", fraction: grown / 14423, remaining: 600 },
+            progress: { stage: "asr", text: "Listening", fraction: grown / 14423, remaining: 600, covered: grown },
           },
           event: { kind: "progress", text: "Listening", elapsed: 1 },
         },

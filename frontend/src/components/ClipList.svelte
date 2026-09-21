@@ -65,7 +65,7 @@
         </button>
         {#if onremove}
           <button
-            class="drop"
+            class="drop quiet danger"
             title="Take this clip out of the list"
             aria-label="Remove {clip.title || clip.slug}"
             onclick={() => onremove(clip)}
@@ -141,14 +141,7 @@
     pointer-events: auto;
   }
 
-  /* The lift is a layer over the row rather than a grey of its own, so it
-     is the same step on an ordinary row and on the chosen one. Named as a
-     grey it was exactly the colour of the row the trash can appears on,
-     which is the one row it is ever seen against. */
-  .drop:hover:not(:disabled) {
-    background: var(--lift-err);
-    color: var(--err);
-  }
+
 
   .pick {
     display: flex;

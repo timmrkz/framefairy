@@ -240,7 +240,7 @@
               <Icon name="folder" />
             </button>
             <button
-              class="glyph small"
+              class="glyph small quiet danger"
               title="Remove"
               aria-label="Remove {ep.name}"
               aria-haspopup="dialog"

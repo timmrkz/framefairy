@@ -24,6 +24,7 @@
     transcribing = false,
     partly = false,
     leftToGo = "",
+    holding = false,
     ontranscription,
   }: {
     duration: number;
@@ -51,6 +52,10 @@
     // Stopped part way: some of it read, nothing reading the rest.
     partly?: boolean;
     leftToGo?: string;
+    // The edge is being held where it is, because pause was pressed. It
+    // stops moving at once rather than sliding on to where the work had
+    // got to, which is a second or two of an interface ignoring a click.
+    holding?: boolean;
     // Pause it while it runs, carry on while it is stopped. One control,
     // because there is only ever one thing to do.
     ontranscription?: () => void;
@@ -275,7 +280,7 @@
        moves as the transcript grows, and the only thing on the track that
        moves of its own accord is the window while a search runs. -->
   {#if pending}
-    <div class="pending" class:glide style="left: {at(covered)}px"></div>
+    <div class="pending" class:glide={glide && !holding} class:held={holding} style="left: {at(covered)}px"></div>
   {/if}
   <!-- The one thing to do about the reading of the episode, at the edge the
        reading moves. It waits for the pointer to be on the track, the way
@@ -284,8 +289,9 @@
   {#if pending && near && (transcribing || partly) && ontranscription}
     <button
       class="reading"
-      class:glide
-      style="left: {at(covered)}px"
+      class:glide={glide && !holding}
+      class:held={holding}
+      style="transform: translateX({at(covered)}px)"
       onpointerdown={(e) => e.stopPropagation()}
       ondblclick={(e) => e.stopPropagation()}
       onclick={ontranscription}
@@ -321,7 +327,7 @@
        to hold the button wears it just outside its end. -->
   {#if onremove && !locked && covering}
     <button
-      class="free"
+      class="free quiet danger"
       class:shown={overWindow}
       class:beside={at(to) - at(from) < 40}
       style="left: {at(to)}px"
@@ -581,16 +587,32 @@
     transition: left 1s linear;
   }
 
+  /* Pause was pressed, so the edge stops. Taking the glide away should be
+     enough and is not: a transition already on its way carries on to where
+     it was going, which is a second of an edge still sliding after the
+     press. Saying none outright ends it, and the edge lands on the second
+     the work really reached. */
+  .pending.held,
+  .reading.held {
+    transition: none;
+  }
+
   /* At the transcript's edge, on the dark side of it, so it never covers
      the waveform or a clip mark. It sits on the line rather than beside it,
      because what it is about is the line.
      It travels with the edge, so it takes the same glide: a control that
      jumped while the line it belongs to slid would read as two things. */
+  /* It travels by transform rather than by left. A left that is animated
+     lands on a fraction of a pixel on most frames, the button is laid out
+     afresh at every one of them, and the two bars of the pause mark inside
+     it are drawn a little differently each time: the mark wobbles while it
+     slides. A transform moves what has already been drawn, so the mark is
+     rasterised once and carried, and it holds still. */
   .reading {
     position: absolute;
     top: 50%;
+    left: 3px;
     margin-top: -10px;
-    margin-left: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -611,7 +633,7 @@
   }
 
   .reading.glide {
-    transition: left 1s linear;
+    transition: transform 1s linear;
   }
 
   /* In the middle of the track, over everything, and only what is inside it

@@ -184,6 +184,22 @@ button.danger:hover:not(:disabled) {
   color: #fff;
 }
 
+/* The same meaning as the button above, said at the moment it is reached
+   rather than all the time. A trash can in a list is quiet until the
+   pointer is on it, because a list of rows is not a row of red marks, and
+   then it says what it does. A button in a box has to declare itself
+   before it is reached, because there is no undoing what it does. One name
+   for the one meaning, and the quiet form decides only when it is said. */
+button.quiet.danger {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+button.quiet.danger:hover:not(:disabled) {
+  background: var(--lift-err);
+  color: var(--err);
+}
+
 button.on {
   border-color: var(--accent);
   background: var(--accent-wash);
