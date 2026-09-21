@@ -16,7 +16,7 @@
   // words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
-  import { api, clock, snapEnd, snapStart, type ClipEntry, type Word } from "../lib/api";
+  import { api, clock, snapCut, snapEnd, snapStart, type ClipEntry, type Word } from "../lib/api";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
 
@@ -31,6 +31,9 @@
     frame = 1 / 30,
     onseek,
     ontrim,
+    oncut,
+    onjoincut,
+    onmovecut,
     onword,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
@@ -50,6 +53,11 @@
     frame?: number;
     onseek: (t: number) => void;
     ontrim?: (start: number, end: number) => Promise<void>;
+    // The cuts inside the clip: taking a stretch out, putting one back, and
+    // moving the edges of one that is already there.
+    oncut?: (from: number, to: number) => Promise<void>;
+    onjoincut?: (at: number) => Promise<void>;
+    onmovecut?: (index: number, from: number, to: number) => Promise<void>;
     onword?: (start: number, text: string) => Promise<void>;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
@@ -64,9 +72,9 @@
     numbers = {
       start,
       end,
-      seconds: Math.round(pieces.reduce((sum, p) => sum + p.end - p.start, 0)),
-      pieces: pieces.length,
-      saving,
+      seconds: Math.round(drawnPieces.reduce((sum, p) => sum + p.end - p.start, 0)),
+      pieces: drawnPieces.length,
+      saving: saving || cutSaving,
     };
   });
 
@@ -132,6 +140,13 @@
 
   function scrub(event: PointerEvent) {
     if (event.button !== 0) return;
+    // Shift and a drag marks a stretch to take out instead of moving the
+    // playhead. Everything else about the track is unchanged.
+    if (event.shiftKey && editable && oncut) {
+      event.preventDefault();
+      drawCut(event);
+      return;
+    }
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     scrubbing = true;
@@ -159,6 +174,153 @@
     out[out.length - 1].end = end;
     return out.filter((p) => p.end > p.start);
   });
+
+  // A cut is a stretch the clip leaves out, which is the gap between two
+  // pieces. The engine counts them from the first, and so does the timeline,
+  // because that is what a move names.
+  //
+  // A cut being moved and a cut being drawn are held here and drawn from
+  // here until the engine answers, so the block follows the hand rather
+  // than jumping when the edit lands. Both are snapped the way the engine
+  // snaps, so what is drawn is what will be left out.
+  let movingCut = $state<null | { index: number; from: number; to: number }>(null);
+  let drawnCut = $state<null | { from: number; to: number }>(null);
+  // Kept apart from saving, which belongs to the trim and its own draft.
+  let cutSaving = $state(false);
+  // The closest two edges of a cut may come, so a drag can never turn a cut
+  // inside out.
+  const leastCut = 0.05;
+
+  const editable = $derived(!!clip && !locked && !saving && !cutSaving);
+
+  // The pieces as they are drawn, with a cut being moved applied.
+  const drawnPieces = $derived.by(() => {
+    const out = pieces.map((p) => ({ start: p.start, end: p.end }));
+    const m = movingCut;
+    if (m && m.index >= 0 && m.index + 1 < out.length) {
+      out[m.index].end = m.from;
+      out[m.index + 1].start = m.to;
+    }
+    return out;
+  });
+
+  // The cuts as they are drawn, in the order the engine counts them.
+  const cuts = $derived(
+    drawnPieces
+      .slice(1)
+      .map((p, i) => ({ index: i, from: drawnPieces[i].end, to: p.start }))
+      .filter((c) => c.to > c.from),
+  );
+
+  // An edge of a cut is dragged the way a clip edge is, and the other edge
+  // stays where it was. What the engine would make of the drag is worked
+  // out on the way, so the block shows the words it will really take.
+  function grabCut(index: number, side: "from" | "to", event: PointerEvent) {
+    if (!editable || !onmovecut) return;
+    const was = cuts.find((c) => c.index === index);
+    if (!was) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const held = { from: was.from, to: was.to };
+    // A cut lives between the two pieces it parts, and neither may be
+    // squeezed out of existence. The hand is held inside those walls, so
+    // the block never shows a clip the engine is about to refuse.
+    const wall = {
+      least: (pieces[index]?.start ?? 0) + leastCut,
+      most: (pieces[index + 1]?.end ?? duration) - leastCut,
+    };
+    const startX = event.clientX;
+    let moved = false;
+    const move = (e: PointerEvent) => {
+      if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
+      if (!moved) return;
+      const t = Math.min(Math.max(timeAt(e.clientX), wall.least), wall.most);
+      const from = side === "from" ? Math.min(t, held.to - leastCut) : held.from;
+      const to = side === "to" ? Math.max(t, held.from + leastCut) : held.to;
+      const [a, b] = snapCut(words, from, to, keepPause);
+      movingCut = { index, from: a, to: b };
+    };
+    const up = async () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      const m = movingCut;
+      if (!moved || !m) {
+        movingCut = null;
+        return;
+      }
+      if (Math.abs(m.from - held.from) < 0.01 && Math.abs(m.to - held.to) < 0.01) {
+        movingCut = null;
+        return;
+      }
+      cutSaving = true;
+      try {
+        await onmovecut?.(m.index, m.from, m.to);
+      } finally {
+        cutSaving = false;
+        movingCut = null;
+      }
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
+
+  // Drawing a cut is a drag across the clip with shift held, which is how
+  // a stretch is marked in an editing timeline. Without shift the same drag
+  // moves the playhead, so nothing that worked before works differently.
+  function drawCut(event: PointerEvent) {
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const from = timeAt(startX);
+    let moved = false;
+    const move = (e: PointerEvent) => {
+      if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
+      if (!moved) return;
+      const t = timeAt(e.clientX);
+      const [a, b] = snapCut(words, Math.min(from, t), Math.max(from, t), keepPause);
+      drawnCut = { from: a, to: b };
+    };
+    const up = async () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      const d = drawnCut;
+      if (!moved || !d) {
+        drawnCut = null;
+        return;
+      }
+      cutSaving = true;
+      try {
+        await oncut?.(d.from, d.to);
+      } finally {
+        cutSaving = false;
+        drawnCut = null;
+      }
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
+
+  // A double-click puts a cut back, the way a double-click undoes an edit
+  // point in an editing timeline. It is not a single click, because a cut
+  // is easy to land on by accident while scrubbing.
+  async function putCutBack(index: number, event: MouseEvent) {
+    event.preventDefault();
+    if (!editable || !onjoincut) return;
+    const cut = cuts.find((c) => c.index === index);
+    if (!cut) return;
+    cutSaving = true;
+    try {
+      await onjoincut((cut.from + cut.to) / 2);
+    } finally {
+      cutSaving = false;
+    }
+  }
 
   // A view is read with as much again either side of it, so swiping along
   // the episode moves through what is already in hand. The waveform is drawn
@@ -252,7 +414,22 @@
 
   // Where the timeline sits when nobody has moved it: the clip with a little
   // room around it, or the minute around the playhead.
-  function fitView() {
+  // A double-click fits the clip to the view, unless it lands on a cut, in
+  // which case it puts that cut back.
+  //
+  // It has to be decided here rather than on the cut itself. The track takes
+  // the pointer on the way down so a drag keeps working when it leaves the
+  // track, and while a pointer is captured every click and double-click is
+  // dealt to the element holding it. A handler on the cut is never reached.
+  function fitView(event?: MouseEvent) {
+    if (event && editable && onjoincut && track) {
+      const at = timeAt(event.clientX);
+      const hit = cuts.find((c) => at >= c.from && at <= c.to);
+      if (hit) {
+        putCutBack(hit.index, event);
+        return;
+      }
+    }
     held = false;
     if (clip && clip.segments.length) {
       const a = clip.segments[0].start;
@@ -669,7 +846,9 @@
         The episode up close. Drag to move the playhead, two fingers to travel, a pinch to zoom,
         and a double-click to fit the clip. The arrow keys step a frame, with shift a second. Drag
         a clip edge to trim it, and the magnifier shows the words. A hatched block inside a clip is
-        dead air the engine cut out.
+        a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
+        back, and hold shift while dragging across the clip to take a stretch out yourself. Cuts
+        land on whole words, so a cut over a pause takes the whole pause.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
@@ -693,12 +872,54 @@
     {#each ticks as t (t)}
       <span class="num time" style="left: {x(t)}%">{clock(t)}</span>
     {/each}
-    {#each pieces as p, i (i)}
+    {#each drawnPieces as p, i (i)}
       <div class="piece" style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"></div>
-      {#if i > 0}
-        <div class="cut" style="left: {x(pieces[i - 1].end)}%; width: {x(p.start) - x(pieces[i - 1].end)}%"></div>
-      {/if}
     {/each}
+    <!-- A cut is drawn over the pieces rather than between them, so a cut
+         being dragged wider is seen taking the piece rather than waiting
+         for the piece to give way. -->
+    {#each cuts as c (c.index)}
+      <div
+        class="cut"
+        class:editable
+        style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
+        title={editable
+          ? "A stretch the clip leaves out. Drag an edge to change it, double-click to put it back."
+          : "A stretch the clip leaves out."}
+      ></div>
+    {/each}
+    {#if editable && onmovecut}
+      <!-- The handles come after every cut, so a handle is never drawn
+           under the next cut's block. -->
+      {#each cuts as c (c.index)}
+        <div
+          class="cutedge"
+          class:active={movingCut?.index === c.index}
+          style="left: {x(c.from)}%"
+          role="slider"
+          tabindex="-1"
+          aria-label="Where cut {c.index + 1} starts"
+          aria-valuenow={c.from}
+          onpointerdown={(e) => grabCut(c.index, "from", e)}
+        ></div>
+        <div
+          class="cutedge"
+          class:active={movingCut?.index === c.index}
+          style="left: {x(c.to)}%"
+          role="slider"
+          tabindex="-1"
+          aria-label="Where cut {c.index + 1} ends"
+          aria-valuenow={c.to}
+          onpointerdown={(e) => grabCut(c.index, "to", e)}
+        ></div>
+      {/each}
+    {/if}
+    {#if drawnCut}
+      <div
+        class="cut drawing"
+        style="left: {x(drawnCut.from)}%; width: {x(drawnCut.to) - x(drawnCut.from)}%"
+      ></div>
+    {/if}
     {#if clip && !locked}
       <div
         class="edge"
@@ -869,6 +1090,58 @@
     bottom: 0;
     background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(255, 255, 255, 0.06) 5px 10px);
     pointer-events: none;
+    z-index: 1;
+  }
+
+  /* A cut the hand can reach takes the pointer, so a double-click can put
+     it back. It does not stop the drag underneath: the pointer event goes
+     on up to the track, which is what moves the playhead, so scrubbing
+     across a cut works exactly as it did. */
+  .cut.editable {
+    pointer-events: auto;
+  }
+
+  /* The block the hand is drawing, before the engine has been asked. It is
+     the same hatching over the accent wash, so it reads as the cut it is
+     about to become rather than as something else. */
+  .cut.drawing {
+    background:
+      repeating-linear-gradient(135deg, transparent 0 5px, rgba(255, 255, 255, 0.12) 5px 10px),
+      var(--accent-wash);
+    outline: 1px solid var(--accent-hi);
+    pointer-events: none;
+  }
+
+  /* The edges of a cut are grabbed the way the clip's own edges are, so
+     they are the same width and the same shape. They are drawn in the
+     accent's lighter shade rather than the accent, because what they move
+     is the hole and not the clip. */
+  .cutedge {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    margin-left: -6px;
+    cursor: ew-resize;
+    z-index: 2;
+  }
+
+  .cutedge::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent-hi);
+    opacity: 0.55;
+  }
+
+  .cutedge:hover::after,
+  .cutedge.active::after {
+    left: 4px;
+    width: 4px;
+    opacity: 1;
   }
 
   /* The playhead, with the grip that holds the words. */

@@ -22,9 +22,12 @@ What the product has to be:
 - **Crisp clips.** A good short cuts fluff and dead air inside a moment
   instead of copying a linear stretch.
 - **Light manual control.** The app shows the clips before rendering and lets
-  the user trim edges, correct words and place the crop and the captions,
-  like Resolve's subtitle tools, and nothing heavier. Where the cuts inside
-  a clip fall is the engine's business, not something to fiddle with.
+  the user trim edges, correct words, place the crop and the captions, and
+  change the cuts inside a clip, like Resolve's subtitle tools, and nothing
+  heavier. The engine still proposes every cut, and what it proposes is
+  right often enough that most clips are never touched. But a proposal is
+  not a verdict: a cut can be moved, put back or made by hand, because the
+  one thing the engine cannot hear is what the episode is about.
 - **For many people.** Native on macOS, Windows and Linux, not tuned to one
   Mac. The installer will pick the model that fits the machine's memory.
 - **Improving over time.** Recorded decisions train our own local selection

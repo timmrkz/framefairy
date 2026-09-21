@@ -14,28 +14,103 @@ const words = (from: number, to: number) => {
   return list;
 };
 
-const clip = (n: number, start: number, title: string, rendered: boolean) => ({
-  id: `0${n}`,
-  slug: `clip-${n}`,
-  basename: `0${n}_clip-${n}`,
-  title,
-  reason: "A short, complete memory of defending oneself using Judo.",
-  duration: 24,
-  start,
-  end: start + 24,
-  segments: [
+type Piece = { start: number; end: number; cropX: number; moved: boolean };
+
+// A clip's pieces, once a cut has changed them. The Go side keeps them in
+// the plan, so the preview keeps them here, or a cut would come undone the
+// moment the clip list is read again.
+const held = (): Record<string, Piece[]> => ((window as any).__pieces ??= {});
+
+const pieces = (n: number, start: number): Piece[] =>
+  held()[`0${n}`] ?? [
     { start, end: start + 12, cropX: 420, moved: false },
     { start: start + 13, end: start + 25, cropX: 420, moved: false },
-  ],
-  words: words(start, start + 25),
-  rejected: false,
-  rendered: rendered ? "/tmp/out.mp4" : undefined,
-  captionY: 300,
-  captionYMoved: false,
-  key: `clips.json/0${n}`,
-  plan: "/eps/ep.framefairy/logs/clips.json",
-  cropLefts: [420, 420],
-});
+  ];
+
+// The same snapping the engine does, so what the preview gives back is what
+// the app would really be handed: a cut swallows every word it touches and
+// then leaves a tenth of a second of air on each side that stays.
+const snapCut = (list: { start: number; end: number }[], from: number, to: number): [number, number] => {
+  const keepPause = 0.1;
+  let swallowedFrom = Infinity;
+  let swallowedTo = -Infinity;
+  for (const w of list) {
+    if (w.end > from && w.start < to) {
+      swallowedFrom = Math.min(swallowedFrom, w.start);
+      swallowedTo = Math.max(swallowedTo, w.end);
+    }
+  }
+  let a = Math.min(from, swallowedFrom);
+  let b = Math.max(to, swallowedTo);
+  let before = -Infinity;
+  let after = Infinity;
+  for (const w of list) {
+    if (w.end <= a) before = Math.max(before, w.end);
+    if (w.start >= b) after = Math.min(after, w.start);
+  }
+  if (before !== -Infinity) a = Math.min(before + keepPause, swallowedFrom);
+  if (after !== Infinity) b = Math.max(after - keepPause, swallowedTo);
+  return [Math.max(0, a), b];
+};
+
+// Taking a stretch out of a set of pieces. A piece the cut straddles becomes
+// two, and both keep the framing, exactly as the engine does it.
+const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
+  const out: Piece[] = [];
+  for (const p of list) {
+    if (from <= p.start && to >= p.end) continue;
+    if (to <= p.start || from >= p.end) {
+      out.push(p);
+      continue;
+    }
+    if (from > p.start) out.push({ ...p, end: from });
+    if (to < p.end) out.push({ ...p, start: to });
+  }
+  return out;
+};
+
+const clip = (n: number, start: number, title: string, rendered: boolean) => {
+  const segments = pieces(n, start);
+  const first = segments.length ? segments[0].start : start;
+  const last = segments.length ? segments[segments.length - 1].end : start;
+  return {
+    id: `0${n}`,
+    slug: `clip-${n}`,
+    basename: `0${n}_clip-${n}`,
+    title,
+    reason: "A short, complete memory of defending oneself using Judo.",
+    duration: segments.reduce((sum, p) => sum + p.end - p.start, 0),
+    start: first,
+    end: last,
+    segments,
+    words: words(start, start + 25).filter((w) =>
+      segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
+    ),
+    rejected: false,
+    rendered: rendered ? "/tmp/out.mp4" : undefined,
+    captionY: 300,
+    captionYMoved: false,
+    key: `clips.json/0${n}`,
+    plan: "/eps/ep.framefairy/logs/clips.json",
+    cropLefts: segments.map((p) => p.cropX),
+  };
+};
+
+// Where each clip of the ordinary mode starts, so a cut can find the clip
+// it was asked about and give the same one back.
+const starts: Record<string, [number, string, boolean]> = {
+  "01": [57, "Mein Arm ist zersprungen", true],
+  "02": [400, "Der Typ vor mir auf einmal", false],
+  "03": [902, "Warum ich nie wieder", false],
+  "04": [1400, "Ein echtes Thema", false],
+};
+
+const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
+  const n = Number(id);
+  const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
+  held()[id] = change(pieces(n, at));
+  return clip(n, at, title, rendered);
+};
 
 const captionWords = [
   { start: 0.2, end: 0.6, text: "Und" },
@@ -157,6 +232,45 @@ export const Call = {
       }
       case "RemoveSearch":
         return Promise.resolve(null);
+      // The cuts inside a clip. They answer with the clip as it now is,
+      // the way the Go side does, so the timeline draws where the edges
+      // really landed rather than where the hand let go.
+      case "CutClip": {
+        const [, , id, from, to] = args as [string, string, string, number, number];
+        const n = Number(id);
+        const [at] = starts[id] ?? [60];
+        const said = words(at, at + 25);
+        const [a, b] = snapCut(said, from, to);
+        return Promise.resolve(recut(id, (list) => applyCut(list, a, b)));
+      }
+      case "JoinCut": {
+        const [, , id, at] = args as [string, string, string, number];
+        return Promise.resolve(
+          recut(id, (list) => {
+            for (let i = 0; i + 1 < list.length; i++) {
+              if (at >= list[i].end && at <= list[i + 1].start) {
+                const joined = { ...list[i], end: list[i + 1].end };
+                return [...list.slice(0, i), joined, ...list.slice(i + 2)];
+              }
+            }
+            return list;
+          }),
+        );
+      }
+      case "MoveCut": {
+        const [, , id, index, from, to] = args as [string, string, string, number, number, number];
+        const [at] = starts[id] ?? [60];
+        const [a, b] = snapCut(words(at, at + 25), from, to);
+        return Promise.resolve(
+          recut(id, (list) => {
+            if (index < 0 || index + 1 >= list.length) return list;
+            const out = list.map((p) => ({ ...p }));
+            out[index].end = a;
+            out[index + 1].start = b;
+            return out;
+          }),
+        );
+      }
       case "Jobs": {
         const q = location.search;
         if (found) return Promise.resolve(searching() ? [planJob("running")] : done() ? [planJob("done")] : []);

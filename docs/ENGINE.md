@@ -54,6 +54,18 @@ Pauses inside a run stay, material between runs goes, and each cut keeps
 A leading or trailing line holding only hesitation ("äh", "und", "also") is
 trimmed off.
 
+What comes out of that is a proposal, not the last word. Every cut a clip
+carries is a gap between two of its pieces, and the app can move one, put
+one back or make one, through `CutClip`, `JoinCut` and `MoveCut` in
+`engine/edit.go`. They go through `editPlan` like every other edit, so the
+plan keeps its shape and its unknown fields, the clip's words are taken
+again from the transcript, and the caption file goes so the next render
+builds it afresh. A piece a cut is made inside becomes two, and both keep
+the framing of the piece they came from, so cutting never moves the
+picture. A cut swallows any word it touches and then leaves `--keep-pause`
+of air on each side that stays, which is why a cut dragged over a pause
+takes the whole pause and one dragged over speech takes whole words.
+
 Captions are made of the same words. A caption is a run of up to 38
 characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next

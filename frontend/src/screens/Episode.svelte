@@ -495,6 +495,39 @@
     }
   }
 
+  // The cuts inside a clip. All three answer with the clip as it is now,
+  // because the engine puts the edges on words and the timeline has to draw
+  // where they landed, not where the hand let go.
+  async function cut(clip: ClipEntry, from: number, to: number) {
+    problem = "";
+    try {
+      const updated = await api.cutClip(path, clip.plan, clip.id, from, to);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  async function joinCut(clip: ClipEntry, at: number) {
+    problem = "";
+    try {
+      const updated = await api.joinCut(path, clip.plan, clip.id, at);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  async function moveCut(clip: ClipEntry, index: number, from: number, to: number) {
+    problem = "";
+    try {
+      const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
   async function setWord(clip: ClipEntry, start: number, text: string) {
     problem = "";
     try {
@@ -1215,6 +1248,10 @@
         bind:numbers
         onseek={(t) => player?.seek(t)}
         ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}
+        oncut={(from, to) => (current ? cut(current, from, to) : Promise.resolve())}
+        onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
+        onmovecut={(index, from, to) =>
+          current ? moveCut(current, index, from, to) : Promise.resolve()}
         onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
       />
       <!-- One row under the clip up close, so the range picker and the

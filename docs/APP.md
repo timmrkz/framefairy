@@ -407,8 +407,22 @@ place.
       transcript there is nothing to magnify, so it is off there and says
       so.
     - The clip lies over the waveform in the accent colour. A hatched block
-      inside it is dead air the engine cut out: playing jumps it, and the
-      render does too. Where those cuts fall is the engine's business.
+      inside it is a stretch the clip leaves out, usually dead air the
+      engine found: playing jumps it, and the render does too.
+    - **The cuts can be changed.** Each one carries a handle on either edge,
+      in the accent's lighter shade so it is not taken for the clip's own
+      edge. Dragging a handle moves that edge of the cut, a double-click on
+      the block puts the stretch back, and holding shift while dragging
+      across the clip takes a stretch out by hand. Without shift the same
+      drag moves the playhead, so nothing that worked before works
+      differently, and a shift-click with no drag does nothing.
+    - **A cut lands on whole words.** The engine puts the edges where the
+      render would cut them, so a cut dragged over a pause takes the whole
+      pause and a cut dragged over speech takes whole words. A cut can
+      never stop half way through a word, because half a word is a sound
+      nobody said and the captions are built from the words. The timeline
+      works the same snapping out while the hand is moving, so the block
+      shown is the block the render will leave out.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and the words to correct are in the lens,
       so the waveform has the whole track to itself.
