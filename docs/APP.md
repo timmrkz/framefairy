@@ -240,8 +240,9 @@ place.
   picker, at the transcript's edge, a mark appears while the pointer is on
   the track and does the one thing there is to do: pause it while it reads,
   carry on while it is stopped part way. It travels with the edge and glides
-  with it, so the two read as one thing. It is not there when the episode is
-  read to the end, because then there is nothing to do.
+  with it, so the two read as one thing: both are carried by a transform, so
+  the distance between them never changes. It is not there when the episode
+  is read to the end, because then there is nothing to do.
 - **What is running shows in the button it was started from.** Work that
   knows how far along it is fills the button, with a line of the app's
   colour at the front of the fill. Work that cannot say sends a band of that

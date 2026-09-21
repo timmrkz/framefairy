@@ -280,7 +280,7 @@
        moves as the transcript grows, and the only thing on the track that
        moves of its own accord is the window while a search runs. -->
   {#if pending}
-    <div class="pending" class:glide={glide && !holding} class:held={holding} style="left: {at(covered)}px"></div>
+    <div class="pending" class:glide={glide && !holding} class:held={holding} style="transform: translateX({at(covered)}px)"></div>
   {/if}
   <!-- The one thing to do about the reading of the episode, at the edge the
        reading moves. It waits for the pointer to be on the track, the way
@@ -565,10 +565,20 @@
      plainly lighter says what a whole field of darker grey cannot, and it
      is the edge that shows the movement: what the eye follows as the
      transcript grows is the line, not the shade behind it. */
+  /* It is as wide as the whole track and travels by transform, so what is
+     drawn is only ever moved and never laid out again. A left that is
+     animated is worked out by the main thread on every frame, which is the
+     same thread the transcription's own reports land on, so the edge stood
+     still for a frame or two and then caught up in a jump: a step, beside a
+     mark that glided. Measured while transcribing, the distance between the
+     two varied by 1.80 pixels. A transform is carried by the compositor,
+     like the mark's, so the two move as one thing.
+     The track clips what runs past its right edge. */
   .pending {
     position: absolute;
     top: 0;
     bottom: 0;
+    left: 0;
     right: 0;
     border-left: 1px solid var(--muted);
     /* Deepest against the line and easing back to the flat shade, so the
@@ -584,7 +594,7 @@
      are. The glide is armed a frame after the first edge is drawn, so
      opening a workspace mid-transcription does not sweep the track. */
   .pending.glide {
-    transition: left 1s linear;
+    transition: transform 1s linear;
   }
 
   /* Pause was pressed, so the edge stops. Taking the glide away should be
