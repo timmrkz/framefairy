@@ -49,6 +49,13 @@
       what: "No light at all. The place itself dims to half and comes back, two seconds, in and out. What most of the web wears in 2026.",
     },
     {
+      key: "both",
+      name: "The breath and the wave",
+      from: "the two above, together",
+      step: 800,
+      what: "The place dims to half and comes back while a wave goes over it, and the wave is half as wide again as the place, so it has no edges to catch. Two seconds and two and a half, so the wave lands at a different point of every breath.",
+    },
+    {
       key: "foil",
       name: "The foil",
       from: "ours, after simeydotme/pokemon-cards-css",
@@ -148,10 +155,11 @@
   </section>
 
   <section>
-    <h2>The shimmer, four ways</h2>
+    <h2>The shimmer, five ways</h2>
     <p class="muted">
       A place that is not filled yet. Three of these are what other people
-      ship, copied faithfully and named. The fourth is ours. Pick one and it
+      ship, copied faithfully and named. The fourth is two of those three
+      together, which is what the app wears. The fifth is ours. Pick one and it
       becomes the only one, everywhere a place waits: the clips not found
       yet, the part of the clip timeline the transcript has not reached, the
       stretch on the range picker while a search runs.
@@ -162,7 +170,7 @@
         <div class="row wayhead">
           <h3>{way.name}</h3>
           <span class="muted">{way.from}</span>
-          {#if way.key === "sweep"}<span class="now">in the app now</span>{/if}
+          {#if way.key === "both"}<span class="now">in the app now</span>{/if}
         </div>
         <p class="muted small">{way.what}</p>
         <ol class="cards">
@@ -404,6 +412,48 @@
     }
   }
 
+  /* The two together, which is what the app wears. The wave is wider than
+     the card, so it has no edges to catch. */
+  .ghost.both {
+    animation: breath 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation-delay: var(--wait-in, 0ms);
+  }
+
+  .ghost.both::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -20%;
+    width: 140%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--accent-wash) 24%,
+      var(--accent-hi) 43%,
+      rgba(255, 255, 255, 0.34) 50%,
+      var(--accent-hi) 57%,
+      var(--accent-wash) 76%,
+      transparent 100%
+    );
+    opacity: 0.5;
+    transform: translateX(-100%);
+    animation: bothwave 2.5s linear infinite;
+    animation-delay: var(--wait-in, 0ms);
+  }
+
+  @keyframes bothwave {
+    0% {
+      transform: translateX(-100%);
+    }
+    55% {
+      transform: translateX(100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
   /* The foil, ours. A grating cut to the shape of a lens, with a white
      gleam going the other way. */
   .ghost.foil {
@@ -541,5 +591,16 @@
 
   td {
     font-weight: 400;
+  }
+
+  /* The bench says what the app says, so nothing moves here either. Two
+     classes, because every candidate above names itself with two and a
+     media query adds no weight of its own. */
+  @media (prefers-reduced-motion: reduce) {
+    .cards .ghost,
+    .cards .ghost::before,
+    .cards .ghost::after {
+      animation: none;
+    }
   }
 </style>

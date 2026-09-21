@@ -494,20 +494,22 @@ things and no others, and each one means one thing.
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
-  the stretch on the range picker while clips are being found for it. It is
-  the sweep that
-  [react-loading-skeleton](https://github.com/dvtng/react-loading-skeleton)
-  ships and that most of the web wears, in the app's own colour: a
-  highlight as wide as the place itself, soft at both ends, crossing once
-  every second and a half and easing at each end. Wide is the point. A
-  narrow band slides past and reads as a stripe on a box, while a highlight
-  with no edges to catch reads as the place brightening and dimming as the
-  light goes over it, which is what a real surface does. In a list each row
-  starts a step after the row above it, so the light runs down the column
-  rather than every row flashing together. `make motion` stands this beside
-  the three other ways it is commonly done, each named and copied
-  faithfully, so the choice can be made by looking rather than by
-  describing.
+  the stretch on the range picker while clips are being found for it. Two
+  things at once, and neither of them ours. The place breathes, which is
+  what [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton)
+  and Tailwind ship as `animate-pulse`: it dims to half and comes back,
+  two seconds, in and out. And a wave goes over it, which is
+  [MUI's Skeleton](https://mui.com/material-ui/react-skeleton/): a soft
+  highlight that crosses once and then waits out the rest of its round.
+  The wave is half as wide again as the place it crosses, so it has no
+  edges to catch and reads as the light going over rather than as a stripe
+  sliding past, which is the thing that was wrong with every earlier
+  attempt. The two rounds are two and two and a half seconds, so the wave
+  lands at a different point of every breath. In a list each row starts a
+  step after the row above it, so the light runs down the column rather
+  than every row flashing together. `make motion` stands this beside the
+  four other ways it is commonly done, each named and copied faithfully,
+  so the choice can be made by looking rather than by describing.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and
   their place, and a ring widens out of them and fades.
@@ -528,9 +530,10 @@ make motion
 
 It opens a page in the browser with every one of them running, at every
 share and in every kind of control, and a colour picker at the top so the
-whole set can be seen in another accent. The shimmer stands there four
-ways: the sweep the app wears, MUI's wave, the breath that shadcn/ui and
-Tailwind ship, and a foil of our own. It is preview material in
+whole set can be seen in another accent. The shimmer stands there five
+ways: react-loading-skeleton's sweep, MUI's wave, the breath that
+shadcn/ui and Tailwind ship, the breath and the wave together, which is
+what the app wears, and a foil of our own. It is preview material in
 `frontend/preview/motion/` and never goes into the app: the product only
 serves making shorts.
 

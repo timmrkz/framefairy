@@ -309,15 +309,27 @@ input[type="text"] {
   }
 }
 
-/* Something that is not there yet: the shimmer. This is the sweep that
-   react-loading-skeleton ships and that most of the web wears, in the
-   app's own colour: a highlight as wide as the place itself, soft at both
-   ends, crossing once every second and a half and easing at each end.
+/* Something that is not there yet: the shimmer. Two things at once, and
+   neither of them ours.
 
-   Wide is the point. A narrow band slides past and reads as a stripe on a
-   box. A highlight the width of the place has no edges to catch, so what
-   is seen is the place brightening and dimming as the light goes over it,
-   which is what a real surface does.
+   The place breathes, which is what shadcn/ui and Tailwind ship as
+   animate-pulse: it dims to half and comes back, two seconds, in and out.
+   And a wave goes over it, which is MUI's Skeleton: a soft highlight that
+   crosses once and then waits out the rest of its round.
+
+   The wave is wider than the place it crosses, half as wide again, so it
+   has no edges to catch and reads as the light going over rather than as
+   a stripe sliding past. That was the thing to get right: a narrow band
+   is a stripe on a box however it is dressed up.
+
+   The two rounds are two and two and a half seconds, so the wave lands at
+   a different point of every breath and the pair takes ten seconds to
+   come back to itself.
+
+   The place breathing is the place's own opacity, which gives it a
+   surface of its own for as long as it waits. That is safe here and only
+   here: the surface is there the whole time rather than arriving with a
+   fade, so nothing steps. See the whole-pixel rule in CLAUDE.md.
 
    The same light lies over the stretch the transcript has not reached and
    over the clips that have not been found. Other ways of doing this, and
@@ -325,39 +337,66 @@ input[type="text"] {
 .waiting {
   position: relative;
   overflow: hidden;
+  animation: breath 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* What sets one row of a list off after the row above it. */
+  animation-delay: var(--wait-in, 0ms);
 }
 
 .waiting::after {
   content: "";
   position: absolute;
-  inset: 0;
-  background-repeat: no-repeat;
-  background-image: linear-gradient(
+  top: 0;
+  bottom: 0;
+  left: -20%;
+  width: 140%;
+  background: linear-gradient(
     90deg,
     transparent 0%,
-    var(--accent-faint) 22%,
-    var(--accent-wash) 42%,
-    rgba(255, 255, 255, 0.13) 50%,
-    var(--accent-wash) 58%,
-    var(--accent-faint) 78%,
+    var(--accent-wash) 24%,
+    var(--accent-hi) 43%,
+    rgba(255, 255, 255, 0.34) 50%,
+    var(--accent-hi) 57%,
+    var(--accent-wash) 76%,
     transparent 100%
   );
+  /* Half strength, because the breath under it takes the place to half and
+     the wave would go with it and disappear. */
+  opacity: 0.5;
   transform: translateX(-100%);
-  animation: waiting 1.5s ease-in-out infinite;
-  /* What sets one row of a list off after the row above it. */
+  animation: wave 2.5s linear infinite;
   animation-delay: var(--wait-in, 0ms);
   pointer-events: none;
 }
 
-@keyframes waiting {
-  to {
+@keyframes breath {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes wave {
+  0% {
+    transform: translateX(-100%);
+  }
+  55% {
+    transform: translateX(100%);
+  }
+  100% {
     transform: translateX(100%);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .waiting,
   .waiting::after {
     animation: none;
+  }
+
+  .waiting::after {
     transform: none;
     opacity: 0.5;
   }
