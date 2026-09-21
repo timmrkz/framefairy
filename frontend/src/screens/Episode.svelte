@@ -110,18 +110,11 @@
   // outlasts the first search, and when it does the pane said
   // Transcribing over a list of twelve clips and took New away with it.
   // One lane's state does not belong on the other lane's head.
-  const aboutWords = $derived(needsWords && !clips.length && !busy);
-  const lane = $derived.by(() => {
-    if (busy) return { word: "Clips", count: true, job: working };
-    if (status?.transcriptStale && !clips.length) {
-      return { word: "Out of date", count: false, job: null };
-    }
-    if (aboutWords) {
-      if (transcribing) return { word: "Transcribing", count: false, job: transcribing };
-      return { word: covered > 0 ? "Paused" : "Not transcribed", count: false, job: null };
-    }
-    return { word: "Clips", count: true, job: null };
-  });
+  // The pane is the clip list and nothing else. The transcription is worked
+  // from the range picker, at the edge it moves, so none of it belongs in
+  // this head: the two ran in lanes of their own and the head carried both,
+  // which is how it came to say Transcribing over a list of clips.
+  const lane = $derived({ word: "Clips", count: true, job: busy ? working : null });
   const action = $derived.by(() => {
     if (busy) {
       return {
@@ -133,37 +126,17 @@
         title: `${finding || starting ? "Stop looking for clips" : "Stop the render"}${leftOfWork ? `, ${leftOfWork}` : ""}`,
       };
     }
-    if (aboutWords && transcribing) {
-      return {
-        label: pausing ? "Pausing" : "Pause",
-        icon: "pause",
-        run: pauseTranscribing,
-        off: pausing,
-        primary: false,
-        title: `Pause the transcription${leftToGo ? `, ${leftToGo}` : ""}. It carries on where it stopped`,
-      };
-    }
-    if (aboutWords) {
-      return {
-        label: status?.transcriptStale || covered <= 0 ? "Transcribe" : "Continue",
-        icon: "activity",
-        run: () => api.transcribe(path),
-        off: false,
-        primary: true,
-        title: status?.transcriptStale
-          ? "The file changed since it was transcribed. Read it again"
-          : "Transcribe the episode on this machine",
-      };
-    }
     return {
       label: "New",
       icon: "plus",
       run: newClips,
-      off: false,
+      off: !readyToLook,
       primary: true,
-      title: covering
-        ? "Look at this stretch again, removing the clips it has"
-        : "Look for clips in the chosen stretch",
+      title: !readyToLook
+        ? `The transcript reaches ${clock(covered)}. Clips can be looked for once it reaches ${clock(to)}`
+        : covering
+          ? "Look at this stretch again, removing the clips it has"
+          : "Look for clips in the chosen stretch",
     };
   });
 
@@ -212,6 +185,13 @@
   const heard = $derived(
     mark.seen(path, covered, transcribing?.progress?.covered ?? null, restarted),
   );
+
+  // A search reads the transcript off disk, so it can only run where the
+  // saved transcript reaches. It goes by covered and not by heard for that
+  // reason: heard runs ahead of what has been written down, and a search
+  // started on it would read a transcript that stops short of the stretch
+  // it was asked for. shouldLook keeps to covered for the same reason.
+  const readyToLook = $derived(duration > 0 && to > 0 && covered >= to - 0.5);
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -975,7 +955,7 @@
       </p>
       {#snippet actions()}
         <button onclick={() => (confirmReplace = false)}>Cancel</button>
-        <button class="primary" onclick={() => removeRange({ from, to }, true)}>Look again</button>
+        <button class="danger" onclick={() => removeRange({ from, to }, true)}>Look again</button>
       {/snippet}
     </Confirm>
   {/if}
@@ -995,7 +975,7 @@
       </p>
       {#snippet actions()}
         <button onclick={() => (removingSearch = null)}>Cancel</button>
-        <button class="primary" onclick={() => removeRange(stretch, false)}>Remove</button>
+        <button class="danger" onclick={() => removeRange(stretch, false)}>Remove</button>
       {/snippet}
     </Confirm>
   {/if}

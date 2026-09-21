@@ -263,7 +263,7 @@
         title="Add an episode. Any mp4, mov, m4v or mkv works"
       >
         <Icon name="plus" />
-        <span class="label">Add episode</span>
+        <span class="label">Add</span>
       </button>
       <button
         class="quiet nav"
@@ -344,10 +344,10 @@
       {#snippet actions()}
         <button onclick={() => (removing = null)}>Cancel</button>
         {#if ep.work}
-          <button class="primary" onclick={() => remove(ep, false)}>Keep files</button>
-          <button class="danger" onclick={() => remove(ep, true)}>Delete files</button>
+          <button class="primary" onclick={() => remove(ep, false)}>Keep</button>
+          <button class="danger" onclick={() => remove(ep, true)}>Remove</button>
         {:else}
-          <button class="primary" onclick={() => remove(ep, true)}>Remove</button>
+          <button class="danger" onclick={() => remove(ep, true)}>Remove</button>
         {/if}
       {/snippet}
     </Confirm>

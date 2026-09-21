@@ -378,10 +378,20 @@
     onpointerdown={(e) => e.stopPropagation()}
     ondblclick={(e) => e.stopPropagation()}
   >
+    <!-- Until the episode is read to the end that is the thing to say, and
+         it is said first, because it is what everything else is waiting on.
+         Short either way: a bubble nobody finishes is a bubble nobody
+         reads. -->
     <Info label="What the range picker is" side="right">
-      The whole episode at a glance. Drag across it for the stretch to search, or drag the window
-      and its edges, and double-click for the whole episode. A shaded stretch has been searched
-      already, and the marks in it are the clips found there.
+      {#if pending}
+        The whole episode. The dark part is not read yet, and the line is how far it has got. The
+        mark on the line pauses the reading or carries it on. Clips can be looked for once the line
+        passes the window.
+      {:else}
+        The whole episode. Drag for a stretch to search, or drag the window and its edges.
+        Double-click for all of it. A shaded stretch has been searched, and the marks in it are its
+        clips.
+      {/if}
     </Info>
   </span>
   {#if showing}

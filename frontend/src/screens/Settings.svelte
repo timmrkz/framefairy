@@ -202,7 +202,7 @@
       </p>
       {#snippet actions()}
         <button onclick={() => (clearing = false)}>Cancel</button>
-        <button class="primary" onclick={clearTraining}>Remove them</button>
+        <button class="danger" onclick={clearTraining}>Remove them</button>
       {/snippet}
     </Confirm>
   {/if}

@@ -225,13 +225,17 @@ place.
 - **The arrows up and down walk the clip list**, the way left and right walk
   the episode: each step takes the next clip and puts the playhead at its
   start.
-- **The pane is the clip list, not whatever is running.** The two lanes run
-  side by side and a transcription often outlasts the first search, so once
-  there are clips the head says **Clips** and **New** stays where it is.
-  Nothing in that head is about the transcription: it has a place of its
-  own, on the range picker, at the edge it moves. Before there are any clips
-  the pane is about the transcription, because there is nothing else for it
-  to be about.
+- **The pane is the clip list and nothing else.** It says **Clips** and
+  carries **New**, whatever else is happening. The transcription is not in
+  it at any point: it has a place of its own, on the range picker, at the
+  edge it moves. The two run in lanes of their own, and a head that carried
+  both is how it came to say **Transcribing** over a list of clips.
+- **New waits until a search could run.** A search reads the transcript off
+  disk, so **New** is off until the saved transcript reaches the end of the
+  chosen stretch, and says how far it has got and how far it needs to go.
+  It goes by what is written down rather than by what has been heard,
+  because a search started on the second one would read a transcript that
+  stops short of the stretch it was asked for.
 - **The transcription is worked from the edge it moves.** On the range
   picker, at the transcript's edge, a mark appears while the pointer is on
   the track and does the one thing there is to do: pause it while it reads,
