@@ -21,6 +21,10 @@
     searched = [],
     onremove,
     locked = false,
+    transcribing = false,
+    partly = false,
+    leftToGo = "",
+    ontranscription,
   }: {
     duration: number;
     covered?: number;
@@ -40,7 +44,23 @@
     // leaves the stretch free to be searched again. The caller asks first.
     onremove?: (stretch: { from: number; to: number }) => void;
     locked?: boolean;
+    // How the reading of the episode stands. The transcript's edge is drawn
+    // here already, so the one thing to do about it belongs here too rather
+    // than in the head of a list about clips.
+    transcribing?: boolean;
+    // Stopped part way: some of it read, nothing reading the rest.
+    partly?: boolean;
+    leftToGo?: string;
+    // Pause it while it runs, carry on while it is stopped. One control,
+    // because there is only ever one thing to do.
+    ontranscription?: () => void;
   } = $props();
+
+  // The control at the transcript's edge is only there while the pointer is
+  // on the track, the same as the info marks: what a thing is for is shown
+  // when it is being looked at, and a track with nothing happening on it
+  // carries nothing.
+  let near = $state(false);
 
   let track: HTMLDivElement;
   let width = $state(0);
@@ -232,7 +252,12 @@
      that has to reach past them: its head stands above the track the way
      an editor's does, and at the very start or the very end it would
      otherwise be cut off by the corner. -->
-<div class="over">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="over"
+  onpointerenter={() => (near = true)}
+  onpointerleave={() => (near = false)}
+>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -251,6 +276,26 @@
        moves of its own accord is the window while a search runs. -->
   {#if pending}
     <div class="pending" class:glide style="left: {at(covered)}px"></div>
+  {/if}
+  <!-- The one thing to do about the reading of the episode, at the edge the
+       reading moves. It waits for the pointer to be on the track, the way
+       every other mark here does, so a track nobody is looking at carries
+       nothing. -->
+  {#if pending && near && (transcribing || partly) && ontranscription}
+    <button
+      class="reading"
+      class:glide
+      style="left: {at(covered)}px"
+      onpointerdown={(e) => e.stopPropagation()}
+      ondblclick={(e) => e.stopPropagation()}
+      onclick={ontranscription}
+      aria-label={transcribing ? "Pause the transcription" : "Carry on transcribing"}
+      title={transcribing
+        ? `Reading the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`
+        : `The episode is read as far as ${clock(covered)}. Carry on from there`}
+    >
+      <Icon name={transcribing ? "pause" : "play"} size={12} />
+    </button>
   {/if}
   {#each searched as w, i (i)}
     <div
@@ -491,16 +536,29 @@
     margin-left: 6px;
   }
 
-  /* What has not been transcribed yet is simply darker, and the edge
-     between the two is where the transcript has got to. No line, no light:
-     a mark nobody can read is worse than nothing, and what is going on is
-     said by the head of the clip list and its info mark. */
+  /* What has not been transcribed yet is darker, and the edge between the
+     two is where the transcript has got to.
+     The shade alone could never say where that is. Down at this end of the
+     scale lightness is compressed: the track is #1d1f23, and laying black
+     over it at any strength lands between 1.1 and 1.2 to 1 against it,
+     measured off the pixels. Taking it to near black does not help, it only
+     turns the far end of the track into a hole. Two large areas that close
+     together are one area.
+     An edge is a different thing to see. A line carries its contrast in the
+     step across it rather than in the area, so one pixel of a grey that is
+     plainly lighter says what a whole field of darker grey cannot, and it
+     is the edge that shows the movement: what the eye follows as the
+     transcript grows is the line, not the shade behind it. */
   .pending {
     position: absolute;
     top: 0;
     bottom: 0;
     right: 0;
-    background: rgba(0, 0, 0, 0.3);
+    border-left: 1px solid var(--muted);
+    /* Deepest against the line and easing back to the flat shade, so the
+       edge reads as the front of something moving rather than as the side
+       of a block. */
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.34) 28px);
     pointer-events: none;
   }
 
@@ -510,6 +568,39 @@
      are. The glide is armed a frame after the first edge is drawn, so
      opening a workspace mid-transcription does not sweep the track. */
   .pending.glide {
+    transition: left 1s linear;
+  }
+
+  /* At the transcript's edge, on the dark side of it, so it never covers
+     the waveform or a clip mark. It sits on the line rather than beside it,
+     because what it is about is the line.
+     It travels with the edge, so it takes the same glide: a control that
+     jumped while the line it belongs to slid would read as two things. */
+  .reading {
+    position: absolute;
+    top: 50%;
+    margin-top: -10px;
+    margin-left: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: var(--ink-2);
+    color: var(--text);
+    cursor: pointer;
+    z-index: 7;
+  }
+
+  .reading:hover {
+    background: var(--ink-3);
+    border-color: var(--muted);
+  }
+
+  .reading.glide {
     transition: left 1s linear;
   }
 

@@ -932,6 +932,10 @@
     onremove={(stretch) => (removingSearch = stretch)}
     locked={finding || starting}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
+    transcribing={isTranscribing}
+    {partly}
+    {leftToGo}
+    ontranscription={() => (transcribing ? pauseTranscribing() : api.transcribe(path))}
   />
 {/snippet}
 
@@ -1171,28 +1175,10 @@
             {#if lane.count}
               <span class="muted num">{shown.length}</span>
             {/if}
-            <!-- The transcription going on behind the clips. The head is
-                 about the list now, so this says how the reading of the
-                 episode stands and is the one thing to do about it, and
-                 nothing else in the head moves for it: it is a mark, and a
-                 mark is one width.
-                 It is here while it runs and while it is stopped part way,
-                 because a control that only stops something is a trap: the
-                 mark said it would carry on where it left off, and then
-                 took itself away and left nothing that would. -->
-            {#if !aboutWords && (transcribing || partly)}
-              <button
-                class="quiet glyph still"
-                onclick={transcribing ? pauseTranscribing : () => api.transcribe(path)}
-                disabled={pausing}
-                aria-label={transcribing ? "Pause the transcription" : "Carry on transcribing"}
-                title={transcribing
-                  ? `Still transcribing the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`
-                  : `The episode is only read as far as ${clock(covered)}. Carry on from there`}
-              >
-                <Icon name={pausing ? "activity" : transcribing ? "pause" : "play"} size={13} />
-              </button>
-            {/if}
+            <!-- Nothing about the transcription here. It has a place of
+                 its own now, at the edge it moves, on the range picker.
+                 A thirteen pixel mark in the head of a list about something
+                 else was a thing nobody could name. -->
             <span class="ask">
               <Info label={waitNote ? "What is happening" : "What the clip list is"} side="right">
                 {#if waitNote}
@@ -1689,23 +1675,6 @@
     position: relative;
     gap: 6px;
     height: var(--control-h);
-  }
-
-  /* The transcription carrying on behind the clips: a mark in the head,
-     the width of a mark whatever it says, with the same light passing over
-     it that every place waiting on work has. */
-  .listhead .still {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    color: var(--muted);
-  }
-
-  .listhead .still:hover:not(:disabled) {
-    color: var(--text);
   }
 
   /* What is running fills the button it was started from, behind its own

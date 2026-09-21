@@ -197,8 +197,14 @@ place.
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the edge is taken from the waveform
   itself, so the light never lies over a waveform that is already drawn. The
-  range picker itself stays quiet: what is not transcribed is simply darker,
-  and the edge moves as the transcript grows. It moves with the work, not
+  range picker itself stays quiet: what is not transcribed is darker, with a
+  line of the muted grey at the edge, and the edge moves as the transcript
+  grows. The line is what carries it. Two greys this dark are about 1.2 to 1
+  against each other however far apart they are put, measured off the
+  pixels, because lightness is compressed at this end of the scale, so the
+  shade alone can never say where the transcript has got to. A line can: it
+  carries its contrast in the step across it rather than in the area, and it
+  is the edge the eye follows as the transcript grows. It moves with the work, not
   with the saving of it: the transcript is written to disk every few
   seconds, but every chunk the recogniser finishes says how far it has come,
   and the edge follows that. The only thing on that track that moves of its
@@ -221,10 +227,17 @@ place.
   start.
 - **The pane is the clip list, not whatever is running.** The two lanes run
   side by side and a transcription often outlasts the first search, so once
-  there are clips the head says **Clips** and **New** stays where it is. The
-  transcription carrying on behind them is a mark beside the count that
-  pauses it. Before there are any clips the pane is about the transcription,
-  because there is nothing else for it to be about.
+  there are clips the head says **Clips** and **New** stays where it is.
+  Nothing in that head is about the transcription: it has a place of its
+  own, on the range picker, at the edge it moves. Before there are any clips
+  the pane is about the transcription, because there is nothing else for it
+  to be about.
+- **The transcription is worked from the edge it moves.** On the range
+  picker, at the transcript's edge, a mark appears while the pointer is on
+  the track and does the one thing there is to do: pause it while it reads,
+  carry on while it is stopped part way. It travels with the edge and glides
+  with it, so the two read as one thing. It is not there when the episode is
+  read to the end, because then there is nothing to do.
 - **What is running shows in the button it was started from.** Work that
   knows how far along it is fills the button, with a line of the app's
   colour at the front of the fill. Work that cannot say sends a band of that
@@ -370,8 +383,11 @@ place.
       marked or not. A press that wobbles a few pixels is still a click, so
       nothing is drawn by accident.
     - Double-click it for the whole episode.
-    - The part not yet transcribed is darker, with a light passing over it
-      while the transcription runs.
+    - The part not yet transcribed is darker, with a line at the edge where
+      the transcript has got to, and a light passing over it while the
+      transcription runs.
+    - On the edge, while the pointer is on the track, the mark that pauses
+      the transcription or carries it on.
     - The window is locked while clips are being found.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
