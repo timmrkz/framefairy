@@ -59,9 +59,13 @@
     <p class="muted">
       Light runs clockwise round the edge of the control the work was started
       from, for as long as the work runs, and specks of that light drift up
-      through the control behind its own words. On a control that is already
-      the app's colour the light is white, because the app's colour cannot be
-      seen on itself.
+      through the control behind its own words. It is not one turn at one
+      speed: a round is three turns, the comet gets away quickly, drifts
+      through the long side, tugs back twice and catches up at the end, and a
+      broad faint wash goes round twice in the same time. So the slow part
+      falls somewhere else on the edge each turn and the two are never in the
+      same place twice. On a control that is already the app's colour the
+      light is white, because the app's colour cannot be seen on itself.
     </p>
     <div class="row wrap">
       <button><Busy />Cancel</button>
@@ -110,10 +114,15 @@
   <section>
     <h2>The shimmer</h2>
     <p class="muted">
-      A place that is not filled yet. A band of light leans across it and then
-      rests before it comes again, and in a list each row starts a moment
-      after the row above it, so the light runs down the column as a wave
-      rather than every row flashing together.
+      A place that is not filled yet, under two lights that are not the same
+      light and not on the same clock. The wash is broad and slow and leans
+      one way. The glint is narrow and bright, leans the other way, crosses
+      in a third of the time and then waits. Their rounds are 3.7 and 2.3
+      seconds, so the pair never comes round to the same picture: sometimes
+      the glint rides the wash, sometimes it crosses an empty place, and now
+      and then the two lean through each other. In a list each row starts a
+      step after the row above it, so the light runs down the column as a
+      wave rather than every row flashing together.
     </p>
     <div class="shim">
       <ol>

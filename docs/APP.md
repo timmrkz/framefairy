@@ -472,7 +472,11 @@ Everything that runs says so the same way, wherever it runs. There are four
 things and no others, and each one means one thing.
 
 - **The beam.** Light runs clockwise round the edge of the control the work
-  was started from, for as long as the work runs. **New** while clips are
+  was started from, for as long as the work runs. A round is three turns and
+  not at one speed: the comet gets away quickly, drifts through the long
+  side, tugs back twice and catches up at the end, so the slow part falls
+  somewhere else on the edge each turn, and a broad faint wash goes round
+  twice in the same time, so the two are never in the same place twice. **New** while clips are
   being found, **Cancel** while a job winds down, **Pause** while the
   transcription stops, **Render** while a clip is being made, **Check
   again** while the tools are looked for. The control that started the work
@@ -490,11 +494,17 @@ things and no others, and each one means one thing.
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
-  the stretch on the range picker while clips are being found for it. A
-  band of light leans across the place and then rests before it comes
-  again, and in a list each row starts a moment after the row above it, so
-  the light runs down the column as a wave rather than every row flashing
-  together.
+  the stretch on the range picker while clips are being found for it. Two
+  lights cross it and they are not the same light and not on the same
+  clock. The wash is broad and slow and leans one way. The glint is narrow
+  and bright, leans the other way, goes over in a third of the time and
+  then waits. Their rounds are 3.7 and 2.3 seconds, which share no whole
+  number of rounds anybody sits through, so the pair never comes round to
+  the same picture: sometimes the glint rides the wash, sometimes it
+  crosses an empty place, and now and then the two lean through each other
+  and the place lights up in both directions at once. In a list each row
+  starts a step after the row above it, so the light runs down the column
+  as a wave rather than every row flashing together.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and
   their place, and a ring widens out of them and fades.
@@ -518,6 +528,14 @@ share and in every kind of control, and a colour picker at the top so the
 whole set can be seen in another accent. It is preview material in
 `frontend/preview/motion/` and never goes into the app: the product only
 serves making shorts.
+
+All of it is the stylesheet's. Nothing here runs JavaScript, nothing asks
+for a frame and nothing measures anything: every moving part animates a
+transform or an opacity, which the compositor carries without painting
+again, and the one curve that is not a plain ease is a CSS `linear()`.
+Measured in headless Chromium: 60 frames a second with 114 of them running
+at once on the bench, 60 with a search running in the workspace, and no
+animation at all at rest.
 
 `frontend/src/components/Busy.svelte` is the whole of the beam, the motes
 and the fill inside a control. The track, the shimmer and the pulse are in

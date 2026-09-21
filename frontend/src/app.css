@@ -309,10 +309,20 @@ input[type="text"] {
   }
 }
 
-/* Something that is not there yet: the shimmer. A band of light crosses
-   the place the thing will be, leaning the way light leans, and then
-   rests before it comes again, so the wait breathes rather than ticks.
-   The same light lies over the stretch the transcript has not reached and
+/* Something that is not there yet: the shimmer. Two lights cross the
+   place the thing will be, and they are not the same light and not on the
+   same clock.
+
+   The wash is broad and slow and leans one way. The glint is narrow and
+   bright, it leans the other way, and it goes over in a third of the time
+   and then waits. Their rounds are 3.7 and 2.3 seconds, which share no
+   whole number of rounds anyone will sit through, so the pair never comes
+   round to the same picture: sometimes the glint rides the wash, sometimes
+   it crosses an empty place, and now and then the two lean through each
+   other and the place lights up in both directions at once. One light on
+   one clock is a thing you have seen the whole of after half a second.
+
+   The same pair lies over the stretch the transcript has not reached and
    over the clips that have not been found. */
 .waiting {
   position: relative;
@@ -325,48 +335,93 @@ input[type="text"] {
   );
 }
 
-.waiting::after {
+.waiting::after,
+.waiting::before {
   content: "";
   position: absolute;
   top: -25%;
   bottom: -25%;
   left: 0;
-  width: 55%;
+  pointer-events: none;
+  animation-iteration-count: infinite;
+}
+
+/* The wash. */
+.waiting::after {
+  width: 62%;
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0) 0%,
-    var(--accent-wash) 30%,
-    rgba(255, 255, 255, 0.26) 50%,
-    var(--accent-wash) 70%,
+    var(--accent-wash) 32%,
+    rgba(255, 255, 255, 0.15) 50%,
+    var(--accent-wash) 68%,
     rgba(255, 255, 255, 0) 100%
   );
   /* Where it stands before its own light has started, which is what a row
      waiting its turn in a list shows. Without it the band sits at the left
      edge of the row, unskewed, until the delay runs out. */
-  transform: translateX(-110%) skewX(-14deg);
+  transform: translateX(-105%) skewX(-14deg);
   /* One run, then a rest. The rest is inside the keyframes rather than in
      animation-delay, because a delay only holds the first round. The delay
      is what sets one row off after the row above it. */
-  animation: shimmer 2.4s cubic-bezier(0.5, 0, 0.25, 1) infinite;
+  animation-name: shimmer;
+  animation-duration: 3.7s;
+  animation-timing-function: cubic-bezier(0.5, 0, 0.25, 1);
   animation-delay: var(--wait-in, 0ms);
-  pointer-events: none;
+}
+
+/* The glint, leaning the other way and gone before you have placed it. */
+.waiting::before {
+  width: 17%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.06) 28%,
+    rgba(255, 255, 255, 0.34) 50%,
+    rgba(255, 255, 255, 0.06) 72%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-110%) skewX(12deg);
+  animation-name: glint;
+  animation-duration: 2.3s;
+  animation-timing-function: cubic-bezier(0.32, 0, 0.2, 1);
+  /* Its own head start, so the two lights are never in step down a list
+     either. */
+  animation-delay: calc(var(--wait-in, 0ms) * 1.7 + 700ms);
 }
 
 @keyframes shimmer {
   0% {
-    transform: translateX(-110%) skewX(-14deg);
+    transform: translateX(-105%) skewX(-14deg);
   }
-  88% {
-    transform: translateX(200%) skewX(-14deg);
+  94% {
+    transform: translateX(175%) skewX(-14deg);
   }
   100% {
-    transform: translateX(200%) skewX(-14deg);
+    transform: translateX(175%) skewX(-14deg);
+  }
+}
+
+@keyframes glint {
+  0% {
+    transform: translateX(-110%) skewX(12deg);
+  }
+  52% {
+    transform: translateX(700%) skewX(12deg);
+  }
+  100% {
+    transform: translateX(700%) skewX(12deg);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .waiting::after {
+  .waiting::after,
+  .waiting::before {
     animation: none;
+  }
+
+  .waiting::before {
+    opacity: 0;
   }
 }
 
