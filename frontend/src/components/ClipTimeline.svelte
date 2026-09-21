@@ -461,14 +461,6 @@
     load(from, from + shown);
   }
 
-  // Playing is asking to watch what is playing, so the view goes to the
-  // playhead. It is not asking for a different zoom, and it does not count
-  // as a hand moving the view either: the clip and the crosshair go on
-  // meaning what they meant.
-  export function follow() {
-    bring(time);
-  }
-
   // Clicking a clip in the list puts the timeline back on it, even when it
   // is the clip that is already selected and the view was moved by hand.
   // Given a moment, the timeline goes there instead: putting the playhead

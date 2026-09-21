@@ -843,22 +843,14 @@
     });
   });
 
-  // Playing is asking to watch, so the clip timeline goes to what is
-  // playing. Every editor scrolls its timeline with playback, and a view
-  // left somewhere else means pressing the space bar shows the picture
-  // moving over a waveform that is not the one being played.
-  //
-  // It goes there at the zoom it is standing at. This used to fit the clip
-  // to the view, which threw away a zoom the hand had chosen: zoom in,
-  // press the space bar, and the timeline jumped back to the whole clip.
-  // Playing is a reason to look somewhere, never a reason to look from
-  // further away.
-  let wasPaused = $state(true);
-  $effect(() => {
-    const now = paused;
-    if (wasPaused && !now) timeline?.follow();
-    wasPaused = now;
-  });
+  // Playing moves nothing. An editor's timeline follows its playhead while
+  // it plays, and that is a setting there, off as often as on, because a
+  // view somebody put somewhere is a view they meant. Here it was neither
+  // asked for nor announced: scroll to where you want to look, press the
+  // space bar, and the track jumped somewhere else before a frame had
+  // played. Finding the playhead is what the crosshair under the track is
+  // for, and going back to the clip is what clicking its card does. Two
+  // controls that say what they do, and no third that does it uninvited.
 
   // The arrows up and down walk the clip list, the way the arrows left and
   // right walk the episode on the clip timeline. Each step takes the next

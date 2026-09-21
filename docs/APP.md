@@ -249,14 +249,18 @@ place.
   colour travelling across it instead.
 - **The chosen card is always in view.** Walking the list with the arrows
   brings it far enough in to clear the veil at either end.
-- **The clip timeline goes to what is playing.** Pressing play, or the space
-  bar, brings the playhead into the view, the way an editor's timeline
-  follows playback. It does it at the zoom the timeline is standing at.
-  **How close the timeline stands is the hand's**: a pinch sets it, and
-  fitting a clip sets it, and nothing else may. Following the playhead
-  moves the view along, it never makes it wider or narrower, and the same
-  goes for putting the playhead somewhere on the range picker and for the
-  crosshair under the timeline.
+- **Playing moves nothing.** An editor's timeline follows its playhead
+  while it plays, and there it is a setting, off as often as on, because a
+  view somebody put somewhere is a view they meant. Here it was neither
+  asked for nor announced. Finding the playhead is what the crosshair
+  under the track is for, and going back to the clip is what clicking its
+  card does: two controls that say what they do, and no third that does it
+  uninvited.
+- **How close the timeline stands is the hand's.** A pinch sets it, and
+  fitting a clip sets it, and nothing else may. Whatever brings the
+  playhead into the view moves the view along at the width it already has,
+  never making it wider or narrower: that is putting the playhead
+  somewhere on the range picker, and the crosshair under the timeline.
 - **The clip list waits in the shape it will have.** While the transcript is
   still coming, and while a search runs, the list holds as many rows as the
   search was asked for, with the light passing over them, so it does not
