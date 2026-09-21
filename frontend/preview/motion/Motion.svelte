@@ -158,8 +158,10 @@
     <h2>The shimmer, five ways</h2>
     <p class="muted">
       A place that is not filled yet. Three of these are what other people
-      ship, copied faithfully and named. The fourth is two of those three
-      together, which is what the app wears. The fifth is ours. Pick one and it
+      ship, copied faithfully and named, the fourth is two of those three
+      together, and the fifth is ours. The breath is the one the app wears.
+      They all stay here, where they cost the app nothing, so the choice
+      can be looked at again. Pick one and it
       becomes the only one, everywhere a place waits: the clips not found
       yet, the part of the clip timeline the transcript has not reached, the
       stretch on the range picker while a search runs.
@@ -170,7 +172,7 @@
         <div class="row wayhead">
           <h3>{way.name}</h3>
           <span class="muted">{way.from}</span>
-          {#if way.key === "both"}<span class="now">in the app now</span>{/if}
+          {#if way.key === "breath"}<span class="now">in the app now</span>{/if}
         </div>
         <p class="muted small">{way.what}</p>
         <ol class="cards">

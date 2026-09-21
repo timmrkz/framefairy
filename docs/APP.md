@@ -494,21 +494,17 @@ things and no others, and each one means one thing.
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
-  the stretch on the range picker while clips are being found for it. Two
-  things at once, and neither of them ours, each exactly as the people who
-  made it ship it. The place breathes, which is what
+  the stretch on the range picker while clips are being found for it. The
+  place itself dims and comes back, two seconds, in and out. It is
+  `animate-pulse`, which is what
   [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton) and
-  Tailwind ship as `animate-pulse`: it dims and comes back, two seconds,
-  in and out. And a wave goes over it, which is
-  [MUI's Skeleton](https://mui.com/material-ui/react-skeleton/): a soft
-  highlight over in half the round, then still for the other half, two
-  seconds at one speed. The only change to either is that the wave is half
-  as wide again as the place it crosses, so it has no edges to catch. In a
-  list each row starts a step after the row above it, so the light runs
-  down the column rather than every row flashing together. `make motion`
-  stands this beside the four other ways it is commonly done, each named
-  and copied faithfully, so the choice can be made by looking rather than
-  by describing.
+  Tailwind ship and what most of the web wears, and it is the whole of it:
+  no band, no sweep, no light crossing anything. In a list each row starts
+  a step after the row above it, so the breath runs down the column rather
+  than every row rising and falling together. Four brighter ways of doing
+  this were tried and looked at side by side, and this is the one that was
+  chosen. They all stay in `make motion` to be compared again, where they
+  cost the app nothing.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
   the sidebar and the dot on **Activity** on the rail keep their size and
   their place, and a ring widens out of them and fades.
@@ -531,8 +527,8 @@ It opens a page in the browser with every one of them running, at every
 share and in every kind of control, and a colour picker at the top so the
 whole set can be seen in another accent. The shimmer stands there five
 ways: react-loading-skeleton's sweep, MUI's wave, the breath that
-shadcn/ui and Tailwind ship, the breath and the wave together, which is
-what the app wears, and a foil of our own. It is preview material in
+shadcn/ui and Tailwind ship and that the app wears, the breath and the
+wave together, and a foil of our own. It is preview material in
 `frontend/preview/motion/` and never goes into the app: the product only
 serves making shorts.
 

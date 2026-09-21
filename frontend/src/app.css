@@ -309,51 +309,30 @@ input[type="text"] {
   }
 }
 
-/* Something that is not there yet: the shimmer. Two things at once, and
-   neither of them ours, each exactly as the people who made it ship it.
+/* Something that is not there yet: the shimmer. The place itself dims and
+   comes back, two seconds, in and out. It is animate-pulse, which is what
+   shadcn/ui and Tailwind ship and what most of the web wears, and it is
+   the whole of it: no band, no sweep, no light crossing anything.
 
-   The place breathes, which is what shadcn/ui and Tailwind ship as
-   animate-pulse: it dims and comes back, two seconds, in and out. And a
-   wave goes over it, which is MUI's Skeleton: a soft highlight over in
-   half the round, then still for the other half, two seconds at one
-   speed. The only change to either is that the wave is half as wide again
-   as the place it crosses, so it has no edges to catch.
+   Four brighter ways of doing this were tried and looked at side by side,
+   and this is the one that was chosen. They are all still in `make
+   motion` to be compared again, where they cost the app nothing.
 
    The place breathing is the place's own opacity, which gives it a
    surface of its own for as long as it waits. That is safe here and only
    here: the surface is there the whole time rather than arriving with a
    fade, so nothing steps. See the whole-pixel rule in CLAUDE.md.
 
-   The same light lies over the stretch the transcript has not reached and
-   over the clips that have not been found. Other ways of doing this, and
-   where each comes from, stand side by side in `make motion`. */
+   The same breath lies over the stretch the transcript has not reached
+   and over the clips that have not been found. */
 .waiting {
-  position: relative;
-  overflow: hidden;
   animation: breath 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   /* What sets one row of a list off after the row above it. */
   animation-delay: var(--wait-in, 0ms);
 }
 
-.waiting::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -25%;
-  width: 150%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--accent-wash),
-    transparent
-  );
-  transform: translateX(-100%);
-  animation: wave 2s linear infinite;
-  animation-delay: var(--wait-in, 0ms);
-  pointer-events: none;
-}
-
+/* Tailwind's own number here is 0.5. This is the 0.45 that stood on the
+   bench and was picked, and the two cannot be told apart. */
 @keyframes breath {
   0%,
   100% {
@@ -364,26 +343,10 @@ input[type="text"] {
   }
 }
 
-@keyframes wave {
-  0% {
-    transform: translateX(-100%);
-  }
-  50% {
-    transform: translateX(100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .waiting,
-  .waiting::after {
+  .waiting {
     animation: none;
-  }
-
-  .waiting::after {
-    transform: none;
+    opacity: 0.75;
   }
 }
 
