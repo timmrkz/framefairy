@@ -39,14 +39,27 @@ await stop();
 | *(none)* | a finished episode with clips and two searched stretches |
 | `?busy` | a search running, with progress |
 | `?unknown` | the same, with progress it cannot put a number on |
-| `?transcribing` | a transcription part way, no words past the edge |
+| `?transcribing` | a transcription part way, reporting ahead of the saved transcript |
 | `?growing` | a transcript that really grows, job events every 900 ms |
+| `?paused` | clips found, the episode read part way, nothing reading the rest |
 | `?found` | a search that runs and really finishes, clips and all |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
 the first search never starting was invisible until `?growing` sent job
 events the way the Go side does.
+
+**The job list is only ever brought up to date by events.** It is read once
+at startup and changed after that by nothing but `onJob`. So a mode that
+sends no events can never show work starting or stopping, whatever its
+`Jobs` call answers: cancel a job in it and the window goes on holding a
+job that is still running. Two probes were written against that and passed
+against broken code before it was noticed. A mode meant for anything that
+starts, stops or reports has to send events, and the numbers in them have
+to be the ones the real side sends. `?growing` reported a fraction but
+never a `covered`, so the transcript's edge never moved from the work at
+all, and the first probe about pausing was measuring the track filling in
+after load.
 
 `frontend/preview/dist/` is build output and is not in the repository.
 Write one-off probes outside the repository, in the scratchpad.
@@ -71,7 +84,27 @@ So decide which kind of bug it is before picking an instrument:
 
 `rows()` in `open.mjs` takes a screenshot and reads the pixels back. It is
 how the waveform was shown to be painting at 117 of 255 rather than 227:
-every bar was landing across two pixels at part strength.
+every bar was landing across two pixels at part strength. It averages each
+row, so it answers about something that changes down the picture. A vertical
+edge changes across it, and needs the columns instead.
+
+**While anything is gliding, the rect is the animation and not the value.**
+It is the rule above the other way round. An element part way through a
+transition reports where it is being painted, which is not where it has
+been told to go, so a number read then says nothing about whether the code
+is right. Read the inline style beside the rect and the two answer
+different questions: `style.left` is what the interface decided,
+`getBoundingClientRect` is what the browser has drawn so far. The edge of
+the transcript looked like it was still moving after a pause, with the
+style holding at 142px the whole time. Wait for a glide to settle before
+measuring, or measure both and say which one is being talked about.
+
+**A moving target cannot be clicked at a point worked out a moment ago.**
+By the time the click lands the element is somewhere else, and the click
+goes to whatever is there now. `page.mouse.click` on a coordinate missed
+the mark on the range picker every time while the transcript was growing.
+Press the element itself, `el.click()`, when what is being tested is the
+handler rather than the hit area.
 
 ## Prove it, do not claim it
 
@@ -87,6 +120,15 @@ build. What could be proved was that the cause was gone.
 the fix is removed is a fix. A number that does not is a coincidence. The
 waveform, the transcript progress and the data race were all confirmed
 this way, by reverting the change and watching the measurement go back.
+
+This is also the only thing that catches a probe which proves nothing. A
+probe written against a stub that cannot reach the broken state passes
+either way, and reads exactly like a probe that passes because the code is
+right. Twice in one session a fix looked proved and was not, and both times
+it was reverting that said so: the measurement did not move, because the
+harness had never been able to produce the state in the first place. Run
+every probe against the old code once. A probe that has never failed is not
+yet evidence.
 
 **Check against what Tim actually said.** He reports precisely, and the
 pattern in his report is evidence. When he said the mark stepped beside
@@ -156,6 +198,16 @@ bar's box is twice the middle of the window buttons. In fullscreen macOS
 takes the buttons away, the middle came through as 0, and the box became
 nothing tall. Leave a measurement out altogether rather than sending a zero,
 so the stylesheet's own fallback is what answers.
+
+**A drag takes the pointer, and with it every click.** The clip timeline
+and the range picker both call `setPointerCapture` on the way down, so a
+drag keeps working when it leaves the track. While a pointer is captured
+every click and double-click is dealt to the element holding it, whatever
+lies under the cursor. A handler on a child is never reached: the
+double-click that puts a cut back had to be decided on the track and the
+cut found by where the pointer was, because the handler on the cut itself
+never ran once. Anything that has to answer a click on top of a drag
+surface is either decided by the surface or stops the pointer going down.
 
 **The webview cannot always read the episode file** while the machine is
 busy, so a seek is dropped silently and the picture stays where it was.
