@@ -637,6 +637,9 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 // Waveform returns the loudest level in each of buckets parts of a stretch.
 // An episode waiting for its first transcription has no waveform yet, which
 // is an empty answer and not a failure.
+//
+// Peaks never answers with more buckets than it measured, so the window is
+// told how fine the measurement was and can draw that finely and no finer.
 func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
 	if !s.store.Known(path) {
 		return nil, os.ErrNotExist
@@ -1131,6 +1134,62 @@ func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, st
 		return ClipEntry{}, err
 	}
 	if err := engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// cutting is what every change to a clip's cuts needs: the episode and the
+// plan have to belong to the library, and the transcript is what the edges
+// snap to.
+func (s *FrameFairy) cutting(path, plan string) (*engine.Transcript, engine.Options, error) {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return nil, engine.Options{}, os.ErrNotExist
+	}
+	opts := s.store.Settings().options()
+	t, err := engine.NewProject(nil, path, opts).Transcript()
+	if err != nil {
+		return nil, engine.Options{}, err
+	}
+	return t, opts, nil
+}
+
+// CutClip takes a stretch out of the middle of a clip and returns it as it
+// is now. With toWords the edges land on the words around them, without it
+// they stay exactly where the hand put them.
+func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, from, to float64, toWords bool) (ClipEntry, error) {
+	t, opts, err := s.cutting(path, plan)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// JoinCut puts back the stretch a clip leaves out at a moment and returns
+// the clip as it is now.
+func (s *FrameFairy) JoinCut(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
+	t, _, err := s.cutting(path, plan)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := engine.JoinCut(plan, clipID, at, t); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// MoveCut moves both edges of one of a clip's cuts and returns the clip as
+// it is now. With toWords the edges land on the words around them, without
+// it they stay exactly where they were put, a frame at a time.
+func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, index int, from, to float64, toWords bool) (ClipEntry, error) {
+	t, opts, err := s.cutting(path, plan)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

@@ -70,7 +70,7 @@ One record per action on a clip.
 | Event | Recorded when |
 | --- | --- |
 | `viewed` | a clip is played in the app |
-| `edited` | an edge is trimmed in the app |
+| `edited` | an edge is trimmed, or a cut inside a clip is made, moved or thrown away, in the app |
 | `rendered` | a clip finished rendering in the app |
 | `rejected` | a clip is removed from the list in the app, or `framefairy-train mark` |
 | `kept` | a removed clip is put back in the app, or `framefairy-train mark` |
@@ -99,19 +99,35 @@ Every record except `viewed`, `rejected` and `unpublished` carries:
 
 | Field | Meaning |
 | --- | --- |
-| `unchanged` | edges within 0.05 seconds and the same cuts |
+| `unchanged` | edges within 0.05 seconds, and the same cuts in the same places |
 | `start_shift`, `end_shift` | seconds the edges moved, negative is earlier |
 | `lines_added`, `lines_removed` | line numbers |
 | `pauses_cut` | cuts that are new, as `[from, to]` in seconds |
 | `pauses_restored` | cuts of the proposal that are gone |
+| `pauses_moved` | cuts of the proposal that were kept but put elsewhere, as `{was, now}` |
 
-The pause fields compare a clip with its proposal. Nothing in the app cuts a
-pause by hand any more, so for a plan the app made they are empty, and they
-stay in the format for plans that were edited before and for a clip set the
-model made twice.
+The pause fields compare a clip with its proposal, and they are the whole
+record of what a person thought of the model's cutting. Where a clip is cut
+is a judgement the model makes, so every deviation is a lesson:
 
-Cuts are only compared where the proposal and the final clip overlap, so a
+- **A cut the model did not make.** The person heard something that had to
+  go where the model let the audio run. `pauses_cut`.
+- **A cut of the model's thrown away.** The model took out something that
+  carried the moment. `pauses_restored`.
+- **A cut of the model's moved.** The model was right that something
+  belonged there and wrong about where it fell. `pauses_moved`, which
+  carries both places so the pair can be learned from.
+
+Two cuts that overlap are the same cut, so a cut that was moved is one
+`pauses_moved` and never a `pauses_cut` plus a `pauses_restored`. Those are
+different lessons and counting one as the other teaches the wrong thing.
+A cut is only compared where the proposal and the final clip overlap, so a
 trimmed edge is not also counted as a pause change.
+
+`unchanged` is what the export reads to decide whether a render is a full
+hit, so it is false whenever any of the three lists is not empty. A cut
+moved by less than the 0.05 second tolerance is the same cut, because a
+hand is no steadier on the edge of a cut than on the edge of a clip.
 
 ---
 

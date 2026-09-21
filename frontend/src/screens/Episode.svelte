@@ -21,7 +21,7 @@
     type WindowView,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
-  import { Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
+  import { Heard, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -105,24 +105,11 @@
   const needsWords = $derived(
     !!status && !status.missing && (!status.transcribed || status.transcriptStale),
   );
-  // The pane is the clip list. It is only about the transcription while
-  // there is no clip list to be about, which is before the first clips are
-  // found. The two run in lanes of their own and the transcription often
-  // outlasts the first search, and when it does the pane said
-  // Transcribing over a list of twelve clips and took New away with it.
-  // One lane's state does not belong on the other lane's head.
-  const aboutWords = $derived(needsWords && !clips.length && !busy);
-  const lane = $derived.by(() => {
-    if (busy) return { word: "Clips", count: true, job: working };
-    if (status?.transcriptStale && !clips.length) {
-      return { word: "Out of date", count: false, job: null };
-    }
-    if (aboutWords) {
-      if (transcribing) return { word: "Transcribing", count: false, job: transcribing };
-      return { word: covered > 0 ? "Paused" : "Not transcribed", count: false, job: null };
-    }
-    return { word: "Clips", count: true, job: null };
-  });
+  // The pane is the clip list and nothing else. The transcription is worked
+  // from the range picker, at the edge it moves, so none of it belongs in
+  // this head: the two ran in lanes of their own and the head carried both,
+  // which is how it came to say Transcribing over a list of clips.
+  const lane = $derived({ word: "Clips", count: true, job: busy ? working : null });
   const action = $derived.by(() => {
     if (busy) {
       return {
@@ -134,37 +121,17 @@
         title: `${finding || starting ? "Stop looking for clips" : "Stop the render"}${leftOfWork ? `, ${leftOfWork}` : ""}`,
       };
     }
-    if (aboutWords && transcribing) {
-      return {
-        label: pausing ? "Pausing" : "Pause",
-        icon: "pause",
-        run: pauseTranscribing,
-        off: pausing,
-        primary: false,
-        title: `Pause the transcription${leftToGo ? `, ${leftToGo}` : ""}. It carries on where it stopped`,
-      };
-    }
-    if (aboutWords) {
-      return {
-        label: status?.transcriptStale || covered <= 0 ? "Transcribe" : "Continue",
-        icon: "activity",
-        run: () => api.transcribe(path),
-        off: false,
-        primary: true,
-        title: status?.transcriptStale
-          ? "The file changed since it was transcribed. Read it again"
-          : "Transcribe the episode on this machine",
-      };
-    }
     return {
       label: "New",
       icon: "plus",
       run: newClips,
-      off: false,
+      off: !readyToLook,
       primary: true,
-      title: covering
-        ? "Look at this stretch again, removing the clips it has"
-        : "Look for clips in the chosen stretch",
+      title: !readyToLook
+        ? `The transcript reaches ${clock(covered)}. Clips can be looked for once it reaches ${clock(to)}`
+        : covering
+          ? "Look at this stretch again, removing the clips it has"
+          : "Look for clips in the chosen stretch",
     };
   });
 
@@ -183,6 +150,14 @@
     api.cancelJob(working.id);
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
+
+  // A transcription that was stopped part way through. The episode still
+  // wants words, some of them are already read, and nothing is reading the
+  // rest. It is the state pausing leaves behind, and until it had a name
+  // there was no way back out of it: the mark that stops the transcription
+  // was only there while it ran, and once a clip existed the head never
+  // went back to being about words, so nothing ever offered to carry on.
+  const partly = $derived(needsWords && covered > 0 && !transcribing && !starting);
   // How far the audio has been heard, which is not the same as how far the
   // saved transcript reaches. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
@@ -191,7 +166,32 @@
   // the transcript keeps to covered, because that is what is on disk: a
   // search that started on this number would read a transcript that stops
   // short of the stretch it was asked for.
-  const heard = $derived(Math.max(covered, transcribing?.progress?.covered ?? 0));
+  // The mark the edge is drawn from. It only ever grows, because it says
+  // how much of the episode has been read and reading does not unhappen.
+  // Pausing showed that plainly: the live number disappears at the one
+  // moment the saved one is at its most stale, and the edge walked
+  // backwards by however much had not been written down. Heard in flow.ts
+  // holds the rule, with the orderings that break it written out beside it.
+  const mark = new Heard();
+  // What makes the mark meaningless: a transcript that is out of date and
+  // will be read again, or a work folder that is no longer there. Not while
+  // the episode is still loading, when nothing is known yet.
+  const restarted = $derived(!!status && (status.transcriptStale || !status.work));
+  const heard = $derived(
+    mark.seen(path, covered, transcribing?.progress?.covered ?? null, restarted),
+  );
+  // Where the edge was when pause was pressed, or null while it is free to
+  // move. Held rather than followed, because what the work reports after
+  // the press is work nobody asked for any more.
+  let stoppedAt = $state<number | null>(null);
+  const shownHeard = $derived(stoppedAt ?? heard);
+
+  // A search reads the transcript off disk, so it can only run where the
+  // saved transcript reaches. It goes by covered and not by heard for that
+  // reason: heard runs ahead of what has been written down, and a search
+  // started on it would read a transcript that stops short of the stretch
+  // it was asked for. shouldLook keeps to covered for the same reason.
+  const readyToLook = $derived(duration > 0 && to > 0 && covered >= to - 0.5);
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -438,8 +438,20 @@
 
   function pauseTranscribing() {
     if (!transcribing) return;
+    // The edge stops where it is, on the click. The recogniser is part way
+    // through a chunk and keeps reporting until it hears the stop, so
+    // without this the edge carries on for a second or two after the press
+    // and the click looks like it missed.
+    stoppedAt = heard;
     pausing = true;
     api.cancelJob(transcribing.id);
+  }
+
+  // Carrying on lets the edge go again. Asking for it here rather than
+  // through the action keeps the two halves of the one control together.
+  function carryOnTranscribing() {
+    stoppedAt = null;
+    api.transcribe(path).catch((err) => (problem = errorText(err)));
   }
 
   $effect(() => {
@@ -490,6 +502,45 @@
     problem = "";
     try {
       const updated = await api.trimClip(path, clip.plan, clip.id, start, end);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  // The cuts inside a clip. All three answer with the clip as it is now,
+  // because the engine puts the edges on words and the timeline has to draw
+  // where they landed, not where the hand let go.
+  async function cut(clip: ClipEntry, from: number, to: number, toWords: boolean) {
+    problem = "";
+    try {
+      const updated = await api.cutClip(path, clip.plan, clip.id, from, to, toWords);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  async function joinCut(clip: ClipEntry, at: number) {
+    problem = "";
+    try {
+      const updated = await api.joinCut(path, clip.plan, clip.id, at);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  async function moveCut(
+    clip: ClipEntry,
+    index: number,
+    from: number,
+    to: number,
+    toWords: boolean,
+  ) {
+    problem = "";
+    try {
+      const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to, toWords);
       clips = clips.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
       problem = errorText(err);
@@ -793,18 +844,14 @@
     });
   });
 
-  // Playing is asking to watch, so the clip timeline goes to what is
-  // playing. Every editor scrolls its timeline with playback, and a view
-  // left somewhere else means pressing the space bar shows the picture
-  // moving over a waveform that is not the one being played. A view moved
-  // by hand is let go of here, which is the one time that is right: the
-  // hand has asked for something else since.
-  let wasPaused = $state(true);
-  $effect(() => {
-    const now = paused;
-    if (wasPaused && !now) timeline?.fit();
-    wasPaused = now;
-  });
+  // Playing moves nothing. An editor's timeline follows its playhead while
+  // it plays, and that is a setting there, off as often as on, because a
+  // view somebody put somewhere is a view they meant. Here it was neither
+  // asked for nor announced: scroll to where you want to look, press the
+  // space bar, and the track jumped somewhere else before a frame had
+  // played. Finding the playhead is what the crosshair under the track is
+  // for, and going back to the clip is what clicking its card does. Two
+  // controls that say what they do, and no third that does it uninvited.
 
   // The arrows up and down walk the clip list, the way the arrows left and
   // right walk the episode on the clip timeline. Each step takes the next
@@ -880,7 +927,7 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    covered={heard}
+    covered={shownHeard}
     bind:from
     bind:to
     {marks}
@@ -892,6 +939,12 @@
     onremove={(stretch) => (removingSearch = stretch)}
     locked={finding || starting}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
+    transcribing={isTranscribing}
+    {partly}
+    {leftToGo}
+    holding={stoppedAt !== null}
+    {pausing}
+    ontranscription={() => (transcribing ? pauseTranscribing() : carryOnTranscribing())}
   />
 {/snippet}
 
@@ -918,7 +971,7 @@
       </p>
       {#snippet actions()}
         <button onclick={() => (confirmReplace = false)}>Cancel</button>
-        <button class="primary" onclick={() => removeRange({ from, to }, true)}>Look again</button>
+        <button class="danger" onclick={() => removeRange({ from, to }, true)}>Look again</button>
       {/snippet}
     </Confirm>
   {/if}
@@ -938,7 +991,7 @@
       </p>
       {#snippet actions()}
         <button onclick={() => (removingSearch = null)}>Cancel</button>
-        <button class="primary" onclick={() => removeRange(stretch, false)}>Remove</button>
+        <button class="danger" onclick={() => removeRange(stretch, false)}>Remove</button>
       {/snippet}
     </Confirm>
   {/if}
@@ -1131,22 +1184,10 @@
             {#if lane.count}
               <span class="muted num">{shown.length}</span>
             {/if}
-            <!-- The transcription carrying on behind the clips. The head is
-                 about the list now, so this says the episode is still being
-                 read and stops it, and nothing else in the head moves for
-                 it: it is a mark, and a mark is one width. -->
-            {#if !aboutWords && transcribing}
-              <button
-                class="quiet glyph still"
-                onclick={pauseTranscribing}
-                disabled={pausing}
-                aria-label="Pause the transcription"
-                title={`Still transcribing the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`}
-              >
-                {#if pausing}<Busy />{/if}
-                <Icon name="pause" size={13} />
-              </button>
-            {/if}
+            <!-- Nothing about the transcription here. It has a place of
+                 its own now, at the edge it moves, on the range picker.
+                 A thirteen pixel mark in the head of a list about something
+                 else was a thing nobody could name. -->
             <span class="ask">
               <Info label={waitNote ? "What is happening" : "What the clip list is"} side="right">
                 {#if waitNote}
@@ -1205,6 +1246,11 @@
         bind:numbers
         onseek={(t) => player?.seek(t)}
         ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}
+        oncut={(from, to, toWords) =>
+          current ? cut(current, from, to, toWords) : Promise.resolve()}
+        onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
+        onmovecut={(index, from, to, toWords) =>
+          current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
       />
       <!-- One row under the clip up close, so the range picker and the
@@ -1633,23 +1679,6 @@
     position: relative;
     gap: 6px;
     height: var(--control-h);
-  }
-
-  /* The transcription carrying on behind the clips: a mark in the head,
-     the width of a mark whatever it says, with the same light passing over
-     it that every place waiting on work has. */
-  .listhead .still {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    color: var(--muted);
-  }
-
-  .listhead .still:hover:not(:disabled) {
-    color: var(--text);
   }
 
   /* What is running fills the button it was started from, behind its own

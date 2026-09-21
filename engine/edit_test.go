@@ -306,6 +306,11 @@ func FuzzPlanEdits(f *testing.F) {
 	f.Add([]byte{0, 100, 130, 1, 60, 110, 2, 115, 0, 3, 105, 0})
 	f.Add([]byte{1, 120, 124, 1, 120, 124})
 	f.Add([]byte{4, 0, 0, 4, 1, 0, 2, 118, 1})
+	// Cut a clip in two, move the cut, then put it back.
+	f.Add([]byte{6, 112, 119, 8, 111, 120, 7, 115, 0})
+	// Cut the same clip over and over, which is how a clip runs out of
+	// pieces and out of length.
+	f.Add([]byte{6, 100, 105, 6, 106, 110, 6, 112, 118, 6, 120, 130})
 	f.Fuzz(func(t *testing.T, script []byte) {
 		path := editablePlanPath(t)
 		tr := editableTranscript()
@@ -318,7 +323,16 @@ func FuzzPlanEdits(f *testing.F) {
 			if script[i+1]%2 == 1 {
 				clip = "02"
 			}
-			switch script[i] % 6 {
+			switch script[i] % 9 {
+			case 6:
+				// A cut takes a stretch out of the middle, so this is the
+				// one edit that makes pieces rather than only moving them.
+				_ = CutClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
+			case 7:
+				_ = JoinCut(path, clip, at(script[i+1]), tr)
+			case 8:
+				_ = MoveCut(path, clip, int(script[i+1])%4,
+					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
 				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1)
 			case 1:

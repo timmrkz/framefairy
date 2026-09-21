@@ -65,7 +65,7 @@
         </button>
         {#if onremove}
           <button
-            class="drop"
+            class="drop quiet danger"
             title="Take this clip out of the list"
             aria-label="Remove {clip.title || clip.slug}"
             onclick={() => onremove(clip)}
@@ -146,10 +146,7 @@
     pointer-events: auto;
   }
 
-  .drop:hover:not(:disabled) {
-    background: var(--ink-2);
-    color: var(--err);
-  }
+
 
   .pick {
     display: flex;

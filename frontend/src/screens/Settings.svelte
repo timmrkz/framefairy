@@ -184,7 +184,7 @@
           </span>
           <span class="grow"></span>
           <button
-            class="quiet drop"
+            class="quiet danger drop"
             disabled={training.plans + training.decisions === 0}
             title="Remove every training record"
             aria-haspopup="dialog"
@@ -205,7 +205,7 @@
       </p>
       {#snippet actions()}
         <button onclick={() => (clearing = false)}>Cancel</button>
-        <button class="primary" onclick={clearTraining}>Remove them</button>
+        <button class="danger" onclick={clearTraining}>Remove them</button>
       {/snippet}
     </Confirm>
   {/if}

@@ -43,7 +43,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.3 | Episode status from the files on disk | `[x]` |
 | 1.4 | Waveform peaks, silences, words in a stretch, plan views | `[x]` |
 | 1.5 | Thumbnails per clip and the playback copy of the episode | `[ ]` |
-| 1.6 | Plan edits: keep or reject `[x]`, trim edges and set pauses with snapping `[ ]` | `[~]` |
+| 1.6 | Plan edits: keep or reject `[x]`, trim edges `[x]`, change the cuts inside a clip with snapping `[x]` | `[x]` |
 | 1.7 | Caption edits in the plan, with SRT export and import | `[ ]` |
 | 1.8 | A clip's captions on request, in the lines and the look the render uses, for the caption preview | `[x]` |
 

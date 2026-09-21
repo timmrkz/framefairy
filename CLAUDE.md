@@ -22,9 +22,12 @@ What the product has to be:
 - **Crisp clips.** A good short cuts fluff and dead air inside a moment
   instead of copying a linear stretch.
 - **Light manual control.** The app shows the clips before rendering and lets
-  the user trim edges, correct words and place the crop and the captions,
-  like Resolve's subtitle tools, and nothing heavier. Where the cuts inside
-  a clip fall is the engine's business, not something to fiddle with.
+  the user trim edges, correct words, place the crop and the captions, and
+  change the cuts inside a clip, like Resolve's subtitle tools, and nothing
+  heavier. The engine still proposes every cut, and what it proposes is
+  right often enough that most clips are never touched. But a proposal is
+  not a verdict: a cut can be moved, put back or made by hand, because the
+  one thing the engine cannot hear is what the episode is about.
 - **For many people.** Native on macOS, Windows and Linux, not tuned to one
   Mac. The installer will pick the model that fits the machine's memory.
 - **Improving over time.** Recorded decisions train our own local selection
@@ -54,10 +57,16 @@ Start with [README.md](README.md). In short:
   pull requests on GitHub. After a merge he runs `git pull && make run`.
   Never hand him zip files or ask him to copy files around.
 - **Every piece of work becomes a pull request, always.** A branch he has to
-  find himself is work he cannot see. Open the pull request as soon as there
-  is a commit worth looking at, without being asked and without asking, and
-  keep pushing to it. Work with no pull request is work that has not been
-  handed over.
+  find himself is work he cannot see. Work with no pull request is work that
+  has not been handed over.
+- **The pull request comes first, not last.** Push the first commit and open
+  the pull request straight away, without being asked and without asking,
+  and then keep pushing to it. The first commit does not have to be worth
+  looking at and does not have to work. It exists so the pull request
+  exists, because that is where Tim follows the work as it happens. Waiting
+  until there is something good to show means he watches nothing for an hour
+  and then gets everything at once. A pull request opened late is the same
+  mistake as no pull request at all.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew, ffmpeg from the ffmpeg tap, llama.cpp and the models in
   `~/.framefairy/models`.
@@ -277,10 +286,11 @@ messages, pull request text, code comments and chat replies.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
   without ffmpeg. Run `make test` before every push **that touches Go**. A
-  change only to `frontend/` or `docs/` runs `npx svelte-check` and builds
-  the preview, and nothing else: the Go tests fuzz for ten thousand
-  executions a target and take minutes, and no line of CSS can move them.
-  CI runs everything anyway, on both systems.
+  change only to `frontend/` or `docs/` runs `make interface`, which is that
+  type check and the interface's own tests, and builds the preview, and
+  nothing else: the Go tests fuzz for ten thousand executions a target and
+  take minutes, and no line of CSS can move them. CI runs everything
+  anyway, on both systems.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has
@@ -332,7 +342,13 @@ compile. There are no models in the cloud, which the tests do not need.
   `frontend/preview/`, what to measure and how to prove a fix instead of
   claiming one. Read it before changing anything in `frontend/`.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
-  on Linux and builds on macOS without warnings.
+  on Linux and on macOS, where the build has to be clean of warnings, and
+  fuzzes on both. It is six jobs at once rather than one after another, so
+  the answer comes back in the time the slowest takes, and on a pull request
+  each one asks `scripts/ci-needs.sh` whether the change gives it anything
+  to do. A push to main narrows nothing. `make test` runs the lot locally,
+  and `make unit`, `make fuzz` and `make interface` are the three parts of
+  it, see [docs/BUILD.md](docs/BUILD.md).
 
 ## Open work
 

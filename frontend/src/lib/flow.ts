@@ -129,3 +129,49 @@ export class Newest {
     return true;
   }
 }
+
+// How far an episode has been heard, which can only ever grow.
+//
+// Two numbers say it and they disagree on purpose. The saved transcript is
+// rewritten whole, so it lands seconds apart and jumps minutes of audio at
+// a time. A running transcription says where it got to as each chunk
+// finishes, which is far more often. The range picker draws the second one,
+// because that is the one that moves with the work.
+//
+// The moment the transcription stops, the second one is gone and what is
+// left is the number from disk, which is behind it by however much had not
+// been saved. The edge then walks backwards, and it cannot: it says how
+// much of the episode has been read, and reading does not unhappen. Pausing
+// showed this plainly, because pausing is the one moment the live number
+// disappears while the saved one is at its most stale.
+//
+// The same holds for answers that cross. Every refresh of the episode is a
+// call of its own, so an older one can land after a newer one and carry a
+// smaller number with it.
+//
+// So the furthest seen is kept, and the edge never falls below it. It
+// starts over only when the mark is about a transcript that no longer
+// exists: another episode, or one being read again from the beginning.
+export class Heard {
+  private at = 0;
+  private of = "";
+
+  // saved is how far the transcript on disk reaches. running is how far a
+  // running transcription says it has got, or null when none is running.
+  // restart says the mark is about to be meaningless: the transcript is out
+  // of date and will be read again, or there is no work folder left at all.
+  //
+  // A transcription carried on after a pause reports from where the saved
+  // transcript ends, which is behind the mark. That is not a step back:
+  // those seconds were heard, they were only never written down, so the
+  // edge stands still until the work passes it rather than rewinding.
+  seen(episode: string, saved: number, running: number | null, restart: boolean): number {
+    if (episode !== this.of || restart) {
+      this.of = episode;
+      this.at = 0;
+    }
+    const now = Math.max(saved, running ?? 0);
+    if (now > this.at) this.at = now;
+    return this.at;
+  }
+}

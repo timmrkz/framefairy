@@ -133,6 +133,40 @@ func TestSilencesAndPeaks(t *testing.T) {
 	}
 }
 
+// Loudness is read every hundredth of a second and no finer, so asking for
+// more parts than that gives parts that share a reading. Five buckets
+// inside one reading are five copies of it, and a window drawing a line
+// between its buckets cannot tell that from five readings that agree: the
+// line comes out flat where the sound was rising, which is what made the
+// clip timeline look like a display with too few pixels. The answer says
+// how fine the measurement was by being that long.
+func TestPeaksNeverPromiseMoreThanWasMeasured(t *testing.T) {
+	tr := &Transcript{Frames: make([]float32, 500), Floor: -40}
+	for i := range tr.Frames {
+		tr.Frames[i] = float32(-60 + i%20)
+	}
+
+	// A tenth of a second holds ten readings, however many are asked for.
+	if got := tr.Peaks(0, 0.1, 4000); len(got) != 10 {
+		t.Errorf("a tenth of a second came back in %d parts, want 10", len(got))
+	}
+	// Asking for fewer than were measured is answered exactly.
+	if got := tr.Peaks(0, 5, 100); len(got) != 100 {
+		t.Errorf("100 parts of five seconds came back as %d", len(got))
+	}
+	// One reading is one part, never none.
+	if got := tr.Peaks(0, 0.004, 50); len(got) != 1 {
+		t.Errorf("four milliseconds came back in %d parts, want 1", len(got))
+	}
+	// And every part still carries the loudest reading in it.
+	fine := tr.Peaks(0, 0.1, 4000)
+	for i, level := range fine {
+		if level != tr.Frames[i] {
+			t.Errorf("part %d reads %v, the reading is %v", i, level, tr.Frames[i])
+		}
+	}
+}
+
 func TestSetRejectedKeepsTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "clips.json")
 	original := `{
@@ -251,6 +285,34 @@ func TestDiffClip(t *testing.T) {
 	cut := DiffClip(proposal, [][2]float64{{10, 14}, {16, 20}, {25, 30}}, [][2]int{{1, 4}}, [][2]int{{1, 4}})
 	if cut.Unchanged || len(cut.PausesCut) != 1 || cut.PausesCut[0] != [2]float64{14, 16} {
 		t.Errorf("cut %+v", cut)
+	}
+
+	// A cut the model made and a person moved. The clip's own edges did not
+	// change and there are still as many cuts as before, so nothing above
+	// notices it, and the export reads Unchanged to decide whether a render
+	// is a full hit. Recorded as unchanged, this teaches the model that the
+	// cut it proposed was the one that was wanted, which is the opposite of
+	// what happened.
+	moved := DiffClip(proposal, [][2]float64{{10, 21.5}, {24, 30}}, [][2]int{{1, 4}}, [][2]int{{1, 4}})
+	if moved.Unchanged {
+		t.Errorf("a moved cut counts as an unchanged clip: %+v", moved)
+	}
+	if len(moved.PausesMoved) != 1 {
+		t.Fatalf("moved %+v", moved)
+	}
+	if moved.PausesMoved[0].Was != [2]float64{20, 25} || moved.PausesMoved[0].Now != [2]float64{21.5, 24} {
+		t.Errorf("the move was recorded as %+v", moved.PausesMoved[0])
+	}
+	// It is one cut moved, not one taken away and another made.
+	if len(moved.PausesCut) != 0 || len(moved.PausesRestored) != 0 {
+		t.Errorf("a moved cut was counted twice: %+v", moved)
+	}
+
+	// A cut nudged by a frame or two is the same cut, and a person who
+	// leaves it alone should not look like one who corrected it.
+	nudged := DiffClip(proposal, [][2]float64{{10, 20.02}, {25.01, 30}}, [][2]int{{1, 4}}, [][2]int{{1, 4}})
+	if !nudged.Unchanged || len(nudged.PausesMoved) != 0 {
+		t.Errorf("a cut within the tolerance counts as moved: %+v", nudged)
 	}
 }
 

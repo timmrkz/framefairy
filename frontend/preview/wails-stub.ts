@@ -14,28 +14,103 @@ const words = (from: number, to: number) => {
   return list;
 };
 
-const clip = (n: number, start: number, title: string, rendered: boolean) => ({
-  id: `0${n}`,
-  slug: `clip-${n}`,
-  basename: `0${n}_clip-${n}`,
-  title,
-  reason: "A short, complete memory of defending oneself using Judo.",
-  duration: 24,
-  start,
-  end: start + 24,
-  segments: [
+type Piece = { start: number; end: number; cropX: number; moved: boolean };
+
+// A clip's pieces, once a cut has changed them. The Go side keeps them in
+// the plan, so the preview keeps them here, or a cut would come undone the
+// moment the clip list is read again.
+const held = (): Record<string, Piece[]> => ((window as any).__pieces ??= {});
+
+const pieces = (n: number, start: number): Piece[] =>
+  held()[`0${n}`] ?? [
     { start, end: start + 12, cropX: 420, moved: false },
     { start: start + 13, end: start + 25, cropX: 420, moved: false },
-  ],
-  words: words(start, start + 25),
-  rejected: false,
-  rendered: rendered ? "/tmp/out.mp4" : undefined,
-  captionY: 300,
-  captionYMoved: false,
-  key: `clips.json/0${n}`,
-  plan: "/eps/ep.framefairy/logs/clips.json",
-  cropLefts: [420, 420],
-});
+  ];
+
+// The same snapping the engine does, so what the preview gives back is what
+// the app would really be handed: a cut swallows every word it touches and
+// then leaves a tenth of a second of air on each side that stays.
+const snapCut = (list: { start: number; end: number }[], from: number, to: number): [number, number] => {
+  const keepPause = 0.1;
+  let swallowedFrom = Infinity;
+  let swallowedTo = -Infinity;
+  for (const w of list) {
+    if (w.end > from && w.start < to) {
+      swallowedFrom = Math.min(swallowedFrom, w.start);
+      swallowedTo = Math.max(swallowedTo, w.end);
+    }
+  }
+  let a = Math.min(from, swallowedFrom);
+  let b = Math.max(to, swallowedTo);
+  let before = -Infinity;
+  let after = Infinity;
+  for (const w of list) {
+    if (w.end <= a) before = Math.max(before, w.end);
+    if (w.start >= b) after = Math.min(after, w.start);
+  }
+  if (before !== -Infinity) a = Math.min(before + keepPause, swallowedFrom);
+  if (after !== Infinity) b = Math.max(after - keepPause, swallowedTo);
+  return [Math.max(0, a), b];
+};
+
+// Taking a stretch out of a set of pieces. A piece the cut straddles becomes
+// two, and both keep the framing, exactly as the engine does it.
+const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
+  const out: Piece[] = [];
+  for (const p of list) {
+    if (from <= p.start && to >= p.end) continue;
+    if (to <= p.start || from >= p.end) {
+      out.push(p);
+      continue;
+    }
+    if (from > p.start) out.push({ ...p, end: from });
+    if (to < p.end) out.push({ ...p, start: to });
+  }
+  return out;
+};
+
+const clip = (n: number, start: number, title: string, rendered: boolean) => {
+  const segments = pieces(n, start);
+  const first = segments.length ? segments[0].start : start;
+  const last = segments.length ? segments[segments.length - 1].end : start;
+  return {
+    id: `0${n}`,
+    slug: `clip-${n}`,
+    basename: `0${n}_clip-${n}`,
+    title,
+    reason: "A short, complete memory of defending oneself using Judo.",
+    duration: segments.reduce((sum, p) => sum + p.end - p.start, 0),
+    start: first,
+    end: last,
+    segments,
+    words: words(start, start + 25).filter((w) =>
+      segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
+    ),
+    rejected: false,
+    rendered: rendered ? "/tmp/out.mp4" : undefined,
+    captionY: 300,
+    captionYMoved: false,
+    key: `clips.json/0${n}`,
+    plan: "/eps/ep.framefairy/logs/clips.json",
+    cropLefts: segments.map((p) => p.cropX),
+  };
+};
+
+// Where each clip of the ordinary mode starts, so a cut can find the clip
+// it was asked about and give the same one back.
+const starts: Record<string, [number, string, boolean]> = {
+  "01": [57, "Mein Arm ist zersprungen", true],
+  "02": [400, "Der Typ vor mir auf einmal", false],
+  "03": [902, "Warum ich nie wieder", false],
+  "04": [1400, "Ein echtes Thema", false],
+};
+
+const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
+  const n = Number(id);
+  const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
+  held()[id] = change(pieces(n, at));
+  return clip(n, at, title, rendered);
+};
 
 const captionWords = [
   { start: 0.2, end: 0.6, text: "Und" },
@@ -55,6 +130,9 @@ export const Call = {
     // A search that really runs and really finishes, for testing what the
     // workspace does the moment the first clips arrive.
     const found = location.search.includes("found");
+    const paused = location.search.includes("paused");
+    const carriedOn = () => !!(window as any).__carriedOn;
+    const stopped = () => !!(window as any).__stopped;
     const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
     const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < 2500;
     const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= 2500;
@@ -76,6 +154,12 @@ export const Call = {
         }
         if (location.search.includes("transcribing")) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 1200, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true });
+        }
+        // What pausing leaves behind: clips already found, the episode read
+        // only part way, and nothing reading the rest. Until the mark in the
+        // clip list head stayed for it, this state had no way out.
+        if (paused) {
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
         }
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
       // Every search this window asks for, so a test can see the first one
@@ -157,15 +241,69 @@ export const Call = {
       }
       case "RemoveSearch":
         return Promise.resolve(null);
+      // The cuts inside a clip. They answer with the clip as it now is,
+      // the way the Go side does, so the timeline draws where the edges
+      // really landed rather than where the hand let go.
+      case "CutClip": {
+        // The last argument is toWords. Without it the edges stay where
+        // they were put, which is how a cut lands on a frame rather than
+        // on a word, so the stub has to honour it or the harness cannot
+        // tell the two gestures apart.
+        const [, , id, from, to, toWords] = args as
+          [string, string, string, number, number, boolean];
+        const [at] = starts[id] ?? [60];
+        const said = words(at, at + 25);
+        const [a, b] = toWords ? snapCut(said, from, to) : [from, to];
+        return Promise.resolve(recut(id, (list) => applyCut(list, a, b)));
+      }
+      case "JoinCut": {
+        const [, , id, at] = args as [string, string, string, number];
+        return Promise.resolve(
+          recut(id, (list) => {
+            for (let i = 0; i + 1 < list.length; i++) {
+              if (at >= list[i].end && at <= list[i + 1].start) {
+                const joined = { ...list[i], end: list[i + 1].end };
+                return [...list.slice(0, i), joined, ...list.slice(i + 2)];
+              }
+            }
+            return list;
+          }),
+        );
+      }
+      case "MoveCut": {
+        const [, , id, index, from, to, toWords] = args as
+          [string, string, string, number, number, number, boolean];
+        const [at] = starts[id] ?? [60];
+        const [a, b] = toWords ? snapCut(words(at, at + 25), from, to) : [from, to];
+        return Promise.resolve(
+          recut(id, (list) => {
+            if (index < 0 || index + 1 >= list.length) return list;
+            const out = list.map((p) => ({ ...p }));
+            out[index].end = a;
+            out[index + 1].start = b;
+            return out;
+          }),
+        );
+      }
       case "Jobs": {
         const q = location.search;
         if (found) return Promise.resolve(searching() ? [planJob("running")] : done() ? [planJob("done")] : []);
+        // Paused, and then asked to carry on: the transcription runs again,
+        // which is what the mark in the clip list head has to bring about.
+        if (paused) {
+          return Promise.resolve(carriedOn()
+            ? [{ id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe", progress: { stage: "asr", text: "Listening", fraction: 0.28, remaining: 420 } }]
+            : []);
+        }
         if (growing) {
           return Promise.resolve([
             { id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe", progress: { stage: "asr", text: "Listening", fraction: grown / 14423, remaining: 600 } },
           ]);
         }
         if (q.includes("transcribing")) {
+          // Stopped, so the job is gone and only the saved transcript is
+          // left. That is the moment the edge used to jump backwards.
+          if (stopped()) return Promise.resolve([]);
           return Promise.resolve([
             {
               id: "t1",
@@ -175,7 +313,9 @@ export const Call = {
               state: "running",
               queued: "",
               lane: "transcribe",
-              progress: { stage: "asr", text: "Listening", fraction: 0.23, remaining: 276 },
+              // Ahead of the 1200 the episode reports, because the saved
+              // transcript is rewritten whole and lands seconds apart.
+              progress: { stage: "asr", text: "Listening", fraction: 0.23, remaining: 276, covered: 1800 },
             },
           ]);
         }
@@ -217,13 +357,47 @@ export const Call = {
         ]);
       }
       case "Waveform": {
-        const buckets = Number(args[3]) || 900;
         const from = Number(args[1]) || 0;
         const to = Number(args[2]) || 14423;
+        // Never more buckets than there are measurements, the way the Go
+        // side answers. Without this the stub hands back five buckets
+        // carrying the same ten milliseconds and the window has no way to
+        // know it.
+        const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
         // The peaks come from the transcript, so while it is being made
         // there is a waveform up to where it got to and silence after.
         const edge = location.search.includes("transcribing") ? 1200 : 14423;
-        return Promise.resolve(Array.from({ length: buckets }, (_, i) => (from + ((i + 0.5) * (to - from)) / buckets > edge ? -90 : -60 + 45 * Math.abs(Math.sin(i / 7)) * Math.abs(Math.cos(i / 31)))));
+        // Loudness is measured every ten milliseconds and no finer, and
+        // a bucket is the loudest measurement that falls in it. That is
+        // engine.FrameSeconds and Transcript.Peaks, and the stub has to do
+        // the same or it cannot be zoomed in past the measurement, which
+        // is the one place the waveform looked like a display with too few
+        // pixels. It used to answer with exactly as many smooth values as
+        // it was asked for, whatever the zoom, so the fault could not
+        // happen here at all.
+        const frame = 0.01;
+        // Speech, near enough: syllables about four a second inside a
+        // slower rise and fall, and a grain on top because loudness is not
+        // smooth from one ten milliseconds to the next. The grain is the
+        // part that matters here. A signal that barely moves between
+        // neighbouring frames cannot show a staircase however coarsely it
+        // is drawn, so a stub without it says every drawing is fine.
+        const loud = (t: number) => {
+          if (t > edge) return -90;
+          const said = Math.abs(Math.sin(t * 6.3)) * Math.abs(Math.cos(t * 0.7));
+          const grain = Math.abs(Math.sin(t * 997));
+          return -60 + 45 * said * (0.55 + 0.45 * grain);
+        };
+        const step = (to - from) / buckets;
+        return Promise.resolve(
+          Array.from({ length: buckets }, (_, i) => {
+            const first = Math.floor((from + i * step) / frame);
+            const last = Math.max(first + 1, Math.ceil((from + (i + 1) * step) / frame - 1e-9));
+            let peak = -90;
+            for (let k = first; k < last; k++) peak = Math.max(peak, loud(k * frame));
+            return peak;
+          }),
+        );
       }
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });
@@ -232,6 +406,12 @@ export const Call = {
         // One file per second, so a test can see the frame follow the
         // playhead.
         return Promise.resolve(`/eps/still-${Math.round(Number(args[1]) || 0)}.jpg`);
+      case "CancelJob":
+        (window as any).__stopped = true;
+        return Promise.resolve(null);
+      case "Transcribe":
+        (window as any).__carriedOn = true;
+        return Promise.resolve({ id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: "running", queued: "", lane: "transcribe" });
       default:
         return Promise.resolve(null);
     }
@@ -245,6 +425,33 @@ export const Events = {
   // tell.
   On(name: string, fn: (ev: unknown) => void): () => void {
     if (name !== "job") return () => {};
+    // A transcription that reports where it got to, well ahead of the saved
+    // transcript, and that really stops when it is stopped. The job list is
+    // only ever kept current by these events, so without them a cancelled
+    // job stays in the window's hands and the pause cannot be tested at all.
+    if (location.search.includes("transcribing")) {
+      const timer = setInterval(() => {
+        const gone = !!(window as any).__stopped;
+        fn({
+          data: {
+            job: {
+              id: "t1",
+              episode: "/eps/ep.mp4",
+              kind: "transcribe",
+              label: "Transcribe",
+              state: gone ? "cancelled" : "running",
+              queued: "",
+              lane: "transcribe",
+              progress: gone
+                ? undefined
+                : { stage: "asr", text: "Listening", fraction: 0.23, remaining: 276, covered: 1800 },
+            },
+            event: { kind: "progress", text: "Listening", elapsed: 1 },
+          },
+        });
+      }, 400);
+      return () => clearInterval(timer);
+    }
     if (location.search.includes("found")) {
       const timer = setInterval(() => {
         const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;
@@ -257,6 +464,7 @@ export const Events = {
     if (!location.search.includes("growing")) return () => {};
     const started = ((window as any).__started ??= Date.now());
     const timer = setInterval(() => {
+      const gone = !!(window as any).__stopped;
       const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
       fn({
         data: {
@@ -265,10 +473,10 @@ export const Events = {
             episode: "/eps/ep.mp4",
             kind: "transcribe",
             label: "Transcribe",
-            state: "running",
+            state: gone ? "cancelled" : "running",
             queued: "",
             lane: "transcribe",
-            progress: { stage: "asr", text: "Listening", fraction: grown / 14423, remaining: 600 },
+            progress: { stage: "asr", text: "Listening", fraction: grown / 14423, remaining: 600, covered: grown },
           },
           event: { kind: "progress", text: "Listening", elapsed: 1 },
         },

@@ -197,8 +197,14 @@ place.
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the edge is taken from the waveform
   itself, so the light never lies over a waveform that is already drawn. The
-  range picker itself stays quiet: what is not transcribed is simply darker,
-  and the edge moves as the transcript grows. It moves with the work, not
+  range picker itself stays quiet: what is not transcribed is darker, with a
+  line of the muted grey at the edge, and the edge moves as the transcript
+  grows. The line is what carries it. Two greys this dark are about 1.2 to 1
+  against each other however far apart they are put, measured off the
+  pixels, because lightness is compressed at this end of the scale, so the
+  shade alone can never say where the transcript has got to. A line can: it
+  carries its contrast in the step across it rather than in the area, and it
+  is the edge the eye follows as the transcript grows. It moves with the work, not
   with the saving of it: the transcript is written to disk every few
   seconds, but every chunk the recogniser finishes says how far it has come,
   and the edge follows that. The only thing on that track that moves of its
@@ -219,21 +225,42 @@ place.
 - **The arrows up and down walk the clip list**, the way left and right walk
   the episode: each step takes the next clip and puts the playhead at its
   start.
-- **The pane is the clip list, not whatever is running.** The two lanes run
-  side by side and a transcription often outlasts the first search, so once
-  there are clips the head says **Clips** and **New** stays where it is. The
-  transcription carrying on behind them is a mark beside the count that
-  pauses it. Before there are any clips the pane is about the transcription,
-  because there is nothing else for it to be about.
+- **The pane is the clip list and nothing else.** It says **Clips** and
+  carries **New**, whatever else is happening. The transcription is not in
+  it at any point: it has a place of its own, on the range picker, at the
+  edge it moves. The two run in lanes of their own, and a head that carried
+  both is how it came to say **Transcribing** over a list of clips.
+- **New waits until a search could run.** A search reads the transcript off
+  disk, so **New** is off until the saved transcript reaches the end of the
+  chosen stretch, and says how far it has got and how far it needs to go.
+  It goes by what is written down rather than by what has been heard,
+  because a search started on the second one would read a transcript that
+  stops short of the stretch it was asked for.
+- **The transcription is worked from the edge it moves.** On the range
+  picker, at the transcript's edge, a mark appears while the pointer is on
+  the track and does the one thing there is to do: pause it while it reads,
+  carry on while it is stopped part way. It travels with the edge and glides
+  with it, so the two read as one thing: both are carried by a transform, so
+  the distance between them never changes. It is not there when the episode
+  is read to the end, because then there is nothing to do.
 - **What is running shows in the button it was started from.** Work that
   knows how far along it is fills the button, with a line of the app's
   colour at the front of the fill. Work that cannot say sends a band of that
   colour travelling across it instead.
 - **The chosen card is always in view.** Walking the list with the arrows
   brings it far enough in to clear the veil at either end.
-- **The clip timeline goes to what is playing.** Pressing play, or the space
-  bar, takes the view to the clip, the way an editor's timeline follows
-  playback. A view moved by hand is let go of then, and only then.
+- **Playing moves nothing.** An editor's timeline follows its playhead
+  while it plays, and there it is a setting, off as often as on, because a
+  view somebody put somewhere is a view they meant. Here it was neither
+  asked for nor announced. Finding the playhead is what the crosshair
+  under the track is for, and going back to the clip is what clicking its
+  card does: two controls that say what they do, and no third that does it
+  uninvited.
+- **How close the timeline stands is the hand's.** A pinch sets it, and
+  fitting a clip sets it, and nothing else may. Whatever brings the
+  playhead into the view moves the view along at the width it already has,
+  never making it wider or narrower: that is putting the playhead
+  somewhere on the range picker, and the crosshair under the timeline.
 - **The clip list waits in the shape it will have.** While the transcript is
   still coming, and while a search runs, the list holds as many rows as the
   search was asked for, with the light passing over them, so it does not
@@ -370,8 +397,11 @@ place.
       marked or not. A press that wobbles a few pixels is still a click, so
       nothing is drawn by accident.
     - Double-click it for the whole episode.
-    - The part not yet transcribed is darker, with a light passing over it
-      while the transcription runs.
+    - The part not yet transcribed is darker, with a line at the edge where
+      the transcript has got to, and a light passing over it while the
+      transcription runs.
+    - On the edge, while the pointer is on the track, the mark that pauses
+      the transcription or carries it on.
     - The window is locked while clips are being found.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
@@ -406,17 +436,60 @@ place.
       for. The magnifier never moves the playhead, and past the end of the
       transcript there is nothing to magnify, so it is off there and says
       so.
-    - The clip lies over the waveform in the accent colour. A hatched block
-      inside it is dead air the engine cut out: playing jumps it, and the
-      render does too. Where those cuts fall is the engine's business.
+    - **The clip is one thing, holes and all.** Two rules in the accent run
+      above and below it from its first piece to its last, whatever is cut
+      out in between, so a clip with a cut in it reads as one clip and not
+      as two standing in a row. The accent wash inside the rules says
+      which parts are kept. A stretch the clip leaves out, usually dead
+      air the engine found, is the track's own background with an accent
+      line at each end, the way an editor marks the place two shots were
+      joined: what is not in the clip looks like everything else that is
+      not in the clip. Playing jumps it, and the render does too.
+    - **The cuts can be changed.** Each one carries a handle on either edge,
+      in the accent's lighter shade so it is not taken for the clip's own
+      edge. Dragging a handle moves that edge of the cut, a double-click on
+      the block puts the stretch back, and holding shift while dragging
+      across the clip takes a stretch out by hand. Without shift the same
+      drag moves the playhead, so nothing that worked before works
+      differently, and a shift-click with no drag does nothing.
+    - **A stretch put back goes back in with the same gesture.** The
+      double-click that puts a cut back is remembered, so a second
+      double-click in the same place takes the stretch out again, edge for
+      edge. It is forgotten as soon as anything else about that clip
+      changes, because a stretch put back into a clip that has moved on is
+      not the stretch that was taken out.
+    - **A cut lands on whole words.** The engine puts the edges where the
+      render would cut them, so a cut dragged over a pause takes the whole
+      pause and a cut dragged over speech takes whole words. A cut can
+      never stop half way through a word, because half a word is a sound
+      nobody said and the captions are built from the words. The timeline
+      works the same snapping out while the hand is moving, so the block
+      shown is the block the render will leave out.
+    - **Alt lands on the frame instead.** Holding alt while dragging, on a
+      handle or across the clip, leaves the edges exactly where the hand
+      put them, rounded to a whole frame of the episode and no further, for
+      a word clipped a little short or a breath worth keeping. A cut made
+      that way may stop inside a word, which is the point of it. The key is
+      read while the hand moves rather than when it goes down, so letting
+      go of alt part way through goes back to snapping and the block says
+      so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and the words to correct are in the lens,
       so the waveform has the whole track to itself.
     - The waveform is drawn the way an editor draws one: one column of the
-      screen per column of the picture, each the loudest reading that falls
-      in it, each a whole pixel wide. Nothing is ever drawn between two
-      pixels, so it keeps the same weight at every zoom instead of
-      brightening and dimming as it is pinched.
+      screen per column of the picture, each a whole pixel wide. Nothing is
+      ever drawn between two pixels, so it keeps the same weight at every
+      zoom instead of brightening and dimming as it is pinched.
+    - **Zoomed out a column is the loudest reading in it**, because a peak
+      that was averaged away is a peak nobody can see. **Zoomed in past the
+      measurement the outline runs between the readings.** Loudness is
+      read every hundredth of a second and no finer, so a second of it on
+      a retina screen is a hundred readings across eight hundred pixels:
+      squared off, that is eight pixels of one height, a cliff, and eight
+      more. The engine says how fine its measurement was by never
+      answering with more parts than it read, and the timeline joins them
+      rather than squaring them off. It invents no detail, it stops
+      pretending each hundredth of a second was flat.
     - The times sit at the top of both tracks, in the same quiet grey, a
       step above the lines around them and below the waveform inside them.
     - Click a word in the lens to correct it. Enter saves, Escape cancels.
@@ -440,7 +513,9 @@ place.
     - **Two fingers move along the episode**, the way an editing timeline
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
-      to the whole episode. A view moved by hand stays where it was put,
+      to the whole episode. **Both ends are walls.** A pinch that can go no
+      closer does nothing at all, rather than carrying on and sliding the
+      view sideways. A view moved by hand stays where it was put,
       wherever the playhead goes. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. A double-click lets
       go of the view, and so does clicking a clip in the list, the one that

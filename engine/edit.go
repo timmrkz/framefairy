@@ -477,6 +477,249 @@ func segmentObjects(c *object) []*object {
 	return pieces
 }
 
+// MinCut is the shortest stretch worth taking out of a clip.
+const MinCut = 0.05
+
+// MinClip is the least a clip may be left holding.
+const MinClip = 1.0
+
+// Cut is one stretch a clip leaves out, the gap between two pieces.
+type Cut struct {
+	From float64
+	To   float64
+}
+
+// ClipCuts are the stretches a clip leaves out, in order. They are the gaps
+// between its pieces, so a clip in one piece has none.
+func ClipCuts(c Clip) []Cut {
+	var cuts []Cut
+	for i := 1; i < len(c.Segments); i++ {
+		from, to := c.Segments[i-1].End, c.Segments[i].Start
+		if to > from {
+			cuts = append(cuts, Cut{roundTo(from, 3), roundTo(to, 3)})
+		}
+	}
+	return cuts
+}
+
+// pieceSpan is how much of the source a set of pieces holds.
+func pieceSpan(pieces []*object) float64 {
+	lengths := make([]float64, len(pieces))
+	for i, seg := range pieces {
+		lengths[i] = number(seg.values["end"]) - number(seg.values["start"])
+	}
+	return pysum(lengths)
+}
+
+// editPieces is the one way the pieces of a clip are rebuilt. The change is
+// handed the pieces in order and answers with the pieces that replace them.
+// What comes back has to be a clip a person can still watch and the render
+// can still make, so it is checked before anything is written. The words are
+// taken again from the transcript, the caption file goes, because the
+// captions are built from the words, and the edit is recorded for training.
+func editPieces(planPath, clipID string, t *Transcript,
+	change func(pieces []*object) ([]*object, error)) error {
+	err := editPlan(planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		out, err := change(segmentObjects(c))
+		if err != nil {
+			return err
+		}
+		if len(out) == 0 {
+			return renderErr("that would leave the clip with nothing in it")
+		}
+		if len(out) > MaxSegments {
+			return renderErr("a clip can hold at most %d pieces", MaxSegments)
+		}
+		if span := pieceSpan(out); span < MinClip {
+			return renderErr("a clip needs at least one second, that would leave %s",
+				fixed(span, 2))
+		}
+		kept := make([]any, len(out))
+		for i, seg := range out {
+			kept[i] = seg
+		}
+		c.set("segments", kept)
+		refreshWords(c, kept, t)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	dropCaptionFile(planPath, clipID)
+	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
+	return nil
+}
+
+// Snap says whether a cut's edges are moved onto the words around them.
+//
+// ToWords is what the engine proposes and what a first drag does, because a
+// cut that lands between words is right nearly every time and nobody wants
+// to place one by hand. ToFrames leaves the edges exactly where they were
+// put, for the times when a word has to be clipped a little or a breath
+// kept, and then the picture is the only thing that says where the cut
+// belongs. A cut made to frames may stop inside a word, which is the whole
+// point of it.
+type Snap bool
+
+const (
+	ToWords  Snap = true
+	ToFrames Snap = false
+)
+
+// snapCut puts the edges of a cut where the render would cut them. A cut is
+// not a trim seen from the other side: a trim moves an edge to the nearest
+// word and keeps it, while a cut takes words away, so it has to be able to
+// reach a word and it must never stop inside one. Half a word is a sound
+// nobody said.
+//
+// So the cut first swallows every word it touches, then leaves keepPause of
+// air on each side that stays, without reaching into a word that is going.
+// A cut dragged over a pause takes the whole pause, and a cut dragged over
+// speech takes whole words.
+func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
+	// What the cut touches goes with it.
+	swallowedFrom, swallowedTo := math.Inf(1), math.Inf(-1)
+	for _, w := range t.Words {
+		if w.End > from && w.Start < to {
+			swallowedFrom = math.Min(swallowedFrom, w.Start)
+			swallowedTo = math.Max(swallowedTo, w.End)
+		}
+	}
+	start := math.Min(from, swallowedFrom)
+	end := math.Max(to, swallowedTo)
+
+	// The last word that stays before the cut, and the first that stays
+	// after it. The air belongs to the side that stays.
+	before, after := math.Inf(-1), math.Inf(1)
+	for _, w := range t.Words {
+		if w.End <= start {
+			before = math.Max(before, w.End)
+		}
+		if w.Start >= end {
+			after = math.Min(after, w.Start)
+		}
+	}
+	if !math.IsInf(before, -1) {
+		start = math.Min(before+keepPause, swallowedFrom)
+	}
+	if !math.IsInf(after, 1) {
+		end = math.Max(after-keepPause, swallowedTo)
+	}
+	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
+}
+
+// CutClip takes a stretch out of the middle of a clip. A piece the cut lands
+// inside becomes two, and both keep the framing of the piece they came from,
+// so cutting never moves the picture. A piece the cut swallows whole goes.
+// With ToWords the edges move onto the words around them, with ToFrames they
+// stay where they were put.
+func CutClip(planPath, clipID string, from, to float64, t *Transcript,
+	keepPause float64, snap Snap) error {
+	if snap == ToWords {
+		from, to = snapCut(t, from, to, keepPause)
+	} else {
+		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
+	}
+	if to-from < MinCut {
+		return renderErr("a cut has to take out more than that")
+	}
+	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
+		out := applyCut(pieces, from, to)
+		if len(out) == len(pieces) && pieceSpan(out) >= pieceSpan(pieces) {
+			return nil, renderErr("that cut falls outside the clip")
+		}
+		return out, nil
+	})
+}
+
+// applyCut takes a stretch out of a set of pieces. A piece the cut straddles
+// is split, and the half that is kept on each side is a copy of the whole,
+// so the framing and the automatic framing behind it travel with both.
+func applyCut(pieces []*object, from, to float64) []*object {
+	var out []*object
+	for _, seg := range pieces {
+		start, end := number(seg.values["start"]), number(seg.values["end"])
+		if from <= start && to >= end {
+			continue
+		}
+		if to <= start || from >= end {
+			out = append(out, seg)
+			continue
+		}
+		if from > start {
+			head := copyObject(seg)
+			head.set("end", roundTo(from, 3))
+			out = append(out, head)
+		}
+		if to < end {
+			tail := copyObject(seg)
+			tail.set("start", roundTo(to, 3))
+			out = append(out, tail)
+		}
+	}
+	return out
+}
+
+// JoinCut puts back the stretch a clip leaves out at a moment, so the two
+// pieces around it become one. The framing of the piece before the cut is
+// the one the joined piece keeps, because that is the shot it opens on.
+func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
+	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
+		for i := 0; i+1 < len(pieces); i++ {
+			end := number(pieces[i].values["end"])
+			next := number(pieces[i+1].values["start"])
+			if at >= end && at <= next {
+				joined := copyObject(pieces[i])
+				joined.set("end", pieces[i+1].values["end"])
+				out := append([]*object{}, pieces[:i]...)
+				out = append(out, joined)
+				return append(out, pieces[i+2:]...), nil
+			}
+		}
+		return nil, renderErr("there is no cut at %s", fixed(at, 2))
+	})
+}
+
+// MoveCut moves both edges of one of a clip's cuts, counted from the first.
+// The pieces either side give way to it, and neither may be squeezed out of
+// existence, so a cut that would swallow its neighbour is refused rather
+// than quietly dropping a piece. With ToWords the edges move onto the words
+// around them, with ToFrames they stay where they were put, which is how an
+// edge is walked a frame at a time.
+func MoveCut(planPath, clipID string, index int, from, to float64,
+	t *Transcript, keepPause float64, snap Snap) error {
+	if snap == ToWords {
+		from, to = snapCut(t, from, to, keepPause)
+	} else {
+		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
+	}
+	if to-from < MinCut {
+		return renderErr("a cut has to take out more than that")
+	}
+	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
+		if index < 0 || index+1 >= len(pieces) {
+			return nil, renderErr("this clip has no cut number %d", index+1)
+		}
+		before, after := pieces[index], pieces[index+1]
+		if from <= number(before.values["start"]) {
+			return nil, renderErr("a cut cannot swallow the piece before it")
+		}
+		if to >= number(after.values["end"]) {
+			return nil, renderErr("a cut cannot swallow the piece after it")
+		}
+		out := append([]*object{}, pieces...)
+		out[index] = copyObject(before)
+		out[index].set("end", roundTo(from, 3))
+		out[index+1] = copyObject(after)
+		out[index+1].set("start", roundTo(to, 3))
+		return out, nil
+	})
+}
+
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
 // left edge in source pixels. Every piece of the clip that the analysis
 // framed the same way, which is the same camera angle, moves with it. The

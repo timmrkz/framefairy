@@ -4,6 +4,7 @@
   // inside the track. A click without dragging moves the player.
   import { onMount } from "svelte";
   import { clock, type WindowView } from "../lib/api";
+  import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
 
@@ -21,6 +22,12 @@
     searched = [],
     onremove,
     locked = false,
+    transcribing = false,
+    partly = false,
+    leftToGo = "",
+    holding = false,
+    pausing = false,
+    ontranscription,
   }: {
     duration: number;
     covered?: number;
@@ -40,7 +47,31 @@
     // leaves the stretch free to be searched again. The caller asks first.
     onremove?: (stretch: { from: number; to: number }) => void;
     locked?: boolean;
+    // How the reading of the episode stands. The transcript's edge is drawn
+    // here already, so the one thing to do about it belongs here too rather
+    // than in the head of a list about clips.
+    transcribing?: boolean;
+    // Stopped part way: some of it read, nothing reading the rest.
+    partly?: boolean;
+    leftToGo?: string;
+    // The edge is being held where it is, because pause was pressed. It
+    // stops moving at once rather than sliding on to where the work had
+    // got to, which is a second or two of an interface ignoring a click.
+    holding?: boolean;
+    // The stop has been asked for and has not reached the work yet. The
+    // control it was asked from wears the beam while that lasts, the way
+    // every control in the app says the work it started is in hand.
+    pausing?: boolean;
+    // Pause it while it runs, carry on while it is stopped. One control,
+    // because there is only ever one thing to do.
+    ontranscription?: () => void;
   } = $props();
+
+  // The control at the transcript's edge is only there while the pointer is
+  // on the track, the same as the info marks: what a thing is for is shown
+  // when it is being looked at, and a track with nothing happening on it
+  // carries nothing.
+  let near = $state(false);
 
   let track: HTMLDivElement;
   let width = $state(0);
@@ -232,7 +263,12 @@
      that has to reach past them: its head stands above the track the way
      an editor's does, and at the very start or the very end it would
      otherwise be cut off by the corner. -->
-<div class="over">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="over"
+  onpointerenter={() => (near = true)}
+  onpointerleave={() => (near = false)}
+>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -250,7 +286,30 @@
        moves as the transcript grows, and the only thing on the track that
        moves of its own accord is the window while a search runs. -->
   {#if pending}
-    <div class="pending" class:glide style="left: {at(covered)}px"></div>
+    <div class="pending" class:glide={glide && !holding} class:held={holding} style="transform: translateX({at(covered)}px)"></div>
+  {/if}
+  <!-- The one thing to do about the reading of the episode, at the edge the
+       reading moves. It waits for the pointer to be on the track, the way
+       every other mark here does, so a track nobody is looking at carries
+       nothing. -->
+  {#if pending && near && (transcribing || partly) && ontranscription}
+    <button
+      class="reading"
+      class:glide={glide && !holding}
+      class:held={holding}
+      style="transform: translateX({at(covered)}px)"
+      onpointerdown={(e) => e.stopPropagation()}
+      ondblclick={(e) => e.stopPropagation()}
+      onclick={ontranscription}
+      disabled={pausing}
+      aria-label={transcribing ? "Pause the transcription" : "Carry on transcribing"}
+      title={transcribing
+        ? `Reading the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`
+        : `The episode is read as far as ${clock(covered)}. Carry on from there`}
+    >
+      {#if pausing}<Busy />{/if}
+      <Icon name={transcribing ? "pause" : "play"} size={12} />
+    </button>
   {/if}
   {#each searched as w, i (i)}
     <div
@@ -277,7 +336,7 @@
        to hold the button wears it just outside its end. -->
   {#if onremove && !locked && covering}
     <button
-      class="free"
+      class="free quiet danger"
       class:shown={overWindow}
       class:beside={at(to) - at(from) < 40}
       style="left: {at(to)}px"
@@ -334,10 +393,20 @@
     onpointerdown={(e) => e.stopPropagation()}
     ondblclick={(e) => e.stopPropagation()}
   >
+    <!-- Until the episode is read to the end that is the thing to say, and
+         it is said first, because it is what everything else is waiting on.
+         Short either way: a bubble nobody finishes is a bubble nobody
+         reads. -->
     <Info label="What the range picker is" side="right">
-      The whole episode at a glance. Drag across it for the stretch to search, or drag the window
-      and its edges, and double-click for the whole episode. A shaded stretch has been searched
-      already, and the marks in it are the clips found there.
+      {#if pending}
+        The whole episode. The dark part is not read yet, and the line is how far it has got. The
+        mark on the line pauses the reading or carries it on. Clips can be looked for once the line
+        passes the window.
+      {:else}
+        The whole episode. Drag for a stretch to search, or drag the window and its edges.
+        Double-click for all of it. A shaded stretch has been searched, and the marks in it are its
+        clips.
+      {/if}
     </Info>
   </span>
   {#if showing}
@@ -492,16 +561,39 @@
     margin-left: 6px;
   }
 
-  /* What has not been transcribed yet is simply darker, and the edge
-     between the two is where the transcript has got to. No line, no light:
-     a mark nobody can read is worse than nothing, and what is going on is
-     said by the head of the clip list and its info mark. */
+  /* What has not been transcribed yet is darker, and the edge between the
+     two is where the transcript has got to.
+     The shade alone could never say where that is. Down at this end of the
+     scale lightness is compressed: the track is #1d1f23, and laying black
+     over it at any strength lands between 1.1 and 1.2 to 1 against it,
+     measured off the pixels. Taking it to near black does not help, it only
+     turns the far end of the track into a hole. Two large areas that close
+     together are one area.
+     An edge is a different thing to see. A line carries its contrast in the
+     step across it rather than in the area, so one pixel of a grey that is
+     plainly lighter says what a whole field of darker grey cannot, and it
+     is the edge that shows the movement: what the eye follows as the
+     transcript grows is the line, not the shade behind it. */
+  /* It is as wide as the whole track and travels by transform, so what is
+     drawn is only ever moved and never laid out again. A left that is
+     animated is worked out by the main thread on every frame, which is the
+     same thread the transcription's own reports land on, so the edge stood
+     still for a frame or two and then caught up in a jump: a step, beside a
+     mark that glided. Measured while transcribing, the distance between the
+     two varied by 1.80 pixels. A transform is carried by the compositor,
+     like the mark's, so the two move as one thing.
+     The track clips what runs past its right edge. */
   .pending {
     position: absolute;
     top: 0;
     bottom: 0;
+    left: 0;
     right: 0;
-    background: rgba(0, 0, 0, 0.3);
+    border-left: 1px solid var(--muted);
+    /* Deepest against the line and easing back to the flat shade, so the
+       edge reads as the front of something moving rather than as the side
+       of a block. */
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.34) 28px);
     pointer-events: none;
   }
 
@@ -511,7 +603,56 @@
      are. The glide is armed a frame after the first edge is drawn, so
      opening a workspace mid-transcription does not sweep the track. */
   .pending.glide {
-    transition: left 1s linear;
+    transition: transform 1s linear;
+  }
+
+  /* Pause was pressed, so the edge stops. Taking the glide away should be
+     enough and is not: a transition already on its way carries on to where
+     it was going, which is a second of an edge still sliding after the
+     press. Saying none outright ends it, and the edge lands on the second
+     the work really reached. */
+  .pending.held,
+  .reading.held {
+    transition: none;
+  }
+
+  /* At the transcript's edge, on the dark side of it, so it never covers
+     the waveform or a clip mark. It sits on the line rather than beside it,
+     because what it is about is the line.
+     It travels with the edge, so it takes the same glide: a control that
+     jumped while the line it belongs to slid would read as two things. */
+  /* It travels by transform rather than by left. A left that is animated
+     lands on a fraction of a pixel on most frames, the button is laid out
+     afresh at every one of them, and the two bars of the pause mark inside
+     it are drawn a little differently each time: the mark wobbles while it
+     slides. A transform moves what has already been drawn, so the mark is
+     rasterised once and carried, and it holds still. */
+  .reading {
+    position: absolute;
+    top: 50%;
+    left: 3px;
+    margin-top: -10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: var(--ink-2);
+    color: var(--text);
+    cursor: pointer;
+    z-index: 7;
+  }
+
+  .reading:hover {
+    background: var(--ink-3);
+    border-color: var(--muted);
+  }
+
+  .reading.glide {
+    transition: transform 1s linear;
   }
 
   /* In the middle of the track, over everything, and only what is inside it
