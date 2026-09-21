@@ -43,6 +43,7 @@ await stop();
 | `?growing` | a transcript that really grows, job events every 900 ms |
 | `?paused` | clips found, the episode read part way, nothing reading the rest |
 | `?found` | a search that runs and really finishes, clips and all |
+| `?rendering` | a render running on the first clip, with progress |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
@@ -63,6 +64,26 @@ after load.
 
 `frontend/preview/dist/` is build output and is not in the repository.
 Write one-off probes outside the repository, in the scratchpad.
+
+## The motion bench
+
+`make motion` opens every way the app shows work in hand on one page: the
+beam and its motes, the fill in a control and as a track, the shimmer and
+the pulse, each at every share and in every kind of control, with a colour
+picker so the whole set can be seen in another accent. It is the fastest
+way to look at a change to any of them, because nothing has to be started
+and nothing has to be caught at the right moment.
+
+It is built from `frontend/preview/motion/` by
+`frontend/preview/motion.config.ts` and it uses the app's own `app.css` and
+the app's own `Busy.svelte`, so what it shows is what the workspace shows.
+Build it for a probe with
+
+```
+npx vite build --config frontend/preview/motion.config.ts
+```
+
+Anything added to the five belongs on that page in the same change.
 
 ## Measure the right thing
 
@@ -241,8 +262,14 @@ Anything that assumes a seek worked will be wrong while transcribing.
 
 ## Before saying it is done
 
-- `cd frontend && npx svelte-check --threshold error`
-- `make test`, then `make`, both from the top. Both must be clean.
+- `make interface`, which is the type check and the interface's own tests.
+- Build the preview, and the motion bench if the change touches any of the
+  five ways work in hand is shown.
+- `make test` and `make` only if the change touches Go. A change only to
+  `frontend/` or `docs/` does not: the Go tests fuzz for ten thousand
+  executions a target and take minutes, and no line of CSS can move them.
+  CI runs everything anyway, on both systems. Waiting on them in a cloud
+  session is Tim waiting.
 - Say what to look at and what should happen, in the app, in the order
   Tim would do it. He is the one who can see it.
 - Name what you could not verify. A fix reported as certain and found

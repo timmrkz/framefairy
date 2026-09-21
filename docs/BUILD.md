@@ -39,6 +39,7 @@ installed only by the two targets below, and only when you call them.
 | --- | --- |
 | `make` | everything above |
 | `make run` | builds, then starts the app |
+| `make motion` | opens every way the app shows work in hand on one page in the browser, for looking at a change to any of them without starting a job. Preview material, never in the app |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
@@ -46,7 +47,7 @@ installed only by the two targets below, and only when you call them.
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | macOS: installs what is missing with Homebrew: Go, llama.cpp, Node.js, and ffmpeg with libass from the ffmpeg tap. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, unless they are there. An interrupted download resumes |
-| `make clean` | removes `bin/`, `.build/` and `frontend/node_modules/` |
+| `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
 
 `make TIDY=0` skips step 2, for a machine without network whose modules are

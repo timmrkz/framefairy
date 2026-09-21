@@ -77,6 +77,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.49 | An episode opens on the clip it was last worked on, or on the first one, so a workspace with clips in it is never waiting for a click that says nothing | `[x]` |
 | 2.48 | The ruler under the window rather than over it, so the edge of the window is whole where a minute falls on it, and the list of faces ending where the numbers end | `[x]` |
 | 2.47 | The playhead drawn over the tracks so its head stands above them, and frames that cannot arrive out of order: a file of its own per ask in the engine, a ticket per ask in the window | `[x]` |
+| 2.56 | One way of showing work in hand, everywhere: the beam round the control the work came from, the motes it sheds, the fill for how far it has come, the shimmer over a place waiting to be filled, and the pulse on a dot for work running elsewhere | `[x]` |
 | 2.46 | The pane stays about the clips while the transcription carries on behind them, the chosen card kept in view, an editor's playhead in the app's own colour, and progress that fills or travels | `[x]` |
 | 2.45 | The clip list as a stack of cards under a veil with the work in the button, an editor's playhead, the arrows walking the clips, and the bar asking macOS where its buttons are | `[x]` |
 | 2.44 | Two colours in the settings, the app's own and the word highlight, starting out the same, with the lighter shade and the wash mixed from the app's | `[x]` |

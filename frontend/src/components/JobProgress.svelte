@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, clock, type Job } from "../lib/api";
+  import Busy from "./Busy.svelte";
 
   let { job }: { job: Job } = $props();
 
@@ -34,13 +35,13 @@
     <span class="label grow">{job.label}</span>
     <span class="muted num">{left}</span>
   </div>
-  <div class="bar" class:unknown={fraction < 0}>
+  <div class="progress" class:unknown={fraction < 0}>
     <i style="width: {Math.max(fraction, 0) * 100}%"></i>
   </div>
   <div class="row bottom">
     <span class="muted grow line">{line}</span>
     <button class="stop" onclick={stop} disabled={stopping}
-      >{stopping ? onItsWay : word}</button
+      >{#if stopping}<Busy />{/if}{stopping ? onItsWay : word}</button
     >
   </div>
 </div>

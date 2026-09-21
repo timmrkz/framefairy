@@ -25,6 +25,7 @@
   import { installFonts } from "../lib/fonts";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
+  import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
   import ClipTimeline, { type ClipNumbers } from "../components/ClipTimeline.svelte";
   import Icon from "../components/Icon.svelte";
@@ -942,6 +943,7 @@
     {partly}
     {leftToGo}
     holding={stoppedAt !== null}
+    {pausing}
     ontranscription={() => (transcribing ? pauseTranscribing() : carryOnTranscribing())}
   />
 {/snippet}
@@ -1210,19 +1212,7 @@
                    started from and behind its own words. The control that
                    started it is the one that should say how it is doing,
                    and nothing is drawn across the list for it. -->
-              {#if lane.job}
-                {#if share < 0}
-                  <!-- Work that cannot say how far along it is. -->
-                  <span class="going round"><i class="sweep"></i></span>
-                {:else}
-                  <!-- Work that can: it fills, with a bright edge at the
-                       front so where it has got to is a line and not just
-                       where one shade becomes another. -->
-                  <span class="going fills">
-                    <i style="width: {share * 100}%"></i>
-                  </span>
-                {/if}
-              {/if}
+              {#if lane.job}<Busy fraction={share} />{/if}
               <Icon name={action.icon} />
               {action.label}
             </button>
@@ -1334,8 +1324,14 @@
           {#if current.rendered}
             <button onclick={() => api.reveal(current.rendered!)}>Show in folder</button>
           {/if}
-          <button class="primary" onclick={() => render(current)} disabled={!!working}
-            >{renderingCurrent ? "Rendering" : current.rendered ? "Render again" : "Render"}</button
+          <!-- The one act that matters, so it says how it is going in the
+               button it was started from, the same as New does. -->
+          <button class="primary render" onclick={() => render(current)} disabled={!!working}
+            >{#if renderingCurrent}<Busy fraction={share} />{/if}{renderingCurrent
+              ? "Rendering"
+              : current.rendered
+                ? "Render again"
+                : "Render"}</button
           >
         {/if}
       </div>
@@ -1688,101 +1684,17 @@
   /* What is running fills the button it was started from, behind its own
      words. The control that started the work is the one that should say
      how the work is going, and it leaves the head with nothing drawn
-     across it. */
-  .listhead .new {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .listhead .going {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    border-radius: inherit;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  /* What fills. The filled part is the app's colour at a wash, and its
-     front edge is a line of the colour itself, so how far it has come is
-     something to look at rather than a change of shade to squint at. A
-     sheen passes over what is done, which is what says it is still going
-     when the number has not moved for a while. */
-  .listhead .fills i {
-    display: block;
-    position: relative;
-    height: 100%;
-    background: var(--accent-wash);
-    box-shadow: inset -2px 0 var(--accent-hi);
-    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .listhead .fills i::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.14) 50%,
-      transparent 100%
-    );
-    animation: passing 2.4s ease-in-out infinite;
-  }
-
-  /* Work that cannot say how far along it is: a band of the app's colour
-     travels across the button, over and over. Brighter than the light that
-     passes over a place waiting to be filled, and in the app's own colour,
-     because something is happening here and only its end is unknown. */
-  .listhead .round .sweep {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 45%;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      var(--accent-wash) 30%,
-      var(--accent) 60%,
-      var(--accent-hi) 76%,
-      transparent 100%
-    );
-    animation: travelling 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  }
-
-  @keyframes travelling {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(223%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .listhead .round .sweep,
-    .listhead .fills i::after {
-      animation: none;
-    }
-  }
-
-  /* The words and the mark stay over the fill. */
-  .listhead .new > :global(svg),
-  .listhead .new {
-    position: relative;
-  }
-
-  .listhead .going i {
-    display: block;
-    height: 100%;
-    background: var(--accent-wash);
-    transition: width 0.2s linear;
-  }
-
+     across it. Busy.svelte is the whole of it, here and everywhere else
+     something runs. */
 
   .listhead .grow {
     flex: 1;
+  }
+
+  /* Room for the longest of the three words this button says, so the row
+     keeps still while a clip renders. */
+  .render {
+    min-width: 122px;
   }
 
   label {

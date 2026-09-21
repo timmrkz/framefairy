@@ -2,6 +2,7 @@
 #
 #   make            project packages, the interface and all three programs
 #   make run        build, then start the app
+#   make motion     the five ways the app shows work in hand, in a browser
 #   make test       all tests: unit, fuzz and interface
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
@@ -60,14 +61,14 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run motion test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
 all: toolchain $(PROGRAMS)
 	@echo "Ready: $(PROGRAMS)"
 	@sh scripts/check.sh --quiet
 
 help:
-	@sed -n '1,14p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,15p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -124,6 +125,11 @@ $(BIN)/framefairy-train$(EXE): modules
 run: all
 	@$(BIN)/framefairy-app$(EXE)
 
+# Every way the app says work is in hand, on one page, in a browser. It is
+# preview material and never goes into the app.
+motion: frontend/node_modules/.package-lock.json
+	@cd frontend && npx vite --config preview/motion.config.ts
+
 # Everything, in the order that puts the quickest answer first. The three
 # stand alone as well, because they do not need each other and CI runs them
 # on three machines at once: waiting for the fuzzing to finish before the
@@ -171,6 +177,6 @@ models:
 	@sh scripts/models.sh
 
 clean:
-	@rm -rf $(BIN) $(STAMPS) frontend/node_modules
+	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion
 	@$(GO) clean -fuzzcache
-	@echo "Removed bin/, .build/, frontend/node_modules/ and the fuzz corpus"
+	@echo "Removed bin/, .build/, frontend/node_modules/, the preview builds and the fuzz corpus"

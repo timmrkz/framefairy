@@ -4,6 +4,7 @@
   // inside the track. A click without dragging moves the player.
   import { onMount } from "svelte";
   import { clock, type WindowView } from "../lib/api";
+  import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
 
@@ -25,6 +26,7 @@
     partly = false,
     leftToGo = "",
     holding = false,
+    pausing = false,
     ontranscription,
   }: {
     duration: number;
@@ -56,6 +58,10 @@
     // stops moving at once rather than sliding on to where the work had
     // got to, which is a second or two of an interface ignoring a click.
     holding?: boolean;
+    // The stop has been asked for and has not reached the work yet. The
+    // control it was asked from wears the beam while that lasts, the way
+    // every control in the app says the work it started is in hand.
+    pausing?: boolean;
     // Pause it while it runs, carry on while it is stopped. One control,
     // because there is only ever one thing to do.
     ontranscription?: () => void;
@@ -295,11 +301,13 @@
       onpointerdown={(e) => e.stopPropagation()}
       ondblclick={(e) => e.stopPropagation()}
       onclick={ontranscription}
+      disabled={pausing}
       aria-label={transcribing ? "Pause the transcription" : "Carry on transcribing"}
       title={transcribing
         ? `Reading the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`
         : `The episode is read as far as ${clock(covered)}. Carry on from there`}
     >
+      {#if pausing}<Busy />{/if}
       <Icon name={transcribing ? "pause" : "play"} size={12} />
     </button>
   {/if}
@@ -313,6 +321,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="window"
+    class:waiting={locked}
     class:whole
     class:grip
     class:xray={covering}
@@ -715,49 +724,16 @@
     border-color: var(--accent-hi);
   }
 
-  /* While clips are being found for it, the window cannot be moved. A soft
-     light passes through it, once every couple of seconds, so the stretch
-     says work is in hand without a pattern to read. Stripes were tried and
-     they tile badly: the diagonal starts over at the edge of the repeat,
-     which shows as a seam down the middle of the window. */
+  /* While clips are being found for it, the window cannot be moved. The
+     stretch wears the shimmer, the same light that lies over every place
+     in the app waiting to be filled, because that is what this stretch
+     is: the clips in it are on their way. Stripes were tried and they
+     tile badly, the diagonal starts over at the edge of the repeat, which
+     shows as a seam down the middle of the window. */
   .track.locked .window,
   .track.locked .window.whole {
-    background-color: rgba(180, 35, 111, 0.18);
+    background-color: var(--accent-wash);
     border-color: var(--accent);
-    overflow: hidden;
-  }
-
-  .track.locked .window::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 45%;
-    background: linear-gradient(
-      90deg,
-      rgba(208, 53, 127, 0) 0%,
-      rgba(230, 120, 180, 0.38) 50%,
-      rgba(208, 53, 127, 0) 100%
-    );
-    animation: pass 2.2s ease-in-out infinite;
-  }
-
-  @keyframes pass {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(222%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .track.locked .window::after {
-      animation: none;
-      width: 100%;
-      background: rgba(208, 53, 127, 0.18);
-    }
   }
 
   .mark {

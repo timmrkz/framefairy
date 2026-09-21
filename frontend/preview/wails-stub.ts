@@ -319,7 +319,16 @@ export const Call = {
             },
           ]);
         }
-        if (!q.includes("busy")) return Promise.resolve([]);
+        // A render running on the first clip, so the Render button has
+        // work of its own to show.
+        if (q.includes("rendering")) {
+          return Promise.resolve([
+            { id: "r1", episode: "/eps/ep.mp4", kind: "render", label: "Render", state: "running", result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: { stage: "render", text: "Burning in the captions", fraction: 0.58, remaining: 42 } },
+          ]);
+        }
+        // Progress with no number to it comes with the busy job, so
+        // ?unknown on its own means the same as ?busy&unknown.
+        if (!q.includes("busy") && !q.includes("unknown")) return Promise.resolve([]);
         return Promise.resolve([
           {
             id: "j1",
