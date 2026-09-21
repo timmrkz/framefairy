@@ -422,6 +422,31 @@
     }
   }
 
+  // Brings a moment into the view without changing how much of the episode
+  // the view shows. How close the timeline stands is the hand's: a pinch
+  // sets it, and fitting a clip sets it, and nothing else may. Following
+  // the playhead is not a reason to change it. It used to be: pressing the
+  // space bar took the view back to a minute wide, so zooming in and
+  // playing threw the zoom away every time.
+  //
+  // A view the moment is already well inside does not move at all, or it
+  // would shuffle along every time the playhead crossed the middle.
+  function bring(at: number) {
+    const shown = span;
+    const whole = Math.max(duration, shown);
+    if (at > view.from + shown * 0.1 && at < view.from + shown * 0.9) return;
+    const from = Math.max(0, Math.min(at - shown * 0.25, whole - shown));
+    load(from, from + shown);
+  }
+
+  // Playing is asking to watch what is playing, so the view goes to the
+  // playhead. It is not asking for a different zoom, and it does not count
+  // as a hand moving the view either: the clip and the crosshair go on
+  // meaning what they meant.
+  export function follow() {
+    bring(time);
+  }
+
   // Clicking a clip in the list puts the timeline back on it, even when it
   // is the clip that is already selected and the view was moved by hand.
   // Given a moment, the timeline goes there instead: putting the playhead
@@ -437,9 +462,7 @@
     // playhead.
     held = !!clip;
     viewFor = clip?.key ?? "";
-    const whole = Math.max(duration, loose);
-    const from = Math.max(0, Math.min(at - loose * 0.25, whole - loose));
-    load(from, Math.min(from + loose, whole));
+    bring(at);
   }
 
   // The crosshair in the row below goes to the playhead. Always, clip or no
@@ -460,9 +483,9 @@
   export function toPlayhead() {
     held = !!clip;
     viewFor = clip?.key ?? "";
-    const whole = Math.max(duration, loose);
-    const from = Math.max(0, Math.min(time - loose / 2, whole - loose));
-    load(from, Math.min(from + loose, whole));
+    const whole = Math.max(duration, span);
+    const from = Math.max(0, Math.min(time - span / 2, whole - span));
+    load(from, from + span);
   }
 
   // Where the timeline sits when nobody has moved it: the clip with a little
@@ -592,6 +615,13 @@
     // Nothing to do while the playhead is well inside the window, and
     // nothing to do when the window it wants is the one already loaded.
     if (loaded && viewFor === "" && (middle || Math.abs(from - view.from) < 0.5)) return;
+    // A view that is already about the playhead just moves along with it.
+    // Only a view that is about something else, or none at all, is laid
+    // out afresh.
+    if (loaded && viewFor === "") {
+      bring(time);
+      return;
+    }
     fitView();
   });
 

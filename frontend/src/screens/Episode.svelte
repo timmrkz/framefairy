@@ -846,13 +846,17 @@
   // Playing is asking to watch, so the clip timeline goes to what is
   // playing. Every editor scrolls its timeline with playback, and a view
   // left somewhere else means pressing the space bar shows the picture
-  // moving over a waveform that is not the one being played. A view moved
-  // by hand is let go of here, which is the one time that is right: the
-  // hand has asked for something else since.
+  // moving over a waveform that is not the one being played.
+  //
+  // It goes there at the zoom it is standing at. This used to fit the clip
+  // to the view, which threw away a zoom the hand had chosen: zoom in,
+  // press the space bar, and the timeline jumped back to the whole clip.
+  // Playing is a reason to look somewhere, never a reason to look from
+  // further away.
   let wasPaused = $state(true);
   $effect(() => {
     const now = paused;
-    if (wasPaused && !now) timeline?.fit();
+    if (wasPaused && !now) timeline?.follow();
     wasPaused = now;
   });
 
