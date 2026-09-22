@@ -2,7 +2,7 @@
 # Everything this machine needs to build and run framefairy, installed
 # where it is missing.
 #
-#   scripts/tools.sh [FFMPEG_DIR]
+#   scripts/tools.sh [FFMPEG_DIR] [LLAMA_DIR]
 #
 # make calls this on every build, so it has to cost nothing when there is
 # nothing to do: every check below is a command -v or a file test, and no
@@ -17,6 +17,7 @@
 set -e
 SYSTEM=$(uname -s 2>/dev/null)
 FFMPEG_DIR=${1:-.build/ffmpeg}
+LLAMA_DIR=${2:-.build/llama}
 
 if [ "$SYSTEM" != Darwin ]; then
 	# Nothing to say when nothing is missing, because make calls this every
@@ -34,7 +35,6 @@ missing=""
 want() { command -v "$1" >/dev/null 2>&1 || missing="$missing $2"; }
 want go go
 want npm node
-want llama-server llama.cpp
 # What building our own ffmpeg needs. harfbuzz is built with meson, and
 # ffmpeg assembles its own x86 code with nasm.
 if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
@@ -42,6 +42,13 @@ if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
 	want ninja ninja
 	want pkg-config pkg-config
 	want nasm nasm
+fi
+# And what building our own llama-server needs. llama.cpp itself is not
+# installed from Homebrew any more: a customer has no Homebrew, so the
+# llama-server that has to work is the one we build and ship, and the way
+# to find out whether it works is to run that one every day.
+if [ ! -x "$LLAMA_DIR/bin/llama-server" ]; then
+	want cmake cmake
 fi
 
 if [ -n "$missing" ]; then
@@ -94,6 +101,34 @@ if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
 				brew list --formula ffmpeg >/dev/null 2>&1 && brew unlink ffmpeg
 				brew install homebrew-ffmpeg/ffmpeg/ffmpeg
 			fi
+		fi
+	fi
+fi
+
+# The llama-server framefairy ships, built from llama.cpp, which is MIT.
+# Same rules as ffmpeg above: several minutes, once, and after that this is
+# a file test.
+#
+# It is built here rather than installed from Homebrew because a customer
+# has no Homebrew. The llama-server that has to work is the one in the app,
+# so that is the one to run every day. A build that fails is not a reason
+# to be unable to work: the search path answers instead, and the app says
+# plainly when nothing answers at all.
+if [ ! -x "$LLAMA_DIR/bin/llama-server" ]; then
+	recipe=$(cksum scripts/build-llama.sh | cut -d' ' -f1)
+	if [ "$(cat "$LLAMA_DIR/failed" 2>/dev/null)" = "$recipe" ]; then
+		echo "The llama-server framefairy ships did not build last time, so a local"
+		echo "model needs one on the search path. Try it again with: make llama"
+	else
+		echo "Building the llama-server framefairy ships. This takes a few minutes, once."
+		if sh scripts/build-llama.sh "$LLAMA_DIR"; then
+			rm -f "$LLAMA_DIR/failed"
+		else
+			mkdir -p "$LLAMA_DIR"
+			echo "$recipe" >"$LLAMA_DIR/failed"
+			echo
+			echo "That did not work. A local model will need a llama-server on the search"
+			echo "path until it does. Try it again on its own with: make llama"
 		fi
 	fi
 fi

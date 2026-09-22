@@ -69,9 +69,18 @@ or set `FRAMEFAIRY_ASR_MODEL`.
 ## 4. llama.cpp and a language model
 
 The moments are chosen by a language model running on your machine through
-llama.cpp.
+llama.cpp's `llama-server`.
 
-| System | Command |
+`make` builds one for you, from source, and puts it in `bin/` beside the
+programs, where they look before the search path. That is the one a
+customer gets, so it is the one worth running. `make llama` builds it again
+from scratch.
+
+If you would rather use one you already have, put it on the search path and
+remove `bin/llama-server`, or name it with `--llm-server PATH` on the
+command line or in the app's settings.
+
+| System | If you want your own instead |
 | --- | --- |
 | macOS | `brew install llama.cpp` |
 | Windows | `winget install llama.cpp` |

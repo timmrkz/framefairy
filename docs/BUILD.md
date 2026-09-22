@@ -13,12 +13,14 @@ the folder, copy the new files in and run `make` again.
 ## What make does
 
 1. Installs what this machine is missing. On macOS that is Homebrew doing
-   Go, Node.js, llama.cpp and the few tools that build ffmpeg. Elsewhere it
-   says what to install, because those need administrator rights.
-2. Builds the ffmpeg framefairy ships, if it is not there yet. Several
-   minutes, once. Every build after this one copies it beside the programs,
-   and from then on the app renders through the exact ffmpeg a customer
-   gets rather than whatever Homebrew happens to have.
+   Go, Node.js and the few tools that build ffmpeg and llama.cpp. Elsewhere
+   it says what to install, because those need administrator rights.
+2. Builds the two programs framefairy ships beside itself, if they are not
+   there yet: ffmpeg and llama-server. Several minutes, once. Every build
+   after this one copies them beside the programs, and from then on the app
+   renders through the exact ffmpeg a customer gets and runs a local model
+   through the exact llama-server a customer gets, rather than whatever
+   Homebrew happens to have.
 3. Checks for Go 1.27 or newer and a C compiler, and stops with the install
    command if one is still missing.
 4. Resolves the project's Go modules and writes `go.sum`. This needs the
@@ -56,12 +58,14 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make run` | the same, then starts the app |
 | `make motion` | opens every way the app shows work in hand on one page in the browser, for looking at a change to any of them without starting a job. Preview material, never in the app |
 | `make ffmpeg` | builds the ffmpeg framefairy ships again, from scratch, throwing away the one that is there. `make` builds it once by itself, so this is for when `scripts/build-ffmpeg.sh` changed or the last one went wrong |
+| `make llama` | the same for the llama-server framefairy ships, which is what runs a local model |
+| `make tools-archive` | packs both of them into one archive with a manifest, for a release. See [PACKAGING.md](PACKAGING.md#the-tools-we-ship) |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make check` | what this machine has and what it still needs, with the command for each |
-| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js, llama.cpp and what builds ffmpeg. Elsewhere it points to [INSTALL.md](INSTALL.md) |
+| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line. The app does this itself |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
@@ -76,8 +80,8 @@ make run
 ```
 
 The first one takes a while, because it installs the tools and builds
-ffmpeg. The app then walks you through the rest: the speech model it
-fetches itself, and it asks once how clips should be found.
+ffmpeg and llama-server. The app then walks you through the rest: the
+speech model it fetches itself, and it asks once how clips should be found.
 
 ## Tests
 
