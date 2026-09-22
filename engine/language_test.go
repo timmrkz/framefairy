@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -306,9 +309,13 @@ func TestInstallingALanguageModel(t *testing.T) {
 		m := LanguageModel{Name: "test.gguf", Title: "Test", URL: slow.URL,
 			Download: int64(len(body) * 4), Needs: 1}
 		ctx, stop := context.WithCancel(context.Background())
+		// Once some of it is really on disk, not merely once the file
+		// exists: the file is made before the first byte arrives, and
+		// stopping there would leave nothing to carry on from and prove
+		// nothing about what happens when a real download drops.
 		go func() {
 			for {
-				if _, err := os.Stat(filepath.Join(dir, "test.gguf.part")); err == nil {
+				if info, err := os.Stat(filepath.Join(dir, "test.gguf.part")); err == nil && info.Size() > 0 {
 					stop()
 					return
 				}
@@ -321,10 +328,136 @@ func TestInstallingALanguageModel(t *testing.T) {
 		if m.Installed(dir) {
 			t.Error("half a model looks installed, which is the worst of both")
 		}
-		if left, _ := os.ReadDir(dir); len(left) != 0 {
-			t.Errorf("left %d things behind", len(left))
+		// What arrived stays, under a part name. That is not mess, it is
+		// what the next try carries on from: fifteen gigabytes that drop
+		// at nine tenths should not begin again at nothing.
+		info, err := os.Stat(filepath.Join(dir, "test.gguf.part"))
+		if err != nil {
+			t.Fatalf("what was fetched was thrown away: %v", err)
+		}
+		if info.Size() == 0 {
+			t.Error("the part file is empty, so there is nothing to carry on from")
 		}
 	})
+}
+
+// Carrying on where a stopped download left off. A language model is up to
+// fifteen gigabytes and a connection that drops is an ordinary thing, so
+// this is the difference between a retry and a whole evening.
+func TestADownloadCarriesOnWhereItStopped(t *testing.T) {
+	body := ggufBytes(60_000)
+
+	// A server that does ranges, and counts how many bytes it was asked to
+	// send, so the test can say whether anything was fetched twice. The
+	// counting is atomic because the handler runs on the server's own
+	// goroutine and the test reads it from its own.
+	var sent, ranged atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		from := int64(0)
+		if h := r.Header.Get("Range"); h != "" {
+			ranged.Add(1)
+			fmt.Sscanf(h, "bytes=%d-", &from)
+			if from >= int64(len(body)) {
+				http.Error(w, "range", http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			w.Header().Set("Content-Range",
+				fmt.Sprintf("bytes %d-%d/%d", from, len(body)-1, len(body)))
+			w.Header().Set("Content-Length", fmt.Sprint(int64(len(body))-from))
+			w.WriteHeader(http.StatusPartialContent)
+		} else {
+			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+		}
+		n, _ := w.Write(body[from:])
+		sent.Add(int64(n))
+	}))
+	t.Cleanup(server.Close)
+
+	dir := t.TempDir()
+	m := LanguageModel{Name: "test.gguf", Title: "Test", URL: server.URL,
+		Download: int64(len(body)), Needs: 1,
+		SHA256: fmt.Sprintf("%x", sha256.Sum256(body))}
+
+	// Half of it is already on disk, the way a stopped download leaves it.
+	half := len(body) / 2
+	if err := os.WriteFile(filepath.Join(dir, "test.gguf.part"), body[:half], 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Installed(dir) {
+		t.Fatal("it did not land")
+	}
+	if got := ranged.Load(); got != 1 {
+		t.Errorf("%d range requests, wanted one", got)
+	}
+	if got := sent.Load(); got >= int64(len(body)) {
+		t.Errorf("fetched %d bytes of a %d byte file, so it started again", got, len(body))
+	}
+	// And the whole file is right, which is the thing that would quietly
+	// break: the checksum has to be of the bytes on disk plus the bytes
+	// fetched, in that order, not of the ones fetched alone.
+	got, err := os.ReadFile(filepath.Join(dir, "test.gguf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Errorf("the file came to %d bytes and should be %d", len(got), len(body))
+	}
+}
+
+// A server that will not do ranges answers with the whole file. Then the
+// part file is written again from the start, and what comes out is still
+// the right thing.
+func TestAServerThatWillNotResumeStillWorks(t *testing.T) {
+	body := ggufBytes(20_000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(server.Close)
+
+	dir := t.TempDir()
+	m := LanguageModel{Name: "test.gguf", Title: "Test", URL: server.URL,
+		Download: int64(len(body)), Needs: 1,
+		SHA256: fmt.Sprintf("%x", sha256.Sum256(body))}
+	if err := os.WriteFile(filepath.Join(dir, "test.gguf.part"), body[:1000], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "test.gguf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Errorf("the file came to %d bytes and should be %d", len(got), len(body))
+	}
+}
+
+// Bytes that turned out to be the wrong ones are not carried on from, or a
+// bad download would be resumed for ever and fail the same way every time.
+func TestWrongBytesAreNotCarriedOnFrom(t *testing.T) {
+	body := ggufBytes(4096)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(server.Close)
+
+	dir := t.TempDir()
+	m := LanguageModel{Name: "test.gguf", Title: "Test", URL: server.URL,
+		Download: int64(len(body)), Needs: 1,
+		SHA256: "0000000000000000000000000000000000000000000000000000000000000000"}
+	if err := InstallLanguageModel(context.Background(), NewLog(os.Stderr, false, false), m, dir); err == nil {
+		t.Fatal("took a model that is not the one expected")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "test.gguf.part")); err == nil {
+		t.Error("the wrong bytes were kept, so every try from now on resumes them")
+	}
 }
 
 // A file of the right name is not a model, and this is the only thing that

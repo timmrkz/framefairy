@@ -18,7 +18,7 @@ import (
 // The speech models somebody can install, and installing one.
 //
 // No model ships with the app. The speech model is 490 MB, which is not an
-// installer, and the app fetches it from its own home on first run instead.
+// installer, and the app fetches it from whoever published it on first run.
 // See docs/PACKAGING.md.
 //
 // There is one model today and the list is written for more, because the
@@ -42,7 +42,7 @@ type SpeechModel struct {
 	// because a download nobody agreed to is a download nobody wanted.
 	Download int64 `json:"download"`
 	Unpacked int64 `json:"unpacked"`
-	// URL is where it comes from, its own home rather than ours. Nothing
+	// URL is where it comes from, whoever published it rather than us. Nothing
 	// is redistributed, so its licence is between the user and whoever
 	// published it.
 	URL string `json:"url"`
@@ -118,8 +118,17 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 	part := filepath.Join(dir, m.Name+".part")
 	staging := filepath.Join(dir, m.Name+".unpacking")
 	final := filepath.Join(dir, m.Name)
-	defer os.Remove(part)
+	// Half an unpacking is never worth keeping. Half a download is: it is
+	// what a second try carries on from, rather than beginning again at
+	// nothing.
 	defer os.RemoveAll(staging)
+
+	// Bytes that turned out to be the wrong ones go, so a second try does
+	// not carry on from them for ever.
+	wrong := func(err error) error {
+		os.Remove(part)
+		return err
+	}
 
 	return log.Step("speech model", func() error {
 		sum, err := download(ctx, log, m.URL, m.Download, part, m.Title)
@@ -127,8 +136,8 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 			return err
 		}
 		if m.SHA256 != "" && !strings.EqualFold(sum, m.SHA256) {
-			return renderErr("%s did not arrive as expected. It should be %s and came to %s.",
-				m.Title, m.SHA256, sum)
+			return wrong(renderErr("%s did not arrive as expected. It should be %s and came to %s.",
+				m.Title, m.SHA256, sum))
 		}
 
 		// Unpacking has no share to report, so it says what it is doing
@@ -142,6 +151,12 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 			return err
 		}
 		if err := unpackTarBz2(ctx, part, staging); err != nil {
+			// An archive that will not unpack is an archive that is wrong,
+			// whatever its checksum said, and there is nothing in it to
+			// carry on from.
+			if ctx.Err() == nil {
+				return wrong(err)
+			}
 			return err
 		}
 
@@ -152,8 +167,8 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 			inner = staging
 		}
 		if _, err := os.Stat(filepath.Join(inner, "tokens.txt")); err != nil {
-			return renderErr("%s unpacked without a tokens.txt, so it is not the model it claims to be.",
-				m.Title)
+			return wrong(renderErr("%s unpacked without a tokens.txt, so it is not the model it claims to be.",
+				m.Title))
 		}
 		if err := os.RemoveAll(final); err != nil {
 			return err
@@ -162,6 +177,8 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 			return err
 		}
 		log.ClearProgress()
+		// The archive has done its work, so it goes.
+		os.Remove(part)
 		return nil
 	})
 }
@@ -170,35 +187,77 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 // checksum is taken as the bytes go past rather than by reading the file
 // again afterwards.
 //
+// It carries on where a stopped download left off. A language model is up
+// to fifteen gigabytes, and one that drops at nine tenths of that should
+// not begin again at nothing. What is already in path is what was already
+// fetched, so the rest is asked for with a range and the bytes on disk go
+// through the checksum first, in order, which leaves the same sum at the
+// end as fetching the whole thing in one go.
+//
+// A server that will not do ranges answers with the whole file instead,
+// and then the file is written again from the start. So resuming is an
+// improvement where it works and never a way of going wrong.
+//
 // expect is how big it should be, used only to report how far the download
 // has come when the server does not say, and to know a download that
 // stopped early from one that finished. what is the name to say it by.
 func download(ctx context.Context, log *Log, url string, expect int64, path, what string) (string, error) {
+	have := int64(0)
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		have = info.Size()
+	}
+	// A part file as big as the whole thing is a download that finished and
+	// was never checked. Ask for the lot rather than for nothing, so there
+	// is always a request to answer and always a sum to compare.
+	if expect > 0 && have >= expect {
+		have = 0
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
+	}
+	if have > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", renderErr("could not reach %s: %s", what, err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
+	switch res.StatusCode {
+	case http.StatusPartialContent:
+		// Carrying on.
+	case http.StatusOK:
+		// The range was not honoured, so this is the whole file again.
+		have = 0
+	default:
 		return "", renderErr("%s answered %s", url, res.Status)
 	}
 
-	file, err := os.Create(path)
-	if err != nil {
+	sum := sha256.New()
+	var file *os.File
+	if have > 0 {
+		if file, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644); err != nil {
+			return "", err
+		}
+		// The sum is of the whole file, so what is already on disk goes
+		// through it before anything new does.
+		if err := hashInto(sum, path, have); err != nil {
+			file.Close()
+			return "", err
+		}
+		log.Progress(fmt.Sprintf("carrying on with %s from %s", what, inMB(have)))
+	} else if file, err = os.Create(path); err != nil {
 		return "", err
 	}
 	defer file.Close()
 
-	total := res.ContentLength
-	if total <= 0 {
+	total := res.ContentLength + have
+	if res.ContentLength <= 0 {
 		total = expect
 	}
-	sum := sha256.New()
-	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), res.Body, total, "fetching")
+	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), res.Body, have, total, "fetching")
 	if err != nil {
 		return "", err
 	}
@@ -211,13 +270,27 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
+// hashInto feeds the first n bytes of a file to a checksum.
+func hashInto(sum io.Writer, path string, n int64) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(sum, io.LimitReader(file, n))
+	return err
+}
+
 // copyWithProgress is io.Copy that says how far it has got, about once a
 // second. More often than that is a job event a second for no reason, and
 // the window redraws for every one of them.
+//
+// done starts at what was already there, so a download carrying on shows
+// how far the file has come rather than how far this attempt has.
 func copyWithProgress(ctx context.Context, log *Log, dst io.Writer, src io.Reader,
-	total int64, what string) (int64, error) {
+	already, total int64, what string) (int64, error) {
 	buf := make([]byte, 256*1024)
-	var done int64
+	done := already
 	began := time.Now()
 	last := began
 	for {
@@ -237,7 +310,7 @@ func copyWithProgress(ctx context.Context, log *Log, dst io.Writer, src io.Reade
 			if total > 0 {
 				share := float64(done) / float64(total)
 				left := Unknown
-				if rate := float64(done) / time.Since(began).Seconds(); rate > 0 {
+				if rate := float64(done-already) / time.Since(began).Seconds(); rate > 0 {
 					left = float64(total-done) / rate
 				}
 				log.ProgressOf(fmt.Sprintf("%s, %s of %s", what, inMB(done), inMB(total)),

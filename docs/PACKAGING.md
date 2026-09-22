@@ -80,7 +80,7 @@ and the server supports it, so this is a range request and a checksum fed
 the bytes that are already on disk.
 
 **A consequence worth having.** Because no model ships, we never
-redistribute one. The app fetches Gemma from its own home, the way
+redistribute one. The app fetches a model from whoever published it, the way
 `scripts/models.sh` does today, so its licence is between the user and Google
 rather than something we have to carry.
 

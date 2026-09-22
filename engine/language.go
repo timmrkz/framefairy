@@ -43,7 +43,7 @@ type LanguageModel struct {
 	// asks for, in bytes. More than the file: the weights are in memory
 	// and the context is on top of them.
 	Needs int64 `json:"needs"`
-	// URL is where it comes from, its own home rather than ours. Nothing
+	// URL is where it comes from, whoever published it rather than us. Nothing
 	// is redistributed, so its licence is between the user and whoever
 	// published it.
 	URL string `json:"url"`
@@ -313,7 +313,15 @@ func InstallLanguageModel(ctx context.Context, log *Log, m LanguageModel, dir st
 	}
 	part := filepath.Join(dir, m.Name+".part")
 	final := filepath.Join(dir, m.Name)
-	defer os.Remove(part)
+
+	// Bytes that turned out to be the wrong ones go, so a second try does
+	// not carry on from them for ever. Bytes that simply stopped arriving
+	// stay, because that is what makes the next try carry on rather than
+	// begin again at nothing.
+	wrong := func(err error) error {
+		os.Remove(part)
+		return err
+	}
 
 	return log.Step("language model", func() error {
 		sum, err := download(ctx, log, m.URL, m.Download, part, m.Title)
@@ -321,14 +329,14 @@ func InstallLanguageModel(ctx context.Context, log *Log, m LanguageModel, dir st
 			return err
 		}
 		if m.SHA256 != "" && !strings.EqualFold(sum, m.SHA256) {
-			return renderErr("%s did not arrive as expected. It should be %s and came to %s.",
-				m.Title, m.SHA256, sum)
+			return wrong(renderErr("%s did not arrive as expected. It should be %s and came to %s.",
+				m.Title, m.SHA256, sum))
 		}
 		// Whether a checksum is pinned or not, what arrived has to be a
 		// model. A page saying no, saved under a model's name, is the
 		// thing this catches.
 		if !isGGUF(part) {
-			return renderErr("what came back from %s is not a model file.", m.URL)
+			return wrong(renderErr("what came back from %s is not a model file.", m.URL))
 		}
 		log.ClearProgress()
 		return os.Rename(part, final)
