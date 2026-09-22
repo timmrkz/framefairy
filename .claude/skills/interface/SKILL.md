@@ -46,7 +46,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?paused` | clips found, the episode read part way, nothing reading the rest |
 | `?found` | a search that runs and really finishes, clips and all |
 | `?rendering` | a render running on the first clip, with progress |
-| `?setup` | a machine with nothing on it, so the first run is the window, with an install that really runs and really finishes |
+| `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
