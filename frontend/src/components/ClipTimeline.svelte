@@ -360,19 +360,30 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // How wide a cut taken out by a double-click starts. It has to be wide
-  // enough to take hold of and drag at the zoom the timeline opens at,
-  // where a quarter of a second is about ten pixels across, and the edges
-  // do the rest. Narrower and the cut is there but nobody can get at it.
-  const cutAtOnce = 0.25;
+  // How wide a cut taken out by a double-click starts, in pixels of the
+  // track rather than in seconds.
+  //
+  // Seconds are the wrong measure for something whose whole job is to be
+  // seen and taken hold of. A quarter of a second is wider than the whole
+  // view with the timeline zoomed right in, so the cut arrives with both
+  // its edges off screen and nothing to drag. On a four hour episode
+  // zoomed right out it is a hair nobody can see, let alone grab. The
+  // same number cannot be right at both ends of a range that wide, and
+  // the thing that has to stay the same is what the hand sees.
+  //
+  // Forty, because the two edge handles are twelve wide each and centred
+  // on the edges, so forty apart leaves clear block between them: both
+  // edges can be told apart and either one grabbed without catching the
+  // other.
+  const cutAtOnce = 40;
 
   // Shift and a double-click takes a stretch out where you click, the way
   // shift and a drag takes out the stretch you drag across. Shift is the
   // cutting hand on this track either way. Where it goes exactly, and
   // whether it goes at all, is cutAt in lib/api.ts, which has the tests.
-  async function cutHere(at: number) {
+  async function cutHere(at: number, wide: number) {
     if (!editable || !oncut) return;
-    const where = cutAt(pieces, at, cutAtOnce, leastCut, frame);
+    const where = cutAt(pieces, at, wide, leastCut, frame);
     if (!where) return;
     cutSaving = true;
     try {
@@ -546,8 +557,13 @@
     if (event?.shiftKey) {
       event.preventDefault();
       const at = timeAt(event.clientX);
+      // What those forty pixels are worth in seconds, here, at this zoom.
+      // timeAt is linear and unclamped, so the difference is the same
+      // anywhere on the track, and reading it costs no layout: it is a
+      // measurement read, never turned back into a size.
+      const wide = Math.abs(timeAt(event.clientX + cutAtOnce) - at);
       // Inside a cut there is nothing left to take out.
-      if (!cuts.some((c) => at >= c.from && at <= c.to)) void cutHere(at);
+      if (!cuts.some((c) => at >= c.from && at <= c.to)) void cutHere(at, wide);
       return;
     }
     if (event && editable && onjoincut && track) {

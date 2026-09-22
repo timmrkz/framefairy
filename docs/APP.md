@@ -467,9 +467,18 @@ place.
       on the block puts the stretch back.
     - **Shift is the cutting hand.** Holding it and dragging across the clip
       takes out the stretch dragged over. Holding it and double-clicking
-      takes one out where the click lands, a quarter of a second wide, which
-      is wide enough to take hold of and drag to size at the zoom the
-      timeline opens at. Either way the view never moves: a gesture that
+      takes one out where the click lands, forty pixels wide, which is wide
+      enough to see and to take hold of by either edge and drag to size.
+      Forty pixels and not a quarter of a second, because what has to stay
+      the same is what the hand sees: the timeline goes from a whole four
+      hour episode down to a second across, and a width in seconds is
+      wrong at both ends of a range that wide. Measured at the zoom the
+      timeline opens at and again with a second across the track, a quarter
+      of a second came out as 9 pixels and then as 187, narrower than one
+      of the two 12 pixel edge handles and then a quarter of the track.
+      Forty pixels comes out as 40 and 47, the 47 being the frame rounding:
+      a cut is a whole number of frames wide, rounded up, so it is never
+      too short for the engine to take. Either way the view never moves: a gesture that
       cuts and zooms at the same time is a gesture nobody can aim, and
       before this a shift double-click only zoomed, which is why it read as
       nothing happening. A shift double-click inside a cut does nothing,

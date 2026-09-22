@@ -432,9 +432,12 @@ export function snapEnd(words: Word[], at: number, keepPause: number): number {
 // out to the words either side would put it somewhere else, which is the
 // whole complaint about cuts landing on words.
 //
-// It is as wide as it is asked to be, which has to be wide enough to take
-// hold of and drag at the zoom the timeline opens at. A cut nobody can
-// grab is a cut nobody can change.
+// It is as wide as it is asked to be, and what asks is the timeline, which
+// works that width out from a fixed number of pixels at whatever zoom it
+// is on. A cut nobody can see is a cut nobody can change. Below the least
+// a cut may be it is held open at that, so a timeline zoomed in far enough
+// that those pixels are worth less than the least still takes a stretch
+// out rather than doing nothing.
 //
 // And it stays inside the piece it falls in, with room left on both sides,
 // because a piece squeezed to nothing is a clip the engine refuses. A
@@ -453,16 +456,28 @@ export function cutAt(
   const low = piece.start + least;
   const high = piece.end - least;
   if (high - low < least) return null;
-  const width = Math.min(wide, high - low);
+  // As wide as it was asked to be, never less than the least a cut may be,
+  // never more than the piece has room for.
+  let width = Math.min(Math.max(wide, least), high - low);
+  // And a whole number of frames wide, rounded up. Rounding the two ends
+  // on their own instead brings them closer than they were asked to be,
+  // and at 25 frames a second a frame is 40 milliseconds against a least
+  // of 50, so two ends far enough apart came back 40 apart and the engine
+  // refused the cut: a double-click that did nothing at all, at some zooms
+  // and not others.
+  if (frame > 0) width = Math.min(Math.ceil(width / frame) * frame, high - low);
   let a = on(at - width / 2);
-  let b = on(a + width);
+  let b = a + width;
+  // Inside the piece, keeping the width. An end held at the piece's own
+  // edge is no longer on a frame, which is right: that edge is where the
+  // engine put it.
   if (a < low) {
     a = low;
-    b = Math.min(on(a + width), high);
+    b = a + width;
   }
   if (b > high) {
     b = high;
-    a = Math.max(on(b - width), low);
+    a = Math.max(b - width, low);
   }
   if (b - a < least) return null;
   return [a, b];

@@ -86,10 +86,15 @@ describe("cutAt", () => {
   ];
   const frame = 1 / 25;
 
-  test("lands where it was asked for, on frames, as wide as it was asked", () => {
+  test("lands where it was asked for, on frames, around what it was asked", () => {
     const [a, b] = cutAt(pieces, 15, 0.25, 0.05, frame)!;
-    expect(a).toBeCloseTo(14.88, 2);
-    expect(b).toBeCloseTo(15.12, 2);
+    // Centred on the click.
+    expect((a + b) / 2).toBeCloseTo(15, 1);
+    // A whole number of frames wide, which is the asked-for width rounded
+    // up: seven frames of 40 milliseconds is 280, for a quarter second
+    // asked.
+    expect(b - a).toBeCloseTo(0.28, 6);
+    expect(b - a).toBeGreaterThanOrEqual(0.25);
     expect(Math.abs(a / frame - Math.round(a / frame))).toBeLessThan(1e-9);
     expect(Math.abs(b / frame - Math.round(b / frame))).toBeLessThan(1e-9);
   });
@@ -119,5 +124,30 @@ describe("cutAt", () => {
     expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
     expect(b).toBeLessThanOrEqual(10.35 + 1e-9);
     expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+});
+
+describe("cutAt, asked for a width the zoom worked out", () => {
+  const piece = [{ start: 10, end: 30 }];
+  const frame = 1 / 25;
+
+  // Zoomed right out, forty pixels of a four hour episode across a
+  // thousand-pixel track is a long time. The cut is that long.
+  test("takes a wide stretch when the zoom says forty pixels are wide", () => {
+    const [a, b] = cutAt(piece, 20, 8, 0.05, frame)!;
+    expect(b - a).toBeCloseTo(8, 6);
+  });
+
+  // Zoomed right in, forty pixels can be worth less than the least a cut
+  // may be. It is held open at the least rather than refused.
+  test("holds a cut open at the least when the zoom says less", () => {
+    const [a, b] = cutAt(piece, 20, 0.001, 0.05, frame)!;
+    expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+
+  test("never takes more than the piece has room for", () => {
+    const [a, b] = cutAt(piece, 20, 999, 0.05, frame)!;
+    expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
+    expect(b).toBeLessThanOrEqual(29.95 + 1e-9);
   });
 });
