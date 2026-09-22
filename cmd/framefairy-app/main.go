@@ -104,12 +104,29 @@ func main() {
 		BackgroundColour: application.NewRGB(29, 31, 35),
 		URL:              "/",
 		Mac: application.MacWindow{
-			// How far down a click still drags the window. It moves no
-			// button by a pixel, and it cannot follow the measured bar
-			// because it is read once when the window is made, so it is
-			// set a little taller than the title bar ever is.
-			InvisibleTitleBarHeight: 56,
-			TitleBar:                application.MacTitleBarHiddenInset,
+			// How far down a click still drags the window. Read once when
+			// the window is made, so it cannot follow the measured bar,
+			// and it is set to the standard title bar rather than over it:
+			// any more than that and it eats clicks on the workspace.
+			InvisibleTitleBarHeight: 28,
+			// Hidden, not HiddenInset. The difference is one flag inside
+			// them, UseToolbar, and it is the whole reason this window did
+			// not look like a Mac's.
+			//
+			// A toolbar makes the title bar taller and macOS then insets
+			// the three buttons further to centre them in it. Measured
+			// against Terminal, VS Code and Chrome in the same screenshot,
+			// all at the same scale: their close button sits 16, 17 and 20
+			// points below the window's top edge and 16, 18 and 20 points
+			// in from its left. Ours sat at 26 and 26. Six to ten points
+			// out in both directions, on every window, which is exactly
+			// the amount that reads as wrong without being nameable.
+			//
+			// Without the toolbar macOS lays out an ordinary title bar and
+			// puts the buttons where it puts everybody's, which is
+			// Terminal's 16 and 16. The bar's height follows by itself,
+			// because the app measures it rather than choosing it.
+			TitleBar: application.MacTitleBarHidden,
 		},
 	})
 	svc.chrome = watchChrome(app, svc.window)

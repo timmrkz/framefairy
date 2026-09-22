@@ -401,18 +401,18 @@
   /* The bar is the window's own: it is what you drag the window by, it
      holds the window buttons on macOS, and it says what is on screen. */
   /* Exactly as tall as the title bar macOS laid out, which the shell sets
-     from the window, or the token where the system draws its own bar. */
-  /* No line at its foot. A Mac draws one under a title bar only while
-     something is scrolled under it, and nothing here ever is: the bar is
-     a row above the body, not something the body passes beneath. So the
-     line was never separating anything, it was only the loudest thing on
-     the bar, at #3a3f48 against the bar's own #1d1f23, twice as bright as
-     what it sat on. What separates the two now is what already did, the
-     step from --ink-1 to --ink-0 underneath. */
+     from the window, or the token where the system draws its own bar. The
+     line at the foot is drawn inside that height rather than under it, so
+     the bar is the title bar and nothing else.
+     The line was taken out once and put back. Read off VS Code and
+     Terminal: both draw one under their title bar, and VS Code's is
+     brighter against its own bar than ours is against ours. It was never
+     what made this window look unlike theirs. */
   .bar {
     position: relative;
     flex: none;
     height: var(--bar-h);
+    box-shadow: inset 0 -1px var(--line);
     background: var(--ink-1);
     --wails-draggable: drag;
   }
