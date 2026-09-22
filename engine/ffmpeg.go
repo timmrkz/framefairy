@@ -54,7 +54,12 @@ type Engine struct {
 	// it, which keeps the native speech library out of this package.
 	OpenRecognizer func(modelDir string) (Recognizer, error)
 
+	// WantEncoder names the video encoder instead of picking one, for a
+	// machine whose ffmpeg is unusual and for comparing two on one clip.
+	WantEncoder string
+
 	mu               sync.Mutex
+	encoder          Encoder
 	subtitleTemplate string
 	faces            *faceDetector
 	facesLoaded      bool
@@ -373,10 +378,12 @@ func (e *Engine) Preflight(ctx context.Context) error {
 		return renderErr("%s is missing, which usually means a partial ffmpeg install.",
 			e.FFprobe)
 	}
-	encoders := run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
-	if !strings.Contains(encoders.Stdout, "libx264") {
+	// Which encoder, before anything is spent. It used to insist on
+	// libx264, which is the one library that makes an ffmpeg build GPL and
+	// is deliberately absent from the one we ship.
+	if _, err := e.VideoEncoder(ctx); err != nil {
 		e.Log.ClearProgress()
-		return renderErr("this ffmpeg has no libx264 encoder.")
+		return err
 	}
 	if !e.SkipCaptions {
 		e.Log.Progress("checking subtitle support")

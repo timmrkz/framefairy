@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -105,12 +104,16 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		cmd = append(cmd, "-ss", fixed(seg.Start, 3), "-t", fixed(seg.Duration(), 3),
 			"-i", abs)
 	}
+	video, err := e.VideoArgs(ctx, rs)
+	if err != nil {
+		return nil, err
+	}
 	cmd = append(cmd,
 		"-filter_complex", graph,
 		"-map", videoLabel, "-map", audioLabel,
-		"-c:v", "libx264",
-		"-preset", rs.Preset,
-		"-crf", strconv.Itoa(rs.CRF),
+	)
+	cmd = append(cmd, video...)
+	cmd = append(cmd,
 		"-profile:v", "high",
 		"-pix_fmt", "yuv420p",
 		"-fps_mode", "cfr",

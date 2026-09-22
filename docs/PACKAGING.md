@@ -95,7 +95,16 @@ them is touched:
 
 Only the last line of the render command changes: `-c:v libx264 -crf N`
 becomes the system encoder and its own quality setting, because
-`-crf` is an x264 idea and does not exist elsewhere.
+`-crf` is an x264 idea and does not exist elsewhere. **This is done**, in
+`engine/encode.go`. The encoder is chosen at render time from what this
+ffmpeg actually has, macOS reaching for `h264_videotoolbox` and falling
+back to `libx264`, with `--encoder` to name one instead. Preflight checks
+that the chosen encoder exists rather than insisting on libx264.
+
+Windows and Linux are deliberately not in that table yet. Windows has
+`h264_mf` and Linux has VA-API or openh264, and a guess written there would
+render every short made on that system. They go in when those builds are
+first made and looked at.
 
 **Two things to confirm on the first real build**, rather than assume:
 

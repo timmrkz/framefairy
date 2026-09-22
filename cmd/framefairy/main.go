@@ -164,8 +164,12 @@ func specs() []flagSpec {
 			func(o *engine.Options, _ string) error { o.NoUpscale = true; return nil }},
 		{[]string{"--crf"}, kInt, "CRF", "quality, lower is better (default 18)",
 			intValue("--crf", func(o *engine.Options, v int) { o.CRF = v })},
-		{[]string{"--preset"}, kString, "PRESET", "x264 speed against compression (default slow)",
+		{[]string{"--preset"}, kString, "PRESET", "x264 speed against compression (default slow). " +
+			"Only libx264 has presets, and it is ignored by any other encoder",
 			func(o *engine.Options, v string) error { o.Preset = v; return nil }},
+		{[]string{"--encoder"}, kString, "ENCODER", "the video encoder to use, instead of the best " +
+			"one this ffmpeg has (" + engine.EncoderNames() + ")",
+			func(o *engine.Options, v string) error { o.Encoder = v; return nil }},
 		{[]string{"--audio-bitrate"}, kString, "AUDIO_BITRATE", "aac bitrate (default 256k)",
 			func(o *engine.Options, v string) error { o.AudioBitrate = v; return nil }},
 		{[]string{"--preview"}, kBool, "", "fast low quality render for checking cuts",

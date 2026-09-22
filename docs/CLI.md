@@ -105,8 +105,9 @@ fits.
 | --- | --- | --- |
 | `--clip 01` | all clips | render only this clip id, repeatable |
 | `--preview` | off | half size, fast preset, into `preview/` |
-| `--crf 18` | 18 | quality, lower is better |
-| `--preset slow` | slow | x264 speed against compression |
+| `--crf 18` | 18 | quality, lower is better. Every encoder is asked in its own language, so this becomes `-q:v` on Apple's encoder, where higher is better |
+| `--preset slow` | slow | x264 speed against compression. Only libx264 has presets, and any other encoder ignores it |
+| `--encoder` | the best this ffmpeg has | the video encoder to use. macOS reaches for `h264_videotoolbox` first and falls back to `libx264`, everywhere else it is `libx264` for now |
 | `--audio-bitrate 256k` | 256k | aac bitrate |
 | `--width 1080 --height 1920` | 1080x1920 | output size in pixels |
 | `--no-upscale` | off | write the native crop, no resampling |
