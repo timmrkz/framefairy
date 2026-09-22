@@ -179,7 +179,13 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		return "", nil, err
 	}
 	args := []string{"-m", m.Model, "--host", "127.0.0.1", "--port", itoa(port),
-		"-c", itoa(contextSize), "-ngl", "999"}
+		"-c", itoa(contextSize), "-ngl", "999",
+		// One slot. Only one request is ever sent, and left to itself the
+		// server makes four and a sliding window cache for each, which is
+		// memory nothing uses. Said here rather than left to a default,
+		// because the memory a model is judged by assumes it. See
+		// windowSpare in language.go.
+		"-np", "1"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	cmd := exec.Command(server, args...)
 	var logFile *os.File

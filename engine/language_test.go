@@ -118,10 +118,11 @@ func TestWhatEachMachineIsOffered(t *testing.T) {
 		if fit == TooBig {
 			t.Errorf("%d GB was offered %s, which does not fit it", machine/gb, got.Title)
 		}
-		// And it is the largest that does, or the choice is being made
-		// badly rather than not at all.
+		// And it is the largest model that does, or the choice is being
+		// made badly rather than not at all. The largest model, by its
+		// file, and not the one that takes the most memory.
 		for _, other := range LanguageModels() {
-			if other.Needs <= got.Needs {
+			if other.Download <= got.Download {
 				continue
 			}
 			if other.FitsIn(machine) == fit {
@@ -138,7 +139,7 @@ func TestWhatEachMachineIsOffered(t *testing.T) {
 		t.Fatal("a machine that will not say was offered nothing at all")
 	}
 	for _, other := range LanguageModels() {
-		if other.Needs < got.Needs {
+		if other.Download < got.Download {
 			t.Errorf("a machine that will not say was offered %s, and %s is smaller",
 				got.Title, other.Title)
 		}
@@ -496,5 +497,108 @@ func TestOnlyAGGUFCountsAsInstalled(t *testing.T) {
 	}
 	if m.Installed(dir) {
 		t.Error("a folder was taken for a model")
+	}
+}
+
+// What each Mac is actually offered, by name. The table above checks that
+// the choice follows its own rule. This checks the rule gives the right
+// answers, which is a different question, and the one that was wrong: the
+// old rule told a 16 GB Mac to install Ministral 3 8B and a 24 GB Mac to
+// install Qwen3 14B, each as the best for it, and neither fits.
+//
+// Changing the catalogue or the rule should fail this, so that somebody
+// looks at what every size of Mac would now be told before it ships.
+func TestWhatEveryMacIsOffered(t *testing.T) {
+	const gb = 1 << 30
+	for _, c := range []struct {
+		memory int64
+		want   string
+		fit    Fit
+	}{
+		{8 * gb, "", ""},
+		{16 * gb, "Gemma 4 12B", FitsTight},
+		{18 * gb, "Gemma 4 12B", FitsWell},
+		{24 * gb, "Gemma 4 12B", FitsWell},
+		{32 * gb, "Gemma 4 26B A4B", FitsWell},
+		{36 * gb, "Gemma 4 26B A4B", FitsWell},
+		{64 * gb, "Gemma 4 26B A4B", FitsWell},
+	} {
+		got, ok := RecommendedFor(c.memory)
+		if c.want == "" {
+			if ok {
+				t.Errorf("%d GB was offered %s, and nothing fits it", c.memory/gb, got.Title)
+			}
+			continue
+		}
+		if !ok || got.Title != c.want || got.FitsIn(c.memory) != c.fit {
+			t.Errorf("%d GB was offered %q (%s), want %q (%s)",
+				c.memory/gb, got.Title, got.FitsIn(c.memory), c.want, c.fit)
+		}
+	}
+}
+
+// The property the old rule could not see. A model whose layers mostly
+// look back over a short window barely grows with the length of a search.
+// One whose layers all look back over everything grows with every token.
+func TestACacheGrowsWithTheSearchOnlyWhereTheModelLooksBackOverAllOfIt(t *testing.T) {
+	byTitle := map[string]LanguageModel{}
+	for _, m := range LanguageModels() {
+		byTitle[m.Title] = m
+	}
+	growth := func(title string) float64 {
+		m := byTitle[title]
+		return float64(m.Shape.cacheBytes(131072)) / float64(m.Shape.cacheBytes(32768))
+	}
+	// Four times the context. Every layer of Qwen3 and Ministral holds all
+	// of it, so their cache is four times the size.
+	for _, title := range []string{"Qwen3 14B", "Ministral 3 8B"} {
+		if g := growth(title); g < 3.99 || g > 4.01 {
+			t.Errorf("%s grew %.2f times for four times the context, want 4", title, g)
+		}
+	}
+	// Most of Gemma 4's layers hold only the last 1024 tokens, so its
+	// cache grows much less than the context does.
+	for _, title := range []string{"Gemma 4 26B A4B", "Gemma 4 12B"} {
+		if g := growth(title); g > 3.5 {
+			t.Errorf("%s grew %.2f times for four times the context, want well under 4", title, g)
+		}
+	}
+}
+
+// Worked out from the shape, and pinned to what the maker publishes, so a
+// typing mistake in a shape shows up as a number that is plainly wrong.
+// Qwen3 14B at 64k tokens: 40 layers, 8 heads of 128, a key and a value, two
+// bytes each, is exactly ten gibibytes of cache.
+func TestTheCacheIsWorkedOutFromTheShape(t *testing.T) {
+	for _, m := range LanguageModels() {
+		if m.Title == "Qwen3 14B" {
+			if got := m.Shape.cacheBytes(65536); got != 10<<30 {
+				t.Errorf("Qwen3 14B at 64k: %d bytes of cache, want exactly 10 GiB", got)
+			}
+		}
+		if m.Needs != m.NeedsAt(judgedContext) {
+			t.Errorf("%s says it needs %d, and its shape says %d", m.Title, m.Needs, m.NeedsAt(judgedContext))
+		}
+		if m.Shape.FullLayers+m.Shape.WindowLayers == 0 {
+			t.Errorf("%s has no shape, so its cache is counted as nothing", m.Title)
+		}
+	}
+}
+
+// The context a model is judged at has to cover the first search the app
+// makes by itself, or the check answers a question nobody asked. The first
+// search is the first half hour, taken whole up to 45 minutes when that
+// would leave only a scrap, see nextWindow in frontend/src/lib/flow.ts.
+//
+// Characters per minute of episode is an estimate: German conversation at
+// around 150 words a minute, and the numbering and timings each line of
+// the prompt carries. It errs high on purpose.
+func TestTheJudgedContextCoversTheFirstSearch(t *testing.T) {
+	const charsPerMinute = 1200
+	const firstSearchMinutes = 45
+	got := contextFor(charsPerMinute*firstSearchMinutes, 48000)
+	if got > judgedContext {
+		t.Errorf("the first search asks for %d tokens of context, and models are "+
+			"judged at %d, so the check says a machine can hold what it cannot", got, judgedContext)
 	}
 }
