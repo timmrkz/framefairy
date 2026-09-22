@@ -242,9 +242,10 @@ messages, pull request text, code comments and chat replies.
 - The episode workspace is the centre of the app, in three columns: the
   settings for finding clips and for the captions on the left, the video
   preview with the crop frame and the range picker in the middle, the clip
-  list on the right with **New** above it. Under all three, the clip panel with the
-  zoomed timeline and the words in the lens. The whole of it fits the window
-  without scrolling.
+  list on the right with **New** above it. Under all three, the clip panel
+  with the zoomed timeline. The words of a clip are written out in one
+  place, the caption box over the picture, which is also where they are
+  corrected. The whole of it fits the window without scrolling.
 - The sidebar is a rail until the pointer reaches it. Open, it lies over the
   settings column rather than pushing the workspace about, so the video
   preview never changes size. It stays open when it is pinned.

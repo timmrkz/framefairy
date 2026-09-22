@@ -543,15 +543,12 @@ place.
     - Drag an edge to trim. Edges snap to words the way the render cuts them.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.
-    - The playhead carries a magnifier. Click it for the lens, which
-      magnifies the words around the playhead with the one being spoken
-      highlighted. Another click takes the lens away again, and so does
-      Escape when nothing else is asking for it. Nothing else
-      opens or closes it, so the track stays clear until the words are asked
-      for. The magnifier never moves the playhead, and past the end of the
-      transcript there is nothing to magnify, so it is off there and says
-      so. The lens reads and nothing else. A word is corrected in the
-      caption box over the picture, where a short will show it.
+    - **Nothing on the playhead but the playhead.** It carried a magnifier
+      that opened a pill of the words around it, which was where a word was
+      corrected. Words are corrected in the caption box over the picture
+      now, where a short will show them, and a magnifier that could only
+      read was a second place to look at the same words. So it came out,
+      and the track is the waveform and the playhead and nothing else.
     - **The clip is one thing, holes and all.** Two rules in the accent run
       above and below it from its first piece to its last, whatever is cut
       out in between, so a clip with a cut in it reads as one clip and not
@@ -608,8 +605,8 @@ place.
       go of alt part way through goes back to frames and the block says
       so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
-      preview as they are spoken and the lens reads out the words at the
-      playhead, so the waveform has the whole track to itself.
+      preview as they are spoken, and that is the one place they are
+      written out, so the waveform has the whole track to itself.
     - The waveform is drawn the way an editor draws one: one column of the
       screen per column of the picture, each a whole pixel wide. Nothing is
       ever drawn between two pixels, so it keeps the same weight at every
