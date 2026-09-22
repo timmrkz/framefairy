@@ -243,30 +243,17 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	}
 }
 
-type chatReply struct {
-	Choices []struct {
-		Message struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
-	Timings struct {
-		PromptPerSecond    float64 `json:"prompt_per_second"`
-		PredictedPerSecond float64 `json:"predicted_per_second"`
-	} `json:"timings"`
+// chatError is what llama-server says when it refuses a request.
+type chatError struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// CallLocal asks the model on this machine for a plan.
+// CallLocal asks the model on this machine for a plan. The answer is read
+// as it is written, and listen hears it arrive.
 func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
-	lineCount, count, maxTokens int, logDir string) (string, error) {
+	lineCount, count, maxTokens int, logDir string, listen *Listener) (string, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
 		started, stop, err := e.startServer(ctx, m, contextFor(runeLen(prompt), maxTokens), logDir)
@@ -285,7 +272,11 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": maxTokens,
-		"stream":     false,
+		// Streamed, with the reading of the prompt reported as it goes and
+		// what it cost at the end, which a stream otherwise leaves out.
+		"stream":          true,
+		"stream_options":  map[string]any{"include_usage": true},
+		"return_progress": true,
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
@@ -308,63 +299,57 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	}
 	request.Header.Set("content-type", "application/json")
 
-	// The server answers only once it is done, so the wait is shown as a
-	// running clock.
-	done := make(chan struct{})
 	started := time.Now()
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				e.Log.Progress(fmt.Sprintf("reading the transcript and choosing %.0fs",
-					time.Since(started).Seconds()))
-			}
-		}
-	}()
 	response, err := localClient.Do(request)
-	close(done)
-	e.Log.ClearProgress()
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
 		return "", renderErr("the local model did not answer: %s", Scrub(err.Error(), 200))
 	}
-	raw, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		return "", renderErr("the local model's answer could not be read: %s", err)
-	}
-	if logDir != "" {
-		writeJSONText(filepath.Join(logDir, "plan-response.json"), raw)
-	}
-	var reply chatReply
-	if err := json.Unmarshal(raw, &reply); err != nil {
-		return "", renderErr("the local model returned something that is not JSON: %s",
-			pyRepr(Scrub(string(raw), 200)))
-	}
-	if reply.Error != nil || response.StatusCode != http.StatusOK {
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if logDir != "" {
+			writeJSONText(filepath.Join(logDir, "plan-response.json"), raw)
+		}
 		message := fmt.Sprintf("status %d", response.StatusCode)
-		if reply.Error != nil {
-			message = reply.Error.Message
+		var refused chatError
+		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
+			message = refused.Error.Message
 		}
 		return "", renderErr("the local model reported an error: %s", Scrub(message, 400))
 	}
-	if len(reply.Choices) == 0 || strip(reply.Choices[0].Message.Content) == "" {
+	answer, err := readLocalStream(response.Body, listen)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", err
+	}
+	if logDir != "" {
+		if kept, err := json.Marshal(answer); err == nil {
+			writeJSONText(filepath.Join(logDir, "plan-response.json"), kept)
+		}
+	}
+	if strip(answer.Content) == "" {
 		return "", renderErr("the local model returned no answer")
 	}
-	choice := reply.Choices[0]
+	reading, writing := 0.0, 0.0
+	if t := answer.Timings; t != nil {
+		reading, writing = t.PromptPerSecond, t.PredictedPerSecond
+	}
 	e.Log.Info("local model answered in %ss  read %s tok at %s tok/s  wrote %s tok at %s tok/s",
 		fixed(time.Since(started).Seconds(), 1),
-		commas(reply.Usage.PromptTokens), fixed(reply.Timings.PromptPerSecond, 0),
-		commas(reply.Usage.CompletionTokens), fixed(reply.Timings.PredictedPerSecond, 1))
-	if choice.FinishReason == "length" {
+		commas(answer.PromptTokens), fixed(reading, 0),
+		commas(answer.Written), fixed(writing, 1))
+	if answer.Reasoning > 0 {
+		e.Log.Detail("the model thought for %s characters before it answered",
+			commas(answer.Reasoning))
+	}
+	if answer.FinishReason == "length" {
 		e.Log.Warn("the answer hit the %s token ceiling. Raise --max-tokens if clips are missing.",
 			commas(maxTokens))
 	}
-	return choice.Message.Content, nil
+	return answer.Content, nil
 }

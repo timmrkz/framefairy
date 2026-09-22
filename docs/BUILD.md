@@ -105,7 +105,7 @@ suite still passes on a machine without it.
 
 The parts that read what a model, a plan file or a caption file contains
 also have fuzz targets, named `Fuzz...` next to the ordinary tests. `make
-test` fuzzes every one of the 15 of them, because a fuzz target that only
+test` fuzzes every one of the 16 of them, because a fuzz target that only
 ever sees its seeds is not fuzzing.
 
 The work is a number of executions, `FUZZTIME`, 10000 per target, and not a

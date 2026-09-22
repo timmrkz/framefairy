@@ -49,18 +49,22 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 		}
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &request)
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"clips\":[]}"},"finish_reason":"stop"}],`+
-			`"usage":{"prompt_tokens":10,"completion_tokens":5},"timings":{"prompt_per_second":100,"predicted_per_second":10}}`)
+		writeLocalStream(w, `{"clips":[]}`, 4)
 	}))
 	defer server.Close()
 
 	e := NewEngine(NewLog(io.Discard, false, false))
-	reply, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "Transcript:", 40, 12, 1000, "")
+	var heard strings.Builder
+	reply, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "Transcript:", 40, 12, 1000, "",
+		&Listener{Text: func(p string) { heard.WriteString(p) }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reply != `{"clips":[]}` {
-		t.Errorf("reply %q", reply)
+	if reply != `{"clips":[]}` || heard.String() != reply {
+		t.Errorf("reply %q, heard %q", reply, heard.String())
+	}
+	if request["stream"] != true || request["return_progress"] != true {
+		t.Errorf("not asked for a stream: %v", request)
 	}
 	format := request["response_format"].(map[string]any)
 	if format["type"] != "json_schema" {
@@ -79,7 +83,7 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	e := NewEngine(NewLog(io.Discard, false, false))
-	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "x", 1, 1, 10, "")
+	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
 	}

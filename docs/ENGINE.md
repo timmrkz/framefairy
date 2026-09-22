@@ -201,6 +201,15 @@ is sized to the transcript, about 64,000 tokens for an hour, which keeps
 memory use down. The answer is held to the plan's JSON format while it is
 written, so it always parses.
 
+The answer is read as it is written, from llama-server and from the API
+alike, in `engine/stream.go`. Each clip is taken the moment its closing
+brace arrives, by a scanner that only reads objects directly inside the
+list named `clips`, so a brace in a title or a sentence before the answer is
+read past. What it hands out still goes through every check a whole answer
+does. An API answer that breaks off before a word of it arrived is asked
+for again. One that breaks off after is not, because what arrived has
+already been used.
+
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when
 you try several runs in a row, start the server once yourself and point the
@@ -225,6 +234,8 @@ Everything else is in `engine/`:
   highlight.go  word timings for captions and the bouncing highlight
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
+  stream.go     answers read as they are written, and each clip taken
+                the moment it is whole
   plan.go       building the plan
   analysis.go   camera switches and framing
   faces.go      the built-in face detector

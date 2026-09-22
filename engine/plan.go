@@ -188,7 +188,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
 			var err error
 			reply, err = e.CallLocal(ctx, *opts.Local, prompt, len(lines), opts.Count,
-				opts.MaxTokens, opts.LogDir)
+				opts.MaxTokens, opts.LogDir, nil)
 			return err
 		})
 		if err != nil {
@@ -241,7 +241,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		err := e.Log.Step("choosing and condensing", func() error {
 			var err error
 			reply, err = e.CallClaudeWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
-				opts.LogDir, "plan")
+				opts.LogDir, "plan", nil)
 			return err
 		})
 		if err != nil {
