@@ -3,6 +3,7 @@
 #   make            project packages, the interface and all three programs
 #   make run        build, then start the app
 #   make motion     the five ways the app shows work in hand, in a browser
+#   make ffmpeg     builds the ffmpeg we ship, without libx264. Takes a while
 #   make test       all tests: unit, fuzz and interface
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
@@ -61,14 +62,23 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run motion test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run motion ffmpeg tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
-all: toolchain $(PROGRAMS)
+all: toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
 	@sh scripts/check.sh --quiet
 
+# Our own ffmpeg goes beside the programs, where they look before the search
+# path. Only if make ffmpeg has been run: without it there is nothing to
+# copy and the search path answers, which is how this worked before.
+#
+# This is what makes the development build use the ffmpeg a customer will
+# use, rather than whatever Homebrew happens to have installed.
+tools-beside:
+	@if [ -x $(STAMPS)/ffmpeg/bin/ffmpeg ]; then 		cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(BIN)/ && 		echo "Using our own ffmpeg, from make ffmpeg"; 	fi
+
 help:
-	@sed -n '1,15p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,16p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -132,6 +142,13 @@ $(BIN)/framefairy-train$(EXE): modules
 
 run: all
 	@$(BIN)/framefairy-app$(EXE)
+
+# The ffmpeg we ship, built from source without libx264 so the build is
+# LGPL. It takes many minutes and its answer changes only when
+# scripts/build-ffmpeg.sh does, so it is called by hand, the way make tools
+# and make models are, and every build after it picks up what it left.
+ffmpeg:
+	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
 
 # Every way the app says work is in hand, on one page, in a browser. It is
 # preview material and never goes into the app.

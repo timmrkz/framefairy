@@ -40,6 +40,7 @@ installed only by the two targets below, and only when you call them.
 | `make` | everything above |
 | `make run` | builds, then starts the app |
 | `make motion` | opens every way the app shows work in hand on one page in the browser, for looking at a change to any of them without starting a job. Preview material, never in the app |
+| `make ffmpeg` | builds the ffmpeg framefairy ships, from source, without libx264 so the build is LGPL. Many minutes, so it is called by hand like `make tools`. Every build after it copies the result beside the programs, and from then on the app uses it rather than the one on the search path |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |

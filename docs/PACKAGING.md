@@ -73,9 +73,32 @@ system already has:
 On an M2 Max this is also **faster** than libx264, because it is the media
 engine rather than the cores.
 
-**What this leaves to do.** Ship an ffmpeg we built ourselves, configured
-without `--enable-gpl` and with libass, as a plain executable inside the
-app bundle. Distributing an unmodified LGPL binary asks for two things: the
+**This is built**, by `scripts/build-ffmpeg.sh`, and `make ffmpeg` runs it.
+It takes many minutes and its answer changes only when that script does, so
+it is called by hand the way `make tools` and `make models` are, and every
+build after it copies what it left beside the programs. From then on the
+development build uses the ffmpeg a customer will use rather than whatever
+Homebrew has installed.
+
+Run on Linux, which proves everything but the parts that are Apple's:
+
+| Checked | Result |
+| --- | --- |
+| `ffmpeg -L` | GNU **Lesser** General Public License |
+| libx264 | absent, which is what makes the first line true |
+| Size | 24 MB, static, one file with nothing to chase |
+| Captions | a real caption file and the bundled face burned in, 41042 pixels of ink |
+| H.264 on Linux | **none at all** |
+
+That last row is the open question from above, answered as fact rather than
+guess. With no libx264 and nothing detected, an LGPL ffmpeg on Linux cannot
+write H.264. macOS is fine, because `--enable-videotoolbox` builds Apple's
+encoder in, and that is the one that ships first. Linux needs VA-API or
+openh264 added before it can ship at all, and the app says so plainly now:
+Preflight refuses with the encoders it looked for.
+
+**What this leaves to do.** Ship that ffmpeg as a plain executable inside
+the app bundle. Distributing an unmodified LGPL binary asks for two things: the
 licence text travels with it, and the source is available to anyone who
 asks. That is a file in the repository and a tarball on a download page. No
 lawyer, no ambiguity, no judgement call about where one work ends and
