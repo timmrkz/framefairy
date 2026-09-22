@@ -22,7 +22,16 @@
 # makes a release, and what it leaves behind is kept as an archive.
 set -e
 
-OUT=${1:-$(pwd)/ffmpeg-build}
+# Every library below is built from a folder of its own, with a cd into it,
+# so a path that is relative to where this was started points somewhere
+# different in each one. make hands this .build/ffmpeg, which is relative,
+# and freetype is the one that says so out loud: "expected an absolute
+# directory name for --prefix". The others would have installed into the
+# wrong place without a word. So it is made absolute once, here, and
+# nothing below has to think about it.
+OUT=${1:-ffmpeg-build}
+mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)
 WORK="$OUT/work"
 PREFIX="$OUT/deps"
 JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)

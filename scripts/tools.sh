@@ -69,17 +69,31 @@ fi
 # to work: the search path answers instead, and the line below says so, so
 # that nobody is left wondering which ffmpeg made a clip.
 if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
-	echo "Building the ffmpeg framefairy ships. This takes several minutes, once."
-	if ! sh scripts/build-ffmpeg.sh "$FFMPEG_DIR"; then
-		echo
-		echo "That did not work, so framefairy will use the ffmpeg on the search path."
-		echo "Try it again on its own with: make ffmpeg"
-		if ! command -v ffmpeg >/dev/null 2>&1 ||
-			! ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' ass '; then
-			echo "There is no ffmpeg with libass on the search path either, so installing one."
-			brew tap homebrew-ffmpeg/ffmpeg
-			brew list --formula ffmpeg >/dev/null 2>&1 && brew unlink ffmpeg
-			brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+	# A build that did not work is not tried again on every make. That would
+	# be several minutes of nothing before every build, for as long as it
+	# stays broken. It is tried again the moment the script that does it
+	# changes, and make ffmpeg always tries again whatever happened.
+	recipe=$(cksum scripts/build-ffmpeg.sh | cut -d' ' -f1)
+	if [ "$(cat "$FFMPEG_DIR/failed" 2>/dev/null)" = "$recipe" ]; then
+		echo "The ffmpeg framefairy ships did not build last time, so the one on the"
+		echo "search path is used instead. Try it again with: make ffmpeg"
+	else
+		echo "Building the ffmpeg framefairy ships. This takes several minutes, once."
+		if sh scripts/build-ffmpeg.sh "$FFMPEG_DIR"; then
+			rm -f "$FFMPEG_DIR/failed"
+		else
+			mkdir -p "$FFMPEG_DIR"
+			echo "$recipe" >"$FFMPEG_DIR/failed"
+			echo
+			echo "That did not work, so framefairy will use the ffmpeg on the search path."
+			echo "Try it again on its own with: make ffmpeg"
+			if ! command -v ffmpeg >/dev/null 2>&1 ||
+				! ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' ass '; then
+				echo "There is no ffmpeg with libass on the search path either, so installing one."
+				brew tap homebrew-ffmpeg/ffmpeg
+				brew list --formula ffmpeg >/dev/null 2>&1 && brew unlink ffmpeg
+				brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+			fi
 		fi
 	fi
 fi
