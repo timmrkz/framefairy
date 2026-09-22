@@ -35,10 +35,11 @@ plainly:
   to install. This is the path that gets somebody to their first short in
   minutes.
 - **A local model.** Free per run, private, needs the machine for it. The
-  app walks them through getting it, which is `scripts/models.sh` turned
-  into something with a window: pick the model that fits the memory, show
-  the size before it starts, download with a checksum, resume a broken one,
-  and say plainly what it will cost in disk and in memory.
+  app walks them through getting it: four models from three houses, each
+  saying what it costs to fetch and what it costs in memory to run, with
+  the one this machine should have marked as such. A download nobody agreed
+  to is a download nobody wanted, so every figure is said before anything
+  starts.
 
 Speech is not part of that choice. Transcription is always local, always
 Parakeet, and the speech model is 490 MB, which is a first-run download
@@ -62,13 +63,21 @@ too big. It never refuses: a machine's memory can be read wrong and it is
 not the app's place to decide, so it says what it thinks before the
 download rather than after it.
 
-**A language model has no pinned checksum yet.** The speech model's is read
-off the real file. The language models' cannot be, from here: `huggingface.co`
-is not reachable from a cloud session, so neither a checksum nor an exact
-size can be taken. What the installer does instead is check that what
-arrived begins with `GGUF`, which is what tells a model from a page saying
-no saved under a model's name, and the field for a checksum is there for
-the day one can be read off the file.
+**Every model is pinned and every model comes from its own maker.** The
+sizes and the checksums are read off the real files through the Hugging
+Face API rather than guessed, which matters: the first one was guessed once
+and was a gigabyte out. Nothing on the list is somebody else's quantisation
+of somebody's model, so what is fetched is what its maker meant to release,
+and its licence is between the user and that maker. On top of the checksum
+the installer checks that what arrived begins with `GGUF`, because a page
+saying no, saved under a model's name, is the thing that gets past
+everything else.
+
+**What is not done yet: a download does not resume.** A language model is
+between five and fifteen gigabytes, and one that fails at nine tenths
+starts again from nothing. The part file is already there to resume from
+and the server supports it, so this is a range request and a checksum fed
+the bytes that are already on disk.
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches Gemma from its own home, the way

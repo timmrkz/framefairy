@@ -47,4 +47,15 @@ describe("what a machine can do with a model", () => {
   test("a machine that will not say is not warned about", () => {
     expect(fitNote("unknown")).toEqual({ note: "", warn: false });
   });
+
+  // The one this machine is offered says so. What it must never do is
+  // swallow the warning with it: the best of them on a small machine is
+  // still tight on it, and somebody about to spend a download on it
+  // deserves to know that before they start.
+  test("the one on offer says so, and still warns", () => {
+    expect(fitNote("fits", true)).toEqual({ note: "Best for this machine", warn: false });
+    expect(fitNote("tight", true).warn).toBe(true);
+    expect(fitNote("tight", true).note).not.toBe(fitNote("tight").note);
+    expect(fitNote("unknown", true).note).not.toBe("");
+  });
 });

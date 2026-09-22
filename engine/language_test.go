@@ -31,7 +31,6 @@ func TestEveryLanguageModelCanBeOffered(t *testing.T) {
 		t.Fatal("no language models at all, so nobody can choose one")
 	}
 	seen := map[string]bool{}
-	recommended := 0
 	for _, m := range models {
 		if m.Name == "" || m.Title == "" || m.Maker == "" || m.About == "" {
 			t.Errorf("a model the window cannot describe: %+v", m)
@@ -57,16 +56,15 @@ func TestEveryLanguageModelCanBeOffered(t *testing.T) {
 			t.Errorf("two models land as the same file, %s", m.Name)
 		}
 		seen[m.Name] = true
-		if m.Recommended {
-			recommended++
+		// A checksum, because this is a file off the internet that is then
+		// fed to a program. Sixty four hex characters or nothing.
+		if len(m.SHA256) != 64 {
+			t.Errorf("%s has no checksum: %q", m.Title, m.SHA256)
 		}
 		// Whoever finds a model by name has to find this one.
 		if got, ok := LanguageModelByName(m.Name); !ok || got.Title != m.Title {
 			t.Errorf("%s cannot be found by its own name", m.Title)
 		}
-	}
-	if recommended != 1 {
-		t.Errorf("%d models are recommended, and the window offers one", recommended)
 	}
 	if _, ok := LanguageModelByName("no-such-model.gguf"); ok {
 		t.Error("found a model that does not exist")
@@ -101,18 +99,70 @@ func TestWhatAMachineCanHold(t *testing.T) {
 	}
 }
 
-// The recommended model has to be one a real machine can run, or the
-// recommendation is a joke at the customer's expense. 32 GB is the machine
-// this is built on.
-func TestTheRecommendedModelRunsOnARealMachine(t *testing.T) {
+// What a machine is offered. The recommendation is never a model that
+// machine cannot hold: that would be a joke at the customer's expense,
+// and it is the whole reason any of this reads the memory at all.
+func TestWhatEachMachineIsOffered(t *testing.T) {
 	const gb = 1 << 30
-	for _, m := range LanguageModels() {
-		if !m.Recommended {
+	for _, machine := range []int64{8 * gb, 16 * gb, 18 * gb, 24 * gb, 32 * gb, 64 * gb, 128 * gb} {
+		got, ok := RecommendedFor(machine)
+		if !ok {
+			t.Logf("%3d GB  nothing fits", machine/gb)
 			continue
 		}
-		if fit := m.FitsIn(32 * gb); fit == TooBig {
-			t.Errorf("%s is recommended and does not fit a 32 GB machine", m.Title)
+		fit := got.FitsIn(machine)
+		t.Logf("%3d GB  %-18s %s", machine/gb, got.Title, fit)
+		if fit == TooBig {
+			t.Errorf("%d GB was offered %s, which does not fit it", machine/gb, got.Title)
 		}
+		// And it is the largest that does, or the choice is being made
+		// badly rather than not at all.
+		for _, other := range LanguageModels() {
+			if other.Needs <= got.Needs {
+				continue
+			}
+			if other.FitsIn(machine) == fit {
+				t.Errorf("%d GB was offered %s when %s fits it just as well",
+					machine/gb, got.Title, other.Title)
+			}
+		}
+	}
+
+	// A machine that will not say gets the smallest, because that is the
+	// one most likely to run and a guess should be the cautious one.
+	got, ok := RecommendedFor(0)
+	if !ok {
+		t.Fatal("a machine that will not say was offered nothing at all")
+	}
+	for _, other := range LanguageModels() {
+		if other.Needs < got.Needs {
+			t.Errorf("a machine that will not say was offered %s, and %s is smaller",
+				got.Title, other.Title)
+		}
+	}
+
+	// A machine too small for any of them is offered none, and then the
+	// window says so rather than promising something that cannot work.
+	if _, ok := RecommendedFor(1 * gb); ok {
+		t.Error("a 1 GB machine was offered a model")
+	}
+}
+
+// Every model is fetched from whoever made it, over a connection that can
+// be checked. A model is a file off the internet that is then fed to a
+// program, so where it comes from is not a detail.
+func TestEveryModelComesFromItsOwnMaker(t *testing.T) {
+	makers := map[string]bool{}
+	for _, m := range LanguageModels() {
+		makers[m.Maker] = true
+		if !strings.HasPrefix(m.URL, "https://huggingface.co/") {
+			t.Errorf("%s comes from %s", m.Title, m.URL)
+		}
+	}
+	// The point of a list rather than one model is that there is a choice,
+	// and a choice between four of one house is not much of one.
+	if len(makers) < 2 {
+		t.Errorf("every model on the list is from %v", makers)
 	}
 }
 

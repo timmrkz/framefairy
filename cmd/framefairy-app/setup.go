@@ -35,6 +35,11 @@ type LanguageModelView struct {
 	Installed bool `json:"installed"`
 	// Fit is "fits", "tight", "too big" or "unknown". See engine.Fit.
 	Fit string `json:"fit"`
+	// Recommended marks the one to offer this machine, which is the
+	// largest it can hold. It belongs to the machine and not to the model,
+	// which is why it is worked out here rather than written into the
+	// catalogue.
+	Recommended bool `json:"recommended"`
 }
 
 // SetupState is what the window needs to decide whether to ask anything.
@@ -83,9 +88,11 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		state.Speech = append(state.Speech, view)
 	}
 	state.Memory = engine.MachineMemory()
+	best, hasBest := engine.RecommendedFor(state.Memory)
 	for _, m := range engine.LanguageModels() {
 		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir),
-			Fit: string(m.FitsIn(state.Memory))}
+			Fit:         string(m.FitsIn(state.Memory)),
+			Recommended: hasBest && m.Name == best.Name}
 		if view.Installed {
 			state.HasLocalModel = true
 		}

@@ -264,11 +264,13 @@ export interface LanguageModel {
   download: number;
   needs: number;
   url: string;
-  recommended: boolean;
   installed: boolean;
   // What this machine can do with it: "fits", "tight", "too big", or
   // "unknown" where the machine would not say how much memory it has.
   fit: "fits" | "tight" | "too big" | "unknown";
+  // Whether this is the one to offer this machine, which is the largest it
+  // can hold. It belongs to the machine and not to the model.
+  recommended: boolean;
 }
 
 // One row of a list of models, as the list draws it. Speech models and
@@ -453,16 +455,23 @@ export function clock(seconds: number): string {
 // What a machine can do with a model, in words, and whether that is a
 // warning. One place, because the setup and the settings say the same
 // thing and two wordings of one fact read as two facts.
-export function fitNote(fit: LanguageModel["fit"]): { note: string; warn: boolean } {
+//
+// best is the one the machine is offered, the largest it can hold. Saying
+// so never hides the warning: the best of them on a small machine is still
+// tight on it, and somebody about to spend a download deserves to know.
+export function fitNote(
+  fit: LanguageModel["fit"],
+  best = false,
+): { note: string; warn: boolean } {
   switch (fit) {
     case "fits":
-      return { note: "Fits this machine", warn: false };
+      return { note: best ? "Best for this machine" : "Fits this machine", warn: false };
     case "tight":
-      return { note: "Tight on this machine, and it will slow everything else down", warn: true };
+      return { note: best ? "The best of these here, and tight on it" : "Tight on this machine", warn: true };
     case "too big":
       return { note: "Too big for this machine", warn: true };
     default:
-      return { note: "", warn: false };
+      return { note: best ? "The safest of these" : "", warn: false };
   }
 }
 

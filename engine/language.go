@@ -35,12 +35,9 @@ type LanguageModel struct {
 	Maker string `json:"maker"`
 	// About is one line saying what it is for.
 	About string `json:"about"`
-	// Download is about how big the file is, in bytes. It is said before
-	// anything starts, because a download nobody agreed to is a download
-	// nobody wanted, and it is only ever used to say so and to report how
-	// far a download has come when the server does not say. Nothing
-	// depends on it being exact, because a figure that has not been read
-	// off the real file is not exact.
+	// Download is how big the file is, in bytes, read off the real file
+	// rather than guessed. It is said before anything starts, because a
+	// download nobody agreed to is a download nobody wanted.
 	Download int64 `json:"download"`
 	// Needs is the memory it takes to run, with the context the engine
 	// asks for, in bytes. More than the file: the weights are in memory
@@ -54,39 +51,119 @@ type LanguageModel struct {
 	// then the check is that what arrived is a model at all rather than
 	// that it is exactly the one expected.
 	SHA256 string `json:"-"`
-	// Recommended marks the one to offer on a machine that can hold it.
-	Recommended bool `json:"recommended"`
 }
+
+// needs is what a model takes to run, worked out from what it takes on
+// disk. The weights are the file, and the context and the runtime sit on
+// top of them: a quarter more, which is where the eighteen gigabytes this
+// project has always quoted for the fourteen gigabyte Gemma comes from.
+//
+// It is a rule rather than a measurement, and it is a rule because a
+// measurement would have to be taken on every machine for every model. It
+// is used to say whether a machine can hold a model, and for that being
+// roughly right and never optimistic is what matters.
+func needs(file int64) int64 { return file + file/4 }
 
 // LanguageModels is every model that can be installed, largest first.
 //
-// There is one here and the shape is written for many, because the moment
-// there are two the window has a real choice to put to somebody and the
-// memory below decides which of them it may offer.
+// Four models from three houses, across the range of machines somebody
+// might have: the largest wants a machine with plenty and the smallest
+// runs on one with sixteen gigabytes. Which of them a given machine is
+// offered is RecommendedFor below.
 //
-// A word about how short this list is. Every entry needs a URL that is
-// really there, a size that is really that and, best of all, a checksum
-// taken from the real file. The one below has been downloaded and run. The
-// others cannot be added from a cloud session, because huggingface.co is
-// not reachable from one, and a list of models that 404 is worse than a
-// list of one that works.
+// Every one is published by whoever made the model rather than quantised
+// by somebody else afterwards, so what is fetched is what its maker meant
+// to release. Nothing is redistributed, so each licence is between the
+// user and its maker.
+//
+// The sizes and the checksums are read off the real files, through the
+// Hugging Face API, not guessed. The first of these was guessed once and
+// was a gigabyte out.
 func LanguageModels() []LanguageModel {
+	const hf = "https://huggingface.co/"
 	return []LanguageModel{{
 		Name:  "gemma-4-26B_q4_0-it.gguf",
 		Title: "Gemma 4 26B A4B",
 		Maker: "Google",
-		About: "Quantised to four bits, and only four billion of its " +
-			"twenty six are used per token, so it answers like a much " +
-			"smaller model.",
-		// Both of these are the figures scripts/models.sh has carried
-		// since this model was first used, in bytes: 14.4 GiB to fetch
-		// and about 18 GiB to run. Neither has been read off the file by
-		// anything here, so neither is exact and nothing depends on it.
-		Download:    15_461_882_265,
-		Needs:       19_327_352_832,
-		URL:         "https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf",
-		Recommended: true,
+		About: "Twenty six billion parameters with four of them used per token, " +
+			"so it runs like a far smaller model. The largest of these.",
+		Download: 14_439_363_584,
+		Needs:    needs(14_439_363_584),
+		URL:      hf + "google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf",
+		SHA256:   "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+	}, {
+		Name:     "Qwen3-14B-Q4_K_M.gguf",
+		Title:    "Qwen3 14B",
+		Maker:    "Alibaba",
+		About:    "Fourteen billion parameters, quantised to four bits.",
+		Download: 9_001_752_960,
+		Needs:    needs(9_001_752_960),
+		URL:      hf + "Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
+		SHA256:   "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+	}, {
+		Name:  "gemma-4-12b-it-qat-q4_0.gguf",
+		Title: "Gemma 4 12B",
+		Maker: "Google",
+		About: "Twelve billion parameters, trained to be quantised to four bits " +
+			"rather than cut down to them afterwards.",
+		Download: 6_975_879_296,
+		Needs:    needs(6_975_879_296),
+		URL:      hf + "google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf",
+		SHA256:   "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+	}, {
+		Name:  "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+		Title: "Ministral 3 8B",
+		Maker: "Mistral",
+		About: "Eight billion parameters, quantised to four bits. The smallest " +
+			"of these, for a machine with less to spare.",
+		Download: 5_198_911_904,
+		Needs:    needs(5_198_911_904),
+		URL:      hf + "mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+		SHA256:   "33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761",
 	}}
+}
+
+// RecommendedFor is the model to offer a machine with this much memory:
+// the largest it can hold comfortably, or, where none of them is
+// comfortable, the largest it can hold at all.
+//
+// A machine that will not say how much memory it has is offered the
+// smallest, because the smallest is the one most likely to run, and a
+// recommendation that cannot be checked should be the cautious one.
+//
+// It answers with nothing when nothing fits. Then the window says so and
+// the Anthropic API is the way through, which is the whole reason there
+// are two ways.
+func RecommendedFor(total int64) (LanguageModel, bool) {
+	models := LanguageModels()
+	if len(models) == 0 {
+		return LanguageModel{}, false
+	}
+	if total <= 0 {
+		smallest := models[0]
+		for _, m := range models {
+			if m.Needs < smallest.Needs {
+				smallest = m
+			}
+		}
+		return smallest, true
+	}
+	var best LanguageModel
+	var found bool
+	for _, want := range []Fit{FitsWell, FitsTight} {
+		for _, m := range models {
+			if m.FitsIn(total) != want {
+				continue
+			}
+			if !found || m.Needs > best.Needs {
+				best, found = m, true
+			}
+		}
+		if found {
+			return best, true
+		}
+	}
+	return LanguageModel{}, false
 }
 
 // LanguageModelByName finds one by the file it lands as.

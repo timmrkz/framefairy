@@ -48,18 +48,22 @@ given and can be changed later in the settings.
 Choosing the API opens a field for the key, which goes in the macOS keychain
 and nowhere else, never in the settings file.
 
-Choosing **On this machine** shows the models that can be installed, by
-maker, each saying what it costs to fetch, what it costs in memory to run
-and what this machine can do with it. That last part is the point of the
-list. A model runs from memory, so a machine too small for one will swap,
-and a model that swaps takes minutes to answer rather than seconds. The app
-reads how much memory the machine has and says, beside each model, **Fits
-this machine**, **Tight on this machine** or **Too big for this machine**,
-with the machine's own figure above the list so the judgement can be checked.
+Choosing **On this machine** shows the models that can be installed, each
+with its maker, what it costs to fetch, what it costs in memory to run and
+what this machine can do with it. That last part is the point of the list.
+A model runs from memory, so a machine too small for one will swap, and a
+model that swaps takes minutes to answer rather than seconds. The app reads
+how much memory the machine has and says, beside each model, **Best for
+this machine**, **Fits this machine**, **Tight on this machine** or **Too
+big for this machine**, with the machine's own figure above the list so the
+judgement can be checked. The best one is simply the largest the machine
+can hold comfortably.
+
 Nothing is hidden and nothing is refused: a model the app thinks is too big
 can still be installed, because a machine's memory can be read wrong and it
 is not the app's place to decide. A machine that will not say how much
-memory it has is told that, and then nothing is promised.
+memory it has is offered the smallest, because that is the one most likely
+to run, and nothing else is promised.
 
 A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
 app fetched it or not. Either way `llama-server` has to be on the machine.

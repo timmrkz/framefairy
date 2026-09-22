@@ -222,9 +222,9 @@ export const Call = {
             download: 15461882265,
             needs: 19327352832,
             url: "https://example.invalid/gemma.gguf",
-            recommended: true,
             installed: !fresh || llmDone(),
             fit: "fits",
+            recommended: true,
           },
           {
             name: "small-q4.gguf",
@@ -234,9 +234,9 @@ export const Call = {
             download: 4900000000,
             needs: 42949672960,
             url: "https://example.invalid/small.gguf",
-            recommended: false,
             installed: false,
             fit: "too big",
+            recommended: false,
           },
         ];
         return Promise.resolve({

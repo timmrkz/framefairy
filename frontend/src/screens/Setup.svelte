@@ -56,7 +56,7 @@
 
   const languageRows = $derived<ModelRow[]>(
     (setup?.language ?? []).map((m) => {
-      const { note, warn } = fitNote(m.fit);
+      const { note, warn } = fitNote(m.fit, m.recommended);
       return {
         name: m.name,
         title: `${m.title} by ${m.maker}`,
