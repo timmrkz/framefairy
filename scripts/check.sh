@@ -9,6 +9,8 @@
 
 MIN_GO_MINOR=27
 MODELS="${HOME}/.framefairy/models"
+# Where make puts the programs, and the ffmpeg it puts beside them.
+BESIDE="${FRAMEFAIRY_BIN:-bin}"
 ASR_DIR="${FRAMEFAIRY_ASR_MODEL:-$MODELS/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8}"
 SYSTEM=$(uname -s 2>/dev/null)
 missing=0
@@ -69,30 +71,47 @@ toolchain() {
 }
 
 runtime() {
-	if command -v ffmpeg >/dev/null 2>&1; then
-		if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' ass ' &&
-			ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libx264; then
-			ok "ffmpeg with libass and libx264"
+	# The programs look beside themselves before they look at the search
+	# path, so this looks in the same order. ffmpeg is named by where it
+	# came from, because which one made a clip is a thing worth knowing.
+	whose="on the search path"
+	ff=$(command -v ffmpeg 2>/dev/null || true)
+	if [ -x "$BESIDE/ffmpeg" ]; then
+		ff="$BESIDE/ffmpeg"
+		whose="ours, from make"
+	fi
+	if [ -n "$ff" ]; then
+		# libass draws the captions. H.264 is not asked of the build any
+		# more: our own has no encoder of its own and reaches for the
+		# system's, which is h264_videotoolbox on macOS.
+		if "$ff" -hide_banner -filters 2>/dev/null | grep -q ' ass '; then
+			ok "ffmpeg with libass ($whose)"
 		else
-			bad "ffmpeg with libass and libx264, the installed one lacks them" "$(install_hint 'make tools' 'see docs/INSTALL.md, step 2' 'see docs/INSTALL.md, step 2')"
+			bad "an ffmpeg with libass, the one $whose has none" "$(install_hint 'make' 'see docs/INSTALL.md, step 2' 'see docs/INSTALL.md, step 2')"
+		fi
+		if ! "$ff" -hide_banner -encoders 2>/dev/null | grep -qE 'h264_videotoolbox|libx264|h264_vaapi|libopenh264'; then
+			bad "an H.264 encoder in that ffmpeg" "on macOS h264_videotoolbox comes with the system. On Linux an LGPL build has none yet, see docs/PACKAGING.md"
 		fi
 	else
-		bad "ffmpeg" "$(install_hint 'make tools' 'sudo apt install ffmpeg' 'winget install Gyan.FFmpeg')"
+		bad "ffmpeg" "$(install_hint 'make' 'sudo apt install ffmpeg' 'winget install Gyan.FFmpeg')"
 	fi
 	if command -v llama-server >/dev/null 2>&1; then
 		ok "llama-server"
 	else
-		bad "llama-server from llama.cpp" "$(install_hint 'make tools' 'see docs/INSTALL.md, step 4' 'winget install llama.cpp')"
+		bad "llama-server from llama.cpp" "$(install_hint 'make' 'see docs/INSTALL.md, step 4' 'winget install llama.cpp')"
 	fi
+	# The models are the app's to fetch, on its first run, the way a
+	# customer gets them. make models is still there for the command line,
+	# which has no window to ask in.
 	if [ -f "$ASR_DIR/tokens.txt" ]; then
 		ok "speech model"
 	else
-		bad "the speech model in $ASR_DIR" "make models"
+		bad "the speech model in $ASR_DIR" "the app fetches it on its first run. For the command line: make models"
 	fi
 	if ls "$MODELS"/*.gguf >/dev/null 2>&1; then
 		ok "language model"
 	else
-		bad "a language model in $MODELS" "make models"
+		bad "a language model in $MODELS" "the app fetches one on its first run, or use an Anthropic API key instead"
 	fi
 }
 
@@ -105,7 +124,7 @@ case "$1" in
 --quiet)
 	QUIET=1
 	runtime
-	[ "$missing" = 0 ] || echo "Building worked. To run framefairy, the above is still needed. make check lists everything."
+	[ "$missing" = 0 ] || echo "The app fetches what it needs on its first run. make check lists everything."
 	;;
 *)
 	echo "Building"

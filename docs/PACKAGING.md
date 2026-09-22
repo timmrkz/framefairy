@@ -55,7 +55,7 @@ are written for the speech model and not yet for Gemma. See
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches Gemma from its own home, the way
-`make models` does today, so its licence is between the user and Google
+`scripts/models.sh` does today, so its licence is between the user and Google
 rather than something we have to carry.
 
 ### 3. ffmpeg: an LGPL build, without libx264, encoding through the system
@@ -82,12 +82,12 @@ system already has:
 On an M2 Max this is also **faster** than libx264, because it is the media
 engine rather than the cores.
 
-**This is built**, by `scripts/build-ffmpeg.sh`, and `make ffmpeg` runs it.
-It takes many minutes and its answer changes only when that script does, so
-it is called by hand the way `make tools` and `make models` are, and every
-build after it copies what it left beside the programs. From then on the
-development build uses the ffmpeg a customer will use rather than whatever
-Homebrew has installed.
+**This is built**, by `scripts/build-ffmpeg.sh`. `make` runs it the first
+time, because it takes many minutes and its answer changes only when that
+script does, and every build after it copies what it left beside the
+programs. From then on the development build uses the ffmpeg a customer
+will use rather than whatever Homebrew has installed. `make ffmpeg` builds
+it again from scratch, for when the script has changed.
 
 Run on Linux, which proves everything but the parts that are Apple's:
 

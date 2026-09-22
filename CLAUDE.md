@@ -250,11 +250,21 @@ messages, pull request text, code comments and chat replies.
 
 - **Go, latest version.** One module, `go 1.27` in `go.mod`, no per-part
   version exceptions. Upgrade with Go releases.
-- **Software never installs dependencies by itself.** The programs never run
-  package managers. `make tools` and `make models` install only when Tim calls
-  them, and `make` only fetches the project's own Go and npm packages.
+- **One command, and the programs still install nothing.** `make` is the
+  whole of it: it installs the tools this machine is missing, builds the
+  ffmpeg we ship the first time, and builds the programs. Nobody should
+  have to remember a second command to get from a fresh machine to a
+  running app. A build runner never installs: `CI` in the environment
+  turns that off, so what CI builds is what its own workflow asked for.
+  The programs themselves never run a package manager. The models are the
+  app's to fetch, on its first run, because that is what a customer does,
+  and `make models` is left for the command line, which has no window to
+  ask in.
 - **Build with make.** `make` must finish without any warning on macOS, see
   [docs/BUILD.md](docs/BUILD.md). CI fails on any warning in the macOS build.
+  It must also stay quick when there is nothing to do: everything `make`
+  decides before it builds is a `command -v` or a file test, never a
+  package manager asked what it has.
 - **One engine, two front ends.** The app drives the engine through
   `engine.Project`, which calls the same `Run` as the command line. Never
   duplicate engine logic in the app. Keep every command-line flag working.
