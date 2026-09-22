@@ -472,4 +472,118 @@ describe("saidWord", () => {
     expect(saidWord(two, [{ start: 100, end: 101, text: "far" }], { start: 0, end: 1 })).toBe(null);
     expect(saidWord(two, [], { start: 0, end: 1 })).toBe(null);
   });
+
+  test("points at nothing with no pieces to read the clock through", () => {
+    expect(saidWord([], said, { start: 10.6, end: 10.9 })).toBe(null);
+  });
+});
+
+// The one assumption the caption box stands on, end to end.
+//
+// The engine lays a clip's captions out by walking the pieces, putting
+// every word of the episode that falls in one onto the clip's own clock,
+// and then splitting any word whose correction reads as several words.
+// That is ClipWords in engine/lines.go with SplitCorrected after it. The
+// caption box clicks its way back along that path, and nothing checks the
+// two agree: TypeScript knows the shape of a word and nothing about where
+// it came from.
+//
+// So the path is walked here, forwards the way the engine walks it and
+// backwards the way the window does, and every word has to come home. If
+// the engine ever lays them out differently this fails, which is the
+// point of writing it down.
+describe("a caption word finds its way home", () => {
+  type Said = { start: number; end: number; text: string };
+
+  // ClipWords: the words of a clip on the clip's own clock.
+  function onClipClock(pieces: { start: number; end: number }[], said: Said[]): Said[] {
+    const out: Said[] = [];
+    let offset = 0;
+    for (const p of pieces) {
+      for (const w of said) {
+        if (w.start < p.start - 0.02 || w.end > p.end + 0.02) continue;
+        out.push({
+          start: offset + (Math.max(w.start, p.start) - p.start),
+          end: offset + (Math.min(w.end, p.end) - p.start),
+          text: w.text,
+        });
+      }
+      offset += p.end - p.start;
+    }
+    return out;
+  }
+
+  // SplitCorrected: a correction that reads as several words is drawn as
+  // several, each taking its share of the one moment by how long it is.
+  function split(words: Said[]): Said[] {
+    const out: Said[] = [];
+    for (const w of words) {
+      const parts = w.text.split(" ").filter(Boolean);
+      if (parts.length < 2) {
+        out.push(w);
+        continue;
+      }
+      const letters = parts.reduce((n, part) => n + part.length, 0);
+      let from = w.start;
+      parts.forEach((part, i) => {
+        const to =
+          i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
+        out.push({ start: from, end: to, text: part });
+        from = to;
+      });
+    }
+    return out;
+  }
+
+  const pieces = [
+    { start: 57, end: 69 },
+    { start: 70, end: 82 },
+  ];
+  // Words of the episode: two in the first piece, one in the cut between
+  // them that no caption can ever show, three in the second. The last one
+  // was corrected into three words, which is what makes the middle rather
+  // than the edge the thing to match on.
+  const said: Said[] = [
+    { start: 57.2, end: 57.6, text: "Und" },
+    { start: 68.4, end: 68.9, text: "da" },
+    { start: 69.2, end: 69.7, text: "hm" },
+    { start: 70.1, end: 70.5, text: "war" },
+    { start: 80.0, end: 80.4, text: "es" },
+    { start: 81.0, end: 81.9, text: "ein echtes Thema" },
+  ];
+
+  test("every caption word points back at the word it came from", () => {
+    const drawn = split(onClipClock(pieces, said));
+    // Five words are drawn from five words heard, with the corrected one
+    // standing as three, and the one inside the cut is not drawn at all.
+    expect(drawn.map((w) => w.text)).toEqual([
+      "Und",
+      "da",
+      "war",
+      "es",
+      "ein",
+      "echtes",
+      "Thema",
+    ]);
+    const home = drawn.map((w) => saidWord(pieces, said, w)?.text ?? "-");
+    expect(home).toEqual(["Und", "da", "war", "es", ...Array(3).fill("ein echtes Thema")]);
+  });
+
+  test("and at the moment the engine keeps it at, to the millisecond", () => {
+    // The engine finds the word by its start, within a thousandth and a
+    // half of a second. Anything that drifts further is a correction that
+    // lands on nothing.
+    const drawn = split(onClipClock(pieces, said));
+    for (const w of drawn) {
+      const home = saidWord(pieces, said, w);
+      expect(home).not.toBe(null);
+      const its = said.find((x) => x.text === home?.text);
+      expect(Math.abs((home?.start ?? -1) - (its?.start ?? -2))).toBeLessThan(0.0015);
+    }
+  });
+
+  test("a word in a cut is never pointed at", () => {
+    const drawn = split(onClipClock(pieces, said));
+    expect(drawn.some((w) => saidWord(pieces, said, w)?.text === "hm")).toBe(false);
+  });
 });

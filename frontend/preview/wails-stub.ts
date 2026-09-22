@@ -557,12 +557,18 @@ export const Call = {
       // that holds the word, which here is every clip that reads it back
       // through fixed().
       case "SetCaptionStyle":
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error("that face is not installed"));
+        }
         if (args[2]) (window as any).__face = String(args[2]);
         if (Number(args[3]) > 0) (window as any).__size = Number(args[3]);
         return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();
         if (!text) return Promise.reject(new Error("a word cannot be empty"));
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error("there is no word at 0:57"));
+        }
         fixed()[said(Number(args[3]))] = text;
         return Promise.resolve(clipOf(String(args[2])));
       }

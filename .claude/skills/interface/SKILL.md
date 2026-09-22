@@ -47,6 +47,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?found` | a search that runs and really finishes, clips and all |
 | `?rendering` | a render running on the first clip, with progress |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
+| `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:

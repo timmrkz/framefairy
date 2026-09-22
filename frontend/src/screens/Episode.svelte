@@ -548,14 +548,26 @@
     }
   }
 
+  // Corrections are made one word after another, and each one is a call
+  // and a reading of every clip after it. Two of them are in the air the
+  // moment a second word is clicked before the first has landed, which is
+  // all it takes: clicking a word commits the one before it. Nothing says
+  // they come back in the order they went out, and the loser paints the
+  // clip list with what it read before the newer correction was written,
+  // which is the older word back on screen.
+  const words = new Newest();
+
   async function setWord(clip: ClipEntry, start: number, text: string) {
     problem = "";
+    const ticket = words.send();
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
       // Other clips with the same word changed too.
-      await refreshClips();
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      const list = (await api.clips(path)) ?? [];
+      if (!words.keep(ticket)) return;
+      clips = list.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
+      words.keep(ticket);
       problem = errorText(err);
       throw err;
     }

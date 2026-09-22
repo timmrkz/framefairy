@@ -28,7 +28,7 @@
   import Icon from "./Icon.svelte";
 
   let {
-    value = $bindable(""),
+    value = "",
     options,
     onpick,
     label,
@@ -40,11 +40,18 @@
     align = "left",
     disabled = false,
   }: {
+    // What is picked. It goes one way only, and nothing here ever writes
+    // it back: what the trigger says is what the caller says is true, and
+    // that is the whole point. A list that shows what was clicked is a
+    // list that lies for as long as the answer is no, and it was lying
+    // before this was written: refusing to save a caption face left the
+    // trigger naming a face the engine had never taken, and it would have
+    // gone on naming it until the face really changed.
     value?: string;
     options: { value: string; label: string }[];
-    // Called with what was picked. The value is bound as well, so a caller
-    // that only wants to know can leave this out, and a caller that sends
-    // it somewhere and draws whatever comes back can leave the binding out.
+    // What to do with a pick. A caller that keeps the value itself sets it
+    // here, and a caller that sends it to the engine draws whatever comes
+    // back. Either way the trigger only ever says what came back.
     onpick?: (value: string) => void;
     // What the list is for, said out loud for anything reading the screen.
     label: string;
@@ -67,9 +74,33 @@
   const longest = $derived(
     options.reduce((most, o) => (o.label.length > most.length ? o.label : most), ""),
   );
+
+  // Which row the list itself thinks is ticked. It is not the same thing
+  // as what is true: between a click and an answer the list has moved on
+  // and the answer may yet be no. So it follows the truth whenever the
+  // truth changes, and it is set back to the truth every time the list
+  // opens, which is the only moment it is ever read.
+  // It starts empty rather than at the value, because reading a prop once
+  // at the top is reading the value it had at that moment and nothing
+  // after. The two lines below are the whole of how it is kept: it follows
+  // the truth whenever the truth changes, and it is set back to the truth
+  // every time the list opens.
+  let ticked = $state("");
+  $effect(() => {
+    ticked = value;
+  });
 </script>
 
-<Select.Root type="single" bind:value items={options} {disabled} onValueChange={(v) => onpick?.(v)}>
+<Select.Root
+  type="single"
+  bind:value={ticked}
+  items={options}
+  {disabled}
+  onOpenChange={(open) => {
+    if (open) ticked = value;
+  }}
+  onValueChange={(v) => onpick?.(v)}
+>
   <Select.Trigger>
     {#snippet child({ props })}
       <button

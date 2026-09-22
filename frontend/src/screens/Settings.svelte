@@ -190,7 +190,10 @@
       <div class="grid">
         <label for="planner">Model</label>
         <Pick
-          bind:value={settings.planner}
+          value={settings.planner}
+          onpick={(v) => {
+            if (settings) settings.planner = v === "api" ? "api" : "local";
+          }}
           options={[
             { value: "local", label: "On this machine" },
             { value: "api", label: "Claude API" },

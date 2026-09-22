@@ -439,7 +439,11 @@
       // was, so the picture never shows a correction that was refused.
       node.textContent = word.text;
     } finally {
-      savingWord = null;
+      // Only if it is still this word's turn. Correcting a second word
+      // while the first is still on its way leaves two of these running,
+      // and the older one finishing would otherwise say the newer one had
+      // landed.
+      if (savingWord === was.at) savingWord = null;
     }
   }
 
@@ -723,7 +727,14 @@
         >
           {#each rows as line, row (row)}
             <div class="line">
-              {#each line as { word, said }, i (word.start)}{#if !doubled(word, said)}{#if i > 0}{" "}{/if}<span
+              <!-- The key carries the place as well as the moment. Two
+                   caption words can stand at the same moment: a word
+                   measured as lasting no time at all and corrected into
+                   two is split into two halves of nothing, both starting
+                   where it did, and a key that was the moment alone would
+                   then be the same key twice, which is not a caption that
+                   looks wrong but a window that stops. -->
+              {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said)}{#if i > 0}{" "}{/if}<span
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
