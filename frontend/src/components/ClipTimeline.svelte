@@ -16,7 +16,18 @@
   // words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
-  import { api, clock, cutAt, snapCut, snapEnd, snapStart, type ClipEntry, type Word } from "../lib/api";
+  import {
+    api,
+    clock,
+    cutAt,
+    snapCut,
+    snapEnd,
+    snapStart,
+    wordsKept,
+    wordStep,
+    type ClipEntry,
+    type Word,
+  } from "../lib/api";
   import Info from "./Info.svelte";
 
   let {
@@ -596,7 +607,10 @@
 
   // The arrow keys step the playhead a frame at a time, as in every video
   // tool, unless a field or an edge of the clip has the keyboard. Shift
-  // takes a second at a time.
+  // steps by words, which is the thing the picture is showing: the caption
+  // lights up the word being spoken, so this walks that light one word at
+  // a time. Where nothing has been heard yet there are no words to walk,
+  // and shift takes a second, which is all it ever took before.
   function onKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
@@ -607,9 +621,21 @@
     // arrows for themselves while they hold the keyboard.
     if (on?.getAttribute("role") === "slider") return;
     if (document.querySelector("dialog[open]")) return;
-    const step = (event.shiftKey ? 1 : Math.max(frame, 1 / 240)) * (event.key === "ArrowLeft" ? -1 : 1);
+    const back = event.key === "ArrowLeft";
     event.preventDefault();
-    onseek(Math.max(0, Math.min(time + step, duration)));
+    const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)));
+    if (!event.shiftKey) {
+      put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
+      return;
+    }
+    // Half a frame of slack, so that a second press leaves the word start
+    // the first one landed on rather than finding it again.
+    const walk = wordsKept(words, pieces);
+    // Half a frame: near enough to a word's start to count as being on it,
+    // and far enough inside it to be unmistakably in it.
+    const to = wordStep(walk, time, back, Math.max(frame, 1 / 240) / 2);
+    if (to !== null) put(to);
+    else if (!walk.length) put(time + (back ? -1 : 1));
   }
 
   // Reading takes a call each, so it waits until the fingers come to rest.
@@ -915,7 +941,8 @@
     >
       <Info label="What the clip timeline is" side="right">
         The episode up close. Drag to move the playhead, two fingers to travel, a pinch to zoom,
-        and a double-click to fit the clip. The arrow keys step a frame, with shift a second. Drag
+        and a double-click to fit the clip. The arrow keys step a frame, with shift a word, so the
+        caption in the picture lights up the next one. Drag
         a clip edge to trim it. The words are in the picture, in the caption box, which is where
         they are read and where they are corrected. A hatched block inside a clip is
         a stretch it leaves out. Drag either edge of one to change it, double-click one to put it

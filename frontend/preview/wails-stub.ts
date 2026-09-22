@@ -1,18 +1,36 @@
 // Stands in for the Wails runtime so the interface can be looked at in a
 // plain browser. Only for taking a picture of the layout.
-const words = (from: number, to: number) => {
-  const list: { start: number; end: number; text: string }[] = [];
+// The words of the whole episode, on one clock, made once.
+//
+// They used to be made from wherever a call asked to start, so a call
+// about the ten minutes around the playhead and a call about a clip's
+// twenty-five seconds answered with words at different moments. Nothing
+// looked wrong: both lists read the same sentence and both drew fine. But
+// the Go side reads one transcript, so the word a clip is built from and
+// the word the timeline steps to are the same word, and here they were
+// not. Stepping by words lit the wrong word in the caption box and it
+// took a probe to see, because the two lists only disagree once something
+// crosses from one to the other.
+let every: { start: number; end: number; text: string }[] | null = null;
+
+const allWords = () => {
+  if (every) return every;
   const sample = "Und da war irgendein Typ auf einmal vor mir und ich habe mich gewehrt weil das ein echtes Thema war".split(" ");
-  let at = from;
+  const list: { start: number; end: number; text: string }[] = [];
+  let at = 0;
   let i = 0;
-  while (at < to) {
+  while (at < 14423) {
     const len = 0.28 + (i % 5) * 0.08;
     list.push({ start: at, end: at + len, text: sample[i % sample.length] });
     at += len + 0.06;
     i++;
   }
+  every = list;
   return list;
 };
+
+const words = (from: number, to: number) =>
+  allWords().filter((w) => w.end > from && w.start < to);
 
 type Piece = { start: number; end: number; cropX: number; moved: boolean };
 

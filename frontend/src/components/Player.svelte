@@ -740,6 +740,13 @@
                    where it did, and a key that was the moment alone would
                    then be the same key twice, which is not a caption that
                    looks wrong but a window that stops. -->
+              <!-- Each word says which moment it stands for. Nothing on
+                   screen reads it: it is there so a probe can, because
+                   which word lights up is decided by comparing two clocks
+                   and there is no other way to see the comparison. The
+                   playhead landing a thousandth of a millisecond before a
+                   word start, and so lighting nothing, was found with
+                   these and could not have been found without them. -->
               {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said)}{#if i > 0}{" "}{/if}<span
                     class="word"
                     class:correctable={!!said}
@@ -749,6 +756,8 @@
                       spoken < word.end}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"
+                    data-at={word.start}
+                    data-to={word.end}
                     role={said ? "textbox" : null}
                     aria-label={said ? "Correct this word" : null}
                     title={said

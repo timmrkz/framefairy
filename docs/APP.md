@@ -543,8 +543,24 @@ place.
   anywhere else: the playhead says it on both timelines. Above that row, the
   clip up close:
     - The arrow keys step the playhead one frame of the episode, and one
-      second with shift, wherever the keyboard is as long as it is not in a
-      field or on an edge of the clip.
+      word with shift, wherever the keyboard is as long as it is not in a
+      field or on an edge of the clip. **A word, because a word is what the
+      picture is showing:** the caption lights up the word being spoken, so
+      shift and an arrow walk that light one word on. A second was what
+      they took before, and a second is nothing in particular. It lands in
+      the middle of a word as often as not, it walks four words at a time
+      where someone speaks quickly and none at all across a pause.
+      - Words a cut takes out are stepped over. They are never spoken in
+        the short and never light up, so landing on one is a press that
+        does nothing anyone can see.
+      - The playhead lands just inside a word, half a frame past its start,
+        never on its edge. A boundary is exactly where the question "is
+        this word being spoken" has no steady answer: the caption runs on
+        the clip's clock and the playhead on the episode's, and the
+        picture's clock is whatever the video element reports, which is
+        rounded. On the edge, two words in every five lit nothing at all.
+      - Where nothing has been heard yet there are no words to walk, and
+        shift takes a second.
     - Drag an edge to trim. Edges snap to words the way the render cuts them.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.
