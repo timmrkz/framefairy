@@ -116,6 +116,17 @@ $ICON
 	<string>public.app-category.video</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- Full screen reaches the top of the display. Without this macOS
+	     keeps a band of black across the top of a full screen window, as
+	     wide as the whole display and 29 points tall, which is the safe
+	     area it leaves clear of a MacBook's camera housing. Measured off
+	     a screenshot: pure black, and nothing the app paints is black,
+	     the darkest of its own being #16171A.
+	     The window's own bar is what ends up under the housing, and it
+	     carries one word at the far left, so there is nothing there for
+	     the housing to cover. -->
+	<key>NSPrefersDisplaySafeAreaLayoutGuide</key>
+	<false/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>NSDesktopFolderUsageDescription</key>

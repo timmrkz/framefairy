@@ -200,8 +200,15 @@
        what is on screen beside them. It is the whole width of the window,
        so the sidebar opens under it and never covers the name. -->
   <!-- The bar is the title bar. macOS lays that out and puts its three
-       buttons on its middle, and nothing the app can set moves them, so
-       the app takes the height it was given rather than asking for one.
+       buttons on its middle, and the app takes the height it was given
+       rather than asking for one.
+       This used to say that nothing the app can set moves those buttons,
+       which is false and cost a great deal: Electron apps move them and
+       VS Code does, and chrome_darwin.go already holds the handle, since
+       it asks the window for standardWindowButton: and reads the frame.
+       What was really wrong was asking for a toolbar, which makes the bar
+       taller and makes macOS inset the buttons to centre them in it. See
+       the window options in main.go.
        Then the buttons are on the bar's middle because the bar is what
        they were centred in. The name goes in a box whose middle is their
        middle, which is the same thing said the other way round. Where the
@@ -400,7 +407,11 @@
   /* Exactly as tall as the title bar macOS laid out, which the shell sets
      from the window, or the token where the system draws its own bar. The
      line at the foot is drawn inside that height rather than under it, so
-     the bar is the title bar and nothing else. */
+     the bar is the title bar and nothing else.
+     The line was taken out once and put back. Read off VS Code and
+     Terminal: both draw one under their title bar, and VS Code's is
+     brighter against its own bar than ours is against ours. It was never
+     what made this window look unlike theirs. */
   .bar {
     position: relative;
     flex: none;

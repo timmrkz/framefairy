@@ -256,6 +256,65 @@ there, and it is the kind of thing Tim sees at a glance and nobody else
 notices until he says it. Before adding a size, a colour or a spacing,
 find the thing it is a sibling of and take that one's.
 
+## When the window itself looks wrong, measure it against a real one
+
+The app is a native window. Every other native window is on the same
+screen, so the control group is free and costs one screenshot.
+
+This is written down because it took a very long time to arrive at. The
+title bar "looked wrong" for round after round, and everything anybody
+tried was about the bar: its height, the line under it, where the name
+sits in it, what it does in fullscreen. It was fixed in one change the
+first time anybody put it next to Terminal and read the numbers.
+
+**Take one screenshot holding your window and a reference window, and fix
+the scale with an object of known size.** A macOS traffic light is 14
+points across, and it is in every window, so it is both the thing being
+measured and the ruler. If it comes back 28 pixels wide, the shot is 2x
+and every other number halves. Then the question stops being "does this
+look right" and becomes a table:
+
+| | down from the window top | in from its left |
+| --- | --- | --- |
+| ours | 26.0 pt | 26.0 pt |
+| VS Code | 17.0 pt | 18.0 pt |
+| Terminal | 16.0 pt | 16.0 pt |
+| Chrome | 20.0 pt | 20.0 pt |
+
+Six to ten points out in both directions, on every window. That is the
+whole bug, and it was invisible for as long as nobody wrote those four
+rows down.
+
+**A constraint in a comment is a claim. Check it before building on it.**
+`App.svelte` said macOS puts the three buttons where it likes "and
+nothing the app can set moves them". That is false: Electron apps
+reposition them, VS Code does, and `chrome_darwin.go` already holds the
+handle to do it, since it asks the window for `standardWindowButton:` and
+reads the frame. Setting it is the same call the other way round.
+
+Nobody checked, and everything after it followed honestly from a wrong
+premise: measure the bar with cgo, measure the buttons, publish four
+custom properties, centre the name against the buttons' middle, round it
+all to whole pixels, hold the height steady through the fullscreen
+animation, test all of it. Good work, every line of it, and none of it
+needed to exist. The real answer was that the preset asked for a toolbar,
+`UseToolbar: true` inside `MacTitleBarHiddenInset`, a toolbar makes the
+bar taller, and macOS insets the buttons to centre them in it.
+
+**Adapting has no end condition. That is the smell.** Fitting around
+something you cannot change is never finished: there is always a better
+centring, another transition, one more rounding. If the work keeps
+growing and never closes, stop adding to it and go and test the thing
+everybody agreed was fixed. A cause has a fix. A symptom has endless
+mitigation, and endless mitigation is how a small thing becomes a month.
+
+**Asking for more opinions does not help while the premise is wrong.**
+Every briefing carries the framing with it, so every answer comes back
+from inside the same box. What broke this open was not another opinion,
+it was Tim asking how VS Code does it. A counterexample beats reasoning:
+three applications were on screen doing the thing we had written down as
+impossible.
+
 ## What goes wrong here in particular
 
 These are the traps this interface has actually fallen into. Each cost at
