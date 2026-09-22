@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { snapCut, type Word } from "./api";
+import { cutAt, snapCut, type Word } from "./api";
 
 // The timeline draws the block a cut will leave out while the hand is still
 // moving, so this snapping has to agree with the engine's. They are the
@@ -75,5 +75,79 @@ describe("a cut lands where the render will cut", () => {
       const [a, b] = snapCut(words, from, from + 0.3, 0.1);
       expect(b, `a cut from ${from} came back as ${a} to ${b}`).toBeGreaterThanOrEqual(a);
     }
+  });
+});
+
+describe("cutAt", () => {
+  // A clip in two pieces with a cut already between them.
+  const pieces = [
+    { start: 10, end: 20 },
+    { start: 22, end: 30 },
+  ];
+  const frame = 1 / 25;
+
+  test("lands where it was asked for, on frames, around what it was asked", () => {
+    const [a, b] = cutAt(pieces, 15, 0.25, 0.05, frame)!;
+    // Centred on the click.
+    expect((a + b) / 2).toBeCloseTo(15, 1);
+    // A whole number of frames wide, which is the asked-for width rounded
+    // up: seven frames of 40 milliseconds is 280, for a quarter second
+    // asked.
+    expect(b - a).toBeCloseTo(0.28, 6);
+    expect(b - a).toBeGreaterThanOrEqual(0.25);
+    expect(Math.abs(a / frame - Math.round(a / frame))).toBeLessThan(1e-9);
+    expect(Math.abs(b / frame - Math.round(b / frame))).toBeLessThan(1e-9);
+  });
+
+  test("makes no cut where there is no piece", () => {
+    expect(cutAt(pieces, 21, 0.25, 0.05, frame)).toBeNull();
+    expect(cutAt(pieces, 5, 0.25, 0.05, frame)).toBeNull();
+    expect(cutAt(pieces, 40, 0.25, 0.05, frame)).toBeNull();
+    expect(cutAt([], 15, 0.25, 0.05, frame)).toBeNull();
+  });
+
+  test("leaves room on both sides of the piece, wherever it is clicked", () => {
+    for (const at of [10.001, 10.1, 15, 19.9, 19.999]) {
+      const [a, b] = cutAt(pieces, at, 0.25, 0.05, frame)!;
+      expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
+      expect(b).toBeLessThanOrEqual(19.95 + 1e-9);
+      expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+    }
+  });
+
+  test("makes no cut in a piece with no room to spare", () => {
+    expect(cutAt([{ start: 10, end: 10.1 }], 10.05, 0.25, 0.05, frame)).toBeNull();
+  });
+
+  test("gives back what room there is when the piece is short", () => {
+    const [a, b] = cutAt([{ start: 10, end: 10.4 }], 10.2, 0.25, 0.05, frame)!;
+    expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
+    expect(b).toBeLessThanOrEqual(10.35 + 1e-9);
+    expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+});
+
+describe("cutAt, asked for a width the zoom worked out", () => {
+  const piece = [{ start: 10, end: 30 }];
+  const frame = 1 / 25;
+
+  // Zoomed right out, forty pixels of a four hour episode across a
+  // thousand-pixel track is a long time. The cut is that long.
+  test("takes a wide stretch when the zoom says forty pixels are wide", () => {
+    const [a, b] = cutAt(piece, 20, 8, 0.05, frame)!;
+    expect(b - a).toBeCloseTo(8, 6);
+  });
+
+  // Zoomed right in, forty pixels can be worth less than the least a cut
+  // may be. It is held open at the least rather than refused.
+  test("holds a cut open at the least when the zoom says less", () => {
+    const [a, b] = cutAt(piece, 20, 0.001, 0.05, frame)!;
+    expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+
+  test("never takes more than the piece has room for", () => {
+    const [a, b] = cutAt(piece, 20, 999, 0.05, frame)!;
+    expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
+    expect(b).toBeLessThanOrEqual(29.95 + 1e-9);
   });
 });

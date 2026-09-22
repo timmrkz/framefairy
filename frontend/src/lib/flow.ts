@@ -64,6 +64,34 @@ export type PictureState = {
 // so a seek is dropped and the picture stays on a frame that has nothing to
 // do with where the playhead is. Whenever that happens the workspace asks
 // the engine for the frame under the playhead instead.
+// A piece of a clip, in the episode's own seconds.
+export type Piece = { start: number; end: number };
+
+// The piece a time falls in, or the one it runs into next. Past the last
+// piece it is the last one, so a time beyond the clip still names a piece
+// rather than nothing.
+export function pieceAt(pieces: Piece[], at: number): number {
+  const index = pieces.findIndex((p) => at < p.end);
+  return index < 0 ? Math.max(pieces.length - 1, 0) : index;
+}
+
+// The piece the player is playing, kept inside the pieces that exist.
+//
+// The pieces change under the player whenever a cut is taken out or put
+// back, and the player holds the one it is on as a number. A clip in three
+// pieces playing its third becomes a clip in two pieces the moment a cut
+// goes back, and the number then points past the end. Reading it gave
+// undefined, and asking undefined where it ended threw inside the frame
+// loop, which ended the loop: the playhead stopped moving and the picture
+// stood still on whatever frame it had. That is a video preview that has
+// got lost, and it took nothing more than putting a cut back while the
+// clip was playing past it.
+export function playingPiece(pieces: Piece[], was: number, at: number): number {
+  if (!pieces.length) return 0;
+  if (was >= 0 && was < pieces.length) return was;
+  return pieceAt(pieces, at);
+}
+
 export function pictureIsStale(s: PictureState): boolean {
   if (!s.ready || s.shows < 0) return true;
   return Math.abs(s.shows - s.at) > 0.5;

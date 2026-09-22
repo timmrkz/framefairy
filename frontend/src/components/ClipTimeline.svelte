@@ -16,7 +16,7 @@
   // words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
-  import { api, clock, snapCut, snapEnd, snapStart, type ClipEntry, type Word } from "../lib/api";
+  import { api, clock, cutAt, snapCut, snapEnd, snapStart, type ClipEntry, type Word } from "../lib/api";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
 
@@ -266,14 +266,16 @@
     };
     const startX = event.clientX;
     let moved = false;
-    // Read on every move rather than at the press, so letting go of alt
-    // part way through a drag goes back to snapping and the block says so
-    // before the hand lets go.
-    let toWords = !event.altKey;
+    // A cut lands on the frame, because a drag says where and growing it
+    // out to the words either side puts it somewhere else. Alt asks for
+    // words instead, and it is read on every move rather than at the
+    // press, so taking alt back part way through a drag goes back to
+    // frames and the block says so before the hand lets go.
+    let toWords = event.altKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      toWords = !e.altKey;
+      toWords = e.altKey;
       const t = Math.min(Math.max(timeAt(e.clientX), wall.least), wall.most);
       const from = side === "from" ? Math.min(t, held.to - leastCut) : held.from;
       const to = side === "to" ? Math.max(t, held.from + leastCut) : held.to;
@@ -316,11 +318,11 @@
     const startX = event.clientX;
     const from = timeAt(startX);
     let moved = false;
-    let toWords = !event.altKey;
+    let toWords = event.altKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      toWords = !e.altKey;
+      toWords = e.altKey;
       const t = timeAt(e.clientX);
       const near = Math.min(from, t);
       const far = Math.max(from, t);
@@ -328,7 +330,8 @@
       // the engine. Frames do not, and a cut of nothing would be refused
       // with the plan untouched and a message for a drag of two pixels. So
       // it is held open at the least a cut may be, the way the walls hold
-      // an edge that is being moved.
+      // an edge that is being moved. This is the usual way round now, not
+      // the exception.
       const [a, b] = toWords
         ? snapCut(words, near, far, keepPause)
         : [onFrame(near), Math.max(onFrame(far), onFrame(near) + leastCut)];
@@ -355,6 +358,40 @@
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  // How wide a cut taken out by a double-click starts, in pixels of the
+  // track rather than in seconds.
+  //
+  // Seconds are the wrong measure for something whose whole job is to be
+  // seen and taken hold of. A quarter of a second is wider than the whole
+  // view with the timeline zoomed right in, so the cut arrives with both
+  // its edges off screen and nothing to drag. On a four hour episode
+  // zoomed right out it is a hair nobody can see, let alone grab. The
+  // same number cannot be right at both ends of a range that wide, and
+  // the thing that has to stay the same is what the hand sees.
+  //
+  // Forty, because the two edge handles are twelve wide each and centred
+  // on the edges, so forty apart leaves clear block between them: both
+  // edges can be told apart and either one grabbed without catching the
+  // other.
+  const cutAtOnce = 40;
+
+  // Shift and a double-click takes a stretch out where you click, the way
+  // shift and a drag takes out the stretch you drag across. Shift is the
+  // cutting hand on this track either way. Where it goes exactly, and
+  // whether it goes at all, is cutAt in lib/api.ts, which has the tests.
+  async function cutHere(at: number, wide: number) {
+    if (!editable || !oncut) return;
+    const where = cutAt(pieces, at, wide, leastCut, frame);
+    if (!where) return;
+    cutSaving = true;
+    try {
+      undone = null;
+      await oncut(where[0], where[1], false);
+    } finally {
+      cutSaving = false;
+    }
   }
 
   // The cut that was last put back, so the same double-click in the same
@@ -512,6 +549,23 @@
   // track, and while a pointer is captured every click and double-click is
   // dealt to the element holding it. A handler on the cut is never reached.
   function fitView(event?: MouseEvent) {
+    // Shift is the cutting hand on this track, so a double-click with it
+    // held takes a stretch out where it lands and never moves the view. It
+    // used to fit the clip instead, which is why holding shift and
+    // double-clicking read as nothing happening: the one gesture that
+    // looked like it ought to cut only zoomed.
+    if (event?.shiftKey) {
+      event.preventDefault();
+      const at = timeAt(event.clientX);
+      // What those forty pixels are worth in seconds, here, at this zoom.
+      // timeAt is linear and unclamped, so the difference is the same
+      // anywhere on the track, and reading it costs no layout: it is a
+      // measurement read, never turned back into a size.
+      const wide = Math.abs(timeAt(event.clientX + cutAtOnce) - at);
+      // Inside a cut there is nothing left to take out.
+      if (!cuts.some((c) => at >= c.from && at <= c.to)) void cutHere(at, wide);
+      return;
+    }
     if (event && editable && onjoincut && track) {
       const at = timeAt(event.clientX);
       const hit = cuts.find((c) => at >= c.from && at <= c.to);
@@ -995,9 +1049,10 @@
         and a double-click to fit the clip. The arrow keys step a frame, with shift a second. Drag
         a clip edge to trim it, and the magnifier shows the words. A hatched block inside a clip is
         a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
-        back, and double-click again to take it out once more. Hold shift while dragging across the
-        clip to take a stretch out yourself. Cuts land on whole words, so a cut over a pause takes
-        the whole pause. Hold alt while dragging to land on the frame instead.
+        back, and double-click again to take it out once more. Shift is the cutting hand: hold it
+        and drag across the clip to take out the stretch you drag over, or hold it and double-click
+        to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
+        words instead, which takes the whole pause a cut falls in.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
