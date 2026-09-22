@@ -46,7 +46,23 @@ HARFBUZZ_VERSION=10.1.0
 LIBASS_VERSION=0.17.3
 
 mkdir -p "$WORK" "$PREFIX"
-export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig"
+# Only our own libraries, and nothing this machine happens to have.
+#
+# PKG_CONFIG_LIBDIR and not PKG_CONFIG_PATH: PATH is looked at first and the
+# system is still looked at after it, LIBDIR replaces the search entirely.
+# That is the difference between preferring ours and using only ours, and it
+# is not a fine distinction. libass takes libunibreak when it can see one,
+# and on a Mac with Homebrew it could, so the ffmpeg that came out named
+# /opt/homebrew/opt/libunibreak/lib/libunibreak.7.dylib and would not have
+# run on any machine without Homebrew. The whole point of building this one
+# is that it is one file with nothing to chase.
+# --libdir=lib is given to meson below for the same reason this is a short
+# list: on Debian and Ubuntu meson installs into lib/x86_64-linux-gnu by
+# itself, and then the next library in the chain cannot find it. Which is
+# how the leak stayed hidden: freetype could not see our harfbuzz, so it
+# quietly took the system's.
+export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig"
+export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 export CFLAGS="-O2 -fPIC${CFLAGS:+ $CFLAGS}"
 export LDFLAGS="${LDFLAGS:-}"
 if [ "$SYSTEM" = Darwin ]; then
@@ -60,6 +76,22 @@ fi
 
 say() { printf '\n== %s\n' "$1"; }
 
+# Everything the five builds say goes to a log rather than to the screen.
+# Building somebody else's C is thousands of warnings about code that is not
+# ours to fix, and a wall of them buries the one line that matters. When a
+# step fails, the end of the log is what is printed.
+LOG="$OUT/build.log"
+: >"$LOG"
+finish() {
+	code=$?
+	if [ "$code" != 0 ]; then
+		echo >&2
+		echo "build-ffmpeg.sh: that step failed. The last of $LOG:" >&2
+		tail -40 "$LOG" >&2
+	fi
+}
+trap finish EXIT
+
 # $1 url, $2 the folder it unpacks to, $3 a git repository and $4 its tag,
 # for when the archive cannot be reached.
 #
@@ -69,7 +101,7 @@ say() { printf '\n== %s\n' "$1"; }
 # internet is a build script nobody can check before a release.
 fetch() {
 	if [ -d "$WORK/$2" ]; then return 0; fi
-	echo "fetching $2"
+	echo "  fetching the source of $2"
 	if curl -sSL --fail --retry 2 --max-time 300 -o "$WORK/$2.tar" "$1" 2>/dev/null; then
 		tar -xf "$WORK/$2.tar" -C "$WORK"
 		rm "$WORK/$2.tar"
@@ -78,7 +110,7 @@ fetch() {
 	rm -f "$WORK/$2.tar"
 	if [ -n "$3" ]; then
 		echo "  the archive is unreachable, taking $4 from git instead"
-		git clone --depth 1 --branch "$4" -q "$3" "$WORK/$2"
+		git clone --depth 1 --branch "$4" -q "$3" "$WORK/$2" >>"$LOG" 2>&1
 		return 0
 	fi
 	echo "build-ffmpeg.sh: cannot fetch $2 from $1" >&2
@@ -93,40 +125,40 @@ say "freetype, first pass"
 fetch "https://downloads.sourceforge.net/freetype/freetype-$FREETYPE_VERSION.tar.xz" "freetype-$FREETYPE_VERSION"
 (cd "$WORK/freetype-$FREETYPE_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--with-harfbuzz=no --with-brotli=no --with-png=no --with-bzip2=no >/dev/null &&
-	make -j"$JOBS" >/dev/null && make install >/dev/null)
+		--with-harfbuzz=no --with-brotli=no --with-png=no --with-bzip2=no &&
+	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "fribidi"
 fetch "https://github.com/fribidi/fribidi/releases/download/v$FRIBIDI_VERSION/fribidi-$FRIBIDI_VERSION.tar.xz" "fribidi-$FRIBIDI_VERSION"
 (cd "$WORK/fribidi-$FRIBIDI_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--disable-docs >/dev/null &&
-	make -j"$JOBS" >/dev/null && make install >/dev/null)
+		--disable-docs &&
+	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "harfbuzz"
 fetch "https://github.com/harfbuzz/harfbuzz/releases/download/$HARFBUZZ_VERSION/harfbuzz-$HARFBUZZ_VERSION.tar.xz" "harfbuzz-$HARFBUZZ_VERSION"
 (cd "$WORK/harfbuzz-$HARFBUZZ_VERSION" &&
 	rm -rf build &&
-	meson setup build --prefix="$PREFIX" --buildtype=release \
+	meson setup build --prefix="$PREFIX" --libdir=lib --buildtype=release \
 		--default-library=static -Dtests=disabled -Ddocs=disabled \
 		-Dcairo=disabled -Dglib=disabled -Dgobject=disabled -Dicu=disabled \
-		-Dfreetype=enabled >/dev/null &&
-	meson compile -C build >/dev/null 2>&1 &&
-	meson install -C build >/dev/null)
+		-Dfreetype=enabled &&
+	meson compile -C build &&
+	meson install -C build) >>"$LOG" 2>&1
 
 say "freetype, second pass, this time with harfbuzz"
 (cd "$WORK/freetype-$FREETYPE_VERSION" &&
 	make distclean >/dev/null 2>&1 || true
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--with-harfbuzz=yes --with-brotli=no --with-png=no --with-bzip2=no >/dev/null &&
-	make -j"$JOBS" >/dev/null && make install >/dev/null)
+		--with-harfbuzz=yes --with-brotli=no --with-png=no --with-bzip2=no &&
+	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "libass"
 fetch "https://github.com/libass/libass/releases/download/$LIBASS_VERSION/libass-$LIBASS_VERSION.tar.xz" "libass-$LIBASS_VERSION"
 (cd "$WORK/libass-$LIBASS_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--disable-fontconfig --disable-require-system-font-provider >/dev/null &&
-	make -j"$JOBS" >/dev/null && make install >/dev/null)
+		--disable-fontconfig --disable-require-system-font-provider &&
+	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 # The configure line is the whole point of this script, so it is one place
 # and it is readable. No --enable-gpl and no --enable-nonfree, which is
@@ -154,9 +186,9 @@ fi
 		--disable-autodetect \
 		--enable-zlib \
 		--enable-iconv \
-		$EXTRA >/dev/null &&
-	make -j"$JOBS" >/dev/null &&
-	make install >/dev/null)
+		$EXTRA &&
+	make -j"$JOBS" &&
+	make install) >>"$LOG" 2>&1
 
 say "what came out"
 FF="$OUT/bin/ffmpeg"
@@ -182,6 +214,40 @@ fi
 if ! "$FF" -hide_banner -filters 2>/dev/null | awk '{print $2}' | grep -qx subtitles; then
 	echo >&2
 	echo "build-ffmpeg.sh: no subtitles filter, so libass did not get in." >&2
+	exit 1
+fi
+
+# And it has to be a file that runs on somebody else's machine. A static
+# build may still name a library from this one: libass takes libunibreak
+# when it can see one, and on a Mac with Homebrew it could, so the binary
+# came out naming a dylib under /opt/homebrew and would have failed on the
+# first render for anyone without it. The libraries it may name are the
+# system's own and nothing else.
+#
+# It is read back rather than assumed, the same as the licence above,
+# because the flags that were meant to prevent it are exactly what was
+# wrong the first time.
+borrowed=""
+case "$SYSTEM" in
+Darwin)
+	borrowed=$(otool -L "$FF" | tail -n +2 | awk '{print $1}' |
+		grep -vE '^(/usr/lib/|/System/Library/)' || true)
+	;;
+Linux)
+	# Everything but the C runtime and what a C++ library needs. libass,
+	# freetype, harfbuzz and fribidi are ours and static, so seeing any of
+	# them named here means the system's was used in their place. That is
+	# what was happening: the Linux build named libharfbuzz, libfreetype
+	# and libglib from /lib, so it was neither static nor ours.
+	borrowed=$(ldd "$FF" 2>/dev/null | awk '{print $1}' | sed 's:.*/::' |
+		grep -vE '^(linux-vdso|ld-linux|libc|libm|libdl|libpthread|librt|libgcc_s|libstdc\+\+)\.so' || true)
+	;;
+esac
+if [ -n "$borrowed" ]; then
+	echo >&2
+	echo "build-ffmpeg.sh: this ffmpeg needs libraries from this machine, so it runs" >&2
+	echo "only on this machine:" >&2
+	echo "$borrowed" | sed 's/^/  /' >&2
 	exit 1
 fi
 
