@@ -152,8 +152,7 @@ p {
 
 /* One control size everywhere, so controls in a row always line up. */
 button,
-input,
-select {
+input {
   font: inherit;
   color: inherit;
   height: var(--control-h);

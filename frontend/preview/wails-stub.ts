@@ -120,6 +120,13 @@ const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
   return clip(n, at, title, rendered);
 };
 
+// The caption look, as far as anything can change it here: the face and
+// the size the window asked for last. Without these the window could ask
+// for a face all day and always be told Inter Black, so a probe about
+// picking one would pass whatever the picking did.
+const face = () => (window as any).__face ?? "Inter Black";
+const size = () => (window as any).__size ?? 100;
+
 // The clip a call names, whatever has been done to it since.
 const clipOf = (id: string) => {
   const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
@@ -390,7 +397,7 @@ export const Call = {
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[1])),
-          style: { font: "Inter Black", size: 0.062, lineHeight: 1.16, chosenSize: 100, bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: "#ffffff", box: "rgba(0,0,0,0.85)", highlight: true, highlightColour: "#b4236f" },
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: "#ffffff", box: "rgba(0,0,0,0.85)", highlight: true, highlightColour: "#b4236f" },
         });
       case "Fonts":
         return Promise.resolve([
@@ -549,6 +556,10 @@ export const Call = {
       // A correction belongs to the episode and is applied to every clip
       // that holds the word, which here is every clip that reads it back
       // through fixed().
+      case "SetCaptionStyle":
+        if (args[2]) (window as any).__face = String(args[2]);
+        if (Number(args[3]) > 0) (window as any).__size = Number(args[3]);
+        return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();
         if (!text) return Promise.reject(new Error("a word cannot be empty"));

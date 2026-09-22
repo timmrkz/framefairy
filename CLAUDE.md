@@ -218,6 +218,14 @@ messages, pull request text, code comments and chat replies.
   running somewhere else. They are in `Busy.svelte` and `app.css`. A new
   kind of loading is not a new animation, it is one of these five in a new
   place.
+- **One list to pick from.** Every list a person picks from in the app is
+  `Pick.svelte`, and there is no `<select>` anywhere. A `<select>` is drawn
+  by the system: on macOS the webview hands the whole list to AppKit, which
+  paints it white with a blue row in the middle of a dark workspace, and no
+  stylesheet can reach it. `Pick.svelte` is the app's own list, built on
+  bits-ui, which brings the keyboard, the roles, the focus and the floating
+  placement and brings no look at all. Nothing about how it looks is decided
+  anywhere but in that file and the tokens in `app.css`.
 - **Consistency over novelty.** A visual treatment used in one place must be
   used for every equivalent element, or not at all. Reuse existing patterns,
   for example the `--ink-3` background for a selected row, before inventing

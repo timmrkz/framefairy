@@ -366,6 +366,23 @@ place.
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
       the look, so a correction shows up here at once.
+- **Picking from a list:** every list in the app is the app's own, in
+  `frontend/src/components/Pick.svelte`. There is no `<select>` anywhere,
+  because a `<select>` is drawn by the system: on macOS the webview hands
+  the whole list to AppKit, which paints it white with a blue row and a
+  tick, in a box that has nothing to do with the dark workspace around it,
+  and no stylesheet can reach it. The trigger is a control like any other
+  control, the same height with the same border and the same background,
+  with the mark where a unit would be. The list opens right under it and
+  along its left edge, at least as wide as the trigger and never narrower
+  than the longest thing in it. The row under the pointer and the row the
+  keyboard is on are the same row, in `--ink-3`, and what is chosen is in
+  the accent with a tick that keeps its place whether or not it is there.
+  The trigger keeps room for the longest thing the list can say, so a row
+  never changes width as it is used. It is built on
+  [bits-ui](https://bits-ui.com), the headless half of shadcn-svelte, which
+  brings the keyboard, the roles, the focus, the typeahead and the floating
+  placement, and no look at all.
 - **Correcting a word:** click it in the caption box, in the picture, where
   a short will show it. A word under the pointer is framed in the accent and
   the pointer becomes a caret, so what can be corrected says so without a

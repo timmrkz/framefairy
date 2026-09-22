@@ -31,6 +31,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let { path, onchange }: { path: string; onchange: () => void } = $props();
 
@@ -1105,21 +1106,21 @@
                 </button>
               {/if}
             </div>
-            <label class="setting">
+            <label class="setting" for="caption-font">
               <span>Font</span>
               <!-- The list of faces stands in the same box as the numbers,
                    with its own mark where their unit is, so every setting
                    in the column ends in the same place whatever draws it. -->
               <span class="field">
-                <select
+                <Pick
                   value={captions.style.font}
-                  onchange={(e) => setCaptionStyle(e.currentTarget.value, 0)}
-                >
-                  {#each fonts as font (font.name)}
-                    <option value={font.name}>{font.name}</option>
-                  {/each}
-                </select>
-                <span class="unit mark"><Icon name="pick" size={12} /></span>
+                  options={fonts.map((f) => ({ value: f.name, label: f.name }))}
+                  onpick={(name) => setCaptionStyle(name, 0)}
+                  id="caption-font"
+                  label="Font"
+                  title="The face the captions are written in"
+                  align="right"
+                />
               </span>
             </label>
             <label class="setting">
@@ -1536,38 +1537,12 @@
   }
 
   .field,
-  .setting input,
-  .setting select {
+  .setting input {
     width: 116px;
   }
 
-  .setting input,
-  .setting select {
+  .setting input {
     color: var(--text);
-  }
-
-  /* Every setting in the column ends in the same place, the face along
-     with the numbers. A list a person picks from is laid out by the
-     system, so it is told where to put its text rather than where to put
-     its box, and the mark the system would draw at its own inset is left
-     out and drawn in the column the units stand in instead. Otherwise the
-     face ends 17px further right than every number above it. */
-  .setting select {
-    appearance: none;
-    text-align: right;
-    text-align-last: right;
-    padding-right: 29px;
-  }
-
-  /* The mark sits where a unit sits and is read from the same left edge,
-     so it is one space after the face just as s is one space after a
-     number. It is the colour of a unit, not of the text, because it says
-     what the field is rather than what it holds. */
-  .unit.mark {
-    display: flex;
-    align-items: center;
-    height: var(--control-h);
-    line-height: normal;
   }
 
   /* The stepper the system draws inside a number field would stand between
