@@ -66,7 +66,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.12 | One workspace per episode: player with the crop of the selected clip, clip list beside it, clip marks and playhead on the timeline, play a clip with its cuts. The separate clips page is gone | `[x]` |
 | 2.14 | Slim range picker with clip marks, time labels and playhead inside, one search row, no overlap with the player, button-free clip list, Render in the clip panel, keep and reject removed from the app | `[x]` |
 | 2.13 | Remove an episode with or without deleting its files, time window locked while clips are found | `[x]` |
-| 2.15 | One Play button that plays from the playhead and stops at the end of the clip, space bar for play and pause, the clip's captions drawn in the video preview, the clip list as tall as the video preview, words corrected in a lens on the clip timeline | `[x]` |
+| 2.15 | One Play button that plays from the playhead and stops at the end of the clip, space bar for play and pause, the clip's captions drawn in the video preview, the clip list as tall as the video preview, words corrected in the caption box | `[x]` |
 | 2.11 | Episode opens with a frame preview and the time window right away, first 30 minutes chosen for long episodes, waveform filling in during transcription | `[x]` |
 | 2.18 | Searched stretches marked on the range picker, a window drawn only outside them, and a click on a marked stretch to search it again | `[x]` |
 | 2.17 | One box over the workspace for what cannot be taken back: removing an episode, and finding clips again for a stretch that already has some | `[x]` |
@@ -131,7 +131,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 |---|---|---|
 | 4.1 | Captions drawn in the video preview with the render's font, place and highlight `[x]`, compared against a rendered frame `[ ]` | `[~]` |
 | 4.2 | Live ASS for the clip being edited | `[ ]` |
-| 4.3 | Correct words in the lens on the clip timeline `[x]`, a correction that holds several words `[x]`, split and merge captions `[ ]` | `[~]` |
+| 4.3 | Correct words in the caption box in the video preview `[x]`, a correction that holds several words `[x]`, split and merge captions `[ ]` | `[~]` |
 | 4.4 | Drag caption boundaries | `[ ]` |
 | 4.4b | Drag the caption box up and down on a grid, per clip, with one click back and one click to undo that | `[x]` |
 | 4.5 | The caption face and size next to the clip `[x]`, the highlight colour in settings `[x]`, the rest | `[~]` |

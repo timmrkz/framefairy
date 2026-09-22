@@ -366,6 +366,33 @@ place.
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
       the look, so a correction shows up here at once.
+- **Correcting a word:** click it in the caption box, in the picture, where
+  a short will show it. A word under the pointer is framed in the accent and
+  the pointer becomes a caret, so what can be corrected says so without a
+  word of instruction. The caret lands where the hand clicked, letters are
+  typed and taken out from there, Enter saves and Escape leaves the word as
+  it was. Clicking a word stops the picture, because a caption that moved on
+  under the caret would leave the hand correcting a word that is no longer
+  there. The frame and the caret belong to the interface and not to the
+  render: nothing of them is ever burned into a short.
+  - The correction applies to every clip with that word, because it belongs
+    to the episode and not to the clip. It is kept in
+    `<episode>.framefairy/logs/corrections.json` and applied every time the
+    transcript is read.
+  - **A correction may hold more than one word.** Where the recogniser heard
+    one word and two were said, writing both splits the word it measured
+    between them, so the captions break and highlight them one by one.
+    Writing one word again makes it one word again. A word that was split is
+    drawn in two halves, and clicking either one hands back the whole of it
+    to correct, with the other half out of the way while it is being typed.
+  - **The captions run on the clip's clock and a correction belongs to the
+    episode.** A clip's clock has its cuts taken out of it, so the two
+    clocks run apart by however much the cuts hold. The middle of the
+    caption word is read back through the clip's pieces to find the word of
+    the episode it stands for, and the middle rather than the edge because
+    both halves of a split word have to point at the one word they came
+    from. `inEpisode` and `saidWord` in `frontend/src/lib/flow.ts` are the
+    way back, with tests.
 - **Moving the captions:** drag the caption box up or down. It lands on a
   step of a grid that appears while it moves, and it stays inside the frame.
   **There is one place for every clip of every episode**, because a place
@@ -506,7 +533,8 @@ place.
       opens or closes it, so the track stays clear until the words are asked
       for. The magnifier never moves the playhead, and past the end of the
       transcript there is nothing to magnify, so it is off there and says
-      so.
+      so. The lens reads and nothing else. A word is corrected in the
+      caption box over the picture, where a short will show it.
     - **The clip is one thing, holes and all.** Two rules in the accent run
       above and below it from its first piece to its last, whatever is cut
       out in between, so a clip with a cut in it reads as one clip and not
@@ -563,8 +591,8 @@ place.
       go of alt part way through goes back to frames and the block says
       so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
-      preview as they are spoken, and the words to correct are in the lens,
-      so the waveform has the whole track to itself.
+      preview as they are spoken and the lens reads out the words at the
+      playhead, so the waveform has the whole track to itself.
     - The waveform is drawn the way an editor draws one: one column of the
       screen per column of the picture, each a whole pixel wide. Nothing is
       ever drawn between two pixels, so it keeps the same weight at every
@@ -581,12 +609,6 @@ place.
       pretending each hundredth of a second was flat.
     - The times sit at the top of both tracks, in the same quiet grey, a
       step above the lines around them and below the waveform inside them.
-    - Click a word in the lens to correct it. Enter saves, Escape cancels.
-      The correction applies to every clip with that word.
-    - A correction may hold more than one word. Where the recogniser heard
-      one word and two were said, writing both splits the word it measured
-      between them, so the captions break and highlight them one by one.
-      Writing one word again makes it one word again.
     - Drag the playhead anywhere on the track and the video preview follows.
     - Time labels along the top say where in the episode the timeline is,
       which is what a swipe needs in order to mean anything. They are at the
@@ -618,8 +640,9 @@ place.
   it is logged as one.
 - **The timeline is always there.** With no clip selected it shows the
   minute around the playhead and follows it as the episode plays, so there
-  is always something saying where you are. Trimming and corrections need a
-  clip, so they appear once one is selected.
+  is always something saying where you are. Trimming needs a clip, so it
+  appears once one is selected, and so does the caption box a word is
+  corrected in.
 
 Every change is saved at once. There is no save button. A changed clip gets
 new captions on its next render.

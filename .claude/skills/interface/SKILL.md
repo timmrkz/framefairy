@@ -65,6 +65,16 @@ never a `covered`, so the transcript's edge never moved from the work at
 all, and the first probe about pausing was measuring the track filling in
 after load.
 
+**What the stub answers with has to be made the way the engine makes it,
+not made up.** Its caption cues were four words written out by hand, which
+looked right in a picture and could answer nothing: the words in the
+caption box are clicked back to the word of the episode they came from,
+through the clip's own pieces, and words that came from nowhere have
+nowhere to go back to. A probe about correcting one would have passed
+whatever the window did. The cues are built from the clip's words now, on
+the clip's clock and with a split word drawn as two, the way the engine
+builds them.
+
 `frontend/preview/dist/` is build output and is not in the repository.
 Write one-off probes outside the repository, in the scratchpad.
 
@@ -277,6 +287,17 @@ double-click that puts a cut back had to be decided on the track and the
 cut found by where the pointer was, because the handler on the cut itself
 never ran once. Anything that has to answer a click on top of a drag
 surface is either decided by the surface or stops the pointer going down.
+
+**A drag that refuses the pointer refuses the caret with it.** The other
+half of the same rule. `preventDefault` on the way down is what stops a
+drag turning into a text selection, and it is also what stops the browser
+putting the caret where a hand clicked, which is the whole of what
+clicking a word in the caption box is for. The caption box takes a drag
+and holds words that are corrected in place, so a drag that starts on a
+word starts without refusing the pointer and lets the word go the moment
+the hand moves instead. It measures cleanly either way: with the old line
+back the word never takes the keyboard at all, and the caption line moves
+the same whether the drag started on a word or on the box.
 
 **Two things that move together must move by the same means.** A `left`
 that is animated is worked out by the main thread on every frame, a
