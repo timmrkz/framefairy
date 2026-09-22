@@ -518,6 +518,14 @@ place.
       becomes **Cancel** while work runs, and the line under it fills up as
       the work goes on. Nothing is added to the column, so the clips never
       move down. A render shows there in the same way.
+    - **How far a search is, is measured.** The fill in **Cancel** is the
+      share of the search that is done and the info mark says what it is
+      doing, loading the model, reading the transcript or how many clips
+      it has found, and about how long is left. Both are measured against
+      how long the same parts took the last time on this machine, so the
+      very first search with a model has nothing to go on and shows the
+      beam without a fill. The engine keeps the timings, see
+      [ENGINE.md](ENGINE.md).
     - **Clips arrive one at a time.** The engine writes each clip to the
       plan the moment it is framed, while the model is still writing the
       next, so the list fills in a row at a time and the rows still to come

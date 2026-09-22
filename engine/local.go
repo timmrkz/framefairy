@@ -226,12 +226,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 				"in %s", server, err, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
-		e.Log.Progress(fmt.Sprintf("loading the language model %.0fs", time.Since(started).Seconds()))
+		// How far the loading is, is the search's to say: it knows how long
+		// it took before.
 		response, err := localClient.Get(url + "/health")
 		if err == nil {
 			response.Body.Close()
 			if response.StatusCode == http.StatusOK {
-				e.Log.ClearProgress()
 				e.Log.Detail("model loaded in %ss", fixed(time.Since(started).Seconds(), 1))
 				return url, stop, nil
 			}
@@ -256,6 +256,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	lineCount, count, maxTokens int, logDir string, listen *Listener) (string, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
+		listen.part(partLoading)
 		started, stop, err := e.startServer(ctx, m, contextFor(runeLen(prompt), maxTokens), logDir)
 		if err != nil {
 			return "", err
@@ -263,6 +264,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 		defer stop()
 		url = started
 	}
+	listen.part(partReading)
 
 	schema := json.RawMessage(planSchema(lineCount, count))
 	body, err := json.Marshal(map[string]any{

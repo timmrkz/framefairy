@@ -203,6 +203,14 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	}}
 	if haveReply {
 		listen.text(reply)
+	} else {
+		// A model is going to be asked, so the search has parts that take
+		// time, and the clock says how far it has come through them.
+		clock := newSearchClock(e.Log, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count)
+		go clock.run()
+		defer clock.stop()
+		build.clock = clock
+		listen = clock.listen(listen)
 	}
 
 	if !haveReply && opts.Local != nil {
@@ -215,6 +223,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if err != nil {
 			return nil, build.failed(err)
 		}
+		build.answered()
 		saveReply(cachePath, reply)
 		haveReply, fresh = true, true
 	}
@@ -268,6 +277,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if err != nil {
 			return nil, build.failed(err)
 		}
+		build.answered()
 		saveReply(cachePath, reply)
 		fresh = true
 	}
@@ -328,6 +338,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	clips, entries, ids, err := build.finish()
 	if err != nil {
 		return nil, err
+	}
+	if build.clock != nil {
+		build.clock.finish(len(clips) > 0)
 	}
 	e.Log.OK("%d candidate clip(s) proposed, %d kept", len(entries), len(clips))
 	if len(clips) == 0 {

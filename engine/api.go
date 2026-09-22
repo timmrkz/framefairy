@@ -598,6 +598,7 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", APIURL, model,
 		maxTokens, commas(runeLen(prompt)))
+	listen.part(partReading)
 	started := time.Now()
 	data, _, err := e.post(ctx, build, logDir, tag, true, heard)
 	if err != nil {

@@ -162,6 +162,16 @@ func (l *Log) ProgressOf(label string, fraction, remaining float64) {
 // what the machine has already heard, and a window that followed the file
 // alone would step rather than move.
 func (l *Log) ProgressTo(label string, fraction, remaining, covered float64) {
+	l.progress(label, fraction, remaining, covered, 0)
+}
+
+// ProgressFound reports how far a search is, with how many clips it has
+// written to its plan so far.
+func (l *Log) ProgressFound(label string, fraction, remaining float64, found int) {
+	l.progress(label, fraction, remaining, 0, found)
+}
+
+func (l *Log) progress(label string, fraction, remaining, covered float64, found int) {
 	// math.Min and math.Max hand a NaN straight back, so a share that is
 	// not a number has to be caught before it is held to 0 and 1.
 	fraction = sane(fraction)
@@ -179,7 +189,7 @@ func (l *Log) ProgressTo(label string, fraction, remaining, covered float64) {
 	}
 	l.showProgress(text)
 	l.send(Event{Kind: EventProgress, Text: label, Fraction: roundTo(fraction, 4),
-		Remaining: roundTo(remaining, 1), Covered: roundTo(covered, 3)})
+		Remaining: roundTo(remaining, 1), Covered: roundTo(covered, 3), Found: found})
 }
 
 func (l *Log) showProgress(text string) {

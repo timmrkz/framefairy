@@ -224,6 +224,23 @@ id is decided before the first clip lands, so a decision about a clip made
 while the search runs is recorded against the plan it was made about.
 Stopping a search keeps what it had written.
 
+How far a search has come is measured, not guessed, in
+`engine/searchclock.go`. A search is four parts one after the other:
+loading the model, the model reading the transcript, the model writing its
+clips, and the framing still going when it stops. Every search that
+finishes keeps how long each part took, per model, in
+`~/.framefairy/speed.json`: the seconds to load, the transcript characters
+read per second up to the first word of the answer, the seconds per clip,
+and the seconds of framing after the answer. Each new timing counts half,
+so one slow search on a busy machine moves the next estimate without
+taking it over. The next search reports its share and the time left
+against those, about twice a second, with llama-server's own count of the
+prompt it has read standing in for the clock where it gives one. The very
+first search with a model has nothing to be measured against, and says
+what it is doing without saying how far it is. A search against a server
+that was already running loaded nothing, and leaves the loading time as it
+was.
+
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when
 you try several runs in a row, start the server once yourself and point the
@@ -252,6 +269,7 @@ Everything else is in `engine/`:
                 the moment it is whole
   plan.go       building the plan: the prompt, the call, the whole answer
   planbuild.go  clips framed and written as the answer arrives
+  searchclock.go how far a search has come, against how long it took before
   analysis.go   camera switches and framing
   faces.go      the built-in face detector
   clips.go      the plan file and crop geometry

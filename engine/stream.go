@@ -30,6 +30,15 @@ type Listener struct {
 	// Reading is the model working through the prompt before it writes a
 	// word, in tokens read out of tokens to read. Only llama-server says.
 	Reading func(done, total int)
+	// Part is the call moving on to the next part of its work: loading the
+	// model, then reading the prompt. Writing begins with the first text.
+	Part func(name string)
+}
+
+func (l *Listener) part(name string) {
+	if l != nil && l.Part != nil {
+		l.Part(name)
+	}
 }
 
 func (l *Listener) text(piece string) {

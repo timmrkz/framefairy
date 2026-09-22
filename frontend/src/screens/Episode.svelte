@@ -105,6 +105,9 @@
   // head of the clip list carries it: New becomes Cancel and the line under
   // the head fills up. Nothing is added to the column and nothing moves.
   const busy = $derived(!!working || starting);
+  // What the work is doing right now, in the engine's words: loading the
+  // model, reading the transcript, how many clips are found.
+  const doing = $derived(working?.progress?.text ?? "");
   const leftOfWork = $derived(
     working?.progress && working.progress.remaining > 0
       ? `${clock(working.progress.remaining)} left`
@@ -239,7 +242,7 @@
   );
   const waitNote = $derived.by(() => {
     if (finding || starting) {
-      return `The model is reading the stretch from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${leftOfWork ? ` About ${leftOfWork}.` : ""}`;
+      return `The model is reading the stretch from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${doing ? ` ${doing}${leftOfWork ? `, about ${leftOfWork}` : ""}.` : leftOfWork ? ` About ${leftOfWork}.` : ""}`;
     }
     if (!stillWaiting) return "";
     const first = transcribing
@@ -815,6 +818,17 @@
       starting = false;
     }
   }
+
+  // A search says how many clips it has written each time one lands, and
+  // the list is read again then, rather than on the next tick of a timer.
+  // The effect runs on every job event, so it only acts on a change.
+  let foundHeard = 0;
+  $effect(() => {
+    const found = (finding ? working?.progress?.found : 0) ?? 0;
+    if (found === foundHeard) return;
+    foundHeard = found;
+    if (found > 0) refreshClips().then(showFirstFound);
+  });
 
   // The first clip a search finds, shown as soon as it is in the list.
   function showFirstFound() {

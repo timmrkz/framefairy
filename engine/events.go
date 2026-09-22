@@ -46,6 +46,10 @@ type Event struct {
 	// finishes, which is far more often than it saves what it has, so the
 	// range picker can follow the transcript as it grows.
 	Covered float64 `json:"covered,omitempty"`
+	// Found is how many clips a search has written to its plan so far. The
+	// window reads the list again when it changes, rather than on a timer
+	// that is always a little late.
+	Found int `json:"found,omitempty"`
 	// Duration is how long a finished or failed step took, in seconds.
 	Duration float64 `json:"duration,omitempty"`
 	// Elapsed is the seconds since the log was made.

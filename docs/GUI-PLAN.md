@@ -50,7 +50,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.8 | A clip's captions on request, in the lines and the look the render uses, for the caption preview | `[x]` |
 | 1.9 | The model's answer streamed, and each clip taken the moment its last character arrives | `[x]` |
 | 1.10 | A clip framed and written to the plan as soon as it is taken, while the model writes the next one, so the first clip shows long before the last | `[x]` |
-| 1.11 | Real progress for a search: loading the model, reading the transcript, writing clip by clip and framing, each measured against how long it took on this machine before | `[ ]` |
+| 1.11 | Real progress for a search: loading the model, reading the transcript, writing clip by clip and framing, each measured against how long it took on this machine before | `[x]` |
 | 1.12 | Framing decodes only the parts of a clip that are kept, through the system's own video decoder where there is one, and on every system | `[ ]` |
 
 ## Phase 2: app shell

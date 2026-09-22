@@ -56,6 +56,8 @@ type planBuilder struct {
 	offset     int
 	stamp      PlannedWith
 	planID     string
+	// clock hears every clip taken and landed. Nil when no model was asked.
+	clock *searchClock
 
 	queue chan planJob
 	done  sync.WaitGroup
@@ -142,6 +144,17 @@ func (b *planBuilder) queueLocked(entry PlanEntry) {
 	b.entries = append(b.entries, entry)
 	b.ids = append(b.ids, id)
 	b.queue <- planJob{index: position, entry: entry, id: id}
+	if b.clock != nil {
+		b.clock.taken()
+	}
+}
+
+// answered is the model done writing. What is still being framed is the
+// last part of the search.
+func (b *planBuilder) answered() {
+	if b.clock != nil {
+		b.clock.answerDone()
+	}
 }
 
 // rest takes what the whole answer holds beyond the clips already taken.
@@ -419,6 +432,9 @@ func (b *planBuilder) land(clip PlanClip) error {
 	b.mu.Lock()
 	b.clips = append(b.clips, clip)
 	b.mu.Unlock()
+	if b.clock != nil {
+		b.clock.landed()
+	}
 	return nil
 }
 

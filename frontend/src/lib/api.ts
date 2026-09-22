@@ -196,6 +196,8 @@ export interface EngineEvent {
   // The second of the episode the work has reached, where that means
   // anything. A transcription sets it on every chunk it hears.
   covered?: number;
+  // How many clips a search has written to its plan so far.
+  found?: number;
   duration?: number;
   elapsed: number;
   time: string;
