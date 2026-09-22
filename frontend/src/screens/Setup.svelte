@@ -12,12 +12,12 @@
   // answered there is no workspace to put a box over, so this is the
   // window.
   import { onMount } from "svelte";
-  import { api, errorText, type SetupState } from "../lib/api";
+  import { api, errorText, fitNote, memorySize, size, type ModelRow, type SetupState } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
-  import SpeechModels from "../components/SpeechModels.svelte";
+  import ModelList from "../components/ModelList.svelte";
 
   let { ondone }: { ondone: () => void } = $props();
 
@@ -41,6 +41,33 @@
       problem = errorText(err);
     }
   }
+
+  // The rows the two lists draw. The Go side stays factual and the window
+  // does the wording, so the same fact is never worded two ways.
+  const speechRows = $derived<ModelRow[]>(
+    (setup?.speech ?? []).map((m) => ({
+      name: m.name,
+      title: m.title,
+      about: m.about,
+      cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+      installed: m.installed,
+    })),
+  );
+
+  const languageRows = $derived<ModelRow[]>(
+    (setup?.language ?? []).map((m) => {
+      const { note, warn } = fitNote(m.fit);
+      return {
+        name: m.name,
+        title: `${m.title} by ${m.maker}`,
+        about: m.about,
+        cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
+        installed: m.installed,
+        note,
+        warn,
+      };
+    }),
+  );
 
   // Whether the speech model is still coming. The job list is shared, so
   // the last step reads it for itself rather than being told.
@@ -141,7 +168,13 @@
           </span>
           <h2>Speech</h2>
           <p class="muted">Every episode is transcribed on this machine.</p>
-          <SpeechModels models={setup.speech} onchange={reload} auto />
+          <ModelList
+            models={speechRows}
+            kind="model"
+            oninstall={api.installSpeechModel}
+            onchange={reload}
+            auto
+          />
         </div>
       {:else}
         <div class="area asks">
@@ -200,15 +233,25 @@
               </button>
               {#if setup.chosen && setup.planner === "local"}
                 <div class="more">
-                  {#if setup.hasLocalModel}
-                    <p class="done row"><Icon name="check" />A model file is in place.</p>
-                  {:else}
-                    <p class="warn">
-                      No model file yet. Put a <b>.gguf</b> file in
-                      <b>~/.framefairy/models</b> and have <b>llama-server</b> on the machine.
-                      The settings say where to look.
-                    </p>
-                  {/if}
+                  <!-- A model runs from memory, so the machine's own is
+                       said out loud here. A model called too big is only
+                       believable next to the number it was judged
+                       against. -->
+                  <p class="muted small">
+                    {setup.memory > 0
+                      ? `This machine has ${memorySize(setup.memory)} of memory.`
+                      : "This machine did not say how much memory it has."}
+                  </p>
+                  <ModelList
+                    models={languageRows}
+                    kind="llm"
+                    oninstall={api.installLanguageModel}
+                    onchange={reload}
+                  />
+                  <p class="muted small">
+                    A model you already have in <b>~/.framefairy/models</b> is used as it is. Either
+                    way <b>llama-server</b> has to be on the machine.
+                  </p>
                 </div>
               {/if}
             </li>

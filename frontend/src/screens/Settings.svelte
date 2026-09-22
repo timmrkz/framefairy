@@ -4,7 +4,12 @@
   import {
     api,
     errorText,
+    fitNote,
+    memorySize,
+    size,
     type Check,
+    type LanguageModel,
+    type ModelRow,
     type Settings,
     type SpeechModel,
     type TrainingStatus,
@@ -12,7 +17,7 @@
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
-  import SpeechModels from "../components/SpeechModels.svelte";
+  import ModelList from "../components/ModelList.svelte";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[]>([]);
@@ -23,10 +28,38 @@
   // makes the trash can beside them mean anything.
   let training = $state<TrainingStatus>({ dir: "", plans: 0, decisions: 0 });
   let clearing = $state(false);
-  // The speech models that can be installed. The same list the setup
-  // shows, so a model can be added or swapped later without going through
-  // the setup again.
+  // The models that can be installed. The same lists the setup shows, so
+  // one can be added or swapped later without going through the setup
+  // again.
   let speech = $state<SpeechModel[]>([]);
+  let language = $state<LanguageModel[]>([]);
+  // What this machine has, in bytes, or zero where it would not say.
+  let memory = $state(0);
+
+  const speechRows = $derived<ModelRow[]>(
+    speech.map((m) => ({
+      name: m.name,
+      title: m.title,
+      about: m.about,
+      cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+      installed: m.installed,
+    })),
+  );
+
+  const languageRows = $derived<ModelRow[]>(
+    language.map((m) => {
+      const { note, warn } = fitNote(m.fit);
+      return {
+        name: m.name,
+        title: `${m.title} by ${m.maker}`,
+        about: m.about,
+        cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
+        installed: m.installed,
+        note,
+        warn,
+      };
+    }),
+  );
 
   // The Anthropic key. It is never read back: the Go side only ever says
   // whether one can be found.
@@ -54,6 +87,8 @@
     try {
       const state = await api.setup();
       speech = state.speech;
+      language = state.language;
+      memory = state.memory;
       hasKey = state.hasKey;
     } catch (err) {
       problem = errorText(err);
@@ -158,7 +193,23 @@
           <option value="api">Claude API</option>
         </select>
         {#if settings.planner === "local"}
-          <label for="llm">Language model file</label>
+          <!-- Not a label: what it names is a list, not a field, and the
+               field below has the name that belongs to it. -->
+          <span>Model</span>
+          <div class="models">
+            <p class="muted small">
+              {memory > 0
+                ? `This machine has ${memorySize(memory)} of memory. A model runs from it, so that is what decides which of these it can hold.`
+                : "This machine did not say how much memory it has, so nothing below is promised."}
+            </p>
+            <ModelList
+              models={languageRows}
+              kind="llm"
+              oninstall={api.installLanguageModel}
+              onchange={readSpeech}
+            />
+          </div>
+          <label for="llm">Model file</label>
           <input id="llm" type="text" bind:value={settings.llmModel} placeholder="The only .gguf file in ~/.framefairy/models" />
           <label for="server">llama-server</label>
           <input id="server" type="text" bind:value={settings.llmServer} placeholder="Found on the search path" />
@@ -203,7 +254,12 @@
          here is the same job. -->
     <div class="panel">
       <h2>Speech</h2>
-      <SpeechModels models={speech} onchange={readSpeech} />
+      <ModelList
+        models={speechRows}
+        kind="model"
+        oninstall={api.installSpeechModel}
+        onchange={readSpeech}
+      />
       <div class="grid">
         <label for="asr">Model folder</label>
         <input id="asr" type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" />
@@ -355,6 +411,14 @@
 
   .key {
     min-width: 104px;
+  }
+
+  /* The list of models stands in the control column of the grid, where a
+     field would, so the name beside it lines up with every other name. */
+  .models {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .drop {

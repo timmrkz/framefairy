@@ -79,10 +79,11 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	return q
 }
 
-// Which lane a kind of work runs in. Installing the speech model shares the
-// transcribe lane on purpose: nothing can be transcribed until it is there,
-// so a transcription queued behind it waits rather than failing, and
-// finding clips in an episode that already has a transcript carries on.
+// Which lane a kind of work runs in. Each model install shares the lane of
+// the work that needs it, so whatever is queued behind it waits for the
+// model rather than failing on it: the speech model with transcribing,
+// which cannot start without it, and the language model with finding
+// clips. That way installing one does not hold up the other.
 func laneFor(kind string) string {
 	switch kind {
 	case "transcribe", "model":

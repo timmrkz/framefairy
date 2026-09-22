@@ -25,6 +25,18 @@ type SpeechModelView struct {
 	Installed bool `json:"installed"`
 }
 
+// LanguageModelView is the same for a model that finds clips, and it says
+// one thing more: whether this machine can hold it. A model runs from
+// memory, so a machine too small for one is a machine that swaps, and a
+// model that swaps is minutes an answer rather than seconds. Better to say
+// so before the download than after it.
+type LanguageModelView struct {
+	engine.LanguageModel
+	Installed bool `json:"installed"`
+	// Fit is "fits", "tight", "too big" or "unknown". See engine.Fit.
+	Fit string `json:"fit"`
+}
+
 // SetupState is what the window needs to decide whether to ask anything.
 type SetupState struct {
 	// Speech is every model that can be installed, best first.
@@ -32,6 +44,14 @@ type SetupState struct {
 	// HasSpeech is true once any of them is installed. Until then nothing
 	// can be transcribed, which is the first thing every episode needs.
 	HasSpeech bool `json:"hasSpeech"`
+	// Language is every model that can find clips on this machine, best
+	// first, each saying whether the machine can hold it.
+	Language []LanguageModelView `json:"language"`
+	// Memory is what this machine has, in bytes, or zero where it would
+	// not say. The window says it out loud beside the models, because a
+	// model being called too big is only believable next to the number it
+	// was judged against.
+	Memory int64 `json:"memory"`
 	// Planner is "api" or "local", as the settings have it.
 	Planner string `json:"planner"`
 	// HasKey is true when an Anthropic key can be found. It never carries
@@ -62,9 +82,21 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		}
 		state.Speech = append(state.Speech, view)
 	}
+	state.Memory = engine.MachineMemory()
+	for _, m := range engine.LanguageModels() {
+		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir),
+			Fit: string(m.FitsIn(state.Memory))}
+		if view.Installed {
+			state.HasLocalModel = true
+		}
+		state.Language = append(state.Language, view)
+	}
 	if _, err := engine.ReadAPIKey(ctx); err == nil {
 		state.HasKey = true
 	}
+	// A model put there by hand counts too. The catalogue is a convenience,
+	// not the only way in: somebody who already has a .gguf they like keeps
+	// using it.
 	if named := settings.LLMModel; named != "" {
 		if info, err := os.Stat(named); err == nil && !info.IsDir() {
 			state.HasLocalModel = true
@@ -73,7 +105,8 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		state.HasLocalModel = true
 	}
 	for _, job := range s.jobs.list() {
-		if job.Kind == "model" && (job.State == JobQueued || job.State == JobRunning) {
+		if (job.Kind == "model" || job.Kind == "llm") &&
+			(job.State == JobQueued || job.State == JobRunning) {
 			state.Installing = job.ID
 		}
 	}
@@ -109,6 +142,33 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
 			return "", engine.InstallSpeechModel(ctx, p.Log(), model, engine.ModelsDir())
+		})
+}
+
+// InstallLanguageModel fetches a model that can find clips, as a job, the
+// same as the speech model and with the same beam and fill.
+//
+// It runs on the work lane rather than the transcribe lane, because it is
+// what finding clips needs: a search queued behind it then waits for the
+// model instead of failing on it, and a transcription carries on in the
+// other lane meanwhile.
+//
+// A model the machine cannot hold is still installable. Saying no on
+// somebody's behalf is not this app's job, and a machine's memory can be
+// read wrong: what the window does is say what it thinks before the
+// download rather than refuse after it.
+func (s *FrameFairy) InstallLanguageModel(name string) Job {
+	model, ok := engine.LanguageModelByName(name)
+	if !ok {
+		return s.jobs.refuse("", "llm", "Language model", "there is no language model called "+name)
+	}
+	if model.Installed(engine.ModelsDir()) {
+		return s.jobs.refuse("", "llm", model.Title, model.Title+" is already installed")
+	}
+	// One at a time, however often it is asked for.
+	return s.jobs.addOnce("", "llm", model.Title,
+		func(ctx context.Context, p *engine.Project) (string, error) {
+			return "", engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir())
 		})
 }
 

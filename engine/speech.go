@@ -122,7 +122,7 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 	defer os.RemoveAll(staging)
 
 	return log.Step("speech model", func() error {
-		sum, err := download(ctx, log, m, part)
+		sum, err := download(ctx, log, m.URL, m.Download, part, m.Title)
 		if err != nil {
 			return err
 		}
@@ -166,21 +166,25 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 	})
 }
 
-// download writes the archive to path and returns its checksum. The
+// download writes what is at url to path and returns its checksum. The
 // checksum is taken as the bytes go past rather than by reading the file
 // again afterwards.
-func download(ctx context.Context, log *Log, m SpeechModel, path string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.URL, nil)
+//
+// expect is how big it should be, used only to report how far the download
+// has come when the server does not say, and to know a download that
+// stopped early from one that finished. what is the name to say it by.
+func download(ctx context.Context, log *Log, url string, expect int64, path, what string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", renderErr("could not reach %s: %s", m.Title, err)
+		return "", renderErr("could not reach %s: %s", what, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return "", renderErr("%s answered %s", m.URL, res.Status)
+		return "", renderErr("%s answered %s", url, res.Status)
 	}
 
 	file, err := os.Create(path)
@@ -191,7 +195,7 @@ func download(ctx context.Context, log *Log, m SpeechModel, path string) (string
 
 	total := res.ContentLength
 	if total <= 0 {
-		total = m.Download
+		total = expect
 	}
 	sum := sha256.New()
 	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), res.Body, total, "fetching")
@@ -199,7 +203,7 @@ func download(ctx context.Context, log *Log, m SpeechModel, path string) (string
 		return "", err
 	}
 	if total > 0 && done < total {
-		return "", renderErr("%s stopped after %s of %s.", m.Title, inMB(done), inMB(total))
+		return "", renderErr("%s stopped after %s of %s.", what, inMB(done), inMB(total))
 	}
 	if err := file.Close(); err != nil {
 		return "", err

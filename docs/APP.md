@@ -42,10 +42,27 @@ rather than failing on it.
 **Finding clips** is the question. The Claude API works on any machine and
 costs a few cents an episode. A model on this machine is free to run and
 needs the memory to hold it. Either way only the words are read: the video
-and the audio never leave the machine. Choosing the API opens a field for
-the key, which goes in the macOS keychain and nowhere else, never in the
-settings file. The answer is saved the moment it is given and can be changed
-later in the settings.
+and the audio never leave the machine. The answer is saved the moment it is
+given and can be changed later in the settings.
+
+Choosing the API opens a field for the key, which goes in the macOS keychain
+and nowhere else, never in the settings file.
+
+Choosing **On this machine** shows the models that can be installed, by
+maker, each saying what it costs to fetch, what it costs in memory to run
+and what this machine can do with it. That last part is the point of the
+list. A model runs from memory, so a machine too small for one will swap,
+and a model that swaps takes minutes to answer rather than seconds. The app
+reads how much memory the machine has and says, beside each model, **Fits
+this machine**, **Tight on this machine** or **Too big for this machine**,
+with the machine's own figure above the list so the judgement can be checked.
+Nothing is hidden and nothing is refused: a model the app thinks is too big
+can still be installed, because a machine's memory can be read wrong and it
+is not the app's place to decide. A machine that will not say how much
+memory it has is told that, and then nothing is promised.
+
+A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
+app fetched it or not. Either way `llama-server` has to be on the machine.
 
 The last button is **Add an episode**, which closes the setup and opens the
 file dialog, because that is the next thing anybody does. While the speech
@@ -711,11 +728,12 @@ rendering clips never wait for it.
 **Speech** is the same list of models the first run shows, so a model can be
 installed or added later without going through the setup again, and it
 installs the same way, as a job with the same fill. **Finding clips** holds
-the choice between the API and a local model, and with the API chosen, the
-field for the key: it goes in the keychain the moment **Save key** is
-pressed, not with the rest of the settings, because it never lands in the
-settings file. An app opened from Finder has no shell environment, so this
-is the only way to give it a key.
+the choice between the API and a local model. With the API chosen, the field
+for the key: it goes in the keychain the moment **Save key** is pressed, not
+with the rest of the settings, because it never lands in the settings file.
+An app opened from Finder has no shell environment, so this is the only way
+to give it a key. With **On this machine** chosen, the same list of language
+models the first run shows, judged against the same memory.
 
 The rest is paths to ffmpeg, llama-server and the models, and the output
 folder. **Colours** holds two, and they are together because the whole point
@@ -743,9 +761,10 @@ inside itself.
 
 ## Where things are kept
 
-- **Speech models:** in `~/.framefairy/models`, one folder per model. They
-  are not part of the app, so the first run fetches one. See
-  [PACKAGING.md](PACKAGING.md).
+- **Models:** in `~/.framefairy/models`. A speech model is a folder, a
+  language model is one `.gguf` file. Neither is part of the app, so the
+  app fetches them: the speech model by itself on the first run, a language
+  model when somebody picks one. See [PACKAGING.md](PACKAGING.md).
 - **The Anthropic API key:** in the macOS keychain, under `framefairy` and
   `anthropic-api-key`. Never in a file. `ANTHROPIC_API_KEY` in the
   environment is read first where there is one, which is how the command

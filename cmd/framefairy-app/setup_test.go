@@ -281,3 +281,127 @@ func TestSavingSettingsKeepsTheAnswer(t *testing.T) {
 		t.Errorf("the colour did not save: %q", after.AppColour)
 	}
 }
+
+// Pretends a language model is installed, by putting there what Installed
+// looks at: the four bytes that tell a model from a page saying no.
+func placeLanguageModel(t *testing.T, name string) {
+	t.Helper()
+	if err := os.MkdirAll(engine.ModelsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := append([]byte("GGUF"), make([]byte, 64)...)
+	if err := os.WriteFile(filepath.Join(engine.ModelsDir(), name), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTheWindowIsToldWhatThisMachineCanHold(t *testing.T) {
+	t.Run("every model says whether it fits", func(t *testing.T) {
+		s := emptyMachine(t)
+		state := s.Setup(context.Background())
+		if len(state.Language) == 0 {
+			t.Fatal("offered no language model, so the window has nothing to show")
+		}
+		for _, m := range state.Language {
+			if m.Title == "" || m.Maker == "" || m.Download <= 0 || m.Needs <= 0 {
+				t.Errorf("a model the window cannot describe: %+v", m)
+			}
+			switch m.Fit {
+			case "fits", "tight", "too big", "unknown":
+			default:
+				t.Errorf("%s fits how? %q", m.Title, m.Fit)
+			}
+		}
+		if state.Memory < 0 {
+			t.Errorf("memory %d", state.Memory)
+		}
+	})
+
+	// A model that is there is a way of finding clips, without anybody
+	// having to name a path in the settings.
+	t.Run("one on the machine counts as a local model", func(t *testing.T) {
+		s := emptyMachine(t)
+		if s.Setup(context.Background()).HasLocalModel {
+			t.Fatal("said there was a model on an empty machine")
+		}
+		placeLanguageModel(t, engine.LanguageModels()[0].Name)
+		if !s.Setup(context.Background()).HasLocalModel {
+			t.Error("did not see the model that is there")
+		}
+	})
+}
+
+func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
+	name := engine.LanguageModels()[0].Name
+
+	t.Run("a model nobody offers fails as a job", func(t *testing.T) {
+		s := emptyMachine(t)
+		job := s.InstallLanguageModel("no-such-model.gguf")
+		if job.State != JobFailed || job.Error == "" {
+			t.Errorf("state %q, error %q", job.State, job.Error)
+		}
+	})
+
+	t.Run("one already installed is not fetched again", func(t *testing.T) {
+		s := emptyMachine(t)
+		placeLanguageModel(t, name)
+		if job := s.InstallLanguageModel(name); job.State != JobFailed {
+			t.Errorf("started a download for a model that is already here: %q", job.State)
+		}
+	})
+
+	// The lane matters: finding clips is what needs this model, so a search
+	// queued behind it waits for it, and a transcription carries on in the
+	// other lane rather than waiting for a download it does not need.
+	t.Run("it shares the lane with finding clips", func(t *testing.T) {
+		if got := laneFor("llm"); got != LaneWork {
+			t.Errorf("a language model install runs in the %q lane", got)
+		}
+		if got := laneFor("model"); got != LaneTranscribe {
+			t.Errorf("a speech model install runs in the %q lane", got)
+		}
+	})
+
+	t.Run("two asks at once are one install", func(t *testing.T) {
+		s := emptyMachine(t)
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s.InstallLanguageModel(name)
+			}()
+		}
+		wg.Wait()
+		running := 0
+		for _, job := range s.jobs.list() {
+			if job.Kind == "llm" && (job.State == JobQueued || job.State == JobRunning) {
+				running++
+			}
+		}
+		if running > 1 {
+			t.Errorf("%d installs of the same model at once", running)
+		}
+		for _, job := range s.jobs.list() {
+			if job.Kind == "llm" && (job.State == JobQueued || job.State == JobRunning) {
+				s.jobs.cancel(job.ID)
+			}
+		}
+	})
+
+	// The two are different work in different lanes, so one never stands
+	// in for the other in the queue's book-keeping.
+	t.Run("a speech install does not count as a language install", func(t *testing.T) {
+		s := emptyMachine(t)
+		speech := s.InstallSpeechModel(engine.SpeechModels()[0].Name)
+		language := s.InstallLanguageModel(name)
+		if speech.ID == language.ID {
+			t.Fatal("the same job was handed back for both")
+		}
+		for _, job := range s.jobs.list() {
+			if job.State == JobQueued || job.State == JobRunning {
+				s.jobs.cancel(job.ID)
+			}
+		}
+	})
+}

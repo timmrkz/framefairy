@@ -45,13 +45,30 @@ Parakeet, and the speech model is 490 MB, which is a first-run download
 nobody has to think about.
 
 **This is built.** The first run is a setup screen, `frontend/src/screens/
-Setup.svelte`, which fetches the speech model by itself, with a checksum
-and nothing left behind if it is stopped, and asks the one question. The
-key goes in the macOS keychain. What is still to come is the local
-language model: the app names what to put where rather than fetching it,
-so the consent, the checksum, the resume and the choice by memory above
-are written for the speech model and not yet for Gemma. See
-[APP.md](APP.md#the-first-run).
+Setup.svelte`. It fetches the speech model by itself, asks the one question,
+and on the local side offers the language models with what each costs to
+fetch, what it costs in memory, and what this machine can do with it. The
+key goes in the macOS keychain. Both installers land under a part name and
+only move a whole model into place, so a cancel leaves nothing rather than
+half of something. See [APP.md](APP.md#the-first-run).
+
+Two things about that list are worth writing down.
+
+**A model is judged by memory, not by disk.** It runs from memory, so a
+machine too small for one swaps, and a model that swaps takes minutes to
+answer rather than seconds. Each entry says what it needs to run, and the
+app reads what the machine has and says whether it fits, is tight, or is
+too big. It never refuses: a machine's memory can be read wrong and it is
+not the app's place to decide, so it says what it thinks before the
+download rather than after it.
+
+**A language model has no pinned checksum yet.** The speech model's is read
+off the real file. The language models' cannot be, from here: `huggingface.co`
+is not reachable from a cloud session, so neither a checksum nor an exact
+size can be taken. What the installer does instead is check that what
+arrived begins with `GGUF`, which is what tells a model from a page saying
+no saved under a model's name, and the field for a checksum is there for
+the day one can be read off the file.
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches Gemma from its own home, the way

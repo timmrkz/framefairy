@@ -1,12 +1,13 @@
 <script lang="ts">
-  // The speech models that can be installed, and installing one. The same
-  // list in the setup and in the settings, because it is the same thing:
-  // two lists of the same kind would have to look the same anyway, so
-  // there is one of them.
+  // A list of models that can be installed, and installing one. The speech
+  // models and the models that find clips are the same kind of thing on
+  // screen, so they are one list: two lists of the same kind would have to
+  // look the same anyway.
   //
-  // No model ships with the app, so every copy fetches one on its first
-  // run. There is one today and the list is written for more.
-  import { api, errorText, size, type SpeechModel } from "../lib/api";
+  // No model ships with the app, so every copy fetches what it needs. The
+  // rows say what a model is, what it costs and, where the machine has
+  // something to say about it, whether it will run here.
+  import { api, errorText, size, type Job, type ModelRow } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
@@ -14,15 +15,27 @@
 
   let {
     models,
-    // Called when an install settles, so whoever asked can read again
-    // what is installed.
+    // Which jobs belong to this list. A speech model and a model that
+    // finds clips install in different lanes, so they are different kinds
+    // of work and one never shows in the other's rows.
+    kind,
+    // How to start one.
+    oninstall,
+    // Called when an install settles, so whoever asked can read again what
+    // is installed.
     onchange,
-    // Whether the one model on the list may start by itself. It may in
-    // the setup, where a single model is not a choice and the app does
-    // what it can do by itself. It may not in the settings, where nobody
-    // asked for anything.
+    // Whether the one model on the list may start by itself. It may in the
+    // setup, where a single speech model is not a choice and the app does
+    // what it can do by itself. It may not where somebody has to pick, and
+    // never in the settings, where nobody asked for anything.
     auto = false,
-  }: { models: SpeechModel[]; onchange: () => void; auto?: boolean } = $props();
+  }: {
+    models: ModelRow[];
+    kind: "model" | "llm";
+    oninstall: (name: string) => Promise<Job>;
+    onchange: () => void;
+    auto?: boolean;
+  } = $props();
 
   // The model an install was just asked for, so the row says so before the
   // first job event arrives. A click shows at once.
@@ -31,7 +44,7 @@
 
   // The install as the job list has it. The list is only ever brought up
   // to date by events, which is where the progress comes from.
-  const job = $derived(jobs.list.filter((j) => j.kind === "model").at(-1));
+  const job = $derived(jobs.list.filter((j) => j.kind === kind).at(-1));
   const running = $derived(
     job && (job.state === "running" || job.state === "queued") ? job : undefined,
   );
@@ -61,14 +74,14 @@
     const only = models[0];
     if (only.installed) return;
     startedOne = true;
-    install(only);
+    install(only.name);
   });
 
-  async function install(model: SpeechModel) {
-    asked = model.name;
+  async function install(name: string) {
+    asked = name;
     problem = "";
     try {
-      const started = await api.installSpeechModel(model.name);
+      const started = await oninstall(name);
       if (started.state === "failed") problem = started.error ?? "";
     } catch (err) {
       problem = errorText(err);
@@ -92,19 +105,15 @@
         {:else if mine}
           <span class="muted">Installing</span>
         {:else}
-          <button
-            class="act"
-            disabled={asked === model.name || !!running}
-            onclick={() => install(model)}
-          >
+          <button class="act" disabled={asked === model.name || !!running} onclick={() => install(model.name)}>
             {#if asked === model.name}<Busy />{/if}
             {asked === model.name ? "Starting" : "Install"}
           </button>
         {/if}
       </div>
       <p class="muted about">{model.about}</p>
-      <p class="muted small">
-        {model.languages}. {size(model.download)} to fetch, {size(model.unpacked)} on disk.
+      <p class="small" class:muted={!model.warn} class:warn={model.warn}>
+        {model.cost}{model.note ? `. ${model.note}` : ""}
       </p>
       {#if mine}
         <JobProgress job={mine} named={false} />
@@ -170,6 +179,10 @@
   .done {
     color: var(--ok);
     gap: 6px;
+  }
+
+  .warn {
+    color: var(--warn);
   }
 
   /* Room for the longer wording, so the row keeps still while an install

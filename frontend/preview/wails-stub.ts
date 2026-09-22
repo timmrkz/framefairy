@@ -144,6 +144,29 @@ const modelJob = () => ({
       },
 });
 
+// The same for a model that finds clips, on its own lane and its own
+// clock, so a probe can have one running while the other is not.
+const llmAt = () => (window as any).__llmAt ?? 0;
+const llmRunning = () => llmAt() > 0 && Date.now() - llmAt() < 4000;
+const llmDone = () => llmAt() > 0 && Date.now() - llmAt() >= 4000;
+const llmJob = () => ({
+  id: "l1",
+  episode: "",
+  kind: "llm",
+  label: "Gemma 4 26B A4B by Google",
+  state: llmDone() ? "done" : "running",
+  queued: "",
+  lane: "work",
+  progress: llmDone()
+    ? undefined
+    : {
+        stage: "language model",
+        text: "fetching",
+        fraction: Math.min((Date.now() - llmAt()) / 4000, 1),
+        remaining: Math.max(0, Math.round(4 - (Date.now() - llmAt()) / 1000)),
+      },
+});
+
 export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const method = name.split(".").pop();
@@ -186,12 +209,44 @@ export const Call = {
         };
         const planner = (window as any).__planner ?? "";
         const key = !!(window as any).__key;
+        // Two models from two houses, so the choice the window has to put
+        // is a real one, and so the memory below has something to say. The
+        // small one fits any machine, the big one fits none of the ones
+        // the harness pretends to be.
+        const language = [
+          {
+            name: "gemma-4-26B_q4_0-it.gguf",
+            title: "Gemma 4 26B A4B",
+            maker: "Google",
+            about: "Quantised to four bits, and only four billion of its twenty six are used per token.",
+            download: 15461882265,
+            needs: 19327352832,
+            url: "https://example.invalid/gemma.gguf",
+            recommended: true,
+            installed: !fresh || llmDone(),
+            fit: "fits",
+          },
+          {
+            name: "small-q4.gguf",
+            title: "Something Small",
+            maker: "Another House",
+            about: "Half the size and most of the way there.",
+            download: 4900000000,
+            needs: 42949672960,
+            url: "https://example.invalid/small.gguf",
+            recommended: false,
+            installed: false,
+            fit: "too big",
+          },
+        ];
         return Promise.resolve({
           speech: [model],
           hasSpeech: model.installed,
+          language,
+          memory: 34359738368,
           planner: fresh ? planner : "local",
           hasKey: fresh ? key : true,
-          hasLocalModel: !fresh,
+          hasLocalModel: fresh ? llmDone() : true,
           chosen: fresh ? !!planner : true,
           ready: !fresh,
           installing: modelRunning() ? "m1" : "",
@@ -200,6 +255,9 @@ export const Call = {
       case "InstallSpeechModel":
         (window as any).__installAt ??= Date.now();
         return Promise.resolve(modelJob());
+      case "InstallLanguageModel":
+        (window as any).__llmAt ??= Date.now();
+        return Promise.resolve(llmJob());
       case "ChoosePlanner":
         (window as any).__planner = args[0];
         return Promise.resolve(null);
@@ -522,8 +580,12 @@ export const Events = {
     }
     if (location.search.includes("setup")) {
       const timer = setInterval(() => {
-        if (!installAt()) return;
-        fn({ data: { job: modelJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+        if (installAt()) {
+          fn({ data: { job: modelJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+        }
+        if (llmAt()) {
+          fn({ data: { job: llmJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+        }
       }, 300);
       return () => clearInterval(timer);
     }
