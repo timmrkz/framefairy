@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -132,6 +133,42 @@ func ReadAPIKey(ctx context.Context) (string, error) {
 			"an HTTP header. It was probably stored with a stray newline.", source)
 	}
 	return key, nil
+}
+
+// StoreAPIKey puts a key in the macOS keychain, which is the only place the
+// app keeps one. Never a file on disk, and never the settings, which are
+// plain JSON in the config folder and get copied about.
+//
+// An empty key removes the stored one. That is how somebody takes their key
+// off a machine, so it has to be an ordinary thing to do rather than an
+// error.
+//
+// The key is checked before it is stored rather than only when it is used.
+// A key pasted with a newline on the end is the common case, and finding
+// that out at the moment it is typed beats finding out when an episode has
+// already been transcribed.
+func StoreAPIKey(key string) error {
+	key = strings.TrimSpace(key)
+	if runtime.GOOS != "darwin" {
+		return renderErr("this machine has no keychain to put a key in. " +
+			"Set ANTHROPIC_API_KEY instead.")
+	}
+	ctx := context.Background()
+	if key == "" {
+		// Nothing stored is not a failure, so the result is not looked at.
+		run(ctx, "", "security", "delete-generic-password",
+			"-a", "framefairy", "-s", "anthropic-api-key")
+		return nil
+	}
+	if !keyIsSane(key) {
+		return renderErr("that key has characters in it that cannot go in an HTTP header.")
+	}
+	res := run(ctx, "", "security", "add-generic-password",
+		"-U", "-a", "framefairy", "-s", "anthropic-api-key", "-w", key)
+	if res.Code != 0 {
+		return renderErr("the keychain refused the key: %s", strip(res.Stderr))
+	}
+	return nil
 }
 
 // writeJSONText writes a JSON string indented, so a log file can be read by

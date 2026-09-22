@@ -79,13 +79,52 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	return q
 }
 
+// Which lane a kind of work runs in. Installing the speech model shares the
+// transcribe lane on purpose: nothing can be transcribed until it is there,
+// so a transcription queued behind it waits rather than failing, and
+// finding clips in an episode that already has a transcript carries on.
+func laneFor(kind string) string {
+	switch kind {
+	case "transcribe", "model":
+		return LaneTranscribe
+	}
+	return LaneWork
+}
+
+// addOnce queues work unless the same work is already queued or running,
+// in which case it hands back the job that is already there.
+//
+// Looking first and then adding is two locks with a gap between them, and
+// two calls that arrive together both look, both see nothing, and both add.
+// The window can do that by being opened twice, or by a customer pressing a
+// button twice, and the result is two transcriptions of one episode or two
+// downloads writing over each other's unpacking folder. So the looking and
+// the adding happen under one lock.
+func (q *queue) addOnce(episode, kind, label string,
+	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
+	return q.queue(episode, kind, label, true, work)
+}
+
 func (q *queue) add(episode, kind, label string,
 	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
-	lane := LaneWork
-	if kind == "transcribe" {
-		lane = LaneTranscribe
-	}
+	return q.queue(episode, kind, label, false, work)
+}
+
+func (q *queue) queue(episode, kind, label string, once bool,
+	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
+	lane := laneFor(kind)
 	q.mu.Lock()
+	if once {
+		for i := len(q.jobs) - 1; i >= 0; i-- {
+			j := q.jobs[i]
+			if j.Episode == episode && j.Kind == kind &&
+				(j.State == JobQueued || j.State == JobRunning) {
+				already := *j
+				q.mu.Unlock()
+				return already
+			}
+		}
+	}
 	q.next++
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
@@ -104,10 +143,7 @@ func (q *queue) add(episode, kind, label string,
 // refuse records a job that was never started, so the window hears why in
 // the same place it hears everything else about its jobs.
 func (q *queue) refuse(episode, kind, label, reason string) Job {
-	lane := LaneWork
-	if kind == "transcribe" {
-		lane = LaneTranscribe
-	}
+	lane := laneFor(kind)
 	q.mu.Lock()
 	q.next++
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
