@@ -1184,6 +1184,7 @@
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
+          locked={renderingCurrent}
           oncaptionmoved={(y) => {
             captionsWere = null;
             captionY = y;

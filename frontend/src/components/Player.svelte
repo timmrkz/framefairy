@@ -42,6 +42,7 @@
     onresetcrop,
     oncaptiony,
     onword,
+    locked = false,
     strip,
     paused = $bindable(true),
     looping = $bindable(false),
@@ -72,6 +73,11 @@
     // captions in the video preview are where words are corrected, so this
     // is the one hand that reaches out of the picture.
     onword?: (start: number, text: string) => Promise<void>;
+    // True while this clip is being rendered. What is being written into a
+    // file cannot be changed while it is written, so its words are only
+    // there to read until it is done, the way they were while they were
+    // corrected on the playhead.
+    locked?: boolean;
     // The range picker sits under the video preview, so it is exactly as
     // wide as it is.
     strip?: Snippet;
@@ -358,7 +364,7 @@
   // Words are corrected in the picture, where they are read. A correction
   // belongs to the episode, so it takes a clip to know which words these
   // are and somewhere to send it.
-  const correctable = $derived(!!clip && !!onword);
+  const correctable = $derived(!!clip && !!onword && !locked);
 
   // Every word of the caption beside the word of the episode it stands for.
   // A correction that reads as two words is drawn as two, and both halves
