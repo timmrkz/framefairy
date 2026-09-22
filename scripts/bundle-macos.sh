@@ -69,17 +69,18 @@ if [ -d "$BINDIR/lib" ]; then
 	cp "$BINDIR"/lib/*.dylib "$APP/Contents/Frameworks/" 2>/dev/null || true
 fi
 
-# An icon if there is one. There is no artwork in this repository yet, so
-# the bundle takes the system's blank icon until build/icon.icns exists.
-# Saying nothing about it would leave somebody wondering why the Dock looks
-# unfinished.
+# The icon, built from build/icon.png by sips and iconutil. See
+# scripts/make-icon.sh, which also explains why that PNG is inset rather
+# than filling its square.
 ICON=""
-if [ -f "$ROOT/build/icon.icns" ]; then
-	cp "$ROOT/build/icon.icns" "$APP/Contents/Resources/icon.icns"
+ICNS="$ROOT/.build/icon.icns"
+if [ -f "$ROOT/build/icon.png" ]; then
+	sh "$ROOT/scripts/make-icon.sh" "$ICNS"
+	cp "$ICNS" "$APP/Contents/Resources/icon.icns"
 	ICON='	<key>CFBundleIconFile</key>
 	<string>icon</string>'
 else
-	echo "  no build/icon.icns, so this one wears the blank system icon"
+	echo "  no build/icon.png, so this one wears the blank system icon"
 fi
 
 # The purpose strings are the words macOS puts in the prompt when the app

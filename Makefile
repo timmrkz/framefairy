@@ -14,6 +14,7 @@
 #
 #   make motion     the five ways the app shows work in hand, in a browser
 #   make app        the macOS bundle, Frame Fairy.app, which make run starts
+#   make icon       the .icns, from build/icon.png. make app does it for you
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make llama      build the llama-server we ship again, from scratch
 #   make tools-archive
@@ -84,7 +85,7 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app icon motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -116,7 +117,7 @@ tools-beside:
 	fi
 
 help:
-	@sed -n '1,30p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -188,6 +189,11 @@ app: all
 ifeq ($(UNAME),Darwin)
 	@sh scripts/bundle-macos.sh $(BIN) $(BIN)
 endif
+
+# The icon on its own, for when build/icon.png changed and you want to see
+# it without building everything. make app does this by itself.
+icon:
+	@sh scripts/make-icon.sh
 
 # Started from inside the bundle rather than with open, so the log stays in
 # this terminal. macOS reads the Info.plist either way, because it finds the

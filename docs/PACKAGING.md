@@ -453,6 +453,34 @@ And the LGPL obligation itself, that the source be available: the source
 archive holds the upstream releases at the pinned versions and the scripts
 that configured them, on the same release page as the binary.
 
+## The icon
+
+One file: `build/icon.png`, square, 1024 by 1024, with transparency. That
+is the only thing anybody ever changes. `scripts/make-icon.sh` turns it
+into the `.icns` the bundle carries, with `sips` and `iconutil`, which are
+on every Mac. The `.icns` is build output and is not in the repository.
+
+An `.icns` is not an image. It is a container holding the same artwork at
+ten sizes, from 16 to 1024, and macOS picks which one the Dock, Finder,
+Spotlight and the switcher each get. Drawing one size and letting the
+system scale it is a different and worse thing.
+
+**The grid, which decides whether it looks right beside the system's own.**
+A macOS app icon's rounded square fills about 824 of the 1024, centred, and
+the rest is left for the shadow the system draws. An icon that fills its
+square comes out visibly larger than every icon next to it in the Dock.
+`build/icon.png` is on that grid.
+
+`build/icon-full-bleed.png` is the same artwork filling the whole square,
+kept for one reason: macOS 26 changed how icons are built and drawn, and it
+may mask a legacy `.icns` into its own shape. If it does, the full-bleed one
+is the right input and the inset one would come out small inside the mask.
+That is one look on a Mac rather than a guess, and the swap is copying one
+file over the other.
+
+Windows wants a `.ico` and Linux wants loose PNGs. Both come from the same
+1024 master when those builds are first made.
+
 ## Who builds the disk image
 
 **The release job runs on a tag, on a macOS runner**, and downloads the
