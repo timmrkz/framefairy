@@ -27,6 +27,7 @@
     type ClipEntry,
     type Word,
   } from "../lib/api";
+  import { insideClip } from "../lib/flow";
   import Info from "./Info.svelte";
 
   let {
@@ -44,6 +45,7 @@
     oncut,
     onjoincut,
     onmovecut,
+    onwalkclip,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -77,6 +79,10 @@
     oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
     onjoincut?: (at: number) => Promise<void>;
     onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
+    // Walking the words has run off the end of the clip. The words of the
+    // clip beside it are not here to walk on to, they arrive with its
+    // captions, so the workspace is asked and it takes it from there.
+    onwalkclip?: (back: boolean) => void;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -635,14 +641,29 @@
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
     }
-    // Half a frame of slack, so that a second press leaves the word start
-    // the first one landed on rather than finding it again.
-    // Inside the clip, the words that light up. Outside it there is no
-    // caption at all, so the words that were heard are the only ones
+    // Inside the clip, the words the caption lights up. Outside it there
+    // is no caption at all, so the words that were heard are the only ones
     // there are.
-    const walk = lit.length && time >= first && time <= last ? lit : words;
-    const to = wordStep(walk, time, back, Math.max(frame, 1 / 240));
-    if (to !== null) put(to);
+    //
+    // Inside by a whole frame either side, because the playhead is not
+    // where it was put: picking a clip sends it to the clip's first second
+    // and the picture answers with the frame it is showing, which begins a
+    // little before that. Read exactly, the playhead was then outside the
+    // clip it had just been put at the start of, so shift and an arrow
+    // walked the transcript instead and the first press landed wherever
+    // the word before the clip happened to be. That is the jump out of the
+    // clip that could not be made to happen twice: it only happens on the
+    // first press after picking one.
+    const step = Math.max(frame, 1 / 240);
+    const walk = lit.length && insideClip(pieces, time, step) ? lit : words;
+    const to = wordStep(walk, time, back, step);
+    if (to !== null) {
+      put(to);
+      return;
+    }
+    // Out of words. At the ends of a clip that means the clip beside it,
+    // because the words go on even where this clip does not.
+    if (walk === lit) onwalkclip?.(back);
     else if (!walk.length) put(time + (back ? -1 : 1));
   }
 
@@ -949,8 +970,10 @@
     >
       <Info label="What the clip timeline is" side="right">
         The episode up close. Drag to move the playhead, two fingers to travel, a pinch to zoom,
-        and a double-click to fit the clip. The arrow keys step a frame, with shift a word, so the
-        caption in the picture lights up the next one. Drag
+        and a double-click to fit the clip. The arrow keys step a frame. With shift they step a
+        word, so the caption in the picture lights up the next one, and past the last word of a
+        clip they carry on into the one beside it. Shift with the arrows up and down takes the
+        next clip and starts it from the top. Drag
         a clip edge to trim it. The words are in the picture, in the caption box, which is where
         they are read and where they are corrected. A hatched block inside a clip is
         a stretch it leaves out. Drag either edge of one to change it, double-click one to put it

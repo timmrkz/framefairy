@@ -10,6 +10,7 @@
     captionYStep,
     clock,
     errorText,
+    intoWord,
     mediaURL,
     snapCaptionY,
     type CaptionFont,
@@ -897,12 +898,15 @@
   // for, and going back to the clip is what clicking its card does. Two
   // controls that say what they do, and no third that does it uninvited.
 
-  // The arrows up and down walk the clip list, the way the arrows left and
-  // right walk the episode on the clip timeline. Each step takes the next
-  // clip and puts the playhead at its start, so the whole list can be gone
-  // through without reaching for the pointer.
+  // Shift and the arrows up and down walk the clip list, the way shift and
+  // the arrows left and right walk its words. Shift is what means a clip
+  // or a caption throughout: without it the arrows move the playhead a
+  // frame, with it they move it a word and a clip. Each step takes the
+  // next clip and puts the playhead at its start, which is where a short
+  // begins and so the one frame worth seeing first.
   function walkClips(event: KeyboardEvent) {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (!event.shiftKey) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
@@ -923,6 +927,40 @@
     select(clip.key);
     seekTo(clip.start);
   }
+
+  // Walking the words runs off the end of a clip into the one beside it:
+  // shift and the left arrow from the first word of a clip is the last
+  // word of the one before it, and the right arrow from the last word is
+  // the first word of the next. A clip's words are not there to walk on
+  // to, they arrive with its captions, so the clip is chosen and where to
+  // land in it is held until they do.
+  //
+  // It is held by the clip it is about. A clip whose captions never arrive
+  // would otherwise leave this standing, and the next clip chosen by any
+  // other means would be jumped about in for no reason anyone could see.
+  let landOn = $state<{ key: string; last: boolean } | null>(null);
+
+  function walkClip(back: boolean) {
+    const list = shown.filter((c) => c.key !== removed?.key);
+    const here = list.findIndex((c) => c.key === selected);
+    if (here < 0) return;
+    const next = list[here + (back ? -1 : 1)];
+    if (!next) return;
+    // The captions on hand belong to the clip being left, so they are put
+    // down before the new clip is chosen. Until the new ones arrive there
+    // are no words, which is what the landing below waits for.
+    captions = null;
+    landOn = { key: next.key, last: back };
+    select(next.key);
+  }
+
+  $effect(() => {
+    const want = landOn;
+    if (!want || current?.key !== want.key || !lit.length) return;
+    landOn = null;
+    const word = want.last ? lit[lit.length - 1] : lit[0];
+    seekTo(intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+  });
 
   onMount(() => {
     window.addEventListener("keydown", walkClips);
@@ -1298,6 +1336,7 @@
         onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
+        onwalkclip={walkClip}
       />
       <!-- One row under the clip up close, so the range picker and the
            waveform stand together: what plays on the left, what the

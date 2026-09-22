@@ -302,9 +302,14 @@ place.
   the track and is whole even at the very start or the very end. It is the one
   thing in the app with a hue that is not the accent, so it can be found on
   a dark track, on a waveform and inside a clip alike.
-- **The arrows up and down walk the clip list**, the way left and right walk
-  the episode: each step takes the next clip and puts the playhead at its
-  start.
+- **Shift and the arrows up and down walk the clip list**, the way shift
+  and left and right walk its words: each step takes the next clip and
+  puts the playhead at its start, which is where a short begins and so the
+  one frame worth seeing first. **Shift is what means a clip or a caption
+  throughout.** Without it the arrows move the playhead a frame, which is
+  the episode and nothing else. With it they move it a word and a clip,
+  and the two read as one idea rather than two keys that happen to be
+  next to each other.
 - **The pane is the clip list and nothing else.** It says **Clips** and
   carries **New**, whatever else is happening. The transcription is not in
   it at any point: it has a place of its own, on the range picker, at the
@@ -374,7 +379,19 @@ place.
       that the crop frame went dashed at the start of the clip it belonged
       to and one press of an arrow key put it right.
     - Playing a clip jumps over its cuts and stops where the clip ends,
-      however it was started. **Loop** starts it over instead, which is how
+      however it was started. **It seeks first only when the picture has
+      to move.** A seek that changes nothing still interrupts the play, and
+      a play refused by a seek is a press of the space bar that did
+      nothing, with the second press working. The playhead standing a hair
+      before a clip's start counts as standing at it, for the same reason
+      the crop frame is solid there.
+    - **A seek is chased while it has not landed, and never while the
+      picture is playing.** The webview drops a seek silently when the
+      machine is busy, so it is asked again, then the file is read once
+      more, then it gives up. A playing clock is meant to run away from
+      where it was sent, which reads exactly like a seek that never
+      landed, and chasing it pulls the picture back to where playing began
+      and then empties the element. **Loop** starts it over instead, which is how
       a clip is judged. It stays on until it is switched off again.
     - While the playhead is inside the clip, its captions are drawn inside
       the crop, in the font, size, place and colours the render burns in,
@@ -600,9 +617,19 @@ place.
         playhead on the episode's, and the frame the picture settles on is
         a third answer again. On the edge, two words in every five lit
         nothing at all.
+      - **Past the last word of a clip they carry on into the one beside
+        it**, the left arrow from the first word of a clip landing on the
+        last word of the one before it and the right arrow the other way
+        round. A clip's words arrive with its captions, so the clip is
+        chosen first and the landing waits for them.
       - Outside a clip there is no caption, so the words that were heard
         are the only ones there are. Where nothing has been heard yet
         shift takes a second.
+      - **Which list is walked is decided a whole frame either side of the
+        clip**, for the same reason the crop frame is. Read exactly, a
+        playhead just put at a clip's start is outside it, so the keys
+        walked the transcript instead and the first press after picking a
+        clip landed wherever the word before the clip happened to be.
     - Drag an edge to trim. Edges snap to words the way the render cuts them.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.

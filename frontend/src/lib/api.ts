@@ -679,6 +679,12 @@ export function snapCut(
 //
 // Null means there is nowhere to go: no words heard here yet, or the
 // playhead is already before the first or past the last of them.
+// Where the playhead goes to stand on a word: a frame in, never on the
+// edge. A word shorter than two frames is entered by half of itself.
+export function intoWord(word: { start: number; end: number }, frame: number): number {
+  return Math.min(word.start + frame, (word.start + word.end) / 2);
+}
+
 export function wordStep(words: Word[], at: number, back: boolean, frame: number): number | null {
   if (!words.length) return null;
   // The last word that has begun, and whether the playhead is still in it.
@@ -692,7 +698,6 @@ export function wordStep(words: Word[], at: number, back: boolean, frame: number
   // after a word is that word, because it is the one just spoken.
   const target = back ? (inside ? here - 1 : here) : here + 1;
   const word = words[target];
-  if (!word) return null;
-  return Math.min(word.start + frame, (word.start + word.end) / 2);
+  return word ? intoWord(word, frame) : null;
 }
 

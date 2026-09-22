@@ -20,6 +20,7 @@
   import {
     insideClip,
     pictureIsStale,
+    shouldChase,
     pieceAt as pieceIndex,
     playingPiece,
     saidWord,
@@ -205,16 +206,12 @@
   function chase() {
     clearTimeout(chasing);
     chasing = window.setTimeout(() => {
-      if (!video || wanted < 0) return;
-      if (Math.abs(video.currentTime - wanted) < 0.5) {
+      if (!video) return;
+      if (!shouldChase({ wanted, at: video.currentTime, playing: !video.paused, tries })) {
         wanted = -1;
         return;
       }
       tries++;
-      if (tries > 2) {
-        wanted = -1;
-        return;
-      }
       if (tries === 2) {
         const t = wanted;
         video.addEventListener("loadedmetadata", () => put(t), { once: true });
@@ -247,22 +244,37 @@
     if (!video) return;
     if (clip) {
       // A clip plays from the playhead while the playhead stands inside it,
-      // otherwise from its first word.
-      if (time < clipStart || time >= clipEnd - 0.05) time = clipStart;
+      // otherwise from its start.
+      //
+      // Half a frame of room at that start, because the playhead is not
+      // where it was put: picking a clip sends it to the clip's first
+      // second and the picture answers with the frame it is showing, which
+      // begins a hair before. Read exactly, the playhead was then outside
+      // the clip it had just been put at the start of, so every press of
+      // the space bar after picking a clip seeked before it played, and a
+      // seek is the one thing that can refuse a play.
+      if (time < clipStart - frameOf / 2 || time >= clipEnd - 0.05) time = clipStart;
       atPiece = pieceAt(time);
-      goTo(time);
+      // And only when the picture really has to move. A seek that changes
+      // nothing still interrupts, still answers with nothing, and still
+      // leaves a chase running with nothing to answer it.
+      if (Math.abs(video.currentTime - time) > frameOf / 2) goTo(time);
       onplayclip?.(clip);
     }
     wantPlay = true;
     video.play().catch(() => {
       if (!wantPlay || !video) return;
-      video.addEventListener(
-        "canplay",
-        () => {
-          if (wantPlay) void video.play().catch(() => {});
-        },
-        { once: true },
-      );
+      // Two things refuse a play, and they are answered by two different
+      // events. A picture that has not read enough of the file yet says so
+      // with canplay. A picture interrupted by a seek says so with seeked,
+      // and it may never say canplay again, because it could already play
+      // and nothing about that changed. Waiting only for canplay is how a
+      // press of the space bar was lost and the second one worked.
+      const again = () => {
+        if (wantPlay && video && video.paused) void video.play().catch(() => {});
+      };
+      video.addEventListener("canplay", again, { once: true });
+      video.addEventListener("seeked", again, { once: true });
     });
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(tick);

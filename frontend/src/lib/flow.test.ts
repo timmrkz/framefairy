@@ -7,6 +7,7 @@ import {
   pieceAt,
   insideClip,
   playingPiece,
+  shouldChase,
   saidWord,
   inEpisode,
   shouldLook,
@@ -628,5 +629,38 @@ describe("insideClip", () => {
 
   test("no pieces, nowhere inside", () => {
     expect(insideClip([], 5, frame)).toBe(false);
+  });
+});
+
+describe("shouldChase", () => {
+  const paused = { wanted: 100, at: 90, playing: false, tries: 0 };
+
+  test("a seek that never landed is made again", () => {
+    expect(shouldChase(paused)).toBe(true);
+  });
+
+  test("a seek that landed is not", () => {
+    expect(shouldChase({ ...paused, at: 100 })).toBe(false);
+    expect(shouldChase({ ...paused, at: 99.7 })).toBe(false);
+  });
+
+  test("nothing is chased when nothing was sent", () => {
+    expect(shouldChase({ ...paused, wanted: -1 })).toBe(false);
+  });
+
+  test("it gives up rather than reading the file over and over", () => {
+    expect(shouldChase({ ...paused, tries: 3 })).toBe(false);
+  });
+
+  // The one that turned a play into nothing. Playing seeks first, so every
+  // play arms a chase, and a seek that changes nothing answers with
+  // nothing, so the chase is left running. A second and a bit later the
+  // playing clock is a second and a bit further on, which reads exactly
+  // like a seek that never landed: the picture was pulled back to where
+  // playing began, and on the try after that the file was read again,
+  // which empties the element and stops it dead.
+  test("a playing picture is never chased", () => {
+    expect(shouldChase({ wanted: 100, at: 101.2, playing: true, tries: 0 })).toBe(false);
+    expect(shouldChase({ wanted: 100, at: 90, playing: true, tries: 0 })).toBe(false);
   });
 });

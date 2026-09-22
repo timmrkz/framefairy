@@ -286,3 +286,36 @@ export function saidWord(pieces: Piece[], words: Spoken[], word: Piece): Spoken 
 export function insideClip(pieces: Piece[], at: number, frame: number): boolean {
   return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
 }
+
+export type ChaseState = {
+  // Where the picture was sent, or -1 when it is not on its way anywhere.
+  wanted: number;
+  // Where it says it is, and whether it is playing.
+  at: number;
+  playing: boolean;
+  // How many times the seek has been made again already.
+  tries: number;
+};
+
+// Whether a seek that has not landed should be made again.
+//
+// A seek is chased because the webview drops one silently while the
+// machine is busy, and a dropped seek leaves the picture on a frame that
+// has nothing to do with the playhead. It is asked again, and then the
+// file is read once more, and then it gives up.
+//
+// **It gives up at once when the picture is playing.** A playing clock is
+// meant to run away from where it was sent: a second and a bit later it is
+// a second and a bit further on, which reads exactly like a seek that
+// never landed. The chase would then pull the picture back to where
+// playing began, and on the try after that read the file again, which
+// empties the element and stops it dead. Every play arms a chase, because
+// playing seeks first, and the only thing that saved it was the seek
+// answering in time. A seek that changes nothing answers with nothing:
+// the playhead was already on that frame, no seeked ever comes, and the
+// chase is left running against the playing picture.
+export function shouldChase(s: ChaseState): boolean {
+  if (s.wanted < 0 || s.playing) return false;
+  if (s.tries > 2) return false;
+  return Math.abs(s.at - s.wanted) >= 0.5;
+}
