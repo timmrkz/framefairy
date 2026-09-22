@@ -120,3 +120,24 @@ Linux)
 	patchelf --set-rpath "$RPATH" "$PROGRAM"
 	;;
 esac
+
+# Say so rather than hope. Every rewrite above is allowed to fail quietly,
+# because most of them are no-ops on a program that does not name that
+# library, and a run where every one of them failed looks exactly like a run
+# where every one of them was unnecessary. The difference is whether the
+# build machine's module cache is still written in the program, so that is
+# what is looked at.
+#
+# Without this the macOS half could do nothing at all and still pass, on a
+# machine nobody here can watch.
+left=""
+case "$SYSTEM" in
+Darwin) left=$(otool -L "$PROGRAM" 2>/dev/null | grep -F "$GOMOD" || true) ;;
+Linux) left=$(readelf -d "$PROGRAM" 2>/dev/null | grep -E "RPATH|RUNPATH" | grep -F "$GOMOD" || true) ;;
+esac
+if [ -n "$left" ]; then
+	echo "carry-libs.sh: $PROGRAM still looks in the build machine's module cache:" >&2
+	echo "$left" >&2
+	echo "  It would run here and nowhere else. See docs/PACKAGING.md." >&2
+	exit 1
+fi
