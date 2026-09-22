@@ -101,18 +101,12 @@
     await reload();
   }
 
-  // The way out. Adding an episode is the next thing anybody does, so the
-  // last button does that as well as closing the setup: cancelling the
-  // file picker leaves them in the empty workspace, which says the same
-  // thing again.
-  async function finish() {
+  // The way out, and the whole of it. It finishes the setup and hands over
+  // to the app, which has one way of adding an episode. Opening the file
+  // dialog from here as well would be a second way of doing one thing,
+  // bought for a click that is only ever saved once.
+  function finish() {
     ondone();
-    try {
-      await api.addEpisodes();
-    } catch {
-      // The workspace reads the library itself. A picker nobody chose
-      // anything in is not a failure worth a message.
-    }
   }
 
   // While the model is still coming there is nothing to be done with the
@@ -162,8 +156,8 @@
             <Info label="About the speech model" side="right">
               Every episode is transcribed on this machine, word by word with the time of each
               word. Nothing about the episode is sent anywhere. The model is not part of the app,
-              so it is fetched from its own home the first time and kept in
-              <b>~/.framefairy/models</b>.
+              so the first time it is fetched from the people who published it and kept on your
+              machine, in <b>~/.framefairy/models</b>.
             </Info>
           </span>
           <h2>Speech</h2>
@@ -268,7 +262,7 @@
       {:else}
         <button class="primary go" disabled={waiting || !setup.chosen} onclick={finish}>
           {#if waiting}<Busy {fraction} />{/if}
-          {waiting ? "Fetching the speech model" : "Add an episode"}
+          {waiting ? "Fetching the speech model" : "Finish setup"}
         </button>
       {/if}
     </footer>

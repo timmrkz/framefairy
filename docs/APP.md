@@ -68,10 +68,12 @@ to run, and nothing else is promised.
 A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
 app fetched it or not. Either way `llama-server` has to be on the machine.
 
-The last button is **Add an episode**, which closes the setup and opens the
-file dialog, because that is the next thing anybody does. While the speech
-model is still coming it says so and waits, because there is nothing to be
-done with the app until it is there.
+The last button is **Finish setup**, and that is all it does. Adding an
+episode has one way of being done and it is the plus in the sidebar, so a
+second way here would be a second way of doing one thing, bought for a
+click that is only ever saved once. While the speech model is still coming
+the button says so and waits, because there is nothing to be done with the
+app until it is there.
 
 A key found in the environment is not an answer to the question. The app
 never decides on somebody's behalf, so an app that has never been asked asks.

@@ -116,6 +116,16 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
+}
+
+/* Nothing in the app is dragged over and selected by accident: it is an
+   app, not a page. The rule is on the app rather than on the page around
+   it, because an info bubble hangs from the page, outside the app, and
+   WebKit will not let a selection begin inside an element whose ancestor
+   said none, whatever that element says for itself. Saying none on body
+   is what made the text in a bubble impossible to copy on a Mac while it
+   copied perfectly in a browser. */
+#app {
   user-select: none;
   -webkit-user-select: none;
 }
