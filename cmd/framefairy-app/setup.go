@@ -64,6 +64,10 @@ type SetupState struct {
 	HasKey bool `json:"hasKey"`
 	// HasLocalModel is true when a language model is on the machine.
 	HasLocalModel bool `json:"hasLocalModel"`
+	// HasServer is true when a llama-server can be found and run. A model
+	// without one is fifteen gigabytes that answer nothing, so the window
+	// says so before the download rather than after it.
+	HasServer bool `json:"hasServer"`
 	// Chosen is true once somebody has answered the one question, so the
 	// app knows the settings are a decision rather than a default.
 	Chosen bool `json:"chosen"`
@@ -101,6 +105,7 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	if _, err := engine.ReadAPIKey(ctx); err == nil {
 		state.HasKey = true
 	}
+	state.HasServer = engine.HasLlamaServer()
 	// A model put there by hand counts too. The catalogue is a convenience,
 	// not the only way in: somebody who already has a .gguf they like keeps
 	// using it.
@@ -127,7 +132,11 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	case state.Planner == "api":
 		canPlan = state.HasKey
 	case state.Planner == "local":
-		canPlan = state.HasLocalModel
+		// Both halves, because either one alone makes nothing. The model is
+		// what answers and llama-server is what runs it, and until this was
+		// checked the app could call itself ready on a machine that had the
+		// download and no way to open it.
+		canPlan = state.HasLocalModel && state.HasServer
 	}
 	state.Ready = state.HasSpeech && canPlan
 	return state

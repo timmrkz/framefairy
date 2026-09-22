@@ -133,3 +133,35 @@ func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {
 		t.Errorf("ffmpeg %q, ffprobe %q", e.FFmpeg, e.FFprobe)
 	}
 }
+
+// llama-server is decided the same way ffmpeg is, and for the same reason:
+// a customer has no Homebrew and no terminal, so the only one they will
+// ever have is the one shipped beside the program. It used to be looked
+// for on the search path alone, which is a search path a shipped app does
+// not have.
+func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
+	t.Run("a named one is taken as it stands", func(t *testing.T) {
+		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "/somewhere/else/llama-server")
+		if got := LlamaServerPath(); got != "/somewhere/else/llama-server" {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("otherwise the bare name, for the search path", func(t *testing.T) {
+		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "")
+		got := LlamaServerPath()
+		if got != "llama-server" && !filepath.IsAbs(got) {
+			t.Errorf("got %q, which is neither the bare name nor a real path", got)
+		}
+	})
+
+	// What HasLlamaServer answers has to follow from that and from nothing
+	// else, or the setup screen and the thing that starts the server can
+	// disagree about the same machine.
+	t.Run("what the setup asks follows the same path", func(t *testing.T) {
+		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", filepath.Join(t.TempDir(), "not-here"))
+		if HasLlamaServer() {
+			t.Error("said yes about a file that is not there")
+		}
+	})
+}

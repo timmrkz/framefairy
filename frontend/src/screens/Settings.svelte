@@ -212,7 +212,7 @@
           <label for="llm">Model file</label>
           <input id="llm" type="text" bind:value={settings.llmModel} placeholder="The only .gguf file in ~/.framefairy/models" />
           <label for="server">llama-server</label>
-          <input id="server" type="text" bind:value={settings.llmServer} placeholder="Found on the search path" />
+          <input id="server" type="text" bind:value={settings.llmServer} placeholder="Found beside the app, then on the search path" />
         {:else}
           <label for="api">API model</label>
           <input id="api" type="text" bind:value={settings.apiModel} />

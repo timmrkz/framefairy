@@ -73,11 +73,24 @@ the installer checks that what arrived begins with `GGUF`, because a page
 saying no, saved under a model's name, is the thing that gets past
 everything else.
 
-**What is not done yet: a download does not resume.** A language model is
-between five and fifteen gigabytes, and one that fails at nine tenths
-starts again from nothing. The part file is already there to resume from
-and the server supports it, so this is a range request and a checksum fed
-the bytes that are already on disk.
+**What is not done yet: llama-server.** A model is only half of the local
+way. llama.cpp's server is what runs it, and nothing ships it, so today the
+app downloads up to 14.4 GB and then says in small text that llama-server
+has to be on the machine. A customer has no Homebrew and no terminal, so
+that is a wall.
+
+Half of it is fixed: the app now looks for llama-server the way it looks
+for ffmpeg, the one beside the program before the one on the search path,
+and it no longer calls itself ready on a machine with a model it cannot
+run. The other half is shipping it. llama.cpp is MIT and it is a child
+process like ffmpeg, so there is no entitlement to ask for and no licence
+question to answer. It is built the way ffmpeg is, rarely, and it goes in
+`Contents/MacOS/`.
+
+**Done: a download resumes.** A language model is
+between five and fifteen gigabytes, and one that failed at nine tenths used
+to start again from nothing. It carries on from the part file instead, with
+a range request and the checksum fed the bytes already on disk.
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches a model from whoever published it, the way
@@ -265,7 +278,7 @@ inside the `.app` like any other file.
 | Licence notices | us | yes | [THIRD_PARTY.md](THIRD_PARTY.md), shown in the app |
 | The speech model, 490 MB | NVIDIA, we never touch it | no | `~/.framefairy/models/`, first run |
 | A language model, 14.4 GB | Google, we never touch it | no | the same place, only if they choose local |
-| `llama-server` | the user, if they choose local | no | wherever they install it |
+| `llama-server` | llama.cpp, MIT, we build it | not yet, and it has to be | `Contents/MacOS/`, beside ffmpeg |
 | Settings and the episode list | the app | no | `~/Library/Application Support/` |
 | An episode's work | the app | no | `<episode>.framefairy/`, beside the video |
 
@@ -409,9 +422,8 @@ exception that has to be justified.
 
 **Starting another program is not one of the things it restricts.** A child
 process is its own process with its own signature, so running our own
-ffmpeg needs no entitlement, and neither does running the user's
-`llama-server`, which lives outside the bundle entirely now that they
-install it themselves.
+ffmpeg needs no entitlement, and neither does running `llama-server`,
+whether it is the one we ship beside ffmpeg or one the user already had.
 
 ### What building our own ffmpeg really costs
 
