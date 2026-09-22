@@ -143,32 +143,12 @@ codesign -s - -f "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
 # quietly and a bundle that is wrong looks exactly like one that is right
 # until somebody else opens it.
 #
-# The one that matters: a speech library still reached through the build
-# machine's module cache. That folder exists on the machine that built the
-# app and on no other, so the app would open here and die on a customer's
-# Mac before it drew anything. It is the whole reason carry-libs.sh exists
-# and it has to be true of the bundle as well, not only of bin/.
-GOMOD=$(go env GOMODCACHE 2>/dev/null || echo "")
-bad=0
-if [ -n "$GOMOD" ]; then
-	if otool -l "$APP/Contents/MacOS/$EXE" 2>/dev/null | grep -qF "$GOMOD"; then
-		echo >&2
-		echo "bundle-macos.sh: this bundle still looks in the build machine's Go module" >&2
-		echo "cache for its speech libraries, so it runs here and nowhere else:" >&2
-		otool -l "$APP/Contents/MacOS/$EXE" 2>/dev/null | grep -F "$GOMOD" | sed 's/^/  /' >&2
-		bad=1
-	fi
-fi
-for want in libsherpa-onnx-c-api libonnxruntime; do
-	if ! ls "$APP/Contents/Frameworks/$want"*.dylib >/dev/null 2>&1; then
-		echo "bundle-macos.sh: $want is not in Contents/Frameworks." >&2
-		bad=1
-	fi
-done
-[ "$bad" = 0 ] || {
-	echo "  See docs/PACKAGING.md." >&2
-	exit 1
-}
+# The question that decides whether this runs on a customer's Mac: does
+# every speech library it needs resolve inside the bundle, and does it
+# still look in the Go module cache of the machine that built it. That
+# folder exists here and on no other Mac. carry-libs.sh asks it, so it is
+# asked with the same eyes rather than a second pair.
+sh "$(dirname "$0")/carry-libs.sh" --verify "$APP/Contents/MacOS/$EXE"
 
 echo "$APP"
 echo "  version $VERSION, $(du -sh "$APP" | cut -f1)"

@@ -350,11 +350,38 @@ Nobody else has that folder, so the app dies before it draws anything.
 
 **This is done**, in `scripts/carry-libs.sh`, and it runs on every build
 rather than only when packaging, so what is run every day is what is
-shipped. Proved by hiding the module cache and looking: a build made this
-way resolves both libraries from its own folder, and the build as it was
-yesterday answers `libsherpa-onnx-c-api.so => not found`, which is what a
-customer would have seen. On Linux that needs `patchelf`, which the checks,
-the cloud setup and CI now install.
+shipped. On Linux that needs `patchelf`, which the checks, the cloud setup
+and CI now install.
+
+**It was only ever done on Linux.** The macOS half did nothing, on every
+macOS build there has been, and the check written to catch exactly that
+passed every time. Both halves of the mistake are worth writing down.
+
+The rewriting did nothing because there was nothing to rewrite. On macOS
+these libraries already call themselves `@rpath/libsherpa-onnx-c-api.dylib`
+and so does everything linking them, so no absolute path is recorded
+anywhere and every `install_name_tool -change` was a no-op. The whole
+question is the rpath, and cgo bakes one:
+
+```
+#cgo LDFLAGS: ... -Wl,-rpath,${SRCDIR}/lib/aarch64-apple-darwin
+```
+
+That is the module cache. The two rpaths `carry-libs.sh` added,
+`@executable_path` and `@executable_path/../Frameworks`, matched neither
+the libraries' real folder, `bin/lib`, nor anything else. The program found
+them through the cgo rpath, every time, on the only machine that has it.
+
+And the check missed it because it asked `otool -L`, which lists what a
+program needs, not where it looks. The module cache was in `LC_RPATH`,
+which `otool -L` never prints. So the check answered no and meant nothing.
+
+Now the rpath list includes the folder the libraries are really in, the
+module cache rpath is deleted with `install_name_tool -delete_rpath`, and
+the check resolves each `@rpath/` library against each rpath by hand and
+fails if one cannot be found or if any rpath names the module cache. It is
+the same check for the bundle, `carry-libs.sh --verify`, so `bin/` and
+`Frame Fairy.app` are held to one standard.
 
 What it does, per system:
 
