@@ -391,7 +391,12 @@ place.
   it was. Clicking a word stops the picture, because a caption that moved on
   under the caret would leave the hand correcting a word that is no longer
   there. The frame and the caret belong to the interface and not to the
-  render: nothing of them is ever burned into a short.
+  render: nothing of them is ever burned into a short, and **the frame is
+  all the interface adds**. A word being corrected takes no background of
+  its own. One would read as a second highlight pill, in the app's colour,
+  on a word nobody is speaking, and on the word that is being spoken it
+  would take away the colour the render really burns in. The picture goes
+  on showing what the render will show while a word in it is being typed.
   - The correction applies to every clip with that word, because it belongs
     to the episode and not to the clip. It is kept in
     `<episode>.framefairy/logs/corrections.json` and applied every time the

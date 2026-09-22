@@ -881,9 +881,15 @@
     outline-color: var(--accent-hi);
   }
 
-  .line span.word.fixing {
+  /* The word being corrected wears the frame and nothing else. A
+     background would be a second pill, in the app's colour, on a word that
+     is not the one being spoken, and it would take the pill off the word
+     that is: correcting the spoken word swapped the colour the render
+     burns in for the app's accent, which is the caption saying something
+     about itself that is not true. What the picture shows stays what the
+     render will show, and the frame is the only thing the interface adds. */
+  .word.fixing {
     outline-color: var(--accent-hi);
-    background: var(--accent);
   }
 
   /* The steps the caption line snaps to, shown while it is dragged. */
