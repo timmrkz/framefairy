@@ -410,17 +410,26 @@ place.
   and no stylesheet can reach it. The trigger is a control like any other
   control, the same height with the same border and the same background,
   with the mark where a unit would be. **The list opens right under the
-  trigger and is exactly its box**, both edges on the trigger's, and a row
-  keeps the same room for its tick that the trigger keeps for its mark, so
-  a name in the list ends where the name on the trigger ends. The whole
-  thing is one column down to the pixel, which is what the settings column
-  asks of everything in it. It was allowed to grow past the trigger to fit
-  a longer name and grew out to the right, over the edge every field in
-  that column ends on: which way a list grows is the placement's to decide
-  and it decided from a width measured before the rule that widened it. At
-  the same width there is nothing to decide. A name too long for the column
-  is cut short in the list the way it is on the trigger, and the whole of
-  it is in the row's title. The row under the pointer and the row the
+  trigger, hangs on its right edge and grows away from it**, out to the
+  left, as wide as the names in it need. A row keeps the same room for its
+  tick that the trigger keeps for its mark, so a name in the list ends
+  where the name on the trigger ends, whatever the name is. The right edge
+  of the whole thing is one line down the column, which is what that
+  column asks of everything in it, and no name is ever cut short in the
+  list, because the list is where a name is read.
+
+  **The width it is measured at is the width it grows from.** Which way a
+  list grows is the placement's to decide, and it decides from the width
+  it measures, before the stylesheet has run its rules. A list told to be
+  the trigger's width and then widened to fit its longest name is measured
+  first and widened after, so the placement hangs the trigger's width on
+  the right edge and every pixel the list then gains goes out the other
+  way, over the edge every field in that column ends on. `max-content` is
+  the width before anything is measured, so the placement measures what it
+  will get.
+
+  A name longer than the window has room for is the one case a list cannot
+  grow into, and the whole of a name is in the row's title either way. The row under the pointer and the row the
   keyboard is on are the same row, in `--ink-3`, and what is chosen is in
   the accent with a tick that keeps its place whether or not it is there.
   The trigger keeps room for the longest thing the list can say, so a row

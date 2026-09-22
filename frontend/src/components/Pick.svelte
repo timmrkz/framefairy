@@ -224,25 +224,37 @@
   /* The list itself. It is the panel colour rather than the field colour,
      because it lies over the workspace rather than sitting in it.
 
-     **Exactly as wide as the trigger, and no wider.** bits-ui measures the
-     trigger and hands the width over as a custom property, which is the
-     one number the stylesheet cannot work out for itself.
+     **It is as wide as what it holds, and it grows away from the edge it
+     is hung on.** A name is read in the list, so the list is never the
+     reason a name is cut short.
 
-     It was allowed to grow past the trigger to fit a long name, and grow
-     it did, out to the right, over the edge every field in that column
-     ends on. Which way a list grows is the placement's to decide and the
-     placement decides it from a width measured before this rule widened
-     it, so the answer came back wrong. At the same width there is nothing
-     to decide: both edges stand on the trigger's, whatever the placement
-     thinks.
+     Which is the width it is measured at, and that is the whole of why
+     this works. The placement decides which way a list grows from the
+     width it measures, and it measures before the stylesheet has run its
+     rules. Saying `width: var(--bits-floating-anchor-width)` and then
+     `min-width: max-content` is measure first and widen after: the
+     placement worked out where the trigger's right edge put a list of the
+     trigger's width, the list then came out wider, and every pixel of the
+     difference went out to the right, over the edge every field in that
+     column ends on. `max-content` is the width before anything is
+     measured, so the placement measures what it will get and hangs the
+     right edge where it was told.
 
-     A long name is no worse off for it. The row keeps the same 29 pixels
-     for its mark that the trigger keeps for its own, so the name has three
-     pixels more room in the list than on the trigger, and it ellipsises in
-     the same place either way. */
+     The minimum keeps a list of short names from standing narrower than
+     the trigger it belongs to. It is the one number the stylesheet cannot
+     work out for itself, so bits-ui measures the trigger and hands it over
+     as a custom property. It only ever applies where the names are
+     shorter than the trigger, where the difference is a pixel or two.
+
+     The most is what the placement says there is room for, so a name
+     longer than the window has left cannot push the list off the side of
+     it. That is the one case a name is still cut short, and the whole of
+     it is in the row's title. */
   .pick-list {
     z-index: 60;
-    width: var(--bits-floating-anchor-width);
+    width: max-content;
+    min-width: var(--bits-floating-anchor-width);
+    max-width: calc(var(--bits-floating-available-width, 100vw) - 8px);
     max-height: 320px;
     /* Nothing at the sides. A row carries the whole inset by itself, so
        the list's own padding cannot be added on top of it: the trigger

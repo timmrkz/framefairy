@@ -229,7 +229,10 @@ messages, pull request text, code comments and chat replies.
   stylesheet can reach it. `Pick.svelte` is the app's own list, built on
   bits-ui, which brings the keyboard, the roles, the focus and the floating
   placement and brings no look at all. Nothing about how it looks is decided
-  anywhere but in that file and the tokens in `app.css`.
+  anywhere but in that file and the tokens in `app.css`. A list hangs on
+  the edge of the trigger its column reads from and grows away from it, so
+  no name is ever cut short in the list and the edge stays one line down
+  the column.
 - **Consistency over novelty.** A visual treatment used in one place must be
   used for every equivalent element, or not at all. Reuse existing patterns,
   for example the `--ink-3` background for a selected row, before inventing
