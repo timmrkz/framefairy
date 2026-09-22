@@ -459,6 +459,117 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 	}
 }
 
+// A word added by hand reaches the caption file, and taking it away again
+// reaches it too.
+//
+// Correcting a word to two words is how a word the recogniser never heard
+// is added, and correcting it back to one is how it is taken away. Both
+// are one correction on one word of the transcript: what the engine keeps
+// is still the one moment, and the caption splits that moment between
+// however many words now stand in it.
+//
+// The split was tested where it happens and nowhere after, so nothing
+// said that it survived as far as a file. It has to: the srt beside a
+// rendered short is the caption anyone would export, and a word that is
+// burned into the picture and missing from the file is two answers to the
+// same question.
+func TestAnAddedWordReachesTheCaptionFile(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "ep.framefairy", "logs")
+	captionDir := filepath.Join(dir, "ep.framefairy", "captions")
+	_ = os.MkdirAll(logs, 0o755)
+	_ = os.MkdirAll(captionDir, 0o755)
+
+	words := []Cue{{10, 10.4, "mach"}, {10.5, 11.1, "was"}, {11.2, 11.6, "nicht"}}
+	tr := &Transcript{Words: append([]Cue(nil), words...)}
+	plan := `{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 9.9, "end": 11.8}],` +
+		` "words": [[10.0, 10.4, "mach"], [10.5, 11.1, "was"], [11.2, 11.6, "nicht"]]}]}`
+	path := filepath.Join(logs, "clips.json")
+	_ = os.WriteFile(path, []byte(plan), 0o644)
+
+	// What the caption file says now, built the way a render builds it.
+	saidInFile := func() []Cue {
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := resolveCues(clips[0], captionDir, false, 40); err != nil {
+			t.Fatal(err)
+		}
+		srt := filepath.Join(captionDir, clips[0].Basename()+".srt")
+		if !exists(srt) {
+			t.Fatal("no caption file was written")
+		}
+		loaded, err := LoadCaptions(srt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []Cue
+		for _, c := range loaded {
+			out = append(out, c.Words...)
+		}
+		return out
+	}
+
+	before := saidInFile()
+	if len(before) != 3 {
+		t.Fatalf("three words were said: %v", before)
+	}
+
+	// A word is added: what was heard as one word was two.
+	if n, err := SetWordText(logs, 10.5, "was wo", tr); err != nil || n != 1 {
+		t.Fatalf("adding a word changed %d clips, %v", n, err)
+	}
+	added := saidInFile()
+	if len(added) != 4 {
+		t.Fatalf("the added word never reached the file: %v", added)
+	}
+	if added[1].Text != "was" || added[2].Text != "wo" {
+		t.Errorf("the file has the wrong words: %v", added)
+	}
+	// Both halves carry a moment, inside the one the word was heard at and
+	// with no gap between them, or the highlight would stall in the middle.
+	if added[1].Start != before[1].Start || added[2].End != before[1].End {
+		t.Errorf("the halves left the word they came from: %v", added)
+	}
+	if added[1].End != added[2].Start {
+		t.Errorf("a gap opened between the halves: %v", added)
+	}
+	if !(added[1].End > added[1].Start && added[2].End > added[2].Start) {
+		t.Errorf("a half lasts no time at all: %v", added)
+	}
+	// And the text of the caption itself, which is what the srt carries.
+	if !strings.Contains(captionCues(mustCaptions(t, captionDir, path))[0].Text, "was wo") {
+		t.Errorf("the caption text is missing the added word")
+	}
+
+	// Taking it away again is the same correction the other way.
+	if n, err := SetWordText(logs, 10.5, "was", tr); err != nil || n != 1 {
+		t.Fatalf("taking the word away changed %d clips, %v", n, err)
+	}
+	gone := saidInFile()
+	if len(gone) != 3 {
+		t.Fatalf("the word was not taken away again: %v", gone)
+	}
+	if gone[1].Text != "was" || gone[1].Start != before[1].Start || gone[1].End != before[1].End {
+		t.Errorf("the word did not go back to what it was: %v", gone)
+	}
+}
+
+// The captions of the one clip in a test plan, freshly built.
+func mustCaptions(t *testing.T, captionDir, planPath string) []Caption {
+	t.Helper()
+	_, clips, err := LoadClips(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cues, err := resolveCues(clips[0], captionDir, false, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cues
+}
+
 func TestCropByHand(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "clips.json")
 	plan := `{"clips": [{"id": "01", "segments": [` +

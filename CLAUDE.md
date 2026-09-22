@@ -222,6 +222,17 @@ messages, pull request text, code comments and chat replies.
   running somewhere else. They are in `Busy.svelte` and `app.css`. A new
   kind of loading is not a new animation, it is one of these five in a new
   place.
+- **One list to pick from.** Every list a person picks from in the app is
+  `Pick.svelte`, and there is no `<select>` anywhere. A `<select>` is drawn
+  by the system: on macOS the webview hands the whole list to AppKit, which
+  paints it white with a blue row in the middle of a dark workspace, and no
+  stylesheet can reach it. `Pick.svelte` is the app's own list, built on
+  bits-ui, which brings the keyboard, the roles, the focus and the floating
+  placement and brings no look at all. Nothing about how it looks is decided
+  anywhere but in that file and the tokens in `app.css`. A list hangs on
+  the edge of the trigger its column reads from and grows away from it, so
+  no name is ever cut short in the list and the edge stays one line down
+  the column.
 - **Consistency over novelty.** A visual treatment used in one place must be
   used for every equivalent element, or not at all. Reuse existing patterns,
   for example the `--ink-3` background for a selected row, before inventing
@@ -238,9 +249,10 @@ messages, pull request text, code comments and chat replies.
 - The episode workspace is the centre of the app, in three columns: the
   settings for finding clips and for the captions on the left, the video
   preview with the crop frame and the range picker in the middle, the clip
-  list on the right with **New** above it. Under all three, the clip panel with the
-  zoomed timeline and the words in the lens. The whole of it fits the window
-  without scrolling.
+  list on the right with **New** above it. Under all three, the clip panel
+  with the zoomed timeline. The words of a clip are written out in one
+  place, the caption box over the picture, which is also where they are
+  corrected. The whole of it fits the window without scrolling.
 - The sidebar is a rail until the pointer reaches it. Open, it lies over the
   settings column rather than pushing the workspace about, so the video
   preview never changes size. It stays open when it is pinned.

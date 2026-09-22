@@ -16,8 +16,18 @@
   // words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
-  import { api, clock, cutAt, snapCut, snapEnd, snapStart, type ClipEntry, type Word } from "../lib/api";
-  import Icon from "./Icon.svelte";
+  import {
+    api,
+    clock,
+    cutAt,
+    snapCut,
+    snapEnd,
+    snapStart,
+    wordStep,
+    type ClipEntry,
+    type Word,
+  } from "../lib/api";
+  import { insideClip } from "../lib/flow";
   import Info from "./Info.svelte";
 
   let {
@@ -29,12 +39,13 @@
     time,
     locked = false,
     frame = 1 / 30,
+    lit = [],
     onseek,
     ontrim,
     oncut,
     onjoincut,
     onmovecut,
-    onword,
+    onwalkclip,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -51,6 +62,13 @@
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
     frame?: number;
+    // The words the caption lights up, on the episode's clock. Shift and
+    // an arrow key step through these, because these are the words anyone
+    // can see. They are not the words of the transcript: a correction that
+    // reads as two words is two here and one there, so a word added by
+    // hand is in this list and in no other, and a word a cut takes out is
+    // in the transcript and never in this one.
+    lit?: Word[];
     onseek: (t: number) => void;
     ontrim?: (start: number, end: number) => Promise<void>;
     // The cuts inside the clip: taking a stretch out, putting one back, and
@@ -61,7 +79,10 @@
     oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
     onjoincut?: (at: number) => Promise<void>;
     onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
-    onword?: (start: number, text: string) => Promise<void>;
+    // Walking the words has run off the end of the clip. The words of the
+    // clip beside it are not here to walk on to, they arrive with its
+    // captions, so the workspace is asked and it takes it from there.
+    onwalkclip?: (back: boolean) => void;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -453,10 +474,10 @@
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
     const wide = (outer.to - outer.from) / shown;
     const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
-    // The words are wanted around the playhead, for the lens and for
-    // snapping an edge. Zoomed out to a four hour episode that would be
-    // forty thousand of them for every swipe, so they are asked for by the
-    // ten minutes around where the work is.
+    // The words are wanted around the playhead, for snapping an edge to
+    // them. Zoomed out to a four hour episode that would be forty thousand
+    // of them for every swipe, so they are asked for by the ten minutes
+    // around where the work is.
     const middle = time >= outer.from && time <= outer.to ? time : (from + to) / 2;
     const said = {
       from: Math.max(outer.from, middle - spoken / 2),
@@ -599,7 +620,10 @@
 
   // The arrow keys step the playhead a frame at a time, as in every video
   // tool, unless a field or an edge of the clip has the keyboard. Shift
-  // takes a second at a time.
+  // steps by words, which is the thing the picture is showing: the caption
+  // lights up the word being spoken, so this walks that light one word at
+  // a time. Where nothing has been heard yet there are no words to walk,
+  // and shift takes a second, which is all it ever took before.
   function onKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
@@ -610,9 +634,37 @@
     // arrows for themselves while they hold the keyboard.
     if (on?.getAttribute("role") === "slider") return;
     if (document.querySelector("dialog[open]")) return;
-    const step = (event.shiftKey ? 1 : Math.max(frame, 1 / 240)) * (event.key === "ArrowLeft" ? -1 : 1);
+    const back = event.key === "ArrowLeft";
     event.preventDefault();
-    onseek(Math.max(0, Math.min(time + step, duration)));
+    const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)));
+    if (!event.shiftKey) {
+      put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
+      return;
+    }
+    // Inside the clip, the words the caption lights up. Outside it there
+    // is no caption at all, so the words that were heard are the only ones
+    // there are.
+    //
+    // Inside by a whole frame either side, because the playhead is not
+    // where it was put: picking a clip sends it to the clip's first second
+    // and the picture answers with the frame it is showing, which begins a
+    // little before that. Read exactly, the playhead was then outside the
+    // clip it had just been put at the start of, so shift and an arrow
+    // walked the transcript instead and the first press landed wherever
+    // the word before the clip happened to be. That is the jump out of the
+    // clip that could not be made to happen twice: it only happens on the
+    // first press after picking one.
+    const step = Math.max(frame, 1 / 240);
+    const walk = lit.length && insideClip(pieces, time, step) ? lit : words;
+    const to = wordStep(walk, time, back, step);
+    if (to !== null) {
+      put(to);
+      return;
+    }
+    // Out of words. At the ends of a clip that means the clip beside it,
+    // because the words go on even where this clip does not.
+    if (walk === lit) onwalkclip?.(back);
+    else if (!walk.length) put(time + (back ? -1 : 1));
   }
 
   // Reading takes a call each, so it waits until the fingers come to rest.
@@ -876,99 +928,6 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // The lens is not on screen until it is asked for: the magnifier on the
-  // playhead shows the words, and a second click takes them away again. The
-  // magnifier is a button and nothing else, so using it never moves the
-  // playhead.
-  let lensOpen = $state(false);
-
-  let editing = $state<number | null>(null);
-  let editText = $state("");
-  let frozen = $state(0);
-
-  // The lens can only ever show what has been heard. While an episode is
-  // still being transcribed the playhead goes anywhere, and past the end of
-  // the transcript there are no words to magnify, so the magnifier is off
-  // there rather than opening on nothing.
-  const heard = $derived(covered > 0 && time <= covered + 0.5);
-
-  const lensShown = $derived((lensOpen && heard) || editing !== null);
-
-  // Escape takes the lens away too, the same as a second click on the
-  // magnifier. It only ever closes the lens when the lens is the top thing
-  // on screen: a word being corrected, a box asking something and an info
-  // bubble all answer Escape themselves and keep it.
-  $effect(() => {
-    if (!lensOpen) return;
-    const key = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      const on = document.activeElement as HTMLElement | null;
-      const tag = on?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-      if (document.querySelector("dialog[open]") || document.querySelector(".bubble")) return;
-      lensOpen = false;
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  });
-
-  // The lens: a pill that rides the playhead and shows the words around it
-  // big enough to read and to correct. It is the only place the words are
-  // spelled out, so there is no wall of text under the timeline.
-  const lensWidth = 340;
-
-  // The words are laid out in a row of their own, each as wide as it really
-  // is, and the row is shifted so that the word being spoken sits in the
-  // middle of the pill.
-  let ruler: CanvasRenderingContext2D | null = null;
-
-  function textWidth(text: string): number {
-    if (!ruler && track) {
-      const style = getComputedStyle(track);
-      ruler = document.createElement("canvas").getContext("2d");
-      if (ruler) ruler.font = `${style.fontSize} ${style.fontFamily}`;
-    }
-    return ruler ? ruler.measureText(text).width : text.length * 7.2;
-  }
-
-  const laid = $derived.by(() => {
-    let at = 0;
-    return words.map((w) => {
-      const size = Math.round(textWidth(w.text)) + 10;
-      const item = { word: w, left: at, size };
-      at += size + 6;
-      return item;
-    });
-  });
-
-  // Where the lens is reading, in that row. It walks from one word to the
-  // next while the word is spoken, so the row glides instead of jumping.
-  const centre = $derived(editing !== null ? frozen : time);
-
-  const reading = $derived.by(() => {
-    if (!laid.length) return 0;
-    const index = laid.findIndex((it) => centre < it.word.end);
-    if (index < 0) {
-      const last = laid[laid.length - 1];
-      return last.left + last.size / 2;
-    }
-    const here = laid[index];
-    const next = laid[index + 1];
-    const from = Math.max(here.word.start, index > 0 ? laid[index - 1].word.end : 0);
-    const to = next ? next.word.start : here.word.end;
-    const part = Math.max(0, Math.min(1, (centre - from) / Math.max(to - from, 0.001)));
-    const a = here.left + here.size / 2;
-    const b = next ? next.left + next.size / 2 : a;
-    return a + (b - a) * part;
-  });
-
-  // Only what fits in the pill, plus a little either side.
-  const lensWords = $derived(
-    laid
-      .map((it) => ({ ...it, at: it.left - reading + lensWidth / 2 }))
-      .filter((it) => it.at > -it.size - 8 && it.at < lensWidth + 8),
-  );
-
   // Where in the episode this is. Without them a swipe leaves you nowhere,
   // and the step is round and wide enough that the labels never crowd.
   const ticks = $derived.by(() => {
@@ -983,41 +942,6 @@
     return out;
   });
 
-  function beginEdit(w: Word) {
-    // A correction belongs to a clip, so without one the words are only
-    // there to read.
-    if (!clip || !onword || locked) return;
-    frozen = time;
-    editing = w.start;
-    editText = w.text;
-  }
-
-  async function commitEdit() {
-    if (editing === null) return;
-    const at = editing;
-    const original = words.find((w) => w.start === at)?.text;
-    const text = editText.trim();
-    editing = null;
-    if (!text || text === original) return;
-    await onword?.(at, text);
-    const w = words.find((w) => w.start === at);
-    if (w) w.text = text;
-  }
-
-  function editKey(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commitEdit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      editing = null;
-    }
-  }
-
-  function focus(node: HTMLInputElement) {
-    node.focus();
-    node.select();
-  }
 </script>
 
 <div class="clip-timeline">
@@ -1046,8 +970,12 @@
     >
       <Info label="What the clip timeline is" side="right">
         The episode up close. Drag to move the playhead, two fingers to travel, a pinch to zoom,
-        and a double-click to fit the clip. The arrow keys step a frame, with shift a second. Drag
-        a clip edge to trim it, and the magnifier shows the words. A hatched block inside a clip is
+        and a double-click to fit the clip. The arrow keys step a frame. With shift they step a
+        word, so the caption in the picture lights up the next one, and past the last word of a
+        clip they carry on into the one beside it. Shift with the arrows up and down takes the
+        next clip and starts it from the top. Drag
+        a clip edge to trim it. The words are in the picture, in the caption box, which is where
+        they are read and where they are corrected. A hatched block inside a clip is
         a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
         and drag across the clip to take out the stretch you drag over, or hold it and double-click
@@ -1154,7 +1082,7 @@
     {/if}
   </div>
     {#if time >= view.from && time <= view.to}
-      <div class="at" class:shown={lensShown} style="left: {x(centre)}%">
+      <div class="at" style="left: {x(time)}%">
         <div class="playhead"></div>
         <!-- The head is its own element rather than something drawn on the
              line, because it stands above the track and the track is what
@@ -1169,52 +1097,6 @@
           ondblclick={fitView}
           title="Drag to move the playhead"
         ></div>
-        <button
-          class="grip"
-          aria-label="The words at the playhead"
-          aria-expanded={lensShown}
-          disabled={!heard}
-          title={heard
-            ? lensShown
-              ? "Hide the words"
-              : "The words spoken here"
-            : "The transcript does not reach this far yet"}
-          onpointerdown={(e) => e.stopPropagation()}
-          onclick={() => (lensOpen = !lensOpen)}
-        >
-          <Icon name="lens" size={13} />
-        </button>
-        {#if lensWords.length}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="lens" onpointerdown={(e) => e.stopPropagation()}>
-            {#each lensWords as it (it.word.start)}
-              {#if editing === it.word.start}
-                <input
-                  class="edit"
-                  type="text"
-                  bind:value={editText}
-                  use:focus
-                  onkeydown={editKey}
-                  onblur={commitEdit}
-                  style="left: {it.at}px; width: {Math.max(editText.length, 3) + 2}ch"
-                  aria-label="Correct the word"
-                />
-              {:else}
-                <button
-                  class="word"
-                  class:now={time >= it.word.start && time < it.word.end}
-                  class:plain={!clip}
-                  style="left: {it.at}px; width: {it.size}px"
-                  disabled={locked || !clip}
-                  title={clip
-                    ? "Correct this word. Two words split it in two"
-                    : "Pick a clip to correct its words"}
-                  onclick={() => beginEdit(it.word)}>{it.word.text}</button
-                >
-              {/if}
-            {/each}
-          </div>
-        {/if}
       </div>
     {/if}
   </div>
@@ -1387,127 +1269,13 @@
     opacity: 1;
   }
 
-  /* The playhead, with the grip that holds the words. */
+  /* The playhead. */
   .at {
     position: absolute;
     top: 0;
     bottom: 0;
     width: 0;
     z-index: 3;
-  }
-
-  /* Under the head of the playhead, not over it: the head says where the
-     playhead is and the magnifier says what is said there, and neither
-     should be drawn across the other. */
-  .grip {
-    position: absolute;
-    top: 10px;
-    left: -11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 20px;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    background: var(--ink-2);
-    color: var(--muted);
-    cursor: pointer;
-    z-index: 5;
-  }
-
-  .at.shown .grip {
-    background: var(--ink-3);
-    color: var(--text);
-    border-color: var(--accent);
-  }
-
-  /* Past the end of the transcript there is nothing to magnify, so the
-     magnifier says so by looking spent rather than by opening on nothing. */
-  .grip:disabled {
-    color: var(--ink-3);
-    border-color: var(--ink-3);
-    cursor: default;
-  }
-
-  /* The lens magnifies the words around the playhead, which is where they
-     are corrected. It is not there until it is reached for. */
-  .lens {
-    position: absolute;
-    top: 27px;
-    left: -170px;
-    width: 340px;
-    height: 30px;
-    background: var(--ink-2);
-    border: 1px solid var(--line);
-    border-radius: 15px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-    overflow: hidden;
-    z-index: 4;
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-  }
-
-  .at.shown .lens {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-  }
-
-  .lens::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: var(--line);
-    pointer-events: none;
-  }
-
-  .word,
-  .edit {
-    position: absolute;
-    top: 3px;
-    height: 22px;
-    padding: 0 5px;
-    font-size: var(--size-m);
-    line-height: 20px;
-    border-radius: var(--radius-s);
-    text-align: center;
-    white-space: nowrap;
-    z-index: 1;
-  }
-
-  .word {
-    border: 1px solid transparent;
-    background: transparent;
-    cursor: text;
-    overflow: hidden;
-  }
-
-  /* Without a clip the words are only there to read, so they do not look
-     like something to click. */
-  .word.plain:disabled {
-    opacity: 1;
-  }
-
-  .word:hover:not(:disabled) {
-    background: var(--ink-3);
-    border-color: var(--line);
-  }
-
-  .word.now {
-    color: var(--accent-hi);
-    font-weight: 600;
-  }
-
-  .edit {
-    border: 1px solid var(--accent);
-    background: var(--ink-1);
-    width: auto;
   }
 
   .edge {

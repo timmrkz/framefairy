@@ -25,9 +25,6 @@
     <path d="M1.8 12.6V3.4h4l1.4 1.8h7v7.4a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z" />
   {:else if name === "trash"}
     <path d="M2.8 4.3h10.4M6.4 4.3V2.9h3.2v1.4M4.6 4.3l.5 8.8h5.8l.5-8.8" />
-  {:else if name === "lens"}
-    <circle cx="7" cy="7" r="4.4" />
-    <path d="M10.3 10.3 14 14" />
   {:else if name === "info"}
     <circle cx="8" cy="8" r="6.2" />
     <path d="M8 7.3v4M8 4.9v.8" />

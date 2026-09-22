@@ -1,18 +1,36 @@
 // Stands in for the Wails runtime so the interface can be looked at in a
 // plain browser. Only for taking a picture of the layout.
-const words = (from: number, to: number) => {
-  const list: { start: number; end: number; text: string }[] = [];
+// The words of the whole episode, on one clock, made once.
+//
+// They used to be made from wherever a call asked to start, so a call
+// about the ten minutes around the playhead and a call about a clip's
+// twenty-five seconds answered with words at different moments. Nothing
+// looked wrong: both lists read the same sentence and both drew fine. But
+// the Go side reads one transcript, so the word a clip is built from and
+// the word the timeline steps to are the same word, and here they were
+// not. Stepping by words lit the wrong word in the caption box and it
+// took a probe to see, because the two lists only disagree once something
+// crosses from one to the other.
+let every: { start: number; end: number; text: string }[] | null = null;
+
+const allWords = () => {
+  if (every) return every;
   const sample = "Und da war irgendein Typ auf einmal vor mir und ich habe mich gewehrt weil das ein echtes Thema war".split(" ");
-  let at = from;
+  const list: { start: number; end: number; text: string }[] = [];
+  let at = 0;
   let i = 0;
-  while (at < to) {
+  while (at < 14423) {
     const len = 0.28 + (i % 5) * 0.08;
     list.push({ start: at, end: at + len, text: sample[i % sample.length] });
     at += len + 0.06;
     i++;
   }
+  every = list;
   return list;
 };
+
+const words = (from: number, to: number) =>
+  allWords().filter((w) => w.end > from && w.start < to);
 
 type Piece = { start: number; end: number; cropX: number; moved: boolean };
 
@@ -20,6 +38,12 @@ type Piece = { start: number; end: number; cropX: number; moved: boolean };
 // the plan, so the preview keeps them here, or a cut would come undone the
 // moment the clip list is read again.
 const held = (): Record<string, Piece[]> => ((window as any).__pieces ??= {});
+
+// The corrections, kept the same way the cuts are: the Go side writes them
+// down for the whole episode, so a word corrected once stays corrected
+// however often the clip is read again.
+const fixed = (): Record<string, string> => ((window as any).__fixed ??= {});
+const said = (start: number) => start.toFixed(3);
 
 const pieces = (n: number, start: number): Piece[] =>
   held()[`0${n}`] ?? [
@@ -83,9 +107,11 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     start: first,
     end: last,
     segments,
-    words: words(start, start + 25).filter((w) =>
-      segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
-    ),
+    words: words(start, start + 25)
+      .filter((w) =>
+        segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
+      )
+      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
     rejected: false,
     rendered: rendered ? "/tmp/out.mp4" : undefined,
     captionY: 300,
@@ -112,12 +138,82 @@ const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
   return clip(n, at, title, rendered);
 };
 
-const captionWords = [
-  { start: 0.2, end: 0.6, text: "Und" },
-  { start: 0.6, end: 1.0, text: "da" },
-  { start: 1.0, end: 1.6, text: "war" },
-  { start: 1.6, end: 2.4, text: "irgendein" },
-];
+// The caption look, as far as anything can change it here: the face and
+// the size the window asked for last. Without these the window could ask
+// for a face all day and always be told Inter Black, so a probe about
+// picking one would pass whatever the picking did.
+const face = () => (window as any).__face ?? "Inter Black";
+const size = () => (window as any).__size ?? 100;
+
+// The clip a call names, whatever has been done to it since.
+const clipOf = (id: string) => {
+  const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
+  return clip(Number(id), at, title, rendered);
+};
+
+// The captions of a clip, built the way the engine builds them, because
+// the caption box is where words are corrected and a word in it has to be
+// able to say which word of the episode it is. Made up cues could never
+// answer that, so a probe about correcting a word would pass whatever the
+// window did.
+//
+// Two things the engine does and this does with it: the words are put on
+// the clip's own clock, with the cuts taken out of it, and a correction
+// that reads as two words is drawn as two, each taking its share of the
+// one moment they both came from.
+const captionCues = (id: string) => {
+  const c = clipOf(id);
+  const onClipClock: { start: number; end: number; text: string }[] = [];
+  let offset = 0;
+  for (const p of c.segments) {
+    for (const w of c.words) {
+      if (w.start < p.start - 0.02 || w.end > p.end + 0.02) continue;
+      onClipClock.push({
+        start: offset + (w.start - p.start),
+        end: offset + (w.end - p.start),
+        text: w.text,
+      });
+    }
+    offset += p.end - p.start;
+  }
+  const drawn: typeof onClipClock = [];
+  for (const w of onClipClock) {
+    const parts = w.text.split(" ").filter(Boolean);
+    if (parts.length < 2) {
+      drawn.push(w);
+      continue;
+    }
+    const letters = parts.reduce((n, part) => n + part.length, 0);
+    let from = w.start;
+    parts.forEach((part, i) => {
+      const to =
+        i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
+      drawn.push({ start: from, end: to, text: part });
+      from = to;
+    });
+  }
+  // Eight words to a cue in two lines of four, which is near enough to
+  // what the engine's line breaking gives for a box to be looked at.
+  const cues = [];
+  for (let i = 0; i < drawn.length; i += 8) {
+    const eight = drawn.slice(i, i + 8);
+    // A cue stays up a little past its last word, and never past the start
+    // of the one after it. The engine clamps it the same way, and without
+    // the clamp two cues cover the same moment: the window takes the first
+    // that covers it, so the caption box went on showing the cue before
+    // while the playhead stood in a word of the cue after, and that word
+    // lit nothing at all.
+    const next = drawn[i + 8];
+    cues.push({
+      start: eight[0].start,
+      end: Math.min(eight[eight.length - 1].end + 0.4, next ? next.start : Infinity),
+      lines: [{ words: eight.slice(0, 4) }, { words: eight.slice(4) }].filter(
+        (line) => line.words.length > 0,
+      ),
+    });
+  }
+  return cues;
+};
 
 // The speech model install of the setup mode: it starts when it is asked
 // for and finishes four seconds later, reporting as it goes. A mode that
@@ -328,8 +424,8 @@ export const Call = {
         });
       case "Captions":
         return Promise.resolve({
-          captions: [{ start: 0, end: 4, lines: [{ words: captionWords.slice(0, 2) }, { words: captionWords.slice(2) }] }],
-          style: { font: "Inter Black", size: 0.062, lineHeight: 1.16, chosenSize: 100, bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: "#ffffff", box: "rgba(0,0,0,0.85)", highlight: true, highlightColour: "#b4236f" },
+          captions: captionCues(String(args[1])),
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: "#ffffff", box: "rgba(0,0,0,0.85)", highlight: true, highlightColour: "#b4236f" },
         });
       case "Fonts":
         return Promise.resolve([
@@ -484,6 +580,25 @@ export const Call = {
             lane: "transcribe",
           },
         ]);
+      }
+      // A correction belongs to the episode and is applied to every clip
+      // that holds the word, which here is every clip that reads it back
+      // through fixed().
+      case "SetCaptionStyle":
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error("that face is not installed"));
+        }
+        if (args[2]) (window as any).__face = String(args[2]);
+        if (Number(args[3]) > 0) (window as any).__size = Number(args[3]);
+        return Promise.resolve(null);
+      case "SetWord": {
+        const text = String(args[4]).trim();
+        if (!text) return Promise.reject(new Error("a word cannot be empty"));
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error("there is no word at 0:57"));
+        }
+        fixed()[said(Number(args[3]))] = text;
+        return Promise.resolve(clipOf(String(args[2])));
       }
       case "Waveform": {
         const from = Number(args[1]) || 0;

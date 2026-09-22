@@ -203,3 +203,119 @@ export class Heard {
     return this.at;
   }
 }
+
+// A word as the engine hands it over: a moment and what was said.
+export type Spoken = { start: number; end: number; text: string };
+
+// Where a moment of a clip falls in the episode.
+//
+// A clip runs on its own clock, with the cuts taken out, and that is the
+// clock the captions are written on. This is the way back from it. It is
+// what a word in the caption box needs in order to say which word of the
+// episode it is, because a correction belongs to the episode and not to
+// the clip: the same word corrected once is corrected in every clip that
+// holds it.
+export function inEpisode(pieces: Piece[], at: number): number {
+  let sum = 0;
+  for (const p of pieces) {
+    const span = p.end - p.start;
+    if (at < sum + span) return p.start + Math.max(at - sum, 0);
+    sum += span;
+  }
+  const last = pieces[pieces.length - 1];
+  return last ? last.end : at;
+}
+
+// The word of the episode a caption word came from.
+//
+// A caption word is not always one word of the episode. A correction that
+// reads as two words is drawn as two, in the captions and in the render
+// alike, but what the engine keeps is still the one word it corrected, at
+// the one moment. Both halves have to find that one word, and they do,
+// because both lie inside it.
+//
+// The match is made on the middle of the caption word rather than on
+// either edge. An edge would do in every case there is, and that is the
+// reason not to use one: an edge has no room on one side, so anything
+// that moves a moment by a hair moves it out of the word. Walking two
+// clocks adds and subtracts the same offsets in a different order, and
+// that alone is enough to land a thousandth of a millisecond short. A cut
+// that falls on a frame rather than on a word clips an edge outright. The
+// middle is the one point in a caption word that is furthest from both
+// edges of the word it came from.
+//
+// Nothing else is close enough to be meant. A middle that falls in no word
+// at all and is not within a hair of one is no word, rather than the
+// nearest one, because correcting a word nobody pointed at is worse than
+// correcting none.
+export function saidWord(pieces: Piece[], words: Spoken[], word: Piece): Spoken | null {
+  // With no pieces there is no clip, and with no clip the two clocks are
+  // not the same clock, they are one clock and one guess. A caption word
+  // would then be read as a moment of the episode it has nothing to do
+  // with and point at whatever word happened to be there.
+  if (!pieces.length) return null;
+  const when = inEpisode(pieces, (word.start + word.end) / 2);
+  let near: Spoken | null = null;
+  let off = Infinity;
+  for (const w of words) {
+    if (when >= w.start && when < w.end) return w;
+    const away = when < w.start ? w.start - when : when - w.end;
+    if (away < off) {
+      off = away;
+      near = w;
+    }
+  }
+  // The same hair the engine allows itself when it decides which words
+  // belong to a piece.
+  return off <= 0.02 ? near : null;
+}
+
+// Whether the playhead is inside a clip, and so whether the crop frame is
+// drawn solid or dashed.
+//
+// The frame a piece begins in belongs to it, and so does the one it ends
+// in. Not the moment, the whole frame, and that is the whole of this.
+//
+// The playhead is put on a piece's first second and the picture answers
+// with the frame it is showing, which is a frame at or before that second
+// and never the second itself. The playhead is then a hair outside the
+// clip it is standing at the very start of, and the crop frame says as
+// much by going dashed the moment the clip is picked. One press of an
+// arrow key put it right, which is the giveaway: what was wrong was a
+// fraction of a frame and nothing else.
+export function insideClip(pieces: Piece[], at: number, frame: number): boolean {
+  return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
+}
+
+export type ChaseState = {
+  // Where the picture was sent, or -1 when it is not on its way anywhere.
+  wanted: number;
+  // Where it says it is, and whether it is playing.
+  at: number;
+  playing: boolean;
+  // How many times the seek has been made again already.
+  tries: number;
+};
+
+// Whether a seek that has not landed should be made again.
+//
+// A seek is chased because the webview drops one silently while the
+// machine is busy, and a dropped seek leaves the picture on a frame that
+// has nothing to do with the playhead. It is asked again, and then the
+// file is read once more, and then it gives up.
+//
+// **It gives up at once when the picture is playing.** A playing clock is
+// meant to run away from where it was sent: a second and a bit later it is
+// a second and a bit further on, which reads exactly like a seek that
+// never landed. The chase would then pull the picture back to where
+// playing began, and on the try after that read the file again, which
+// empties the element and stops it dead. Every play arms a chase, because
+// playing seeks first, and the only thing that saved it was the seek
+// answering in time. A seek that changes nothing answers with nothing:
+// the playhead was already on that frame, no seeked ever comes, and the
+// chase is left running against the playing picture.
+export function shouldChase(s: ChaseState): boolean {
+  if (s.wanted < 0 || s.playing) return false;
+  if (s.tries > 2) return false;
+  return Math.abs(s.at - s.wanted) >= 0.5;
+}
