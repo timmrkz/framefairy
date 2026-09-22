@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"framefairy/engine"
 )
@@ -37,7 +38,10 @@ func emptyMachine(t *testing.T) *FrameFairy {
 		t.Fatal("this test can still reach the keychain")
 	}
 	st := openStore()
-	return &FrameFairy{store: st, jobs: newQueue(st, func(JobUpdate) {}, func(string) {})}
+	// A queue that holds work and never does it. Every test here is about
+	// what gets asked for, and asking for a model install really fetches a
+	// model: half a gigabyte, from the internet, on every run.
+	return &FrameFairy{store: st, jobs: newIdleQueue(st, func(JobUpdate) {}, func(string) {})}
 }
 
 // Pretends a speech model is installed, by putting there what Installed
@@ -50,6 +54,24 @@ func placeSpeechModel(t *testing.T, name string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "tokens.txt"), []byte("a 0\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The guard on all of the above. If the queue these tests use ever starts
+// running its work, every one of them fetches half a gigabyte from the
+// internet and leaves a part file in a folder the test is about to take
+// away. That is how a build runner found this the first time.
+func TestTheQueueTheseTestsUseNeverRunsAnything(t *testing.T) {
+	s := emptyMachine(t)
+	ran := make(chan struct{})
+	s.jobs.add("", "plan", "Test", func(ctx context.Context, p *engine.Project) (string, error) {
+		close(ran)
+		return "", nil
+	})
+	select {
+	case <-ran:
+		t.Fatal("the queue did the work, so every test in this file fetches a model")
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 
@@ -227,11 +249,6 @@ func TestInstallingTheSpeechModelIsAJobLikeAnyOther(t *testing.T) {
 		if running > 1 {
 			t.Errorf("%d installs of the same model at once", running)
 		}
-		for _, job := range s.jobs.list() {
-			if job.Kind == "model" && job.State == JobQueued || job.State == JobRunning {
-				s.jobs.cancel(job.ID)
-			}
-		}
 	})
 }
 
@@ -382,11 +399,6 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 		if running > 1 {
 			t.Errorf("%d installs of the same model at once", running)
 		}
-		for _, job := range s.jobs.list() {
-			if job.Kind == "llm" && (job.State == JobQueued || job.State == JobRunning) {
-				s.jobs.cancel(job.ID)
-			}
-		}
 	})
 
 	// The two are different work in different lanes, so one never stands
@@ -397,11 +409,6 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 		language := s.InstallLanguageModel(name)
 		if speech.ID == language.ID {
 			t.Fatal("the same job was handed back for both")
-		}
-		for _, job := range s.jobs.list() {
-			if job.State == JobQueued || job.State == JobRunning {
-				s.jobs.cancel(job.ID)
-			}
 		}
 	})
 }

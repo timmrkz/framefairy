@@ -70,13 +70,27 @@ type queue struct {
 	notify func(episode string)
 }
 
+// newQueue builds the queue and sets its lanes running.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	q := &queue{emit: emit, store: s, notify: notify, wake: map[string]chan struct{}{
-		LaneTranscribe: make(chan struct{}, 1), LaneWork: make(chan struct{}, 1)}}
+	q := newIdleQueue(s, emit, notify)
 	for lane := range q.wake {
 		go q.loop(lane)
 	}
 	return q
+}
+
+// newIdleQueue builds the queue without setting it running, so work can be
+// asked for and nothing does it.
+//
+// It is here for the tests about what gets queued. Some of the work is a
+// real download of half a gigabyte: a test that asks for one and lets the
+// queue run is a test that needs the network, and on a build runner it is
+// half a gigabyte an hour and a part file still being written when the
+// test's own folder is taken away. That is exactly what happened, as
+// "TempDir RemoveAll cleanup: directory not empty".
+func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
+	return &queue{emit: emit, store: s, notify: notify, wake: map[string]chan struct{}{
+		LaneTranscribe: make(chan struct{}, 1), LaneWork: make(chan struct{}, 1)}}
 }
 
 // Which lane a kind of work runs in. Each model install shares the lane of
