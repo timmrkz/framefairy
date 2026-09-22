@@ -231,6 +231,36 @@ is mechanical to fix and it is step one:
 It has never been noticed because everyone who has run the app also built
 it.
 
+## Who builds the disk image
+
+Two jobs, on two different clocks, and keeping them apart is the point.
+
+**The ffmpeg job runs by hand, rarely.** Building ffmpeg from source takes
+far longer than building the app and its answer changes only when we change
+the configure line or take a new ffmpeg version. So it is its own workflow,
+started by hand, and what it produces is a versioned archive kept as a
+release asset: `ffmpeg-lgpl-7.1-macos-universal.tar.gz` and its checksum.
+The build records its own configure line and the `ffmpeg -L` output beside
+it, because that output is the proof the build is LGPL rather than our word
+for it.
+
+**The release job runs on a tag, on a macOS runner**, and downloads that
+archive rather than building it. In order:
+
+| Step | What happens |
+| --- | --- |
+| 1 | Build the interface, then the Go binary for arm64 and for x86_64, and `lipo` them into one |
+| 2 | Assemble `framefairy.app`: `Info.plist`, the icon, the speech libraries into `Contents/Frameworks/` with their paths fixed, ffmpeg and ffprobe into `Contents/MacOS/` |
+| 3 | Sign inside-out with the Developer ID: every library, then ffmpeg and ffprobe, then the app, with the hardened runtime |
+| 4 | Make the `.dmg`, the `.app` beside a shortcut to Applications |
+| 5 | Send it to Apple to notarise, wait, and staple the ticket to it |
+| 6 | Attach the `.dmg` to the GitHub release |
+
+Only step 5 needs anything secret, and only steps 3 and 5 need the Apple
+Developer account. Everything up to step 2 runs on any machine, which means
+the `.app` can be built and opened long before there is a certificate to
+sign it with. That is what makes it possible to start now.
+
 ## How the building works
 
 Wails v3 packages from a `build/` folder of per-platform Taskfiles, driven
