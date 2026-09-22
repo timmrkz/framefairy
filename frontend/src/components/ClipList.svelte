@@ -32,9 +32,9 @@
     onputback?: () => void;
   } = $props();
 
-  // A search hands in all its clips at once, so in practice this is either
-  // all of them or none. Counting what is there anyway means a list that
-  // is partly filled never shows more rows than the search will hold.
+  // A search writes each clip the moment it is found, so the list fills in
+  // one row at a time and the rows still to come shrink as it does. What
+  // is handed in already counts the clips that are there.
   const ghosts = $derived.by(() => {
     const n = Math.max(0, coming - clips.length);
     return Array.from({ length: n }, (_, i) => i);

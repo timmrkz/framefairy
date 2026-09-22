@@ -210,6 +210,20 @@ does. An API answer that breaks off before a word of it arrived is asked
 for again. One that breaks off after is not, because what arrived has
 already been used.
 
+A search is three kinds of work that no longer wait on each other, in
+`engine/planbuild.go`. The model writes on the graphics side of the
+machine, framing decodes video with ffmpeg on the processor, and writing a
+clip to the plan is a few kilobytes. So each clip is framed by one of two
+framers while the model goes on writing, and written to the plan the
+moment it is framed. The first clip makes the plan, in place of whatever
+plan was there for the stretch, and each after it goes in through
+`editPlan`, so an edit the window makes to a clip that has already landed
+is kept. A clip that lands in a stretch removed while it was on its way is
+left out, and a plan removed altogether takes no more clips. The plan's
+id is decided before the first clip lands, so a decision about a clip made
+while the search runs is recorded against the plan it was made about.
+Stopping a search keeps what it had written.
+
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when
 you try several runs in a row, start the server once yourself and point the
@@ -236,7 +250,8 @@ Everything else is in `engine/`:
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken
                 the moment it is whole
-  plan.go       building the plan
+  plan.go       building the plan: the prompt, the call, the whole answer
+  planbuild.go  clips framed and written as the answer arrives
   analysis.go   camera switches and framing
   faces.go      the built-in face detector
   clips.go      the plan file and crop geometry

@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -62,6 +61,12 @@ type PlanOptions struct {
 	Record bool
 	// Local plans on this machine instead of through the API.
 	Local *LocalModel
+	// PlanPath is where each clip is written the moment it is framed. The
+	// first one replaces whatever plan was there.
+	PlanPath string
+	// CaptionDir holds the caption files a new plan makes stale. They are
+	// set aside when the first clip lands.
+	CaptionDir string
 }
 
 // The plan as written to disk. Field order matches the Python version, so a
@@ -184,15 +189,31 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		}
 	}
 
+	// Clips are taken from the answer as it is written. Each is checked,
+	// framed and written to the plan while the model writes the next, so
+	// the first clip is there long before the last.
+	build := e.newPlanBuilder(ctx, sourcePath, source, lines, opts,
+		planIDFor(opts, fingerprint, !haveReply))
+	defer build.stop()
+	var scanner clipScanner
+	listen := &Listener{Text: func(piece string) {
+		for _, raw := range scanner.feed(piece) {
+			build.take(raw)
+		}
+	}}
+	if haveReply {
+		listen.text(reply)
+	}
+
 	if !haveReply && opts.Local != nil {
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
 			var err error
 			reply, err = e.CallLocal(ctx, *opts.Local, prompt, len(lines), opts.Count,
-				opts.MaxTokens, opts.LogDir, nil)
+				opts.MaxTokens, opts.LogDir, listen)
 			return err
 		})
 		if err != nil {
-			return nil, err
+			return nil, build.failed(err)
 		}
 		saveReply(cachePath, reply)
 		haveReply, fresh = true, true
@@ -241,21 +262,32 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		err := e.Log.Step("choosing and condensing", func() error {
 			var err error
 			reply, err = e.CallClaudeWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
-				opts.LogDir, "plan", nil)
+				opts.LogDir, "plan", listen)
 			return err
 		})
 		if err != nil {
-			return nil, err
+			return nil, build.failed(err)
 		}
 		saveReply(cachePath, reply)
 		fresh = true
 	}
 
+	// The whole answer is read once more when it is done. Every clip in it
+	// has normally been taken by now. This catches what the scanner could
+	// not see, an answer that only parses once it is salvaged, and says
+	// what was wrong with the clips that were left out.
 	data, note, err := ExtractJSONObject(reply, "clips")
-	if err != nil && opts.Local != nil {
-		return nil, renderErr("%s The prompt and the answer are in %s.", err, opts.LogDir)
-	}
-	if err != nil {
+	switch {
+	case err != nil && build.count() > 0:
+		// The clips taken as the answer arrived are whole and checked. What
+		// is left of it cannot be read, and a repair would only be asked to
+		// guess at it.
+		e.Log.Warn("the end of the answer could not be read. The %d clip(s) before it are kept.",
+			build.count())
+		data = nil
+	case err != nil && opts.Local != nil:
+		return nil, build.failed(renderErr("%s The prompt and the answer are in %s.", err, opts.LogDir))
+	case err != nil:
 		e.Log.Warn("%s", err)
 		if opts.LogDir != "" {
 			e.Log.Warn("the raw reply is in %s", opts.LogDir)
@@ -267,181 +299,37 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			return err
 		})
 		if stepErr != nil {
-			return nil, stepErr
+			return nil, build.failed(stepErr)
 		}
 		data, note, err = ExtractJSONObject(repaired, "clips")
 		if err != nil {
-			return nil, renderErr("%s The prompt and every reply are in %s, so nothing is "+
-				"lost. Inspect them, or write the plan by hand.", err, opts.LogDir)
+			return nil, build.failed(renderErr("%s The prompt and every reply are in %s, so nothing is "+
+				"lost. Inspect them, or write the plan by hand.", err, opts.LogDir))
 		}
 		note = strings.TrimLeft(note+", after a repair call", ", ")
 	}
 	if note != "" {
 		e.Log.Warn("the reply needed salvaging: %s", note)
 	}
+	if data != nil {
+		raw, problems, err := ValidatePlan(data, len(lines))
+		if err != nil && build.count() == 0 {
+			return nil, build.failed(err)
+		}
+		for i, problem := range problems {
+			if i >= 6 {
+				break
+			}
+			e.Log.Warn("in the model's answer: %s", problem)
+		}
+		build.rest(raw)
+	}
 
-	raw, problems, err := ValidatePlan(data, len(lines))
+	clips, entries, ids, err := build.finish()
 	if err != nil {
 		return nil, err
 	}
-	for i, problem := range problems {
-		if i >= 6 {
-			break
-		}
-		e.Log.Warn("in the model's answer: %s", problem)
-	}
-	e.Log.OK("%d candidate clip(s) proposed", len(raw))
-
-	cropW, _ := CropWindow(source, opts.OutW, opts.OutH)
-	cache := map[float64]*int{}
-	var clips []PlanClip
-	e.Log.Info("working out framing for each clip")
-
-	// A second pass over a later part of the episode must not reuse 01..04,
-	// or its clips would overwrite the first pass's output. Seconds, not
-	// minutes, so two windows inside the same minute still differ.
-	offset := 0
-	if opts.Window != nil {
-		offset = int(opts.Window.Start)
-	}
-	if len(raw) > opts.Count {
-		raw = raw[:max(opts.Count, 0)]
-	}
-	ids := make([]string, len(raw))
-	for i := range raw {
-		ids[i] = fmt.Sprintf("%02d", i+1)
-		if opts.Window != nil {
-			ids[i] = fmt.Sprintf("t%d-%02d", offset, i+1)
-		}
-	}
-	span := Window{0, source.Duration}
-	if opts.Window != nil {
-		span = *opts.Window
-	}
-	for i, entry := range raw {
-		index := i + 1
-		// Drop a leading or trailing line that carries nothing. Whole lines,
-		// never part of one.
-		ranges := append([][2]int(nil), entry.Keep...)
-		for len(ranges) > 0 && IsFiller(lines[ranges[0][0]-1].Text()) {
-			if ranges[0][0] < ranges[0][1] {
-				ranges[0][0]++
-			} else {
-				ranges = ranges[1:]
-			}
-		}
-		for len(ranges) > 0 && IsFiller(lines[ranges[len(ranges)-1][1]-1].Text()) {
-			last := len(ranges) - 1
-			if ranges[last][0] < ranges[last][1] {
-				ranges[last][1]--
-			} else {
-				ranges = ranges[:last]
-			}
-		}
-		if len(ranges) == 0 {
-			e.Log.Warn("   %02d: every line in it was filler, skipped", index)
-			continue
-		}
-
-		var chosen []Cue
-		for _, pair := range ranges {
-			for number := pair[0]; number <= pair[1]; number++ {
-				chosen = append(chosen, lines[number-1].Cues...)
-			}
-		}
-		sort.SliceStable(chosen, func(a, b int) bool { return chosen[a].Start < chosen[b].Start })
-
-		loose := 0.0
-		if len(chosen) > 0 {
-			loose = chosen[len(chosen)-1].End - chosen[0].Start
-		}
-		spans := SegmentsFromRanges(ranges, lines, opts.KeepPause, opts.MaxPause)
-		durations := make([]float64, len(spans))
-		for k, s := range spans {
-			durations[k] = s.Duration()
-		}
-		if tight := pysum(durations); loose-tight > 0.3 {
-			e.Log.Detail("clip %d: %ss dropped between the %d run(s) it kept",
-				index, fixed(loose-tight, 1), len(ranges))
-		}
-		tightSpans := make([]Span, len(spans))
-		for k, s := range spans {
-			tightSpans[k] = Span{s.Start, s.End}
-		}
-
-		segments, err := e.ClipSegments(ctx, sourcePath, tightSpans, source, cropW, cache)
-		if err != nil {
-			return nil, err
-		}
-		angles := map[string]bool{}
-		for _, s := range segments {
-			key := "none"
-			if s.CropX != nil {
-				key = itoa(*s.CropX)
-			}
-			angles[key] = true
-		}
-		if len(angles) > 1 {
-			e.Log.Detail("clip %d: %d camera angle(s) across %d segment(s)",
-				index, len(angles), len(segments))
-		}
-		if len(segments) == 0 {
-			continue
-		}
-		if len(segments) > MaxSegments {
-			e.Log.Warn("%02d discarded: %d segments is past the limit of %d",
-				index, len(segments), MaxSegments)
-			continue
-		}
-
-		id := ids[i]
-		clip := PlanClip{
-			ID:     id,
-			Slug:   strings.ToLower(SanitiseName(entry.Slug, fmt.Sprintf("clip%d", index))),
-			Title:  entry.Title,
-			Reason: entry.Reason,
-			Keep:   ranges,
-			Words:  [][3]any{},
-		}
-		for _, w := range chosen {
-			clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
-				PyFloat(roundTo(w.End, 3)), w.Text})
-		}
-		lengths := make([]float64, len(segments))
-		for k, s := range segments {
-			seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
-				CropX: "center"}
-			if s.CropX != nil {
-				seg.CropX = *s.CropX
-			}
-			clip.Segments = append(clip.Segments, seg)
-			lengths[k] = s.Duration()
-		}
-		clips = append(clips, clip)
-
-		total := pysum(lengths)
-		// Both bounds are targets, not walls. Warning about a tenth of a
-		// second teaches you to ignore the warning.
-		flag, advice := "", ""
-		if total < opts.MinLen*0.9 {
-			flag = fmt.Sprintf("  (well under the %ss minimum)", fixed(opts.MinLen, 0))
-			advice = "it may be missing context. Widen it in clips.json, or re-run with --replan"
-		} else if total > opts.MaxLen*1.2 {
-			flag = fmt.Sprintf("  (well over the %ss target)", fixed(opts.MaxLen, 0))
-			advice = "trim it in clips.json and re-render just that clip, or re-run with --replan"
-		}
-		removed := loose - total
-		cutNote := ""
-		if removed > 0.3 {
-			cutNote = fmt.Sprintf(", %ss of dead air cut", fixed(removed, 1))
-		}
-		e.Log.OK("%s %-26s %5ss  %d segment(s)%s%s", clip.ID, clip.Slug,
-			fixed(total, 1), len(segments), cutNote, flag)
-		if flag != "" {
-			e.Log.Warn("   %s: %s", clip.Slug, advice)
-		}
-	}
-
+	e.Log.OK("%d candidate clip(s) proposed, %d kept", len(entries), len(clips))
 	if len(clips) == 0 {
 		return nil, renderErr("no usable clips came back from the model")
 	}
@@ -451,19 +339,20 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			proposed[c.ID] = append(proposed[c.ID], [2]float64{float64(seg.Start), float64(seg.End)})
 		}
 	}
-	planID := e.recordPlan(opts, sourcePath, span, lines, prompt, fingerprint, fresh, raw, ids, proposed)
+	span := Window{0, source.Duration}
+	if opts.Window != nil {
+		span = *opts.Window
+	}
+	planID := e.recordPlan(opts, sourcePath, span, lines, prompt, fingerprint, fresh, entries, ids,
+		proposed, build.planID)
+	if err := build.settle(planID); err != nil {
+		return nil, err
+	}
 	if opts.Local == nil {
 		e.Log.Info("planning used %d API request(s) over %d HTTP attempt(s)",
 			e.Calls.Requests, e.Calls.Attempts)
 	}
-
-	stamp := PlannedWith{Count: opts.Count, Min: PyFloat(opts.MinLen),
-		Max: PyFloat(opts.MaxLen), Model: opts.Model}
-	if opts.Window != nil {
-		from, to := PyFloat(roundTo(opts.Window.Start, 3)), PyFloat(roundTo(opts.Window.End, 3))
-		stamp.From, stamp.To = &from, &to
-	}
-	return &PlanFile{Source: filepath.Base(sourcePath), PlanID: planID, PlannedWith: stamp,
+	return &PlanFile{Source: filepath.Base(sourcePath), PlanID: planID, PlannedWith: build.stamp,
 		Clips: clips}, nil
 }
 

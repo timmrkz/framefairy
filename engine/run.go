@@ -356,49 +356,14 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
 				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord,
+				PlanPath: planPath, CaptionDir: captionDir,
 			})
 		if err != nil {
 			return e.planFailed(ctx, err)
 		}
-		body, err := MarshalPlan(plan)
-		if err == nil {
-			// In one step, and under the lock the window's edits take. The
-			// window is reading this folder about once a second while the
-			// search runs.
-			err = writePlanFile(planPath, body)
-		}
-		if err != nil {
-			log.Error("cannot write the plan: %s", err)
-			return 1
-		}
-		log.OK("plan written to %s", planPath)
-
-		// A new plan means new cut points, so previously derived per-clip
-		// captions are timed to a timeline that no longer exists. They may
-		// still contain hand corrections, so they are moved aside rather
-		// than deleted. Nothing this tool does removes your work.
-		stale, _ := filepath.Glob(filepath.Join(captionDir, "*.srt"))
-		var files []string
-		for _, f := range stale {
-			if isFile(f) {
-				files = append(files, f)
-			}
-		}
-		if len(files) > 0 {
-			attic := filepath.Join(captionDir, "superseded-"+time.Now().Format("20060102-150405"))
-			if err := os.MkdirAll(attic, 0o755); err == nil {
-				for _, old := range files {
-					_ = os.Rename(old, filepath.Join(attic, filepath.Base(old)))
-				}
-				generated, _ := filepath.Glob(filepath.Join(captionDir, "*.ass"))
-				for _, old := range generated {
-					if isFile(old) {
-						_ = os.Remove(old) // regenerated every render, not yours
-					}
-				}
-				log.Info("previous captions moved to %s", attic)
-			}
-		}
+		// Each clip was written to the plan the moment it was framed, so
+		// there is nothing left to write.
+		log.OK("plan written to %s with %d clip(s)", planPath, len(plan.Clips))
 	}
 
 	if !exists(planPath) {
@@ -739,9 +704,41 @@ func writeProof(path string, clips []Clip, cueMap map[string][]Caption) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
+// setStaleCaptionsAside moves every caption file out of the way of a new
+// plan. A new plan means new cut points, so captions derived from the old one
+// are timed to a timeline that no longer exists. They may still contain
+// hand corrections, so they are moved aside rather than deleted. Nothing
+// this tool does removes your work.
+func setStaleCaptionsAside(log *Log, captionDir string) {
+	stale, _ := filepath.Glob(filepath.Join(captionDir, "*.srt"))
+	var files []string
+	for _, f := range stale {
+		if isFile(f) {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return
+	}
+	attic := filepath.Join(captionDir, "superseded-"+time.Now().Format("20060102-150405"))
+	if err := os.MkdirAll(attic, 0o755); err != nil {
+		return
+	}
+	for _, old := range files {
+		_ = os.Rename(old, filepath.Join(attic, filepath.Base(old)))
+	}
+	generated, _ := filepath.Glob(filepath.Join(captionDir, "*.ass"))
+	for _, old := range generated {
+		if isFile(old) {
+			_ = os.Remove(old) // regenerated every render, not yours
+		}
+	}
+	log.Info("previous captions moved to %s", attic)
+}
+
 // Interrupted is the message shown when a run is stopped with ctrl-c.
 const Interrupted = "interrupted. Anything already finished is kept, whatever was in " +
-	"progress is discarded, and a plan is only saved once it is complete."
+	"progress is discarded, and the clips a search had already found stay in its plan."
 
 func (e *Engine) fail(ctx context.Context, err error) int {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {

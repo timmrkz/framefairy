@@ -604,12 +604,32 @@ func RecordDecision(planPath, clipID, event string, reasons []string) error {
 	return appendRecord(filepath.Join(dir, "decisions.jsonl"), record)
 }
 
+// planIDFor is the id a plan will be recorded under, decided before the
+// model has answered. A reused answer keeps the id it was recorded with.
+func planIDFor(opts PlanOptions, replyKey string, fresh bool) string {
+	if opts.LogDir == "" || !opts.Record {
+		return ""
+	}
+	if !fresh {
+		if rec, ok := findPlanRecord(TrainingDir(), replyKey); ok {
+			return rec.PlanID
+		}
+	}
+	return newPlanID(time.Now())
+}
+
 // recordPlan appends a plan record for a new model answer and returns its
 // id. A reused answer, or the same answer to the same prompt given again,
 // keeps the id it was first recorded with.
+//
+// A search writes its clips to the plan as they come, and the window may
+// edit one before the answer is finished, so the id is decided before the
+// first clip lands and passed in here as planned. A decision about a clip
+// is only recorded against a plan with an id, and one made while the search
+// was running would otherwise be lost.
 func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, lines []Line,
 	prompt, replyKey string, fresh bool, entries []PlanEntry, ids []string,
-	segments map[string][][2]float64) string {
+	segments map[string][][2]float64, planned string) string {
 	if opts.LogDir == "" || !opts.Record {
 		return ""
 	}
@@ -620,12 +640,15 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 		}
 	}
 	now := time.Now()
+	if planned == "" {
+		planned = newPlanID(now)
+	}
 	kind, model := "api", opts.Model
 	if opts.Local != nil {
 		kind, model = "local", strings.TrimPrefix(opts.Model, "local:")
 	}
 	record := PlanRecord{
-		Schema: TrainingSchema, PlanID: newPlanID(now), Created: now.UTC().Format(time.RFC3339),
+		Schema: TrainingSchema, PlanID: planned, Created: now.UTC().Format(time.RFC3339),
 		Engine: Version, PromptVersion: PromptVersion,
 		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(sourcePath),
 			Transcript: wordsHash(lines),

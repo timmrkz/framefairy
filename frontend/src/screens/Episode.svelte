@@ -59,6 +59,16 @@
   // Where the model has already looked. A window is only drawn outside it.
   let coverage = $state<CoverageView>({ searched: [], free: [] });
   let selected = $state("");
+  // What the clip list held and which clip was picked when a search began.
+  // A search writes each clip to the plan as it is found, so the first one
+  // it finds is put on screen the moment it lands, long before the search
+  // is over. Only if nobody picked another clip meanwhile: a clip taken
+  // away from under the hand that is working on it is worse than one shown
+  // a little later. What the list held is state, because the rows still to
+  // come are counted from it.
+  let listedBefore = $state<Set<string> | null>(null);
+  let pickedBefore = "";
+  let shownFirst = false;
   let player = $state<Player>();
   let timeline = $state<ClipTimeline>();
   // What the clip timeline has to say about the chosen clip, for the row
@@ -215,10 +225,21 @@
   // asked for. So the list stands in the shape it is about to take, with
   // the light passing over it, rather than as an empty area with a line of
   // text in it. What is going on is in the info mark at the head.
-  const coming = $derived(stillWaiting || finding || starting ? count : 0);
+  //
+  // A search writes each clip the moment it is found, so while it runs the
+  // rows still to come are what it was asked for less what it has found so
+  // far. The clips from earlier searches are in the list too and are not
+  // counted against it.
+  const foundSoFar = $derived.by(() => {
+    const known = listedBefore;
+    return known ? clips.filter((c) => !known.has(c.key)).length : 0;
+  });
+  const coming = $derived(
+    finding || starting ? clips.length + Math.max(0, count - foundSoFar) : stillWaiting ? count : 0,
+  );
   const waitNote = $derived.by(() => {
     if (finding || starting) {
-      return `The model is reading the stretch from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. They appear here and on the range picker as soon as it answers.${leftOfWork ? ` About ${leftOfWork}.` : ""}`;
+      return `The model is reading the stretch from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${leftOfWork ? ` About ${leftOfWork}.` : ""}`;
     }
     if (!stillWaiting) return "";
     const first = transcribing
@@ -776,6 +797,9 @@
   async function findClips(replan: boolean) {
     problem = "";
     starting = true;
+    listedBefore = new Set(clips.map((c) => c.key));
+    pickedBefore = selected;
+    shownFirst = false;
     try {
       const job = await api.plan(path, {
         From: whole ? 0 : from,
@@ -790,6 +814,19 @@
       problem = errorText(err);
       starting = false;
     }
+  }
+
+  // The first clip a search finds, shown as soon as it is in the list.
+  function showFirstFound() {
+    if (!listedBefore || shownFirst) return;
+    const known = listedBefore;
+    const found = clips.filter((c) => !known.has(c.key));
+    if (!found.length) return;
+    shownFirst = true;
+    if (selected !== pickedBefore) return;
+    // The list is in the order of the episode, and so is what is new in
+    // it, so this is the earliest of what has landed.
+    select(found[0].key);
   }
 
   // The job has reported in, so the placeholder can give way to it.
@@ -884,8 +921,18 @@
       // clips it just found, lying over their marks as an X-ray and
       // offering to throw them away.
       moveWindowOn();
-      const first = clips.find((c) => c.plan === plan);
-      if (first) select(first.key);
+      // A clip was shown while the search ran, and whatever has been
+      // picked since is where the hand is now. Otherwise the search's
+      // first clip, the way it always was.
+      showFirstFound();
+      // A stretch searched again comes back under the names it had, so
+      // nothing in the list is new. Its first clip, as long as nobody has
+      // picked another.
+      if (!shownFirst && selected === pickedBefore) {
+        const first = clips.find((c) => c.plan === plan);
+        if (first) select(first.key);
+      }
+      listedBefore = null;
     });
   });
 
@@ -982,10 +1029,10 @@
           .catch(() => {});
       }
       if (isFinding) {
-        // The model answers with the whole set at once and the clips land
-        // in the plan there and then, so they show up while the search is
-        // still wrapping up.
-        refreshClips();
+        // Each clip lands in the plan the moment it is framed, while the
+        // model is still writing the next, so the list is read again as
+        // the search runs and the first one is put on screen.
+        refreshClips().then(showFirstFound);
       }
     }, 2000);
     return () => clearInterval(timer);

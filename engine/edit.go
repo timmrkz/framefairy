@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -241,6 +242,69 @@ func replacePlan(path string, body []byte) error {
 		return err
 	}
 	return os.Rename(name, path)
+}
+
+// errNotAdded is a clip that was not added because the plan no longer has
+// room for it: the stretch it lies in was given back while it was on its
+// way.
+var errNotAdded = errors.New("the stretch this clip lies in was removed")
+
+// appendClip adds a clip to a plan that a search is still writing. It goes
+// through editPlan, so an edit the window makes at the same moment is kept,
+// and so is the plan's shape.
+//
+// Removing part of a search while it runs leaves a hole in the plan, and a
+// clip that arrives afterwards inside that hole is not added, because it
+// would bring back what was just taken away. A plan that is gone
+// altogether is reported as the missing file it is.
+func appendClip(path string, clip PlanClip) error {
+	body, err := MarshalPlan(clip)
+	if err != nil {
+		return err
+	}
+	value, err := decodeOrdered(body)
+	if err != nil {
+		return err
+	}
+	added, ok := value.(*object)
+	if !ok {
+		return renderErr("a clip must be a JSON object")
+	}
+	start, end := 0.0, 0.0
+	if len(clip.Segments) > 0 {
+		start, end = float64(clip.Segments[0].Start), float64(clip.Segments[len(clip.Segments)-1].End)
+	}
+	refused := false
+	err = editPlan(path, func(top *object, clips []*object) error {
+		if made, ok := top.values["planned_with"].(*object); ok {
+			for _, hole := range orderedWindows(made.values["removed"]) {
+				if end > hole.Start && start < hole.End {
+					refused = true
+					return errNotAdded
+				}
+			}
+		}
+		for i, c := range clips {
+			fallback := twoDigits(i + 1)
+			text := fallback
+			if raw, ok := c.get("id"); ok {
+				text = pyStr(raw)
+			}
+			if SanitiseName(text, fallback) == clip.ID {
+				// Already there, which a search that was asked again
+				// for the same answer would otherwise write twice.
+				refused = true
+				return errNotAdded
+			}
+		}
+		list, _ := top.values["clips"].([]any)
+		top.set("clips", append(list, added))
+		return nil
+	})
+	if refused {
+		return errNotAdded
+	}
+	return err
 }
 
 func findClip(clips []*object, id string) (*object, error) {

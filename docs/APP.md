@@ -354,7 +354,9 @@ place.
 - **The clip list waits in the shape it will have.** While the transcript is
   still coming, and while a search runs, the list holds as many rows as the
   search was asked for, with the light passing over them, so it does not
-  fill out from four rows to twelve. Nothing is written in the empty space:
+  fill out from four rows to twelve. The clips of earlier searches are not
+  counted against it, and each clip that lands takes the place of one of
+  the rows. Nothing is written in the empty space:
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
@@ -515,10 +517,16 @@ place.
     - **What a search is doing is the head of the list itself.** **New**
       becomes **Cancel** while work runs, and the line under it fills up as
       the work goes on. Nothing is added to the column, so the clips never
-      move down. A render shows there in the same way. The model answers
-      with the whole set at once, so the clips all land together, and they
-      are in the list the moment the answer is written rather than when the
-      job has wrapped up.
+      move down. A render shows there in the same way.
+    - **Clips arrive one at a time.** The engine writes each clip to the
+      plan the moment it is framed, while the model is still writing the
+      next, so the list fills in a row at a time and the rows still to come
+      shrink as it does. The first clip found is put on screen as soon as
+      it lands, unless another clip was picked after the search began: a
+      clip taken away from the hand that is working on it is worse than
+      one shown a little later. A clip that has landed can be played,
+      trimmed and corrected while the rest are still coming. Stopping a
+      search keeps the clips it had found.
     - **New**, above the list, finds clips in the stretch chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a stretch that was searched before and asking

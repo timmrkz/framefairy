@@ -252,10 +252,86 @@ type PlanEntry struct {
 	Keep   [][2]int
 }
 
+// validateEntry checks one clip of an answer, the index-th. It gives the
+// clip, what was wrong with it, and whether anything of it can be used.
+func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool) {
+	var problems []string
+	clip, ok := clipAny.(map[string]any)
+	if !ok {
+		return PlanEntry{}, []string{fmt.Sprintf("clip %d is not an object", index)}, false
+	}
+	rangesIn, ok := clip["keep"].([]any)
+	if !ok || len(rangesIn) == 0 {
+		return PlanEntry{}, []string{fmt.Sprintf("clip %d has no keep ranges", index)}, false
+	}
+	var ranges [][2]int
+	previous := 0
+	for _, itemAny := range rangesIn {
+		item, ok := itemAny.([]any)
+		if !ok || len(item) != 2 {
+			problems = append(problems, fmt.Sprintf("clip %d: a keep range is not a pair", index))
+			continue
+		}
+		first, ok1 := toInt(item[0])
+		last, ok2 := toInt(item[1])
+		if !ok1 || !ok2 {
+			problems = append(problems, fmt.Sprintf("clip %d: a keep range is not numeric", index))
+			continue
+		}
+		if !(1 <= first && first <= lineCount && 1 <= last && last <= lineCount) {
+			problems = append(problems, fmt.Sprintf("clip %d: lines %d-%d are outside 1-%d",
+				index, first, last, lineCount))
+			continue
+		}
+		if last < first {
+			problems = append(problems, fmt.Sprintf("clip %d: range %d-%d is backwards",
+				index, first, last))
+			continue
+		}
+		if first <= previous {
+			problems = append(problems, fmt.Sprintf("clip %d: range %d-%d overlaps the one before it",
+				index, first, last))
+			continue
+		}
+		previous = last
+		ranges = append(ranges, [2]int{first, last})
+	}
+	if len(ranges) == 0 {
+		return PlanEntry{}, problems, false
+	}
+	get := func(key string) string {
+		value, present := clip[key]
+		if !present {
+			return ""
+		}
+		return pyStr(value)
+	}
+	return PlanEntry{
+		Slug:   Scrub(get("slug"), 64),
+		Title:  Scrub(get("title"), 200),
+		Reason: Scrub(get("reason"), 300),
+		Keep:   ranges,
+	}, problems, true
+}
+
+// uniqueSlug gives a clip a slug no clip before it has, the position-th
+// usable one. It says what it changed, if anything.
+func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
+	problem := ""
+	if entry.Slug != "" && seen[entry.Slug] {
+		problem = fmt.Sprintf("clip %d: slug %s was already used", position, pyRepr(entry.Slug))
+		entry.Slug = fmt.Sprintf("%s-%d", entry.Slug, position)
+	}
+	seen[entry.Slug] = true
+	return problem
+}
+
 // ValidatePlan checks the plan is shaped the way we asked, and says precisely
 // what is not. With line numbers there is nothing to interpret, a number
 // either names a line or it does not.
 func ValidatePlan(data map[string]any, lineCount int) ([]PlanEntry, []string, error) {
+	// The checks are made one clip at a time, so an answer read as it is
+	// written goes through exactly the same ones as an answer read whole.
 	var problems []string
 	clipsAny := data["clips"]
 	clips, ok := clipsAny.([]any)
@@ -268,77 +344,18 @@ func ValidatePlan(data map[string]any, lineCount int) ([]PlanEntry, []string, er
 
 	var good []PlanEntry
 	for i, clipAny := range clips {
-		index := i + 1
-		clip, ok := clipAny.(map[string]any)
-		if !ok {
-			problems = append(problems, fmt.Sprintf("clip %d is not an object", index))
-			continue
+		entry, found, ok := validateEntry(clipAny, i+1, lineCount)
+		problems = append(problems, found...)
+		if ok {
+			good = append(good, entry)
 		}
-		rangesIn, ok := clip["keep"].([]any)
-		if !ok || len(rangesIn) == 0 {
-			problems = append(problems, fmt.Sprintf("clip %d has no keep ranges", index))
-			continue
-		}
-		var ranges [][2]int
-		previous := 0
-		for _, itemAny := range rangesIn {
-			item, ok := itemAny.([]any)
-			if !ok || len(item) != 2 {
-				problems = append(problems, fmt.Sprintf("clip %d: a keep range is not a pair", index))
-				continue
-			}
-			first, ok1 := toInt(item[0])
-			last, ok2 := toInt(item[1])
-			if !ok1 || !ok2 {
-				problems = append(problems, fmt.Sprintf("clip %d: a keep range is not numeric", index))
-				continue
-			}
-			if !(1 <= first && first <= lineCount && 1 <= last && last <= lineCount) {
-				problems = append(problems, fmt.Sprintf("clip %d: lines %d-%d are outside 1-%d",
-					index, first, last, lineCount))
-				continue
-			}
-			if last < first {
-				problems = append(problems, fmt.Sprintf("clip %d: range %d-%d is backwards",
-					index, first, last))
-				continue
-			}
-			if first <= previous {
-				problems = append(problems, fmt.Sprintf("clip %d: range %d-%d overlaps the one before it",
-					index, first, last))
-				continue
-			}
-			previous = last
-			ranges = append(ranges, [2]int{first, last})
-		}
-		if len(ranges) == 0 {
-			continue
-		}
-		get := func(key string) string {
-			value, present := clip[key]
-			if !present {
-				return ""
-			}
-			return pyStr(value)
-		}
-		good = append(good, PlanEntry{
-			Slug:   Scrub(get("slug"), 64),
-			Title:  Scrub(get("title"), 200),
-			Reason: Scrub(get("reason"), 300),
-			Keep:   ranges,
-		})
 	}
 
 	seen := map[string]bool{}
 	for i := range good {
-		position := i + 1
-		slug := good[i].Slug
-		if slug != "" && seen[slug] {
-			problems = append(problems, fmt.Sprintf("clip %d: slug %s was already used",
-				position, pyRepr(slug)))
-			good[i].Slug = fmt.Sprintf("%s-%d", slug, position)
+		if problem := uniqueSlug(seen, &good[i], i+1); problem != "" {
+			problems = append(problems, problem)
 		}
-		seen[good[i].Slug] = true
 	}
 
 	if len(good) == 0 {

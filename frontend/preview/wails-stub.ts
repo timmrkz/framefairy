@@ -278,8 +278,19 @@ export const Call = {
     const carriedOn = () => !!(window as any).__carriedOn;
     const stopped = () => !!(window as any).__stopped;
     const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
-    const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < 2500;
-    const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= 2500;
+    // The search lasts six seconds and its clips land one at a time on the
+    // way, the way the engine writes each one the moment it is framed. They
+    // land in the order the model wrote them, which is not the order of the
+    // episode, so what is new in the list is not always at its end.
+    const searchFor = 6000;
+    const landOrder = [3, 1, 7, 2, 12, 5, 4, 9, 6, 11, 8, 10];
+    const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < searchFor;
+    const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= searchFor;
+    const landed = () => {
+      if (!found || !askedAt()) return [] as number[];
+      const since = Date.now() - askedAt();
+      return landOrder.filter((_, k) => since >= 1500 + k * 350);
+    };
     const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Reading the transcript", fraction: 0.4, remaining: 60 } : undefined });
     switch (method) {
       case "Version":
@@ -372,7 +383,7 @@ export const Call = {
         ]);
       case "Episode":
         if (found) {
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: done() ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: landed().length ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
         }
         if (growing) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: grown, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: false });
@@ -402,8 +413,10 @@ export const Call = {
         return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
       case "Clips":
         if (found) {
-          if (!done()) return Promise.resolve([]);
-          return Promise.resolve(Array.from({ length: 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)));
+          const there = new Set(landed());
+          return Promise.resolve(
+            Array.from({ length: 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
+          );
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve([]);
         return Promise.resolve([
@@ -414,7 +427,7 @@ export const Call = {
         ]);
       case "Coverage":
         if (found) {
-          if (!done()) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
+          if (!landed().length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
           return Promise.resolve({ searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 12 }], free: [{ from: 1800, to: 14423 }] });
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
@@ -711,7 +724,7 @@ export const Events = {
       const timer = setInterval(() => {
         const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;
         if (!at) return;
-        const state = Date.now() - at < 2500 ? "running" : "done";
+        const state = Date.now() - at < 6000 ? "running" : "done";
         fn({ data: { job: { id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Reading the transcript", fraction: 0.4, remaining: 60 } : undefined }, event: { kind: "progress", text: "Reading", elapsed: 1 } } });
       }, 500);
       return () => clearInterval(timer);

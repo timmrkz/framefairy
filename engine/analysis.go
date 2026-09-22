@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func tailRunes(s string, n int) string {
@@ -282,6 +283,31 @@ func settledCrop(samples []timed) (float64, bool) {
 	return values[len(values)/2], true
 }
 
+// cropCache is the framing of each shot, measured once and shared by every
+// clip that shows it. Clips are framed side by side while the model is still
+// writing, so it is locked. Two clips that reach the same shot at the same
+// moment both measure it and get the same answer, which costs a little and
+// is never wrong.
+type cropCache struct {
+	mu    sync.Mutex
+	crops map[float64]*int
+}
+
+func newCropCache() *cropCache { return &cropCache{crops: map[float64]*int{}} }
+
+func (c *cropCache) get(key float64) (*int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	crop, known := c.crops[key]
+	return crop, known
+}
+
+func (c *cropCache) put(key float64, crop *int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.crops[key] = crop
+}
+
 // ClipSegments turns a clip's spans into segments, with one crop per camera
 // angle.
 //
@@ -292,7 +318,7 @@ func settledCrop(samples []timed) (float64, bool) {
 // across the whole clip, each piece is assigned to the shot it sits in, and
 // every piece of the same shot gets the same crop.
 func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
-	source SourceInfo, cropW int, cache map[float64]*int) ([]Segment, error) {
+	source SourceInfo, cropW int, cache *cropCache) ([]Segment, error) {
 	if len(spans) == 0 {
 		return nil, nil
 	}
@@ -317,7 +343,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 				continue
 			}
 			key := roundTo(shotStart, 1)
-			crop, known := cache[key]
+			crop, known := cache.get(key)
 			if !known {
 				// Measured once per shot, not per segment, so removing a
 				// pause never changes the framing.
@@ -329,7 +355,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 					x := int(settled)
 					crop = intPtr(ClampCropX(&x, cropW, source.Width))
 				}
-				cache[key] = crop
+				cache.put(key, crop)
 			}
 			segments = append(segments, Segment{Start: pieceStart, End: pieceEnd, CropX: crop})
 		}
