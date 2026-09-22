@@ -479,6 +479,18 @@ Dock on macOS 26.6.2 the icon keeps its own shape and stands exactly as tall
 as Finder, Terminal and Chrome beside it. So the grid is right and there is
 nothing here to decide again.
 
+**The artwork is flat and stays flat.** In the Dock on macOS 26 the icon
+has a bright rim along its top edge and shades off towards the bottom, so
+it reads as a lit object. None of that is in the file. Measured against the
+same screenshot: the purple we ship is `148, 33, 146` everywhere, and what
+the Dock draws runs from a two-pixel rim at about twice that brightness,
+down through the body, to 57% of it at the bottom. macOS renders the icon
+as a material with a light above it, and the Dock adds its own shadow.
+
+So an icon that looks flat next to the Dock is not a mistake to correct.
+That depth belongs to macOS. Everywhere else the icon goes, Windows, Linux,
+a download page, it is the flat artwork, and depth there has to be drawn.
+
 `build/icon-full-bleed.png` stays, and not for that question. It is the same
 artwork filling the whole square, which is what Windows and a web favicon
 want, because neither insets the way macOS does. Windows takes a `.ico` and
