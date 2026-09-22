@@ -234,6 +234,15 @@ export async function workspace({
     if (await first.count()) {
       await first.click();
       await page.waitForTimeout(800);
+      // And onto the clip's first word. A clip starts a little before the
+      // first thing said in it, the way the engine cuts it, so a playhead
+      // sitting on the clip's own start is sitting in silence and the
+      // caption box is not on screen at all. Anything about the captions
+      // would then be measuring an empty picture. Shift and an arrow step
+      // a word, which is exactly the one step needed.
+      await page.evaluate(() => document.body.focus());
+      await page.keyboard.press("Shift+ArrowRight");
+      await page.waitForTimeout(400);
     }
   }
 

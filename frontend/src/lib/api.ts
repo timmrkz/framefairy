@@ -643,3 +643,61 @@ export function snapCut(
   if (after !== Infinity) end = Math.max(after - keepPause, swallowedTo);
   return [Math.max(0, start), end];
 }
+
+// Where the playhead lands when it is stepped by words, which is what
+// shift and an arrow key do.
+//
+// A second was what they took before, and a second is nothing in
+// particular: it lands in the middle of a word as often as not, it walks
+// four words at a time where someone speaks quickly and none at all across
+// a pause. A word is the thing the picture is showing. The caption lights
+// up the word being spoken, so stepping to the next word steps that light
+// one word on, which is what the keys are for.
+//
+// **It is decided by which word the playhead is in, not by how far it is
+// from one.** That is the whole of why this works, and comparing against a
+// distance is why it did not. The playhead is not where it was put: a
+// video element answers with the frame it is showing, so a playhead sent
+// half a frame into a word comes back somewhere else inside that frame,
+// and it can come back later than it was sent. Stepping back then measured
+// the distance to the word it was already on, found it far enough, and
+// sent the playhead to the same place again. That is a key that does
+// nothing at all, and there was no way out of it but the mouse.
+//
+// Deciding by the word cannot do that, because the answer is always a
+// different word from the one the playhead is in, however the clock
+// rounds.
+//
+// **It lands a frame into the word, never on its edge.** A word boundary
+// is exactly where the question "is this word being spoken" has no steady
+// answer: the caption runs on the clip's clock and the playhead on the
+// episode's, they are worked out by different arithmetic, and the frame
+// the picture settles on is a third answer again. A frame in is inside the
+// word by far less than the gap to the next one, so the picture shows the
+// same frame and the right word is lit. A word shorter than two frames is
+// entered by half of itself.
+//
+// Null means there is nowhere to go: no words heard here yet, or the
+// playhead is already before the first or past the last of them.
+// Where the playhead goes to stand on a word: a frame in, never on the
+// edge. A word shorter than two frames is entered by half of itself.
+export function intoWord(word: { start: number; end: number }, frame: number): number {
+  return Math.min(word.start + frame, (word.start + word.end) / 2);
+}
+
+export function wordStep(words: Word[], at: number, back: boolean, frame: number): number | null {
+  if (!words.length) return null;
+  // The last word that has begun, and whether the playhead is still in it.
+  let here = -1;
+  for (let i = 0; i < words.length; i++) {
+    if (at >= words[i].start) here = i;
+    else break;
+  }
+  const inside = here >= 0 && at < words[here].end;
+  // Back out of a word is the word before it. Back out of the silence
+  // after a word is that word, because it is the one just spoken.
+  const target = back ? (inside ? here - 1 : here) : here + 1;
+  const word = words[target];
+  return word ? intoWord(word, frame) : null;
+}
+

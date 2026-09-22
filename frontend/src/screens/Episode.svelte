@@ -10,6 +10,7 @@
     captionYStep,
     clock,
     errorText,
+    intoWord,
     mediaURL,
     snapCaptionY,
     type CaptionFont,
@@ -18,10 +19,11 @@
     type CoverageView,
     type EpisodeStatus,
     type SourceView,
+    type Word,
     type WindowView,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
-  import { Heard, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
+  import { Heard, inEpisode, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -31,6 +33,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let { path, onchange }: { path: string; onchange: () => void } = $props();
 
@@ -547,14 +550,26 @@
     }
   }
 
+  // Corrections are made one word after another, and each one is a call
+  // and a reading of every clip after it. Two of them are in the air the
+  // moment a second word is clicked before the first has landed, which is
+  // all it takes: clicking a word commits the one before it. Nothing says
+  // they come back in the order they went out, and the loser paints the
+  // clip list with what it read before the newer correction was written,
+  // which is the older word back on screen.
+  const words = new Newest();
+
   async function setWord(clip: ClipEntry, start: number, text: string) {
     problem = "";
+    const ticket = words.send();
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
       // Other clips with the same word changed too.
-      await refreshClips();
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      const list = (await api.clips(path)) ?? [];
+      if (!words.keep(ticket)) return;
+      clips = list.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
+      words.keep(ticket);
       problem = errorText(err);
       throw err;
     }
@@ -586,6 +601,36 @@
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
   let captions = $state<CaptionsView | null>(null);
+
+  // The words the caption lights up, put back on the episode's clock.
+  //
+  // This is the list shift and an arrow key walk, and it is not the list
+  // of words the transcript holds. A correction that reads as two words
+  // is two words in the caption and one in the transcript, so a word
+  // added by hand stood in no list the timeline had and the keys stepped
+  // straight past it. A word a cut takes out is the other way round: in
+  // the transcript, never in the caption, and landing on it lit nothing.
+  //
+  // Reading the caption is what makes both right at once, and it will go
+  // on being right, because it is the same list either way: whatever
+  // lights up is what these keys walk.
+  const lit = $derived.by(() => {
+    const pieces = current?.segments ?? [];
+    if (!pieces.length || !captions?.captions?.length) return [];
+    const out: Word[] = [];
+    for (const cue of captions.captions) {
+      for (const line of cue.lines) {
+        for (const word of line.words) {
+          out.push({
+            start: inEpisode(pieces, word.start),
+            end: inEpisode(pieces, word.end),
+            text: word.text,
+          });
+        }
+      }
+    }
+    return out;
+  });
   let fonts = $state<CaptionFont[]>([]);
 
   // Where the captions sit, for every clip of every episode. Dragging the
@@ -853,12 +898,15 @@
   // for, and going back to the clip is what clicking its card does. Two
   // controls that say what they do, and no third that does it uninvited.
 
-  // The arrows up and down walk the clip list, the way the arrows left and
-  // right walk the episode on the clip timeline. Each step takes the next
-  // clip and puts the playhead at its start, so the whole list can be gone
-  // through without reaching for the pointer.
+  // Shift and the arrows up and down walk the clip list, the way shift and
+  // the arrows left and right walk its words. Shift is what means a clip
+  // or a caption throughout: without it the arrows move the playhead a
+  // frame, with it they move it a word and a clip. Each step takes the
+  // next clip and puts the playhead at its start, which is where a short
+  // begins and so the one frame worth seeing first.
   function walkClips(event: KeyboardEvent) {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (!event.shiftKey) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
@@ -879,6 +927,40 @@
     select(clip.key);
     seekTo(clip.start);
   }
+
+  // Walking the words runs off the end of a clip into the one beside it:
+  // shift and the left arrow from the first word of a clip is the last
+  // word of the one before it, and the right arrow from the last word is
+  // the first word of the next. A clip's words are not there to walk on
+  // to, they arrive with its captions, so the clip is chosen and where to
+  // land in it is held until they do.
+  //
+  // It is held by the clip it is about. A clip whose captions never arrive
+  // would otherwise leave this standing, and the next clip chosen by any
+  // other means would be jumped about in for no reason anyone could see.
+  let landOn = $state<{ key: string; last: boolean } | null>(null);
+
+  function walkClip(back: boolean) {
+    const list = shown.filter((c) => c.key !== removed?.key);
+    const here = list.findIndex((c) => c.key === selected);
+    if (here < 0) return;
+    const next = list[here + (back ? -1 : 1)];
+    if (!next) return;
+    // The captions on hand belong to the clip being left, so they are put
+    // down before the new clip is chosen. Until the new ones arrive there
+    // are no words, which is what the landing below waits for.
+    captions = null;
+    landOn = { key: next.key, last: back };
+    select(next.key);
+  }
+
+  $effect(() => {
+    const want = landOn;
+    if (!want || current?.key !== want.key || !lit.length) return;
+    landOn = null;
+    const word = want.last ? lit[lit.length - 1] : lit[0];
+    seekTo(intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+  });
 
   onMount(() => {
     window.addEventListener("keydown", walkClips);
@@ -1105,21 +1187,21 @@
                 </button>
               {/if}
             </div>
-            <label class="setting">
+            <label class="setting" for="caption-font">
               <span>Font</span>
               <!-- The list of faces stands in the same box as the numbers,
                    with its own mark where their unit is, so every setting
                    in the column ends in the same place whatever draws it. -->
               <span class="field">
-                <select
+                <Pick
                   value={captions.style.font}
-                  onchange={(e) => setCaptionStyle(e.currentTarget.value, 0)}
-                >
-                  {#each fonts as font (font.name)}
-                    <option value={font.name}>{font.name}</option>
-                  {/each}
-                </select>
-                <span class="unit mark"><Icon name="pick" size={12} /></span>
+                  options={fonts.map((f) => ({ value: f.name, label: f.name }))}
+                  onpick={(name) => setCaptionStyle(name, 0)}
+                  id="caption-font"
+                  label="Font"
+                  title="The face the captions are written in"
+                  align="right"
+                />
               </span>
             </label>
             <label class="setting">
@@ -1170,6 +1252,8 @@
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
+          onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
+          locked={renderingCurrent}
           oncaptionmoved={(y) => {
             captionsWere = null;
             captionY = y;
@@ -1243,6 +1327,7 @@
         working={!!transcribing}
         locked={renderingCurrent}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
+        {lit}
         bind:numbers
         onseek={(t) => player?.seek(t)}
         ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}
@@ -1251,7 +1336,7 @@
         onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
-        onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
+        onwalkclip={walkClip}
       />
       <!-- One row under the clip up close, so the range picker and the
            waveform stand together: what plays on the left, what the
@@ -1536,38 +1621,12 @@
   }
 
   .field,
-  .setting input,
-  .setting select {
+  .setting input {
     width: 116px;
   }
 
-  .setting input,
-  .setting select {
+  .setting input {
     color: var(--text);
-  }
-
-  /* Every setting in the column ends in the same place, the face along
-     with the numbers. A list a person picks from is laid out by the
-     system, so it is told where to put its text rather than where to put
-     its box, and the mark the system would draw at its own inset is left
-     out and drawn in the column the units stand in instead. Otherwise the
-     face ends 17px further right than every number above it. */
-  .setting select {
-    appearance: none;
-    text-align: right;
-    text-align-last: right;
-    padding-right: 29px;
-  }
-
-  /* The mark sits where a unit sits and is read from the same left edge,
-     so it is one space after the face just as s is one space after a
-     number. It is the colour of a unit, not of the text, because it says
-     what the field is rather than what it holds. */
-  .unit.mark {
-    display: flex;
-    align-items: center;
-    height: var(--control-h);
-    line-height: normal;
   }
 
   /* The stepper the system draws inside a number field would stand between

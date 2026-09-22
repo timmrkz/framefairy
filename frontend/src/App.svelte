@@ -251,10 +251,7 @@
             onclick={() => nav.go({ name: "episode", path: ep.source })}
           >
             <span class="dot {dotFor(ep)}"></span>
-            <span class="text">
-              <span class="name">{ep.name}</span>
-              <span class="muted small">{summary(ep)}</span>
-            </span>
+            <span class="name" title={summary(ep)}>{ep.name}</span>
           </button>
           <span class="tools">
             <button
@@ -549,7 +546,7 @@
      in the same place shut and open and nothing moves as the sidebar
      goes over. An episode nobody has added yet has nothing to show on the
      rail at all. */
-  aside:not(.open) .text,
+  aside:not(.open) .episode .name,
   aside:not(.open) .tools,
   aside:not(.open) li.empty {
     display: none;
@@ -627,11 +624,16 @@
   }
 
   /* A whole number of pixels high, and the same number whether the sidebar
-     is shut or open: two lines of text and the padding around them come to
-     54, and saying so rather than letting the text say it means the row
-     does not shrink to its lamp when the text goes. The lamp would drop up
-     the list as the sidebar opened otherwise, which is the one thing a
+     is shut or open: the 36 the rail gives every icon, so a row shut is an
+     icon's box around its lamp and a row open is the same box with the
+     name beside it. Saying the height rather than letting the text say it
+     means the row does not shrink to its lamp when the name goes, and a
+     lamp that dropped up the list as the sidebar opened is the one thing a
      sidebar sliding over must not do.
+
+     It said the episode's state on a second line, and 54 was the height of
+     two. One line is what a row of this kind holds everywhere else on the
+     rail, and the state is in the row's own title for whoever wants it.
 
      The left padding is the foot's, so the lamp stands in the same column
      as every icon on the rail: 4 from the list, 1 of border and 9 here put
@@ -639,21 +641,27 @@
      leaves it on 22, which is the middle of the rail. */
   .episode {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 10px;
     width: 100%;
-    height: 54px;
-    padding: 8px 8px 8px 9px;
+    height: 36px;
+    padding: 0 8px 0 9px;
     text-align: left;
     border-color: transparent;
     background: transparent;
     margin-bottom: 2px;
   }
 
-  /* An icon's box around a lamp, so it is centred on the icons' column.
-     The 5 at the top is what puts it on the middle of the name beside it. */
+  /* An icon's box around a lamp, so it is centred on the icons' column. */
   .episode .dot {
-    margin: 5px 4px 0;
+    margin: 0 4px;
+  }
+
+  /* An even number, so the name sits on a whole pixel in a row of an even
+     height. Thirteen point five at the usual line height is nineteen, and
+     nineteen in thirty-six leaves half a pixel above and below. */
+  .episode .name {
+    line-height: 20px;
   }
 
   .episode.current,
@@ -661,11 +669,9 @@
     background: var(--ink-3);
   }
 
-  .text {
-    display: flex;
-    flex-direction: column;
+  /* Room for the two marks, so a long name never runs under them. */
+  .episode .name {
     min-width: 0;
-    /* Room for the two marks, so a long name never runs under them. */
     padding-right: 48px;
   }
 
@@ -673,7 +679,8 @@
      row, the way the trash can does on a clip. */
   .tools {
     position: absolute;
-    top: 8px;
+    /* Centred on the row: a 24 tall mark in a 36 tall row. */
+    top: 6px;
     right: 6px;
     display: flex;
     gap: 2px;

@@ -106,12 +106,17 @@ under the pointer that came for it. A dot on the Activity mark says work is
 in hand. It sits over the mark, so nothing on the rail moves when a job
 starts or ends.
 
-The episodes stay on the rail too, as their lamps. An episode's row keeps
-its height and its lamp keeps its column whether the sidebar is shut or
-open, so the rail is one column of marks from the top to the bottom and
-nothing in it moves as the sidebar goes over. What the episode is called
-and what it has are what wait for the room, along with the two marks on its
-row, which need a pointer on the row anyway.
+The episodes stay on the rail too, as their lamps. **An episode's row is
+one line and the rail's own 36 pixel box**, so shut it is a square around
+its lamp, exactly like every other mark on the rail, and open it is the
+same square with the name beside it. It keeps that height and its lamp
+keeps its column whether the sidebar is shut or open, so the rail is one
+column of marks from the top to the bottom and nothing in it moves as the
+sidebar goes over. The name is what waits for the room, along with the two
+marks on the row, which need a pointer on the row anyway. What the episode
+has, its transcript and its clip sets, is in the row's own title: it is
+one line about state on a rail of lamps, and it made the row two lines
+tall, which left the lamp adrift in a box half again its size.
 
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
@@ -302,9 +307,14 @@ place.
   the track and is whole even at the very start or the very end. It is the one
   thing in the app with a hue that is not the accent, so it can be found on
   a dark track, on a waveform and inside a clip alike.
-- **The arrows up and down walk the clip list**, the way left and right walk
-  the episode: each step takes the next clip and puts the playhead at its
-  start.
+- **Shift and the arrows up and down walk the clip list**, the way shift
+  and left and right walk its words: each step takes the next clip and
+  puts the playhead at its start, which is where a short begins and so the
+  one frame worth seeing first. **Shift is what means a clip or a caption
+  throughout.** Without it the arrows move the playhead a frame, which is
+  the episode and nothing else. With it they move it a word and a clip,
+  and the two read as one idea rather than two keys that happen to be
+  next to each other.
 - **The pane is the clip list and nothing else.** It says **Clips** and
   carries **New**, whatever else is happening. The transcription is not in
   it at any point: it has a place of its own, on the range picker, at the
@@ -367,15 +377,111 @@ place.
   keyboard. Clicking the video preview plays or pauses.
     - For the selected clip, everything outside its vertical crop is dimmed
       and the frame sits where the render will put it. The frame is dashed
-      while the playhead is in a part the clip cuts out.
+      while the playhead is in a part the clip cuts out. **The frame a
+      piece begins in belongs to it**, and so does the one it ends in: the
+      playhead is put on a clip's first second and the picture answers with
+      the frame it is showing, which begins a little before it, so without
+      that the crop frame went dashed at the start of the clip it belonged
+      to and one press of an arrow key put it right.
     - Playing a clip jumps over its cuts and stops where the clip ends,
-      however it was started. **Loop** starts it over instead, which is how
+      however it was started. **It seeks first only when the picture has
+      to move.** A seek that changes nothing still interrupts the play, and
+      a play refused by a seek is a press of the space bar that did
+      nothing, with the second press working. The playhead standing a hair
+      before a clip's start counts as standing at it, for the same reason
+      the crop frame is solid there.
+    - **A seek is chased while it has not landed, and never while the
+      picture is playing.** The webview drops a seek silently when the
+      machine is busy, so it is asked again, then the file is read once
+      more, then it gives up. A playing clock is meant to run away from
+      where it was sent, which reads exactly like a seek that never
+      landed, and chasing it pulls the picture back to where playing began
+      and then empties the element. **Loop** starts it over instead, which is how
       a clip is judged. It stays on until it is switched off again.
     - While the playhead is inside the clip, its captions are drawn inside
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
       the look, so a correction shows up here at once.
-- **Moving the captions:** drag the caption box up or down. It lands on a
+- **Picking from a list:** every list in the app is the app's own, in
+  `frontend/src/components/Pick.svelte`. There is no `<select>` anywhere,
+  because a `<select>` is drawn by the system: on macOS the webview hands
+  the whole list to AppKit, which paints it white with a blue row and a
+  tick, in a box that has nothing to do with the dark workspace around it,
+  and no stylesheet can reach it. The trigger is a control like any other
+  control, the same height with the same border and the same background,
+  with the mark where a unit would be. **The list opens right under the
+  trigger, hangs on its right edge and grows away from it**, out to the
+  left, as wide as the names in it need. A row keeps the same room for its
+  tick that the trigger keeps for its mark, so a name in the list ends
+  where the name on the trigger ends, whatever the name is. The right edge
+  of the whole thing is one line down the column, which is what that
+  column asks of everything in it, and no name is ever cut short in the
+  list, because the list is where a name is read.
+
+  **The width it is measured at is the width it grows from.** Which way a
+  list grows is the placement's to decide, and it decides from the width
+  it measures, before the stylesheet has run its rules. A list told to be
+  the trigger's width and then widened to fit its longest name is measured
+  first and widened after, so the placement hangs the trigger's width on
+  the right edge and every pixel the list then gains goes out the other
+  way, over the edge every field in that column ends on. `max-content` is
+  the width before anything is measured, so the placement measures what it
+  will get.
+
+  A name longer than the window has room for is the one case a list cannot
+  grow into, and the whole of a name is in the row's title either way. The row under the pointer and the row the
+  keyboard is on are the same row, in `--ink-3`, and what is chosen is in
+  the accent with a tick that keeps its place whether or not it is there.
+  The trigger keeps room for the longest thing the list can say, so a row
+  never changes width as it is used. It is built on
+  [bits-ui](https://bits-ui.com), the headless half of shadcn-svelte, which
+  brings the keyboard, the roles, the focus, the typeahead and the floating
+  placement, and no look at all.
+- **Correcting a word:** click it in the caption box, in the picture, where
+  a short will show it. A word under the pointer is framed in the accent and
+  the pointer becomes a caret, so what can be corrected says so without a
+  word of instruction. The caret lands where the hand clicked, letters are
+  typed and taken out from there, Enter saves and Escape leaves the word as
+  it was. Clicking a word stops the picture, because a caption that moved on
+  under the caret would leave the hand correcting a word that is no longer
+  there. The frame and the caret belong to the interface and not to the
+  render: nothing of them is ever burned into a short, and **the frame is
+  all the interface adds**. A word being corrected takes no background of
+  its own. One would read as a second highlight pill, in the app's colour,
+  on a word nobody is speaking, and on the word that is being spoken it
+  would take away the colour the render really burns in. The picture goes
+  on showing what the render will show while a word in it is being typed.
+  - The correction applies to every clip with that word, because it belongs
+    to the episode and not to the clip. It is kept in
+    `<episode>.framefairy/logs/corrections.json` and applied every time the
+    transcript is read.
+  - **A correction may hold more than one word.** Where the recogniser heard
+    one word and two were said, writing both splits the word it measured
+    between them, so the captions break and highlight them one by one.
+    Writing one word again makes it one word again. A word that was split is
+    drawn in two halves, and clicking either one hands back the whole of it
+    to correct, with the other half out of the way while it is being typed.
+  - **The captions run on the clip's clock and a correction belongs to the
+    episode.** A clip's clock has its cuts taken out of it, so the two
+    clocks run apart by however much the cuts hold. The middle of the
+    caption word is read back through the clip's pieces to find the word of
+    the episode it stands for, and the middle rather than the edge because
+    both halves of a split word have to point at the one word they came
+    from. `inEpisode` and `saidWord` in `frontend/src/lib/flow.ts` are the
+    way back, with tests.
+- **Moving the captions:** drag the caption box up or down by its handle,
+  a ring around the box that draws itself in the accent the moment the
+  pointer comes near and is invisible the rest of the time. The whole of
+  the box that is not a word takes hold of it, the ring reaches a little
+  past its edges so there is somewhere to take hold even where a word runs
+  to the end of a line, and the words themselves stay one click from being
+  corrected. Its pointer is the up and down one, not the hand: the crop
+  frame it sits inside is moved sideways and wears the hand, and two
+  things that move in different directions should not say the same thing
+  about themselves. The handle is there because the box stopped being
+  grabbable the day the words in it became fields: what was left was the
+  padding and the spaces between words, a few pixels of a preview, with
+  nothing to say where they were. It lands on a
   step of a grid that appears while it moves, and it stays inside the frame.
   **There is one place for every clip of every episode**, because a place
   that suits one video suits the next one, so the drag saves it as a setting
@@ -503,19 +609,59 @@ place.
   anywhere else: the playhead says it on both timelines. Above that row, the
   clip up close:
     - The arrow keys step the playhead one frame of the episode, and one
-      second with shift, wherever the keyboard is as long as it is not in a
-      field or on an edge of the clip.
+      word with shift, wherever the keyboard is as long as it is not in a
+      field or on an edge of the clip. **A word, because a word is what the
+      picture is showing:** the caption lights up the word being spoken, so
+      shift and an arrow walk that light one word on. A second was what
+      they took before, and a second is nothing in particular. It lands in
+      the middle of a word as often as not, it walks four words at a time
+      where someone speaks quickly and none at all across a pause.
+      - **It walks the words the caption lights up, not the words the
+        transcript holds.** They are not the same list. A correction that
+        reads as two words is two words in the caption and one in the
+        transcript, so a word added by hand stood in no list the timeline
+        had and the keys stepped straight past it. A word a cut takes out
+        is the other way round, in the transcript and never in the caption,
+        and landing on one lit nothing. And a plan keeps the moments it was
+        made with, so a transcript read again since can put the same word a
+        quarter of a second elsewhere. Reading the caption makes all three
+        right at once, and keeps them right, because whatever lights up is
+        what these keys walk.
+      - **Which word to go to is decided by the word the playhead is in,
+        never by how far it is from one.** The playhead is not where it was
+        put: the picture answers with the frame it is showing, which can be
+        later than where the playhead was sent. Measuring a distance then
+        found the word the playhead was already on and sent it to the same
+        place again, so the key did nothing at all and nothing but the
+        mouse got out of it.
+      - The playhead lands a frame inside a word, never on its edge. A
+        boundary is exactly where the question "is this word being spoken"
+        has no steady answer: the caption runs on the clip's clock and the
+        playhead on the episode's, and the frame the picture settles on is
+        a third answer again. On the edge, two words in every five lit
+        nothing at all.
+      - **Past the last word of a clip they carry on into the one beside
+        it**, the left arrow from the first word of a clip landing on the
+        last word of the one before it and the right arrow the other way
+        round. A clip's words arrive with its captions, so the clip is
+        chosen first and the landing waits for them.
+      - Outside a clip there is no caption, so the words that were heard
+        are the only ones there are. Where nothing has been heard yet
+        shift takes a second.
+      - **Which list is walked is decided a whole frame either side of the
+        clip**, for the same reason the crop frame is. Read exactly, a
+        playhead just put at a clip's start is outside it, so the keys
+        walked the transcript instead and the first press after picking a
+        clip landed wherever the word before the clip happened to be.
     - Drag an edge to trim. Edges snap to words the way the render cuts them.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.
-    - The playhead carries a magnifier. Click it for the lens, which
-      magnifies the words around the playhead with the one being spoken
-      highlighted. Another click takes the lens away again, and so does
-      Escape when nothing else is asking for it. Nothing else
-      opens or closes it, so the track stays clear until the words are asked
-      for. The magnifier never moves the playhead, and past the end of the
-      transcript there is nothing to magnify, so it is off there and says
-      so.
+    - **Nothing on the playhead but the playhead.** It carried a magnifier
+      that opened a pill of the words around it, which was where a word was
+      corrected. Words are corrected in the caption box over the picture
+      now, where a short will show them, and a magnifier that could only
+      read was a second place to look at the same words. So it came out,
+      and the track is the waveform and the playhead and nothing else.
     - **The clip is one thing, holes and all.** Two rules in the accent run
       above and below it from its first piece to its last, whatever is cut
       out in between, so a clip with a cut in it reads as one clip and not
@@ -572,8 +718,8 @@ place.
       go of alt part way through goes back to frames and the block says
       so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
-      preview as they are spoken, and the words to correct are in the lens,
-      so the waveform has the whole track to itself.
+      preview as they are spoken, and that is the one place they are
+      written out, so the waveform has the whole track to itself.
     - The waveform is drawn the way an editor draws one: one column of the
       screen per column of the picture, each a whole pixel wide. Nothing is
       ever drawn between two pixels, so it keeps the same weight at every
@@ -590,12 +736,6 @@ place.
       pretending each hundredth of a second was flat.
     - The times sit at the top of both tracks, in the same quiet grey, a
       step above the lines around them and below the waveform inside them.
-    - Click a word in the lens to correct it. Enter saves, Escape cancels.
-      The correction applies to every clip with that word.
-    - A correction may hold more than one word. Where the recogniser heard
-      one word and two were said, writing both splits the word it measured
-      between them, so the captions break and highlight them one by one.
-      Writing one word again makes it one word again.
     - Drag the playhead anywhere on the track and the video preview follows.
     - Time labels along the top say where in the episode the timeline is,
       which is what a swipe needs in order to mean anything. They are at the
@@ -627,8 +767,9 @@ place.
   it is logged as one.
 - **The timeline is always there.** With no clip selected it shows the
   minute around the playhead and follows it as the episode plays, so there
-  is always something saying where you are. Trimming and corrections need a
-  clip, so they appear once one is selected.
+  is always something saying where you are. Trimming needs a clip, so it
+  appears once one is selected, and so does the caption box a word is
+  corrected in.
 
 Every change is saved at once. There is no save button. A changed clip gets
 new captions on its next render.

@@ -5,7 +5,11 @@ import {
   nextWindow,
   pictureIsStale,
   pieceAt,
+  insideClip,
   playingPiece,
+  shouldChase,
+  saidWord,
+  inEpisode,
   shouldLook,
   shouldTranscribe,
   type SearchState,
@@ -403,5 +407,260 @@ describe("pieceAt", () => {
   test("gives the last piece past the end, and zero with no pieces", () => {
     expect(pieceAt(two, 99)).toBe(1);
     expect(pieceAt([], 99)).toBe(0);
+  });
+});
+
+describe("inEpisode", () => {
+  // A clip in two pieces with a two second cut between them. The clip's
+  // own clock runs 0 to 8, the episode's 10 to 20.
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+
+  test("walks the pieces, adding the cuts back", () => {
+    expect(inEpisode(two, 0)).toBe(10);
+    expect(inEpisode(two, 3)).toBe(13);
+    expect(inEpisode(two, 4)).toBe(16);
+    expect(inEpisode(two, 5)).toBe(17);
+  });
+
+  test("stops at the end of the clip", () => {
+    expect(inEpisode(two, 8)).toBe(20);
+    expect(inEpisode(two, 99)).toBe(20);
+  });
+
+  test("gives the time back with no pieces at all", () => {
+    expect(inEpisode([], 7)).toBe(7);
+  });
+});
+
+describe("saidWord", () => {
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+  // The episode's words, on the episode's clock. The third one is inside
+  // the cut, so no caption word can ever point at it.
+  const said = [
+    { start: 10.5, end: 11, text: "Und" },
+    { start: 13, end: 13.6, text: "da" },
+    { start: 14.5, end: 15, text: "hm" },
+    { start: 16.2, end: 17, text: "war" },
+  ];
+
+  test("finds the word a caption word stands for", () => {
+    // On the clip's clock the same words are at 0.5, 3 and 4.2.
+    expect(saidWord(two, said, { start: 0.5, end: 1 })?.text).toBe("Und");
+    expect(saidWord(two, said, { start: 3, end: 3.6 })?.text).toBe("da");
+    expect(saidWord(two, said, { start: 4.2, end: 5 })?.text).toBe("war");
+  });
+
+  test("finds the word both halves of a split one came from", () => {
+    // "war" corrected to "war es" is drawn as two caption words that
+    // together span the one word. Either half corrects the whole.
+    expect(saidWord(two, said, { start: 4.2, end: 4.6 })?.text).toBe("war");
+    expect(saidWord(two, said, { start: 4.6, end: 5 })?.text).toBe("war");
+  });
+
+  test("allows itself the same hair the engine does", () => {
+    // A middle a hundredth of a second past the end of "da" is still "da".
+    expect(saidWord(two, said, { start: 3.61, end: 3.61 })?.text).toBe("da");
+    // A tenth past it is nothing.
+    expect(saidWord(two, said, { start: 3.7, end: 3.7 })).toBe(null);
+  });
+
+  test("points at nothing when nothing is near", () => {
+    expect(saidWord(two, [{ start: 100, end: 101, text: "far" }], { start: 0, end: 1 })).toBe(null);
+    expect(saidWord(two, [], { start: 0, end: 1 })).toBe(null);
+  });
+
+  test("points at nothing with no pieces to read the clock through", () => {
+    expect(saidWord([], said, { start: 10.6, end: 10.9 })).toBe(null);
+  });
+});
+
+// The one assumption the caption box stands on, end to end.
+//
+// The engine lays a clip's captions out by walking the pieces, putting
+// every word of the episode that falls in one onto the clip's own clock,
+// and then splitting any word whose correction reads as several words.
+// That is ClipWords in engine/lines.go with SplitCorrected after it. The
+// caption box clicks its way back along that path, and nothing checks the
+// two agree: TypeScript knows the shape of a word and nothing about where
+// it came from.
+//
+// So the path is walked here, forwards the way the engine walks it and
+// backwards the way the window does, and every word has to come home. If
+// the engine ever lays them out differently this fails, which is the
+// point of writing it down.
+describe("a caption word finds its way home", () => {
+  type Said = { start: number; end: number; text: string };
+
+  // ClipWords: the words of a clip on the clip's own clock.
+  function onClipClock(pieces: { start: number; end: number }[], said: Said[]): Said[] {
+    const out: Said[] = [];
+    let offset = 0;
+    for (const p of pieces) {
+      for (const w of said) {
+        if (w.start < p.start - 0.02 || w.end > p.end + 0.02) continue;
+        out.push({
+          start: offset + (Math.max(w.start, p.start) - p.start),
+          end: offset + (Math.min(w.end, p.end) - p.start),
+          text: w.text,
+        });
+      }
+      offset += p.end - p.start;
+    }
+    return out;
+  }
+
+  // SplitCorrected: a correction that reads as several words is drawn as
+  // several, each taking its share of the one moment by how long it is.
+  function split(words: Said[]): Said[] {
+    const out: Said[] = [];
+    for (const w of words) {
+      const parts = w.text.split(" ").filter(Boolean);
+      if (parts.length < 2) {
+        out.push(w);
+        continue;
+      }
+      const letters = parts.reduce((n, part) => n + part.length, 0);
+      let from = w.start;
+      parts.forEach((part, i) => {
+        const to =
+          i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
+        out.push({ start: from, end: to, text: part });
+        from = to;
+      });
+    }
+    return out;
+  }
+
+  const pieces = [
+    { start: 57, end: 69 },
+    { start: 70, end: 82 },
+  ];
+  // Words of the episode: two in the first piece, one in the cut between
+  // them that no caption can ever show, three in the second. The last one
+  // was corrected into three words, which is what makes the middle rather
+  // than the edge the thing to match on.
+  const said: Said[] = [
+    { start: 57.2, end: 57.6, text: "Und" },
+    { start: 68.4, end: 68.9, text: "da" },
+    { start: 69.2, end: 69.7, text: "hm" },
+    { start: 70.1, end: 70.5, text: "war" },
+    { start: 80.0, end: 80.4, text: "es" },
+    { start: 81.0, end: 81.9, text: "ein echtes Thema" },
+  ];
+
+  test("every caption word points back at the word it came from", () => {
+    const drawn = split(onClipClock(pieces, said));
+    // Five words are drawn from five words heard, with the corrected one
+    // standing as three, and the one inside the cut is not drawn at all.
+    expect(drawn.map((w) => w.text)).toEqual([
+      "Und",
+      "da",
+      "war",
+      "es",
+      "ein",
+      "echtes",
+      "Thema",
+    ]);
+    const home = drawn.map((w) => saidWord(pieces, said, w)?.text ?? "-");
+    expect(home).toEqual(["Und", "da", "war", "es", ...Array(3).fill("ein echtes Thema")]);
+  });
+
+  test("and at the moment the engine keeps it at, to the millisecond", () => {
+    // The engine finds the word by its start, within a thousandth and a
+    // half of a second. Anything that drifts further is a correction that
+    // lands on nothing.
+    const drawn = split(onClipClock(pieces, said));
+    for (const w of drawn) {
+      const home = saidWord(pieces, said, w);
+      expect(home).not.toBe(null);
+      const its = said.find((x) => x.text === home?.text);
+      expect(Math.abs((home?.start ?? -1) - (its?.start ?? -2))).toBeLessThan(0.0015);
+    }
+  });
+
+  test("a word in a cut is never pointed at", () => {
+    const drawn = split(onClipClock(pieces, said));
+    expect(drawn.some((w) => saidWord(pieces, said, w)?.text === "hm")).toBe(false);
+  });
+});
+
+describe("insideClip", () => {
+  const two = [
+    { start: 1677.61, end: 1690 },
+    { start: 1700, end: 1712 },
+  ];
+  // Twenty-five a second, which is what the episodes are.
+  const frame = 0.04;
+
+  test("the playhead inside a piece is inside the clip", () => {
+    expect(insideClip(two, 1680, frame)).toBe(true);
+    expect(insideClip(two, 1705, frame)).toBe(true);
+  });
+
+  test("the playhead in a cut is not", () => {
+    expect(insideClip(two, 1695, frame)).toBe(false);
+  });
+
+  // The one Tim saw. A clip picked from the list puts the playhead on its
+  // first second, and the picture answers with the frame it is showing,
+  // which begins a hundredth of a second before it. The crop frame went
+  // dashed at the start of the clip it belonged to, and one press of an
+  // arrow key put it right.
+  test("the frame a piece begins in belongs to it", () => {
+    // 1677.61 falls a quarter of a frame past one, so the picture settles
+    // on 1677.60 and answers with that.
+    expect(insideClip(two, 1677.6, frame)).toBe(true);
+    expect(insideClip(two, 1677.61 - 0.0000007, frame)).toBe(true);
+  });
+
+  test("and the one it ends in, so nothing blinks at the end", () => {
+    expect(insideClip(two, 1690.02, frame)).toBe(true);
+  });
+
+  test("a whole frame before a clip is still outside it", () => {
+    expect(insideClip(two, 1677.61 - 0.05, frame)).toBe(false);
+  });
+
+  test("no pieces, nowhere inside", () => {
+    expect(insideClip([], 5, frame)).toBe(false);
+  });
+});
+
+describe("shouldChase", () => {
+  const paused = { wanted: 100, at: 90, playing: false, tries: 0 };
+
+  test("a seek that never landed is made again", () => {
+    expect(shouldChase(paused)).toBe(true);
+  });
+
+  test("a seek that landed is not", () => {
+    expect(shouldChase({ ...paused, at: 100 })).toBe(false);
+    expect(shouldChase({ ...paused, at: 99.7 })).toBe(false);
+  });
+
+  test("nothing is chased when nothing was sent", () => {
+    expect(shouldChase({ ...paused, wanted: -1 })).toBe(false);
+  });
+
+  test("it gives up rather than reading the file over and over", () => {
+    expect(shouldChase({ ...paused, tries: 3 })).toBe(false);
+  });
+
+  // The one that turned a play into nothing. Playing seeks first, so every
+  // play arms a chase, and a seek that changes nothing answers with
+  // nothing, so the chase is left running. A second and a bit later the
+  // playing clock is a second and a bit further on, which reads exactly
+  // like a seek that never landed: the picture was pulled back to where
+  // playing began, and on the try after that the file was read again,
+  // which empties the element and stops it dead.
+  test("a playing picture is never chased", () => {
+    expect(shouldChase({ wanted: 100, at: 101.2, playing: true, tries: 0 })).toBe(false);
+    expect(shouldChase({ wanted: 100, at: 90, playing: true, tries: 0 })).toBe(false);
   });
 });

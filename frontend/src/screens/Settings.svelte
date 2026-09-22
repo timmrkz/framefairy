@@ -18,6 +18,7 @@
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import ModelList from "../components/ModelList.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[]>([]);
@@ -188,10 +189,19 @@
       <h2>Finding clips</h2>
       <div class="grid">
         <label for="planner">Model</label>
-        <select id="planner" bind:value={settings.planner}>
-          <option value="local">On this machine</option>
-          <option value="api">Claude API</option>
-        </select>
+        <Pick
+          value={settings.planner}
+          onpick={(v) => {
+            if (settings) settings.planner = v === "api" ? "api" : "local";
+          }}
+          options={[
+            { value: "local", label: "On this machine" },
+            { value: "api", label: "Claude API" },
+          ]}
+          id="planner"
+          label="Model"
+          title="Which model finds the clips"
+        />
         {#if settings.planner === "local"}
           <!-- Not a label: what it names is a list, not a field, and the
                field below has the name that belongs to it. -->
@@ -452,5 +462,13 @@
 
   .hex {
     width: 110px;
+  }
+
+  /* Every field in this column is its own width, no wider than what it
+     holds, so the column is a column of fields and not a column of boxes
+     stretched across the window. A list keeps room for the longest thing
+     it can say, so it is that wide and stays that wide. */
+  .grid :global(button.pick) {
+    width: max-content;
   }
 </style>
