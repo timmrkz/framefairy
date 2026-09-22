@@ -230,7 +230,15 @@
     width: var(--bits-floating-anchor-width);
     min-width: max-content;
     max-height: 320px;
-    padding: 4px;
+    /* Nothing at the sides. A row carries the whole inset by itself, so
+       the list's own padding cannot be added on top of it: the trigger
+       ends its name 29 pixels short of its right edge, being 8 of padding,
+       a 12 wide mark and the 8 between them, and a row ends its name the
+       same 29 short of the list's, being the border, the same 8, the same
+       12 and the same 8. The list stands on the trigger's right edge, so
+       the two names end in one line. With 4 pixels of padding here as
+       well they were out by exactly that. */
+    padding: 4px 0;
     overflow-y: auto;
     color: var(--text);
     background: var(--ink-1);
@@ -289,11 +297,6 @@
     text-overflow: ellipsis;
   }
 
-  /* The trigger's own text ends 28 pixels short of its right edge: eight
-     of padding, a twelve wide mark and the eight between them. A row that
-     is read from the right ends its text the same 28 short of its own
-     right edge, and the list stands on the trigger's right edge, so the
-     names in the list and the name on the trigger end in one line. */
   .pick-row.right .what {
     text-align: right;
   }

@@ -106,12 +106,17 @@ under the pointer that came for it. A dot on the Activity mark says work is
 in hand. It sits over the mark, so nothing on the rail moves when a job
 starts or ends.
 
-The episodes stay on the rail too, as their lamps. An episode's row keeps
-its height and its lamp keeps its column whether the sidebar is shut or
-open, so the rail is one column of marks from the top to the bottom and
-nothing in it moves as the sidebar goes over. What the episode is called
-and what it has are what wait for the room, along with the two marks on its
-row, which need a pointer on the row anyway.
+The episodes stay on the rail too, as their lamps. **An episode's row is
+one line and the rail's own 36 pixel box**, so shut it is a square around
+its lamp, exactly like every other mark on the rail, and open it is the
+same square with the name beside it. It keeps that height and its lamp
+keeps its column whether the sidebar is shut or open, so the rail is one
+column of marks from the top to the bottom and nothing in it moves as the
+sidebar goes over. The name is what waits for the room, along with the two
+marks on the row, which need a pointer on the row anyway. What the episode
+has, its transcript and its clip sets, is in the row's own title: it is
+one line about state on a rail of lamps, and it made the row two lines
+tall, which left the lamp adrift in a box half again its size.
 
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
