@@ -293,7 +293,10 @@ INFO="$OUT/bin/BUILD-ffmpeg.txt"
 	"$FF" -hide_banner -L 2>/dev/null | head -4 | sed 's/^/  /'
 	echo
 	echo "configure, as the binary itself reports it"
-	"$FF" -hide_banner -buildconf 2>/dev/null | sed 's/^/  /'
+	# As ffmpeg prints it, one flag a line, without the blank line it
+	# opens with. The paths in it are the ones this build really used, so
+	# they stay: this is the binary's own record and not our summary of it.
+	"$FF" -hide_banner -buildconf 2>/dev/null | sed '/^[[:space:]]*$/d'
 } >"$INFO"
 
 echo

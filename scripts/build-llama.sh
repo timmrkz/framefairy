@@ -183,11 +183,18 @@ fi
 
 # And on macOS it has to have Metal in it. Without it llama.cpp falls back
 # to the cores, which is the difference between a clip search taking a
-# minute and taking twenty, and nothing else would have said so.
-if [ "$SYSTEM" = Darwin ]; then
-	if ! strings "$LS" 2>/dev/null | grep -q "ggml_metal"; then
+# minute and one taking twenty, and nothing else here would have said so.
+#
+# Asked of the binary, by the name ggml's own log lines are compiled with.
+# Only when there is something to ask with: a check that cannot be made is
+# not a check that failed, and stopping a good build because strings is not
+# installed would be worse than not looking.
+if [ "$SYSTEM" = Darwin ] && command -v strings >/dev/null 2>&1; then
+	if ! strings - "$LS" | grep -q ggml_metal; then
 		echo >&2
-		echo "build-llama.sh: no Metal in this build, so it would run on the cores." >&2
+		echo "build-llama.sh: no Metal in this build, so a model would run on the" >&2
+		echo "cores instead of the media engine. Check that GGML_METAL stayed on:" >&2
+		echo "  grep -i metal $LOG" >&2
 		exit 1
 	fi
 fi
