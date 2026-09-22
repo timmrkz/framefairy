@@ -106,17 +106,31 @@ Windows and Linux are deliberately not in that table yet. Windows has
 render every short made on that system. They go in when those builds are
 first made and looked at.
 
-**Two things to confirm on the first real build**, rather than assume:
+**Checked against ffmpeg's own configure**, release 7.1, rather than taken
+on trust, because the whole decision rests on it.
 
-- that every filter the engine uses is in the non-GPL set. The render uses
-  `crop`, `scale`, `pad`, `afade`, `concat` and `subtitles`, and the
-  analysis uses `select`, `fps` and `format`. All of them look
-  unconditional, and `ffmpeg -L` on the finished build will say LGPL or it
-  will not.
-- that `h264_videotoolbox` at a high enough bitrate is not visibly worse
-  than `libx264 -crf`. The product rule is that the picture stays as close
-  to the original as possible, so this gets looked at rather than assumed.
-  Shorts are twenty to thirty seconds, so the bitrate can be generous.
+`EXTERNAL_LIBRARY_GPL_LIST` is the list of libraries whose use requires
+`--enable-gpl`. In full: `avisynth`, `frei0r`, `libcdio`, `libdavs2`,
+`libdvdnav`, `libdvdread`, `librubberband`, `libvidstab`, **`libx264`**,
+`libx265`, `libxavs`, `libxavs2`, `libxvid`. **libass is not in it.** Its
+filters ask only for libass itself: `ass_filter_deps="libass"` and
+`subtitles_filter_deps="avformat avcodec libass"`.
+
+Every filter the engine uses is outside the GPL set as well. Checked one by
+one against `<name>_filter_deps` in configure: `crop`, `scale`, `pad`,
+`afade`, `concat`, `subtitles`, `select`, `fps`, `format`, `setpts`,
+`asetpts`, `aformat`, `setsar` and `showinfo`. A near miss worth knowing
+about: `cropdetect` **is** GPL and `crop` is not, so a future filter picked
+by name without checking is how this comes back. The GPL filters are things
+like `delogo`, `eq`, `hqdn3d` and `nnedi`, none of which this engine wants.
+
+So one thing is settled and **one thing is still to look at**: whether
+`h264_videotoolbox` at a generous quality is visibly worse than
+`libx264 -crf`. The product rule is that the picture stays as close to the
+original as possible, so this gets looked at on a real render rather than
+assumed. A short is twenty to thirty seconds, so the bitrate can afford to
+be generous. `ffmpeg -L` on the finished build stays the final word on the
+licence.
 
 **What this does not fix.** H.264 is covered by patents, and Shorts and
 Reels both want H.264, so that does not go away in any version of this. But
