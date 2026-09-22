@@ -16,11 +16,13 @@
 # About the grid, because it decides whether the icon looks right beside
 # the system's own. A macOS app icon's rounded square fills about 824 of
 # the 1024, centred, with the rest left for the shadow the system draws.
-# build/icon.png is on that grid. build/icon-full-bleed.png is the same
-# artwork filling the whole square, kept because macOS 26 may mask a
-# legacy .icns into its own shape, and if it does, the full-bleed one is
-# the right input. That is one look on a Mac rather than a guess, and the
-# swap is copying one file over the other.
+# build/icon.png is on that grid, and that was checked in the Dock on
+# macOS 26 rather than assumed: the icon keeps its own shape and stands
+# exactly as tall as the system's own beside it.
+#
+# build/icon-full-bleed.png is the same artwork filling the whole square.
+# It is the master for Windows and for a web favicon, neither of which
+# insets the way macOS does.
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

@@ -471,15 +471,19 @@ the rest is left for the shadow the system draws. An icon that fills its
 square comes out visibly larger than every icon next to it in the Dock.
 `build/icon.png` is on that grid.
 
-`build/icon-full-bleed.png` is the same artwork filling the whole square,
-kept for one reason: macOS 26 changed how icons are built and drawn, and it
-may mask a legacy `.icns` into its own shape. If it does, the full-bleed one
-is the right input and the inset one would come out small inside the mask.
-That is one look on a Mac rather than a guess, and the swap is copying one
-file over the other.
+**Looked at rather than guessed.** It was an open question whether macOS 26,
+which changed how icons are built and drawn, masks a legacy `.icns` into its
+own shape. If it did, an icon on the grid would come out small inside that
+mask and the full-bleed one would be the right input. It does not: in the
+Dock on macOS 26.6.2 the icon keeps its own shape and stands exactly as tall
+as Finder, Terminal and Chrome beside it. So the grid is right and there is
+nothing here to decide again.
 
-Windows wants a `.ico` and Linux wants loose PNGs. Both come from the same
-1024 master when those builds are first made.
+`build/icon-full-bleed.png` stays, and not for that question. It is the same
+artwork filling the whole square, which is what Windows and a web favicon
+want, because neither insets the way macOS does. Windows takes a `.ico` and
+Linux takes loose PNGs, both from that master, when those builds are first
+made.
 
 ## Who builds the disk image
 
