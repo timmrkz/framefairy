@@ -134,7 +134,12 @@
                          and the tick on that side too, so a name in the
                          list starts where the name on the trigger starts
                          and the eye runs down one edge. -->
-                    <div {...row} class="pick-row" class:right={align === "right"}>
+                    <div
+                      {...row}
+                      class="pick-row"
+                      class:right={align === "right"}
+                      title={option.label}
+                    >
                       {#if align === "right"}
                         <span class="what">{option.label}</span>
                         <span class="tick">
@@ -219,16 +224,25 @@
   /* The list itself. It is the panel colour rather than the field colour,
      because it lies over the workspace rather than sitting in it.
 
-     As wide as the trigger, so it opens where the eye already is. bits-ui
-     measures the trigger and hands the width over as a custom property,
-     which is the one number the stylesheet cannot work out for itself.
-     Never narrower than what it holds, though: a trigger that clips a long
-     name to fit a column must not make the list clip it too, because the
-     list is where the name is read. */
+     **Exactly as wide as the trigger, and no wider.** bits-ui measures the
+     trigger and hands the width over as a custom property, which is the
+     one number the stylesheet cannot work out for itself.
+
+     It was allowed to grow past the trigger to fit a long name, and grow
+     it did, out to the right, over the edge every field in that column
+     ends on. Which way a list grows is the placement's to decide and the
+     placement decides it from a width measured before this rule widened
+     it, so the answer came back wrong. At the same width there is nothing
+     to decide: both edges stand on the trigger's, whatever the placement
+     thinks.
+
+     A long name is no worse off for it. The row keeps the same 29 pixels
+     for its mark that the trigger keeps for its own, so the name has three
+     pixels more room in the list than on the trigger, and it ellipsises in
+     the same place either way. */
   .pick-list {
     z-index: 60;
     width: var(--bits-floating-anchor-width);
-    min-width: max-content;
     max-height: 320px;
     /* Nothing at the sides. A row carries the whole inset by itself, so
        the list's own padding cannot be added on top of it: the trigger

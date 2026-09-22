@@ -409,9 +409,18 @@ place.
   tick, in a box that has nothing to do with the dark workspace around it,
   and no stylesheet can reach it. The trigger is a control like any other
   control, the same height with the same border and the same background,
-  with the mark where a unit would be. The list opens right under it and
-  along its left edge, at least as wide as the trigger and never narrower
-  than the longest thing in it. The row under the pointer and the row the
+  with the mark where a unit would be. **The list opens right under the
+  trigger and is exactly its box**, both edges on the trigger's, and a row
+  keeps the same room for its tick that the trigger keeps for its mark, so
+  a name in the list ends where the name on the trigger ends. The whole
+  thing is one column down to the pixel, which is what the settings column
+  asks of everything in it. It was allowed to grow past the trigger to fit
+  a longer name and grew out to the right, over the edge every field in
+  that column ends on: which way a list grows is the placement's to decide
+  and it decided from a width measured before the rule that widened it. At
+  the same width there is nothing to decide. A name too long for the column
+  is cut short in the list the way it is on the trigger, and the whole of
+  it is in the row's title. The row under the pointer and the row the
   keyboard is on are the same row, in `--ink-3`, and what is chosen is in
   the accent with a tick that keeps its place whether or not it is there.
   The trigger keeps room for the longest thing the list can say, so a row
