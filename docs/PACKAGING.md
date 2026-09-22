@@ -74,6 +74,40 @@ too big. It never refuses: a machine's memory can be read wrong and it is
 not the app's place to decide, so it says what it thinks before the
 download rather than after it.
 
+**What a model needs is worked out from how it attends, not from its
+file.** It used to be the file and a quarter more, taken from the
+eighteen gigabytes always quoted for Gemma 4 26B. That fit Gemma by the
+luck of its design and nothing else. Applied to the models added later it
+told a 16 GB Mac to install Ministral 3 8B and a 24 GB Mac to install
+Qwen3 14B, each as the best for it, and neither fits.
+
+The reason is the cache the context lives in. A layer that looks back
+over the whole context keeps a key and a value for every token of it, so
+its cache grows with the search. Most of Gemma 4's layers look back over
+only the last 1024 tokens, so a longer search costs it almost nothing.
+Qwen3 and Ministral have no such layers and pay for every token in every
+layer. And every local search asks for at least 32 768 tokens of context,
+because the room kept for the answer alone is more than the smallest
+context, so this is never a small effect.
+
+So each model in `engine/language.go` carries its shape, read off its
+maker's `config.json`, and what it needs is the weights, plus the cache at
+the context the first search asks for, plus an allowance for llama.cpp's
+own buffers. The allowance is the one number not read off anything. It is
+set on the cautious side, and llama-server prints the real figure in
+`llm-server.log` every time it starts. The first search is judged rather
+than the longest, and a search of more than about an hour and a half asks
+for more than that.
+
+What every Mac is offered, pinned by a test:
+
+| Mac | Offered |
+| --- | --- |
+| 8 GB | nothing, the API is the way through |
+| 16 GB | Gemma 4 12B, tight |
+| 18 and 24 GB | Gemma 4 12B |
+| 32 GB and up | Gemma 4 26B A4B |
+
 **Every model is pinned and every model comes from its own maker.** The
 sizes and the checksums are read off the real files through the Hugging
 Face API rather than guessed, which matters: the first one was guessed once

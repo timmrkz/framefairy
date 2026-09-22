@@ -124,10 +124,9 @@ func (m LanguageModel) NeedsAt(ctx int) int64 {
 
 // LanguageModels is every model that can be installed, largest first.
 //
-// Four models from three houses, across the range of machines somebody
-// might have: the largest wants a machine with plenty and the smallest
-// runs on one with sixteen gigabytes. Which of them a given machine is
-// offered is RecommendedFor below.
+// Four models from three houses. Which of them a given machine is offered
+// is RecommendedFor below, and the smallest machine that is offered one at
+// all has sixteen gigabytes.
 //
 // Every one is published by whoever made the model rather than quantised
 // by somebody else afterwards, so what is fetched is what its maker meant

@@ -56,8 +56,9 @@ model that swaps takes minutes to answer rather than seconds. The app reads
 how much memory the machine has and says, beside each model, **Best for
 this machine**, **Fits this machine**, **Tight on this machine** or **Too
 big for this machine**, with the machine's own figure above the list so the
-judgement can be checked. The best one is simply the largest the machine
-can hold comfortably.
+judgement can be checked. The best one is the largest model the machine
+can hold comfortably, largest by the model and not by the memory it
+takes, because the two are not the same thing: see PACKAGING.md.
 
 Nothing is hidden and nothing is refused: a model the app thinks is too big
 can still be installed, because a machine's memory can be read wrong and it
