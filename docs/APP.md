@@ -42,6 +42,13 @@ under the pointer that came for it. A dot on the Activity mark says work is
 in hand. It sits over the mark, so nothing on the rail moves when a job
 starts or ends.
 
+The episodes stay on the rail too, as their lamps. An episode's row keeps
+its height and its lamp keeps its column whether the sidebar is shut or
+open, so the rail is one column of marks from the top to the bottom and
+nothing in it moves as the sidebar goes over. What the episode is called
+and what it has are what wait for the room, along with the two marks on its
+row, which need a pointer on the row anyway.
+
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
 keep the episode's files or delete them. The box names the folder they are
@@ -197,18 +204,27 @@ place.
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the edge is taken from the waveform
   itself, so the light never lies over a waveform that is already drawn. The
-  range picker itself stays quiet: what is not transcribed is darker, with a
-  line of the muted grey at the edge, and the edge moves as the transcript
-  grows. The line is what carries it. Two greys this dark are about 1.2 to 1
-  against each other however far apart they are put, measured off the
-  pixels, because lightness is compressed at this end of the scale, so the
-  shade alone can never say where the transcript has got to. A line can: it
-  carries its contrast in the step across it rather than in the area, and it
-  is the edge the eye follows as the transcript grows. It moves with the work, not
+  range picker carries the reading of the episode in the app's own words:
+  what is not transcribed is darker and breathes while the reading runs,
+  because it is a place waiting to be filled, and the line where the
+  reading has got to is the head of a fill, the same bright line with a
+  glow that the head of every other fill in the app carries. The line is
+  what carries it. Two greys this dark are about 1.2 to 1 against each
+  other however far apart they are put, measured off the pixels, because
+  lightness is compressed at this end of the scale, so the shade alone can
+  never say where the transcript has got to. A line can: it carries its
+  contrast in the step across it rather than in the area, and it is the
+  edge the eye follows as the transcript grows. A hairline of the muted
+  grey did that job before and did it too quietly to see: measured off the
+  pixels it stood at 53 against a track of 48, a step of five in 255. The
+  fill's head stands at 189 against 54, a step of 135. It breathes only
+  while the reading runs, because an episode read half way and left alone
+  is not work in hand. It moves with the work, not
   with the saving of it: the transcript is written to disk every few
   seconds, but every chunk the recogniser finishes says how far it has come,
-  and the edge follows that. The only thing on that track that moves of its
-  own accord is the window while a search runs.
+  and the edge follows that. Nothing on that track moves of its own accord
+  unless work is running on it: the window while a search runs, and the
+  stretch with no transcript yet while the reading runs.
 - **The clip list is a stack of cards**, each clip its own, with air
   between them and the app's colour down the edge of the chosen one. It has
   no box around it: the ends go under a veil, so a card scrolling out of
