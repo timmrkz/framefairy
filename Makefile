@@ -13,6 +13,7 @@
 # The rest, for when you want one part of it:
 #
 #   make motion     the five ways the app shows work in hand, in a browser
+#   make app        the macOS bundle, Frame Fairy.app, which make run starts
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make llama      build the llama-server we ship again, from scratch
 #   make tools-archive
@@ -83,7 +84,7 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -115,7 +116,7 @@ tools-beside:
 	fi
 
 help:
-	@sed -n '1,29p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,30p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -177,8 +178,26 @@ $(BIN)/framefairy-train$(EXE): modules
 	@echo "Building $@"
 	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy-train
 
-run: all
+# The bundle a customer gets, made out of what is already in bin/. It is
+# not only for shipping: make run starts it, so the app run every day has
+# the same Info.plist, the same privacy prompts and the same tools inside
+# the same folder as the one a customer opens. See docs/PACKAGING.md.
+#
+# Only on macOS. A .app on another system would be a folder nothing reads.
+app: all
+ifeq ($(UNAME),Darwin)
+	@sh scripts/bundle-macos.sh $(BIN) $(BIN)
+endif
+
+# Started from inside the bundle rather than with open, so the log stays in
+# this terminal. macOS reads the Info.plist either way, because it finds the
+# bundle by walking up from the program, so the prompts are the real ones.
+run: app
+ifeq ($(UNAME),Darwin)
+	@"$(BIN)/Frame Fairy.app/Contents/MacOS/framefairy-app"
+else
 	@$(BIN)/framefairy-app$(EXE)
+endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
 # LGPL. make builds it once, when it is not there. This builds it again

@@ -1,0 +1,176 @@
+#!/bin/sh
+# Puts the built programs into "Frame Fairy.app", the folder Finder draws as
+# one icon.
+#
+#   scripts/bundle-macos.sh [BINDIR] [OUTDIR]
+#
+# This is not only a packaging step. It is what make run starts, so the
+# thing run every day and the thing a customer runs are the same shape: the
+# same Info.plist, the same privacy prompts, the same ffmpeg and
+# llama-server inside the same folder, the same speech libraries found the
+# same way. The only thing a customer will have that this does not is the
+# signature. A bug in any of the rest then shows up on the day it is made
+# rather than on the day of a release.
+#
+# See docs/PACKAGING.md. Nothing here signs anything: the ad hoc signature
+# carry-libs.sh leaves is enough to run on the machine that built it, and
+# Developer ID signing and notarisation are their own step.
+set -e
+
+BINDIR=${1:-bin}
+OUTDIR=${2:-bin}
+NAME="Frame Fairy"
+EXE=framefairy-app
+
+if [ "$(uname -s 2>/dev/null)" != Darwin ]; then
+	echo "bundle-macos.sh: a .app is a macOS thing and this is not a Mac." >&2
+	exit 1
+fi
+if [ ! -x "$BINDIR/$EXE" ]; then
+	echo "bundle-macos.sh: $BINDIR/$EXE is not built. Run make first." >&2
+	exit 1
+fi
+
+# The version lives in one place and is read from it, so a bundle can never
+# claim a version the program does not.
+VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' \
+	"$(dirname "$0")/../engine/log.go")
+[ -n "$VERSION" ] || {
+	echo "bundle-macos.sh: cannot read the version out of engine/log.go" >&2
+	exit 1
+}
+
+APP="$OUTDIR/$NAME.app"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
+
+cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
+
+# The tools we ship, beside the program, which is where engine/tools.go
+# looks before the search path. So the bundle renders with our ffmpeg and
+# runs a local model with our llama-server, with no search path at all.
+for tool in ffmpeg ffprobe llama-server; do
+	if [ -x "$BINDIR/$tool" ]; then
+		cp "$BINDIR/$tool" "$APP/Contents/MacOS/$tool"
+	else
+		echo "  no $tool in $BINDIR, so the bundle will look on the search path for it"
+	fi
+done
+# Their licence texts travel with them. LGPL asks for it and MIT asks for
+# it, and it is two files.
+for licence in "$BINDIR"/LICENSE-*; do
+	[ -f "$licence" ] && cp "$licence" "$APP/Contents/MacOS/"
+done
+
+# The speech libraries. carry-libs.sh has already rewritten the program to
+# look in @executable_path/../Frameworks, which from Contents/MacOS is
+# exactly this folder, so copying them here is the whole of it.
+if [ -d "$BINDIR/lib" ]; then
+	cp "$BINDIR"/lib/*.dylib "$APP/Contents/Frameworks/" 2>/dev/null || true
+fi
+
+# An icon if there is one. There is no artwork in this repository yet, so
+# the bundle takes the system's blank icon until build/icon.icns exists.
+# Saying nothing about it would leave somebody wondering why the Dock looks
+# unfinished.
+ICON=""
+if [ -f build/icon.icns ]; then
+	cp build/icon.icns "$APP/Contents/Resources/icon.icns"
+	ICON='	<key>CFBundleIconFile</key>
+	<string>icon</string>'
+else
+	echo "  no build/icon.icns, so this one wears the blank system icon"
+fi
+
+# The purpose strings are the words macOS puts in the prompt when the app
+# reads a folder it has not been let into. An app with none of them gets a
+# prompt with a blank reason, which is what somebody who has just paid for
+# it would see. They say what the app does with the folder, because that is
+# the question being asked.
+cat >"$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>$NAME</string>
+	<key>CFBundleDisplayName</key>
+	<string>$NAME</string>
+	<key>CFBundleExecutable</key>
+	<string>$EXE</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.framefairy.app</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$VERSION</string>
+	<key>CFBundleVersion</key>
+	<string>$VERSION</string>
+$ICON
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Frame Fairy opens the episodes you keep on the Desktop and writes each one's clips in a folder beside the video.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Frame Fairy opens the episodes you keep in Documents and writes each one's clips in a folder beside the video.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Frame Fairy opens the episodes you keep in Downloads and writes each one's clips in a folder beside the video.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Frame Fairy opens the episodes you keep on an external disk and writes each one's clips in a folder beside the video.</string>
+</dict>
+</plist>
+PLIST
+
+# Four bytes that say the same as CFBundlePackageType. Old, still read by
+# some of Finder, and it costs a line.
+printf 'APPL????' >"$APP/Contents/PkgInfo"
+
+# Rewriting nothing invalidates nothing, but the copy loses the signature
+# on some systems, so it is made again. Ad hoc, the same as carry-libs.sh:
+# enough to run here, and Developer ID signing is its own step later.
+codesign --remove-signature "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
+codesign -s - -f "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
+
+# And read back, because everything above is a copy that is allowed to fail
+# quietly and a bundle that is wrong looks exactly like one that is right
+# until somebody else opens it.
+#
+# The one that matters: a speech library still reached through the build
+# machine's module cache. That folder exists on the machine that built the
+# app and on no other, so the app would open here and die on a customer's
+# Mac before it drew anything. It is the whole reason carry-libs.sh exists
+# and it has to be true of the bundle as well, not only of bin/.
+GOMOD=$(go env GOMODCACHE 2>/dev/null || echo "")
+bad=0
+if [ -n "$GOMOD" ]; then
+	if otool -l "$APP/Contents/MacOS/$EXE" 2>/dev/null | grep -qF "$GOMOD"; then
+		echo >&2
+		echo "bundle-macos.sh: this bundle still looks in the build machine's Go module" >&2
+		echo "cache for its speech libraries, so it runs here and nowhere else:" >&2
+		otool -l "$APP/Contents/MacOS/$EXE" 2>/dev/null | grep -F "$GOMOD" | sed 's/^/  /' >&2
+		bad=1
+	fi
+fi
+for want in libsherpa-onnx-c-api libonnxruntime; do
+	if ! ls "$APP/Contents/Frameworks/$want"*.dylib >/dev/null 2>&1; then
+		echo "bundle-macos.sh: $want is not in Contents/Frameworks." >&2
+		bad=1
+	fi
+done
+[ "$bad" = 0 ] || {
+	echo "  See docs/PACKAGING.md." >&2
+	exit 1
+}
+
+echo "$APP"
+echo "  version $VERSION, $(du -sh "$APP" | cut -f1)"
+echo "  in Contents/MacOS:     $(ls "$APP/Contents/MacOS" | tr '\n' ' ')"
+echo "  in Contents/Frameworks: $(ls "$APP/Contents/Frameworks" | tr '\n' ' ')"
