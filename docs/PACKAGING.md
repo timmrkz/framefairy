@@ -143,7 +143,7 @@ encoder, which is exactly where the difficulty was.
 | --- | --- | --- |
 | `framefairy-app` | 19.5 MB | interface embedded |
 | sherpa-onnx and onnxruntime | 32 MB | the speech runtime, see below |
-| ffmpeg and ffprobe, LGPL | about 40 MB | built by us, no libx264 |
+| ffmpeg and ffprobe, LGPL | about 40 MB | built by us, static, no libx264 |
 | Licence notices | nothing | [THIRD_PARTY.md](THIRD_PARTY.md), shown in the app |
 
 Downloaded on first run, with consent: the speech model at 490 MB, and a
@@ -187,13 +187,71 @@ through `chrome_darwin.go` linking Cocoa, and through Wails itself. Every
 platform needs its own machine, and macOS signing and notarising need a Mac
 anyway. CI has runners for all three.
 
-Two things each platform wants that are easy to forget:
+One thing each platform wants that is easy to forget:
 
-- **macOS**: every bundled dylib and every bundled executable is signed
-  too, not just the app, and the hardened runtime that notarisation
-  requires is where spawning our own ffmpeg needs the right entitlements.
+- **macOS**: signing is inside-out. Every nested binary is signed first,
+  each dylib and each bundled program, and the app around them last. See
+  below.
 - **Linux**: build against an old glibc, in a container or on the oldest
-  supported Ubuntu, or the binary fails on machines newer than nothing.
+  supported Ubuntu, or the binary fails on anything older than the machine
+  it was built on.
+
+## Signing on macOS, and what entitlements are
+
+An entitlement is a key and a value baked into the code signature. It is
+not a file the app reads. The system enforces it and changing one means
+signing again.
+
+Two things share the word and only one of them is ours:
+
+- **App Sandbox** confines an app to a container. It is required for the
+  Mac App Store, and we are not going there.
+- **The hardened runtime** is required for notarisation. This one is ours.
+
+The part worth understanding: under the hardened runtime an entitlement is
+mostly permission to **switch a protection back off**, not permission to do
+something. Apple turns a set of defences on and each entitlement is an
+exception that has to be justified.
+
+| Protection | What it stops | What we need |
+| --- | --- | --- |
+| Library validation | loading a library signed by another team | nothing. We sign the speech libraries ourselves, which notarisation needs anyway |
+| Unsigned executable memory, and JIT | memory that is writable and executable at once | nothing. Neither the app nor ffmpeg does it |
+| `DYLD_*` variables | they are ignored | nothing. We do not use them |
+
+**Starting another program is not one of the things it restricts.** A child
+process is its own process with its own signature, so running our own
+ffmpeg needs no entitlement, and neither does running the user's
+`llama-server`, which lives outside the bundle entirely now that they
+install it themselves.
+
+### What building our own ffmpeg really costs
+
+- **It is signed with our Developer ID**, before the app around it, and
+  notarised with everything else. Mechanical.
+- **It is built statically**, and this is the part that matters. A dynamic
+  ffmpeg with libass drags in freetype, fribidi and harfbuzz as separate
+  libraries. Each one then needs signing, and each one needs its search
+  path pointed inside the bundle, which is the sherpa-onnx problem above
+  four more times over. A static ffmpeg is one file with nothing to chase.
+
+  Static is right on the licence side too. The ffmpeg command and the
+  libraries inside it are one LGPL program, we ship it unmodified and we
+  publish the source we built it from, which is the obligation we already
+  took on. It would only get complicated if LGPL code were linked into
+  **our** binary, and it is not. ffmpeg stays a separate process.
+- **No entitlement.**
+
+### What does bite, and it is not an entitlement
+
+macOS privacy prompts. Episodes live in the user's Desktop, Documents or
+Downloads. A file chosen through the open dialog is granted implicitly, but
+the app remembers the path and reads it again on the next launch, and that
+is the moment macOS asks. The words in that prompt come from purpose
+strings in `Info.plist`, `NSDocumentsFolderUsageDescription` and its
+siblings for Desktop, Downloads and removable volumes. Leave them out and
+somebody who has just paid for the app gets a blank-sounding prompt about
+it.
 
 ## Still open
 
