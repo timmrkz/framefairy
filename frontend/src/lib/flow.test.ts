@@ -4,6 +4,8 @@ import {
   Newest,
   nextWindow,
   pictureIsStale,
+  pieceAt,
+  playingPiece,
   shouldLook,
   shouldTranscribe,
   type SearchState,
@@ -316,5 +318,90 @@ describe("the transcript's edge only ever moves forward", () => {
     const h = new Heard();
     h.seen(ep, 600, null, false);
     expect(h.seen(ep, 0, null, true)).toBe(0);
+  });
+});
+
+describe("pictureIsStale", () => {
+  // What the video element looks like the moment load() has reset it: it
+  // is showing nothing, and the second it last showed is near the
+  // playhead, because the seek that would not land was a small one.
+  test("a reset element is stale, and says so only if ready is cleared", () => {
+    expect(pictureIsStale({ ready: false, shows: -1, at: 12.2 })).toBe(true);
+    // Leaving ready set, which is what the player used to do, is the bug:
+    // a black element reports a good picture, so no frame is asked for and
+    // nothing is drawn over the black.
+    expect(pictureIsStale({ ready: true, shows: 12, at: 12.2 })).toBe(false);
+  });
+});
+
+describe("playingPiece", () => {
+  const three = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+    { start: 22, end: 26 },
+  ];
+
+  test("stays on the piece it is on", () => {
+    expect(playingPiece(three, 0, 12)).toBe(0);
+    expect(playingPiece(three, 1, 18)).toBe(1);
+    expect(playingPiece(three, 2, 24)).toBe(2);
+  });
+
+  // A cut put back while the clip plays its last piece leaves the player
+  // holding a number past the end. Before this it read undefined and threw
+  // inside the frame loop, which stopped the loop for good.
+  test("comes back inside when the pieces it was in are gone", () => {
+    const two = three.slice(0, 2);
+    expect(playingPiece(two, 2, 18)).toBe(1);
+    expect(playingPiece([three[0]], 2, 12)).toBe(0);
+    expect(playingPiece([three[0]], 1, 12)).toBe(0);
+  });
+
+  test("never answers with a piece that is not there", () => {
+    for (const count of [1, 2, 3]) {
+      const pieces = three.slice(0, count);
+      for (const was of [-1, 0, 1, 2, 5]) {
+        for (const at of [0, 12, 15, 18, 21, 24, 99]) {
+          const got = playingPiece(pieces, was, at);
+          expect(got).toBeGreaterThanOrEqual(0);
+          expect(got).toBeLessThan(pieces.length);
+        }
+      }
+    }
+  });
+
+  test("answers for a clip with no pieces at all", () => {
+    expect(playingPiece([], 2, 12)).toBe(0);
+  });
+
+  // What the player used to do, and what it does now, side by side. The
+  // throw is the bug: it happened inside the frame loop, so the loop ended
+  // and the picture stood still on whatever frame it had.
+  test("the old way threw where this one does not", () => {
+    const two = three.slice(0, 2);
+    expect(() => two[2].end).toThrow();
+    expect(() => two[playingPiece(two, 2, 18)].end).not.toThrow();
+  });
+});
+
+describe("pieceAt", () => {
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+
+  test("gives the piece a time is in", () => {
+    expect(pieceAt(two, 11)).toBe(0);
+    expect(pieceAt(two, 17)).toBe(1);
+  });
+
+  test("gives the piece a time runs into next", () => {
+    expect(pieceAt(two, 15)).toBe(1);
+    expect(pieceAt(two, 0)).toBe(0);
+  });
+
+  test("gives the last piece past the end, and zero with no pieces", () => {
+    expect(pieceAt(two, 99)).toBe(1);
+    expect(pieceAt([], 99)).toBe(0);
   });
 });

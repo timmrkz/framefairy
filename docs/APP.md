@@ -74,6 +74,13 @@ under the pointer that came for it. A dot on the Activity mark says work is
 in hand. It sits over the mark, so nothing on the rail moves when a job
 starts or ends.
 
+The episodes stay on the rail too, as their lamps. An episode's row keeps
+its height and its lamp keeps its column whether the sidebar is shut or
+open, so the rail is one column of marks from the top to the bottom and
+nothing in it moves as the sidebar goes over. What the episode is called
+and what it has are what wait for the room, along with the two marks on its
+row, which need a pointer on the row anyway.
+
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
 keep the episode's files or delete them. The box names the folder they are
@@ -229,18 +236,27 @@ place.
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the edge is taken from the waveform
   itself, so the light never lies over a waveform that is already drawn. The
-  range picker itself stays quiet: what is not transcribed is darker, with a
-  line of the muted grey at the edge, and the edge moves as the transcript
-  grows. The line is what carries it. Two greys this dark are about 1.2 to 1
-  against each other however far apart they are put, measured off the
-  pixels, because lightness is compressed at this end of the scale, so the
-  shade alone can never say where the transcript has got to. A line can: it
-  carries its contrast in the step across it rather than in the area, and it
-  is the edge the eye follows as the transcript grows. It moves with the work, not
+  range picker carries the reading of the episode in the app's own words:
+  what is not transcribed is darker and breathes while the reading runs,
+  because it is a place waiting to be filled, and the line where the
+  reading has got to is the head of a fill, the same bright line with a
+  glow that the head of every other fill in the app carries. The line is
+  what carries it. Two greys this dark are about 1.2 to 1 against each
+  other however far apart they are put, measured off the pixels, because
+  lightness is compressed at this end of the scale, so the shade alone can
+  never say where the transcript has got to. A line can: it carries its
+  contrast in the step across it rather than in the area, and it is the
+  edge the eye follows as the transcript grows. A hairline of the muted
+  grey did that job before and did it too quietly to see: measured off the
+  pixels it stood at 53 against a track of 48, a step of five in 255. The
+  fill's head stands at 189 against 54, a step of 135. It breathes only
+  while the reading runs, because an episode read half way and left alone
+  is not work in hand. It moves with the work, not
   with the saving of it: the transcript is written to disk every few
   seconds, but every chunk the recogniser finishes says how far it has come,
-  and the edge follows that. The only thing on that track that moves of its
-  own accord is the window while a search runs.
+  and the edge follows that. Nothing on that track moves of its own accord
+  unless work is running on it: the window while a search runs, and the
+  stretch with no transcript yet while the reading runs.
 - **The clip list is a stack of cards**, each clip its own, with air
   between them and the app's colour down the edge of the chosen one. It has
   no box around it: the ends go under a veil, so a card scrolling out of
@@ -479,10 +495,27 @@ place.
       not in the clip. Playing jumps it, and the render does too.
     - **The cuts can be changed.** Each one carries a handle on either edge,
       in the accent's lighter shade so it is not taken for the clip's own
-      edge. Dragging a handle moves that edge of the cut, a double-click on
-      the block puts the stretch back, and holding shift while dragging
-      across the clip takes a stretch out by hand. Without shift the same
-      drag moves the playhead, so nothing that worked before works
+      edge. Dragging a handle moves that edge of the cut, and a double-click
+      on the block puts the stretch back.
+    - **Shift is the cutting hand.** Holding it and dragging across the clip
+      takes out the stretch dragged over. Holding it and double-clicking
+      takes one out where the click lands, forty pixels wide, which is wide
+      enough to see and to take hold of by either edge and drag to size.
+      Forty pixels and not a quarter of a second, because what has to stay
+      the same is what the hand sees: the timeline goes from a whole four
+      hour episode down to a second across, and a width in seconds is
+      wrong at both ends of a range that wide. Measured at the zoom the
+      timeline opens at and again with a second across the track, a quarter
+      of a second came out as 9 pixels and then as 187, narrower than one
+      of the two 12 pixel edge handles and then a quarter of the track.
+      Forty pixels comes out as 40 and 47, the 47 being the frame rounding:
+      a cut is a whole number of frames wide, rounded up, so it is never
+      too short for the engine to take. Either way the view never moves: a gesture that
+      cuts and zooms at the same time is a gesture nobody can aim, and
+      before this a shift double-click only zoomed, which is why it read as
+      nothing happening. A shift double-click inside a cut does nothing,
+      because there is nothing there left to take out. Without shift the
+      same drag moves the playhead, so nothing that worked before works
       differently, and a shift-click with no drag does nothing.
     - **A stretch put back goes back in with the same gesture.** The
       double-click that puts a cut back is remembered, so a second
@@ -490,20 +523,21 @@ place.
       edge. It is forgotten as soon as anything else about that clip
       changes, because a stretch put back into a clip that has moved on is
       not the stretch that was taken out.
-    - **A cut lands on whole words.** The engine puts the edges where the
-      render would cut them, so a cut dragged over a pause takes the whole
-      pause and a cut dragged over speech takes whole words. A cut can
-      never stop half way through a word, because half a word is a sound
-      nobody said and the captions are built from the words. The timeline
-      works the same snapping out while the hand is moving, so the block
-      shown is the block the render will leave out.
-    - **Alt lands on the frame instead.** Holding alt while dragging, on a
-      handle or across the clip, leaves the edges exactly where the hand
-      put them, rounded to a whole frame of the episode and no further, for
-      a word clipped a little short or a breath worth keeping. A cut made
-      that way may stop inside a word, which is the point of it. The key is
+    - **A cut lands on the frame.** The edges stay where the hand put them,
+      rounded to a whole frame of the episode and no further, because a
+      double-click and a drag both say where exactly and moving the edges
+      somewhere else is not what was asked. A cut made this way may stop
+      inside a word, which is the point of it.
+    - **Alt lands on whole words instead.** Holding alt while dragging, on a
+      handle or across the clip, puts the edges where the render would cut
+      them, so a cut dragged over a pause takes the whole pause and a cut
+      dragged over speech takes whole words, and it can never stop half way
+      through a word. That is the right thing when a whole phrase is to go
+      and the wrong thing when a breath is: a drag of a few pixels in a
+      silence came out as the whole silence, which is why this is the
+      modifier now and not the default. The key is
       read while the hand moves rather than when it goes down, so letting
-      go of alt part way through goes back to snapping and the block says
+      go of alt part way through goes back to frames and the block says
       so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and the words to correct are in the lens,

@@ -282,11 +282,23 @@
   <div class="shade" style="left: 0; width: {at(from)}px"></div>
   <div class="shade" style="left: {at(to)}px; right: 0"></div>
   <!-- Over the shade, not under it, so what has no transcript yet reads
-       the same wherever it is. It is darker and nothing else: the edge
-       moves as the transcript grows, and the only thing on the track that
-       moves of its own accord is the window while a search runs. -->
+       the same wherever it is. What the episode has not been read to is a
+       place waiting to be filled, so while the reading runs it wears the
+       shimmer, the same breath every such place in the app wears, and the
+       line where the reading has got to is the head of a fill, the same
+       head every fill carries. Only while it runs: an episode read half
+       way and left alone is not work in hand, and a track that breathed at
+       it would say there was.
+       Nothing new is drawn here: the track says what the rest of the app
+       says, in the words the rest of the app uses. -->
   {#if pending}
-    <div class="pending" class:glide={glide && !holding} class:held={holding} style="transform: translateX({at(covered)}px)"></div>
+    <div
+      class="pending"
+      class:waiting={transcribing}
+      class:glide={glide && !holding}
+      class:held={holding}
+      style="transform: translateX({at(covered)}px)"
+    ></div>
   {/if}
   <!-- The one thing to do about the reading of the episode, at the edge the
        reading moves. It waits for the pointer to be on the track, the way
@@ -589,11 +601,26 @@
     bottom: 0;
     left: 0;
     right: 0;
-    border-left: 1px solid var(--muted);
+    /* The head of a fill, which is what this edge is: the app fills this
+       track from the left as it reads the episode, so the line where it
+       has got to is the same bright line with a glow ahead of it that the
+       head of every other fill in the app carries. A hairline of --muted
+       said the same thing in a colour that means nothing here, and said it
+       so quietly that Tim could not see the reading move. */
+    border-left: 2px solid var(--accent-lit);
+    box-shadow:
+      -7px 0 12px -4px var(--accent-wash),
+      7px 0 14px -6px var(--accent-wash);
     /* Deepest against the line and easing back to the flat shade, so the
        edge reads as the front of something moving rather than as the side
-       of a block. */
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.34) 28px);
+       of a block. The first step carries the app's colour, so the dark
+       ahead of the head belongs to the light behind it. */
+    background: linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.5),
+      var(--accent-faint) 10px,
+      rgba(0, 0, 0, 0.34) 28px
+    );
     pointer-events: none;
   }
 

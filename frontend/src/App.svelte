@@ -370,11 +370,15 @@
       <!-- Left to right, the safest answer to the one that cannot be taken
            back, which is where the eye and the hand both expect it. The
            keyboard starts on Cancel: what is irreversible is marked as
-           what it is rather than made the answer Enter gives. -->
+           what it is rather than made the answer Enter gives. No answer is
+           picked out: this box asks which of three things to do and the
+           app has no opinion on two of them, so all three look alike and
+           only the one that cannot be taken back is marked. The other
+           boxes have two answers and no highlight either. -->
       {#snippet actions()}
         <button onclick={() => (removing = null)}>Cancel</button>
         {#if ep.work}
-          <button class="primary" onclick={() => remove(ep, false)}>Keep</button>
+          <button onclick={() => remove(ep, false)}>Keep</button>
           <button class="danger" onclick={() => remove(ep, true)}>Remove</button>
         {:else}
           <button class="danger" onclick={() => remove(ep, true)}>Remove</button>
@@ -521,14 +525,25 @@
   }
 
   /* What there is no room for on the rail waits until the sidebar opens.
-     The list itself stays, empty, because it is what holds the foot down:
-     an icon on the rail has to be exactly where its row is when the
+     An icon on the rail has to be exactly where its row is when the
      sidebar opens, or the sidebar opens and moves it out from under the
-     pointer that came for it. For the same reason the version line keeps
-     its height and only its text goes. */
+     pointer that came for it. So the version line keeps its height and
+     only its text goes, and an episode keeps its row and shows only its
+     lamp. */
   aside:not(.open) h2,
-  aside:not(.open) ul > li,
   aside:not(.open) .label {
+    display: none;
+  }
+
+  /* On the rail an episode is its lamp and nothing else. What it is called
+     and what it has wait for the room, and so do the two marks, which need
+     a pointer on the row anyway. The row keeps its height, so the lamp is
+     in the same place shut and open and nothing moves as the sidebar
+     goes over. An episode nobody has added yet has nothing to show on the
+     rail at all. */
+  aside:not(.open) .text,
+  aside:not(.open) .tools,
+  aside:not(.open) li.empty {
     display: none;
   }
 
@@ -552,8 +567,10 @@
     overflow: hidden;
   }
 
+  /* The list keeps its 4 at the sides on the rail, so a lamp stands in the
+     same column shut and open and does not step across as the sidebar goes
+     over. Only the scrolling goes, because a rail has nothing to scroll. */
   aside:not(.open) ul {
-    padding: 0;
     overflow: hidden;
   }
 
@@ -601,21 +618,34 @@
     position: relative;
   }
 
+  /* A whole number of pixels high, and the same number whether the sidebar
+     is shut or open: two lines of text and the padding around them come to
+     54, and saying so rather than letting the text say it means the row
+     does not shrink to its lamp when the text goes. The lamp would drop up
+     the list as the sidebar opened otherwise, which is the one thing a
+     sidebar sliding over must not do.
+
+     The left padding is the foot's, so the lamp stands in the same column
+     as every icon on the rail: 4 from the list, 1 of border and 9 here put
+     the lamp's box at 14, and an 8 wide lamp centred in a 16 wide box
+     leaves it on 22, which is the middle of the rail. */
   .episode {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     width: 100%;
-    height: auto;
-    padding: 8px;
+    height: 54px;
+    padding: 8px 8px 8px 9px;
     text-align: left;
     border-color: transparent;
     background: transparent;
     margin-bottom: 2px;
   }
 
+  /* An icon's box around a lamp, so it is centred on the icons' column.
+     The 5 at the top is what puts it on the middle of the name beside it. */
   .episode .dot {
-    margin-top: 5px;
+    margin: 5px 4px 0;
   }
 
   .episode.current,
