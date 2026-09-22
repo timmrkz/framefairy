@@ -487,9 +487,17 @@
   }
 
   /* The setup has the whole window, rail and all: there is nothing on the
-     rail worth reaching for until it is done. */
+     rail worth reaching for until it is done.
+
+     The row is the window and not the setup. Left implicit it is sized to
+     what is in it, which on a window too short for the whole setup makes
+     the row taller than the window, and then the foot of the setup is
+     below the bottom edge with nothing to scroll: the page itself never
+     scrolls. minmax(0, 1fr) is the row being the window's own height and
+     what is in it being allowed to give way. */
   .body.alone {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr);
   }
 
   aside {

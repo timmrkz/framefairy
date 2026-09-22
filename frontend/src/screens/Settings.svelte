@@ -28,9 +28,9 @@
   // makes the trash can beside them mean anything.
   let training = $state<TrainingStatus>({ dir: "", plans: 0, decisions: 0 });
   let clearing = $state(false);
-  // The models that can be installed. The same lists the setup shows, so
-  // one can be added or swapped later without going through the setup
-  // again.
+  // The models that can be installed, and what the machine can hold. The
+  // same lists the setup shows, so one can be added or swapped later
+  // without going through the setup again.
   let speech = $state<SpeechModel[]>([]);
   let language = $state<LanguageModel[]>([]);
   // What this machine has, in bytes, or zero where it would not say.
@@ -80,10 +80,10 @@
       problem = errorText(err);
     }
     savingKey = false;
-    await readSpeech();
+    await readModels();
   }
 
-  async function readSpeech() {
+  async function readModels() {
     try {
       const state = await api.setup();
       speech = state.speech;
@@ -147,7 +147,7 @@
   onMount(async () => {
     settings = await api.getSettings();
     await readTraining();
-    await readSpeech();
+    await readModels();
     await check();
   });
 </script>
@@ -206,7 +206,7 @@
               models={languageRows}
               kind="llm"
               oninstall={api.installLanguageModel}
-              onchange={readSpeech}
+              onchange={readModels}
             />
           </div>
           <label for="llm">Model file</label>
@@ -258,7 +258,7 @@
         models={speechRows}
         kind="model"
         oninstall={api.installSpeechModel}
-        onchange={readSpeech}
+        onchange={readModels}
       />
       <div class="grid">
         <label for="asr">Model folder</label>
