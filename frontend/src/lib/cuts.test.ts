@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { snapCut, type Word } from "./api";
+import { cutAt, snapCut, type Word } from "./api";
 
 // The timeline draws the block a cut will leave out while the hand is still
 // moving, so this snapping has to agree with the engine's. They are the
@@ -75,5 +75,49 @@ describe("a cut lands where the render will cut", () => {
       const [a, b] = snapCut(words, from, from + 0.3, 0.1);
       expect(b, `a cut from ${from} came back as ${a} to ${b}`).toBeGreaterThanOrEqual(a);
     }
+  });
+});
+
+describe("cutAt", () => {
+  // A clip in two pieces with a cut already between them.
+  const pieces = [
+    { start: 10, end: 20 },
+    { start: 22, end: 30 },
+  ];
+  const frame = 1 / 25;
+
+  test("lands where it was asked for, on frames, as wide as it was asked", () => {
+    const [a, b] = cutAt(pieces, 15, 0.25, 0.05, frame)!;
+    expect(a).toBeCloseTo(14.88, 2);
+    expect(b).toBeCloseTo(15.12, 2);
+    expect(Math.abs(a / frame - Math.round(a / frame))).toBeLessThan(1e-9);
+    expect(Math.abs(b / frame - Math.round(b / frame))).toBeLessThan(1e-9);
+  });
+
+  test("makes no cut where there is no piece", () => {
+    expect(cutAt(pieces, 21, 0.25, 0.05, frame)).toBeNull();
+    expect(cutAt(pieces, 5, 0.25, 0.05, frame)).toBeNull();
+    expect(cutAt(pieces, 40, 0.25, 0.05, frame)).toBeNull();
+    expect(cutAt([], 15, 0.25, 0.05, frame)).toBeNull();
+  });
+
+  test("leaves room on both sides of the piece, wherever it is clicked", () => {
+    for (const at of [10.001, 10.1, 15, 19.9, 19.999]) {
+      const [a, b] = cutAt(pieces, at, 0.25, 0.05, frame)!;
+      expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
+      expect(b).toBeLessThanOrEqual(19.95 + 1e-9);
+      expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+    }
+  });
+
+  test("makes no cut in a piece with no room to spare", () => {
+    expect(cutAt([{ start: 10, end: 10.1 }], 10.05, 0.25, 0.05, frame)).toBeNull();
+  });
+
+  test("gives back what room there is when the piece is short", () => {
+    const [a, b] = cutAt([{ start: 10, end: 10.4 }], 10.2, 0.25, 0.05, frame)!;
+    expect(a).toBeGreaterThanOrEqual(10.05 - 1e-9);
+    expect(b).toBeLessThanOrEqual(10.35 + 1e-9);
+    expect(b - a).toBeGreaterThanOrEqual(0.05 - 1e-9);
   });
 });

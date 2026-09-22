@@ -425,6 +425,49 @@ export function snapEnd(words: Word[], at: number, keepPause: number): number {
 // snapping: a cut takes words away, so it swallows every word it touches
 // and then leaves keepPause of air on each side that stays. A cut over a
 // pause takes the whole pause, a cut over speech takes whole words.
+// Where a cut goes when a double-click says take one out here. Three
+// things decide it.
+//
+// It lands on frames. A double-click says where, exactly, and growing it
+// out to the words either side would put it somewhere else, which is the
+// whole complaint about cuts landing on words.
+//
+// It is as wide as it is asked to be, which has to be wide enough to take
+// hold of and drag at the zoom the timeline opens at. A cut nobody can
+// grab is a cut nobody can change.
+//
+// And it stays inside the piece it falls in, with room left on both sides,
+// because a piece squeezed to nothing is a clip the engine refuses. A
+// click outside every piece, or in a piece with no room to spare, makes no
+// cut at all rather than a cut somewhere else.
+export function cutAt(
+  pieces: { start: number; end: number }[],
+  at: number,
+  wide: number,
+  least: number,
+  frame: number,
+): [number, number] | null {
+  const on = (t: number) => (frame > 0 ? Math.round(t / frame) * frame : t);
+  const piece = pieces.find((p) => at >= p.start && at < p.end);
+  if (!piece) return null;
+  const low = piece.start + least;
+  const high = piece.end - least;
+  if (high - low < least) return null;
+  const width = Math.min(wide, high - low);
+  let a = on(at - width / 2);
+  let b = on(a + width);
+  if (a < low) {
+    a = low;
+    b = Math.min(on(a + width), high);
+  }
+  if (b > high) {
+    b = high;
+    a = Math.max(on(b - width), low);
+  }
+  if (b - a < least) return null;
+  return [a, b];
+}
+
 export function snapCut(
   words: Word[],
   from: number,
