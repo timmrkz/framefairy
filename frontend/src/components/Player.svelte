@@ -17,7 +17,7 @@
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
   import { onMount, type Snippet } from "svelte";
-  import { pictureIsStale, pieceAt as pieceIndex, playingPiece } from "../lib/flow";
+  import { pictureIsStale, pieceAt as pieceIndex, playingPiece, saidWord } from "../lib/flow";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -41,6 +41,7 @@
     oncrop,
     onresetcrop,
     oncaptiony,
+    onword,
     strip,
     paused = $bindable(true),
     looping = $bindable(false),
@@ -67,6 +68,10 @@
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
     oncaptiony?: (y: number) => Promise<void>;
+    // Corrects one word of the episode, by the moment it was spoken. The
+    // captions in the video preview are where words are corrected, so this
+    // is the one hand that reaches out of the picture.
+    onword?: (start: number, text: string) => Promise<void>;
     // The range picker sits under the video preview, so it is exactly as
     // wide as it is.
     strip?: Snippet;
@@ -325,17 +330,133 @@
     };
   });
 
+  // The word being corrected: where it stands in the caption, which word of
+  // the episode it is, the whole of that word, and the piece of it drawn
+  // here. The last two differ only for a word that was split in two.
+  let fixing = $state<{ at: number; said: number; whole: string; piece: string } | null>(null);
+  // The word a correction is on its way to disk for, so it says it is not
+  // settled yet the way everything else in the app does.
+  let savingWord = $state<number | null>(null);
+  // The moment the caption box is showing while a word is being corrected.
+  // Without it the caption would move on under the caret, which is the same
+  // reason the lens freezes the row it magnifies.
+  let frozen = $state(0);
+  const shown = $derived(fixing ? frozen : time);
+
   // The caption standing at the playhead, with the word being spoken. The
   // engine hands over the lines and the look, so nothing about captions is
   // decided twice.
   const caption = $derived.by(() => {
     if (!clip || !captions?.captions?.length) return null;
-    if (time < clipStart - 0.05 || time > clipEnd + 0.05) return null;
-    const at = inClipTime(time);
+    if (shown < clipStart - 0.05 || shown > clipEnd + 0.05) return null;
+    const at = inClipTime(shown);
     return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
   });
 
-  const spoken = $derived(inClipTime(time));
+  const spoken = $derived(inClipTime(shown));
+
+  // Words are corrected in the picture, where they are read. A correction
+  // belongs to the episode, so it takes a clip to know which words these
+  // are and somewhere to send it.
+  const correctable = $derived(!!clip && !!onword);
+
+  // Every word of the caption beside the word of the episode it stands for.
+  // A correction that reads as two words is drawn as two, and both halves
+  // point back at the one word they came from.
+  const rows = $derived.by(() => {
+    const said = clip?.words ?? [];
+    return (caption?.lines ?? []).map((line) =>
+      line.words.map((word) => ({ word, said: correctable ? saidWord(pieces, said, word) : null })),
+    );
+  });
+
+  // A word is in the caption twice when it was split in two, and while one
+  // half is being corrected it holds the whole word, so the other half is
+  // not drawn at all.
+  function doubled(word: { start: number }, said: { start: number } | null): boolean {
+    return !!fixing && !!said && said.start === fixing.said && word.start !== fixing.at;
+  }
+
+  // A caption word says what it says by hand, not through the template.
+  // While a word is being corrected the browser owns what is inside it,
+  // and a template that wrote there would take the caret with it. This
+  // writes only when the word itself has changed, which never happens
+  // while a hand is in it.
+  function says(node: HTMLElement, text: string) {
+    node.textContent = text;
+    return {
+      update(next: string) {
+        if (node.textContent !== next) node.textContent = next;
+      },
+    };
+  }
+
+  // Taking a word takes the picture with it: a caption that moved on under
+  // the caret would leave the hand correcting a word that is no longer
+  // there.
+  function takeWord(
+    node: HTMLElement,
+    word: { start: number; text: string },
+    said: { start: number; text: string } | null,
+  ) {
+    if (!said || !correctable) return;
+    frozen = time;
+    if (video && !video.paused) toggle();
+    fixing = { at: word.start, said: said.start, whole: said.text, piece: word.text };
+    // The caret is already where the hand put it. It is only moved when
+    // what is drawn here is half of the word being corrected: a word split
+    // in two is drawn in two halves, and correcting either hands back the
+    // whole of it, so the half that was clicked makes way for it.
+    if (node.textContent === said.text) return;
+    node.textContent = said.text;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    const at = window.getSelection();
+    at?.removeAllRanges();
+    at?.addRange(range);
+  }
+
+  async function dropWord(node: HTMLElement, word: { start: number; text: string }) {
+    const was = fixing;
+    fixing = null;
+    if (!was) return;
+    // A word is one word on a line, whatever was typed into it: the
+    // newlines a paste brings are spaces, and a run of spaces is one.
+    const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+    if (!text || text === was.whole) {
+      node.textContent = word.text;
+      return;
+    }
+    savingWord = was.at;
+    try {
+      await onword?.(was.said, text);
+      // What comes back is the engine's answer, drawn by the template.
+      // Until it lands the word keeps what was typed, so the correction is
+      // never shown coming undone and going in again.
+    } catch {
+      // The workspace says what went wrong. The word goes back to what it
+      // was, so the picture never shows a correction that was refused.
+      node.textContent = word.text;
+    } finally {
+      savingWord = null;
+    }
+  }
+
+  function wordKey(event: KeyboardEvent) {
+    const node = event.currentTarget as HTMLElement;
+    if (event.key === "Enter") {
+      // A caption word is one line and stays one line, so Enter is what
+      // finishes it rather than what breaks it.
+      event.preventDefault();
+      node.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      if (fixing) node.textContent = fixing.piece;
+      fixing = null;
+      node.blur();
+    }
+  }
 
   // The frame the captions sit in: the crop, or the whole preview when there
   // is none to place them in.
@@ -353,7 +474,12 @@
   // of an episode stay in line with each other.
   function grabCaptions(event: PointerEvent) {
     if (!oncaptiony || savingCaptions || !captions) return;
-    event.preventDefault();
+    // A word takes the caret where the hand put it, and the browser only
+    // does that if nothing refuses the pointer on the way down. So a drag
+    // that starts on a word starts without refusing it, and the word is
+    // let go of the moment the hand moves instead.
+    const word = (event.target as HTMLElement | null)?.closest?.(".word") as HTMLElement | null;
+    if (!word) event.preventDefault();
     event.stopPropagation();
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
@@ -364,6 +490,7 @@
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientY - from) > 2) moved = true;
       if (!moved) return;
+      word?.blur();
       dragCaptions = snapCaptionY(start + (from - e.clientY) * scale);
       oncaptionmoved?.(dragCaptions);
     };
@@ -374,7 +501,9 @@
       const to = dragCaptions;
       if (!moved || to === null) {
         dragCaptions = null;
-        toggle();
+        // A click on a word is the hand asking to correct it, so the
+        // picture stays where it is rather than starting to play.
+        if (!word) toggle();
         return;
       }
       savingCaptions = true;
@@ -493,7 +622,8 @@
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">
         The space bar plays and pauses, and so does a click on the picture. Drag the crop frame
-        sideways to place it, and the black box up or down for the captions.
+        sideways to place it, and the black box up or down for the captions. Click a word in the
+        caption box to correct it: Enter saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
     {#if still && stale}
@@ -584,20 +714,36 @@
         <div
           class="box"
           class:draggable={!!oncaptiony}
+          class:waiting={savingWord !== null}
           style="background: {captions.style.box};
                  border-radius: {px(captions.style.radius)}px;
                  padding: {px(captions.style.padY)}px {px(captions.style.padX)}px"
           title="Drag up or down to place the captions"
           onpointerdown={grabCaptions}
         >
-          {#each caption.lines as line, row (row)}
+          {#each rows as line, row (row)}
             <div class="line">
-              {#each line.words as word, i (word.start)}{#if i > 0}{" "}{/if}<span
-                  class:now={captions.style.highlight &&
-                    spoken >= word.start &&
-                    spoken < word.end}
-                  style="--pill: {captions.style.highlightColour}">{word.text}</span
-                >{/each}
+              {#each line as { word, said }, i (word.start)}{#if !doubled(word, said)}{#if i > 0}{" "}{/if}<span
+                    class="word"
+                    class:correctable={!!said}
+                    class:fixing={fixing?.at === word.start}
+                    class:now={captions.style.highlight &&
+                      spoken >= word.start &&
+                      spoken < word.end}
+                    contenteditable={said ? "plaintext-only" : null}
+                    spellcheck="false"
+                    role={said ? "textbox" : null}
+                    aria-label={said ? "Correct this word" : null}
+                    title={said
+                      ? "Click to correct this word. Enter saves it, Escape leaves it. Two words split it in two"
+                      : null}
+                    style="--pill: {captions.style.highlightColour}"
+                    use:says={word.text}
+                    onfocusin={(e) => takeWord(e.currentTarget, word, said)}
+                    onfocusout={(e) => dropWord(e.currentTarget, word)}
+                    onkeydown={wordKey}
+                  ></span
+                  >{/if}{/each}
             </div>
           {/each}
         </div>
@@ -701,6 +847,26 @@
     pointer-events: auto;
     cursor: grab;
     touch-action: none;
+  }
+
+  /* A word is corrected where it is read, in the picture, so the word takes
+     the pointer for itself whether or not the box around it takes a drag.
+     The frame and the caret are the interface's, not the render's: nothing
+     here is ever burned into a short. */
+  .word.correctable {
+    pointer-events: auto;
+    cursor: text;
+    caret-color: var(--accent-hi);
+    outline: 1px solid transparent;
+  }
+
+  .word.correctable:hover {
+    outline-color: var(--accent-hi);
+  }
+
+  .line span.word.fixing {
+    outline-color: var(--accent-hi);
+    background: var(--accent);
   }
 
   /* The steps the caption line snaps to, shown while it is dragged. */

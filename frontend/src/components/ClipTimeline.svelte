@@ -34,7 +34,6 @@
     oncut,
     onjoincut,
     onmovecut,
-    onword,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -61,7 +60,6 @@
     oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
     onjoincut?: (at: number) => Promise<void>;
     onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
-    onword?: (start: number, text: string) => Promise<void>;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -882,22 +880,18 @@
   // playhead.
   let lensOpen = $state(false);
 
-  let editing = $state<number | null>(null);
-  let editText = $state("");
-  let frozen = $state(0);
-
   // The lens can only ever show what has been heard. While an episode is
   // still being transcribed the playhead goes anywhere, and past the end of
   // the transcript there are no words to magnify, so the magnifier is off
   // there rather than opening on nothing.
   const heard = $derived(covered > 0 && time <= covered + 0.5);
 
-  const lensShown = $derived((lensOpen && heard) || editing !== null);
+  const lensShown = $derived(lensOpen && heard);
 
   // Escape takes the lens away too, the same as a second click on the
   // magnifier. It only ever closes the lens when the lens is the top thing
-  // on screen: a word being corrected, a box asking something and an info
-  // bubble all answer Escape themselves and keep it.
+  // on screen: a field with the keyboard, a box asking something and an
+  // info bubble all answer Escape themselves and keep it.
   $effect(() => {
     if (!lensOpen) return;
     const key = (event: KeyboardEvent) => {
@@ -913,8 +907,9 @@
   });
 
   // The lens: a pill that rides the playhead and shows the words around it
-  // big enough to read and to correct. It is the only place the words are
-  // spelled out, so there is no wall of text under the timeline.
+  // big enough to read. It reads and nothing else. Words are corrected in
+  // the picture, in the caption box, where they are read the way a short
+  // will show them.
   const lensWidth = 340;
 
   // The words are laid out in a row of their own, each as wide as it really
@@ -943,7 +938,7 @@
 
   // Where the lens is reading, in that row. It walks from one word to the
   // next while the word is spoken, so the row glides instead of jumping.
-  const centre = $derived(editing !== null ? frozen : time);
+  const centre = $derived(time);
 
   const reading = $derived.by(() => {
     if (!laid.length) return 0;
@@ -983,41 +978,6 @@
     return out;
   });
 
-  function beginEdit(w: Word) {
-    // A correction belongs to a clip, so without one the words are only
-    // there to read.
-    if (!clip || !onword || locked) return;
-    frozen = time;
-    editing = w.start;
-    editText = w.text;
-  }
-
-  async function commitEdit() {
-    if (editing === null) return;
-    const at = editing;
-    const original = words.find((w) => w.start === at)?.text;
-    const text = editText.trim();
-    editing = null;
-    if (!text || text === original) return;
-    await onword?.(at, text);
-    const w = words.find((w) => w.start === at);
-    if (w) w.text = text;
-  }
-
-  function editKey(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commitEdit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      editing = null;
-    }
-  }
-
-  function focus(node: HTMLInputElement) {
-    node.focus();
-    node.select();
-  }
 </script>
 
 <div class="clip-timeline">
@@ -1047,7 +1007,8 @@
       <Info label="What the clip timeline is" side="right">
         The episode up close. Drag to move the playhead, two fingers to travel, a pinch to zoom,
         and a double-click to fit the clip. The arrow keys step a frame, with shift a second. Drag
-        a clip edge to trim it, and the magnifier shows the words. A hatched block inside a clip is
+        a clip edge to trim it, and the magnifier reads out the words. Correcting one is done in the
+        caption box over the picture. A hatched block inside a clip is
         a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
         and drag across the clip to take out the stretch you drag over, or hold it and double-click
@@ -1177,7 +1138,7 @@
           title={heard
             ? lensShown
               ? "Hide the words"
-              : "The words spoken here"
+              : "Read the words spoken here"
             : "The transcript does not reach this far yet"}
           onpointerdown={(e) => e.stopPropagation()}
           onclick={() => (lensOpen = !lensOpen)}
@@ -1188,30 +1149,11 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="lens" onpointerdown={(e) => e.stopPropagation()}>
             {#each lensWords as it (it.word.start)}
-              {#if editing === it.word.start}
-                <input
-                  class="edit"
-                  type="text"
-                  bind:value={editText}
-                  use:focus
-                  onkeydown={editKey}
-                  onblur={commitEdit}
-                  style="left: {it.at}px; width: {Math.max(editText.length, 3) + 2}ch"
-                  aria-label="Correct the word"
-                />
-              {:else}
-                <button
-                  class="word"
-                  class:now={time >= it.word.start && time < it.word.end}
-                  class:plain={!clip}
-                  style="left: {it.at}px; width: {it.size}px"
-                  disabled={locked || !clip}
-                  title={clip
-                    ? "Correct this word. Two words split it in two"
-                    : "Pick a clip to correct its words"}
-                  onclick={() => beginEdit(it.word)}>{it.word.text}</button
-                >
-              {/if}
+              <span
+                class="word"
+                class:now={time >= it.word.start && time < it.word.end}
+                style="left: {it.at}px; width: {it.size}px">{it.word.text}</span
+              >
             {/each}
           </div>
         {/if}
@@ -1467,47 +1409,25 @@
     pointer-events: none;
   }
 
-  .word,
-  .edit {
+  /* The words are there to read and nothing else. They are corrected in
+     the caption box in the video preview, where a short will show them, so
+     nothing here looks like something to click. */
+  .word {
     position: absolute;
     top: 3px;
     height: 22px;
     padding: 0 5px;
     font-size: var(--size-m);
     line-height: 20px;
-    border-radius: var(--radius-s);
     text-align: center;
     white-space: nowrap;
-    z-index: 1;
-  }
-
-  .word {
-    border: 1px solid transparent;
-    background: transparent;
-    cursor: text;
     overflow: hidden;
-  }
-
-  /* Without a clip the words are only there to read, so they do not look
-     like something to click. */
-  .word.plain:disabled {
-    opacity: 1;
-  }
-
-  .word:hover:not(:disabled) {
-    background: var(--ink-3);
-    border-color: var(--line);
+    z-index: 1;
   }
 
   .word.now {
     color: var(--accent-hi);
     font-weight: 600;
-  }
-
-  .edit {
-    border: 1px solid var(--accent);
-    background: var(--ink-1);
-    width: auto;
   }
 
   .edge {

@@ -1170,6 +1170,7 @@
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
+          onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
           oncaptionmoved={(y) => {
             captionsWere = null;
             captionY = y;
@@ -1251,7 +1252,6 @@
         onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
-        onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
       />
       <!-- One row under the clip up close, so the range picker and the
            waveform stand together: what plays on the left, what the

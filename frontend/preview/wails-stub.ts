@@ -21,6 +21,12 @@ type Piece = { start: number; end: number; cropX: number; moved: boolean };
 // moment the clip list is read again.
 const held = (): Record<string, Piece[]> => ((window as any).__pieces ??= {});
 
+// The corrections, kept the same way the cuts are: the Go side writes them
+// down for the whole episode, so a word corrected once stays corrected
+// however often the clip is read again.
+const fixed = (): Record<string, string> => ((window as any).__fixed ??= {});
+const said = (start: number) => start.toFixed(3);
+
 const pieces = (n: number, start: number): Piece[] =>
   held()[`0${n}`] ?? [
     { start, end: start + 12, cropX: 420, moved: false },
@@ -83,9 +89,11 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     start: first,
     end: last,
     segments,
-    words: words(start, start + 25).filter((w) =>
-      segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
-    ),
+    words: words(start, start + 25)
+      .filter((w) =>
+        segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
+      )
+      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
     rejected: false,
     rendered: rendered ? "/tmp/out.mp4" : undefined,
     captionY: 300,
@@ -112,12 +120,68 @@ const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
   return clip(n, at, title, rendered);
 };
 
-const captionWords = [
-  { start: 0.2, end: 0.6, text: "Und" },
-  { start: 0.6, end: 1.0, text: "da" },
-  { start: 1.0, end: 1.6, text: "war" },
-  { start: 1.6, end: 2.4, text: "irgendein" },
-];
+// The clip a call names, whatever has been done to it since.
+const clipOf = (id: string) => {
+  const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
+  return clip(Number(id), at, title, rendered);
+};
+
+// The captions of a clip, built the way the engine builds them, because
+// the caption box is where words are corrected and a word in it has to be
+// able to say which word of the episode it is. Made up cues could never
+// answer that, so a probe about correcting a word would pass whatever the
+// window did.
+//
+// Two things the engine does and this does with it: the words are put on
+// the clip's own clock, with the cuts taken out of it, and a correction
+// that reads as two words is drawn as two, each taking its share of the
+// one moment they both came from.
+const captionCues = (id: string) => {
+  const c = clipOf(id);
+  const onClipClock: { start: number; end: number; text: string }[] = [];
+  let offset = 0;
+  for (const p of c.segments) {
+    for (const w of c.words) {
+      if (w.start < p.start - 0.02 || w.end > p.end + 0.02) continue;
+      onClipClock.push({
+        start: offset + (w.start - p.start),
+        end: offset + (w.end - p.start),
+        text: w.text,
+      });
+    }
+    offset += p.end - p.start;
+  }
+  const drawn: typeof onClipClock = [];
+  for (const w of onClipClock) {
+    const parts = w.text.split(" ").filter(Boolean);
+    if (parts.length < 2) {
+      drawn.push(w);
+      continue;
+    }
+    const letters = parts.reduce((n, part) => n + part.length, 0);
+    let from = w.start;
+    parts.forEach((part, i) => {
+      const to =
+        i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
+      drawn.push({ start: from, end: to, text: part });
+      from = to;
+    });
+  }
+  // Eight words to a cue in two lines of four, which is near enough to
+  // what the engine's line breaking gives for a box to be looked at.
+  const cues = [];
+  for (let i = 0; i < drawn.length; i += 8) {
+    const eight = drawn.slice(i, i + 8);
+    cues.push({
+      start: eight[0].start,
+      end: eight[eight.length - 1].end + 0.4,
+      lines: [{ words: eight.slice(0, 4) }, { words: eight.slice(4) }].filter(
+        (line) => line.words.length > 0,
+      ),
+    });
+  }
+  return cues;
+};
 
 // The speech model install of the setup mode: it starts when it is asked
 // for and finishes four seconds later, reporting as it goes. A mode that
@@ -325,7 +389,7 @@ export const Call = {
         });
       case "Captions":
         return Promise.resolve({
-          captions: [{ start: 0, end: 4, lines: [{ words: captionWords.slice(0, 2) }, { words: captionWords.slice(2) }] }],
+          captions: captionCues(String(args[1])),
           style: { font: "Inter Black", size: 0.062, lineHeight: 1.16, chosenSize: 100, bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: "#ffffff", box: "rgba(0,0,0,0.85)", highlight: true, highlightColour: "#b4236f" },
         });
       case "Fonts":
@@ -481,6 +545,15 @@ export const Call = {
             lane: "transcribe",
           },
         ]);
+      }
+      // A correction belongs to the episode and is applied to every clip
+      // that holds the word, which here is every clip that reads it back
+      // through fixed().
+      case "SetWord": {
+        const text = String(args[4]).trim();
+        if (!text) return Promise.reject(new Error("a word cannot be empty"));
+        fixed()[said(Number(args[3]))] = text;
+        return Promise.resolve(clipOf(String(args[2])));
       }
       case "Waveform": {
         const from = Number(args[1]) || 0;
