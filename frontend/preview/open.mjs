@@ -9,7 +9,7 @@
 import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -36,7 +36,32 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 // plays, which looks exactly like a video that is simply paused. The app
 // itself runs in a WebKit view and plays the MP4 the Go side serves. This
 // file only has to be a video the harness can play.
-const episodeAt = join(tmpdir(), "framefairy-preview-episode.webm");
+const episodeAt = join(tmpdir(), "framefairy-preview-episode-lit2.webm");
+const stillsAt = join(tmpdir(), "framefairy-preview-stills");
+
+// Not black any more, but a grey that climbs steadily from the first
+// second to the last. Black was unreadable in the one way that matters: a
+// black picture and no picture at all look the same, so a probe could not
+// tell a video preview that had gone blank from one showing a frame, and
+// that is the whole question about the two bugs the player had. Grey
+// answers it, and because the grey climbs, a probe can also say roughly
+// where in the episode the picture is and that it moved.
+//
+// It is rough on purpose. The luma comes back through a limited range and
+// a lossy encoder, so it is good for "it is showing something" and "it
+// moved about that far", and not for a second exactly. Anything needing
+// the exact second should read the app's own clock, which is what the app
+// shows anyway.
+//
+// Four hours at a frame a second, which ffmpeg makes in under five
+// seconds and which comes to 400 KB, because a slow ramp barely changes
+// from one frame to the next. Kept in the temp folder and made once.
+//
+// Sixteen by nine, which is the shape the fake Go side says the episode
+// is. A square picture in a wide preview is letterboxed, and a probe that
+// samples anywhere but the middle then reads the black bars and calls the
+// picture blank.
+const litFilter = "geq=lum='40+160*T/14423':cb=128:cr=128";
 
 async function episode() {
   try {
@@ -46,10 +71,12 @@ async function episode() {
   try {
     await run("ffmpeg", [
       "-v", "error",
-      "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1",
+      "-f", "lavfi", "-i", "color=c=black:s=192x108:r=1",
       "-t", "14423",
-      "-c:v", "libvpx-vp9", "-b:v", "10k",
+      "-vf", litFilter,
+      "-c:v", "libvpx-vp9", "-b:v", "12k",
       "-deadline", "realtime", "-cpu-used", "8", "-g", "120",
+      "-pix_fmt", "yuv420p",
       episodeAt, "-y",
     ]);
     return episodeAt;
@@ -58,15 +85,55 @@ async function episode() {
   }
 }
 
+// The whole file, read once. It was read from disk on every range request,
+// and a video element asks for a great many of them.
+let episodeBytes = null;
+async function episodeBody() {
+  const file = await episode();
+  if (!file) return null;
+  episodeBytes ??= await readFile(file);
+  return episodeBytes;
+}
+
+// A frame of the episode as a picture, which is what the workspace puts
+// over the video preview while the picture is stale. The Go side answers
+// Still with a path per second, so this answers that path with that
+// second, cut out of the same episode. Without it the fallback asked for a
+// jpg and was handed a video, so the one thing drawn over a blank picture
+// could not be reached in the harness at all.
+async function still(res, path) {
+  const hit = /still-(\d+)/.exec(path ?? "");
+  const file = await episode();
+  if (!hit || !file) {
+    res.writeHead(404).end("no still");
+    return;
+  }
+  const at = Number(hit[1]);
+  const out = join(stillsAt, `${at}.png`);
+  try {
+    await stat(out);
+  } catch {
+    try {
+      await mkdir(stillsAt, { recursive: true });
+      await run("ffmpeg", ["-v", "error", "-i", file, "-ss", String(at), "-frames:v", "1", out, "-y"]);
+    } catch {
+      res.writeHead(404).end("no still");
+      return;
+    }
+  }
+  const body = await readFile(out);
+  res.writeHead(200, { "content-type": "image/png", "content-length": body.length });
+  res.end(body);
+}
+
 // The video element asks for a stretch at a time and will not seek at all
 // without a 206, so the range is answered rather than the whole file.
 async function media(res, range) {
-  const file = await episode();
-  if (!file) {
+  const body = await episodeBody();
+  if (!body) {
     res.writeHead(404).end("no ffmpeg, so no episode to play");
     return;
   }
-  const body = await readFile(file);
   const hit = /bytes=(\d*)-(\d*)/.exec(range ?? "");
   if (!hit) {
     res.writeHead(200, { "content-type": "video/webm", "content-length": body.length, "accept-ranges": "bytes" });
@@ -104,7 +171,9 @@ export async function workspace({
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     if (url.pathname.startsWith("/media/")) {
-      await media(res, req.headers.range);
+      const asked = url.searchParams.get("path") ?? "";
+      if (/still-\d+/.test(asked)) await still(res, asked);
+      else await media(res, req.headers.range);
       return;
     }
     const file = url.pathname === "/" ? "/index.html" : url.pathname;

@@ -65,6 +65,51 @@ after load.
 `frontend/preview/dist/` is build output and is not in the repository.
 Write one-off probes outside the repository, in the scratchpad.
 
+## The episode the harness can play
+
+The video preview is a real `<video>` and the harness serves it a real
+episode, made with ffmpeg on the first run and kept in the temp folder:
+four hours at a frame a second, 192 by 108, about 700 KB. Without ffmpeg
+there is no episode, playing fails, and a probe that needs it has to say
+so rather than pass.
+
+Two things about it are deliberate.
+
+**It is VP9 in a WebM, not H.264 in an MP4.** The Chromium that comes with
+Playwright is built without the proprietary codecs, so an MP4 loads,
+errors and never plays, which looks exactly like a video that is paused.
+The app itself runs in a WebKit view and plays the MP4 the Go side serves.
+
+**It is a grey that climbs from the first second to the last, not black.**
+Black is unreadable in the one way that matters: a black picture and no
+picture at all look the same, so a probe cannot tell a video preview that
+has gone blank from one showing a frame, and that is the whole question
+about anything the player does. Grey answers it, and because the grey
+climbs, a probe can also say roughly where in the episode the picture is
+and that it moved. Roughly: the luma comes back through a limited range
+and a lossy encoder, so it is good for *it is showing something* and *it
+moved about that far*, not for a second exactly. Anything needing the
+exact second reads the app's own clock.
+
+Read it by taking a screenshot of the middle of `.screen` and averaging
+the pixels. The middle, because the picture is letterboxed in the preview
+and a sample anywhere else reads the black bars and calls a good picture
+blank. Around 28 is a picture, 0 is nothing.
+
+The fallback still is served too: the fake Go side answers `Still` with a
+path per second, and the harness cuts that second out of the same episode
+and hands it back as a PNG. Without that the `<img>` drawn over a stale
+picture asked for a jpg and was handed a video, so the one thing that
+covers a blank preview could not be reached here at all.
+
+**A page error is a result.** Attach `page.on("pageerror", ...)` in any
+probe that plays or edits while playing. The player's frame loop threw
+`Cannot read properties of undefined (reading 'end')` when a cut was put
+back while the clip played past it, which ended the loop for good, and the
+throw is the only clean signal of it: the video's own `currentTime` goes
+on rising either way, because the element is still playing. Measuring the
+video's clock would have said everything was fine.
+
 ## The motion bench
 
 `make motion` opens every way the app shows work in hand on one page: the
