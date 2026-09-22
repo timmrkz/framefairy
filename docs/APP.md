@@ -66,7 +66,16 @@ memory it has is offered the smallest, because that is the one most likely
 to run, and nothing else is promised.
 
 A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
-app fetched it or not. Either way `llama-server` has to be on the machine.
+app fetched it or not.
+
+A model is only half of the local way. `llama-server`, from llama.cpp, is
+what runs it, and a model without one is fifteen gigabytes that answer
+nothing. So the app looks for it and says so while it is missing, and it
+does not call itself ready on a machine that has the download and no way
+to open it, which it used to. It is looked for the way ffmpeg is: the one
+named in the settings, then the one sitting beside the app, then the
+search path. The middle step is the one a customer has, because they have
+no Homebrew and no terminal.
 
 The last button is **Finish setup**, and that is all it does. Adding an
 episode has one way of being done and it is the plus in the sidebar, so a

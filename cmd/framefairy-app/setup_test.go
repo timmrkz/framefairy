@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -133,9 +134,15 @@ func TestANewCopyOfTheAppKnowsWhatItStillNeeds(t *testing.T) {
 		}
 	})
 
+	// The local way needs both halves: the model that answers and the
+	// server that runs it. Neither one alone makes a short.
 	t.Run("local needs a model on the machine", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("the search path works differently enough to need its own test")
+		}
 		s := emptyMachine(t)
 		placeSpeechModel(t, engine.SpeechModels()[0].Name)
+		placeLlamaServer(t)
 		if err := s.ChoosePlanner("local"); err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +158,7 @@ func TestANewCopyOfTheAppKnowsWhatItStillNeeds(t *testing.T) {
 			t.Fatal("did not see the model file")
 		}
 		if !state.Ready {
-			t.Error("a speech model, local chosen and a model file, and still not ready")
+			t.Error("a speech model, local chosen, a model file and a server, and still not ready")
 		}
 	})
 
@@ -411,4 +418,75 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 			t.Fatal("the same job was handed back for both")
 		}
 	})
+}
+
+// Pretends llama.cpp is on the machine, by putting something runnable
+// under that name on the only folder the search path holds here.
+func placeLlamaServer(t *testing.T) {
+	t.Helper()
+	dir := os.Getenv("PATH")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Never started by anything in these tests, so what it would do does
+	// not matter. What matters is that it can be found and could be run.
+	if err := os.WriteFile(filepath.Join(dir, "llama-server"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The worst state the setup could leave somebody in, and until now it
+// could: a language model downloaded, fifteen gigabytes of it, and nothing
+// on the machine able to open it. The app called that ready, because it
+// only ever looked for the model.
+func TestAModelWithNothingToRunItIsNotReady(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the search path works differently enough to need its own test")
+	}
+	s := emptyMachine(t)
+	if err := s.ChoosePlanner("local"); err != nil {
+		t.Fatal(err)
+	}
+	placeSpeechModel(t, engine.SpeechModels()[0].Name)
+	placeLanguageModel(t, engine.LanguageModels()[0].Name)
+
+	state := s.Setup(context.Background())
+	if state.HasServer {
+		t.Fatal("found a llama-server although the search path is an empty folder")
+	}
+	if !state.HasLocalModel || !state.HasSpeech {
+		t.Fatalf("the models are not where the test put them: %+v", state)
+	}
+	if state.Ready {
+		t.Error("said it was ready to make a short with a model it cannot run")
+	}
+
+	placeLlamaServer(t)
+	state = s.Setup(context.Background())
+	if !state.HasServer {
+		t.Fatal("did not see the llama-server that is there")
+	}
+	if !state.Ready {
+		t.Error("has the speech model, a language model and a server, and still says no")
+	}
+}
+
+// The API way is not touched by any of that. A key is the whole of it, and
+// somebody who never chose the local model should never be told about a
+// program they do not need.
+func TestTheAPIWayDoesNotNeedAServer(t *testing.T) {
+	s := emptyMachine(t)
+	if err := s.ChoosePlanner("api"); err != nil {
+		t.Fatal(err)
+	}
+	placeSpeechModel(t, engine.SpeechModels()[0].Name)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key")
+
+	state := s.Setup(context.Background())
+	if state.HasServer {
+		t.Fatal("found a llama-server although the search path is an empty folder")
+	}
+	if !state.Ready {
+		t.Error("a key and a speech model are everything the API way needs, and it said no")
+	}
 }

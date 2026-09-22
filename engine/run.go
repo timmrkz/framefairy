@@ -631,7 +631,7 @@ func resolveLocal(opts Options) (*LocalModel, error) {
 	}
 	server := m.Server
 	if server == "" {
-		server = "llama-server"
+		server = LlamaServerPath()
 	}
 	if _, err := exec.LookPath(server); err != nil {
 		return nil, renderErr("%s was not found. Install llama.cpp as docs/INSTALL.md describes, "+

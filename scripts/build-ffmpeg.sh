@@ -115,7 +115,11 @@ fetch() {
 	rm -f "$WORK/$2.tar"
 	if [ -n "$3" ]; then
 		echo "  the archive is unreachable, taking $4 from git instead"
-		git clone --depth 1 --branch "$4" -q "$3" "$WORK/$2" >>"$LOG" 2>&1
+		# advice.detachedHead off: fourteen lines about a state nobody
+		# here is going to commit in, on the screen, in the middle of a
+		# build.
+		git -c advice.detachedHead=false clone --depth 1 --branch "$4" -q \
+			"$3" "$WORK/$2" >>"$LOG" 2>&1
 		return 0
 	fi
 	echo "build-ffmpeg.sh: cannot fetch $2 from $1" >&2
@@ -261,8 +265,43 @@ if [ -n "$borrowed" ]; then
 	exit 1
 fi
 
+# The licence text travels with the binary. LGPL asks for that and it is
+# one file, so there is nothing to weigh up.
+cp "$WORK/ffmpeg-$FFMPEG_VERSION/COPYING.LGPLv2.1" "$OUT/bin/LICENSE-ffmpeg.txt"
+
+# What this build is, written down beside the binary, read back off the
+# binary rather than echoed from the variables above.
+#
+# The point of this file is that somebody who has only the finished ffmpeg
+# can still answer the two questions that matter: what licence is it under,
+# and what was it built from. -buildconf is ffmpeg's own record of its
+# configure line, kept inside the executable, so it cannot drift from what
+# this script did the way a copy of the line would.
+INFO="$OUT/bin/BUILD-ffmpeg.txt"
+{
+	echo "ffmpeg, built for framefairy"
+	echo
+	echo "built    $(date -u '+%Y-%m-%d %H:%M UTC') on $SYSTEM $(uname -m)"
+	echo "recipe   scripts/build-ffmpeg.sh, cksum $(cksum <"$0" | cut -d' ' -f1)"
+	echo "sources  ffmpeg $FFMPEG_VERSION, freetype $FREETYPE_VERSION,"
+	echo "         fribidi $FRIBIDI_VERSION, harfbuzz $HARFBUZZ_VERSION, libass $LIBASS_VERSION"
+	echo
+	echo "version"
+	"$FF" -hide_banner -version 2>/dev/null | head -1 | sed 's/^/  /'
+	echo
+	echo "licence, as the binary itself reports it"
+	"$FF" -hide_banner -L 2>/dev/null | head -4 | sed 's/^/  /'
+	echo
+	echo "configure, as the binary itself reports it"
+	# As ffmpeg prints it, one flag a line, without the blank line it
+	# opens with. The paths in it are the ones this build really used, so
+	# they stay: this is the binary's own record and not our summary of it.
+	"$FF" -hide_banner -buildconf 2>/dev/null | sed '/^[[:space:]]*$/d'
+} >"$INFO"
+
 echo
 echo "ffmpeg  $(du -h "$FF" | cut -f1)  $FF"
 echo "ffprobe $(du -h "$OUT/bin/ffprobe" | cut -f1)  $OUT/bin/ffprobe"
 echo
 echo "LGPL, no libx264, subtitles filter present."
+echo "What it is and what it came from: $INFO"

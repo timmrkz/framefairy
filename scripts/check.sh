@@ -95,10 +95,18 @@ runtime() {
 	else
 		bad "ffmpeg" "$(install_hint 'make' 'sudo apt install ffmpeg' 'winget install Gyan.FFmpeg')"
 	fi
-	if command -v llama-server >/dev/null 2>&1; then
-		ok "llama-server"
+	# The same order, and named the same way. A local model is only half
+	# of the local way: this is what runs it.
+	whose="on the search path"
+	ls=$(command -v llama-server 2>/dev/null || true)
+	if [ -x "$BESIDE/llama-server" ]; then
+		ls="$BESIDE/llama-server"
+		whose="ours, from make"
+	fi
+	if [ -n "$ls" ]; then
+		ok "llama-server ($whose)"
 	else
-		bad "llama-server from llama.cpp" "$(install_hint 'make' 'see docs/INSTALL.md, step 4' 'winget install llama.cpp')"
+		bad "llama-server, which runs a local model" "$(install_hint 'make' 'make llama, see docs/INSTALL.md' 'winget install llama.cpp')"
 	fi
 	# The models are the app's to fetch, on its first run, the way a
 	# customer gets them. make models is still there for the command line,

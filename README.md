@@ -36,8 +36,8 @@ make run       # installs what is missing, builds everything, starts the app
 ```
 
 That is the whole of it. The first run takes a while, because it installs
-the tools this machine lacks and builds the ffmpeg framefairy ships. After
-that it is an ordinary build. The app then walks you through the rest: it
+the tools this machine lacks and builds the two programs framefairy ships
+beside itself, ffmpeg and llama-server. After that it is an ordinary build. The app then walks you through the rest: it
 fetches the speech model itself and asks once how clips should be found.
 
 `make check` lists what the machine still needs. [docs/BUILD.md](docs/BUILD.md)

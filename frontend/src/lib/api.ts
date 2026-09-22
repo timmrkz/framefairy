@@ -303,6 +303,9 @@ export interface SetupState {
   // Whether a key can be found. It never carries the key itself.
   hasKey: boolean;
   hasLocalModel: boolean;
+  // Whether llama-server can be found. A model without it is a very large
+  // file that answers nothing.
+  hasServer: boolean;
   // Whether anybody has answered the one question. Until then the planner
   // is a default rather than a decision.
   chosen: boolean;

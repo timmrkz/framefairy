@@ -33,8 +33,11 @@ What the product has to be:
   not a verdict: a cut can be moved, put back or made by hand, because the
   one thing the engine cannot hear is what the episode is about.
 - **For many people.** Native on macOS, Windows and Linux, not tuned to one
-  Mac. macOS ships first, because it is the machine that can be tested. A
-  local model is chosen by what the machine's memory can hold.
+  Mac. macOS ships first, because it is the machine that can be tested, and
+  on Apple silicon only: an Intel Mac would cost every binary twice and is
+  the wrong machine for a product that runs a language model from memory
+  through the media engine. A local model is chosen by what the machine's
+  memory can hold.
 - **Improving over time.** Recorded decisions train our own local selection
   model. See [docs/TRAINING.md](docs/TRAINING.md).
 
@@ -74,8 +77,9 @@ Start with [README.md](README.md). In short:
   and then gets everything at once. A pull request opened late is the same
   mistake as no pull request at all.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
-  Go 1.27, Homebrew, ffmpeg from the ffmpeg tap, llama.cpp and the models in
-  `~/.framefairy/models`.
+  Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
+  llama-server are built by `make` and live in `bin/`, which is where the
+  programs look first.
 - He tests the app himself. The cloud VM cannot show the window, so after each
   change say exactly what to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.
@@ -261,7 +265,8 @@ messages, pull request text, code comments and chat replies.
   version exceptions. Upgrade with Go releases.
 - **One command, and the programs still install nothing.** `make` is the
   whole of it: it installs the tools this machine is missing, builds the
-  ffmpeg we ship the first time, and builds the programs. Nobody should
+  two programs we ship beside the app the first time, ffmpeg and
+  llama-server, and builds the programs. Nobody should
   have to remember a second command to get from a fresh machine to a
   running app. A build runner never installs: `CI` in the environment
   turns that off, so what CI builds is what its own workflow asked for.

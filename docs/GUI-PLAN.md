@@ -24,10 +24,10 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
    as the app.
 6. **Time window.** The app offers the command line's `--from` and `--to` as
    a window dragged over the episode waveform.
-7. **Hardware.** No language model ships. The user picks an Anthropic API
-   key or a local model, and the app walks them through installing the
-   local one, choosing by available memory. Tim's machine is an M2 Max with
-   32 GB. See [PACKAGING.md](PACKAGING.md).
+7. **Hardware.** Apple silicon, and no Intel Mac. No language model ships.
+   The user picks an Anthropic API key or a local model, and the app walks
+   them through installing the local one, choosing by available memory.
+   Tim's machine is an M2 Max with 32 GB. See [PACKAGING.md](PACKAGING.md).
 8. **Licence key.** At the very end.
 9. **Training.** The engine records plans and decisions. Everything that
    works with those records is a separate tool, `framefairy-train`. The app only
@@ -149,7 +149,9 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 | 5.1 | Licence memo: which ffmpeg, and what H.264 means for a paid app | `[x]` |
 | 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build`, and `make run` launching the `.app` rather than a bare binary, so what Tim runs every day is what a customer runs | `[ ]` |
 | 5.3 | An LGPL ffmpeg built without libx264 `[x]` for macOS, encoding through the system `[x]`, found next to the app before the search path `[x]`. Linux still has no encoder in an LGPL build, so VA-API or openh264 goes in before Linux ships | `[~]` |
-| 5.4 | The first run: the speech model fetched by the app itself `[x]`, the one question asked once and remembered `[x]`, an Anthropic API key stored in the keychain `[x]`, four language models from three houses, each pinned to a checksum read off the real file, judged against what the machine can hold, with the one it should have marked `[x]`, the same lists in the settings `[x]`. What is left is resuming a download that stopped, which matters at fifteen gigabytes | `[~]` |
+| 5.3b | The llama-server we ship, built from llama.cpp, so choosing a local model is not an instruction to go and install something | `[x]` |
+| 5.3c | The tools we ship built by a workflow started by hand, kept as an archive with a manifest read off the binaries, their source published beside them, and a checksum anybody can hold a copy against | `[x]` |
+| 5.4 | The first run: the speech model fetched by the app itself `[x]`, the one question asked once and remembered `[x]`, an Anthropic API key stored in the keychain `[x]`, four language models from three houses, each pinned to a checksum read off the real file, judged against what the machine can hold, with the one it should have marked `[x]`, the same lists in the settings `[x]`, a download that stopped carried on rather than started again `[x]`, and `llama-server` found beside the app before the search path, with the local way not called ready without one `[x]`. | `[x]` |
 | 5.5 | macOS signing and notarisation, every bundled binary included | `[ ]` |
 | 5.6 | Windows and Linux builds in CI | `[ ]` |
 | 5.7 | Whether customer builds record training data, and a setting for it | `[ ]` |

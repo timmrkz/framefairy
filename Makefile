@@ -4,15 +4,19 @@
 #   make run        the same, then start the app
 #
 # That is the whole of it for everyday work. make installs the tools this
-# machine lacks and builds the ffmpeg framefairy ships, once, and after
-# that it is an ordinary build. The models are not make's business: the app
-# fetches the speech model and the language model itself, on first run,
-# which is what a customer does.
+# machine lacks and builds the two programs framefairy ships beside
+# itself, ffmpeg and llama-server, once, and after that it is an ordinary
+# build. The models are not make's business: the app fetches the speech
+# model and the language model itself, on first run, which is what a
+# customer does.
 #
 # The rest, for when you want one part of it:
 #
 #   make motion     the five ways the app shows work in hand, in a browser
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
+#   make llama      build the llama-server we ship again, from scratch
+#   make tools-archive
+#                   pack both of them, with a manifest, for a release
 #   make test       all tests: unit, fuzz and interface
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
@@ -79,7 +83,7 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run motion ffmpeg deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -91,7 +95,7 @@ all: deps toolchain $(PROGRAMS) tools-beside
 # or a file test.
 deps:
 ifeq ($(INSTALL),1)
-	@sh scripts/tools.sh $(STAMPS)/ffmpeg
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
 endif
 
 # Our own ffmpeg goes beside the programs, where they look before the search
@@ -101,10 +105,17 @@ endif
 # This is what makes the development build use the ffmpeg a customer will
 # use, rather than whatever Homebrew happens to have installed.
 tools-beside:
-	@if [ -x $(STAMPS)/ffmpeg/bin/ffmpeg ]; then 		cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(BIN)/ && 		echo "Using our own ffmpeg, from make ffmpeg"; 	fi
+	@if [ -x $(STAMPS)/ffmpeg/bin/ffmpeg ]; then \
+		cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(BIN)/ && \
+		echo "Using our own ffmpeg, from make ffmpeg"; \
+	fi
+	@if [ -x $(STAMPS)/llama/bin/llama-server ]; then \
+		cp $(STAMPS)/llama/bin/llama-server $(BIN)/ && \
+		echo "Using our own llama-server, from make llama"; \
+	fi
 
 help:
-	@sed -n '1,28p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,29p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -177,6 +188,20 @@ ffmpeg:
 	@rm -rf $(STAMPS)/ffmpeg
 	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
 
+# The llama-server we ship, so choosing a local model is not an instruction
+# to go and install something. Same rules as ffmpeg above: make builds it
+# once when it is not there, this builds it again whatever is there.
+llama:
+	@rm -rf $(STAMPS)/llama
+	@sh scripts/build-llama.sh $(STAMPS)/llama
+
+# Both of them in one archive, with a manifest that says what each one is
+# and the sha256 to check a copy against. This is what a release picks up
+# rather than building them itself, and the workflow that makes one by hand
+# is .github/workflows/tools.yml.
+tools-archive:
+	@sh scripts/pack-tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/dist
+
 # Every way the app says work is in hand, on one page, in a browser. It is
 # preview material and never goes into the app.
 motion: frontend/node_modules/.package-lock.json
@@ -223,7 +248,7 @@ check:
 	@sh scripts/check.sh || true
 
 tools:
-	@sh scripts/tools.sh $(STAMPS)/ffmpeg
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
 
 models:
 	@sh scripts/models.sh

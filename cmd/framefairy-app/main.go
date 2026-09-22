@@ -298,7 +298,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 
 	server := opts.LLMServer
 	if server == "" {
-		server = "llama-server"
+		server = engine.LlamaServerPath()
 	}
 	ls := Check{Name: "llama-server"}
 	if found := lookPath(server); found != "" {
