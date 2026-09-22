@@ -33,8 +33,8 @@ fi
 
 # The version lives in one place and is read from it, so a bundle can never
 # claim a version the program does not.
-VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' \
-	"$(dirname "$0")/../engine/log.go")
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+VERSION=$(awk -F'"' '/^const Version = /{ print $2; exit }' "$ROOT/engine/log.go")
 [ -n "$VERSION" ] || {
 	echo "bundle-macos.sh: cannot read the version out of engine/log.go" >&2
 	exit 1
@@ -74,8 +74,8 @@ fi
 # Saying nothing about it would leave somebody wondering why the Dock looks
 # unfinished.
 ICON=""
-if [ -f build/icon.icns ]; then
-	cp build/icon.icns "$APP/Contents/Resources/icon.icns"
+if [ -f "$ROOT/build/icon.icns" ]; then
+	cp "$ROOT/build/icon.icns" "$APP/Contents/Resources/icon.icns"
 	ICON='	<key>CFBundleIconFile</key>
 	<string>icon</string>'
 else
