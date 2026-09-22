@@ -17,7 +17,7 @@
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
   import { onMount, type Snippet } from "svelte";
-  import { pictureIsStale } from "../lib/flow";
+  import { pictureIsStale, pieceAt as pieceIndex, playingPiece } from "../lib/flow";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -133,8 +133,7 @@
   }
 
   function pieceAt(t: number): number {
-    const index = pieces.findIndex((p) => t < p.end);
-    return index < 0 ? Math.max(pieces.length - 1, 0) : index;
+    return pieceIndex(pieces, t);
   }
 
   // A video that has not read its own index yet drops a seek on the floor,
@@ -254,6 +253,9 @@
     if (clip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
       // jumps every cut and stops where the clip ends.
+      // The pieces change under the player whenever a cut is taken out or
+      // put back, so the piece being played can be gone by this frame.
+      atPiece = playingPiece(pieces, atPiece, video.currentTime);
       const piece = pieces[atPiece];
       // Nothing is decided while a jump is still being made, or a stale
       // position could be read as the end of the piece jumped to.
@@ -276,6 +278,9 @@
   }
 
   function onError() {
+    // Nothing is on screen once it has failed, so the still takes over.
+    ready = false;
+    shows = -1;
     const code = video?.error?.code ?? 0;
     const names: Record<number, string> = {
       1: "loading was stopped",
@@ -522,6 +527,24 @@
         ready = true;
         shows = video.currentTime;
         wanted = -1;
+      }}
+      onemptied={() => {
+        // The element has just been reset and is showing nothing at all.
+        // load() does that, and chase() calls load() when a seek will not
+        // land, which is exactly when the machine is busy and the picture
+        // matters most.
+        //
+        // Saying so is what puts the still in its place. pictureIsStale
+        // asks whether the picture is ready and what second it is showing,
+        // and ready was set in two places and cleared in none, so after a
+        // reset the window went on believing a black element was showing
+        // the right frame. With the seek that failed anywhere within half
+        // a second of the playhead, nothing counted as stale, no frame was
+        // asked for, and nothing was drawn over the black. That is a video
+        // preview that goes and does not come back, and clicking about
+        // near a cut is all it takes, because those are the small seeks.
+        ready = false;
+        shows = -1;
       }}
       onerror={onError}
       onclick={toggle}
