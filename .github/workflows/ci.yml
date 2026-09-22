@@ -86,7 +86,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
       - name: Build
         if: steps.needs.outputs.run == 'true'
         run: make
@@ -112,7 +112,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
       - name: Go tests
         if: steps.needs.outputs.run == 'true'
         run: make unit
@@ -137,7 +137,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
       - name: Fuzz
         if: steps.needs.outputs.run == 'true'
         run: make fuzz

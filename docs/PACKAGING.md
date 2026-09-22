@@ -236,8 +236,17 @@ path into the executable as the place to find them:
 RUNPATH  /root/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-linux@v1.13.8/lib/x86_64-unknown-linux-gnu
 ```
 
-Nobody else has that folder, so the app dies before it draws anything. It
-is mechanical to fix and it is step one:
+Nobody else has that folder, so the app dies before it draws anything.
+
+**This is done**, in `scripts/carry-libs.sh`, and it runs on every build
+rather than only when packaging, so what is run every day is what is
+shipped. Proved by hiding the module cache and looking: a build made this
+way resolves both libraries from its own folder, and the build as it was
+yesterday answers `libsherpa-onnx-c-api.so => not found`, which is what a
+customer would have seen. On Linux that needs `patchelf`, which the checks,
+the cloud setup and CI now install.
+
+What it does, per system:
 
 | System | What it needs |
 | --- | --- |

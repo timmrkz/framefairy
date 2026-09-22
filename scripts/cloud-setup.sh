@@ -45,7 +45,7 @@ install_packages() {
 	# still update, so only the install decides.
 	"${apt[@]}" update || echo "Some package sources could not be reached, continuing"
 	"${apt[@]}" install -y --no-install-recommends \
-		ffmpeg pkg-config libgtk-4-dev libwebkitgtk-6.0-dev || return 1
+		ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev || return 1
 }
 
 install_go >/tmp/framefairy-setup-go.log 2>&1 &

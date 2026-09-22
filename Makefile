@@ -107,16 +107,24 @@ $(UI_BUILT): $(UI_SOURCES)
 
 # The programs are always handed to go build, which rebuilds only what
 # changed and takes a moment otherwise.
+# The speech library travels with the program rather than being found in
+# the Go module cache, which is where the program would otherwise look and
+# which exists on no machine but the one that built it. See
+# docs/PACKAGING.md and scripts/carry-libs.sh.
+#
+# Done on every build rather than only when packaging, so what is run every
+# day is what is shipped. A program built without it runs on this machine
+# and nowhere else, which is a thing to find out here rather than from a
+# customer.
 $(BIN)/framefairy$(EXE): modules
 	@echo "Building $@"
 	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy
-ifeq ($(OS),Windows_NT)
-	@sh scripts/check.sh --copy-dlls $(BIN)
-endif
+	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
 	@echo "Building $@"
 	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy-app
+	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
 	@echo "Building $@"

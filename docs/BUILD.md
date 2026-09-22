@@ -208,7 +208,15 @@ go mod tidy
 go build -o bin/framefairy ./cmd/framefairy
 go build -o bin/framefairy-app ./cmd/framefairy-app
 go build -o bin/framefairy-train ./cmd/framefairy-train
+sh scripts/carry-libs.sh bin/framefairy bin/lib
+sh scripts/carry-libs.sh bin/framefairy-app bin/lib
 ```
+
+The last two matter. Without them the two programs look for the speech
+library in the Go module cache of the machine that built them, because
+that is where the cgo directive points, and they run nowhere else. It goes
+unnoticed as long as everyone who runs the app also built it. See
+[PACKAGING.md](PACKAGING.md).
 
 On macOS, put the settings above in front to avoid the warnings:
 

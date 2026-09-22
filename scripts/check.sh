@@ -56,6 +56,16 @@ toolchain() {
 	if [ "$SYSTEM" = Linux ] && ! pkg-config --exists gtk4 webkitgtk-6.0 2>/dev/null; then
 		bad "GTK 4 and WebKitGTK 6, for the app" "sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev gstreamer1.0-libav gstreamer1.0-plugins-good"
 	fi
+	# The speech library travels with the program rather than being found
+	# in the Go module cache. On Linux that needs patchelf, on macOS
+	# install_name_tool comes with the command line tools.
+	if [ "$SYSTEM" = Linux ]; then
+		if command -v patchelf >/dev/null 2>&1; then
+			ok "patchelf"
+		else
+			bad "patchelf, to carry the speech library with the program" "sudo apt install patchelf"
+		fi
+	fi
 }
 
 runtime() {
