@@ -49,13 +49,6 @@ nothing in it moves as the sidebar goes over. What the episode is called
 and what it has are what wait for the room, along with the two marks on its
 row, which need a pointer on the row anyway.
 
-The episodes stay on the rail too, as their lamps. An episode's row keeps
-its height and its lamp keeps its column whether the sidebar is shut or
-open, so the rail is one column of marks from the top to the bottom and
-nothing in it moves as the sidebar goes over. What the episode is called
-and what it has are what wait for the room, along with the two marks on its
-row, which need a pointer on the row anyway.
-
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
 keep the episode's files or delete them. The box names the folder they are
