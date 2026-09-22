@@ -145,9 +145,9 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 
 | # | Batch | Status |
 |---|---|---|
-| 5.0 | The speech library carried in the bundle: the runpath off the build machine's module cache and onto the app | `[x]` |
+| 5.0 | The speech library carried in the bundle: the runpath off the build machine's module cache and onto the app. Done on Linux first, and the macOS half was doing nothing at all until the bundle made it visible | `[x]` |
 | 5.1 | Licence memo: which ffmpeg, and what H.264 means for a paid app | `[x]` |
-| 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build`, and `make run` launching the `.app` rather than a bare binary, so what Tim runs every day is what a customer runs | `[ ]` |
+| 5.2 | `Frame Fairy.app` built by `make app` and started by `make run`, so what Tim runs every day is what a customer runs: the same `Info.plist`, the same privacy prompts, the same tools inside the same folder. Wails' own Taskfile layout is not adopted, see [PACKAGING.md](PACKAGING.md#how-the-building-works). The icon is one PNG in `build/`, made into an `.icns` by the build | `[~]` |
 | 5.3 | An LGPL ffmpeg built without libx264 `[x]` for macOS, encoding through the system `[x]`, found next to the app before the search path `[x]`. Linux still has no encoder in an LGPL build, so VA-API or openh264 goes in before Linux ships | `[~]` |
 | 5.3b | The llama-server we ship, built from llama.cpp, so choosing a local model is not an instruction to go and install something | `[x]` |
 | 5.3c | The tools we ship built by a workflow started by hand, kept as an archive with a manifest read off the binaries, their source published beside them, and a checksum anybody can hold a copy against | `[x]` |

@@ -350,11 +350,38 @@ Nobody else has that folder, so the app dies before it draws anything.
 
 **This is done**, in `scripts/carry-libs.sh`, and it runs on every build
 rather than only when packaging, so what is run every day is what is
-shipped. Proved by hiding the module cache and looking: a build made this
-way resolves both libraries from its own folder, and the build as it was
-yesterday answers `libsherpa-onnx-c-api.so => not found`, which is what a
-customer would have seen. On Linux that needs `patchelf`, which the checks,
-the cloud setup and CI now install.
+shipped. On Linux that needs `patchelf`, which the checks, the cloud setup
+and CI now install.
+
+**It was only ever done on Linux.** The macOS half did nothing, on every
+macOS build there has been, and the check written to catch exactly that
+passed every time. Both halves of the mistake are worth writing down.
+
+The rewriting did nothing because there was nothing to rewrite. On macOS
+these libraries already call themselves `@rpath/libsherpa-onnx-c-api.dylib`
+and so does everything linking them, so no absolute path is recorded
+anywhere and every `install_name_tool -change` was a no-op. The whole
+question is the rpath, and cgo bakes one:
+
+```
+#cgo LDFLAGS: ... -Wl,-rpath,${SRCDIR}/lib/aarch64-apple-darwin
+```
+
+That is the module cache. The two rpaths `carry-libs.sh` added,
+`@executable_path` and `@executable_path/../Frameworks`, matched neither
+the libraries' real folder, `bin/lib`, nor anything else. The program found
+them through the cgo rpath, every time, on the only machine that has it.
+
+And the check missed it because it asked `otool -L`, which lists what a
+program needs, not where it looks. The module cache was in `LC_RPATH`,
+which `otool -L` never prints. So the check answered no and meant nothing.
+
+Now the rpath list includes the folder the libraries are really in, the
+module cache rpath is deleted with `install_name_tool -delete_rpath`, and
+the check resolves each `@rpath/` library against each rpath by hand and
+fails if one cannot be found or if any rpath names the module cache. It is
+the same check for the bundle, `carry-libs.sh --verify`, so `bin/` and
+`Frame Fairy.app` are held to one standard.
 
 What it does, per system:
 
@@ -425,6 +452,50 @@ gh attestation verify framefairy-tools-macos-arm64.tar.gz --repo timmrkz/framefa
 And the LGPL obligation itself, that the source be available: the source
 archive holds the upstream releases at the pinned versions and the scripts
 that configured them, on the same release page as the binary.
+
+## The icon
+
+One file: `build/icon.png`, square, 1024 by 1024, with transparency. That
+is the only thing anybody ever changes. `scripts/make-icon.sh` turns it
+into the `.icns` the bundle carries, with `sips` and `iconutil`, which are
+on every Mac. The `.icns` is build output and is not in the repository.
+
+An `.icns` is not an image. It is a container holding the same artwork at
+ten sizes, from 16 to 1024, and macOS picks which one the Dock, Finder,
+Spotlight and the switcher each get. Drawing one size and letting the
+system scale it is a different and worse thing.
+
+**The grid, which decides whether it looks right beside the system's own.**
+A macOS app icon's rounded square fills about 824 of the 1024, centred, and
+the rest is left for the shadow the system draws. An icon that fills its
+square comes out visibly larger than every icon next to it in the Dock.
+`build/icon.png` is on that grid.
+
+**Looked at rather than guessed.** It was an open question whether macOS 26,
+which changed how icons are built and drawn, masks a legacy `.icns` into its
+own shape. If it did, an icon on the grid would come out small inside that
+mask and the full-bleed one would be the right input. It does not: in the
+Dock on macOS 26.6.2 the icon keeps its own shape and stands exactly as tall
+as Finder, Terminal and Chrome beside it. So the grid is right and there is
+nothing here to decide again.
+
+**The artwork is flat and stays flat.** In the Dock on macOS 26 the icon
+has a bright rim along its top edge and shades off towards the bottom, so
+it reads as a lit object. None of that is in the file. Measured against the
+same screenshot: the purple we ship is `148, 33, 146` everywhere, and what
+the Dock draws runs from a two-pixel rim at about twice that brightness,
+down through the body, to 57% of it at the bottom. macOS renders the icon
+as a material with a light above it, and the Dock adds its own shadow.
+
+So an icon that looks flat next to the Dock is not a mistake to correct.
+That depth belongs to macOS. Everywhere else the icon goes, Windows, Linux,
+a download page, it is the flat artwork, and depth there has to be drawn.
+
+`build/icon-full-bleed.png` stays, and not for that question. It is the same
+artwork filling the whole square, which is what Windows and a web favicon
+want, because neither insets the way macOS does. Windows takes a `.ico` and
+Linux takes loose PNGs, both from that master, when those builds are first
+made.
 
 ## Who builds the disk image
 
