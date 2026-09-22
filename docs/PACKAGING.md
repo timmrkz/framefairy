@@ -44,6 +44,15 @@ Speech is not part of that choice. Transcription is always local, always
 Parakeet, and the speech model is 490 MB, which is a first-run download
 nobody has to think about.
 
+**This is built.** The first run is a setup screen, `frontend/src/screens/
+Setup.svelte`, which fetches the speech model by itself, with a checksum
+and nothing left behind if it is stopped, and asks the one question. The
+key goes in the macOS keychain. What is still to come is the local
+language model: the app names what to put where rather than fetching it,
+so the consent, the checksum, the resume and the choice by memory above
+are written for the speech model and not yet for Gemma. See
+[APP.md](APP.md#the-first-run).
+
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches Gemma from its own home, the way
 `make models` does today, so its licence is between the user and Google

@@ -134,7 +134,10 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 		// Unpacking has no share to report, so it says what it is doing
 		// and the window shows work in hand without a number, which it
 		// already knows how to do.
-		log.Progress("unpacking " + m.Title)
+		// What is happening, and not what it is happening to: the job
+		// carries the model's title, so saying it here as well would put
+		// the same name on screen twice in one row.
+		log.Progress("unpacking")
 		if err := os.RemoveAll(staging); err != nil {
 			return err
 		}
@@ -191,8 +194,7 @@ func download(ctx context.Context, log *Log, m SpeechModel, path string) (string
 		total = m.Download
 	}
 	sum := sha256.New()
-	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), res.Body, total,
-		"fetching "+m.Title)
+	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), res.Body, total, "fetching")
 	if err != nil {
 		return "", err
 	}

@@ -232,7 +232,8 @@ input[type="number"] {
   width: 80px;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   width: 100%;
 }
 

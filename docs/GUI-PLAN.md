@@ -149,7 +149,7 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 | 5.1 | Licence memo: which ffmpeg, and what H.264 means for a paid app | `[x]` |
 | 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build`, and `make run` launching the `.app` rather than a bare binary, so what Tim runs every day is what a customer runs | `[ ]` |
 | 5.3 | An LGPL ffmpeg built without libx264 `[x]` for macOS, encoding through the system `[x]`, found next to the app before the search path `[x]`. Linux still has no encoder in an LGPL build, so VA-API or openh264 goes in before Linux ships | `[~]` |
-| 5.4 | Finding clips is a choice: an Anthropic API key, or a local model the app helps install, with consent, checksum, resume and a choice by memory | `[ ]` |
+| 5.4 | The first run: the speech model fetched by the app itself `[x]`, the one question asked once and remembered `[x]`, an Anthropic API key stored in the keychain `[x]`, the same model list in the settings `[x]`. The local language model is still put there by hand, so its consent, checksum and choice by memory are still to come | `[~]` |
 | 5.5 | macOS signing and notarisation, every bundled binary included | `[ ]` |
 | 5.6 | Windows and Linux builds in CI | `[ ]` |
 | 5.7 | Whether customer builds record training data, and a setting for it | `[ ]` |

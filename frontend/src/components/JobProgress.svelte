@@ -2,7 +2,12 @@
   import { api, clock, type Job } from "../lib/api";
   import Busy from "./Busy.svelte";
 
-  let { job }: { job: Job } = $props();
+  let {
+    job,
+    // Whether to say what the work is. A row that already names it, like
+    // a speech model being installed in its own row, would say it twice.
+    named = true,
+  }: { job: Job; named?: boolean } = $props();
 
   // Stopping a job takes a moment to reach the work itself, so the button
   // says so at once rather than looking like nothing happened.
@@ -32,7 +37,7 @@
      row, and it has to read the same in both. -->
 <div class="job">
   <div class="row top">
-    <span class="label grow">{job.label}</span>
+    <span class="label grow">{named ? job.label : ""}</span>
     <span class="muted num">{left}</span>
   </div>
   <div class="progress" class:unknown={fraction < 0}>
@@ -55,6 +60,13 @@
 
   .label {
     font-weight: 600;
+  }
+
+  /* The row keeps its height whether or not there is anything in it, so
+     nothing below moves as the time left comes and goes, and so a place
+     that leaves the label out does not lose the row. */
+  .top {
+    min-height: 18px;
   }
 
   .grow {
