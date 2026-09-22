@@ -6,6 +6,8 @@ import {
   pictureIsStale,
   pieceAt,
   playingPiece,
+  saidWord,
+  inEpisode,
   shouldLook,
   shouldTranscribe,
   type SearchState,
@@ -403,5 +405,71 @@ describe("pieceAt", () => {
   test("gives the last piece past the end, and zero with no pieces", () => {
     expect(pieceAt(two, 99)).toBe(1);
     expect(pieceAt([], 99)).toBe(0);
+  });
+});
+
+describe("inEpisode", () => {
+  // A clip in two pieces with a two second cut between them. The clip's
+  // own clock runs 0 to 8, the episode's 10 to 20.
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+
+  test("walks the pieces, adding the cuts back", () => {
+    expect(inEpisode(two, 0)).toBe(10);
+    expect(inEpisode(two, 3)).toBe(13);
+    expect(inEpisode(two, 4)).toBe(16);
+    expect(inEpisode(two, 5)).toBe(17);
+  });
+
+  test("stops at the end of the clip", () => {
+    expect(inEpisode(two, 8)).toBe(20);
+    expect(inEpisode(two, 99)).toBe(20);
+  });
+
+  test("gives the time back with no pieces at all", () => {
+    expect(inEpisode([], 7)).toBe(7);
+  });
+});
+
+describe("saidWord", () => {
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+  // The episode's words, on the episode's clock. The third one is inside
+  // the cut, so no caption word can ever point at it.
+  const said = [
+    { start: 10.5, end: 11, text: "Und" },
+    { start: 13, end: 13.6, text: "da" },
+    { start: 14.5, end: 15, text: "hm" },
+    { start: 16.2, end: 17, text: "war" },
+  ];
+
+  test("finds the word a caption word stands for", () => {
+    // On the clip's clock the same words are at 0.5, 3 and 4.2.
+    expect(saidWord(two, said, { start: 0.5, end: 1 })?.text).toBe("Und");
+    expect(saidWord(two, said, { start: 3, end: 3.6 })?.text).toBe("da");
+    expect(saidWord(two, said, { start: 4.2, end: 5 })?.text).toBe("war");
+  });
+
+  test("finds the word both halves of a split one came from", () => {
+    // "war" corrected to "war es" is drawn as two caption words that
+    // together span the one word. Either half corrects the whole.
+    expect(saidWord(two, said, { start: 4.2, end: 4.6 })?.text).toBe("war");
+    expect(saidWord(two, said, { start: 4.6, end: 5 })?.text).toBe("war");
+  });
+
+  test("allows itself the same hair the engine does", () => {
+    // A middle a hundredth of a second past the end of "da" is still "da".
+    expect(saidWord(two, said, { start: 3.61, end: 3.61 })?.text).toBe("da");
+    // A tenth past it is nothing.
+    expect(saidWord(two, said, { start: 3.7, end: 3.7 })).toBe(null);
+  });
+
+  test("points at nothing when nothing is near", () => {
+    expect(saidWord(two, [{ start: 100, end: 101, text: "far" }], { start: 0, end: 1 })).toBe(null);
+    expect(saidWord(two, [], { start: 0, end: 1 })).toBe(null);
   });
 });

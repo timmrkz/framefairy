@@ -203,3 +203,56 @@ export class Heard {
     return this.at;
   }
 }
+
+// A word as the engine hands it over: a moment and what was said.
+export type Spoken = { start: number; end: number; text: string };
+
+// Where a moment of a clip falls in the episode.
+//
+// A clip runs on its own clock, with the cuts taken out, and that is the
+// clock the captions are written on. This is the way back from it. It is
+// what a word in the caption box needs in order to say which word of the
+// episode it is, because a correction belongs to the episode and not to
+// the clip: the same word corrected once is corrected in every clip that
+// holds it.
+export function inEpisode(pieces: Piece[], at: number): number {
+  let sum = 0;
+  for (const p of pieces) {
+    const span = p.end - p.start;
+    if (at < sum + span) return p.start + Math.max(at - sum, 0);
+    sum += span;
+  }
+  const last = pieces[pieces.length - 1];
+  return last ? last.end : at;
+}
+
+// The word of the episode a caption word came from.
+//
+// A caption word is not always one word of the episode. A correction that
+// reads as two words is drawn as two, in the captions and in the render
+// alike, but what the engine keeps is still the one word it corrected, at
+// the one moment. So the match is made on the middle of the caption word
+// rather than on its edges: the middle of either half falls inside the
+// word both halves came from, and a correction then lands on the whole of
+// it however it was split.
+//
+// Nothing else is close enough to be meant. A middle that falls in no word
+// at all and is not within a hair of one is no word, rather than the
+// nearest one, because correcting a word nobody pointed at is worse than
+// correcting none.
+export function saidWord(pieces: Piece[], words: Spoken[], word: Piece): Spoken | null {
+  const when = inEpisode(pieces, (word.start + word.end) / 2);
+  let near: Spoken | null = null;
+  let off = Infinity;
+  for (const w of words) {
+    if (when >= w.start && when < w.end) return w;
+    const away = when < w.start ? w.start - when : when - w.end;
+    if (away < off) {
+      off = away;
+      near = w;
+    }
+  }
+  // The same hair the engine allows itself when it decides which words
+  // belong to a piece.
+  return off <= 0.02 ? near : null;
+}
