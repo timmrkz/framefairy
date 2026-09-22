@@ -30,7 +30,12 @@ const { page, stop } = await workspace({ query: "?found", scale: 2 });
 await stop();
 ```
 
-`workspace()` opens an episode, puts the sidebar away and picks a clip.
+`workspace()` opens an episode, puts the sidebar away, picks a clip and
+steps the playhead onto its first word. That last step is not tidiness: a
+clip begins a little before the first thing said in it, the way the engine
+cuts it, so a playhead on the clip's own start is in silence and there is
+no caption box on screen at all. Every probe about the captions would be
+measuring an empty picture.
 `screen()` is the same window with nothing clicked, for anything that is
 not the workspace: the first run, the settings, the empty window.
 `query` tells the fake Go side what to pretend. The modes are in

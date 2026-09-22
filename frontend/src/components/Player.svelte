@@ -500,7 +500,14 @@
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientY - from) > 2) moved = true;
       if (!moved) return;
-      word?.blur();
+      if (word) {
+        word.blur();
+        // Pressing on a word without refusing the pointer is what puts the
+        // caret where the hand went down, and it is also what starts the
+        // browser selecting letters. Once the hand is moving this is a
+        // drag, so whatever it selected on the way goes.
+        window.getSelection()?.removeAllRanges();
+      }
       dragCaptions = snapCaptionY(start + (from - e.clientY) * scale);
       oncaptionmoved?.(dragCaptions);
     };
@@ -725,12 +732,32 @@
           class="box"
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
+          class:holding={dragCaptions !== null}
           style="background: {captions.style.box};
                  border-radius: {px(captions.style.radius)}px;
                  padding: {px(captions.style.padY)}px {px(captions.style.padX)}px"
-          title="Drag up or down to place the captions"
+          title="Drag the handle up or down to place the captions"
           onpointerdown={grabCaptions}
         >
+          <!-- The handle the captions are moved by. It is a ring around
+               the box, reaching out over the picture and lying under the
+               words, so the whole of the box that is not a word is
+               something to take hold of and the words stay one click from
+               being corrected.
+
+               It is there because the box stopped being grabbable the day
+               the words in it became fields. What was left to take hold of
+               was the padding and the spaces between words, which is a few
+               pixels of a preview, and nothing said where they were. So
+               the handle says where it is: it draws itself the moment the
+               pointer comes near, the way the info marks do, and it never
+               covers a word.
+
+               Its pointer is the up and down one, not the hand. The crop
+               frame it sits inside is moved sideways and wears the hand,
+               and two things that move in different directions should not
+               say the same thing about themselves. -->
+          <span class="hold"></span>
           {#each rows as line, row (row)}
             <div class="line">
               <!-- The key carries the place as well as the moment. Two
@@ -869,10 +896,42 @@
     text-align: center;
   }
 
+  .box {
+    position: relative;
+  }
+
+  /* Everything in the box that is not a word takes hold of it, and the
+     pointer says which way it goes. The crop frame it sits inside is
+     moved sideways and wears the hand, and two things that move in
+     different directions should not say the same thing about themselves. */
   .box.draggable {
     pointer-events: auto;
-    cursor: grab;
+    cursor: ns-resize;
     touch-action: none;
+  }
+
+  /* The ring reaches past the box, so there is something to take hold of
+     even where a word runs to the end of a line. */
+  .box.draggable .hold {
+    position: absolute;
+    inset: -9px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+  }
+
+  /* It says where it is only while the pointer is near it, like every
+     other mark in the app that explains one thing where that thing is. */
+  .box.draggable:hover .hold,
+  .box.draggable.holding .hold {
+    border-color: var(--accent-hi);
+  }
+
+  /* The lines stand over the ring rather than under it. The ring is
+     placed, and anything placed is painted over anything that is not, so
+     without this it would lie across the words and no word could be
+     clicked at all. */
+  .line {
+    position: relative;
   }
 
   /* A word is corrected where it is read, in the picture, so the word takes
@@ -896,8 +955,19 @@
      that is: correcting the spoken word swapped the colour the render
      burns in for the app's accent, which is the caption saying something
      about itself that is not true. What the picture shows stays what the
-     render will show, and the frame is the only thing the interface adds. */
+     render will show, and the frame is the only thing the interface adds.
+
+     It is the hover frame twice over, which is the whole difference
+     between the two. A frame under the pointer says a word can be
+     corrected, and it goes on saying it after Enter because it goes on
+     being true: the pointer is still there. What has to change at Enter is
+     the frame that said this word is being typed in, and a frame that is
+     the same weight as the one underneath it changes nothing anyone can
+     see. Suppressing the hover instead would be the interface lying about
+     where the pointer is, and it would come back the moment the hand
+     twitched. */
   .word.fixing {
+    outline-width: 2px;
     outline-color: var(--accent-hi);
   }
 

@@ -415,7 +415,19 @@ place.
     both halves of a split word have to point at the one word they came
     from. `inEpisode` and `saidWord` in `frontend/src/lib/flow.ts` are the
     way back, with tests.
-- **Moving the captions:** drag the caption box up or down. It lands on a
+- **Moving the captions:** drag the caption box up or down by its handle,
+  a ring around the box that draws itself in the accent the moment the
+  pointer comes near and is invisible the rest of the time. The whole of
+  the box that is not a word takes hold of it, the ring reaches a little
+  past its edges so there is somewhere to take hold even where a word runs
+  to the end of a line, and the words themselves stay one click from being
+  corrected. Its pointer is the up and down one, not the hand: the crop
+  frame it sits inside is moved sideways and wears the hand, and two
+  things that move in different directions should not say the same thing
+  about themselves. The handle is there because the box stopped being
+  grabbable the day the words in it became fields: what was left was the
+  padding and the spaces between words, a few pixels of a preview, with
+  nothing to say where they were. It lands on a
   step of a grid that appears while it moves, and it stays inside the frame.
   **There is one place for every clip of every episode**, because a place
   that suits one video suits the next one, so the drag saves it as a setting

@@ -122,7 +122,7 @@
   <Select.Portal>
     <!-- Right under the trigger and along its left edge, so the list opens
          where the eye already is. -->
-    <Select.Content sideOffset={4} align="start">
+    <Select.Content sideOffset={4} align={align === "right" ? "end" : "start"}>
       {#snippet child({ props, wrapperProps, open })}
         {#if open}
           <div {...wrapperProps}>
@@ -130,11 +130,22 @@
               {#each options as option (option.value)}
                 <Select.Item value={option.value} label={option.label}>
                   {#snippet child({ props: row, selected })}
-                    <div {...row} class="pick-row">
-                      <span class="tick">
-                        {#if selected}<Icon name="check" size={12} />{/if}
-                      </span>
-                      <span class="what">{option.label}</span>
+                    <!-- Read from the same side the trigger reads from,
+                         and the tick on that side too, so a name in the
+                         list starts where the name on the trigger starts
+                         and the eye runs down one edge. -->
+                    <div {...row} class="pick-row" class:right={align === "right"}>
+                      {#if align === "right"}
+                        <span class="what">{option.label}</span>
+                        <span class="tick">
+                          {#if selected}<Icon name="check" size={12} />{/if}
+                        </span>
+                      {:else}
+                        <span class="tick">
+                          {#if selected}<Icon name="check" size={12} />{/if}
+                        </span>
+                        <span class="what">{option.label}</span>
+                      {/if}
                     </div>
                   {/snippet}
                 </Select.Item>
@@ -276,5 +287,14 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  /* The trigger's own text ends 28 pixels short of its right edge: eight
+     of padding, a twelve wide mark and the eight between them. A row that
+     is read from the right ends its text the same 28 short of its own
+     right edge, and the list stands on the trigger's right edge, so the
+     names in the list and the name on the trigger end in one line. */
+  .pick-row.right .what {
+    text-align: right;
   }
 </style>
