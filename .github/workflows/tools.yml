@@ -1,0 +1,186 @@
+# Builds the two programs framefairy ships beside itself, ffmpeg and
+# llama-server, and keeps the result where a release can pick it up.
+#
+# Started by hand, never by a push. These take half an hour between them
+# and their answer changes only when scripts/build-ffmpeg.sh or
+# scripts/build-llama.sh changes, which is rarely and on purpose. A release
+# that rebuilt them every time would pay that half hour for a result
+# identical to the last one, and could fail because one of the five source
+# servers it reaches was down.
+#
+# What comes out, per system:
+#
+#   framefairy-tools-<system>-<arch>.tar.gz   the binaries and their licences
+#   ...tar.gz.sha256                          its checksum
+#   ...manifest.txt                           what each binary is, readable
+#                                             without unpacking anything
+#   framefairy-tools-source.tar.gz            the source they were built
+#                                             from, once, not per system
+#
+# Three separate things make this provable rather than claimed, which
+# matters because ffmpeg is LGPL and we may ship it only while we can say
+# what it is and hand over what it came from.
+#
+# 1. The manifest is read off the binaries. The licence line comes from
+#    ffmpeg -L and the configure line from ffmpeg -buildconf, both of which
+#    the binary keeps inside itself, so neither can drift from what was
+#    really built. The build scripts refuse outright if libx264 got in or
+#    if the licence comes out GPL.
+# 2. Every file carries a sha256, and scripts/verify-tools.sh checks the
+#    copy inside a built app against it. That is what ties "we build our
+#    own ffmpeg" to the file a customer actually runs.
+# 3. GitHub signs each archive with a build attestation, which records that
+#    this exact file came out of this workflow, from this commit, on a
+#    runner nobody had a shell on. Anyone can check it without trusting us:
+#      gh attestation verify framefairy-tools-linux-x86_64.tar.gz \
+#        --repo timmrkz/framefairy
+name: Tools we ship
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Also attach the result to a release, rather than only keeping it as a workflow artifact
+        type: boolean
+        default: false
+      tag:
+        description: The release tag to attach to, made if it is not there. Left empty it is tools-<today>
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      # One system finishing does not make the other's answer worthless,
+      # and half an hour is a long time to throw away.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS, Apple silicon
+          - os: ubuntu-24.04
+            name: Linux, x86_64
+    # Apple silicon only, decided rather than left out. An Intel Mac would
+    # need every binary here built for x86_64 as well and lipo'd together,
+    # and it is the wrong machine for a product that runs a language model
+    # from memory through the media engine. See docs/PACKAGING.md.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    # Long, because these really do take half an hour between them, but not
+    # unbounded: a build that has hung is not a build that is nearly done.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      # What the attestation needs: an identity for the runner, and
+      # somewhere to put what it signs.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # CI is set in the environment on a runner, so make never installs
+      # anything by itself here. What a build needs is asked for in the
+      # workflow, which is the rule everywhere in this repository.
+      - name: What the builds need, on macOS
+        if: runner.os == 'macOS'
+        run: brew install meson ninja pkg-config nasm cmake
+
+      - name: What the builds need, on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            meson ninja-build pkg-config nasm cmake build-essential
+
+      # Half an hour, and the reason this workflow exists.
+      - name: ffmpeg, LGPL, without libx264
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+
+      - name: llama-server
+        run: sh scripts/build-llama.sh .build/llama
+
+      - name: Pack them, with a manifest read off the binaries
+        run: sh scripts/pack-tools.sh .build/ffmpeg .build/llama .build/dist
+
+      # Unpacked again and checked against its own manifest, because the
+      # manifest is only worth something if it describes what is in the
+      # archive rather than what was lying about when it was written. This
+      # would catch a pack step that picked up the wrong file, which is the
+      # one mistake the manifest cannot catch by itself.
+      - name: The archive holds what the manifest describes
+        run: |
+          mkdir -p .build/unpacked
+          tar -xzf .build/dist/*.tar.gz -C .build/unpacked --strip-components=1
+          sh scripts/verify-tools.sh .build/unpacked/bin .build/dist/*.manifest.txt
+
+      - name: Sign what came out
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: .build/dist/*.tar.gz
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tools-${{ runner.os }}-${{ runner.arch }}
+          path: .build/dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+  # The source is the same whatever system did the building, so it is
+  # fetched once rather than once per system. This is the LGPL side of it:
+  # the upstream archives at the versions the build pins, and the two
+  # scripts that configured them.
+  source:
+    name: The source it was built from
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+      - run: sh scripts/pack-source.sh .build/dist
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: .build/dist/*.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tools-source
+          path: .build/dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+  # Only when it was asked for. A release is a thing with a name that
+  # people are handed, so it is never made by accident.
+  release:
+    if: inputs.release
+    needs: [build, source]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
+      # gh is on every runner, so the release is made by the tool GitHub
+      # ships rather than by somebody else's action. On a workflow whose
+      # whole point is being able to say where a file came from, one less
+      # third party in the chain is worth the three extra lines.
+      - name: Make the release and attach everything to it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ inputs.tag }}'
+          [ -n "$tag" ] || tag="tools-$(date -u '+%Y-%m-%d')"
+          sed "s/{REPO}/${{ github.repository }}/g" \
+            .github/tools-release-notes.md >notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" assets/* --clobber
+          else
+            gh release create "$tag" assets/* --title "$tag" --notes-file notes.md
+          fi

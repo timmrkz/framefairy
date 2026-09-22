@@ -14,7 +14,7 @@ and it is the part that is finished.
 
 ## Decided
 
-### 1. macOS first
+### 1. macOS first, and Apple silicon only
 
 It is the machine that can be tested. Windows and Linux follow once the
 shape is proven, and they are a build problem rather than a design problem
@@ -22,6 +22,17 @@ by then.
 
 macOS is also the strictest gate, so it teaches the most: a signed
 Developer ID build, notarised by Apple, or Gatekeeper refuses to open it.
+
+**Intel Macs are not supported.** The Mac is an Apple silicon machine now,
+and building for the one before it costs every binary twice, an x86_64
+half of ffmpeg and of llama-server as well as of the app, `lipo` to join
+each pair, and a second runner to build them on. None of that is work
+towards the product, and an Intel Mac is the wrong machine for this
+product anyway: a local model runs from memory and leans on the media
+engine, and neither the memory nor the engine is there.
+
+So everything is arm64. The `.app` is not a universal binary, the tools
+archive has no Intel half, and the download page says which Mac it is for.
 
 ### 2. No language model ships
 
@@ -73,11 +84,32 @@ the installer checks that what arrived begins with `GGUF`, because a page
 saying no, saved under a model's name, is the thing that gets past
 everything else.
 
-**What is not done yet: a download does not resume.** A language model is
-between five and fifteen gigabytes, and one that fails at nine tenths
-starts again from nothing. The part file is already there to resume from
-and the server supports it, so this is a range request and a checksum fed
-the bytes that are already on disk.
+**Done: llama-server ships too.** A model is only half of the local way.
+llama.cpp's server is what runs it, and for a while nothing shipped one, so
+the app downloaded up to 14.4 GB and then said in small text that
+llama-server had to be on the machine. A customer has no Homebrew and no
+terminal. That was a wall.
+
+Both halves are closed now. The app looks for llama-server the way it looks
+for ffmpeg, the one beside the program before the one on the search path,
+and it does not call itself ready on a machine with a model it cannot run.
+And `scripts/build-llama.sh` builds one, from a pinned tag, which `make`
+does once and puts in `bin/`, so the llama-server run every day is the one
+that ships. llama.cpp is MIT and it is a child process like ffmpeg, so
+there is no entitlement to ask for and no licence question to answer.
+
+Two flags in that build are worth knowing about, because both were found
+by reading the finished binary rather than by trusting the configure.
+`BUILD_SHARED_LIBS` is on by default, which would leave five libraries
+beside the program, each needing its own signature and its own search path
+inside the bundle. And `LLAMA_OPENSSL` is on by default, which made the
+first build name `libssl.so.3` and `libcrypto.so.3` from the machine that
+built it. Both off, it is one file that names nothing but the system.
+
+**Done: a download resumes.** A language model is
+between five and fifteen gigabytes, and one that failed at nine tenths used
+to start again from nothing. It carries on from the part file instead, with
+a range request and the checksum fed the bytes already on disk.
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches a model from whoever published it, the way
@@ -265,32 +297,38 @@ inside the `.app` like any other file.
 | Licence notices | us | yes | [THIRD_PARTY.md](THIRD_PARTY.md), shown in the app |
 | The speech model, 490 MB | NVIDIA, we never touch it | no | `~/.framefairy/models/`, first run |
 | A language model, 14.4 GB | Google, we never touch it | no | the same place, only if they choose local |
-| `llama-server` | the user, if they choose local | no | wherever they install it |
+| `llama-server`, 15 MB | us, from llama.cpp, MIT | yes | `Contents/MacOS/`, beside ffmpeg |
 | Settings and the episode list | the app | no | `~/Library/Application Support/` |
 | An episode's work | the app | no | `<episode>.framefairy/`, beside the video |
 
 ## One build, used for development too
 
 The rule is that what Tim runs every day and what a customer runs should be
-the same thing. Today they are not, and four of the six differences are
-exactly where shipping bugs live:
+the same thing. Most of it now is, and what is left is exactly where
+shipping bugs live:
 
-| | `make run` today | what a customer runs |
-| --- | --- | --- |
-| Engine and interface | the same code | the same code |
-| ffmpeg | Homebrew's, GPL, with libx264, found on `PATH` | ours, LGPL, static, inside the app |
-| Which encoder | **the same one, chosen from what that ffmpeg has** | the same |
-| Which ffmpeg wins | **the one beside the program, then `PATH`** | the same |
-| The speech library | from the Go module cache | from `Contents/Frameworks/` |
-| Runs from | `bin/framefairy-app`, bare | `/Applications/framefairy.app` |
-| `Info.plist` and privacy prompts | none, so none appear | present, so they appear |
-| Signature | none | Developer ID, notarised |
+| | `make run` today | what a customer runs | same? |
+| --- | --- | --- | --- |
+| Engine and interface | the same code | the same code | yes |
+| ffmpeg | ours, LGPL, static, from `bin/` | ours, from `Contents/MacOS/` | yes |
+| llama-server | ours, from `bin/` | ours, from `Contents/MacOS/` | yes |
+| Which encoder | chosen from what that ffmpeg has | the same | yes |
+| Which tool wins | the one beside the program, then `PATH` | the same | yes |
+| The speech library | carried beside the program | from `Contents/Frameworks/` | nearly |
+| Runs from | `bin/framefairy-app`, bare | `/Applications/framefairy.app` | **no** |
+| `Info.plist` and privacy prompts | none, so none appear | present, so they appear | **no** |
+| Signature | none | Developer ID, notarised | **no** |
 
-Two of those rows are already the same, in `engine/encode.go` and
-`engine/tools.go`. The encoder is chosen at render time from what the
-ffmpeg in hand actually has, and the ffmpeg beside the program always beats
-the one on the search path, so the day ffmpeg lands in the bundle it is the
-one that runs without another change.
+Four of those rows became the same on purpose, in `engine/encode.go`,
+`engine/tools.go`, `scripts/build-ffmpeg.sh` and `scripts/build-llama.sh`.
+The encoder is chosen at render time from what the ffmpeg in hand actually
+has, and a tool beside the program always beats the one on the search
+path, so the day these land in the bundle they are the ones that run
+without another change.
+
+The three that are still different are what batch 5.2 is for: `make run`
+building and launching the `.app` rather than a bare binary. The only thing
+a customer would then have that Tim does not is the signature.
 
 So `make run` builds and launches the `.app` rather than a bare binary.
 Then the daily loop exercises the bundled ffmpeg, the relocated libraries,
@@ -329,27 +367,75 @@ What it does, per system:
 It has never been noticed because everyone who has run the app also built
 it.
 
+## The tools we ship
+
+**This is built**, as `.github/workflows/tools.yml`.
+
+Two jobs on two different clocks, and keeping them apart is the point.
+ffmpeg and llama-server take about half an hour between them and their
+answer changes only when we change a build script or take a newer version.
+A release that rebuilt them every time would pay that half hour for a
+result identical to the last one, and could fail because one of the five
+source servers it reaches was having a bad afternoon.
+
+So they are built rarely, started by hand, and what comes out is kept:
+
+| File | What it is |
+| --- | --- |
+| `framefairy-tools-<system>-<arch>.tar.gz` | ffmpeg, ffprobe, llama-server and their licence texts |
+| `...tar.gz.sha256` | its checksum |
+| `...manifest.txt` | what each binary is, readable without unpacking anything |
+| `framefairy-tools-source.tar.gz` | the source they were built from, once, not per system |
+
+`make tools-archive` makes the same thing on a machine that has already
+built both, which is how it is tried before the workflow runs it.
+
+### Why any of this is provable rather than claimed
+
+The whole licence position rests on one sentence: the ffmpeg we ship is
+LGPL because it was built without libx264. That is worth nothing unless the
+file inside the app can be shown to be the file that was built that way.
+Four separate things make that so, and none of them is our word for it.
+
+**The build refuses to produce a wrong answer.** `scripts/build-ffmpeg.sh`
+reads the finished binary back and stops if the licence comes out GPL, if
+libx264 got in, if libass did not, or if the binary names a library from
+the machine that built it. `scripts/build-llama.sh` does the same last
+check, and it is how two real leaks were found: an ffmpeg that named
+Homebrew's libunibreak, and a llama-server that named the build machine's
+OpenSSL.
+
+**The manifest is read off the binaries.** The licence line comes from
+`ffmpeg -L` and the configure line from `ffmpeg -buildconf`, both of which
+ffmpeg keeps inside itself, so neither can drift from what was really
+built the way a copied-out line would.
+
+**Every binary carries a sha256**, and `scripts/verify-tools.sh` compares
+the copy inside a built app against the manifest. That is the step that
+ties "we build our own ffmpeg" to the file a customer runs.
+
+**GitHub signs each archive** with a build attestation, recording that this
+exact file came out of this workflow, from this commit, on a runner nobody
+had a shell on. Anyone can check it:
+
+```
+gh attestation verify framefairy-tools-macos-arm64.tar.gz --repo timmrkz/framefairy
+```
+
+And the LGPL obligation itself, that the source be available: the source
+archive holds the upstream releases at the pinned versions and the scripts
+that configured them, on the same release page as the binary.
+
 ## Who builds the disk image
 
-Two jobs, on two different clocks, and keeping them apart is the point.
-
-**The ffmpeg job runs by hand, rarely.** Building ffmpeg from source takes
-far longer than building the app and its answer changes only when we change
-the configure line or take a new ffmpeg version. So it is its own workflow,
-started by hand, and what it produces is a versioned archive kept as a
-release asset: `ffmpeg-lgpl-7.1-macos-universal.tar.gz` and its checksum.
-The build records its own configure line and the `ffmpeg -L` output beside
-it, because that output is the proof the build is LGPL rather than our word
-for it.
-
-**The release job runs on a tag, on a macOS runner**, and downloads that
-archive rather than building it. In order:
+**The release job runs on a tag, on a macOS runner**, and downloads the
+tools archive rather than building it. In order:
 
 | Step | What happens |
 | --- | --- |
-| 1 | Build the interface, then the Go binary for arm64 and for x86_64, and `lipo` them into one |
-| 2 | Assemble `framefairy.app`: `Info.plist`, the icon, the speech libraries into `Contents/Frameworks/` with their paths fixed, ffmpeg and ffprobe into `Contents/MacOS/` |
-| 3 | Sign inside-out with the Developer ID: every library, then ffmpeg and ffprobe, then the app, with the hardened runtime |
+| 1 | Build the interface, then the Go binary for arm64. One architecture, no `lipo`, see the first decision above |
+| 2 | Assemble `framefairy.app`: `Info.plist`, the icon, the speech libraries into `Contents/Frameworks/` with their paths fixed, ffmpeg, ffprobe and llama-server into `Contents/MacOS/` with their licence texts |
+| 3 | Sign inside-out with the Developer ID: every library, then the three bundled programs, then the app, with the hardened runtime |
 | 4 | Make the `.dmg`, the `.app` beside a shortcut to Applications |
 | 5 | Send it to Apple to notarise, wait, and staple the ticket to it |
 | 6 | Attach the `.dmg` to the GitHub release |
@@ -364,9 +450,9 @@ sign it with. That is what makes it possible to start now.
 Wails v3 packages from a `build/` folder of per-platform Taskfiles, driven
 by the `wails3` command. We have none of it: no `build/`, no `Taskfile.yml`,
 and `make` calls `go build` directly. The templates in the pinned
-v3.0.0-beta.23 cover an `.app` bundle and a universal binary for macOS, an
-NSIS installer for Windows, and AppImage plus deb and rpm for Linux, and
-there is notarisation support in the toolchain. Adopting that layout is the
+v3.0.0-beta.23 cover an `.app` bundle and, if it were wanted, a universal
+binary for macOS, an NSIS installer for Windows, and AppImage plus deb and
+rpm for Linux, and there is notarisation support in the toolchain. Adopting that layout is the
 cheap path, with one edit: their Windows task sets `CGO_ENABLED=0` and
 sherpa-onnx needs 1.
 
@@ -409,9 +495,8 @@ exception that has to be justified.
 
 **Starting another program is not one of the things it restricts.** A child
 process is its own process with its own signature, so running our own
-ffmpeg needs no entitlement, and neither does running the user's
-`llama-server`, which lives outside the bundle entirely now that they
-install it themselves.
+ffmpeg needs no entitlement, and neither does running `llama-server`,
+whether it is the one we ship beside ffmpeg or one the user already had.
 
 ### What building our own ffmpeg really costs
 

@@ -35,6 +35,26 @@ type LocalModel struct {
 	URL string
 }
 
+// LlamaServerPath decides which llama-server to run, the same way ffmpeg is
+// decided: the one named in the environment, then the one sitting beside the
+// program, then the search path. See ToolPath in tools.go.
+//
+// The middle step is the one that matters for a shipped app. A customer has
+// no Homebrew and no terminal, so the only llama-server they will ever have
+// is the one we put next to the program. Looking only on the search path is
+// how a machine with a model on it still cannot find a clip.
+func LlamaServerPath() string {
+	return ToolPath("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
+}
+
+// HasLlamaServer says whether a llama-server can be run at all. The setup
+// and the settings ask this before offering the local way, because a model
+// on its own is fifteen gigabytes that cannot answer anything.
+func HasLlamaServer() bool {
+	_, err := exec.LookPath(LlamaServerPath())
+	return err == nil
+}
+
 // DefaultLocalModel finds the model file when none was named: the only
 // .gguf file in ~/.framefairy/models.
 func DefaultLocalModel() (string, error) {
@@ -148,7 +168,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	}
 	server := m.Server
 	if server == "" {
-		server = "llama-server"
+		server = LlamaServerPath()
 	}
 	if _, err := exec.LookPath(server); err != nil {
 		return "", nil, renderErr("%s was not found. Install llama.cpp as docs/INSTALL.md "+

@@ -243,9 +243,18 @@
                     onchange={reload}
                   />
                   <p class="muted small">
-                    A model you already have in <b>~/.framefairy/models</b> is used as it is. Either
-                    way <b>llama-server</b> has to be on the machine.
+                    A model you already have in <b>~/.framefairy/models</b> is used as it is.
                   </p>
+                  <!-- A model is the answer and llama-server is what runs
+                       it, so one without the other makes nothing. This is
+                       state and not standing help: it is here only while
+                       it is true, and it names the way that does work. -->
+                  {#if !setup.hasServer}
+                    <p class="warn">
+                      <b>llama-server</b> is what runs a model here, and it is not on this machine.
+                      Until it is, the Claude API is the way that works.
+                    </p>
+                  {/if}
                 </div>
               {/if}
             </li>

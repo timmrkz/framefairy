@@ -247,6 +247,9 @@ export const Call = {
           planner: fresh ? planner : "local",
           hasKey: fresh ? key : true,
           hasLocalModel: fresh ? llmDone() : true,
+          // ?noserver is the machine with a model and nothing to run it,
+          // which is the state the local way has to say something about.
+          hasServer: !location.search.includes("noserver"),
           chosen: fresh ? !!planner : true,
           ready: !fresh,
           installing: modelRunning() ? "m1" : "",

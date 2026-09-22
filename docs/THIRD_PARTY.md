@@ -156,20 +156,58 @@ is not sold on its own. The files live in `engine/fonts/`.
 - Archivo Black, © 2017 The Archivo Black Project Authors,
   https://github.com/Omnibus-Type/ArchivoBlack
 
-## Not included: llama.cpp
+## Shipped beside the program: ffmpeg and llama-server
 
-`framefairy` runs `llama-server` from llama.cpp as a separate program that you
-install yourself. Nothing from llama.cpp is compiled into this binary. If a
-future app bundles it, its MIT licence (https://github.com/ggml-org/llama.cpp)
-must ship with it.
+Two programs travel with `framefairy` rather than inside it. Both are
+separate processes, started and stopped like any other, and nothing from
+either is compiled into the `framefairy` binary. We build both ourselves,
+from source, so what ships is a build we can describe rather than one
+somebody else made.
 
-## Not included: ffmpeg
+**ffmpeg and ffprobe**, LGPL 2.1, https://ffmpeg.org
 
-`framefairy` calls ffmpeg and ffprobe as separate programs that you install
-yourself. Nothing from ffmpeg is compiled into this binary or shipped with it,
-so none of its licence terms apply to a `framefairy` build as it stands.
+ffmpeg is LGPL until it is configured with `--enable-gpl`, and that flag
+exists to allow GPL-licensed external encoders. The only one anybody wants
+is libx264, and ours is built without it: the H.264 encoder comes from the
+system instead, `h264_videotoolbox` on macOS. The build refuses to finish
+if the result comes out GPL or if libx264 got in, and the finished binary
+reports both facts about itself:
 
-That changes if a future app bundles ffmpeg to save its users the install. An
-ffmpeg built with libx264, which `framefairy` needs, is GPL licensed, and shipping
-it alongside a paid, closed-source app carries obligations that deserve a
-careful look before release.
+```
+ffmpeg -L          the licence
+ffmpeg -buildconf  the configure line it was built with
+```
+
+Shipping an unmodified LGPL binary asks for two things and we do both. The
+licence text travels with it, as `LICENSE-ffmpeg.txt`. And the source it
+was built from is published as `framefairy-tools-source.tar.gz` on the same
+release as the binary, holding the upstream archives at the pinned versions
+and the script that configured them.
+
+It is built by `scripts/build-ffmpeg.sh`, which also carries the versions
+of the four libraries inside it: freetype, fribidi, harfbuzz and libass.
+libass is ISC and is not in ffmpeg's GPL list, which is checked against
+ffmpeg's own configure in [PACKAGING.md](PACKAGING.md).
+
+**llama-server**, MIT, https://github.com/ggml-org/llama.cpp
+
+What runs a language model on the user's own machine. MIT asks for its
+notice to travel with every copy, and it does, as `LICENSE-llama.cpp`. It
+is built by `scripts/build-llama.sh` from a pinned tag, without OpenSSL and
+without the web interface, neither of which we use.
+
+**How a copy is checked.** Every release of these carries a manifest with
+the sha256 of each binary, and `scripts/verify-tools.sh` compares the copy
+inside a built app against it. Each archive is also signed by GitHub with a
+build attestation, so anyone can check where it came from without taking
+our word for it:
+
+```
+gh attestation verify <the archive> --repo timmrkz/framefairy
+```
+
+## Not included: the models
+
+No speech model and no language model ships. The app fetches them from
+whoever published them, on its first run and with consent, so their
+licences are between the user and their makers.
