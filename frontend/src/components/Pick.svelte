@@ -179,10 +179,24 @@
     text-align: left;
   }
 
-  /* The same ring the rest of the app gives whatever has the keyboard. */
+  /* The same ring the rest of the app gives whatever has the keyboard,
+     drawn inside the box rather than around it so a field in a column does
+     not grow by two pixels when it is tabbed to. */
   .pick:focus-visible {
     outline: 2px solid var(--accent-hi);
     outline-offset: -1px;
+  }
+
+  /* And no ring at all while the list is open. The keyboard never leaves
+     the trigger, so the ring stayed lit under an open list and said a
+     second time, louder, what the lit row in the list was already saying.
+     Two marks for one thing, and the bigger one on the thing that is not
+     being walked.
+
+     This is every list in the app at once, because there is only one list
+     in the app. */
+  .pick[aria-expanded="true"]:focus-visible {
+    outline: none;
   }
 
   /* The two lie on top of each other, so the box is as wide as the longest

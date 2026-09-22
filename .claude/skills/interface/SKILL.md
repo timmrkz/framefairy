@@ -72,7 +72,8 @@ all, and the first probe about pausing was measuring the track filling in
 after load.
 
 **What the stub answers with has to be made the way the engine makes it,
-not made up.** Its caption cues were four words written out by hand, which
+not made up.** Three phantoms came out of this one, and every time the
+made-up answer looked perfectly reasonable in a picture. Its caption cues were four words written out by hand, which
 looked right in a picture and could answer nothing: the words in the
 caption box are clicked back to the word of the episode they came from,
 through the clip's own pieces, and words that came from nowhere have
@@ -80,6 +81,16 @@ nowhere to go back to. A probe about correcting one would have passed
 whatever the window did. The cues are built from the clip's words now, on
 the clip's clock and with a split word drawn as two, the way the engine
 builds them.
+
+Then the words themselves were made from wherever a call asked to start,
+so a call about ten minutes and a call about a clip answered with words at
+different moments. Both read the same sentence and both drew fine, and the
+two only disagree once something crosses from one to the other, which is
+exactly what stepping by words does. And the cues were allowed to overlap,
+where the engine clamps a cue to the start of the one after it: the window
+takes the first cue that covers the playhead, so the box went on showing
+the cue before while the playhead stood in a word of the cue after, and
+that word lit nothing. One list, and the engine's own rules on it.
 
 `frontend/preview/dist/` is build output and is not in the repository.
 Write one-off probes outside the repository, in the scratchpad.
@@ -172,6 +183,19 @@ how the waveform was shown to be painting at 117 of 255 rather than 227:
 every bar was landing across two pixels at part strength. It averages each
 row, so it answers about something that changes down the picture. A vertical
 edge changes across it, and needs the columns instead.
+
+**Two boxes can line up while what is in them does not.** The rect is the
+box, and the box is not the ink. Three names in a list all reported the
+same right edge to the hundredth of a pixel, and on screen one of them
+ended four pixels short of the other two: it was the one too long for its
+box, and `text-overflow: ellipsis` fits whole characters, so whatever room
+is left after the last one that fits plus the dots is simply unused. No
+arithmetic gets it back and no rect can see it. Anything about whether two
+things line up on screen is a question about painted pixels. The last lit
+column of a screenshot is the answer, and it is worth writing the probe
+that finds it: take the element's box, screenshot it, find the darkest
+value in it, and walk in from the right for the first column holding
+anything well above that.
 
 **While anything is gliding, the rect is the animation and not the value.**
 It is the rule above the other way round. An element part way through a
@@ -334,6 +358,49 @@ measurement, and the wrong answer. Take the middle of the box.
 **The webview cannot always read the episode file** while the machine is
 busy, so a seek is dropped silently and the picture stays where it was.
 Anything that assumes a seek worked will be wrong while transcribing.
+
+**The playhead is never where it was put.** This is the big one. A video
+element answers with the moment of the frame it is showing, which begins a
+little before the second it was sent to and can be a little after. Five
+bugs in one afternoon were that one fact read exactly:
+
+- the crop frame went dashed at the start of the very clip it belonged to,
+  because the playhead sat a hair outside it
+- stepping by words landed on word edges, where the caption's clock and
+  the playhead's disagree by a thousandth of a millisecond, and two words
+  in five lit nothing
+- stepping back could not get out of a word at all, because it measured
+  how far the playhead was from one, the clock had drifted past the word
+  it was on, so back found that same word and sent the playhead where it
+  already stood
+- which list the arrow keys walk was read exactly, so the first press
+  after picking a clip walked the wrong one and jumped out of the clip
+- playing seeked before it played even with nothing to move, and a seek is
+  the one thing that can refuse a play
+
+So never compare a playhead to a moment. Compare it to a frame, or better,
+do not compare it at all: **decide by the state the playhead is in, not by
+how far it is from something.** Which word is it in, which piece is it in.
+A distance can round its way into the answer it started from, which is a
+key that does nothing and cannot be got out of. A state cannot.
+
+And note where this could not be reproduced: the harness's video answers
+with the exact second it was sent to, so none of these five happen in
+Chromium at all. They are proved as rules in `lib/` with tests, and the
+tests say so.
+
+**A floating thing is measured before the stylesheet has finished with
+it.** Which way a list grows from the edge it is hung on is decided from
+the width the placement measures, and it measures before the rules run.
+So `width: var(--the-anchor-width)` with `min-width: max-content` under it
+is measure first and widen after: the placement works out where the
+anchor's right edge puts a list of the anchor's width, the list then comes
+out wider, and every pixel of the difference goes out the other way. Give
+a floating thing a width that does not depend on anything the placement
+writes, `max-content`, and it measures what it will get. This took three
+rounds of Tim's testing to see, because the harness's own convergence
+hides it: the size change trips a ResizeObserver and the second pass comes
+out right in Chromium, and the first pass is what he was looking at.
 
 ## Before saying it is done
 
