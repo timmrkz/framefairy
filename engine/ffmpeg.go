@@ -65,17 +65,13 @@ type Engine struct {
 	facesLoaded      bool
 }
 
-// NewEngine makes an engine with binaries taken from the environment or PATH.
+// NewEngine makes an engine with the tools it calls: the ones named in the
+// environment, then the ones beside the program, then the search path. See
+// ToolPath in tools.go for why that order.
 func NewEngine(log *Log) *Engine {
-	ffmpeg := os.Getenv("FRAMEFAIRY_FFMPEG")
-	if ffmpeg == "" {
-		ffmpeg = "ffmpeg"
-	}
-	ffprobe := os.Getenv("FRAMEFAIRY_FFPROBE")
-	if ffprobe == "" {
-		ffprobe = "ffprobe"
-	}
-	return &Engine{Log: log, FFmpeg: ffmpeg, FFprobe: ffprobe,
+	return &Engine{Log: log,
+		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
+		FFprobe: ToolPath("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}
 }
 

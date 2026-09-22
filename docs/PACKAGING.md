@@ -207,10 +207,18 @@ exactly where shipping bugs live:
 | --- | --- | --- |
 | Engine and interface | the same code | the same code |
 | ffmpeg | Homebrew's, GPL, with libx264, found on `PATH` | ours, LGPL, static, inside the app |
+| Which encoder | **the same one, chosen from what that ffmpeg has** | the same |
+| Which ffmpeg wins | **the one beside the program, then `PATH`** | the same |
 | The speech library | from the Go module cache | from `Contents/Frameworks/` |
 | Runs from | `bin/framefairy-app`, bare | `/Applications/framefairy.app` |
 | `Info.plist` and privacy prompts | none, so none appear | present, so they appear |
 | Signature | none | Developer ID, notarised |
+
+Two of those rows are already the same, in `engine/encode.go` and
+`engine/tools.go`. The encoder is chosen at render time from what the
+ffmpeg in hand actually has, and the ffmpeg beside the program always beats
+the one on the search path, so the day ffmpeg lands in the bundle it is the
+one that runs without another change.
 
 So `make run` builds and launches the `.app` rather than a bare binary.
 Then the daily loop exercises the bundled ffmpeg, the relocated libraries,
