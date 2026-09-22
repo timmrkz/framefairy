@@ -14,7 +14,7 @@ and it is the part that is finished.
 
 ## Decided
 
-### 1. macOS first
+### 1. macOS first, and Apple silicon only
 
 It is the machine that can be tested. Windows and Linux follow once the
 shape is proven, and they are a build problem rather than a design problem
@@ -22,6 +22,17 @@ by then.
 
 macOS is also the strictest gate, so it teaches the most: a signed
 Developer ID build, notarised by Apple, or Gatekeeper refuses to open it.
+
+**Intel Macs are not supported.** The Mac is an Apple silicon machine now,
+and building for the one before it costs every binary twice, an x86_64
+half of ffmpeg and of llama-server as well as of the app, `lipo` to join
+each pair, and a second runner to build them on. None of that is work
+towards the product, and an Intel Mac is the wrong machine for this
+product anyway: a local model runs from memory and leans on the media
+engine, and neither the memory nor the engine is there.
+
+So everything is arm64. The `.app` is not a universal binary, the tools
+archive has no Intel half, and the download page says which Mac it is for.
 
 ### 2. No language model ships
 
@@ -422,7 +433,7 @@ tools archive rather than building it. In order:
 
 | Step | What happens |
 | --- | --- |
-| 1 | Build the interface, then the Go binary for arm64 and for x86_64, and `lipo` them into one |
+| 1 | Build the interface, then the Go binary for arm64. One architecture, no `lipo`, see the first decision above |
 | 2 | Assemble `framefairy.app`: `Info.plist`, the icon, the speech libraries into `Contents/Frameworks/` with their paths fixed, ffmpeg, ffprobe and llama-server into `Contents/MacOS/` with their licence texts |
 | 3 | Sign inside-out with the Developer ID: every library, then the three bundled programs, then the app, with the hardened runtime |
 | 4 | Make the `.dmg`, the `.app` beside a shortcut to Applications |
@@ -439,9 +450,9 @@ sign it with. That is what makes it possible to start now.
 Wails v3 packages from a `build/` folder of per-platform Taskfiles, driven
 by the `wails3` command. We have none of it: no `build/`, no `Taskfile.yml`,
 and `make` calls `go build` directly. The templates in the pinned
-v3.0.0-beta.23 cover an `.app` bundle and a universal binary for macOS, an
-NSIS installer for Windows, and AppImage plus deb and rpm for Linux, and
-there is notarisation support in the toolchain. Adopting that layout is the
+v3.0.0-beta.23 cover an `.app` bundle and, if it were wanted, a universal
+binary for macOS, an NSIS installer for Windows, and AppImage plus deb and
+rpm for Linux, and there is notarisation support in the toolchain. Adopting that layout is the
 cheap path, with one edit: their Windows task sets `CGO_ENABLED=0` and
 sherpa-onnx needs 1.
 

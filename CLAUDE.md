@@ -33,8 +33,11 @@ What the product has to be:
   not a verdict: a cut can be moved, put back or made by hand, because the
   one thing the engine cannot hear is what the episode is about.
 - **For many people.** Native on macOS, Windows and Linux, not tuned to one
-  Mac. macOS ships first, because it is the machine that can be tested. A
-  local model is chosen by what the machine's memory can hold.
+  Mac. macOS ships first, because it is the machine that can be tested, and
+  on Apple silicon only: an Intel Mac would cost every binary twice and is
+  the wrong machine for a product that runs a language model from memory
+  through the media engine. A local model is chosen by what the machine's
+  memory can hold.
 - **Improving over time.** Recorded decisions train our own local selection
   model. See [docs/TRAINING.md](docs/TRAINING.md).
 

@@ -63,10 +63,10 @@ jobs:
             name: macOS, Apple silicon
           - os: ubuntu-24.04
             name: Linux, x86_64
-    # Intel Macs are deliberately not here. An app that runs on one needs
-    # every binary in it built for x86_64 as well and lipo'd together, and
-    # that is a decision about who the product is for rather than a line in
-    # a matrix. It goes in the day that is decided.
+    # Apple silicon only, decided rather than left out. An Intel Mac would
+    # need every binary here built for x86_64 as well and lipo'd together,
+    # and it is the wrong machine for a product that runs a language model
+    # from memory through the media engine. See docs/PACKAGING.md.
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     # Long, because these really do take half an hour between them, but not
