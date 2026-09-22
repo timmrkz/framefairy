@@ -111,13 +111,37 @@ func keyIsSane(key string) bool {
 	return true
 }
 
+// keychainWait is how long a keychain command is given before it is given
+// up on. macOS puts a box on screen when the keychain is locked, and a box
+// nobody answers is a window that never comes back. Two minutes is long
+// enough for somebody to read it and short enough that a machine with
+// nobody in front of it does not sit there for ever.
+//
+// A build runner is such a machine. Storing a key in a test held the macOS
+// job for the full ten minutes a test binary is given, with the security
+// command still waiting when the runner was cleaned up.
+const keychainWait = 2 * time.Minute
+
+// keychain runs one security command, bounded. It says whether the command
+// answered at all, because a keychain that was given up on is a different
+// thing from a keychain that said no.
+func keychain(ctx context.Context, args ...string) (result, bool) {
+	ctx, cancel := context.WithTimeout(ctx, keychainWait)
+	defer cancel()
+	res := run(ctx, "", "security", args...)
+	return res, ctx.Err() == nil
+}
+
 // ReadAPIKey takes the key from the environment first, then the macOS
 // keychain. Never from a file on disk.
 func ReadAPIKey(ctx context.Context) (string, error) {
 	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
 	source := "ANTHROPIC_API_KEY"
 	if key == "" {
-		res := run(ctx, "", "security", "find-generic-password",
+		// A keychain that never answers is a keychain with no key in it
+		// as far as this is concerned, and the line below says what to do
+		// about it either way.
+		res, _ := keychain(ctx, "find-generic-password",
 			"-a", "framefairy", "-s", "anthropic-api-key", "-w")
 		if res.Code == 0 && strip(res.Stdout) != "" {
 			key, source = strip(res.Stdout), "the keychain"
@@ -156,15 +180,19 @@ func StoreAPIKey(key string) error {
 	ctx := context.Background()
 	if key == "" {
 		// Nothing stored is not a failure, so the result is not looked at.
-		run(ctx, "", "security", "delete-generic-password",
+		keychain(ctx, "delete-generic-password",
 			"-a", "framefairy", "-s", "anthropic-api-key")
 		return nil
 	}
 	if !keyIsSane(key) {
 		return renderErr("that key has characters in it that cannot go in an HTTP header.")
 	}
-	res := run(ctx, "", "security", "add-generic-password",
+	res, answered := keychain(ctx, "add-generic-password",
 		"-U", "-a", "framefairy", "-s", "anthropic-api-key", "-w", key)
+	if !answered {
+		return renderErr("the keychain did not answer. It may be locked, or waiting " +
+			"for an answer in a box somewhere on screen.")
+	}
 	if res.Code != 0 {
 		return renderErr("the keychain refused the key: %s", strip(res.Stderr))
 	}

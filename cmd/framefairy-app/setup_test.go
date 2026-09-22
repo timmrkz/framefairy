@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,6 +24,18 @@ func emptyMachine(t *testing.T) *FrameFairy {
 	// makes the test about a machine with no key rather than about
 	// whatever is on this one.
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	// And nothing here may reach the machine's own keychain. Storing a key
+	// writes to it, macOS puts a box on screen when it is locked, and a box
+	// nobody answers is a test that hangs. That is what happened: the macOS
+	// job sat for the full ten minutes a test binary is given, with the
+	// security command still waiting when the runner was cleaned up. An
+	// empty folder for a search path is the whole of the fix, and the check
+	// under it is there so that a test which can reach the keychain again
+	// says so instead of hanging again.
+	t.Setenv("PATH", filepath.Join(home, "no-tools"))
+	if _, err := exec.LookPath("security"); err == nil {
+		t.Fatal("this test can still reach the keychain")
+	}
 	st := openStore()
 	return &FrameFairy{store: st, jobs: newQueue(st, func(JobUpdate) {}, func(string) {})}
 }
