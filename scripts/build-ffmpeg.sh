@@ -89,6 +89,11 @@ finish() {
 		echo "build-ffmpeg.sh: that step failed. The last of $LOG:" >&2
 		tail -40 "$LOG" >&2
 	fi
+	# Said again on the way out. A trap that falls off the end leaves the
+	# shell reporting whatever the last command in the trap returned, which
+	# is tail, which works, so a build that failed reported success and
+	# make believed it.
+	exit "$code"
 }
 trap finish EXIT
 
@@ -239,8 +244,13 @@ Linux)
 	# them named here means the system's was used in their place. That is
 	# what was happening: the Linux build named libharfbuzz, libfreetype
 	# and libglib from /lib, so it was neither static nor ours.
+	# zlib is asked for on purpose and is on every Linux and every Mac, so
+	# it belongs here with the C runtime. And the loader is named
+	# ld-linux-x86-64.so.2 or ld-linux-aarch64.so.1, never plain ld-linux,
+	# which the first version of this list did not allow for and then
+	# reported the loader itself as something borrowed.
 	borrowed=$(ldd "$FF" 2>/dev/null | awk '{print $1}' | sed 's:.*/::' |
-		grep -vE '^(linux-vdso|ld-linux|libc|libm|libdl|libpthread|librt|libgcc_s|libstdc\+\+)\.so' || true)
+		grep -vE '^(linux-vdso|ld-linux[^.]*|libc|libm|libdl|libpthread|librt|libz|libgcc_s|libstdc\+\+)\.so' || true)
 	;;
 esac
 if [ -n "$borrowed" ]; then
