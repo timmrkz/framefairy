@@ -48,6 +48,10 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.6 | Plan edits: keep or reject `[x]`, trim edges `[x]`, change the cuts inside a clip with snapping `[x]` | `[x]` |
 | 1.7 | Caption edits in the plan, with SRT export and import | `[ ]` |
 | 1.8 | A clip's captions on request, in the lines and the look the render uses, for the caption preview | `[x]` |
+| 1.9 | The model's answer streamed, and each clip taken the moment its last character arrives | `[ ]` |
+| 1.10 | A clip framed and written to the plan as soon as it is taken, while the model writes the next one, so the first clip shows long before the last | `[ ]` |
+| 1.11 | Real progress for a search: loading the model, reading the transcript, writing clip by clip and framing, each measured against how long it took on this machine before | `[ ]` |
+| 1.12 | Framing decodes only the parts of a clip that are kept, through the system's own video decoder where there is one, and on every system | `[ ]` |
 
 ## Phase 2: app shell
 
@@ -122,7 +126,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.5b | Lengthen or shorten a pause | dropped |
 | 3.8 | Drag the playhead through the timeline, and a click anywhere hands the keyboard over | `[x]` |
 | 3.9 | Click a clip edge to put the playhead on it, and loop the clip while it plays | `[x]` |
-| 3.6 | Undo, redo and saving, which records an `edited` decision | `[ ]` |
+| 3.6 | Undo and redo for everything done to a clip: trims, cuts, the crop frame, the caption box, words, the caption look, removing a clip and removing a search. One history per episode while the app is open. Jobs, moving around and app settings are not in it | `[ ]` |
 | 3.7 | Crop frame shown per shot, moved by hand per camera angle, reset to automatic | `[x]` |
 
 ## Phase 4: caption editor
@@ -132,7 +136,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 4.1 | Captions drawn in the video preview with the render's font, place and highlight `[x]`, compared against a rendered frame `[ ]` | `[~]` |
 | 4.2 | Live ASS for the clip being edited | `[ ]` |
 | 4.3 | Correct words in the caption box in the video preview `[x]`, a correction that holds several words `[x]`, split and merge captions `[ ]` | `[~]` |
-| 4.4 | Drag caption boundaries | `[ ]` |
+| 4.4 | A caption shown earlier or later, and for longer or shorter, where the timing of the words is a little off from what is heard | `[ ]` |
 | 4.4b | Drag the caption box up and down on a grid, per clip, with one click back and one click to undo that | `[x]` |
 | 4.5 | The caption face and size next to the clip `[x]`, the highlight colour in settings `[x]`, the rest | `[~]` |
 | 4.6 | The caption fonts built into the binary, so nothing has to be installed | `[x]` |
