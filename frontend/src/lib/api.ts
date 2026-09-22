@@ -648,65 +648,48 @@ export function snapCut(
 // particular: it lands in the middle of a word as often as not, it walks
 // four words at a time where someone speaks quickly and none at all across
 // a pause. A word is the thing the picture is showing. The caption lights
-// up the word being spoken, so stepping to the start of the next word
-// steps that light one word on, which is what the keys are for.
+// up the word being spoken, so stepping to the next word steps that light
+// one word on, which is what the keys are for.
 //
-// Going back lands on the word being spoken, and only then on the one
-// before it, the way the same keys walk text. The slack says which: it is
-// half a frame, and a playhead within half a frame of a word's start is
-// already on that word, so going back from there is going back a word.
+// **It is decided by which word the playhead is in, not by how far it is
+// from one.** That is the whole of why this works, and comparing against a
+// distance is why it did not. The playhead is not where it was put: a
+// video element answers with the frame it is showing, so a playhead sent
+// half a frame into a word comes back somewhere else inside that frame,
+// and it can come back later than it was sent. Stepping back then measured
+// the distance to the word it was already on, found it far enough, and
+// sent the playhead to the same place again. That is a key that does
+// nothing at all, and there was no way out of it but the mouse.
 //
-// **It lands just inside the word, never on its edge.** A word boundary is
-// exactly where the question "is this word being spoken" has no steady
-// answer. The caption runs on the clip's clock and the playhead on the
-// episode's, the two are worked out by different arithmetic, and the
-// picture's clock is whatever the video element reports, which is rounded.
-// So a playhead put exactly on a word start reads as a hair before it as
-// often as a hair after, and a hair before is a word that does not light
-// up. Measured: two words in every five lit nothing at all. Half a frame
-// in is inside the word by far less than the gap to the next one, so the
-// picture shows the same frame and the right word is lit every time.
+// Deciding by the word cannot do that, because the answer is always a
+// different word from the one the playhead is in, however the clock
+// rounds.
+//
+// **It lands a frame into the word, never on its edge.** A word boundary
+// is exactly where the question "is this word being spoken" has no steady
+// answer: the caption runs on the clip's clock and the playhead on the
+// episode's, they are worked out by different arithmetic, and the frame
+// the picture settles on is a third answer again. A frame in is inside the
+// word by far less than the gap to the next one, so the picture shows the
+// same frame and the right word is lit. A word shorter than two frames is
+// entered by half of itself.
 //
 // Null means there is nowhere to go: no words heard here yet, or the
-// playhead is already at the first or the last of them.
-export function wordStep(words: Word[], at: number, back: boolean, slack: number): number | null {
+// playhead is already before the first or past the last of them.
+export function wordStep(words: Word[], at: number, back: boolean, frame: number): number | null {
   if (!words.length) return null;
-  let found: Word | null = null;
-  if (back) {
-    for (const w of words) {
-      if (w.start < at - slack) found = w;
-      else break;
-    }
-  } else {
-    found = words.find((w) => w.start > at + slack) ?? null;
+  // The last word that has begun, and whether the playhead is still in it.
+  let here = -1;
+  for (let i = 0; i < words.length; i++) {
+    if (at >= words[i].start) here = i;
+    else break;
   }
-  if (!found) return null;
-  // A word shorter than a frame is stepped into by half of itself, so the
-  // playhead is inside it whatever its length.
-  return Math.min(found.start + slack, (found.start + found.end) / 2);
+  const inside = here >= 0 && at < words[here].end;
+  // Back out of a word is the word before it. Back out of the silence
+  // after a word is that word, because it is the one just spoken.
+  const target = back ? (inside ? here - 1 : here) : here + 1;
+  const word = words[target];
+  if (!word) return null;
+  return Math.min(word.start + frame, (word.start + word.end) / 2);
 }
 
-// The words a clip keeps, out of the words of the episode around it.
-//
-// A word inside a cut is never spoken in the short and never lights up in
-// the caption, so stepping onto one is a press that does nothing anyone
-// can see: it was two such presses in a row across a one second cut, which
-// reads exactly like the arbitrary jump this was meant to fix.
-//
-// Words outside the clip altogether are left alone. There are no captions
-// out there whatever happens, and the playhead still has to be able to
-// walk through them.
-//
-// The hair is the engine's own: it decides which words a piece holds the
-// same way, in ClipWords.
-export function wordsKept(words: Word[], pieces: { start: number; end: number }[]): Word[] {
-  if (pieces.length < 2) return words;
-  const from = pieces[0].start;
-  const to = pieces[pieces.length - 1].end;
-  return words.filter(
-    (w) =>
-      w.end <= from ||
-      w.start >= to ||
-      pieces.some((p) => w.start >= p.start - 0.02 && w.end <= p.end + 0.02),
-  );
-}

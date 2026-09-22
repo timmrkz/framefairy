@@ -17,7 +17,13 @@
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
   import { onMount, type Snippet } from "svelte";
-  import { pictureIsStale, pieceAt as pieceIndex, playingPiece, saidWord } from "../lib/flow";
+  import {
+    insideClip,
+    pictureIsStale,
+    pieceAt as pieceIndex,
+    playingPiece,
+    saidWord,
+  } from "../lib/flow";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -127,6 +133,10 @@
       hint: dragCaptions !== null ? `Captions ${Math.round(captionY)} from the bottom` : "",
     };
   });
+
+  // One frame of the episode. The playhead can only ever stand on one, so
+  // it is the smallest difference between two moments that means anything.
+  const frameOf = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
   const pieces = $derived(clip?.segments ?? []);
   const clipStart = $derived(pieces.length ? pieces[0].start : 0);
@@ -329,9 +339,7 @@
     return {
       left: (left / source.width) * 100,
       width: (source.cropWidth / source.width) * 100,
-      // The last frame of a piece still belongs to it, so the frame does
-      // not blink when a clip plays to its end.
-      inside: clip.segments.some((s) => time >= s.start && time <= s.end),
+      inside: insideClip(clip.segments, time, frameOf),
       moved: clip.segments[piece]?.moved ?? false,
     };
   });

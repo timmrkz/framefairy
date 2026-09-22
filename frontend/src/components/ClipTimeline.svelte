@@ -23,7 +23,6 @@
     snapCut,
     snapEnd,
     snapStart,
-    wordsKept,
     wordStep,
     type ClipEntry,
     type Word,
@@ -39,6 +38,7 @@
     time,
     locked = false,
     frame = 1 / 30,
+    lit = [],
     onseek,
     ontrim,
     oncut,
@@ -60,6 +60,13 @@
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
     frame?: number;
+    // The words the caption lights up, on the episode's clock. Shift and
+    // an arrow key step through these, because these are the words anyone
+    // can see. They are not the words of the transcript: a correction that
+    // reads as two words is two here and one there, so a word added by
+    // hand is in this list and in no other, and a word a cut takes out is
+    // in the transcript and never in this one.
+    lit?: Word[];
     onseek: (t: number) => void;
     ontrim?: (start: number, end: number) => Promise<void>;
     // The cuts inside the clip: taking a stretch out, putting one back, and
@@ -630,10 +637,11 @@
     }
     // Half a frame of slack, so that a second press leaves the word start
     // the first one landed on rather than finding it again.
-    const walk = wordsKept(words, pieces);
-    // Half a frame: near enough to a word's start to count as being on it,
-    // and far enough inside it to be unmistakably in it.
-    const to = wordStep(walk, time, back, Math.max(frame, 1 / 240) / 2);
+    // Inside the clip, the words that light up. Outside it there is no
+    // caption at all, so the words that were heard are the only ones
+    // there are.
+    const walk = lit.length && time >= first && time <= last ? lit : words;
+    const to = wordStep(walk, time, back, Math.max(frame, 1 / 240));
     if (to !== null) put(to);
     else if (!walk.length) put(time + (back ? -1 : 1));
   }

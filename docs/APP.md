@@ -358,7 +358,12 @@ place.
   keyboard. Clicking the video preview plays or pauses.
     - For the selected clip, everything outside its vertical crop is dimmed
       and the frame sits where the render will put it. The frame is dashed
-      while the playhead is in a part the clip cuts out.
+      while the playhead is in a part the clip cuts out. **The frame a
+      piece begins in belongs to it**, and so does the one it ends in: the
+      playhead is put on a clip's first second and the picture answers with
+      the frame it is showing, which begins a little before it, so without
+      that the crop frame went dashed at the start of the clip it belonged
+      to and one press of an arrow key put it right.
     - Playing a clip jumps over its cuts and stops where the clip ends,
       however it was started. **Loop** starts it over instead, which is how
       a clip is judged. It stays on until it is switched off again.
@@ -562,16 +567,32 @@ place.
       they took before, and a second is nothing in particular. It lands in
       the middle of a word as often as not, it walks four words at a time
       where someone speaks quickly and none at all across a pause.
-      - Words a cut takes out are stepped over. They are never spoken in
-        the short and never light up, so landing on one is a press that
-        does nothing anyone can see.
-      - The playhead lands just inside a word, half a frame past its start,
-        never on its edge. A boundary is exactly where the question "is
-        this word being spoken" has no steady answer: the caption runs on
-        the clip's clock and the playhead on the episode's, and the
-        picture's clock is whatever the video element reports, which is
-        rounded. On the edge, two words in every five lit nothing at all.
-      - Where nothing has been heard yet there are no words to walk, and
+      - **It walks the words the caption lights up, not the words the
+        transcript holds.** They are not the same list. A correction that
+        reads as two words is two words in the caption and one in the
+        transcript, so a word added by hand stood in no list the timeline
+        had and the keys stepped straight past it. A word a cut takes out
+        is the other way round, in the transcript and never in the caption,
+        and landing on one lit nothing. And a plan keeps the moments it was
+        made with, so a transcript read again since can put the same word a
+        quarter of a second elsewhere. Reading the caption makes all three
+        right at once, and keeps them right, because whatever lights up is
+        what these keys walk.
+      - **Which word to go to is decided by the word the playhead is in,
+        never by how far it is from one.** The playhead is not where it was
+        put: the picture answers with the frame it is showing, which can be
+        later than where the playhead was sent. Measuring a distance then
+        found the word the playhead was already on and sent it to the same
+        place again, so the key did nothing at all and nothing but the
+        mouse got out of it.
+      - The playhead lands a frame inside a word, never on its edge. A
+        boundary is exactly where the question "is this word being spoken"
+        has no steady answer: the caption runs on the clip's clock and the
+        playhead on the episode's, and the frame the picture settles on is
+        a third answer again. On the edge, two words in every five lit
+        nothing at all.
+      - Outside a clip there is no caption, so the words that were heard
+        are the only ones there are. Where nothing has been heard yet
         shift takes a second.
     - Drag an edge to trim. Edges snap to words the way the render cuts them.
     - Click an edge to put the playhead exactly on it, which is how a clip

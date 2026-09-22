@@ -269,3 +269,20 @@ export function saidWord(pieces: Piece[], words: Spoken[], word: Piece): Spoken 
   // belong to a piece.
   return off <= 0.02 ? near : null;
 }
+
+// Whether the playhead is inside a clip, and so whether the crop frame is
+// drawn solid or dashed.
+//
+// The frame a piece begins in belongs to it, and so does the one it ends
+// in. Not the moment, the whole frame, and that is the whole of this.
+//
+// The playhead is put on a piece's first second and the picture answers
+// with the frame it is showing, which is a frame at or before that second
+// and never the second itself. The playhead is then a hair outside the
+// clip it is standing at the very start of, and the crop frame says as
+// much by going dashed the moment the clip is picked. One press of an
+// arrow key put it right, which is the giveaway: what was wrong was a
+// fraction of a frame and nothing else.
+export function insideClip(pieces: Piece[], at: number, frame: number): boolean {
+  return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
+}

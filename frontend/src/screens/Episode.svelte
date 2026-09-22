@@ -18,10 +18,11 @@
     type CoverageView,
     type EpisodeStatus,
     type SourceView,
+    type Word,
     type WindowView,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
-  import { Heard, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
+  import { Heard, inEpisode, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -599,6 +600,36 @@
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
   let captions = $state<CaptionsView | null>(null);
+
+  // The words the caption lights up, put back on the episode's clock.
+  //
+  // This is the list shift and an arrow key walk, and it is not the list
+  // of words the transcript holds. A correction that reads as two words
+  // is two words in the caption and one in the transcript, so a word
+  // added by hand stood in no list the timeline had and the keys stepped
+  // straight past it. A word a cut takes out is the other way round: in
+  // the transcript, never in the caption, and landing on it lit nothing.
+  //
+  // Reading the caption is what makes both right at once, and it will go
+  // on being right, because it is the same list either way: whatever
+  // lights up is what these keys walk.
+  const lit = $derived.by(() => {
+    const pieces = current?.segments ?? [];
+    if (!pieces.length || !captions?.captions?.length) return [];
+    const out: Word[] = [];
+    for (const cue of captions.captions) {
+      for (const line of cue.lines) {
+        for (const word of line.words) {
+          out.push({
+            start: inEpisode(pieces, word.start),
+            end: inEpisode(pieces, word.end),
+            text: word.text,
+          });
+        }
+      }
+    }
+    return out;
+  });
   let fonts = $state<CaptionFont[]>([]);
 
   // Where the captions sit, for every clip of every episode. Dragging the
@@ -1258,6 +1289,7 @@
         working={!!transcribing}
         locked={renderingCurrent}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
+        {lit}
         bind:numbers
         onseek={(t) => player?.seek(t)}
         ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}

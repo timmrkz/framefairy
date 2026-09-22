@@ -197,9 +197,16 @@ const captionCues = (id: string) => {
   const cues = [];
   for (let i = 0; i < drawn.length; i += 8) {
     const eight = drawn.slice(i, i + 8);
+    // A cue stays up a little past its last word, and never past the start
+    // of the one after it. The engine clamps it the same way, and without
+    // the clamp two cues cover the same moment: the window takes the first
+    // that covers it, so the caption box went on showing the cue before
+    // while the playhead stood in a word of the cue after, and that word
+    // lit nothing at all.
+    const next = drawn[i + 8];
     cues.push({
       start: eight[0].start,
-      end: eight[eight.length - 1].end + 0.4,
+      end: Math.min(eight[eight.length - 1].end + 0.4, next ? next.start : Infinity),
       lines: [{ words: eight.slice(0, 4) }, { words: eight.slice(4) }].filter(
         (line) => line.words.length > 0,
       ),

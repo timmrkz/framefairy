@@ -5,6 +5,7 @@ import {
   nextWindow,
   pictureIsStale,
   pieceAt,
+  insideClip,
   playingPiece,
   saidWord,
   inEpisode,
@@ -585,5 +586,47 @@ describe("a caption word finds its way home", () => {
   test("a word in a cut is never pointed at", () => {
     const drawn = split(onClipClock(pieces, said));
     expect(drawn.some((w) => saidWord(pieces, said, w)?.text === "hm")).toBe(false);
+  });
+});
+
+describe("insideClip", () => {
+  const two = [
+    { start: 1677.61, end: 1690 },
+    { start: 1700, end: 1712 },
+  ];
+  // Twenty-five a second, which is what the episodes are.
+  const frame = 0.04;
+
+  test("the playhead inside a piece is inside the clip", () => {
+    expect(insideClip(two, 1680, frame)).toBe(true);
+    expect(insideClip(two, 1705, frame)).toBe(true);
+  });
+
+  test("the playhead in a cut is not", () => {
+    expect(insideClip(two, 1695, frame)).toBe(false);
+  });
+
+  // The one Tim saw. A clip picked from the list puts the playhead on its
+  // first second, and the picture answers with the frame it is showing,
+  // which begins a hundredth of a second before it. The crop frame went
+  // dashed at the start of the clip it belonged to, and one press of an
+  // arrow key put it right.
+  test("the frame a piece begins in belongs to it", () => {
+    // 1677.61 falls a quarter of a frame past one, so the picture settles
+    // on 1677.60 and answers with that.
+    expect(insideClip(two, 1677.6, frame)).toBe(true);
+    expect(insideClip(two, 1677.61 - 0.0000007, frame)).toBe(true);
+  });
+
+  test("and the one it ends in, so nothing blinks at the end", () => {
+    expect(insideClip(two, 1690.02, frame)).toBe(true);
+  });
+
+  test("a whole frame before a clip is still outside it", () => {
+    expect(insideClip(two, 1677.61 - 0.05, frame)).toBe(false);
+  });
+
+  test("no pieces, nowhere inside", () => {
+    expect(insideClip([], 5, frame)).toBe(false);
   });
 });
