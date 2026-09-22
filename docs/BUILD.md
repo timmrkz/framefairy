@@ -12,41 +12,57 @@ the folder, copy the new files in and run `make` again.
 
 ## What make does
 
-1. Checks for Go 1.27 or newer and a C compiler, and stops with the install
-   command if one is missing.
-2. Resolves the project's Go modules and writes `go.sum`. This needs the
+1. Installs what this machine is missing. On macOS that is Homebrew doing
+   Go, Node.js, llama.cpp and the few tools that build ffmpeg. Elsewhere it
+   says what to install, because those need administrator rights.
+2. Builds the ffmpeg framefairy ships, if it is not there yet. Several
+   minutes, once. Every build after this one copies it beside the programs,
+   and from then on the app renders through the exact ffmpeg a customer
+   gets rather than whatever Homebrew happens to have.
+3. Checks for Go 1.27 or newer and a C compiler, and stops with the install
+   command if one is still missing.
+4. Resolves the project's Go modules and writes `go.sum`. This needs the
    network the first time.
-3. Installs the interface's packages into `frontend/node_modules`, exactly as
+5. Installs the interface's packages into `frontend/node_modules`, exactly as
    locked in `package-lock.json`, but only when the interface has to be built.
-4. Builds the interface into `cmd/framefairy-app/dist/app/`, when it is missing
+6. Builds the interface into `cmd/framefairy-app/dist/app/`, when it is missing
    or something in `frontend/` changed. This needs Node.js. The built
    interface is not in the repository.
-5. Builds the three programs.
-6. Lists anything this machine still needs to run them, such as a missing
-   model.
+7. Builds the three programs.
+8. Lists anything this machine still needs to run them.
 
-Module resolution and the interface only run when their inputs changed, and
-Go rebuilds only what changed, so a second `make` takes a moment. The module
-check compares file contents, not dates, so copied files never fool it.
-Output from Go and npm is only shown when something fails.
+Steps 1 and 2 cost nothing when there is nothing to do: each one is a
+`command -v` or a file test, and no package manager is started unless
+something is actually missing. Module resolution and the interface only run
+when their inputs changed, and Go rebuilds only what changed, so a second
+`make` takes a moment. The module check compares file contents, not dates,
+so copied files never fool it. Output from Go and npm is only shown when
+something fails.
 
-`make` changes nothing outside the repository. System tools and models are
-installed only by the two targets below, and only when you call them.
+**The models are not make's business.** The app fetches the speech model and
+the language model itself, on first run, which is what a customer does and
+so is what this machine should do too. `make models` is still there for the
+command line, which has no window to ask in.
+
+**A build runner never installs anything.** `CI` in the environment turns
+step 1 and step 2 off, so what CI builds is what its own workflow asked for
+and nothing else. `make INSTALL=0` does the same by hand.
 
 ## Targets
 
 | Command | What it does |
 | --- | --- |
 | `make` | everything above |
-| `make run` | builds, then starts the app |
+| `make run` | the same, then starts the app |
 | `make motion` | opens every way the app shows work in hand on one page in the browser, for looking at a change to any of them without starting a job. Preview material, never in the app |
+| `make ffmpeg` | builds the ffmpeg framefairy ships again, from scratch, throwing away the one that is there. `make` builds it once by itself, so this is for when `scripts/build-ffmpeg.sh` changed or the last one went wrong |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make check` | what this machine has and what it still needs, with the command for each |
-| `make tools` | macOS: installs what is missing with Homebrew: Go, llama.cpp, Node.js, and ffmpeg with libass from the ffmpeg tap. Elsewhere it points to [INSTALL.md](INSTALL.md) |
-| `make models` | downloads the speech model and the language model into `~/.framefairy/models`, unless they are there. An interrupted download resumes |
+| `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js, llama.cpp and what builds ffmpeg. Elsewhere it points to [INSTALL.md](INSTALL.md) |
+| `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line. The app does this itself |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
 
@@ -56,10 +72,12 @@ already in place.
 A new Mac, from nothing to a running app:
 
 ```
-make tools
-make models
 make run
 ```
+
+The first one takes a while, because it installs the tools and builds
+ffmpeg. The app then walks you through the rest: the speech model it
+fetches itself, and it asks once how clips should be found.
 
 ## Tests
 
@@ -208,7 +226,15 @@ go mod tidy
 go build -o bin/framefairy ./cmd/framefairy
 go build -o bin/framefairy-app ./cmd/framefairy-app
 go build -o bin/framefairy-train ./cmd/framefairy-train
+sh scripts/carry-libs.sh bin/framefairy bin/lib
+sh scripts/carry-libs.sh bin/framefairy-app bin/lib
 ```
+
+The last two matter. Without them the two programs look for the speech
+library in the Go module cache of the machine that built them, because
+that is where the cgo directive points, and they run nowhere else. It goes
+unnoticed as long as everyone who runs the app also built it. See
+[PACKAGING.md](PACKAGING.md).
 
 On macOS, put the settings above in front to avoid the warnings:
 

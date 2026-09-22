@@ -3,9 +3,12 @@
 The command line and the app need the same tools and models. They only need
 installing once per machine, and wiping the repository does not remove them.
 
-On macOS, `make tools` and `make models` do all of this page, and
-`make check` shows what is still missing. The steps below are the same work
-by hand, for every system.
+On macOS, `make` does all of this page by itself, and `make check` shows
+what is still missing. The models are not on it at all any more: the app
+fetches the speech model and the language model on its first run, the way a
+customer gets them, and `make models` is left for the command line, which
+has no window to ask in. The steps below are the same work by hand, for
+every system.
 
 ## 1. A C compiler and Go
 
@@ -13,11 +16,17 @@ The speech recogniser is a native library, so building needs a C compiler
 next to Go 1.27 or newer. The command line, the app and the training tool
 share one module and one Go version.
 
+That library travels with the program rather than being found in the Go
+module cache, which exists on no machine but the one that built it. Doing
+that needs `patchelf` on Linux. macOS uses `install_name_tool`, which comes
+with the command line tools, and Windows keeps the DLLs beside the program
+and needs no rewriting.
+
 | System | Commands |
 | --- | --- |
 | macOS | `xcode-select --install` and `brew install go` |
 | Windows | `winget install GoLang.Go` and `winget install MSYS2.MSYS2`, then in the MSYS2 UCRT64 shell `pacman -S mingw-w64-ucrt-x86_64-gcc` and add `C:\msys64\ucrt64\bin` to PATH |
-| Debian, Ubuntu | `sudo apt install build-essential`, and Go 1.27 from go.dev, since the distribution's Go is older |
+| Debian, Ubuntu | `sudo apt install build-essential patchelf`, and Go 1.27 from go.dev, since the distribution's Go is older |
 
 ## 2. ffmpeg, with libass and libx264
 

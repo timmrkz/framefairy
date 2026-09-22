@@ -1,15 +1,26 @@
-# One command builds everything:
+# One command does everything:
 #
-#   make            project packages, the interface and all three programs
-#   make run        build, then start the app
+#   make            install what is missing, build all three programs
+#   make run        the same, then start the app
+#
+# That is the whole of it for everyday work. make installs the tools this
+# machine lacks and builds the ffmpeg framefairy ships, once, and after
+# that it is an ordinary build. The models are not make's business: the app
+# fetches the speech model and the language model itself, on first run,
+# which is what a customer does.
+#
+# The rest, for when you want one part of it:
+#
 #   make motion     the five ways the app shows work in hand, in a browser
+#   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make test       all tests: unit, fuzz and interface
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check and its own tests
 #   make check      what this machine still needs to run framefairy
-#   make tools      install the system tools that are missing (macOS)
-#   make models     download the speech model and the language model
+#   make tools      install the missing tools and nothing else
+#   make models     download the models for the command line, which has no
+#                   window to ask in
 #   make clean      remove what make built and downloaded into the project
 #
 # The programs land in bin/. Details are in docs/BUILD.md.
@@ -55,20 +66,45 @@ export GOTOOLCHAIN
 # TIDY=0 skips resolving the Go modules, for machines without network.
 TIDY ?= 1
 
+# Whether make may install what this machine is missing. On, because one
+# command has to be enough to get from a fresh machine to a running app.
+# Off wherever CI is set: a build runner installs its own packages from its
+# own workflow, and handing it a Homebrew would be a different build from
+# the one it was asked for.
+INSTALL ?= $(if $(CI),0,1)
+
 UI_SOURCES := $(shell find frontend/src -type f 2>/dev/null) frontend/index.html \
 	frontend/package.json frontend/vite.config.ts frontend/svelte.config.js frontend/tsconfig.json
 UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run motion test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run motion ffmpeg deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
 
-all: toolchain $(PROGRAMS)
+all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
 	@sh scripts/check.sh --quiet
 
+# What this machine is missing, installed. Before the toolchain check,
+# because the toolchain is one of the things it installs, and it costs
+# nothing when there is nothing to do: every check inside it is a command -v
+# or a file test.
+deps:
+ifeq ($(INSTALL),1)
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg
+endif
+
+# Our own ffmpeg goes beside the programs, where they look before the search
+# path. Only if there is one: on a machine where the build has not run, or
+# did not work, the search path answers instead.
+#
+# This is what makes the development build use the ffmpeg a customer will
+# use, rather than whatever Homebrew happens to have installed.
+tools-beside:
+	@if [ -x $(STAMPS)/ffmpeg/bin/ffmpeg ]; then 		cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(BIN)/ && 		echo "Using our own ffmpeg, from make ffmpeg"; 	fi
+
 help:
-	@sed -n '1,15p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,28p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -107,16 +143,24 @@ $(UI_BUILT): $(UI_SOURCES)
 
 # The programs are always handed to go build, which rebuilds only what
 # changed and takes a moment otherwise.
+# The speech library travels with the program rather than being found in
+# the Go module cache, which is where the program would otherwise look and
+# which exists on no machine but the one that built it. See
+# docs/PACKAGING.md and scripts/carry-libs.sh.
+#
+# Done on every build rather than only when packaging, so what is run every
+# day is what is shipped. A program built without it runs on this machine
+# and nowhere else, which is a thing to find out here rather than from a
+# customer.
 $(BIN)/framefairy$(EXE): modules
 	@echo "Building $@"
 	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy
-ifeq ($(OS),Windows_NT)
-	@sh scripts/check.sh --copy-dlls $(BIN)
-endif
+	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
 	@echo "Building $@"
 	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy-app
+	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
 	@echo "Building $@"
@@ -124,6 +168,14 @@ $(BIN)/framefairy-train$(EXE): modules
 
 run: all
 	@$(BIN)/framefairy-app$(EXE)
+
+# The ffmpeg we ship, built from source without libx264 so the build is
+# LGPL. make builds it once, when it is not there. This builds it again
+# whatever is there, for when scripts/build-ffmpeg.sh has changed or the
+# last one went wrong.
+ffmpeg:
+	@rm -rf $(STAMPS)/ffmpeg
+	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
 
 # Every way the app says work is in hand, on one page, in a browser. It is
 # preview material and never goes into the app.
@@ -171,7 +223,7 @@ check:
 	@sh scripts/check.sh || true
 
 tools:
-	@sh scripts/tools.sh
+	@sh scripts/tools.sh $(STAMPS)/ffmpeg
 
 models:
 	@sh scripts/models.sh

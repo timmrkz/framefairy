@@ -155,18 +155,17 @@ async function media(res, range) {
 // A port of its own per run, so two probes never collide.
 let port = 4300 + Math.floor(Math.random() * 400);
 
-export async function workspace({
-  // What the fake Go side should pretend. The modes are in wails-stub.ts:
-  // ?busy, ?unknown, ?transcribing, ?growing, ?found.
+// The window as it opens, with nothing clicked. For anything that is not
+// the episode workspace: the setup on a new machine, the settings, the
+// empty window. workspace() is this with an episode picked.
+export async function screen({
+  // What the fake Go side should pretend. The modes are in wails-stub.ts.
   query = "",
   width = 1500,
   height = 1000,
   // 2 for a retina picture, which is what Tim sees. 1 makes a measurement
   // in whole pixels easier to read.
   scale = 1,
-  // Picking a clip is what puts the caption settings and the clip panel on
-  // screen. Without it half the workspace is not there to look at.
-  clip = true,
 } = {}) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
@@ -195,6 +194,31 @@ export async function workspace({
   page.on("pageerror", (e) => console.log("pageerror", String(e)));
   await page.goto(`http://127.0.0.1:${at}/${query}`);
   await page.waitForTimeout(700);
+
+  return {
+    page,
+    width,
+    height,
+    async stop() {
+      await browser.close();
+      server.close();
+    },
+  };
+}
+
+// The episode workspace, open on an episode and on a clip of it, which is
+// what nearly every probe is about.
+export async function workspace({
+  query = "",
+  width = 1500,
+  height = 1000,
+  scale = 1,
+  // Picking a clip is what puts the caption settings and the clip panel on
+  // screen. Without it half the workspace is not there to look at.
+  clip = true,
+} = {}) {
+  const open = await screen({ query, width, height, scale });
+  const { page } = open;
   await page.getByText("Mein Arm ist zersprungen").first().click();
   await page.waitForTimeout(1100);
 
@@ -213,13 +237,7 @@ export async function workspace({
     }
   }
 
-  return {
-    page,
-    async stop() {
-      await browser.close();
-      server.close();
-    },
-  };
+  return open;
 }
 
 // Where things are, to the hundredth of a pixel, and whether they sit

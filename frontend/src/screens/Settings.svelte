@@ -1,10 +1,23 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { wearColour } from "../lib/colour";
-  import { api, errorText, type Check, type Settings, type TrainingStatus } from "../lib/api";
+  import {
+    api,
+    errorText,
+    fitNote,
+    memorySize,
+    size,
+    type Check,
+    type LanguageModel,
+    type ModelRow,
+    type Settings,
+    type SpeechModel,
+    type TrainingStatus,
+  } from "../lib/api";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
+  import ModelList from "../components/ModelList.svelte";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[]>([]);
@@ -15,6 +28,72 @@
   // makes the trash can beside them mean anything.
   let training = $state<TrainingStatus>({ dir: "", plans: 0, decisions: 0 });
   let clearing = $state(false);
+  // The models that can be installed, and what the machine can hold. The
+  // same lists the setup shows, so one can be added or swapped later
+  // without going through the setup again.
+  let speech = $state<SpeechModel[]>([]);
+  let language = $state<LanguageModel[]>([]);
+  // What this machine has, in bytes, or zero where it would not say.
+  let memory = $state(0);
+
+  const speechRows = $derived<ModelRow[]>(
+    speech.map((m) => ({
+      name: m.name,
+      title: m.title,
+      about: m.about,
+      cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+      installed: m.installed,
+    })),
+  );
+
+  const languageRows = $derived<ModelRow[]>(
+    language.map((m) => {
+      const { note, warn } = fitNote(m.fit, m.recommended);
+      return {
+        name: m.name,
+        title: `${m.title} by ${m.maker}`,
+        about: m.about,
+        cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
+        installed: m.installed,
+        note,
+        warn,
+      };
+    }),
+  );
+
+  // The Anthropic key. It is never read back: the Go side only ever says
+  // whether one can be found.
+  let key = $state("");
+  let hasKey = $state(false);
+  let savingKey = $state(false);
+  let savedKey = $state(false);
+
+  async function saveKey() {
+    savingKey = true;
+    problem = "";
+    try {
+      await api.saveAPIKey(key);
+      key = "";
+      savedKey = true;
+      setTimeout(() => (savedKey = false), 1800);
+    } catch (err) {
+      problem = errorText(err);
+    }
+    savingKey = false;
+    await readModels();
+  }
+
+  async function readModels() {
+    try {
+      const state = await api.setup();
+      speech = state.speech;
+      language = state.language;
+      memory = state.memory;
+      hasKey = state.hasKey;
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
 
   async function readTraining() {
     try {
@@ -68,6 +147,7 @@
   onMount(async () => {
     settings = await api.getSettings();
     await readTraining();
+    await readModels();
     await check();
   });
 </script>
@@ -82,7 +162,7 @@
 
   <div class="panel">
     <div class="row">
-      <h2>Setup</h2>
+      <h2>This machine</h2>
       <span class="grow"></span>
       <button class="check" onclick={check} disabled={checking}
         >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
@@ -113,22 +193,82 @@
           <option value="api">Claude API</option>
         </select>
         {#if settings.planner === "local"}
-          <label for="llm">Language model file</label>
+          <!-- Not a label: what it names is a list, not a field, and the
+               field below has the name that belongs to it. -->
+          <span>Model</span>
+          <div class="models">
+            <p class="muted small">
+              {memory > 0
+                ? `This machine has ${memorySize(memory)} of memory. A model runs from it, so that is what decides which of these it can hold.`
+                : "This machine did not say how much memory it has, so nothing below is promised."}
+            </p>
+            <ModelList
+              models={languageRows}
+              kind="llm"
+              oninstall={api.installLanguageModel}
+              onchange={readModels}
+            />
+          </div>
+          <label for="llm">Model file</label>
           <input id="llm" type="text" bind:value={settings.llmModel} placeholder="The only .gguf file in ~/.framefairy/models" />
           <label for="server">llama-server</label>
           <input id="server" type="text" bind:value={settings.llmServer} placeholder="Found on the search path" />
         {:else}
           <label for="api">API model</label>
           <input id="api" type="text" bind:value={settings.apiModel} />
+          <!-- The key goes in the keychain the moment it is saved, not
+               with the rest of these, because it never lands in the
+               settings file. An app opened from Finder has no shell
+               environment, so this is the only way to give it one. -->
+          <label for="key">API key</label>
+          <div class="row">
+            <input
+              id="key"
+              type="password"
+              bind:value={key}
+              placeholder={hasKey ? "Replace the key" : "sk-ant-..."}
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button class="key" disabled={savingKey || !key.trim()} onclick={saveKey}>
+              {#if savingKey}<Busy />{/if}
+              {savingKey ? "Saving" : "Save key"}
+            </button>
+          </div>
+          <span></span>
+          <span class="muted small">
+            {#if savedKey}
+              Saved. It is in the keychain and nowhere else.
+            {:else if hasKey}
+              A key is in place. It is in the keychain and nowhere else.
+            {:else}
+              It goes in the keychain and nowhere else.
+            {/if}
+          </span>
         {/if}
       </div>
     </div>
 
+    <!-- Every episode is transcribed on this machine, so the model has to
+         be on it. It is the same list as the setup, and installing one
+         here is the same job. -->
     <div class="panel">
-      <h2>Transcription and rendering</h2>
+      <h2>Speech</h2>
+      <ModelList
+        models={speechRows}
+        kind="model"
+        oninstall={api.installSpeechModel}
+        onchange={readModels}
+      />
       <div class="grid">
-        <label for="asr">Speech model folder</label>
+        <label for="asr">Model folder</label>
         <input id="asr" type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" />
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Rendering</h2>
+      <div class="grid">
         <label for="ffmpeg">ffmpeg</label>
         <input id="ffmpeg" type="text" bind:value={settings.ffmpeg} placeholder="Found on the search path" />
         <label for="out">Output folder</label>
@@ -267,6 +407,18 @@
      are being looked for. */
   .check {
     min-width: 116px;
+  }
+
+  .key {
+    min-width: 104px;
+  }
+
+  /* The list of models stands in the control column of the grid, where a
+     field would, so the name beside it lines up with every other name. */
+  .models {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .drop {

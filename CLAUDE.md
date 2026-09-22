@@ -15,8 +15,12 @@ What the product has to be:
 - **A black box first.** The episode video is the only input. No captions
   file, no timecodes. Transcription, word timing, clip choice, framing and
   captions happen by themselves.
-- **Local.** Transcription and clip choice run on the user's machine, with no
-  API and no cost per run. The Claude API planner stays as an option.
+- **Local.** Transcription always runs on the user's machine. Choosing clips
+  is the one thing they pick between: an Anthropic API key, which works on
+  any machine and costs per episode, or a local model, which is free per run
+  and needs the machine for it. No language model ships, so the app walks
+  them through installing the local one. See
+  [docs/PACKAGING.md](docs/PACKAGING.md).
 - **Faithful.** Audio and picture stay as close to the original as possible.
   Only cutting and burned-in captions, no volume or colour changes.
 - **Crisp clips.** A good short cuts fluff and dead air inside a moment
@@ -29,7 +33,8 @@ What the product has to be:
   not a verdict: a cut can be moved, put back or made by hand, because the
   one thing the engine cannot hear is what the episode is about.
 - **For many people.** Native on macOS, Windows and Linux, not tuned to one
-  Mac. The installer will pick the model that fits the machine's memory.
+  Mac. macOS ships first, because it is the machine that can be tested. A
+  local model is chosen by what the machine's memory can hold.
 - **Improving over time.** Recorded decisions train our own local selection
   model. See [docs/TRAINING.md](docs/TRAINING.md).
 
@@ -48,6 +53,7 @@ Start with [README.md](README.md). In short:
 | desktop app `framefairy-app` | `cmd/framefairy-app/` (Go), `frontend/` (Svelte) | [docs/APP.md](docs/APP.md) |
 | training tool `framefairy-train` | `cmd/framefairy-train/`, `train/` | [docs/TRAINING.md](docs/TRAINING.md) |
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
+| shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | plan and status | | [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
 ## How Tim works
@@ -244,11 +250,21 @@ messages, pull request text, code comments and chat replies.
 
 - **Go, latest version.** One module, `go 1.27` in `go.mod`, no per-part
   version exceptions. Upgrade with Go releases.
-- **Software never installs dependencies by itself.** The programs never run
-  package managers. `make tools` and `make models` install only when Tim calls
-  them, and `make` only fetches the project's own Go and npm packages.
+- **One command, and the programs still install nothing.** `make` is the
+  whole of it: it installs the tools this machine is missing, builds the
+  ffmpeg we ship the first time, and builds the programs. Nobody should
+  have to remember a second command to get from a fresh machine to a
+  running app. A build runner never installs: `CI` in the environment
+  turns that off, so what CI builds is what its own workflow asked for.
+  The programs themselves never run a package manager. The models are the
+  app's to fetch, on its first run, because that is what a customer does,
+  and `make models` is left for the command line, which has no window to
+  ask in.
 - **Build with make.** `make` must finish without any warning on macOS, see
   [docs/BUILD.md](docs/BUILD.md). CI fails on any warning in the macOS build.
+  It must also stay quick when there is nothing to do: everything `make`
+  decides before it builds is a `command -v` or a file test, never a
+  package manager asked what it has.
 - **One engine, two front ends.** The app drives the engine through
   `engine.Project`, which calls the same `Run` as the command line. Never
   duplicate engine logic in the app. Keep every command-line flag working.
@@ -359,6 +375,8 @@ Next up, roughly in this order:
 - splitting and merging captions
 - the playback copy of the episode and clip thumbnails
 - `framefairy-train import` and `eval`, and loading a trained adapter
-- packaging: bundled tools, installer with model choice by memory, signing,
-  CI builds for all three systems, licence notices
+- packaging, macOS first: the speech library carried in the bundle, an LGPL
+  ffmpeg encoding through the system, signing and notarisation, the choice
+  between an API key and a local model. The reasoning is in
+  [docs/PACKAGING.md](docs/PACKAGING.md)
 - the licence key, last of all

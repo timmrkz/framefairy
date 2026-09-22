@@ -17,6 +17,7 @@
   import Episode from "./screens/Episode.svelte";
   import Jobs from "./screens/Jobs.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
+  import Setup from "./screens/Setup.svelte";
 
   // The sidebar is a rail until the pointer reaches it, and stays open when
   // it is pinned. Open, it lies over the workspace rather than pushing it,
@@ -47,6 +48,15 @@
 
   let version = $state("");
   let problem = $state("");
+
+  // The first run. A new copy of the app cannot transcribe without a
+  // speech model and cannot find clips until somebody has said how, so
+  // until both are answered the setup is the window: no sidebar, no
+  // workspace, nothing to press that would not work.
+  //
+  // Null until the Go side has answered, so the workspace never flashes up
+  // for a moment before the setup covers it.
+  let settingUp = $state<boolean | null>(null);
 
   async function refresh() {
     try {
@@ -168,6 +178,12 @@
       .then((s) => wearColour(s.appColour))
       .catch(() => {});
     api.version().then((v) => (version = v));
+    api
+      .setup()
+      .then((s) => (settingUp = !s.chosen || !s.hasSpeech))
+      // A machine that cannot answer is not a machine to hold in a setup
+      // screen it can never leave.
+      .catch(() => (settingUp = false));
     refresh();
     const off = onEpisodeChanged(() => refresh());
     window.addEventListener("pointerdown", handOverFocus);
@@ -195,7 +211,18 @@
     <span class="name"><span class="what">{title}</span></span>
   </header>
 
-  <div class="body">
+  <div class="body" class:alone={settingUp !== false}>
+  {#if settingUp === null}
+    <!-- Nothing, for the moment it takes to ask. The bar is already there,
+         so the window is not blank. -->
+  {:else if settingUp}
+    <Setup
+      ondone={() => {
+        settingUp = false;
+        refresh();
+      }}
+    />
+  {:else}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <aside
     class:open
@@ -320,6 +347,7 @@
       </div>
     {/if}
   </main>
+  {/if}
   </div>
 
   {#if removing}
@@ -456,6 +484,20 @@
     grid-template-columns: var(--rail) 1fr;
     flex: 1;
     min-height: 0;
+  }
+
+  /* The setup has the whole window, rail and all: there is nothing on the
+     rail worth reaching for until it is done.
+
+     The row is the window and not the setup. Left implicit it is sized to
+     what is in it, which on a window too short for the whole setup makes
+     the row taller than the window, and then the foot of the setup is
+     below the bottom edge with nothing to scroll: the page itself never
+     scrolls. minmax(0, 1fr) is the row being the window's own height and
+     what is in it being allowed to give way. */
+  .body.alone {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr);
   }
 
   aside {

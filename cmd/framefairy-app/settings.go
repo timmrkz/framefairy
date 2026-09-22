@@ -42,6 +42,10 @@ type Settings struct {
 	// 1080x1920 frame. It belongs to the person, not to an episode: a place
 	// that suits one video suits the next one.
 	CaptionY float64 `json:"captionY"`
+	// Chosen is true once somebody has answered how clips are found. Until
+	// then Planner is a default rather than a decision, and the app asks
+	// on the first run instead of guessing on the customer's behalf.
+	Chosen bool `json:"chosen"`
 }
 
 // defaultColour is what both the app and the word highlight start out as.

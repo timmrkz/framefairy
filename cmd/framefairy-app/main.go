@@ -226,8 +226,15 @@ func (s *FrameFairy) Chrome() Chrome {
 // GetSettings returns the saved settings.
 func (s *FrameFairy) GetSettings() Settings { return s.store.Settings() }
 
-// SaveSettings stores new settings.
-func (s *FrameFairy) SaveSettings(v Settings) error { return s.store.SetSettings(v) }
+// SaveSettings takes the whole settings object back from the window, so
+// anything the window does not know about would be lost on every save.
+// Chosen is one of those: it is not a setting anybody edits, it is the
+// record that the one setup question was answered, and losing it would put
+// a customer back in the setup screen every time they changed a colour.
+func (s *FrameFairy) SaveSettings(v Settings) error {
+	v.Chosen = s.store.Settings().Chosen
+	return s.store.SetSettings(v)
+}
 
 // Check is one line of the setup check.
 type Check struct {
@@ -664,11 +671,11 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, "transcribe", "Transcription", notInLibrary)
 	}
-	if job, ok := s.jobs.find(path, "transcribe"); ok &&
-		(job.State == JobQueued || job.State == JobRunning) {
-		return job
-	}
-	return s.jobs.add(path, "transcribe", "Transcription", func(ctx context.Context, p *engine.Project) (string, error) {
+	// Once, however many times it is asked for. Looking and then adding is
+	// two locks with a gap between them, and two calls arriving together
+	// both looked, both saw nothing and both added, which is two
+	// transcriptions of one episode.
+	return s.jobs.addOnce(path, "transcribe", "Transcription", func(ctx context.Context, p *engine.Project) (string, error) {
 		return "", p.Transcribe(ctx)
 	})
 }

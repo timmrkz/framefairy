@@ -147,3 +147,65 @@ func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
 		}
 	}
 }
+
+// Work asked for twice at once is queued once.
+//
+// Looking for an existing job and then adding one is two locks with a gap
+// between them. Two calls arriving together both look, both see nothing and
+// both add, and the result is two transcriptions of one episode or two
+// downloads writing over each other's unpacking folder. The window can do
+// that by being opened twice, and a customer can do it by pressing a button
+// twice. A test that makes one call at a time proves nothing about it.
+func TestAskingForTheSameWorkTwiceAtOnceQueuesItOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	st := openStore()
+	q := newQueue(st, func(JobUpdate) {}, func(string) {})
+
+	held := func(ctx context.Context, p *engine.Project) (string, error) {
+		<-ctx.Done()
+		return "", engine.ErrCancelled
+	}
+
+	var wg sync.WaitGroup
+	ids := make([]string, 24)
+	for i := range ids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// Two episodes, so the test also shows that once-only is per
+			// piece of work rather than a queue that takes one job at all.
+			episode := "/eps/one.mp4"
+			if i%2 == 1 {
+				episode = "/eps/two.mp4"
+			}
+			ids[i] = q.addOnce(episode, "transcribe", "Transcription", held).ID
+		}(i)
+	}
+	wg.Wait()
+
+	live := map[string]int{}
+	for _, job := range q.list() {
+		if job.State == JobQueued || job.State == JobRunning {
+			live[job.Episode]++
+		}
+	}
+	for episode, n := range live {
+		if n != 1 {
+			t.Errorf("%s has %d jobs queued or running, want 1", episode, n)
+		}
+	}
+	if len(live) != 2 {
+		t.Errorf("%d episodes have work, want 2", len(live))
+	}
+	// Every caller was handed a real job rather than an empty one.
+	for i, id := range ids {
+		if id == "" {
+			t.Errorf("caller %d got no job", i)
+		}
+	}
+	for _, job := range q.list() {
+		q.cancel(job.ID)
+	}
+}

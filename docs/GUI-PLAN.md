@@ -24,8 +24,10 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
    as the app.
 6. **Time window.** The app offers the command line's `--from` and `--to` as
    a window dragged over the episode waveform.
-7. **Hardware.** Model choice by available memory belongs to the installer.
-   Tim's machine is an M2 Max with 32 GB.
+7. **Hardware.** No language model ships. The user picks an Anthropic API
+   key or a local model, and the app walks them through installing the
+   local one, choosing by available memory. Tim's machine is an M2 Max with
+   32 GB. See [PACKAGING.md](PACKAGING.md).
 8. **Licence key.** At the very end.
 9. **Training.** The engine records plans and decisions. Everything that
    works with those records is a separate tool, `framefairy-train`. The app only
@@ -138,16 +140,22 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 
 ## Phase 5: packaging
 
+macOS first, because it is the machine that can be tested. The reasoning
+behind all of it is in [PACKAGING.md](PACKAGING.md).
+
 | # | Batch | Status |
 |---|---|---|
-| 5.1 | Licence memo: ffmpeg build and H.264 patents, llama.cpp, sherpa-onnx | `[ ]` |
-| 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build` | `[ ]` |
-| 5.3 | Bundled tools found next to the app before the search path | `[ ]` |
-| 5.4 | Installer: model download with consent, checksum and resume, model choice by memory | `[ ]` |
-| 5.5 | macOS signing and notarisation | `[ ]` |
+| 5.0 | The speech library carried in the bundle: the runpath off the build machine's module cache and onto the app | `[x]` |
+| 5.1 | Licence memo: which ffmpeg, and what H.264 means for a paid app | `[x]` |
+| 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build`, and `make run` launching the `.app` rather than a bare binary, so what Tim runs every day is what a customer runs | `[ ]` |
+| 5.3 | An LGPL ffmpeg built without libx264 `[x]` for macOS, encoding through the system `[x]`, found next to the app before the search path `[x]`. Linux still has no encoder in an LGPL build, so VA-API or openh264 goes in before Linux ships | `[~]` |
+| 5.4 | The first run: the speech model fetched by the app itself `[x]`, the one question asked once and remembered `[x]`, an Anthropic API key stored in the keychain `[x]`, four language models from three houses, each pinned to a checksum read off the real file, judged against what the machine can hold, with the one it should have marked `[x]`, the same lists in the settings `[x]`. What is left is resuming a download that stopped, which matters at fifteen gigabytes | `[~]` |
+| 5.5 | macOS signing and notarisation, every bundled binary included | `[ ]` |
 | 5.6 | Windows and Linux builds in CI | `[ ]` |
 | 5.7 | Whether customer builds record training data, and a setting for it | `[ ]` |
 | 5.8 | Licence key check and storage | `[ ]` |
+| 5.9 | How the app updates itself | `[ ]` |
+| 5.10 | A skill for shipping, once a build has actually been through signing and notarisation. Not before: a skill written from reasoning rather than from a round of it would teach the guesses | `[ ]` |
 
 ---
 

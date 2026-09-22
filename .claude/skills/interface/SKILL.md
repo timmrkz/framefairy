@@ -31,6 +31,8 @@ await stop();
 ```
 
 `workspace()` opens an episode, puts the sidebar away and picks a clip.
+`screen()` is the same window with nothing clicked, for anything that is
+not the workspace: the first run, the settings, the empty window.
 `query` tells the fake Go side what to pretend. The modes are in
 `frontend/preview/wails-stub.ts`, and today they are:
 
@@ -44,6 +46,7 @@ await stop();
 | `?paused` | clips found, the episode read part way, nothing reading the rest |
 | `?found` | a search that runs and really finishes, clips and all |
 | `?rendering` | a render running on the first clip, with progress |
+| `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:

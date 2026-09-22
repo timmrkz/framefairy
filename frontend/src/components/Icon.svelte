@@ -64,6 +64,10 @@
   {:else if name === "pick"}
     <path d="M5 6.3 8 3.4l3 2.9" />
     <path d="M5 9.7 8 12.6l3-2.9" />
+  <!-- Done. Beside a speech model that is on the machine, and anywhere
+       else something has arrived. -->
+  {:else if name === "check"}
+    <path d="M3.2 8.4 6.5 11.7 12.8 4.9" />
   {:else if name === "sliders"}
     <path d="M2 4.5h12M2 11.5h12" />
     <circle cx="5.5" cy="4.5" r="1.9" fill="var(--ink-1)" />

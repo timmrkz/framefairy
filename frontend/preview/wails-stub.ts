@@ -119,6 +119,54 @@ const captionWords = [
   { start: 1.6, end: 2.4, text: "irgendein" },
 ];
 
+// The speech model install of the setup mode: it starts when it is asked
+// for and finishes four seconds later, reporting as it goes. A mode that
+// sends no events can never show work starting or stopping, whatever its
+// Jobs call answers.
+const installAt = () => (window as any).__installAt ?? 0;
+const modelRunning = () => installAt() > 0 && Date.now() - installAt() < 4000;
+const modelDone = () => installAt() > 0 && Date.now() - installAt() >= 4000;
+const modelJob = () => ({
+  id: "m1",
+  episode: "",
+  kind: "model",
+  label: "Parakeet TDT 0.6B v3",
+  state: modelDone() ? "done" : "running",
+  queued: "",
+  lane: "transcribe",
+  progress: modelDone()
+    ? undefined
+    : {
+        stage: "speech model",
+        text: "fetching",
+        fraction: Math.min((Date.now() - installAt()) / 4000, 1),
+        remaining: Math.max(0, Math.round(4 - (Date.now() - installAt()) / 1000)),
+      },
+});
+
+// The same for a model that finds clips, on its own lane and its own
+// clock, so a probe can have one running while the other is not.
+const llmAt = () => (window as any).__llmAt ?? 0;
+const llmRunning = () => llmAt() > 0 && Date.now() - llmAt() < 4000;
+const llmDone = () => llmAt() > 0 && Date.now() - llmAt() >= 4000;
+const llmJob = () => ({
+  id: "l1",
+  episode: "",
+  kind: "llm",
+  label: "Gemma 4 26B A4B by Google",
+  state: llmDone() ? "done" : "running",
+  queued: "",
+  lane: "work",
+  progress: llmDone()
+    ? undefined
+    : {
+        stage: "language model",
+        text: "fetching",
+        fraction: Math.min((Date.now() - llmAt()) / 4000, 1),
+        remaining: Math.max(0, Math.round(4 - (Date.now() - llmAt()) / 1000)),
+      },
+});
+
 export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const method = name.split(".").pop();
@@ -140,6 +188,84 @@ export const Call = {
     switch (method) {
       case "Version":
         return Promise.resolve("0.1.0");
+      case "Platform":
+        return Promise.resolve(location.search.includes("linux") ? "linux" : "darwin");
+      // The first run. Nothing installed, nothing chosen, and an install
+      // that really runs and really finishes, so the whole walkthrough can
+      // be reached. Every other mode is a machine that is already set up,
+      // or the setup would cover the workspace in every probe there is.
+      case "Setup": {
+        const fresh = location.search.includes("setup");
+        const model = {
+          name: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+          title: "Parakeet TDT 0.6B v3",
+          about: "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.",
+          languages: "25 European languages, German and English among them",
+          download: 487170055,
+          unpacked: 671239000,
+          url: "https://example.invalid/parakeet.tar.bz2",
+          recommended: true,
+          installed: !fresh || modelDone(),
+        };
+        const planner = (window as any).__planner ?? "";
+        const key = !!(window as any).__key;
+        // Two models from two houses, so the choice the window has to put
+        // is a real one, and so the memory below has something to say. The
+        // small one fits any machine, the big one fits none of the ones
+        // the harness pretends to be.
+        const language = [
+          {
+            name: "gemma-4-26B_q4_0-it.gguf",
+            title: "Gemma 4 26B A4B",
+            maker: "Google",
+            about: "Quantised to four bits, and only four billion of its twenty six are used per token.",
+            download: 15461882265,
+            needs: 19327352832,
+            url: "https://example.invalid/gemma.gguf",
+            installed: !fresh || llmDone(),
+            fit: "fits",
+            recommended: true,
+          },
+          {
+            name: "small-q4.gguf",
+            title: "Something Small",
+            maker: "Another House",
+            about: "Half the size and most of the way there.",
+            download: 4900000000,
+            needs: 42949672960,
+            url: "https://example.invalid/small.gguf",
+            installed: false,
+            fit: "too big",
+            recommended: false,
+          },
+        ];
+        return Promise.resolve({
+          speech: [model],
+          hasSpeech: model.installed,
+          language,
+          memory: 34359738368,
+          planner: fresh ? planner : "local",
+          hasKey: fresh ? key : true,
+          hasLocalModel: fresh ? llmDone() : true,
+          chosen: fresh ? !!planner : true,
+          ready: !fresh,
+          installing: modelRunning() ? "m1" : "",
+        });
+      }
+      case "InstallSpeechModel":
+        (window as any).__installAt ??= Date.now();
+        return Promise.resolve(modelJob());
+      case "InstallLanguageModel":
+        (window as any).__llmAt ??= Date.now();
+        return Promise.resolve(llmJob());
+      case "ChoosePlanner":
+        (window as any).__planner = args[0];
+        return Promise.resolve(null);
+      case "SaveAPIKey":
+        (window as any).__key = !!String(args[0] ?? "").trim();
+        return Promise.resolve(null);
+      case "AddEpisodes":
+        return Promise.resolve(null);
       case "Library":
         return Promise.resolve([
           { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true },
@@ -450,6 +576,17 @@ export const Events = {
           },
         });
       }, 400);
+      return () => clearInterval(timer);
+    }
+    if (location.search.includes("setup")) {
+      const timer = setInterval(() => {
+        if (installAt()) {
+          fn({ data: { job: modelJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+        }
+        if (llmAt()) {
+          fn({ data: { job: llmJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+        }
+      }, 300);
       return () => clearInterval(timer);
     }
     if (location.search.includes("found")) {

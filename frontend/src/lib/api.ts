@@ -206,7 +206,7 @@ export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
 export interface Job {
   id: string;
   episode: string;
-  kind: "transcribe" | "plan" | "render";
+  kind: "transcribe" | "plan" | "render" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -232,6 +232,86 @@ export interface RenderRequest {
   Preview: boolean;
 }
 
+// One speech model that can be installed, as the setup and the settings
+// see it. The engine holds the list, so a new model is one entry there and
+// nothing here changes.
+export interface SpeechModel {
+  name: string;
+  title: string;
+  about: string;
+  languages: string;
+  // What the download costs and what it costs on disk once it is there,
+  // in bytes. Both are said before anything starts.
+  download: number;
+  unpacked: number;
+  url: string;
+  // The one the app offers when nobody has chosen.
+  recommended: boolean;
+  installed: boolean;
+}
+
+// One model that can find clips. A model runs from memory, so what decides
+// whether a machine can have one is not the download but what it takes to
+// run.
+export interface LanguageModel {
+  name: string;
+  title: string;
+  // Who made it. A list of models is read by maker first: Google's Gemma
+  // and Meta's Llama are the same kind of thing from two houses.
+  maker: string;
+  about: string;
+  // Bytes to fetch, and bytes of memory to run.
+  download: number;
+  needs: number;
+  url: string;
+  installed: boolean;
+  // What this machine can do with it: "fits", "tight", "too big", or
+  // "unknown" where the machine would not say how much memory it has.
+  fit: "fits" | "tight" | "too big" | "unknown";
+  // Whether this is the one to offer this machine, which is the largest it
+  // can hold. It belongs to the machine and not to the model.
+  recommended: boolean;
+}
+
+// One row of a list of models, as the list draws it. Speech models and
+// language models are the same kind of thing on screen, so they are one
+// component and each screen says what to put in the row.
+export interface ModelRow {
+  name: string;
+  title: string;
+  about: string;
+  // What it costs, as one line.
+  cost: string;
+  installed: boolean;
+  // A word about this model on this machine, where there is one.
+  note?: string;
+  // Whether that word is a warning rather than a fact.
+  warn?: boolean;
+}
+
+// What a new copy of the app still needs before it can make a short. Two
+// things are needed and only one of them is a question: speech is always
+// local and finding clips is a choice between an API key and a local
+// model.
+export interface SetupState {
+  speech: SpeechModel[];
+  hasSpeech: boolean;
+  language: LanguageModel[];
+  // What this machine has, in bytes, or zero where it would not say.
+  memory: number;
+  planner: "local" | "api" | "";
+  // Whether a key can be found. It never carries the key itself.
+  hasKey: boolean;
+  hasLocalModel: boolean;
+  // Whether anybody has answered the one question. Until then the planner
+  // is a default rather than a decision.
+  chosen: boolean;
+  ready: boolean;
+  // The job of a model install in hand, so a window opened again while one
+  // runs picks it up rather than starting a second.
+  installing?: string;
+}
+
 export const api = {
   version: () => call<string>("Version"),
   platform: () => call<string>("Platform"),
@@ -252,6 +332,13 @@ export const api = {
   setSearch: (count: number, min: number, max: number) =>
     call<void>("SetSearch", count, min, max),
   checkSetup: () => call<Check[]>("CheckSetup"),
+  // What a new copy of the app still needs, and the three ways to answer
+  // it. Setup only reads, the other three change something.
+  setup: () => call<SetupState>("Setup"),
+  installSpeechModel: (name: string) => call<Job>("InstallSpeechModel", name),
+  installLanguageModel: (name: string) => call<Job>("InstallLanguageModel", name),
+  saveAPIKey: (key: string) => call<void>("SaveAPIKey", key),
+  choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
   addEpisodes: () => call<string[] | null>("AddEpisodes"),
@@ -363,6 +450,49 @@ export function clock(seconds: number): string {
   const mm = String(m).padStart(h ? 2 : 1, "0");
   const ss = String(s).padStart(2, "0");
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// What a machine can do with a model, in words, and whether that is a
+// warning. One place, because the setup and the settings say the same
+// thing and two wordings of one fact read as two facts.
+//
+// best is the one the machine is offered, the largest it can hold. Saying
+// so never hides the warning: the best of them on a small machine is still
+// tight on it, and somebody about to spend a download deserves to know.
+export function fitNote(
+  fit: LanguageModel["fit"],
+  best = false,
+): { note: string; warn: boolean } {
+  switch (fit) {
+    case "fits":
+      return { note: best ? "Best for this machine" : "Fits this machine", warn: false };
+    case "tight":
+      return { note: best ? "The best of these here, and tight on it" : "Tight on this machine", warn: true };
+    case "too big":
+      return { note: "Too big for this machine", warn: true };
+    default:
+      return { note: best ? "The safest of these" : "", warn: false };
+  }
+}
+
+// A size in bytes the way a download is always quoted: metric, a thousand
+// bytes to the kilobyte, and never more than one decimal.
+export function size(bytes: number): string {
+  if (!isFinite(bytes) || bytes <= 0) return "";
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  return `${Math.round(bytes / 1e6)} MB`;
+}
+
+// Memory, which is counted the other way. A machine sold as 32 GB has
+// 34,359,738,368 bytes of it, so quoting that as 34.4 GB would be true and
+// unrecognisable: nobody would find it on the box their machine came in.
+// A download counts in thousands and memory counts in 1024s, because that
+// is how each of them is quoted everywhere else.
+export function memorySize(bytes: number): string {
+  if (!isFinite(bytes) || bytes <= 0) return "";
+  const gb = bytes / (1 << 30);
+  if (gb < 1) return `${Math.round(bytes / (1 << 20))} MB`;
+  return `${gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10} GB`;
 }
 
 export function errorText(err: unknown): string {

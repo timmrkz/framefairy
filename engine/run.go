@@ -55,6 +55,7 @@ type Options struct {
 	NoUpscale       bool
 	CRF             int
 	Preset          string
+	Encoder         string
 	AudioBitrate    string
 	Preview         bool
 	Font            string
@@ -165,6 +166,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 
 	e.SkipCaptions = opts.NoCaptions
+	e.WantEncoder = opts.Encoder
 	log.Info("%s", filepath.Base(opts.Source))
 
 	if err := e.Preflight(ctx); err != nil {
