@@ -24,8 +24,10 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
    as the app.
 6. **Time window.** The app offers the command line's `--from` and `--to` as
    a window dragged over the episode waveform.
-7. **Hardware.** Model choice by available memory belongs to the installer.
-   Tim's machine is an M2 Max with 32 GB.
+7. **Hardware.** No language model ships. The user picks an Anthropic API
+   key or a local model, and the app walks them through installing the
+   local one, choosing by available memory. Tim's machine is an M2 Max with
+   32 GB. See [PACKAGING.md](PACKAGING.md).
 8. **Licence key.** At the very end.
 9. **Training.** The engine records plans and decisions. Everything that
    works with those records is a separate tool, `framefairy-train`. The app only
@@ -138,16 +140,21 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 
 ## Phase 5: packaging
 
+macOS first, because it is the machine that can be tested. The reasoning
+behind all of it is in [PACKAGING.md](PACKAGING.md).
+
 | # | Batch | Status |
 |---|---|---|
-| 5.1 | Licence memo: ffmpeg build and H.264 patents, llama.cpp, sherpa-onnx | `[ ]` |
+| 5.0 | The speech library carried in the bundle: the runpath off the build machine's module cache and onto the app | `[ ]` |
+| 5.1 | Licence memo: which ffmpeg, and what H.264 means for a paid app | `[x]` |
 | 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build` | `[ ]` |
-| 5.3 | Bundled tools found next to the app before the search path | `[ ]` |
-| 5.4 | Installer: model download with consent, checksum and resume, model choice by memory | `[ ]` |
-| 5.5 | macOS signing and notarisation | `[ ]` |
+| 5.3 | An LGPL ffmpeg built without libx264, encoding through the system, found next to the app before the search path | `[ ]` |
+| 5.4 | Finding clips is a choice: an Anthropic API key, or a local model the app helps install, with consent, checksum, resume and a choice by memory | `[ ]` |
+| 5.5 | macOS signing and notarisation, every bundled binary included | `[ ]` |
 | 5.6 | Windows and Linux builds in CI | `[ ]` |
 | 5.7 | Whether customer builds record training data, and a setting for it | `[ ]` |
 | 5.8 | Licence key check and storage | `[ ]` |
+| 5.9 | How the app updates itself | `[ ]` |
 
 ---
 

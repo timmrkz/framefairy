@@ -15,8 +15,12 @@ What the product has to be:
 - **A black box first.** The episode video is the only input. No captions
   file, no timecodes. Transcription, word timing, clip choice, framing and
   captions happen by themselves.
-- **Local.** Transcription and clip choice run on the user's machine, with no
-  API and no cost per run. The Claude API planner stays as an option.
+- **Local.** Transcription always runs on the user's machine. Choosing clips
+  is the one thing they pick between: an Anthropic API key, which works on
+  any machine and costs per episode, or a local model, which is free per run
+  and needs the machine for it. No language model ships, so the app walks
+  them through installing the local one. See
+  [docs/PACKAGING.md](docs/PACKAGING.md).
 - **Faithful.** Audio and picture stay as close to the original as possible.
   Only cutting and burned-in captions, no volume or colour changes.
 - **Crisp clips.** A good short cuts fluff and dead air inside a moment
@@ -29,7 +33,8 @@ What the product has to be:
   not a verdict: a cut can be moved, put back or made by hand, because the
   one thing the engine cannot hear is what the episode is about.
 - **For many people.** Native on macOS, Windows and Linux, not tuned to one
-  Mac. The installer will pick the model that fits the machine's memory.
+  Mac. macOS ships first, because it is the machine that can be tested. A
+  local model is chosen by what the machine's memory can hold.
 - **Improving over time.** Recorded decisions train our own local selection
   model. See [docs/TRAINING.md](docs/TRAINING.md).
 
@@ -48,6 +53,7 @@ Start with [README.md](README.md). In short:
 | desktop app `framefairy-app` | `cmd/framefairy-app/` (Go), `frontend/` (Svelte) | [docs/APP.md](docs/APP.md) |
 | training tool `framefairy-train` | `cmd/framefairy-train/`, `train/` | [docs/TRAINING.md](docs/TRAINING.md) |
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
+| shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | plan and status | | [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
 ## How Tim works
@@ -359,6 +365,8 @@ Next up, roughly in this order:
 - splitting and merging captions
 - the playback copy of the episode and clip thumbnails
 - `framefairy-train import` and `eval`, and loading a trained adapter
-- packaging: bundled tools, installer with model choice by memory, signing,
-  CI builds for all three systems, licence notices
+- packaging, macOS first: the speech library carried in the bundle, an LGPL
+  ffmpeg encoding through the system, signing and notarisation, the choice
+  between an API key and a local model. The reasoning is in
+  [docs/PACKAGING.md](docs/PACKAGING.md)
 - the licence key, last of all
