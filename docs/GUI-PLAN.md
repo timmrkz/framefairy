@@ -147,7 +147,7 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 |---|---|---|
 | 5.0 | The speech library carried in the bundle: the runpath off the build machine's module cache and onto the app | `[ ]` |
 | 5.1 | Licence memo: which ffmpeg, and what H.264 means for a paid app | `[x]` |
-| 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build` | `[ ]` |
+| 5.2 | Taskfile and build assets for `wails3 dev` and `wails3 build`, and `make run` launching the `.app` rather than a bare binary, so what Tim runs every day is what a customer runs | `[ ]` |
 | 5.3 | An LGPL ffmpeg built without libx264, encoding through the system, found next to the app before the search path | `[ ]` |
 | 5.4 | Finding clips is a choice: an Anthropic API key, or a local model the app helps install, with consent, checksum, resume and a choice by memory | `[ ]` |
 | 5.5 | macOS signing and notarisation, every bundled binary included | `[ ]` |

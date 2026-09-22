@@ -137,17 +137,77 @@ goes. Decoding an arbitrary podcast video is not, and writing an H.264
 encoder is not. Anything built here still bottoms out at a decoder and an
 encoder, which is exactly where the difficulty was.
 
-## What travels in the bundle
+## The words, because three of them get mixed up
 
-| Part | Size | Note |
+**Bundle** is a noun on macOS, not a verb. `framefairy.app` is a folder that
+Finder draws as one icon, holding `Contents/MacOS/`,
+`Contents/Frameworks/` and `Contents/Info.plist`. It is not an archive and
+nothing unpacks it. It **is** the application.
+
+That collides with the other sense already in this repository, where Vite
+bundles the interface into `cmd/framefairy-app/dist/app/`. So, one name per
+thing: **bundle** here means the `.app`, and what Vite does is **building
+the interface**. **Bundler** is a JavaScript word and is not used for
+shipping at all.
+
+**Installer** is a program that puts things where they belong. macOS has
+two shapes of it and we want the lighter one:
+
+- **`.dmg`**, a disk image, which is barely an installer. It mounts, shows
+  the `.app` beside a shortcut to Applications, and the user drags it
+  across. That drag is the installation.
+- **`.pkg`**, a real installer that runs scripts and asks for an
+  administrator password. It is only needed to write outside the app's own
+  folder, and we do not.
+
+So we ship a `.dmg` holding one `.app`.
+
+**Nothing is ever compiled on a customer's machine.** They have no
+compiler. We build ffmpeg once, in advance, and the finished binary sits
+inside the `.app` like any other file.
+
+## What is where
+
+| Stage | What exists | Where | Who does it |
+| --- | --- | --- | --- |
+| Source | the repository | GitHub | us |
+| Build | `framefairy.app`, signed | a Mac or a CI runner | us, once per release |
+| Download | `framefairy-1.0.dmg`, about 90 MB, notarised | a web page | the customer, one click |
+| Install | `/Applications/framefairy.app` | their disk | they drag it |
+| First run | the models arrive | their disk | the app, with consent |
+
+| Piece | Who builds it | In the download | Ends up |
+| --- | --- | --- | --- |
+| The app, 19.5 MB, interface embedded | us, at build time | yes | `Contents/MacOS/` |
+| sherpa-onnx and onnxruntime, 32 MB | k2-fsa, we copy and sign again | yes | `Contents/Frameworks/` |
+| ffmpeg and ffprobe, about 40 MB | us, once, in advance, static, no libx264 | yes | `Contents/MacOS/` |
+| Licence notices | us | yes | [THIRD_PARTY.md](THIRD_PARTY.md), shown in the app |
+| The speech model, 490 MB | NVIDIA, we never touch it | no | `~/.framefairy/models/`, first run |
+| A language model, 14.4 GB | Google, we never touch it | no | the same place, only if they choose local |
+| `llama-server` | the user, if they choose local | no | wherever they install it |
+| Settings and the episode list | the app | no | `~/Library/Application Support/` |
+| An episode's work | the app | no | `<episode>.framefairy/`, beside the video |
+
+## One build, used for development too
+
+The rule is that what Tim runs every day and what a customer runs should be
+the same thing. Today they are not, and four of the six differences are
+exactly where shipping bugs live:
+
+| | `make run` today | what a customer runs |
 | --- | --- | --- |
-| `framefairy-app` | 19.5 MB | interface embedded |
-| sherpa-onnx and onnxruntime | 32 MB | the speech runtime, see below |
-| ffmpeg and ffprobe, LGPL | about 40 MB | built by us, static, no libx264 |
-| Licence notices | nothing | [THIRD_PARTY.md](THIRD_PARTY.md), shown in the app |
+| Engine and interface | the same code | the same code |
+| ffmpeg | Homebrew's, GPL, with libx264, found on `PATH` | ours, LGPL, static, inside the app |
+| The speech library | from the Go module cache | from `Contents/Frameworks/` |
+| Runs from | `bin/framefairy-app`, bare | `/Applications/framefairy.app` |
+| `Info.plist` and privacy prompts | none, so none appear | present, so they appear |
+| Signature | none | Developer ID, notarised |
 
-Downloaded on first run, with consent: the speech model at 490 MB, and a
-language model only if the user asks for one.
+So `make run` builds and launches the `.app` rather than a bare binary.
+Then the daily loop exercises the bundled ffmpeg, the relocated libraries,
+the `Info.plist` and the privacy prompts, and the only thing a customer has
+that Tim does not is the signature. A bug in any of it shows up on the day
+it is made rather than on the day of a release.
 
 ## The blocker to clear first
 
