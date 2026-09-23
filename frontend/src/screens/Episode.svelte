@@ -1769,6 +1769,9 @@
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onwalkclip={walkClip}
         captions={captions?.captions ?? []}
+        captionLook={shownCaptions
+          ? { text: shownCaptions.style.primary, box: shownCaptions.style.box }
+          : null}
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         oncaptiondraft={(draft) => (captionDraft = draft)}

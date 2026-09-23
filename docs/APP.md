@@ -846,11 +846,15 @@ moved by hand, on the clip timeline.
   caption at a time. An edge lands on a whole frame.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
-- **The blocks wear the waveform's colour**, with a gap of two pixels
-  where one caption goes and the next appears. The one the video preview
-  is showing is in the colour of the text. The edge under the pointer, and
-  the one being dragged, is a line in the accent, and it goes again when
-  the hand lets go. A double-click on an edge moved by hand puts it back
+- **Each block is its caption as the short shows it**: its own words in
+  the text colour on the box colour, so a colour picked in the captions
+  column is seen here too, while it is picked. What the hand works with
+  stays in the app's colours, so it reads whatever the captions are
+  given: every block has a thin frame, the one the video preview is
+  showing is ringed in the accent, and the edge under the pointer, or the
+  one being dragged, is a white line with a dark edge that goes again
+  when the hand lets go. Two captions that meet have a gap of two pixels
+  between them. A double-click on an edge moved by hand puts it back
   where its words put it, and Undo takes back any move.
 - **A click on an edge puts the playhead on it**, the way a clip edge does,
   which is how a caption is heard from where it appears.

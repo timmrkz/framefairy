@@ -48,6 +48,7 @@
     onmovecut,
     onwalkclip,
     captions = [],
+    captionLook = null,
     oncaptiontime,
     oncaptiondraft,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
@@ -91,6 +92,10 @@
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
     captions?: CaptionCue[];
+    // The colours the captions are burned in, the text and the box behind
+    // it, as the video preview draws them. Each block shows its words in
+    // them, so a colour picked for the short is seen here too.
+    captionLook?: { text: string; box: string } | null;
     // A caption edge let go of: the word it begins or ends on and the new
     // moment, both in the episode, or a moment below nought to put it back
     // where its words put it. True when it was saved.
@@ -965,6 +970,7 @@
     return draftCaptions(captions, capDraft).map((c, i) => ({
       i,
       c: captions[i],
+      words: (captions[i].lines ?? []).flatMap((l) => l.words.map((w) => w.text)).join(" "),
       from: inEpisode(segments, c.start),
       to: inEpisode(segments, Math.min(c.end, clipLength)),
     }));
@@ -1205,13 +1211,17 @@
     {#if captionBlocks.length}
       <!-- The captions along the foot of the track, each a block from where
            it appears to where it goes. -->
-      <div class="captions">
+      <div
+        class="captions"
+        style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
+          'transparent'}"
+      >
         {#each captionBlocks as b (b.i)}
           <div
             class="caption"
             class:showing={time >= b.from && time < b.to}
             style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
-          ></div>
+          >{b.words}</div>
         {/each}
       </div>
       {#if !locked && oncaptiontime}
@@ -1442,38 +1452,57 @@
     opacity: 1;
   }
 
-  /* The captions along the foot of the track. The band is 20 pixels, a
-     block of 14 with 3 above and below it, and the edges are as tall as
+  /* The captions along the foot of the track. The band is 24 pixels, a
+     block of 18 with 3 above and below it, and the edges are as tall as
      the band so they never reach the trim and cut edges above them. */
   .captions {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    height: 20px;
+    height: 24px;
     pointer-events: none;
     z-index: 1;
   }
 
-  /* A block is drawn a pixel short of its time at each end, so two
+  /* Each block is the caption as the short shows it: its own words, in
+     the text colour on the box colour, laid over the app's own grey so a
+     box that lets the picture through is still a block. The colours are
+     the short's and change with it. Everything the hand works with is the
+     app's: the frame, the mark on the caption on screen and the edges, so
+     they read the same whatever colours the captions are given.
+
+     A block is drawn a pixel short of its time at each end, so two
      captions that meet show a gap of two pixels where one goes and the
-     next appears, and every block reads as one of its own. It wears the
-     waveform's own colour under the clip's wash, so the band reads as
-     part of the track and not as something laid over it. */
+     next appears. */
   .caption {
     position: absolute;
     top: 3px;
-    height: 14px;
+    height: 18px;
     margin-left: 1px;
-    background: color-mix(in srgb, var(--wave), var(--accent) 22%);
+    box-sizing: border-box;
+    padding: 0 5px;
+    background:
+      linear-gradient(var(--cap-box), var(--cap-box)),
+      var(--ink-2);
     border-radius: 3px;
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--cap-text);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* The caption the video preview is showing is in the colour of the
-     text, the brightest thing on the track, so the eye finds it at once.
-     The accent in this band is the edge under the hand and nothing else. */
+  /* The caption the video preview is showing is ringed in the app's
+     colour, with a dark line outside the ring so it holds against any
+     colour the box is given. */
   .caption.showing {
-    background: var(--text);
+    box-shadow:
+      inset 0 0 0 2px var(--accent-hi),
+      0 0 0 1px var(--ink-0);
   }
 
   /* An edge is grabbed on its own side of the gap, so where two captions
@@ -1482,7 +1511,7 @@
   .capedge {
     position: absolute;
     bottom: 0;
-    height: 20px;
+    height: 24px;
     width: 8px;
     cursor: ew-resize;
     z-index: 2;
@@ -1492,13 +1521,17 @@
     margin-left: -8px;
   }
 
+  /* The handle: a white line with a dark edge, which shows on any colour
+     a caption can have. */
   .capedge::after {
     content: "";
     position: absolute;
-    top: 3px;
-    bottom: 3px;
+    top: 2px;
+    bottom: 2px;
     width: 2px;
-    background: var(--accent-hi);
+    background: var(--text);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+    border-radius: 1px;
     opacity: 0;
   }
 
