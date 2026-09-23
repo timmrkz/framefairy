@@ -286,8 +286,20 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 			float64(file.From) <= 0.001 && float64(file.To) < window.End {
 			covered := float64(file.To)
 			doneFrames = frames[:min(len(frames), int(math.Round(covered/FrameSeconds)))]
-			doneWords = words
 			todo = Window{float64(len(doneFrames)) * FrameSeconds, window.End}
+			// It carries on where the loudness ends. The words and the
+			// loudness are two files written one after the other, and when
+			// the loudness falls short, the words past its end are heard
+			// again, so they are not kept twice.
+			doneWords = words
+			if todo.Start < covered-0.001 {
+				doneWords = nil
+				for _, w := range words {
+					if w.End <= todo.Start+0.001 {
+						doneWords = append(doneWords, w)
+					}
+				}
+			}
 			e.Log.Info("carrying on from %s, where the last transcription stopped", HMS(todo.Start))
 		}
 	}

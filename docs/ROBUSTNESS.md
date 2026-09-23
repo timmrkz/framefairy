@@ -93,7 +93,15 @@ what became of it.
     written back outside the store's lock. Fixed: every change is one step
     under the lock, `UpdateSettings`. The test lost the number of clips in
     two runs out of three on the old code. `cmd/framefairy-app/settings.go`.
-11. **Smaller ones.** Stopping llama-server read its state while another
+11. **Transcripts out of step.** The words and the loudness of a transcript
+    are two files written one after the other. When the loudness fell short
+    of what the words covered, carrying on started where the loudness ended
+    and kept every word, so part of the audio was heard twice: 149 words
+    against 116. Fixed: the words past the end of the loudness are not
+    kept. `engine/transcript.go`. Tested beside it: a transcript cut short,
+    not JSON, or without its loudness is started again, and six readers
+    while it is written never see it go back or end early.
+12. **Smaller ones.** Stopping llama-server read its state while another
     goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
     loading costs one search.
     A warm-up for a search that failed still loads the model. The job list,
