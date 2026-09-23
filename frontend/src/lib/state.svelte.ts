@@ -47,6 +47,7 @@ export type View =
   | { name: "episode"; path: string }
   | { name: "jobs" }
   | { name: "settings" }
+  | { name: "licences" }
   | { name: "empty" };
 
 class Nav {

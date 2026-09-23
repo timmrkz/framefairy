@@ -6,6 +6,18 @@ const call = <T>(method: string, ...args: unknown[]): Promise<T> =>
   Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
 
 // Where the training records are and how much there is of them.
+// One piece of other people's work the app is made of or brings with it,
+// and its licence. The texts are asked for one at a time, by name.
+export interface Notice {
+  name: string;
+  version: string;
+  licence: string;
+  url: string;
+  part: string;
+  note?: string;
+  texts: string[];
+}
+
 export interface TrainingStatus {
   dir: string;
   plans: number;
@@ -327,6 +339,8 @@ export interface SetupState {
 export const api = {
   version: () => call<string>("Version"),
   platform: () => call<string>("Platform"),
+  licences: () => call<Notice[]>("Licences"),
+  licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
   chrome: () => call<Chrome>("Chrome"),

@@ -99,8 +99,8 @@ opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
 come back. Closed, it leaves room for the settings column of the workspace,
-which is exactly what it covers when it opens. **Add episode**, **Activity**
-and **Settings** sit at the bottom of it and stay reachable as marks on the
+which is exactly what it covers when it opens. **Add episode**, **Activity**,
+**Settings** and **Licences** sit at the bottom of it and stay reachable as marks on the
 rail. Every mark is in the same place on the rail as it is in the open
 sidebar, to the pixel, so opening the sidebar never moves the mark out from
 under the pointer that came for it. A dot on the Activity mark says work is
@@ -158,7 +158,7 @@ that a click which throws work away has to be a click you meant.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Activity** or **Settings**. No screen
+screen: the name of the episode, or **Activity**, **Settings** or **Licences**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -1082,6 +1082,17 @@ there is kept for the next episode. Empty paths use the same defaults as the
 command line. **Check again** tests the
 setup and says what is missing, and lists the caption faces the app carries
 inside itself.
+
+### Licences
+
+Every piece of other people's work the app is made of or brings with it,
+grouped by where it is: the app, its interface, speech recognition, ffmpeg,
+llama-server, the caption fonts, and the models the app fetches from their
+makers. A row is the name, the version and the licence, and it opens to what
+the licence asks to be said and to the licence's own text, the way a finished
+job opens to its log in **Activity**. The list is built into the app from
+`notices/`, and how it is made and kept complete is in
+[THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Where things are kept
 
