@@ -226,10 +226,19 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		return "", nil, renderErr("cannot start %s: %s", server, err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
+	// exited is closed once the server has gone, and waitErr says how.
+	// Whether it has gone is asked of the channel and never of
+	// cmd.ProcessState, which Wait writes on its own goroutine.
+	exited := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(exited)
+	}()
 	stop := func() {
-		if cmd.ProcessState == nil {
+		select {
+		case <-exited:
+		default:
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
@@ -250,12 +259,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		case <-ctx.Done():
 			stop()
 			return "", nil, ctx.Err()
-		case err := <-exited:
+		case <-exited:
 			if logFile != nil {
 				logFile.Close()
 			}
 			return "", nil, renderErr("%s stopped while loading the model (%v). Its output is "+
-				"in %s", server, err, filepath.Join(logDir, "llm-server.log"))
+				"in %s", server, waitErr, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
