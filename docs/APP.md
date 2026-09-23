@@ -849,14 +849,17 @@ moved by hand, on the clip timeline.
   caption at a time. An edge lands on a whole frame.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
-- **A block is the app's dark with a bar in it** in the colour the words
-  are burned in, as tall as a lowercase letter, so a colour picked in the
-  captions column is seen here too, while it is picked. Everything around
-  the bar is the app's, so it reads whatever colour the captions are given:
-  the one the video preview is showing is framed in the accent, and the
-  edge under the pointer, or the one being dragged, is a white line with a
-  dark edge that goes again when the hand lets go. Two captions that meet
-  have a gap of two pixels between them.
+- **A block is the app's dark with a thin bar in it** in the colour the
+  words are burned in, so a colour picked in the captions column is seen
+  here too, while it is picked. Its states are told apart by how bright
+  they are and never by a colour, because a colour could be the one the
+  captions were given: at rest the bar is at half strength, under the
+  pointer the block lifts to a lighter grey and the bar comes up, and the
+  caption the video preview is showing is filled with the app's colour,
+  its bar at full strength with a dark line round it. The edge under the
+  pointer, or the one being dragged, is a white line with a dark edge that
+  goes again when the hand lets go. Two captions that meet have a gap of
+  two pixels between them.
 - **A click on an edge puts the playhead on it**, the way a clip edge does,
   which is how a caption is heard from where it appears.
 

@@ -1497,23 +1497,31 @@
   }
 
   /* A block is the app's own dark with a bar in it, in the colour the
-     words are burned in and as tall as a lowercase letter, rounded just
-     enough that the dark shows round it. The colour is the short's and
-     changes with it, and everything around it is the app's, so the block
-     reads whatever colour the captions are given. A block is drawn a pixel
-     short of its time at each end, so two captions that meet show a gap. */
+     words are burned in, rounded just enough that the dark shows round
+     it. The colour is the short's and changes with it, and everything
+     around it is the app's.
+
+     Its three states are told apart by how bright they are, never by a
+     colour, because a colour could be the one the captions were given.
+     At rest the bar is at half strength. Under the pointer the block
+     lifts to a lighter grey and the bar comes up, the way a row of the
+     clip list lifts. The caption the video preview is showing is filled
+     with the app's colour and its bar is at full strength, with a dark
+     line round it, so it stands off the fill whatever colour it is.
+
+     A block is drawn a pixel short of its time at each end, so two
+     captions that meet show a gap. */
   .caption {
     position: absolute;
     top: 4px;
     height: 16px;
     margin-left: 1px;
     box-sizing: border-box;
-    padding: 0 4px;
+    padding: 0 5px;
     display: flex;
     align-items: center;
     background: var(--ink-0);
     border-radius: 3px;
-    box-shadow: inset 0 0 0 1px var(--line);
     pointer-events: auto;
     cursor: pointer;
   }
@@ -1522,20 +1530,31 @@
     display: block;
     flex: 1;
     min-width: 0;
-    height: 6px;
+    height: 4px;
     border-radius: 2px;
     background: var(--cap-text);
+    opacity: 0.5;
   }
 
-  /* It answers the pointer the way a row of the clip list does. */
   .caption:hover {
-    background: var(--ink-2);
+    background: var(--ink-3);
   }
 
-  /* The caption the video preview is showing wears the app's colour
-     round it. */
+  .caption:hover i {
+    opacity: 0.85;
+  }
+
   .caption.showing {
-    box-shadow: inset 0 0 0 2px var(--accent-hi);
+    background: var(--accent);
+  }
+
+  .caption.showing i {
+    opacity: 1;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  }
+
+  .caption.showing:hover {
+    background: var(--accent-hi);
   }
 
   /* An edge is grabbed on its own side of the gap, so where two captions
