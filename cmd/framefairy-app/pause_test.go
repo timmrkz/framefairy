@@ -178,10 +178,18 @@ func TestASearchStartsWhenTheWindowIsHeard(t *testing.T) {
 	if time.Since(began) > 5*time.Second {
 		t.Errorf("the wait took %s", time.Since(began))
 	}
+	stood, _ := s.jobs.find(path, "transcribe")
 	s.carryOn(paused)
-	if j, _ := s.jobs.find(path, "transcribe"); j.State != JobQueued && j.State != JobRunning {
-		t.Errorf("the transcription did not carry on, it is %s", j.State)
+	// A new transcription, in whatever state it is by now: the real one
+	// here has no speech model and can have failed already.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if j, ok := s.jobs.find(path, "transcribe"); ok && j.ID != stood.ID {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
+	t.Error("the transcription did not carry on")
 }
 
 // A search stopped while it waits hands back what it paused, so Cancel
@@ -235,10 +243,12 @@ func TestASlowPauseIsStillCarriedOn(t *testing.T) {
 	if took := time.Since(began); took > 1500*time.Millisecond {
 		t.Errorf("carrying on held the search's way out for %s", took)
 	}
+	// Carried on is a new transcription, in whatever state it is by the
+	// time this looks: the one here has no speech model and fails at once,
+	// and on a fast machine it has already failed.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if j, ok := s.jobs.find(path, "transcribe"); ok && j.ID != first.ID &&
-			(j.State == JobQueued || j.State == JobRunning) {
+		if j, ok := s.jobs.find(path, "transcribe"); ok && j.ID != first.ID {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
