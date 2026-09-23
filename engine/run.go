@@ -322,6 +322,15 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				log.Warn("no API key found. Planning only works if a saved reply matches.")
 			}
 		}
+		// Clips at their shortest, one after another, have to fit in the
+		// window, or the model is asked for more than is there. This is
+		// the same sum the app holds its settings to, see Holds.
+		if !opts.TranscribeOnly && !Holds(span, opts.Count, opts.Min) {
+			log.Error("%d clips of at least %ss need %s, and the window is %s. Ask for fewer "+
+				"clips, shorter ones, or a longer window.", opts.Count, trimFloat(opts.Min),
+				HMS(float64(opts.Count)*opts.Min), HMS(span.End-span.Start))
+			return 1
+		}
 		modelDir := opts.ASRModel
 		if modelDir == "" {
 			modelDir = DefaultModelDir()

@@ -161,10 +161,9 @@ func freePort() (int, error) {
 // contextFor sizes the model's context to the prompt, with room for the
 // answer. Memory use grows with it, so it is not simply set to the maximum.
 func contextFor(promptChars, maxTokens int) int {
-	// German runs at roughly two and a half characters per token.
-	need := promptChars*10/25 + min(maxTokens, 16384) + 2048
+	need := int(float64(promptChars)/localCharsPerToken) + localAnswerRoom(maxTokens)
 	size := 16384
-	for size < need && size < 262144 {
+	for size < need && size < contextCeiling {
 		size *= 2
 	}
 	return size
@@ -328,7 +327,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	if url == "" {
 		// A model loaded while the transcript was still on its way is used
 		// as it is. The search lets go of it when it is done, and it stops.
-		size := contextFor(runeLen(prompt), maxTokens)
+		size := localContextFor(m.Model, runeLen(prompt), maxTokens)
 		if !modelReady(m.Model, size) {
 			listen.part(partLoading)
 		}

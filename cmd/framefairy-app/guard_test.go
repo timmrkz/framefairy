@@ -62,6 +62,9 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Coverage(ctx, other, 20); err == nil {
 		t.Error("Coverage answered for a file that is not in the library")
 	}
+	if _, err := svc.Room(other); err == nil {
+		t.Error("Room answered for a file that is not in the library")
+	}
 	if job := svc.Transcribe(other); job.State != JobFailed {
 		t.Errorf("Transcribe queued %s: %s", other, job.State)
 	}
