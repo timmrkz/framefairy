@@ -290,6 +290,23 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	}
 	out = append(out, ff)
 
+	// Which of the system's own video decoders framing can use. It is not
+	// a requirement, the processor decodes where there is none, so it is
+	// never a problem. What a file really went through is in the log of
+	// its search.
+	decoding := Check{Name: "Video decoding", OK: true, Detail: "on the processor"}
+	if ff.OK {
+		var names []string
+		for _, name := range e.SystemDecoders(ctx) {
+			names = append(names, engine.DecoderName(name))
+		}
+		if len(names) > 0 {
+			decoding.Detail = strings.Join(names, ", ") + ", falling back to the processor for a " +
+				"file it does not take. The log of a search says which one it used"
+		}
+	}
+	out = append(out, decoding)
+
 	// Nothing to install: the faces are inside the program and are written
 	// out next to the captions before every render.
 	fonts := Check{Name: "Caption fonts", OK: true}
@@ -830,7 +847,10 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 		}
 		end = info.Duration
 	}
-	label := "waiting for the transcript to reach " + engine.HMS(end)
+	// The words the row in the clip list shows, which adds the window
+	// itself. The log says where the transcript has to get to.
+	label := "Waiting for the transcript"
+	said := false
 	var started *Job
 	firstAt, firstCovered := time.Time{}, -1.0
 	for {
@@ -838,6 +858,10 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 		if done || covered >= end-0.05 {
 			p.Log().ClearProgress()
 			return nil
+		}
+		if !said {
+			said = true
+			p.Log().Info("waiting for the transcript to reach %s", engine.HMS(end))
 		}
 		job, ok := s.jobs.find(p.Source, "transcribe")
 		switch {

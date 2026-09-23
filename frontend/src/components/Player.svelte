@@ -42,6 +42,7 @@
     captions = null,
     time = $bindable(0),
     still = "",
+    stillAt = -1,
     onplayclip,
     onstill,
     oncaptionmoved,
@@ -62,6 +63,9 @@
     captions?: CaptionsView | null;
     time?: number;
     still?: string;
+    // The second the still was read for. It is only shown for that second,
+    // never for wherever the playhead happens to be when it goes stale.
+    stillAt?: number;
     onplayclip?: (clip: ClipEntry) => void;
     // Asks for the frame at a moment of the episode, for as long as the
     // app cannot show that moment itself.
@@ -280,9 +284,25 @@
     frame = requestAnimationFrame(tick);
   }
 
+  // A jump the playing clip makes by itself, over a cut or from its end back
+  // to its start while it loops. Until the picture has landed, the playhead
+  // stays with the picture: moved at once, it would take the crop frame and
+  // the captions with it while the old frame is still on screen, and the
+  // picture would read as not showing the playhead, which is what calls in
+  // a still frame from the file. That still, read for another moment, was
+  // the frame that flashed on every loop.
+  let jumping = false;
+
   function tick() {
     frame = 0;
     if (!video) return;
+    if (jumping) {
+      if (video.seeking) {
+        if (!video.paused) frame = requestAnimationFrame(tick);
+        return;
+      }
+      jumping = false;
+    }
     if (clip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
       // jumps every cut and stops where the clip ends.
@@ -303,7 +323,10 @@
           }
           atPiece = 0;
         }
+        jumping = true;
         video.currentTime = pieces[atPiece].start;
+        frame = requestAnimationFrame(tick);
+        return;
       }
     }
     time = video.currentTime;
@@ -663,7 +686,7 @@
         caption box to correct it: Enter saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
-    {#if still && stale}
+    {#if still && stale && Math.abs(stillAt - time) <= 0.6}
       <img src={still} alt="" />
     {/if}
     <!-- svelte-ignore a11y_media_has_caption -->

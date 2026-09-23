@@ -332,7 +332,7 @@ export const Call = {
       const since = Date.now() - askedAt();
       return landOrder.filter((_, k) => since >= 700 + k * 350);
     };
-    const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Reading the transcript", fraction: 0.4, remaining: 60 } : undefined });
+    const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Finding clips", fraction: 0.4, remaining: 60 } : undefined });
     switch (method) {
       case "Version":
         return Promise.resolve("0.1.0");
@@ -643,7 +643,7 @@ export const Call = {
             lane: "work",
             progress: {
               stage: "plan",
-              text: "Reading the transcript",
+              text: "Finding clips",
               fraction: q.includes("unknown") ? -1 : 0.42,
               remaining: 130,
             },
@@ -808,13 +808,7 @@ export const Events = {
         const since = Date.now() - at;
         const state = since < 6000 ? "running" : "done";
         const found = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((k) => since >= 700 + k * 350).length;
-        const text = found
-          ? `${found} of 12 found`
-          : since < 250
-            ? "Loading the model"
-            : since < 450
-              ? "Reading the transcript"
-              : "Choosing the moments";
+        const text = found ? `${found} of 12 found` : "Finding clips";
         const progress = { kind: "progress", stage: "plan", text, fraction: Math.min(since / 6000, 0.99), remaining: Math.max((6000 - since) / 1000, 0), found, elapsed: since / 1000, time: "" };
         fn({ data: { job: { id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? progress : undefined }, event: progress } });
       }, 250);

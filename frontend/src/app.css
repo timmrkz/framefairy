@@ -25,6 +25,11 @@
      rests at between one pass of the shimmer and the next. */
   --accent-lit: #e07fde;
   --accent-faint: rgba(148, 33, 146, 0.07);
+  /* What a fill inside a control lays over what is done, from its start
+     to its head. Strong enough to be told from what is still to do on a
+     screen with daylight on it: a wash of a fifth was read as no fill. */
+  --accent-fill: rgba(148, 33, 146, 0.3);
+  --accent-fill-hi: rgba(148, 33, 146, 0.5);
   --ok: #5fa37a;
   --warn: #d2a441;
   --err: #e0605a;
@@ -104,6 +109,8 @@
     --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
     --accent-lit: color-mix(in srgb, var(--accent) 45%, white);
     --accent-faint: color-mix(in srgb, var(--accent) 7%, transparent);
+    --accent-fill: color-mix(in srgb, var(--accent) 30%, transparent);
+    --accent-fill-hi: color-mix(in srgb, var(--accent) 50%, transparent);
   }
 }
 
@@ -473,14 +480,14 @@ li:has(> .beam) {
      already the app's colour they are white, because the app's colour
      cannot be seen on itself. */
   --lit: var(--accent-lit);
-  --wash-from: var(--accent-faint);
-  --wash-to: var(--accent-wash);
+  --wash-from: var(--accent-fill);
+  --wash-to: var(--accent-fill-hi);
 }
 
 button.primary:has(> .beam) {
   --lit: #fff;
-  --wash-from: rgba(255, 255, 255, 0.08);
-  --wash-to: rgba(255, 255, 255, 0.3);
+  --wash-from: rgba(255, 255, 255, 0.2);
+  --wash-to: rgba(255, 255, 255, 0.38);
 }
 
 /* A control that cannot be pressed while its own work runs still has to be

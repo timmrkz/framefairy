@@ -152,6 +152,16 @@
         title: `${finding || starting ? "Stop looking for clips" : "Stop the render"}${leftOfWork ? `, ${leftOfWork}` : ""}`,
       };
     }
+    if (lookPending) {
+      return {
+        label: "Cancel",
+        icon: "close",
+        run: skipLook,
+        off: false,
+        primary: false,
+        title: "Do not look for clips by itself when the transcript reaches the end of the window",
+      };
+    }
     return {
       label: "New",
       icon: "plus",
@@ -174,6 +184,13 @@
   $effect(() => {
     if (!working) stopping = false;
   });
+
+  // The first search called off before it started. The episode counts as
+  // looked at, so it does not start by itself either, and New is there
+  // for when it is wanted.
+  function skipLook() {
+    chosen.looked[path] = true;
+  }
 
   function stopWork() {
     if (!working) return;
@@ -238,6 +255,17 @@
   // mark beside the head says why, the same mark that tells what the list
   // is once there are clips in it.
   const stillWaiting = $derived(!busy && waitingOnWords && covered < to - 0.5);
+  // A new episode's first search is on its way: nobody has searched it,
+  // and it starts by itself the moment the transcript covers the window.
+  // From then on it is work in hand, with the row that says so and a
+  // Cancel that stops it before it starts.
+  const autoLook = $derived(
+    !!status &&
+      !(status.looked || chosen.looked[path]) &&
+      (status.plans?.length ?? 0) === 0 &&
+      clips.length === 0,
+  );
+  const lookPending = $derived(stillWaiting && autoLook);
   // How many rows the clip list holds open. Nothing is known about the
   // clips before the search answers, but their number is: it is the one
   // asked for. So the list stands in the shape it is about to take, with
@@ -253,28 +281,73 @@
     return known ? clips.filter((c) => !known.has(c.key)).length : 0;
   });
   const coming = $derived(
-    finding || starting ? clips.length + Math.max(0, count - foundSoFar) : stillWaiting ? count : 0,
+    finding || starting ? clips.length + Math.max(0, count - foundSoFar) : lookPending ? count : 0,
   );
   // What the row the next clip will appear in is waiting on. While the
   // transcript has not reached the end of the window, that is the
   // transcript, and how far it has come is how much of the window it
   // covers. While a search runs, it is whatever the search says it is
   // doing.
+  //
+  // An empty headline means nothing new to say, which is what the moment
+  // between two reports of the engine is, and the row keeps what it says.
+  const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
   const next = $derived.by(() => {
     if (finding || starting) {
       const p = working?.progress;
+      if (p?.text === "Waiting for the transcript") {
+        return { what: p.text, left: windowText, fraction: p.fraction >= 0 ? p.fraction : -1 };
+      }
       return {
-        what: p?.text || "Starting",
-        left: p && p.remaining > 0 ? `About ${clock(p.remaining)} left` : "",
+        what: p?.text ?? "",
+        // In steps of five seconds, so the number is something to read
+        // rather than something that flickers.
+        left: p && p.remaining > 0 ? `About ${clock(Math.ceil(p.remaining / 5) * 5)} left` : "",
         fraction: p && p.fraction >= 0 ? p.fraction : -1,
       };
     }
-    if (!stillWaiting) return null;
+    if (!lookPending) return null;
     return {
-      what: transcribing ? "Waiting for the transcript" : "The window is not transcribed yet",
-      left: `${clock(Math.max(0, covered))} of ${clock(to)}`,
+      what: "Waiting for the transcript",
+      left: windowText,
       fraction: to > 0 ? Math.min(Math.max(covered / to, 0), 1) : -1,
     };
+  });
+
+  // What the row says, held long enough to be read. The engine reports
+  // twice a second and a search goes through its steps faster than anyone
+  // reads, so a new headline waits until the one before has been there
+  // for a while: two and a half seconds, and one for the count of clips
+  // found going up. The fill and the time left follow at once, because
+  // they are the same thing moving on. It keeps its own time, in onMount,
+  // because an effect that reads the job is set up again on every report.
+  let shownNext = $state<{ what: string; left: string; fraction: number } | null>(null);
+  let shownSince = 0;
+  const counting = (what: string) => / of \d+ found$/.test(what);
+  onMount(() => {
+    const timer = window.setInterval(() => {
+      const want = next;
+      if (!want) {
+        shownNext = null;
+        return;
+      }
+      // Nothing new to say: the row stays as it is.
+      if (!want.what && shownNext) return;
+      const what = want.what || "Finding clips";
+      if (!shownNext || what === shownNext.what) {
+        if (!shownNext) shownSince = Date.now();
+        shownNext = { ...want, what };
+        return;
+      }
+      const hold = counting(what) && counting(shownNext.what) ? 1000 : 2500;
+      if (Date.now() - shownSince < hold) {
+        shownNext = { ...shownNext, left: want.left, fraction: Math.max(shownNext.fraction, want.fraction) };
+        return;
+      }
+      shownSince = Date.now();
+      shownNext = { ...want, what };
+    }, 250);
+    return () => window.clearInterval(timer);
   });
   const waitNote = $derived.by(() => {
     if (finding || starting) {
@@ -320,7 +393,7 @@
   // second last asked for. Going to one clip, then another, then back to
   // the first used to skip the last ask, because it matched what had been
   // asked for, and leave the second clip's frame on screen.
-  let showing = -1;
+  let showing = $state(-1);
 
   function askStill(at: number) {
     if (!source || status?.missing) return;
@@ -1550,6 +1623,7 @@
           clip={current}
           bind:time
           {still}
+          stillAt={showing}
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           onstill={askStill}
@@ -1611,7 +1685,7 @@
               clips={shown}
               {selected}
               {coming}
-              {next}
+              next={shownNext}
               removed={removed?.key ?? ""}
               onselect={select}
               onremove={removeClip}

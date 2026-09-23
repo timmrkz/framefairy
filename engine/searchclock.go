@@ -309,22 +309,21 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	return min(done/total, 0.99), max(left, 0)
 }
 
-// searchLabel is what the search is doing, in the words the app shows.
+// searchLabel is what the search is doing, in the words the app shows. It
+// says one thing until there is a clip to count. Loading, reading and
+// thinking are the machine's steps, not something a person waiting for
+// clips has to follow, and a line that changes its words every few seconds
+// is a line nobody reads. How far it has come is the fill and the time
+// left.
 func searchLabel(now searchNow) string {
-	switch now.Part {
-	case partLoading:
-		return "Loading the model"
-	case partReading:
-		return "Reading the transcript"
-	case partThinking:
-		return "Choosing the moments"
-	case partWriting:
-		if now.Landed > 0 {
-			return fmt.Sprintf("%d of %d found", now.Landed, now.Count)
+	if now.Landed > 0 {
+		switch now.Part {
+		case partWriting:
+			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Count, now.Landed))
+		case partFraming:
+			// The answer is whole, so what it holds is what there will be.
+			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Taken, now.Landed))
 		}
-		return "Writing the clips"
-	case partFraming:
-		return fmt.Sprintf("%d of %d found", now.Landed, max(now.Taken, now.Landed))
 	}
 	return "Finding clips"
 }
@@ -359,8 +358,10 @@ func newSearchClock(log *Log, model string, local bool, chars, count, budget int
 	return c
 }
 
-// run reports until stop.
+// run reports until stop, and holds the progress line meanwhile.
 func (c *searchClock) run() {
+	c.log.HoldProgress(true)
+	defer c.log.HoldProgress(false)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {

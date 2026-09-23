@@ -222,8 +222,8 @@
     height: 100%;
     background: linear-gradient(
       90deg,
-      var(--wash-from, var(--accent-faint)) 0%,
-      var(--wash-to, var(--accent-wash)) 100%
+      var(--wash-from, var(--accent-fill)) 0%,
+      var(--wash-to, var(--accent-fill-hi)) 100%
     );
     /* The head of the fill: a line of light with a glow thrown ahead of
        it, so where the work has got to is something to look at rather

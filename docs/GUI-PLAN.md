@@ -55,6 +55,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.13 | The local model thinks on a budget, 2,048 tokens by default, so the first clip is written in about a minute rather than five | `[x]` |
 | 1.14 | The model loaded while the transcription is still running, so a search that starts finds it in memory `[x]`, and the transcript read into it as it grows `[ ]` | `[~]` |
 | 1.15 | The transcription waits while clips are found and carries on after, so the model has the machine to itself | `[x]` |
+| 1.16 | A search's row says Waiting for the transcript with its window, then Finding clips, then how many are found, each held long enough to read, with Cancel from the moment the first search is on its way. A fill that can be told from what is left in daylight. Up to four clips framed at once | `[x]` |
 
 ## Phase 2: app shell
 

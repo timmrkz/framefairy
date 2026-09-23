@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -31,11 +32,13 @@ import (
 // could have been.
 // ---------------------------------------------------------------------------
 
-// framers is how many clips are framed at once. Framing is decoding, which
-// ffmpeg already spreads over the cores it finds, so a second one mostly
-// fills the gaps while the first seeks. More than that and they only take
-// turns.
-const framers = 2
+// framers is how many clips are framed at once. Once the model has
+// written its answer, framing is all that is left: on an M2 Max the last
+// clips took 25 seconds after the answer, two at a time. The decoding is
+// the system decoder's and most of the rest is looking for faces, one core
+// each, and the transcription waits while a search runs, so the processor
+// has room for more. A third of the cores, at least two and at most four.
+var framers = min(max(runtime.NumCPU()/3, 2), 4)
 
 type planJob struct {
 	index int

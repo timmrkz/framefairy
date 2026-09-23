@@ -232,9 +232,13 @@ already been used.
 A search is three kinds of work that no longer wait on each other, in
 `engine/planbuild.go`. The model writes on the graphics side of the
 machine, framing decodes video with ffmpeg on the processor, and writing a
-clip to the plan is a few kilobytes. So each clip is framed by one of two
-framers while the model goes on writing, and written to the plan the
-moment it is framed. The first clip makes the plan, in place of whatever
+clip to the plan is a few kilobytes. So each clip is framed by one of
+several framers while the model goes on writing, and written to the plan
+the moment it is framed. There are as many framers as a third of the
+cores, at least two and at most four: framing the last clips after the
+answer took 25 seconds on an M2 Max with two. While a search runs, its
+clock owns the progress line, so what ffmpeg reports while it frames a
+clip does not take the line from it. The first clip makes the plan, in place of whatever
 plan was there for the window, and each after it goes in through
 `editPlan`, so an edit the app makes to a clip that has already landed
 is kept. A clip that lands in a part removed while it was on its way is

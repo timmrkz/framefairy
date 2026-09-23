@@ -126,7 +126,7 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 func TestDecoderIn(t *testing.T) {
 	cases := map[string]string{
 		"[vist#0:0/h264] Using auto hwaccel type videotoolbox with new default device.\n": "VideoToolbox",
-		"Using auto hwaccel type vaapi with new default device.":                          "vaapi",
+		"Using auto hwaccel type vaapi with new default device.":                          "VA-API",
 		"Stream #0:0: Video: h264\n":                                                      "the processor",
 		"Using auto hwaccel type videotoolbox with new default device.\n" +
 			"Failed setup for format videotoolbox_vld: hwaccel initialisation returned error.": "the processor",
@@ -135,5 +135,21 @@ func TestDecoderIn(t *testing.T) {
 		if got := decoderIn(stderr); got != want {
 			t.Errorf("%q read as %q, want %q", stderr, got, want)
 		}
+	}
+}
+
+func TestHwaccelsIn(t *testing.T) {
+	out := "Hardware acceleration methods:\nvideotoolbox\n\n"
+	if got := hwaccelsIn(out); len(got) != 1 || got[0] != "videotoolbox" {
+		t.Errorf("read %v", got)
+	}
+	if got := hwaccelsIn("Hardware acceleration methods:\n\n"); len(got) != 0 {
+		t.Errorf("an ffmpeg with none read as %v", got)
+	}
+	if got := hwaccelsIn("some banner line\nvaapi\n"); len(got) != 0 {
+		t.Errorf("names outside the list were read: %v", got)
+	}
+	if DecoderName("videotoolbox") != "VideoToolbox" || DecoderName("vaapi") != "VA-API" {
+		t.Error("the names are not the ones a person knows")
 	}
 }

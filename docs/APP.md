@@ -406,6 +406,12 @@ place.
       landed, and chasing it pulls the picture back to where playing began
       and then empties the element. **Loop** starts it over instead, which is how
       a clip is judged. It stays on until it is switched off again.
+    - **A jump a playing clip makes by itself**, over a cut or from its end
+      back to its start, moves the playhead when the picture has landed and
+      not before, so the crop frame, the captions and the picture change
+      together. A frame read from the file is only drawn over the video
+      preview for the second it was read for. Before, one read for another
+      moment flashed up on every loop while the seek was on its way.
     - While the playhead is inside the clip, its captions are drawn inside
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
@@ -526,14 +532,20 @@ place.
       and then it starts over as a new one does. The rule and its tests are
       in `frontend/src/lib/flow.ts`.
     - **What a search is doing is in the row its next clip appears in.**
-      The first of the rows still to come wears the beam and the fill, and
-      says in it what is happening: loading the model, reading the
-      transcript, choosing the moments, writing the clips or how many are
-      found, and about how long is left. Before the transcript reaches the
-      end of the window, the same row says so and fills up as the
-      transcript covers the window. **New** becomes **Cancel** while a
-      search runs and only offers to stop it. A render, which has no row
-      to fill, wears the beam and the fill in the button.
+      The first of the rows still to come wears the beam and the fill and
+      says two things: Waiting for the transcript with the window it is
+      waiting to cover, then Finding clips, then how many are found, with
+      about how long is left under it. Loading the model, reading and
+      thinking are the machine's steps and are not spelled out. A headline
+      stays at least two and a half seconds and a count of clips at least
+      one, so it can be read, while the fill and the time left move at
+      once. The time left moves in steps of five seconds. Only the search
+      reports on that row: what ffmpeg says while it frames a clip goes to
+      the log. **New** becomes **Cancel** the moment a first search is on
+      its way, while it still waits for the transcript, and there it calls
+      the search off before it starts. While a search runs, Cancel stops
+      it. A render, which has no row to fill, wears the beam and the fill
+      in the button.
     - **How far a search is, is measured.** The fill is the share of the
       search that is done, measured against how long the same parts took
       the last time on this machine. Inside a part, what the model counts
@@ -985,6 +997,10 @@ rendering clips never wait for it.
 ### Settings
 
 **This machine** tests what the engine needs and says what is missing.
+**Video decoding** says which of the system's own video decoders this
+ffmpeg can use, VideoToolbox on a Mac, or that decoding is done on the
+processor. Which one a file really went through is in the log of its
+search.
 **Speech** is the same list of models the first run shows, so a model can be
 installed or added later without going through the setup again, and it
 installs the same way, as a job with the same fill. **Finding clips** holds

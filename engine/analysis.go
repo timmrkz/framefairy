@@ -63,6 +63,47 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 	return used
 }
 
+// SystemDecoders lists the system video decoders this ffmpeg can hand
+// decoding to, as ffmpeg -hwaccels names them. Whether a file really goes
+// through one is decided per file, and is in the log of the search.
+func (e *Engine) SystemDecoders(ctx context.Context) []string {
+	said := run(ctx, "", e.FFmpeg, "-hide_banner", "-hwaccels")
+	if said.Code != 0 {
+		return nil
+	}
+	return hwaccelsIn(said.Stdout)
+}
+
+func hwaccelsIn(out string) []string {
+	var names []string
+	listed := false
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "Hardware acceleration methods"):
+			listed = true
+		case listed && line != "" && runeLen(line) <= 20 && !strings.ContainsAny(line, " :"):
+			names = append(names, line)
+		}
+	}
+	return names
+}
+
+// DecoderName is how a system decoder is called where a person reads it.
+func DecoderName(name string) string {
+	switch name {
+	case "videotoolbox":
+		return "VideoToolbox"
+	case "d3d11va", "d3d12va", "dxva2":
+		return "DirectX " + name
+	case "vaapi":
+		return "VA-API"
+	case "cuda":
+		return "CUDA"
+	}
+	return Scrub(name, 20)
+}
+
 // decoderIn reads the decoder from what ffmpeg says with -loglevel verbose.
 func decoderIn(stderr string) string {
 	const marker = "Using auto hwaccel type "
@@ -77,12 +118,7 @@ func decoderIn(stderr string) string {
 	if len(words) == 0 {
 		return "the processor"
 	}
-	switch name := words[0]; name {
-	case "videotoolbox":
-		return "VideoToolbox"
-	default:
-		return Scrub(name, 20)
-	}
+	return DecoderName(words[0])
 }
 
 // DetectShots finds camera switches inside one span, as absolute times.
