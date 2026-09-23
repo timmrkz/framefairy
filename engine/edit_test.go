@@ -188,6 +188,10 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		{"font": ""},
 		{"unknown": 1.0},
 		{"size": nil},
+		{"primary": "#FFFFFF"},
+		{"primary": "&H00FFFFFF\nStyle: b"},
+		{"back_colour": "&H80000"},
+		{"back_colour": 5.0},
 	} {
 		if err := SetCaptionStyle(path, bad); err == nil {
 			t.Errorf("%v was accepted", bad)
@@ -580,5 +584,46 @@ func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 	}
 	if isFile(path) {
 		t.Error("a plan with nothing left of its window stayed")
+	}
+}
+
+// The text and the box of the captions take a colour each, the box with how
+// much of the picture shows through it, and the video preview is told the
+// same colours the render will use.
+func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
+	text, ok := AssColour("#ffcc00", 1)
+	if !ok || text != "&H0000CCFF" {
+		t.Fatalf("text %q %v", text, ok)
+	}
+	box, ok := AssColour("#102030", 0.25)
+	if !ok || box != "&HBF302010" {
+		t.Fatalf("box %q %v", box, ok)
+	}
+	for _, bad := range []string{"", "ffcc00", "#fc0", "#gggggg", "#ffcc00\n"} {
+		if _, ok := AssColour(bad, 1); ok {
+			t.Errorf("%q was taken for a colour", bad)
+		}
+	}
+	if _, ok := AssColour("#ffcc00", math.NaN()); ok {
+		t.Error("an opacity that is not a number was taken")
+	}
+
+	path := editablePlanPath(t)
+	if err := SetCaptionStyle(path, map[string]any{"primary": text, "back_colour": box}); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := ResolveStyle(plan.CaptionStyle()); s.Primary != text || s.BackColour != box {
+		t.Errorf("the render would draw %s on %s", s.Primary, s.BackColour)
+	}
+	view, err := ClipCaptionsView(path, "01", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Style.Primary != "rgba(255, 204, 0, 1)" || view.Style.Box != "rgba(16, 32, 48, 0.251)" {
+		t.Errorf("the preview draws %s on %s", view.Style.Primary, view.Style.Box)
 	}
 }

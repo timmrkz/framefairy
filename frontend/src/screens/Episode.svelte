@@ -3,6 +3,9 @@
   import {
     api,
     captionFontDefault,
+    captionBoxDefault,
+    captionOpacityDefault,
+    captionTextDefault,
     captionSizeDefault,
     captionYDefault,
     captionYMax,
@@ -36,6 +39,7 @@
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
+  import { joinColour, splitColour } from "../lib/colour";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -661,11 +665,58 @@
   // the video preview follows it on the way, so what is seen while dragging
   // is what will be saved.
   let captionDraft = $state<CaptionDraft | null>(null);
-  const shownCaptions = $derived(
-    captions && captionDraft
-      ? { ...captions, captions: draftCaptions(captions.captions ?? [], captionDraft) }
-      : captions,
-  );
+  // A colour being picked is drawn in the video preview while it is picked,
+  // and saved when the hand lets go of it.
+  let colourDraft = $state<{ primary?: string; box?: string } | null>(null);
+  // The captions the draft was made against. The draft is let go of when
+  // they come back changed, so the caption box never flashes back to the
+  // colour it had while the saved colour is on its way.
+  let colourHeld: CaptionsView | null = null;
+  let colourSaving = false;
+  $effect(() => {
+    if (colourDraft && !colourSaving && captions !== colourHeld) colourDraft = null;
+  });
+  const shownCaptions = $derived.by(() => {
+    if (!captions) return captions;
+    let view = captions;
+    if (captionDraft) view = { ...view, captions: draftCaptions(view.captions ?? [], captionDraft) };
+    if (colourDraft) {
+      view = {
+        ...view,
+        style: {
+          ...view.style,
+          primary: colourDraft.primary ?? view.style.primary,
+          box: colourDraft.box ?? view.style.box,
+        },
+      };
+    }
+    return view;
+  });
+  // The colours as the controls show them.
+  const textColour = $derived(splitColour(shownCaptions?.style.primary ?? "").hex);
+  const boxColour = $derived(splitColour(shownCaptions?.style.box ?? "rgba(0, 0, 0, 0.5)"));
+  const boxOpacity = $derived(Math.round(boxColour.alpha * 100));
+
+  function drawColour(part: { primary?: string; box?: string }) {
+    if (!colourDraft) colourHeld = captions;
+    colourDraft = { ...colourDraft, ...part };
+  }
+
+  async function setCaptionColours(text: string, box: string, opacity: number) {
+    if (!current) return;
+    problem = "";
+    captionsWere = null;
+    colourSaving = true;
+    try {
+      await api.setCaptionColours(path, current.plan, text, box, opacity / 100);
+      await refreshClips();
+    } catch (err) {
+      problem = errorText(err);
+      colourDraft = null;
+    } finally {
+      colourSaving = false;
+    }
+  }
 
   // When a caption appears or goes, moved where the words are a little off
   // from what is heard. It answers whether it was saved, so the timeline
@@ -727,18 +778,34 @@
   // and one click has to be undoable as easily. It is dropped the moment
   // any of the three is set to anything else, because then there is
   // nothing to return to.
-  let captionsWere = $state<{ font: string; size: number; y: number } | null>(null);
+  let captionsWere = $state<{
+    font: string;
+    size: number;
+    y: number;
+    text: string;
+    box: string;
+    opacity: number;
+  } | null>(null);
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
   const captionsNow = $derived({
     font: captions?.style.font ?? captionFontDefault,
     size: Math.round(captions?.style.chosenSize ?? captionSizeDefault),
     y: Math.round(captionY),
+    text: splitColour(captions?.style.primary ?? "").hex,
+    box: splitColour(captions?.style.box ?? "").hex,
+    opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
+  const coloursMoved = $derived(
+    captionsNow.text !== captionTextDefault ||
+      captionsNow.box !== captionBoxDefault ||
+      captionsNow.opacity !== captionOpacityDefault,
+  );
   const captionsMoved = $derived(
     captionsNow.font !== captionFontDefault ||
       captionsNow.size !== captionSizeDefault ||
-      captionsNow.y !== captionYDefault,
+      captionsNow.y !== captionYDefault ||
+      coloursMoved,
   );
 
   // Everything about the captions back to how it starts out: the face, the
@@ -750,6 +817,9 @@
       await setCaptionStyle(captionFontDefault, captionSizeDefault);
     }
     if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
+    if (coloursMoved) {
+      await setCaptionColours(captionTextDefault, captionBoxDefault, captionOpacityDefault);
+    }
     captionsWere = was;
   }
 
@@ -762,6 +832,9 @@
       await setCaptionStyle(was.font, was.size);
     }
     if (was.y !== captionsNow.y) await setCaptionsHeight(was.y);
+    if (was.text !== captionsNow.text || was.box !== captionsNow.box || was.opacity !== captionsNow.opacity) {
+      await setCaptionColours(was.text, was.box, was.opacity);
+    }
   }
 
   async function setCaptionsHeight(y: number) {
@@ -1331,12 +1404,13 @@
               <h3>Captions</h3>
               <span class="ask">
                 <Info label="What the caption settings do">
-                  The face and the size for every clip of this episode. A line that will not fit is
-                  drawn smaller. <b>Height</b> is how far above the bottom of the short the captions
-                  sit, for every episode: drag the black box in the picture, or type it here. With
-                  the captions anywhere but their usual {captionYDefault}, the mark in this corner
-                  turns anticlockwise and puts them back. Once they are back it turns clockwise
-                  instead and puts them where you had them, so nothing is lost by trying.
+                  The face, the size and the colours for every clip of this episode. A line that will
+                  not fit is drawn smaller. The number beside the box is how much of it is seen, 0 for
+                  only the words. <b>Height</b> is how far above the bottom of the short the captions
+                  sit, for every episode: drag the caption box in the video preview, or type it here.
+                  With the captions any other way than they start out, the mark in this corner turns
+                  anticlockwise and puts them back. Once they are back it turns clockwise instead and
+                  puts them where you had them, so nothing is lost by trying.
                 </Info>
               </span>
               <span class="grow"></span>
@@ -1348,7 +1422,7 @@
               {#if captionsMoved}
                 <button
                   class="quiet glyph"
-                  title="Put the captions back as they start out: {captionFontDefault}, {captionSizeDefault}, {captionYDefault} from the bottom"
+                  title="Put the captions back as they start out: {captionFontDefault}, {captionSizeDefault}, {captionYDefault} from the bottom, white on a half clear black box"
                   aria-label="Put the captions back"
                   onclick={putCaptionsBack}
                 >
@@ -1357,7 +1431,7 @@
               {:else if captionsWere}
                 <button
                   class="quiet glyph"
-                  title="Put the captions back as you had them: {captionsWere.font}, {captionsWere.size}, {captionsWere.y} from the bottom"
+                  title="Put the captions back as you had them: {captionsWere.font}, {captionsWere.size}, {captionsWere.y} from the bottom, with their colours"
                   aria-label="Put the captions back as you had them"
                   onclick={putCaptionsAsTheyWere}
                 >
@@ -1396,6 +1470,58 @@
                 />
               </span>
             </label>
+            <!-- The colours follow the hand in the video preview while they
+                 are picked, and are saved when the picker lets go. -->
+            <label class="setting">
+              <span>Text</span>
+              <span class="field">
+                <input
+                  class="swatch"
+                  type="color"
+                  title="The colour the captions are written in"
+                  value={textColour}
+                  oninput={(e) => drawColour({ primary: joinColour(e.currentTarget.value, 1) })}
+                  onchange={(e) => setCaptionColours(e.currentTarget.value, "", boxOpacity)}
+                />
+              </span>
+            </label>
+            <!-- The box and how much of it is seen, side by side, because
+                 they are one thing: what is behind the words. -->
+            <div class="setting">
+              <span>Box</span>
+              <span class="field pair">
+                <input
+                  class="swatch"
+                  type="color"
+                  title="The colour of the box behind the captions"
+                  aria-label="Box colour"
+                  value={boxColour.hex}
+                  oninput={(e) =>
+                    drawColour({ box: joinColour(e.currentTarget.value, boxOpacity / 100) })}
+                  onchange={(e) => setCaptionColours("", e.currentTarget.value, boxOpacity)}
+                />
+                <input
+                  class="num"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  title="How much of the box behind the captions is seen. 0 leaves only the words, 100 hides the picture behind them"
+                  aria-label="Box opacity"
+                  value={boxOpacity}
+                  oninput={(e) => {
+                    const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
+                    if (Number.isFinite(v)) drawColour({ box: joinColour(boxColour.hex, v / 100) });
+                  }}
+                  onchange={(e) =>
+                    setCaptionColours(
+                      "",
+                      boxColour.hex,
+                      Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
+                    )}
+                /><span class="unit">%</span>
+              </span>
+            </div>
             <label class="setting">
               <span>Height</span>
               <span class="field">
@@ -1733,6 +1859,11 @@
     min-width: 0;
     padding-right: var(--gap);
     border-right: 1px solid var(--line);
+    /* On an app too short for every setting, the last of them would lie
+       under the clip panel with no way to reach it. It scrolls instead,
+       and only then. */
+    overflow-y: auto;
+    scrollbar-width: none;
   }
 
   /* A name and a small field beside it read worse the further apart they
@@ -1831,6 +1962,43 @@
   .setting input {
     text-align: right;
     padding-right: 29px;
+  }
+
+  /* A colour field is the colour and nothing else, as wide as every other
+     field in the column, so the column ends in one place. */
+  .setting input.swatch {
+    display: block;
+    box-sizing: border-box;
+    height: var(--control-h);
+    padding: 3px;
+    cursor: pointer;
+  }
+
+  /* The box and its opacity share the width one field has, the colour
+     first and the number after it, which still ends where every other
+     number in the column ends. */
+  .field.pair {
+    display: flex;
+    gap: 4px;
+  }
+
+  .pair .swatch {
+    width: 48px;
+    flex: none;
+  }
+
+  .pair input.num {
+    width: 64px;
+    flex: none;
+  }
+
+  .swatch::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  .swatch::-webkit-color-swatch {
+    border: none;
+    border-radius: calc(var(--radius-s) - 1px);
   }
 
   /* The unit stands in a place of its own, as wide as the longest one and

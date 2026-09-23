@@ -1102,8 +1102,7 @@
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
-        one after appears. An edge moved by hand has a line that sticks out, and a double-click
-        puts it back.
+        one after appears. A double-click on an edge moved by hand puts it back.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
@@ -1219,7 +1218,6 @@
         {#each captionBlocks as b (b.i)}
           <div
             class="capedge start"
-            class:moved={b.c.startMoved}
             class:active={capDraft?.index === b.i && capDraft.edge === "start"}
             style="left: {x(b.from)}%"
             role="slider"
@@ -1237,7 +1235,6 @@
           ></div>
           <div
             class="capedge end"
-            class:moved={b.c.endMoved}
             class:active={capDraft?.index === b.i && capDraft.edge === "end"}
             style="left: {x(b.to)}%"
             role="slider"
@@ -1445,13 +1442,9 @@
     opacity: 1;
   }
 
-  /* The captions along the foot of the track. The band is a whole number
-     of pixels, the blocks sit in it with a pixel above and below, and the
-     edges are as tall as the band so they never reach the trim and cut
-     edges above them. */
-  /* The band along the foot of the track the caption blocks lie in.
-     20 pixels: a block of 14 with 3 above and below it, which is where a
-     mark for an edge put there by hand sticks out. */
+  /* The captions along the foot of the track. The band is 20 pixels, a
+     block of 14 with 3 above and below it, and the edges are as tall as
+     the band so they never reach the trim and cut edges above them. */
   .captions {
     position: absolute;
     left: 0;
@@ -1464,27 +1457,26 @@
 
   /* A block is drawn a pixel short of its time at each end, so two
      captions that meet show a gap of two pixels where one goes and the
-     next appears, and every block reads as one of its own. */
+     next appears, and every block reads as one of its own. It wears the
+     waveform's own colour under the clip's wash, so the band reads as
+     part of the track and not as something laid over it. */
   .caption {
     position: absolute;
     top: 3px;
     height: 14px;
     margin-left: 1px;
-    background: var(--faint);
+    background: color-mix(in srgb, var(--wave), var(--accent) 22%);
     border-radius: 3px;
-    box-shadow: inset 0 0 0 1px var(--line);
   }
 
-  /* The caption the video preview is showing lights up, in the app's
-     colour. The accent in this band means that and only that: the white
-     line is the edge under the hand, and the mark that sticks out is an
-     edge put there by hand. */
+  /* The caption the video preview is showing is in the colour of the
+     text, the brightest thing on the track, so the eye finds it at once.
+     The accent in this band is the edge under the hand and nothing else. */
   .caption.showing {
-    background: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--accent-lit);
+    background: var(--text);
   }
 
-  /* An edge is grabbed on its own side of the line, so where two captions
+  /* An edge is grabbed on its own side of the gap, so where two captions
      meet the left side is the one before going and the right side the one
      after appearing. */
   .capedge {
@@ -1506,7 +1498,7 @@
     top: 3px;
     bottom: 3px;
     width: 2px;
-    background: var(--text);
+    background: var(--accent-hi);
     opacity: 0;
   }
 
@@ -1518,19 +1510,10 @@
     right: 1px;
   }
 
-  /* An edge put there by hand is marked by a line that sticks out of the
-     block above and below, so it can be found again whatever the block
-     under it is doing. */
-  .capedge.moved::after {
-    top: 0;
-    bottom: 0;
-    background: var(--accent-lit);
-    opacity: 1;
-  }
-
+  /* The handle shows while the pointer is on it and while it is dragged,
+     and goes again when the hand lets go. */
   .capedge:hover::after,
   .capedge.active::after {
-    background: var(--text);
     opacity: 1;
   }
 

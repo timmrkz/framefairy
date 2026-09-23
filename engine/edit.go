@@ -847,6 +847,13 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 				return renderErr("%s is not a caption size between 8 and 400",
 					Scrub(pyStr(value), 40))
 			}
+		case "primary", "back_colour":
+			// The colour of the text and of the box behind it, written the
+			// way the render takes them, &HAABBGGRR.
+			text, ok := value.(string)
+			if !ok || !isAssColour(text) {
+				return renderErr("%s is not a caption colour", Scrub(pyStr(value), 40))
+			}
 		default:
 			return renderErr("the caption setting %s cannot be changed here", Scrub(key, 40))
 		}

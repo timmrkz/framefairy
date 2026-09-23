@@ -153,3 +153,47 @@ func TestEditsAndUndosAtOnce(t *testing.T) {
 		t.Error("undoing everything did not end where it began")
 	}
 }
+
+// The caption colours are an edit like any other: saved to the plan the
+// render reads, taken back by Undo, and a colour that is not one is refused
+// before anything is written.
+func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	style := func() engine.Style {
+		t.Helper()
+		p, _, err := engine.LoadClips(plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return engine.ResolveStyle(p.CaptionStyle())
+	}
+	if err := svc.SetCaptionColours(ctx, mine, plan, "#ffcc00", "#102030", 0.25); err != nil {
+		t.Fatal(err)
+	}
+	if s := style(); s.Primary != "&H0000CCFF" || s.BackColour != "&HBF302010" {
+		t.Errorf("the render would draw %s on %s", s.Primary, s.BackColour)
+	}
+	if _, err := svc.Undo(mine); err != nil {
+		t.Fatal(err)
+	}
+	if s := style(); s.Primary == "&H0000CCFF" || s.BackColour == "&HBF302010" {
+		t.Error("undo left the colours")
+	}
+	// Nothing below may write the plan. Undo counts as an edit of its own,
+	// so the file to compare with is the one after it.
+	before, _ := os.ReadFile(plan)
+	for _, bad := range [][2]string{{"red", ""}, {"", "#12345"}, {"#ffcc00\n", ""}} {
+		if err := svc.SetCaptionColours(ctx, mine, plan, bad[0], bad[1], 0.5); err == nil {
+			t.Errorf("%q was taken for a colour", bad)
+		}
+	}
+	if err := svc.SetCaptionColours(ctx, mine, filepath.Join(filepath.Dir(plan), "..", "..", "x.json"),
+		"#ffffff", "", 1); err == nil {
+		t.Error("a plan outside the library was written")
+	}
+	after, _ := os.ReadFile(plan)
+	if string(before) != string(after) {
+		t.Errorf("the plan is not as it was:\n%s", after)
+	}
+}

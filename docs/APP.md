@@ -360,11 +360,17 @@ place.
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
-  **Captions** holds the face and the size for every clip of the episode, and
-  the height the captions sit at, which is kept for every episode. The
-  height follows the black box in the picture as it is dragged, not when it
-  is let go, and a mark at the end of the **Captions** row puts the captions
-  back as they start out, the font, the size and the height together, because
+  **Captions** holds the face, the size and the colours for every clip of
+  the episode, and the height the captions sit at, which is kept for every
+  episode. **Text** is the colour the words are written in, and **Box** the
+  colour of the box behind them, with how much of it is seen beside it, 0
+  for only the words and 100 for a box the picture does not show through.
+  A colour is drawn in the video preview while it is picked and saved when
+  the picker lets go, and Undo takes it back. The height follows the
+  caption box in the video preview as it is dragged, not when it is let
+  go, and a mark at the end of the **Captions** row puts the captions back
+  as they start out, the font, the size, the height and the colours
+  together, because
   it is beside the head of the whole group and not beside one row of it. It
   turns anticlockwise for that, and once they are back it turns clockwise
   instead and puts them as you had them, so one click is undone by one click.
@@ -826,8 +832,12 @@ moved by hand, on the clip timeline.
   caption at a time. An edge lands on a whole frame.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
-- **An edge moved by hand is in the accent.** A double-click on it puts it
-  back where its words put it, and Undo takes back any move.
+- **The blocks wear the waveform's colour**, with a gap of two pixels
+  where one caption goes and the next appears. The one the video preview
+  is showing is in the colour of the text. The edge under the pointer, and
+  the one being dragged, is a line in the accent, and it goes again when
+  the hand lets go. A double-click on an edge moved by hand puts it back
+  where its words put it, and Undo takes back any move.
 - **A click on an edge puts the playhead on it**, the way a clip edge does,
   which is how a caption is heard from where it appears.
 
@@ -842,7 +852,7 @@ places simply leaves it unused. The engine side is `SetCaptionTime` in
 **Everything done to an episode's clips can be taken back**, with **Undo**
 and **Redo** in the Edit menu, Cmd-Z and Cmd-Y, Ctrl-Z and Ctrl-Y on Windows and Linux. That is a trim, a
 cut made, moved or put back, the crop frame, the caption box moved, a word
-corrected, added or removed, the caption face and size, a clip removed and
+corrected, added or removed, the caption face, size and colours, a clip removed and
 a search removed. Each is one step. Taking one back chooses the clip it
 changed, so nothing changes where nobody is looking. A new edit after an
 undo starts again from there, and what was undone is gone, as in every

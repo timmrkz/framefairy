@@ -136,6 +136,32 @@ func LooksLikeColour(value string) bool {
 	return highlightColour(value, "") != ""
 }
 
+// AssColour turns a colour picked in the app, #RRGGBB, and how opaque it
+// is, from 0 to 1, into the &HAABBGGRR the render takes. ASS counts the
+// alpha backwards: 00 is opaque and FF is clear.
+func AssColour(hex string, opacity float64) (string, bool) {
+	if !strings.HasPrefix(hex, "#") || len(hex) != 7 || !isHex(hex[1:]) || !isFinite(opacity) {
+		return "", false
+	}
+	clear := int(math.Round((1 - math.Max(0, math.Min(opacity, 1))) * 255))
+	rgb := strings.ToUpper(hex[1:])
+	return fmt.Sprintf("&H%02X%s%s%s", clear, rgb[4:6], rgb[2:4], rgb[0:2]), true
+}
+
+// isAssColour says whether a value is a whole &HAABBGGRR colour.
+func isAssColour(value string) bool {
+	return len(value) == 10 && strings.HasPrefix(value, "&H") && isHex(value[2:])
+}
+
+func isHex(text string) bool {
+	for _, r := range text {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return text != ""
+}
+
 func cleanColour(value any, fallback string) string {
 	text := strip(pyStr(value))
 	if text == "" || runeLen(text) > 12 {

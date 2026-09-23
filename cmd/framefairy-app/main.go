@@ -1023,6 +1023,33 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
+// SetCaptionColours changes the colour of the caption text and of the box
+// behind it, with how opaque the box is from 0 to 1, for a whole clip set,
+// beside the face and the size. Colours come as #RRGGBB, and an empty one
+// is left as it is.
+func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text, box string,
+	boxOpacity float64) error {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return os.ErrNotExist
+	}
+	values := map[string]any{}
+	if text != "" {
+		colour, ok := engine.AssColour(text, 1)
+		if !ok {
+			return fmt.Errorf("%s is not a colour", engine.Scrub(text, 20))
+		}
+		values["primary"] = colour
+	}
+	if box != "" {
+		colour, ok := engine.AssColour(box, boxOpacity)
+		if !ok {
+			return fmt.Errorf("%s is not a colour", engine.Scrub(box, 20))
+		}
+		values["back_colour"] = colour
+	}
+	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
+}
+
 // SetCaptionsHeight puts the captions where the box was dragged to, as the
 // distance from the bottom of a 1080x1920 frame. There is one place for
 // every clip of every episode, because a place that suits one video suits
