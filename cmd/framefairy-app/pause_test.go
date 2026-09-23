@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -108,5 +109,104 @@ func TestPausingAndCarryingOnAtOnce(t *testing.T) {
 	}
 	if transcriptions(s, path) < 2 {
 		t.Error("the transcription never carried on")
+	}
+}
+
+// A search that waits for the transcript starts when the audio has been
+// heard to the end of the window, not when the transcript file next says
+// so. It pauses the transcription there, the pause writes down what was
+// heard, and the transcription is handed back to be carried on after the
+// search. The file is saved seconds apart, and in those seconds the
+// recogniser hears minutes of audio, which is how far the range picker's
+// edge ran past the window while the search still waited.
+func TestASearchStartsWhenTheWindowIsHeard(t *testing.T) {
+	s, path, _ := library(t)
+	var mu sync.Mutex
+	saved, heard := 0.0, 0.0
+	was := coverage
+	coverage = func(string, string) (float64, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		return saved, false
+	}
+	t.Cleanup(func() { coverage = was })
+	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
+
+	// A transcription that hears ten seconds of audio every 50 ms and never
+	// saves while it runs. Stopped, it takes a moment and saves all it
+	// heard, the way the engine does.
+	s.jobs.addOnce(path, "transcribe", "Transcription", func(ctx context.Context, p *engine.Project) (string, error) {
+		for {
+			select {
+			case <-ctx.Done():
+				time.Sleep(100 * time.Millisecond)
+				mu.Lock()
+				saved = heard
+				mu.Unlock()
+				return "", engine.ErrCancelled
+			case <-time.After(50 * time.Millisecond):
+			}
+			mu.Lock()
+			heard += 10
+			at := heard
+			mu.Unlock()
+			p.Log().ProgressTo("transcribing", at/3600, 1, at)
+		}
+	})
+
+	search := engine.NewProject(engine.NewEngine(engine.NewLog(io.Discard, false, false)), path, s.store.Settings().options())
+	began := time.Now()
+	paused, err := s.waitForTranscript(context.Background(), search, engine.PlanRequest{To: 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	gotSaved, gotHeard := saved, heard
+	mu.Unlock()
+	if len(paused) != 1 || paused[0] != path {
+		t.Errorf("paused %v, want the episode's transcription handed back", paused)
+	}
+	if gotSaved < 300 {
+		t.Errorf("the search started on %.0f s written down, the window ends at 300", gotSaved)
+	}
+	// Heard at 10 s every 50 ms and looked at every 250 ms, it is paused
+	// within about half a minute of audio past the end, where the file
+	// alone would have let it run on until the next save.
+	if gotHeard > 400 {
+		t.Errorf("the transcription ran on to %.0f s before the search took over", gotHeard)
+	}
+	if time.Since(began) > 5*time.Second {
+		t.Errorf("the wait took %s", time.Since(began))
+	}
+	s.carryOn(paused)
+	if j, _ := s.jobs.find(path, "transcribe"); j.State != JobQueued && j.State != JobRunning {
+		t.Errorf("the transcription did not carry on, it is %s", j.State)
+	}
+}
+
+// A search stopped while it waits hands back what it paused, so Cancel
+// never leaves the transcription stopped.
+func TestACancelledWaitHandsBackWhatItPaused(t *testing.T) {
+	s, path, _ := library(t)
+	was := coverage
+	coverage = func(string, string) (float64, bool) { return 0, false }
+	t.Cleanup(func() { coverage = was })
+	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
+	s.jobs.addOnce(path, "transcribe", "Transcription", func(ctx context.Context, p *engine.Project) (string, error) {
+		p.Log().ProgressTo("transcribing", 0.5, 1, 500)
+		<-ctx.Done()
+		// It saves nothing, so the file never reaches the window.
+		time.Sleep(time.Second)
+		return "", engine.ErrCancelled
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(600*time.Millisecond, cancel)
+	search := engine.NewProject(engine.NewEngine(engine.NewLog(io.Discard, false, false)), path, s.store.Settings().options())
+	paused, err := s.waitForTranscript(ctx, search, engine.PlanRequest{To: 300})
+	if err == nil {
+		t.Fatal("a cancelled wait said it was done")
+	}
+	if len(paused) != 1 {
+		t.Errorf("a cancelled wait handed back %v", paused)
 	}
 }

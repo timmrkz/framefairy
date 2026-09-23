@@ -50,6 +50,11 @@
 
   --radius-s: 4px;
   --radius-m: 8px;
+  /* The line and the corners of a frame, the one look of what is chosen
+     on a picture or a track: the crop in the video preview, the window on
+     the range picker and the clip on the clip timeline. See .frame. */
+  --frame-line: 2px;
+  --frame-radius: 3px;
   --control-h: 32px;
   /* The bar at the top of the app. Where the system draws its own
      title bar, which is everywhere but macOS, this is the whole story and
@@ -254,6 +259,24 @@ input[type="password"] {
   width: 100%;
 }
 
+/* A frame: the part of a picture or a track that is chosen. The crop in
+   the video preview, the window on the range picker and the clip on the
+   clip timeline are the same thing in three places, so they are drawn by
+   this one rule, in the app's colour, with the same line and the same
+   corners, and lit the same way while the hand is on them. Each place
+   keeps only where it sits and what it takes hold of. Three copies of
+   this were three frames that no longer matched: one with square corners,
+   one with a corner of 4 pixels, one of 3. */
+.frame {
+  box-sizing: border-box;
+  border: var(--frame-line) solid var(--accent);
+  border-radius: var(--frame-radius);
+}
+
+.frame.lit {
+  border-color: var(--accent-hi);
+}
+
 :focus-visible {
   outline: 2px solid var(--accent-hi);
   outline-offset: 1px;
@@ -437,6 +460,22 @@ input[type="password"] {
   to {
     transform: scale(2.7);
     opacity: 0;
+  }
+}
+
+/* The pop the pill makes behind the word being spoken in the video
+   preview, a little under its size, a little over and back, the way the
+   render bounces it. The caption block on the clip timeline that stands
+   for the caption shown makes the same one, so it is one animation. */
+@keyframes pop {
+  from {
+    transform: scale(0.88);
+  }
+  55% {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
   }
 }
 

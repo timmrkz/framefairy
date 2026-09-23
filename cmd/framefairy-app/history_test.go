@@ -168,16 +168,16 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 		}
 		return engine.ResolveStyle(p.CaptionStyle())
 	}
-	if err := svc.SetCaptionColours(ctx, mine, plan, "#ffcc00", 0.5, "#102030", 0.25, "#00aa00"); err != nil {
+	if err := svc.SetCaptionColours(ctx, mine, plan, "#ffcc00", 0.5, "#102030", 0.25, "#00aa00", 0.6); err != nil {
 		t.Fatal(err)
 	}
 	if s := style(); s.Primary != "&H8000CCFF" || s.BackColour != "&HBF302010" ||
-		s.HighlightColour != "&H00AA00&" {
+		s.HighlightColour != "&H00AA00&" || s.HighlightAlpha != "66" {
 		t.Errorf("the render would draw %s on %s", s.Primary, s.BackColour)
 	}
 	// The video preview shows the plan's own highlight, not the one of the
 	// settings, which is only for a plan without one.
-	if view, err := svc.Captions(plan, "01"); err != nil || view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
+	if view, err := svc.Captions(plan, "01"); err != nil || view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
 		t.Errorf("the preview's pill: %v %v", view, err)
 	}
 	if _, err := svc.Undo(mine); err != nil {
@@ -190,15 +190,15 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 	// so the file to compare with is the one after it.
 	before, _ := os.ReadFile(plan)
 	for _, bad := range [][2]string{{"red", ""}, {"", "#12345"}, {"#ffcc00\n", ""}} {
-		if err := svc.SetCaptionColours(ctx, mine, plan, bad[0], 1, bad[1], 0.5, ""); err == nil {
+		if err := svc.SetCaptionColours(ctx, mine, plan, bad[0], 1, bad[1], 0.5, "", 1); err == nil {
 			t.Errorf("%q was taken for a colour", bad)
 		}
 	}
-	if err := svc.SetCaptionColours(ctx, mine, plan, "", 1, "", 1, "#12"); err == nil {
+	if err := svc.SetCaptionColours(ctx, mine, plan, "", 1, "", 1, "#12", 1); err == nil {
 		t.Error("a highlight that is not a colour was taken")
 	}
 	if err := svc.SetCaptionColours(ctx, mine, filepath.Join(filepath.Dir(plan), "..", "..", "x.json"),
-		"#ffffff", 1, "", 1, ""); err == nil {
+		"#ffffff", 1, "", 1, "", 1); err == nil {
 		t.Error("a plan outside the library was written")
 	}
 	after, _ := os.ReadFile(plan)

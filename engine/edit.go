@@ -849,9 +849,11 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 					Scrub(pyStr(value), 40))
 			}
 		case "highlight_colour":
-			// The pill behind the word being spoken, as #RRGGBB.
+			// The pill behind the word being spoken, as #RRGGBB, or as
+			// &HAABBGGRR when it is given an opacity.
 			text, ok := value.(string)
-			if !ok || len(text) != 7 || !strings.HasPrefix(text, "#") || !isHex(text[1:]) {
+			hex := ok && len(text) == 7 && strings.HasPrefix(text, "#") && isHex(text[1:])
+			if !hex && (!ok || !isAssColour(text)) {
 				return renderErr("%s is not a highlight colour", Scrub(pyStr(value), 40))
 			}
 		case "primary", "back_colour":

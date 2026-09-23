@@ -431,8 +431,19 @@ export const api = {
     box: string,
     boxOpacity: number,
     highlight: string,
+    highlightOpacity: number,
   ) =>
-    call<void>("SetCaptionColours", path, plan, text, textOpacity, box, boxOpacity, highlight),
+    call<void>(
+      "SetCaptionColours",
+      path,
+      plan,
+      text,
+      textOpacity,
+      box,
+      boxOpacity,
+      highlight,
+      highlightOpacity,
+    ),
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview saves it, so the next video starts there too.
   setCaptionsHeight: (path: string, y: number) => call<void>("SetCaptionsHeight", path, y),
@@ -578,6 +589,7 @@ export const captionBoxDefault = "#000000";
 export const captionOpacityDefault = 50;
 // The pill behind the word being spoken, as the engine's own style has it.
 export const captionHighlightDefault = "#942192";
+export const captionHighlightOpacityDefault = 100;
 export const captionSizeDefault = 96;
 export const captionYDefault = 300;
 export const captionYStep = 40;

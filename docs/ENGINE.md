@@ -115,8 +115,9 @@ drawn on its own layer over the line with that word hidden, which is why its
 neighbours never move.
 
 The colour is set with `"highlight_colour"` in `caption_style` in
-`clips.json`, as `#RRGGBB`, which is where the captions column of the app
-puts it. `--highlight-colour` is the colour for a plan that has none. `--no-highlight`, or
+`clips.json`, as `#RRGGBB`, or as `&HAABBGGRR` when the pill is given an
+opacity, which is how the captions column of the app puts it. A pill that
+lets the picture through is drawn with that alpha. `--highlight-colour` is the colour for a plan that has none. `--no-highlight`, or
 `"highlight": 0` in `caption_style`, gives plain captions.
 
 Captions sit 300 pixels above the bottom of a 1080x1920 frame, which keeps

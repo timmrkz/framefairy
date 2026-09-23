@@ -538,6 +538,30 @@ list answer the pointer the way a clip's row does, brighter under it,
 while they go on breathing. The same interface, before and after the
 content arrives.
 
+**Paused is a state of its own, and it is still.** The range picker drew
+its fill only while the transcription ran, so a pause, by hand or by a
+search that took the machine, took the fill away and left a mark beside
+an edge nobody could see, and carrying on brought the fill back further
+on. Work that stops keeps its fill, `Busy still`, and loses what moves.
+Before drawing any work, name all its states, running, paused, waiting,
+done, failed, and look at each one in the harness.
+
+**Two numbers for one edge part the moment either stops.** The range
+picker drew what had been heard and the search waited for what had been
+written down, seconds and minutes of audio apart. When a number drives
+what the person sees, the work it stands for waits on that same number.
+
+**A focusable thing keeps the focus a click gave it.** A caption block
+with `tabindex` took the focus on a click, and the first arrow key made
+`:focus-visible` true, so a ring stayed round a caption the video preview
+had left. An element the keys never reach takes no focus at all. Probe by
+clicking and then pressing a key, then list what matches `:focus-visible`.
+
+**The same kind of thing is one rule.** The crop, the window and the
+clip had three copies of a 2 pixel border with three different corners.
+They are `.frame` in `app.css` now. Before styling something that is
+"like" another thing, find the other thing and share its rule.
+
 ## Before saying it is done
 
 - `make interface`, which is the type check and the interface's own tests.

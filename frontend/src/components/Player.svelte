@@ -745,7 +745,7 @@
       <div
         class="frame"
         class:outside={!crop.inside}
-        class:dragging={dragLeft !== null}
+        class:lit={dragLeft !== null}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}
@@ -902,19 +902,19 @@
     pointer-events: none;
   }
 
+  /* The crop. Its line and corners are the frame in app.css, the same
+     as the window on the range picker and the clip on the clip timeline. */
   .frame {
     position: absolute;
     top: 0;
     bottom: 0;
     z-index: 2;
-    border: 2px solid var(--accent);
     cursor: grab;
     touch-action: none;
   }
 
-  .frame.dragging {
+  .frame.lit {
     cursor: grabbing;
-    border-color: var(--accent-hi);
   }
 
   .frame.outside {
@@ -1042,21 +1042,11 @@
     border-radius: 0.2em;
   }
 
+  /* The pop is in app.css, because the caption block on the clip timeline
+     makes the same one. */
   .line span.now {
     background: var(--pill);
     animation: pop 0.22s ease-out;
-  }
-
-  @keyframes pop {
-    from {
-      transform: scale(0.88);
-    }
-    55% {
-      transform: scale(1.12);
-    }
-    to {
-      transform: scale(1);
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -631,6 +631,19 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
+	// A highlight with an opacity is kept whole, and the pill is as clear
+	// in the short as in the video preview.
+	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "&H6600AA00"}); err != nil {
+		t.Fatal(err)
+	}
+	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
+		t.Errorf("the pill is %s", view.Style.HighlightColour)
+	}
+	if plan, _, err := LoadClips(path); err != nil {
+		t.Fatal(err)
+	} else if s := ResolveStyle(plan.CaptionStyle()); s.HighlightColour != "&H00AA00&" || s.HighlightAlpha != "66" {
+		t.Errorf("the render would draw the pill %s at %s", s.HighlightColour, s.HighlightAlpha)
+	}
 	view, err := ClipCaptionsView(path, "01", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -653,6 +666,13 @@ func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
 	for _, odd := range []string{"", "&HFFFFFF", "&H80XXCCFF", "junk"} {
 		if got := shownTag(odd); got != `{\alpha&H00&}` {
 			t.Errorf("%q is shown as %s", odd, got)
+		}
+	}
+	// The pill's alpha: a colour given as #RRGGBB, or no colour, is solid.
+	for value, want := range map[any]string{"#942192": "00", "&H6600AA00": "66", "&H00AA00&": "00",
+		"942192AB": "00", nil: "00", "&HZZ00AA00": "00"} {
+		if got := alphaOrSolid(highlightAlpha(value)); got != want {
+			t.Errorf("the pill of %v is %s clear", value, got)
 		}
 	}
 	line := taggedText([]string{"eins", "zwei"}, [][]int{{0, 1}}, func(i int) bool { return i == 0 },

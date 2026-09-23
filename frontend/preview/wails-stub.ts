@@ -675,7 +675,7 @@ export const Call = {
         ((window as any).__colours ??= []).push(args.slice(2));
         if (args[2]) (window as any).__text = hexToCss(String(args[2]), Number(args[3]));
         if (args[4]) (window as any).__box = hexToCss(String(args[4]), Number(args[5]));
-        if (args[6]) (window as any).__pill = hexToCss(String(args[6]), 1);
+        if (args[6]) (window as any).__pill = hexToCss(String(args[6]), Number(args[7] ?? 1));
         return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();

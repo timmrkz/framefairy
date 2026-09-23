@@ -297,19 +297,21 @@
        button of the app wears, with no rim because the track has no edge to
        run round. Not a copy of it, which is what this was and what looked
        different. Its fill slides by the same transform and the same glide
-       as the shade ahead of it, so the two never part. Only while the
-       reading runs, because a fill says work is in hand. -->
-  {#if pending && transcribing}
+       as the shade ahead of it, so the two never part. A reading that is
+       paused, by hand or while a search has the machine, keeps its fill
+       and stands still, the way Busy draws any work that is paused, so
+       what has been read never disappears from the track and comes back. -->
+  {#if pending && covered > 0}
     <span
       class="busyhost"
       class:glide={glide && !holding}
       class:held={holding}
-    ><Busy fraction={duration > 0 ? covered / duration : 0} rim={false} /></span>
+    ><Busy fraction={duration > 0 ? covered / duration : 0} rim={false} still={!transcribing} /></span>
   {/if}
   {#if pending}
     <div
       class="pending"
-      class:waiting={transcribing}
+      class:waiting={covered > 0}
       class:glide={glide && !holding}
       class:held={holding}
       style="transform: translateX({at(covered)}px)"
@@ -350,10 +352,10 @@
   {/each}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="window"
+    class="window frame"
     class:waiting={locked}
     class:whole
-    class:grip
+    class:lit={grip}
     class:xray={covering}
     style="left: {at(from)}px; width: {at(to) - at(from)}px"
     title="Drag it along the range picker"
@@ -755,8 +757,6 @@
     bottom: 0;
     z-index: 3;
     background: var(--accent-wash);
-    border: 2px solid var(--accent);
-    border-radius: var(--radius-s);
     cursor: grab;
   }
 
@@ -774,9 +774,9 @@
   }
 
   /* An edge under the pointer lights the whole box, which is the edge you
-     are about to take hold of. */
-  .window.grip,
-  .window.whole.grip {
+     are about to take hold of, the way the frame in app.css is lit. A
+     window over the whole episode draws no frame until then. */
+  .window.whole.lit {
     border-color: var(--accent-hi);
   }
 

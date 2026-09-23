@@ -757,17 +757,20 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 				}
 			}()
 		}
-		if err := s.waitForTranscript(ctx, p, req); err != nil {
-			return "", err
-		}
 		// The search has the machine to itself. Transcribing the rest of
 		// an episode can wait a few minutes, the clips are what somebody
-		// is waiting for.
-		paused := s.pauseTranscriptions()
+		// is waiting for. The wait pauses this episode's transcription the
+		// moment it has heard the window, so whatever it paused carries on
+		// after the search too, and so does whatever is paused here.
+		paused, err := s.waitForTranscript(ctx, p, req)
+		defer func() { s.carryOn(paused) }()
+		if err != nil {
+			return "", err
+		}
+		paused = append(paused, s.pauseTranscriptions()...)
 		if len(paused) > 0 {
 			p.Log().Info("the transcription waits while clips are found and carries on after")
 		}
-		defer s.carryOn(paused)
 		return p.Plan(ctx, req)
 	})
 }
@@ -839,16 +842,26 @@ func (s *FrameFairy) WarmModel(path string, from, to float64) {
 
 // waitForTranscript blocks until the transcript covers the window, and
 // starts the transcription if nothing is transcribing this episode.
-func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, req engine.PlanRequest) error {
+//
+// The transcript on disk is saved seconds apart, and the recogniser hears
+// minutes of audio in those seconds, so a search that waited for the file
+// alone started long after the window had been heard, while the range
+// picker showed the transcription running on past the end of it. So the
+// wait also watches how far the audio has been heard, and pauses the
+// transcriptions the moment that passes the end of the window. A paused
+// transcription writes down all it heard, the search starts on that, and
+// the episodes it paused are handed back to be carried on after it.
+func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project,
+	req engine.PlanRequest) ([]string, error) {
 	asrDir := s.store.Settings().ASRModel
 	end := req.To
 	if end <= 0 {
 		info, err := s.probe(ctx, p.Source)
 		if err != nil {
 			if ctx.Err() != nil {
-				return engine.ErrCancelled
+				return nil, engine.ErrCancelled
 			}
-			return err
+			return nil, err
 		}
 		end = info.Duration
 	}
@@ -857,12 +870,17 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 	label := "Waiting for the transcript"
 	said := false
 	var started *Job
+	// The episodes paused because this one had heard the window, and
+	// whether that has been done. It is done once: a pause whose save did
+	// not reach the window carries on and the wait goes back to the file.
+	var paused []string
+	pausedOnce := false
 	firstAt, firstCovered := time.Time{}, -1.0
 	for {
-		covered, done := engine.Coverage(p.Source, asrDir)
+		covered, done := coverage(p.Source, asrDir)
 		if done || covered >= end-0.05 {
 			p.Log().ClearProgress()
-			return nil
+			return paused, nil
 		}
 		if !said {
 			said = true
@@ -870,6 +888,26 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 		}
 		job, ok := s.jobs.find(p.Source, "transcribe")
 		switch {
+		case paused != nil && ok && job.State == JobRunning:
+			// Paused here and still writing down what it heard.
+		case paused != nil:
+			// Stopped. The file was read before the job was, so it is read
+			// again: the save may have landed between the two.
+			if again, _ := coverage(p.Source, asrDir); again >= end-0.05 {
+				continue
+			}
+			// What it wrote down falls short of the window. It carries
+			// on, and the wait goes on by the file.
+			s.carryOn(paused)
+			paused, started = nil, nil
+			continue
+		case !pausedOnce && ok && job.State == JobRunning && job.Progress != nil &&
+			job.Progress.Covered >= end-0.05:
+			pausedOnce = true
+			paused = s.pauseTranscriptions()
+			if len(paused) == 0 {
+				paused = nil
+			}
 		case ok && (job.State == JobQueued || job.State == JobRunning):
 		case ok && job.State == JobCancelled:
 			// Pause means pause. A search waiting for the words does not
@@ -877,7 +915,7 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 			// whoever asked for it.
 			p.Log().ClearProgress()
 			p.Log().Error("the transcription is paused at %s", engine.HMS(covered))
-			return engine.ErrStepFailed
+			return nil, engine.ErrStepFailed
 		case started != nil && ok && job.ID == started.ID:
 			p.Log().ClearProgress()
 			reason := job.Error
@@ -885,7 +923,7 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 				reason = "the transcription stopped at " + engine.HMS(covered)
 			}
 			p.Log().Error("%s", reason)
-			return engine.ErrStepFailed
+			return nil, engine.ErrStepFailed
 		default:
 			queued := s.Transcribe(p.Source)
 			started = &queued
@@ -907,13 +945,39 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 			share = covered / end
 		}
 		p.Log().ProgressOf(label, share, remaining)
-		select {
-		case <-ctx.Done():
+		// The file is read once a second, because it is the whole
+		// transcript. How far the audio has been heard is a number the
+		// queue already holds, so it is looked at four times as often, and
+		// the pause comes within a quarter of a second of the window's end.
+		if err := s.untilHeard(ctx, p.Source, end, pausedOnce); err != nil {
 			p.Log().ClearProgress()
-			return engine.ErrCancelled
-		case <-time.After(time.Second):
+			return paused, engine.ErrCancelled
 		}
 	}
+}
+
+// coverage is how far the saved transcript reaches. Tests put a stand-in
+// here, because a real transcript needs a real recogniser.
+var coverage = engine.Coverage
+
+// untilHeard waits a second, or less if the audio of the episode has been
+// heard to end before that and the transcription is still to be paused.
+func (s *FrameFairy) untilHeard(ctx context.Context, path string, end float64, pausedOnce bool) error {
+	for range 4 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+		if pausedOnce {
+			continue
+		}
+		if job, ok := s.jobs.find(path, "transcribe"); ok && job.State == JobRunning &&
+			job.Progress != nil && job.Progress.Covered >= end-0.05 {
+			return nil
+		}
+	}
+	return nil
 }
 
 // Still returns a frame of the episode at a moment, as a media path.
@@ -1052,12 +1116,13 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
-// SetCaptionColours changes the colour of the caption text and of the box
-// behind it, each with how opaque it is from 0 to 1, and the colour of the
-// pill behind the word being spoken, for a whole clip set, beside the face
-// and the size. Colours come as #RRGGBB, and an empty one is left as it is.
+// SetCaptionColours changes the colour of the caption text, of the box
+// behind it and of the pill behind the word being spoken, each with how
+// opaque it is from 0 to 1, for a whole clip set, beside the face and the
+// size. Colours come as #RRGGBB, and an empty one is left as it is.
 func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text string,
-	textOpacity float64, box string, boxOpacity float64, highlight string) error {
+	textOpacity float64, box string, boxOpacity float64, highlight string,
+	highlightOpacity float64) error {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return os.ErrNotExist
 	}
@@ -1077,10 +1142,11 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 		values["back_colour"] = colour
 	}
 	if highlight != "" {
-		if !engine.LooksLikeColour(highlight) || !strings.HasPrefix(highlight, "#") || len(highlight) != 7 {
+		colour, ok := engine.AssColour(highlight, highlightOpacity)
+		if !ok {
 			return fmt.Errorf("%s is not a colour", engine.Scrub(highlight, 20))
 		}
-		values["highlight_colour"] = strings.ToLower(highlight)
+		values["highlight_colour"] = colour
 	}
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }

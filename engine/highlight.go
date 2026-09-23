@@ -296,6 +296,14 @@ func shownTag(primary string) string {
 	return `{\alpha&H` + alphaOf(primary) + `&}`
 }
 
+// alphaOrSolid is an alpha as a tag takes it, solid when there is none.
+func alphaOrSolid(alpha string) string {
+	if len(alpha) != 2 || !isHex(alpha) {
+		return "00"
+	}
+	return strings.ToUpper(alpha)
+}
+
 // alphaOf is the alpha of an &HAABBGGRR colour, 00 when it has none.
 func alphaOf(colour string) string {
 	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(colour, "&H"), "&"))
@@ -482,8 +490,8 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 			h := float64(lineBottom[r]-lineTop[r]) + 2*pillPadY
 			pill := roundedRect(0, 0, w, h, math.Min(h*0.3, radius+2))
 			add(1, from, to, "Box", fmt.Sprintf(
-				`{\an5\pos(%s,%s)\p1\1c%s\1a&H00&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)\t(%d,%d,\fscx100\fscy100)}%s{\p0}`,
-				num(cx), num(cy), s.HighlightColour, num(pillFrom*100), num(pillFrom*100),
+				`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)\t(%d,%d,\fscx100\fscy100)}%s{\p0}`,
+				num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), num(pillFrom*100), num(pillFrom*100),
 				up, num(pillPeak*100), num(pillPeak*100), up, up+down, pill))
 
 			// The line with the active word hidden, so nothing else moves.

@@ -364,10 +364,11 @@ place.
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
   colour of the box behind them and **Highlight** the pill behind the word
-  being spoken. Beside the first two is how much of each is seen:
-  100, where the text starts, is solid, and a box at 0 leaves only the
-  words. A see-through text keeps its opacity in the short, the word on
-  the pill included.
+  being spoken. Beside each is how much of it is seen:
+  100, where the text and the highlight start, is solid, and a box at 0
+  leaves only the words. A see-through text keeps its opacity in the
+  short, the word on the pill included, and a see-through pill lets the
+  box and the picture through, in the short as in the video preview.
   A colour is drawn in the video preview while it is picked and saved when
   the picker lets go, and Undo takes it back. The height follows the
   caption box in the video preview as it is dragged, not when it is let
@@ -527,7 +528,14 @@ place.
       starts with it in memory. **While clips are found, the transcription
       waits**, on this episode and any other, so the model has the
       machine to itself, and it carries on by itself when the search
-      ends. One paused by hand stays paused. It
+      ends. One paused by hand stays paused. The search waits for the
+      audio to be heard to the end of the window, not for the next time
+      the transcript is written down, which is seconds apart and minutes
+      of audio. The moment it is heard, the transcription is paused, the
+      pause writes down all it heard, and the search starts on that. So
+      the range picker's edge stops a little past the end of the window
+      rather than running on across the track while the first row sits
+      full, and it carries on from where it stopped. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
@@ -850,14 +858,19 @@ moved by hand, on the clip timeline.
   caption at a time. An edge lands on a whole frame.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
-- **A block is its caption in the short's colours**: the box colour over
-  the app's dark, with a bar in the colour of the words, so every colour
-  picked in the captions column is seen here too, while it is picked. The
+- **A block is its caption in the short's colours**: the box colour, as
+  see-through as the box is set to be, over the waveform the way the box
+  lies over the picture, with a bar in the colour of the words, so every
+  colour and every opacity picked in the captions column is seen here too,
+  while it is picked. The blocks lie over everything else on the clip
+  timeline, the clip frame, the time lines and the playhead included. The
   colours never change with the state, because a dimmed colour is another
-  colour. The bar's size does: a hairline at rest, thicker under the
-  pointer, and on the caption the video preview is showing thicker still,
-  with the highlight colour round it, the pill the spoken word wears, and
-  it springs into place the way that word bounces. A click puts the
+  colour. At rest the bar is a hairline and under the pointer it is
+  thicker. The caption the video preview is showing wears the highlight
+  colour over its box, with its own opacity, the pill the spoken word
+  wears, and pops into place with the same animation that pill makes in
+  the video preview. A block takes no focus, so no focus ring is left
+  round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
   screen from the clip's first frame, before its first word. The edge
@@ -939,7 +952,14 @@ things and no others, and each one means one thing.
   of the episode with `Busy.svelte` itself, fill, head, glow and motes,
   without the rim, and the row of the clip list that waits for the
   transcript fills by the same line, so the two never say different
-  things. In
+  things.
+- **Paused work is still, not gone.** How far it got stays true, so the
+  fill stays where it is, and everything that says the work is running
+  stops: no beam, no motes, no light over the fill, and the head keeps its
+  line without the glow ahead of it. Running and paused are told apart by
+  movement. The range picker shows a transcription paused by hand, or
+  waiting while a search has the machine, this way, with the mark that
+  carries it on at the head of the fill. In
   Activity, where a job has no control of its own, the same fill lies in a
   track of its own, with a light travelling over what is already done. Work that cannot
   say how far it has come shuttles across that track instead of standing at

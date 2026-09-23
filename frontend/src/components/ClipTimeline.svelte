@@ -1150,7 +1150,7 @@
          a row. -->
     {#if wholeClip}
       <div
-        class="span"
+        class="span frame"
         style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
       ></div>
     {/if}
@@ -1237,13 +1237,16 @@
                the video preview shows it spoken. That is where it appears,
                except for the first caption of a clip, which is on screen
                from the clip's first frame, before its first word. -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- A block takes no focus. The keys walk the words wherever the
+               focus is, and a block that kept it from a click wore the
+               focus ring the moment a key was pressed, round a caption the
+               video preview had long left. -->
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
           <div
             class="caption"
             class:showing={time >= b.from && time < b.to}
             style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
             role="button"
-            tabindex="-1"
             title="Put the playhead where this caption appears"
             onpointerdown={(e) => e.stopPropagation()}
             onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
@@ -1397,10 +1400,8 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    box-sizing: border-box;
-    border: 2px solid var(--accent);
-    /* Just enough that the corners are not points. */
-    border-radius: 3px;
+    /* Its line and corners are the frame in app.css, the same as the crop
+       in the video preview and the window on the range picker. */
     pointer-events: none;
     /* Over the time lines, the cuts and the captions, so the clip is one
        solid frame that nothing on the track crosses. */
@@ -1420,15 +1421,15 @@
   /* The wash at the clip's two ends takes the frame's corners, so none of
      it shows outside them. */
   .piece.first {
-    border-radius: 3px 0 0 3px;
+    border-radius: var(--frame-radius) 0 0 var(--frame-radius);
   }
 
   .piece.last {
-    border-radius: 0 3px 3px 0;
+    border-radius: 0 var(--frame-radius) var(--frame-radius) 0;
   }
 
   .piece.first.last {
-    border-radius: 3px;
+    border-radius: var(--frame-radius);
   }
 
   /* A part the clip leaves out. It is the track's own background and
@@ -1508,18 +1509,25 @@
     top: round(down, calc(50% - 12px), 1px);
     height: 24px;
     pointer-events: none;
-    z-index: 1;
+    /* Over everything else on the track, the clip frame, the time lines
+       and their times and the playhead, the way the captions lie over the
+       picture in the short, so a box that lets the picture through lets
+       the track through here and nothing is drawn across a caption. */
+    z-index: 5;
   }
 
   /* A block is the caption in the colours the short burns it in: the box
-     colour laid over the app's own dark, and a bar in the colour of the
+     colour, as see-through as the box is in the short, over the waveform
+     the way the box lies over the picture, and a bar in the colour of the
      words. The colours are the short's and never change with the state,
-     because a dimmed colour is another colour. The state is the bar's
-     size instead. At rest it is a hairline. Under the pointer it grows.
-     On the caption the video preview is showing it grows further and
-     wears the highlight colour round it, the pill the spoken word wears
-     in the video preview, and it springs into place the way that word
-     bounces.
+     because a dimmed colour is another colour. At rest the bar is a
+     hairline, and under the pointer it grows.
+
+     The caption the video preview is showing wears the highlight colour
+     over its box, the pill over the box the way the short draws it, each
+     as see-through as it is set to be, so it shows two colours, the
+     highlight and the words. It bounces into place with the same pop the
+     pill makes in the video preview.
 
      A block is drawn a pixel short of its time at each end, so two
      captions that meet show a gap. */
@@ -1532,12 +1540,18 @@
     padding: 0 6px;
     display: flex;
     align-items: center;
-    background:
-      linear-gradient(var(--cap-box), var(--cap-box)),
-      var(--ink-0);
+    background: var(--cap-box);
     border-radius: 3px;
     pointer-events: auto;
     cursor: pointer;
+  }
+
+  .caption.showing {
+    z-index: 1;
+    background:
+      linear-gradient(var(--cap-pill), var(--cap-pill)),
+      var(--cap-box);
+    animation: pop 0.22s ease-out;
   }
 
   .caption i {
@@ -1547,25 +1561,22 @@
     height: 2px;
     border-radius: 1px;
     background: var(--cap-text);
-    transition:
-      height 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
-      box-shadow 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: height 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
-  .caption:hover i {
+  .caption:hover i,
+  .caption.showing i {
     height: 4px;
     border-radius: 2px;
-  }
-
-  .caption.showing i {
-    height: 6px;
-    border-radius: 2px;
-    box-shadow: 0 0 0 3px var(--cap-pill);
   }
 
   @media (prefers-reduced-motion: reduce) {
     .caption i {
       transition: none;
+    }
+
+    .caption.showing {
+      animation: none;
     }
   }
 
@@ -1578,7 +1589,7 @@
     height: 24px;
     width: 8px;
     cursor: ew-resize;
-    z-index: 2;
+    z-index: 6;
   }
 
   .capedge.end {

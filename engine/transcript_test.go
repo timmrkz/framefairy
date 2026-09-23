@@ -442,3 +442,47 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 		t.Errorf("the last moment reported is %v, the episode is 70 s", last)
 	}
 }
+
+// A transcription that is stopped writes down everything it heard before it
+// goes, not only what the last save held. A search pauses it, and carrying
+// on afterwards has to start where the work really got to, or minutes of
+// audio are heard twice and the range picker's edge stands still for them.
+func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
+	source := testEpisode(t, "70")
+	saved := checkpointEvery
+	checkpointEvery = time.Hour
+	defer func() { checkpointEvery = saved }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	heard := 0.0
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress || ev.Covered <= 0 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		heard = ev.Covered
+		if heard > 20 {
+			cancel()
+		}
+	})
+	var calls int32
+	e := NewEngine(log)
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Transcribe(ctx); err == nil {
+		t.Fatal("a stopped transcription finished")
+	}
+	mu.Lock()
+	want := heard
+	mu.Unlock()
+	covered, done := Coverage(source, base.ASRModel)
+	if done || want <= 20 || covered < want-0.001 {
+		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
+	}
+}

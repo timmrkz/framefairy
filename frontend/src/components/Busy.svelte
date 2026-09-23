@@ -16,7 +16,18 @@
   // It is the one way work in hand is drawn, so it is used, never copied.
   // Where there is no edge to run round, the range picker, rim is off and
   // the motes and the fill are the same as everywhere else.
-  let { fraction = -1, rim = true }: { fraction?: number; rim?: boolean } = $props();
+  //
+  // Work that is paused is still, not gone. How far it got is as true as
+  // it was, so the fill stays as it is, and what says the work is running,
+  // the beam, the motes and the light over the fill, stops. The head keeps
+  // its line and loses the glow thrown ahead of it, because nothing is
+  // going ahead. So running and paused are told apart by movement, and a
+  // paused piece of work reads as the same thing, stopped.
+  let {
+    fraction = -1,
+    rim = true,
+    still = false,
+  }: { fraction?: number; rim?: boolean; still?: boolean } = $props();
 
   // Where the motes rise and how long each one takes. Fixed rather than
   // drawn at random, because a random number would be a new one on every
@@ -30,14 +41,16 @@
   ];
 </script>
 
-<span class="beam" aria-hidden="true">
-  {#if rim}<span class="ring"></span>{/if}
-  {#each motes as m (m.at)}
-    <i
-      class="mote"
-      style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"
-    ></i>
-  {/each}
+<span class="beam" class:still aria-hidden="true">
+  {#if rim && !still}<span class="ring"></span>{/if}
+  {#if !still}
+    {#each motes as m (m.at)}
+      <i
+        class="mote"
+        style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"
+      ></i>
+    {/each}
+  {/if}
   {#if fraction >= 0}
     <!-- The fill is as wide as the control and slides in from the left,
          so it is moved and never laid out again: a width that changes is
@@ -267,6 +280,16 @@
       transparent 100%
     );
     animation: sheen 2.4s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+  }
+
+  /* Paused: the fill and the line at its head, and nothing that moves. */
+  .still .fill i {
+    box-shadow: inset -2px 0 var(--lit, var(--accent-lit));
+  }
+
+  .still .fill i::after {
+    animation: none;
+    opacity: 0;
   }
 
   /* Where the rim cannot be cut out of the square, there is no beam and

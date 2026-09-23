@@ -5,6 +5,7 @@
     captionFontDefault,
     captionBoxDefault,
     captionHighlightDefault,
+    captionHighlightOpacityDefault,
     captionOpacityDefault,
     captionTextDefault,
     captionTextOpacityDefault,
@@ -775,7 +776,9 @@
   const boxColour = $derived(splitColour(shownCaptions?.style.box ?? "rgba(0, 0, 0, 0.5)"));
   const boxOpacity = $derived(Math.round(boxColour.alpha * 100));
 
-  const highlightColour = $derived(splitColour(shownCaptions?.style.highlightColour ?? "").hex);
+  const highlightSplit = $derived(splitColour(shownCaptions?.style.highlightColour ?? ""));
+  const highlightColour = $derived(highlightSplit.hex);
+  const highlightOpacity = $derived(Math.round(highlightSplit.alpha * 100));
 
   function drawColour(part: { primary?: string; box?: string; highlight?: string }) {
     if (!colourDraft) colourHeld = captions;
@@ -790,6 +793,7 @@
     box: string,
     boxShare: number,
     highlight = "",
+    highlightShare = 100,
   ) {
     if (!current) return;
     problem = "";
@@ -804,6 +808,7 @@
         box,
         boxShare / 100,
         highlight,
+        highlightShare / 100,
       );
       await refreshClips();
     } catch (err) {
@@ -883,6 +888,7 @@
     box: string;
     opacity: number;
     highlight: string;
+    highlightOpacity: number;
   } | null>(null);
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
@@ -893,6 +899,7 @@
     text: splitColour(captions?.style.primary ?? "").hex,
     textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
     highlight: splitColour(captions?.style.highlightColour ?? "").hex,
+    highlightOpacity: Math.round(splitColour(captions?.style.highlightColour ?? "").alpha * 100),
     box: splitColour(captions?.style.box ?? "").hex,
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
@@ -900,6 +907,7 @@
     captionsNow.text !== captionTextDefault ||
       captionsNow.textOpacity !== captionTextOpacityDefault ||
       captionsNow.highlight !== captionHighlightDefault ||
+      captionsNow.highlightOpacity !== captionHighlightOpacityDefault ||
       captionsNow.box !== captionBoxDefault ||
       captionsNow.opacity !== captionOpacityDefault,
   );
@@ -926,6 +934,7 @@
         captionBoxDefault,
         captionOpacityDefault,
         captionHighlightDefault,
+        captionHighlightOpacityDefault,
       );
     }
     captionsWere = was;
@@ -945,9 +954,17 @@
       was.textOpacity !== captionsNow.textOpacity ||
       was.box !== captionsNow.box ||
       was.opacity !== captionsNow.opacity ||
-      was.highlight !== captionsNow.highlight
+      was.highlight !== captionsNow.highlight ||
+      was.highlightOpacity !== captionsNow.highlightOpacity
     ) {
-      await setCaptionColours(was.text, was.textOpacity, was.box, was.opacity, was.highlight);
+      await setCaptionColours(
+        was.text,
+        was.textOpacity,
+        was.box,
+        was.opacity,
+        was.highlight,
+        was.highlightOpacity,
+      );
     }
   }
 
@@ -1666,8 +1683,9 @@
               </span>
             </div>
             <!-- The pill behind the word being spoken, beside the other two
-                 colours of the captions, so every colour the short and the
-                 clip timeline show is set in one place. -->
+                 colours of the captions and the same pair as they are, so
+                 every colour the short and the clip timeline show is set
+                 in one place and in one way. -->
             <div class="setting">
               <span>Highlight</span>
               <span class="field pair">
@@ -1677,10 +1695,44 @@
                   title="The colour of the pill behind the word being spoken"
                   aria-label="Highlight colour"
                   value={highlightColour}
-                  oninput={(e) => drawColour({ highlight: joinColour(e.currentTarget.value, 1) })}
+                  oninput={(e) =>
+                    drawColour({
+                      highlight: joinColour(e.currentTarget.value, highlightOpacity / 100),
+                    })}
                   onchange={(e) =>
-                    setCaptionColours("", textOpacity, "", boxOpacity, e.currentTarget.value)}
+                    setCaptionColours(
+                      "",
+                      textOpacity,
+                      "",
+                      boxOpacity,
+                      e.currentTarget.value,
+                      highlightOpacity,
+                    )}
                 />
+                <input
+                  class="num"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  title="How much of the pill behind the word being spoken is seen. 100 is solid, less lets the box and the picture through"
+                  aria-label="Highlight opacity"
+                  value={highlightOpacity}
+                  oninput={(e) => {
+                    const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
+                    if (Number.isFinite(v))
+                      drawColour({ highlight: joinColour(highlightColour, v / 100) });
+                  }}
+                  onchange={(e) =>
+                    setCaptionColours(
+                      "",
+                      textOpacity,
+                      "",
+                      boxOpacity,
+                      highlightColour,
+                      Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
+                    )}
+                /><span class="unit">%</span>
               </span>
             </div>
             <label class="setting">

@@ -56,6 +56,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.14 | The model loaded while the transcription is still running, so a search that starts finds it in memory `[x]`, and the transcript read into it as it grows `[ ]` | `[~]` |
 | 1.15 | The transcription waits while clips are found and carries on after, so the model has the machine to itself | `[x]` |
 | 1.16 | A search's row says Waiting for the transcript with its window, then Finding clips, then how many are found, each held long enough to read, with Cancel from the moment the first search is on its way. A fill that can be told from what is left in daylight. Up to four clips framed at once | `[x]` |
+| 1.17 | A search starts the moment the window has been heard: the transcription is paused there and writes down all it heard, so its edge on the range picker stops just past the window and carries on from where it stopped. Paused work keeps its fill and stops moving | `[x]` |
 
 ## Phase 2: app shell
 
@@ -132,7 +133,8 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.9 | Click a clip edge to put the playhead on it, and loop the clip while it plays | `[x]` |
 | 3.6 | Undo and redo for everything done to a clip: trims, cuts, the crop frame, the caption box, words, the caption look, removing a clip and removing a search. One history per episode while the app is open. Jobs, moving around and app settings are not in it | `[x]` |
 | 3.7 | Crop frame shown per shot, moved by hand per camera angle, reset to automatic | `[x]` |
-| 3.10 | The colour of the caption text and of the box behind it, each with how much of it is seen, and the highlight colour, beside the face and the size. The caption blocks of the clip timeline wear all three | `[x]` |
+| 3.10 | The colour of the caption text, of the box behind it and of the highlight, each with how much of it is seen, beside the face and the size. The caption blocks of the clip timeline wear all three with their opacity, over everything else on the track | `[x]` |
+| 3.11 | One frame for what is chosen: the crop, the window and the clip drawn by one rule, with the same line, corners and colour | `[x]` |
 
 ## Phase 4: caption editor
 

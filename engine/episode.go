@@ -525,7 +525,7 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,
 		Radius: s.Radius / authored, Primary: WebColour(s.Primary),
 		Box: WebColour(s.BackColour), Highlight: s.Highlight,
-		HighlightColour: WebColour(s.HighlightColour),
+		HighlightColour: s.HighlightWeb(),
 	}}
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"

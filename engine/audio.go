@@ -304,15 +304,22 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	buf := make([]byte, frameSamples*4*50)
 
 	lastSave := time.Now()
+	// How far the audio has been heard and how far of it is written down.
+	heardTo, savedTo := window.Start, window.Start
+	keep := func(covered float64) {
+		frames := int(math.Round((covered - window.Start) / FrameSeconds))
+		words := append([]Cue(nil), raw...)
+		sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
+		save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered)
+		savedTo = covered
+	}
 	recognise := func(samples []float32, at float64) {
 		raw = append(raw, TokensToWords(rec.Recognize(samples, SampleRate), at)...)
 		covered := at + float64(len(samples))/SampleRate
+		heardTo = covered
 		if save != nil && time.Since(lastSave) >= checkpointEvery {
 			lastSave = time.Now()
-			frames := int(math.Round((covered - window.Start) / FrameSeconds))
-			words := append([]Cue(nil), raw...)
-			sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
-			save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered)
+			keep(covered)
 		}
 		done := covered - window.Start
 		elapsed := time.Since(started).Seconds()
@@ -372,6 +379,15 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	}
 	waitErr := cmd.Wait()
 	if ctx.Err() != nil {
+		// Stopped, by pause or by a search that wants the machine. What was
+		// heard since the last save is written down before it goes, so
+		// carrying on starts where the work really got to. Without this a
+		// pause threw away up to checkpointEvery of work, minutes of audio
+		// at the speed the recogniser runs, and the range picker's edge
+		// stood still for all of them after it carried on.
+		if save != nil && heardTo > savedTo {
+			keep(heardTo)
+		}
 		e.Log.ClearProgress()
 		return nil, ctx.Err()
 	}

@@ -34,6 +34,9 @@ type Style struct {
 	Highlight bool
 	// HighlightColour is the pill colour as an ASS colour tag value.
 	HighlightColour string
+	// HighlightAlpha is how see-through the pill is, as the two hex digits
+	// an ASS alpha tag takes. 00 is solid.
+	HighlightAlpha string
 }
 
 // DefaultStyle is the caption look used unless a plan or a flag says
@@ -219,7 +222,30 @@ func ResolveStyle(overrides map[string]any) Style {
 		Highlight:     number("highlight") != 0,
 		HighlightColour: highlightColour(s["highlight_colour"],
 			highlightColour(DefaultStyle["highlight_colour"], "&H6F23B4&")),
+		HighlightAlpha: highlightAlpha(s["highlight_colour"]),
 	}
+}
+
+// highlightAlpha is the alpha of a highlight colour given as a whole
+// &HAABBGGRR, which is how the app keeps one with an opacity. A colour
+// given as #RRGGBB, or one that is no colour at all, is solid.
+func highlightAlpha(value any) string {
+	text := strings.ToUpper(strip(pyStr(value)))
+	if !strings.HasPrefix(text, "&H") || highlightColour(text, "") == "" {
+		return "00"
+	}
+	return alphaOf(text)
+}
+
+// HighlightWeb is the highlight colour with its opacity, as the video
+// preview draws it.
+func (s Style) HighlightWeb() string {
+	bgr := strings.TrimSuffix(strings.TrimPrefix(s.HighlightColour, "&H"), "&")
+	alpha := s.HighlightAlpha
+	if alpha == "" {
+		alpha = "00"
+	}
+	return WebColour("&H" + alpha + bgr)
 }
 
 // Where the captions may sit, as the distance from the bottom of a
