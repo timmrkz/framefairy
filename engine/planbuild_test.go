@@ -208,3 +208,58 @@ func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
 		t.Errorf("after the removal: %v, %+v", err, clips)
 	}
 }
+
+// A clip that panics while it is framed is left out, and the search goes on
+// with the rest. A framer is a goroutine of its own, out of reach of the
+// recover that guards a job, so a panic in one ended the whole app.
+func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
+	letGo := make(chan struct{})
+	close(letGo)
+	p, path := searching(t, letGo)
+	was := framing
+	framing = func(b *planBuilder, job planJob) (PlanClip, bool, error) {
+		if job.index == 1 {
+			var nothing map[string]int
+			nothing["the first clip"] = 1
+		}
+		return was(b, job)
+	}
+	t.Cleanup(func() { framing = was })
+
+	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2}); err != nil {
+		t.Fatalf("a search with one clip that panicked: %v", err)
+	}
+	_, clips, err := LoadClips(path)
+	if err != nil || len(clips) != 1 || clips[0].ID != "t10-02" {
+		t.Errorf("the clip that did not panic should be in the plan: %v, %+v", err, clips)
+	}
+}
+
+// The search clock stops reporting when reporting panics, and nothing
+// else stops.
+func TestAClockThatPanicsStopsQuietly(t *testing.T) {
+	log := NewLog(&bytes.Buffer{}, false, false)
+	c := newSearchClock(log, "gemma", true, 1000, 12, 2048)
+	c.mu.Lock()
+	c.now.Part = "reading"
+	c.mu.Unlock()
+	log.SetSink(func(ev Event) {
+		if ev.Kind == EventProgress {
+			panic("the window went away")
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		c.run()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		c.stop()
+		t.Fatal("the clock neither reported nor stopped")
+	}
+	if log.held.Load() {
+		t.Error("the clock stopped and left the progress line held")
+	}
+}

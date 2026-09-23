@@ -96,7 +96,7 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // test's own folder is taken away. That is exactly what happened, as
 // "TempDir RemoveAll cleanup: directory not empty".
 func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	return &queue{emit: emit, store: s, notify: notify, closed: map[string]int{},
+	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
 		wake: map[string]chan struct{}{
 			LaneTranscribe: make(chan struct{}, 1), LaneWork: make(chan struct{}, 1)}}
 }
@@ -340,7 +340,39 @@ func (q *queue) loop(lane string) {
 			<-q.wake[lane]
 			continue
 		}
-		q.runJob(job)
+		q.runSafely(job)
+	}
+}
+
+// runSafely runs a job and keeps the lane alive whatever happens around
+// it. The work itself is guarded by run, but the lane also sets the job
+// up and reports on it, and a panic there ended the goroutine that is the
+// lane: every job queued after it waited for ever, and the app looked
+// frozen with nothing to say why.
+func (q *queue) runSafely(job *Job) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			q.update(job, nil, func(j *Job) {
+				if j.State == JobRunning {
+					j.State = JobFailed
+					j.Error = fmt.Sprintf("%s stopped unexpectedly: %v", j.Label, caught)
+					j.Progress = nil
+				}
+			})
+		}
+	}()
+	q.runJob(job)
+}
+
+// quietly is a function that never panics into its caller. What the queue
+// hands its news to is the window's, and the queue must not die of it.
+func quietly[T any](f func(T)) func(T) {
+	if f == nil {
+		return nil
+	}
+	return func(v T) {
+		defer func() { _ = recover() }()
+		f(v)
 	}
 }
 

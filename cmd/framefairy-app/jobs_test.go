@@ -211,3 +211,55 @@ func TestAskingForTheSameWorkTwiceAtOnceQueuesItOnce(t *testing.T) {
 		q.cancel(job.ID)
 	}
 }
+
+// A lane survives a panic around a job, not only in it. Whatever the queue
+// hands its news to belongs to the window, and when that panicked, the
+// goroutine that is the lane died with it: every job queued after it waited
+// for ever and the app looked frozen with nothing to say why.
+func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	st := openStore()
+
+	var mu sync.Mutex
+	finished := map[string]string{}
+	q := newQueue(st, func(u JobUpdate) {
+		mu.Lock()
+		if u.Job.State != JobQueued && u.Job.State != JobRunning {
+			finished[u.Job.ID] = u.Job.State
+		}
+		mu.Unlock()
+		// The first job's news cannot be delivered at all.
+		if u.Job.ID == "job-1" {
+			panic("the window went away")
+		}
+	}, func(episode string) {
+		panic("nobody is listening")
+	})
+	quick := func(ctx context.Context, p *engine.Project) (string, error) {
+		p.Log().ProgressOf("working", 0.5, 1)
+		return "ok", nil
+	}
+	first := q.add("/eps/a.mp4", "render", "Render", quick)
+	second := q.add("/eps/b.mp4", "render", "Render", quick)
+	third := q.add("/eps/c.mp4", "transcribe", "Transcription", quick)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		_, b := finished[second.ID]
+		_, c := finished[third.ID]
+		mu.Unlock()
+		if b && c {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, j := range []Job{first, second, third} {
+		got, ok := q.find(j.Episode, j.Kind)
+		if !ok || got.State != JobDone {
+			t.Errorf("%s ended %q, the lane should have carried on", j.ID, got.State)
+		}
+	}
+}

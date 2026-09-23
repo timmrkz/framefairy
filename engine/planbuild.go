@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -270,18 +271,39 @@ func (b *planBuilder) frameAll() {
 			b.firstFramed(job)
 			continue
 		}
-		clip, ok, err := b.frame(job)
+		b.work(job)
+	}
+}
+
+// framing turns an entry of the answer into a clip. Tests put one here that
+// panics.
+var framing = (*planBuilder).frame
+
+// work frames one clip and lands it. A framer is a goroutine of its own,
+// so a panic in it is out of reach of the recover that guards the job, and
+// it ended the whole app: the interface, the other lane and whatever was
+// being transcribed. Framing reads a video nobody has checked, so a clip
+// that panics is left out with a warning, and the search goes on with the
+// rest.
+func (b *planBuilder) work(job planJob) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			b.e.Log.Warn("   %02d: could not be framed and is left out: %v", job.index, caught)
+			b.e.Log.Detail("%s", debug.Stack())
+		}
 		b.firstFramed(job)
-		if err != nil {
-			b.fail(err)
-			continue
-		}
-		if !ok {
-			continue
-		}
-		if err := b.land(clip); err != nil {
-			b.fail(err)
-		}
+	}()
+	clip, ok, err := framing(b, job)
+	b.firstFramed(job)
+	if err != nil {
+		b.fail(err)
+		return
+	}
+	if !ok {
+		return
+	}
+	if err := b.land(clip); err != nil {
+		b.fail(err)
 	}
 }
 

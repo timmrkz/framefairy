@@ -36,8 +36,13 @@ what became of it.
    Open, R.4.
 4. **A panic outside a job's own goroutine ends the app.** Framing clips and
    the search clock run on goroutines of their own with no recover, so a
-   panic in them is not caught by the job. `engine/planbuild.go`,
-   `engine/plan.go`. Open, R.2.
+   panic in them is not caught by the job. The lanes of the queue die of a
+   panic in what receives their news. Fixed: a clip that panics while it is
+   framed is left out with a warning and the search goes on, a clock that
+   panics stops reporting, and a lane survives whatever happens around a
+   job, its news included. `engine/planbuild.go`, `engine/searchclock.go`,
+   `cmd/framefairy-app/jobs.go`, each with a test that crashed the test
+   program before.
 5. **A job event lost or out of order leaves the interface stuck.** The
    queued event can arrive after the running one, events sent before the
    interface starts listening are lost, and nothing reads the job list again.
