@@ -161,12 +161,11 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 		}
 	}
 	if st.captionY != nil {
-		set := s.store.Settings()
-		set.CaptionY = st.captionY[0]
+		y := st.captionY[0]
 		if !back {
-			set.CaptionY = st.captionY[1]
+			y = st.captionY[1]
 		}
-		if err := s.store.SetSettings(set); err != nil {
+		if err := s.store.UpdateSettings(func(set *Settings) { set.CaptionY = y }); err != nil {
 			return Undone{}, err
 		}
 	}

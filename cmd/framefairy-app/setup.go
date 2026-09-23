@@ -206,8 +206,8 @@ func (s *FrameFairy) ChoosePlanner(planner string) error {
 	if planner != "api" && planner != "local" {
 		return os.ErrInvalid
 	}
-	settings := s.store.Settings()
-	settings.Planner = planner
-	settings.Chosen = true
-	return s.store.SetSettings(settings)
+	return s.store.UpdateSettings(func(set *Settings) {
+		set.Planner = planner
+		set.Chosen = true
+	})
 }

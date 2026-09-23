@@ -65,12 +65,15 @@ what became of it.
    `cmd/framefairy-app/jobs.go`, `frontend/src/lib/state.svelte.ts`,
    `frontend/src/lib/flow.ts`.
 6. **Work waiting behind work.** A search waiting for a transcript holds the
-   work lane, and every render of every episode waits behind it. Carrying on
-   paused transcriptions holds it up to 15 s more. Slower, not stuck. Open,
-   R.2.
+   work lane, and every render of every episode waits behind it. Slower,
+   not stuck. Carrying on paused transcriptions held it up to 15 s more,
+   fixed with the next point. The rest is open, R.2.
 7. **A transcription paused for good.** If a paused transcription takes more
    than 15 s to stop, it is not carried on, and the next search fails with a
-   pause nobody made. Open, R.3.
+   pause nobody made. Fixed: a transcription that has not stopped within a
+   second is waited for in the background, for as long as it takes, and
+   carried on then. The search's way out no longer waits for it.
+   `cmd/framefairy-app/main.go`, test in `pause_test.go`.
 8. **Clip lists landing out of order in the interface.** An older list that
    arrives after an edit writes over it, so the edit looks undone until the
    next refresh. `frontend/src/screens/Episode.svelte`. Open, R.6.
@@ -78,7 +81,9 @@ what became of it.
    saved becomes part of that edit, and undoing it removes the clip.
    `cmd/framefairy-app/history.go`. Open, R.5.
 10. **Two settings changes at once lose one.** Settings are read, changed and
-    written back outside the store's lock. Open, R.2.
+    written back outside the store's lock. Fixed: every change is one step
+    under the lock, `UpdateSettings`. The test lost the number of clips in
+    two runs out of three on the old code. `cmd/framefairy-app/settings.go`.
 11. **Smaller ones.** Stopping llama-server read its state while another
     goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
     loading costs one search.

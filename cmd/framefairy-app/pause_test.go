@@ -210,3 +210,38 @@ func TestACancelledWaitHandsBackWhatItPaused(t *testing.T) {
 		t.Errorf("a cancelled wait handed back %v", paused)
 	}
 }
+
+// A transcription that takes long to stop is still carried on once it
+// has, and the search's way out does not wait for it. After a fixed wait
+// the old job was still running, the new ask was taken for it, and the
+// transcription stayed paused for good.
+func TestASlowPauseIsStillCarriedOn(t *testing.T) {
+	s, path, _ := library(t)
+	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
+	started := make(chan struct{})
+	s.jobs.addOnce(path, "transcribe", "Transcription", func(ctx context.Context, p *engine.Project) (string, error) {
+		close(started)
+		<-ctx.Done()
+		// Saving what it heard takes longer than the wait on the way out.
+		time.Sleep(1500 * time.Millisecond)
+		return "", engine.ErrCancelled
+	})
+	<-started
+	first, _ := s.jobs.find(path, "transcribe")
+
+	paused := s.pauseTranscriptions()
+	began := time.Now()
+	s.carryOn(paused)
+	if took := time.Since(began); took > 1500*time.Millisecond {
+		t.Errorf("carrying on held the search's way out for %s", took)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if j, ok := s.jobs.find(path, "transcribe"); ok && j.ID != first.ID &&
+			(j.State == JobQueued || j.State == JobRunning) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Error("the transcription was never carried on")
+}

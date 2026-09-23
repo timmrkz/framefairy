@@ -259,8 +259,11 @@ func (s *FrameFairy) GetSettings() Settings { return s.store.Settings() }
 // record that the one setup question was answered, and losing it would put
 // a customer back in the setup screen every time they changed a colour.
 func (s *FrameFairy) SaveSettings(v Settings) error {
-	v.Chosen = s.store.Settings().Chosen
-	return s.store.SetSettings(v)
+	return s.store.UpdateSettings(func(set *Settings) {
+		chosen := set.Chosen
+		*set = v
+		set.Chosen = chosen
+	})
 }
 
 // Check is one line of the setup check.
@@ -816,18 +819,47 @@ func (s *FrameFairy) pauseTranscriptions() []string {
 // moment to save what it heard, and one asked for while the old one is
 // still saving would be taken for it and never start, so each is given
 // that moment first.
+//
+// The moment is a second here. One that takes longer is waited for in the
+// background, for as long as it takes: after a fixed wait the old job was
+// still running, the new ask was taken for it, and the transcription
+// stayed paused for good, with the next search failing on a pause nobody
+// made. Waiting here held the lane for up to fifteen seconds per episode,
+// and every render queued behind the search waited with it.
 func (s *FrameFairy) carryOn(episodes []string) {
 	for _, path := range episodes {
-		deadline := time.Now().Add(stopWait)
-		for time.Now().Before(deadline) {
-			if j, ok := s.jobs.find(path, "transcribe"); !ok || j.State != JobRunning {
-				break
+		if s.stopped(path, time.Second) {
+			if s.store.Known(path) {
+				s.Transcribe(path)
 			}
-			time.Sleep(50 * time.Millisecond)
+			continue
 		}
-		if s.store.Known(path) {
-			s.Transcribe(path)
+		go func() {
+			defer func() { _ = recover() }()
+			for !s.stopped(path, time.Minute) {
+				if !s.store.Known(path) {
+					return
+				}
+			}
+			if s.store.Known(path) {
+				s.Transcribe(path)
+			}
+		}()
+	}
+}
+
+// stopped waits up to wait for the episode's transcription to be no longer
+// running, and says whether it is.
+func (s *FrameFairy) stopped(path string, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		if j, ok := s.jobs.find(path, "transcribe"); !ok || j.State != JobRunning {
+			return true
 		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -1183,9 +1215,7 @@ func (s *FrameFairy) SetCaptionsHeight(path string, y float64) error {
 		return os.ErrNotExist
 	}
 	return s.edit(path, func() error {
-		set := s.store.Settings()
-		set.CaptionY = engine.SnapCaptionY(y)
-		if err := s.store.SetSettings(set); err != nil {
+		if err := s.store.UpdateSettings(func(set *Settings) { set.CaptionY = engine.SnapCaptionY(y) }); err != nil {
 			return err
 		}
 		return s.followTheHeight(path)
@@ -1198,9 +1228,7 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 		return os.ErrNotExist
 	}
 	return s.edit(path, func() error {
-		set := s.store.Settings()
-		set.CaptionY = engine.DefaultCaptionY
-		if err := s.store.SetSettings(set); err != nil {
+		if err := s.store.UpdateSettings(func(set *Settings) { set.CaptionY = engine.DefaultCaptionY }); err != nil {
 			return err
 		}
 		return s.followTheHeight(path)
@@ -1213,14 +1241,14 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 // clips wants them everywhere. The numbers are held to the same range the
 // controls offer, because what arrives here is not to be trusted.
 func (s *FrameFairy) SetSearch(count int, min, max float64) error {
-	set := s.store.Settings()
-	set.Count = int(hold(float64(count), 1, 30))
-	set.Min = hold(min, 5, 180)
-	set.Max = hold(max, 5, 180)
-	if set.Min > set.Max {
-		set.Max = set.Min
-	}
-	return s.store.SetSettings(set)
+	return s.store.UpdateSettings(func(set *Settings) {
+		set.Count = int(hold(float64(count), 1, 30))
+		set.Min = hold(min, 5, 180)
+		set.Max = hold(max, 5, 180)
+		if set.Min > set.Max {
+			set.Max = set.Min
+		}
+	})
 }
 
 // hold keeps a number inside the range the interface offers. What arrives
