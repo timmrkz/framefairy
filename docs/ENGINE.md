@@ -187,7 +187,16 @@ shortest longer than the longest or no clips at all.
 ## Framing
 
 Each camera angle in a clip gets one crop, measured across the whole shot and
-held still, so removing a pause never makes the picture jump. The crop
+held still, so removing a pause never makes the picture jump. Framing
+decodes only what a clip keeps. Each kept span is searched for camera
+switches on its own, and where the clip leaves the episode and comes back,
+the frame it leaves on is compared with the frame it comes back to, which
+answers whether it comes back to the same camera without decoding what was
+cut out. The decoding is asked of the system's own video decoder,
+VideoToolbox on macOS, and falls back to the processor by itself where
+there is none, which today is every Windows and Linux build. If the system
+decoder refuses a file, the same work is done again on the processor and
+everything after it goes there too. The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned

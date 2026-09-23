@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -57,6 +58,11 @@ type Engine struct {
 	// WantEncoder names the video encoder instead of picking one, for a
 	// machine whose ffmpeg is unusual and for comparing two on one clip.
 	WantEncoder string
+
+	// softDecode is set once decoding through the system's own video
+	// decoder has failed on this machine, and every decode after it is
+	// done on the processor.
+	softDecode atomic.Bool
 
 	mu               sync.Mutex
 	encoder          Encoder
