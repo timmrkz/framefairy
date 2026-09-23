@@ -163,7 +163,9 @@ const clipOf = (id: string) => {
 // one moment they both came from.
 const captionCues = (id: string) => {
   const c = clipOf(id);
-  const onClipClock: { start: number; end: number; text: string }[] = [];
+  // Each word also keeps when it starts in the episode, which is what a
+  // caption moved by hand is kept against.
+  const onClipClock: { start: number; end: number; text: string; said: number }[] = [];
   let offset = 0;
   for (const p of c.segments) {
     for (const w of c.words) {
@@ -172,6 +174,7 @@ const captionCues = (id: string) => {
         start: offset + (w.start - p.start),
         end: offset + (w.end - p.start),
         text: w.text,
+        said: w.start,
       });
     }
     offset += p.end - p.start;
@@ -188,7 +191,7 @@ const captionCues = (id: string) => {
     parts.forEach((part, i) => {
       const to =
         i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
-      drawn.push({ start: from, end: to, text: part });
+      drawn.push({ start: from, end: to, text: part, said: w.said });
       from = to;
     });
   }
@@ -204,14 +207,46 @@ const captionCues = (id: string) => {
     // while the playhead stood in a word of the cue after, and that word
     // lit nothing at all.
     const next = drawn[i + 8];
+    const first = eight[0].said;
+    const last = eight[eight.length - 1].said;
     cues.push({
       start: eight[0].start,
       end: Math.min(eight[eight.length - 1].end + 0.4, next ? next.start : Infinity),
       lines: [{ words: eight.slice(0, 4) }, { words: eight.slice(4) }].filter(
         (line) => line.words.length > 0,
       ),
+      first,
+      last,
+      startMoved: false,
+      endMoved: false,
     });
   }
+  // Captions moved by hand, put where they were put. The engine's rules on
+  // clamping are its own and are tested there. This is enough for a probe
+  // to see a moved caption come back moved.
+  const moved = ((window as any).__captionTimes ??= {}) as Record<string, number>;
+  const onClip = (at: number) => {
+    let sum = 0;
+    for (const p of c.segments) {
+      if (at < p.start) return sum;
+      if (at <= p.end) return sum + at - p.start;
+      sum += p.end - p.start;
+    }
+    return sum;
+  };
+  cues.forEach((cue, i) => {
+    const start = moved[`${id}:${cue.first}:start`];
+    if (start !== undefined) {
+      cue.start = onClip(start);
+      cue.startMoved = true;
+      if (cues[i - 1] && cues[i - 1].end > cue.start) cues[i - 1].end = cue.start;
+    }
+    const end = moved[`${id}:${cue.last}:end`];
+    if (end !== undefined) {
+      cue.end = onClip(end);
+      cue.endMoved = true;
+    }
+  });
   return cues;
 };
 
@@ -479,6 +514,17 @@ export const Call = {
       }
       case "RemoveSearch":
         return Promise.resolve(null);
+      // A caption moved by hand, kept the way the engine keeps it, against
+      // the word and the edge. Below nought puts it back.
+      case "SetCaptionTime": {
+        const [, , id, word, edge, at] = args as [string, string, string, number, string, number];
+        const moved = ((window as any).__captionTimes ??= {}) as Record<string, number>;
+        const key = `${id}:${word}:${edge}`;
+        if (at < 0) delete moved[key];
+        else moved[key] = at;
+        const n = Number(id);
+        return Promise.resolve(clip(n, [57, 400, 902, 1400][n - 1] ?? 60, ["Mein Arm ist zersprungen", "Der Typ vor mir auf einmal", "Warum ich nie wieder", "Ein echtes Thema"][n - 1] ?? "Clip", n === 1));
+      }
       // Every undo and redo the window asks for, so a probe can see which
       // reached the episode and which stayed in a field being typed in. The
       // clip it names is the third, so a probe can see the window go there.

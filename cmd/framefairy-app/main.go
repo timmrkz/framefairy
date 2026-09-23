@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1010,6 +1011,24 @@ func (s *FrameFairy) followTheHeight(path string) error {
 		}
 	}
 	return nil
+}
+
+// SetCaptionTime moves the caption of a clip that begins or ends on a word,
+// to appear or go at a moment of the episode. A moment below nought puts it
+// back where its words put it, because JSON has no way to say not a number.
+func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return ClipEntry{}, os.ErrNotExist
+	}
+	if at < 0 {
+		at = math.NaN()
+	}
+	if err := s.edit(path, func() error {
+		return engine.SetCaptionTime(plan, clipID, word, edge, at)
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
 }
 
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {

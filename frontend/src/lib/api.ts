@@ -122,6 +122,13 @@ export interface CaptionCue {
   start: number;
   end: number;
   lines: CaptionLine[];
+  // When the word the caption begins on and the word it ends on start in
+  // the episode. A caption moved by hand is kept against these.
+  first?: number;
+  last?: number;
+  // The caption appears, or goes, where it was put by hand.
+  startMoved?: boolean;
+  endMoved?: boolean;
 }
 
 // The caption look, with every measure as a share of the frame height.
@@ -389,6 +396,18 @@ export const api = {
   ) => call<ClipEntry>("MoveCut", path, plan, clip, index, from, to, toWords),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
+  // When a caption appears or goes, where the words are a little off from
+  // what is heard. word is the word it begins or ends on and at the moment,
+  // both in the episode. A moment below nought puts it back where its
+  // words put it.
+  setCaptionTime: (
+    path: string,
+    plan: string,
+    clip: string,
+    word: number,
+    edge: "start" | "end",
+    at: number,
+  ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),
   removeClip: (path: string, plan: string, clip: string, removed: boolean) =>
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),

@@ -10,6 +10,8 @@ import {
   shouldChase,
   saidWord,
   inEpisode,
+  inClip,
+  draftCaptions,
   shouldLook,
   shouldTranscribe,
   type SearchState,
@@ -435,6 +437,25 @@ describe("inEpisode", () => {
   });
 });
 
+describe("inClip", () => {
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+
+  test("is the way back from inEpisode", () => {
+    for (const at of [0, 1.5, 3, 4, 5, 7.25, 8]) {
+      expect(inClip(two, inEpisode(two, at))).toBeCloseTo(at, 9);
+    }
+  });
+
+  test("puts a moment the clip cuts out where the clip comes back", () => {
+    expect(inClip(two, 15)).toBe(4);
+    expect(inClip(two, 5)).toBe(0);
+    expect(inClip(two, 99)).toBe(8);
+  });
+});
+
 describe("saidWord", () => {
   const two = [
     { start: 10, end: 14 },
@@ -662,5 +683,43 @@ describe("shouldChase", () => {
   test("a playing picture is never chased", () => {
     expect(shouldChase({ wanted: 100, at: 101.2, playing: true, tries: 0 })).toBe(false);
     expect(shouldChase({ wanted: 100, at: 90, playing: true, tries: 0 })).toBe(false);
+  });
+});
+
+describe("draftCaptions", () => {
+  // Two captions that meet at 2, and a third after a pause.
+  const three = [
+    { start: 0, end: 2 },
+    { start: 2, end: 3.5 },
+    { start: 4.5, end: 6 },
+  ];
+
+  test("a caption that appears later keeps the one before up until it does", () => {
+    const got = draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
+    expect(got[0].end).toBe(2.4);
+    expect(got[1].start).toBe(2.4);
+  });
+
+  test("a caption that appears earlier ends the one before", () => {
+    const got = draftCaptions(three, { index: 1, edge: "start", at: 1.6 });
+    expect(got[0].end).toBe(1.6);
+  });
+
+  test("after a pause, appearing later leaves the one before alone", () => {
+    const got = draftCaptions(three, { index: 2, edge: "start", at: 4.8 });
+    expect(got[1].end).toBe(3.5);
+    expect(got[2].start).toBe(4.8);
+  });
+
+  test("going earlier leaves a gap and moves nothing else", () => {
+    const got = draftCaptions(three, { index: 0, edge: "end", at: 1.5 });
+    expect(got[0].end).toBe(1.5);
+    expect(got[1].start).toBe(2);
+  });
+
+  test("changes nothing it is handed", () => {
+    draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
+    expect(three[0].end).toBe(2);
+    expect(draftCaptions(three, null)).toBe(three);
   });
 });

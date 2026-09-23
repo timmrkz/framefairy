@@ -26,8 +26,9 @@
     wordStep,
     type ClipEntry,
     type Word,
+    type CaptionCue,
   } from "../lib/api";
-  import { insideClip } from "../lib/flow";
+  import { draftCaptions, inClip, inEpisode, insideClip, type CaptionDraft } from "../lib/flow";
   import Info from "./Info.svelte";
 
   let {
@@ -46,6 +47,9 @@
     onjoincut,
     onmovecut,
     onwalkclip,
+    captions = [],
+    oncaptiontime,
+    oncaptiondraft,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -83,6 +87,18 @@
     // clip beside it are not here to walk on to, they arrive with its
     // captions, so the workspace is asked and it takes it from there.
     onwalkclip?: (back: boolean) => void;
+    // The clip's captions, on the clip's clock, as the render shows them.
+    // They are drawn along the foot of the track, and either edge of one
+    // can be dragged where the words are a little off from what is heard.
+    captions?: CaptionCue[];
+    // A caption edge let go of: the word it begins or ends on and the new
+    // moment, both in the episode, or a moment below nought to put it back
+    // where its words put it. True when it was saved.
+    oncaptiontime?: (word: number, edge: "start" | "end", at: number) => Promise<boolean>;
+    // A caption edge while it is being dragged, on the clip's clock, so
+    // the caption box in the video preview can follow it. Null once the
+    // captions have come back with it saved.
+    oncaptiondraft?: (draft: CaptionDraft | null) => void;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -928,6 +944,108 @@
     target.addEventListener("pointercancel", up);
   }
 
+  // The captions along the foot of the track. A caption appears when its
+  // first word is said and goes when the next appears, or a moment after
+  // its last word when a pause follows, and where that is a little off
+  // from what is heard, either edge is dragged. The two sides of the line
+  // between two captions are two edges: the left side is where the one
+  // before goes, the right side where the one after appears. Dragging the
+  // first leaves a gap, dragging the second takes the one before along.
+  let capDraft = $state<CaptionDraft | null>(null);
+  let capMoving = $state(false);
+  let capSaving = $state(false);
+  // The captions a draft was made against. The draft is let go of when
+  // they come back changed, so the block never jumps back to where it was
+  // while the saved captions are on their way.
+  let capHeld: CaptionCue[] | undefined;
+  const clipLength = $derived(segments.reduce((sum, p) => sum + p.end - p.start, 0));
+
+  const captionBlocks = $derived.by(() => {
+    if (!clip || !captions?.length || !segments.length) return [];
+    return draftCaptions(captions, capDraft).map((c, i) => ({
+      i,
+      c: captions[i],
+      from: inEpisode(segments, c.start),
+      to: inEpisode(segments, Math.min(c.end, clipLength)),
+    }));
+  });
+
+  $effect(() => {
+    if (capDraft && !capMoving && !capSaving && captions !== capHeld) {
+      capDraft = null;
+      oncaptiondraft?.(null);
+    }
+  });
+
+  function grabCaption(i: number, edge: "start" | "end", event: PointerEvent) {
+    if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return;
+    const c = captions[i];
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const from = event.clientX;
+    capHeld = captions;
+    let moved = false;
+    const move = (e: PointerEvent) => {
+      if (!moved && Math.abs(e.clientX - from) > 2) {
+        moved = true;
+        capMoving = true;
+      }
+      if (!moved) return;
+      // On the clip's clock, a whole frame at a time, and never over the
+      // caption beside it or past its own other edge.
+      let at = Math.round(inClip(segments, timeAt(e.clientX)) / frame) * frame;
+      const shortest = 0.1;
+      if (edge === "start") {
+        const low = i > 0 ? captions[i - 1].start + shortest : 0;
+        at = Math.min(Math.max(at, low), c.end - shortest);
+      } else {
+        const high = i + 1 < captions.length ? captions[i + 1].start : clipLength;
+        at = Math.min(Math.max(at, c.start + shortest), high);
+      }
+      capDraft = { index: i, edge, at };
+      oncaptiondraft?.(capDraft);
+    };
+    const up = async () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      capMoving = false;
+      const d = capDraft;
+      const word = edge === "start" ? c.first : c.last;
+      if (!moved || !d || word === undefined) {
+        // A click on an edge puts the playhead on it, the way a clip edge
+        // does, which is how a caption is heard from where it appears.
+        capDraft = null;
+        oncaptiondraft?.(null);
+        if (!moved) onseek(inEpisode(segments, edge === "start" ? c.start : Math.min(c.end, clipLength)));
+        return;
+      }
+      capSaving = true;
+      const saved = await oncaptiontime(word, edge, inEpisode(segments, d.at));
+      capSaving = false;
+      if (!saved) {
+        capDraft = null;
+        oncaptiondraft?.(null);
+      }
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
+
+  // A double-click on an edge put there by hand puts it back where its
+  // words put it.
+  function resetCaption(i: number, edge: "start" | "end") {
+    const c = captions?.[i];
+    if (!c || !oncaptiontime || locked) return;
+    const word = edge === "start" ? c.first : c.last;
+    const moved = edge === "start" ? c.startMoved : c.endMoved;
+    if (word === undefined || !moved) return;
+    oncaptiontime(word, edge, -1);
+  }
+
   // Where in the episode this is. Without them a swipe leaves you nowhere,
   // and the step is round and wide enough that the labels never crowd.
   const ticks = $derived.by(() => {
@@ -980,7 +1098,11 @@
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
         and drag across the clip to take out the stretch you drag over, or hold it and double-click
         to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
-        words instead, which takes the whole pause a cut falls in.
+        words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
+        each from where it appears to where it goes. Where one is a little early or late against
+        what you hear, drag its edge: the left side of a line between two captions is where the one
+        before goes, the right side where the one after appears. An edge moved by hand is in the
+        accent, and a double-click puts it back.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
@@ -1079,6 +1201,59 @@
         aria-valuenow={end}
         onpointerdown={(e) => grab("end", e)}
       ></div>
+    {/if}
+    {#if captionBlocks.length}
+      <!-- The captions along the foot of the track, each a block from where
+           it appears to where it goes. -->
+      <div class="captions">
+        {#each captionBlocks as b (b.i)}
+          <div
+            class="caption"
+            class:active={capDraft?.index === b.i}
+            style="left: {x(b.from)}%; width: {Math.max(x(b.to) - x(b.from), 0)}%"
+          ></div>
+        {/each}
+      </div>
+      {#if !locked && oncaptiontime}
+        {#each captionBlocks as b (b.i)}
+          <div
+            class="capedge start"
+            class:moved={b.c.startMoved}
+            class:active={capDraft?.index === b.i && capDraft.edge === "start"}
+            style="left: {x(b.from)}%"
+            role="slider"
+            tabindex="-1"
+            aria-label="When caption {b.i + 1} appears"
+            aria-valuenow={b.c.start}
+            title={b.c.startMoved
+              ? "When this caption appears, put here by hand. Drag to move it, double-click to put it back where its words put it."
+              : "When this caption appears. Drag to move it."}
+            onpointerdown={(e) => grabCaption(b.i, "start", e)}
+            ondblclick={(e) => {
+              e.stopPropagation();
+              resetCaption(b.i, "start");
+            }}
+          ></div>
+          <div
+            class="capedge end"
+            class:moved={b.c.endMoved}
+            class:active={capDraft?.index === b.i && capDraft.edge === "end"}
+            style="left: {x(b.to)}%"
+            role="slider"
+            tabindex="-1"
+            aria-label="When caption {b.i + 1} goes"
+            aria-valuenow={b.c.end}
+            title={b.c.endMoved
+              ? "When this caption goes, put here by hand. Drag to move it, double-click to put it back where its words put it."
+              : "When this caption goes. Drag to move it."}
+            onpointerdown={(e) => grabCaption(b.i, "end", e)}
+            ondblclick={(e) => {
+              e.stopPropagation();
+              resetCaption(b.i, "end");
+            }}
+          ></div>
+        {/each}
+      {/if}
     {/if}
   </div>
     {#if time >= view.from && time <= view.to}
@@ -1266,6 +1441,78 @@
   .cutedge.active::after {
     left: 4px;
     width: 4px;
+    opacity: 1;
+  }
+
+  /* The captions along the foot of the track. The band is a whole number
+     of pixels, the blocks sit in it with a pixel above and below, and the
+     edges are as tall as the band so they never reach the trim and cut
+     edges above them. */
+  .captions {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 14px;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .caption {
+    position: absolute;
+    top: 3px;
+    height: 8px;
+    background: var(--faint);
+    border-radius: 2px;
+  }
+
+  .caption.active {
+    background: var(--muted);
+  }
+
+  /* An edge is grabbed on its own side of the line, so where two captions
+     meet the left side is the one before going and the right side the one
+     after appearing. */
+  .capedge {
+    position: absolute;
+    bottom: 0;
+    height: 14px;
+    width: 8px;
+    cursor: ew-resize;
+    z-index: 2;
+  }
+
+  .capedge.end {
+    margin-left: -8px;
+  }
+
+  .capedge::after {
+    content: "";
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    width: 2px;
+    background: var(--text);
+    opacity: 0;
+  }
+
+  .capedge.start::after {
+    left: 0;
+  }
+
+  .capedge.end::after {
+    right: 0;
+  }
+
+  /* An edge put there by hand is marked in the accent, the way a crop
+     moved by hand is, so what was moved can be found again. */
+  .capedge.moved::after {
+    background: var(--accent-hi);
+    opacity: 1;
+  }
+
+  .capedge:hover::after,
+  .capedge.active::after {
     opacity: 1;
   }
 

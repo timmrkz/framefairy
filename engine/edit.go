@@ -882,6 +882,74 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 	})
 }
 
+// SetCaptionTime moves the caption that begins or ends on a word of a clip,
+// where the timing of the words is a little off from what is heard. word
+// is when that word starts in the episode, edge is "start" or "end", and at
+// is when the caption should appear or go, also in the episode. A time that
+// is not a number puts the caption back where its words put it.
+//
+// It is kept against the word rather than the caption, because captions
+// break in other places when the face or the size changes, and a word stays
+// what it is.
+func SetCaptionTime(planPath, clipID string, word float64, edge string, at float64) error {
+	if edge != "start" && edge != "end" {
+		return renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
+	}
+	reset := math.IsNaN(at)
+	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
+		return renderErr("a caption cannot be moved to %s", fixed(at, 3))
+	}
+	key := wordKey(word)
+	err := editPlan(planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		// Only a word of this clip. A caption is made of its words and of
+		// nothing else.
+		found := false
+		list, _ := c.values["words"].([]any)
+		for _, item := range list {
+			if triple, ok := item.([]any); ok && len(triple) == 3 && wordKey(number(triple[0])) == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return renderErr("the clip has no word at %s", HMS(word))
+		}
+		times, _ := c.values["caption_times"].(*object)
+		if times == nil {
+			times = newObject()
+		}
+		edges, _ := times.values[key].(*object)
+		if edges == nil {
+			edges = newObject()
+		}
+		if reset {
+			edges.remove(edge)
+		} else {
+			edges.set(edge, roundTo(at, 3))
+		}
+		if len(edges.keys) == 0 {
+			times.remove(key)
+		} else {
+			times.set(key, edges)
+		}
+		if len(times.keys) == 0 {
+			c.remove("caption_times")
+		} else {
+			c.set("caption_times", times)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	dropCaptionFile(planPath, clipID)
+	return nil
+}
+
 // ResetCaptionY puts the captions of a clip back where the caption style
 // puts them.
 func ResetCaptionY(planPath, clipID string) error {

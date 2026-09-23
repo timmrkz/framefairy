@@ -66,7 +66,14 @@ picture. A cut swallows any word it touches and then leaves `--keep-pause`
 of air on each side that stays, which is why a cut dragged over a pause
 takes the whole pause and one dragged over speech takes whole words.
 
-Captions are made of the same words. A caption is a run of up to 38
+Captions are made of the same words. Where their timing is a little off
+from what is heard, a caption is moved by hand: the plan keeps, per clip,
+when the caption that begins on a word appears and when the one that ends
+on a word goes, in `caption_times` keyed by the millisecond that word
+starts in the episode. `moveCaptions` in `engine/lines.go` puts them there
+when captions are built, never over the caption beside them and never
+shorter than a tenth of a second, and a timing kept against a word that no
+longer begins or ends a caption is left unused. A caption is a run of up to 38
 characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next
 caption appears, or until shortly after its last word when a pause follows.

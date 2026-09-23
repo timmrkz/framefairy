@@ -796,6 +796,36 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Caption timing
+
+A caption appears when its first word is said and goes when the next one
+appears, or a moment after its last word when a pause follows. Where the
+timing of the words is a little off from what is heard, a caption can be
+moved by hand, on the clip timeline.
+
+- **The captions are along the foot of the clip timeline**, each a block
+  from where it appears to where it goes, on the same clock as everything
+  else on it.
+- **Either edge is dragged.** Where two captions meet, the line between
+  them has two sides: the left side is where the one before goes, the
+  right side where the one after appears. Dragging the left side leaves a
+  gap and moves nothing else. Dragging the right side moves when the next
+  caption appears, and the one before goes with it, so nothing is left bare
+  that was not bare before. Nothing overlaps, because the picture shows one
+  caption at a time. An edge lands on a whole frame.
+- **The caption box in the video preview follows the drag**, so what is
+  seen while dragging is what is saved.
+- **An edge moved by hand is in the accent.** A double-click on it puts it
+  back where its words put it, and Undo takes back any move.
+- **A click on an edge puts the playhead on it**, the way a clip edge does,
+  which is how a caption is heard from where it appears.
+
+A moved caption is kept in the clip's plan against the word it begins or
+ends on, by when that word starts in the episode, so it survives the
+clip's pieces moving, and a size or face that breaks the captions in other
+places simply leaves it unused. The engine side is `SetCaptionTime` in
+`engine/edit.go` and `moveCaptions` in `engine/lines.go`.
+
 ### Undo and redo
 
 **Everything done to an episode's clips can be taken back**, with **Undo**

@@ -136,7 +136,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 4.1 | Captions drawn in the video preview with the render's font, place and highlight `[x]`, compared against a rendered frame `[ ]` | `[~]` |
 | 4.2 | Live ASS for the clip being edited | `[ ]` |
 | 4.3 | Correct words in the caption box in the video preview `[x]`, a correction that holds several words `[x]`, split and merge captions `[ ]` | `[~]` |
-| 4.4 | A caption shown earlier or later, and for longer or shorter, where the timing of the words is a little off from what is heard | `[ ]` |
+| 4.4 | A caption shown earlier or later, and for longer or shorter, where the timing of the words is a little off from what is heard | `[x]` |
 | 4.4b | Drag the caption box up and down on a grid, per clip, with one click back and one click to undo that | `[x]` |
 | 4.5 | The caption face and size next to the clip `[x]`, the highlight colour in settings `[x]`, the rest | `[~]` |
 | 4.6 | The caption fonts built into the binary, so nothing has to be installed | `[x]` |

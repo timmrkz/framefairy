@@ -226,6 +226,19 @@ export function inEpisode(pieces: Piece[], at: number): number {
   return last ? last.end : at;
 }
 
+// Where a moment of the episode falls in a clip, the other way from
+// inEpisode. A moment the clip cuts out is the moment it comes back, and
+// one before or after it is its start or its end.
+export function inClip(pieces: Piece[], at: number): number {
+  let sum = 0;
+  for (const p of pieces) {
+    if (at < p.start) return sum;
+    if (at <= p.end) return sum + at - p.start;
+    sum += p.end - p.start;
+  }
+  return sum;
+}
+
 // The word of the episode a caption word came from.
 //
 // A caption word is not always one word of the episode. A correction that
@@ -318,4 +331,36 @@ export function shouldChase(s: ChaseState): boolean {
   if (s.wanted < 0 || s.playing) return false;
   if (s.tries > 2) return false;
   return Math.abs(s.at - s.wanted) >= 0.5;
+}
+
+// A caption edge being dragged, on the clip's clock.
+export interface CaptionDraft {
+  index: number;
+  edge: "start" | "end";
+  at: number;
+}
+
+// The captions with one edge where it is being dragged, the way the engine
+// will put them once it is let go: a caption that appears earlier or later
+// takes the one before it along where the two met, and never lies over it.
+// Anything that shows the captions while an edge is dragged shows these, so
+// the timeline and the video preview move together.
+export function draftCaptions<T extends { start: number; end: number }>(
+  captions: T[],
+  draft: CaptionDraft | null,
+): T[] {
+  if (!draft || !captions[draft.index]) return captions;
+  const out = captions.map((c) => ({ ...c }));
+  const i = draft.index;
+  if (draft.edge === "end") {
+    out[i].end = draft.at;
+    return out;
+  }
+  const was = out[i].start;
+  out[i].start = draft.at;
+  const before = out[i - 1];
+  if (before && (Math.abs(before.end - was) < 0.001 || before.end > draft.at)) {
+    before.end = draft.at;
+  }
+  return out;
 }

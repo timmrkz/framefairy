@@ -24,7 +24,16 @@
     onUndo,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
-  import { Heard, inEpisode, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
+  import {
+    draftCaptions,
+    Heard,
+    inEpisode,
+    Newest,
+    nextWindow,
+    shouldLook,
+    shouldTranscribe,
+    type CaptionDraft,
+  } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -626,6 +635,35 @@
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
   let captions = $state<CaptionsView | null>(null);
+  // A caption edge being dragged on the clip timeline. The caption box in
+  // the video preview follows it on the way, so what is seen while dragging
+  // is what will be saved.
+  let captionDraft = $state<CaptionDraft | null>(null);
+  const shownCaptions = $derived(
+    captions && captionDraft
+      ? { ...captions, captions: draftCaptions(captions.captions ?? [], captionDraft) }
+      : captions,
+  );
+
+  // When a caption appears or goes, moved where the words are a little off
+  // from what is heard. It answers whether it was saved, so the timeline
+  // knows to keep the edge where it was let go until the captions come back.
+  async function setCaptionTime(
+    clip: ClipEntry,
+    word: number,
+    edge: "start" | "end",
+    at: number,
+  ): Promise<boolean> {
+    problem = "";
+    try {
+      const updated = await api.setCaptionTime(path, clip.plan, clip.id, word, edge, at);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      return true;
+    } catch (err) {
+      problem = errorText(err);
+      return false;
+    }
+  }
 
   // The words the caption lights up, put back on the episode's clock.
   //
@@ -1345,7 +1383,7 @@
           clip={current}
           bind:time
           {still}
-          {captions}
+          captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           onstill={askStill}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
@@ -1436,6 +1474,10 @@
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onwalkclip={walkClip}
+        captions={captions?.captions ?? []}
+        oncaptiontime={(word, edge, at) =>
+          current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
+        oncaptiondraft={(draft) => (captionDraft = draft)}
       />
       <!-- One row under the clip up close, so the range picker and the
            waveform stand together: what plays on the left, what the

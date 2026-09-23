@@ -430,6 +430,15 @@ type CaptionView struct {
 	Start float64           `json:"start"`
 	End   float64           `json:"end"`
 	Lines []CaptionLineView `json:"lines"`
+	// First and Last are when the word the caption begins on and the word
+	// it ends on start in the episode, which is what a caption moved by
+	// hand is kept against. Nought where there is no such word.
+	First float64 `json:"first"`
+	Last  float64 `json:"last"`
+	// StartMoved and EndMoved say the caption appears or goes where it was
+	// put by hand rather than where its words put it.
+	StartMoved bool `json:"startMoved,omitempty"`
+	EndMoved   bool `json:"endMoved,omitempty"`
 }
 
 // CaptionStyleView is the caption look with every measure as a share of the
@@ -523,6 +532,17 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 	}
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
+		if len(c.Words) > 0 {
+			first, last := c.Words[0], c.Words[len(c.Words)-1]
+			if w, ok := SaidWord(*clip, (first.Start+first.End)/2); ok {
+				item.First = w.Start
+				item.StartMoved = clip.CaptionTimes[wordKey(w.Start)].Start != nil
+			}
+			if w, ok := SaidWord(*clip, (last.Start+last.End)/2); ok {
+				item.Last = w.Start
+				item.EndMoved = clip.CaptionTimes[wordKey(w.Start)].End != nil
+			}
+		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}
 			for _, w := range line {
