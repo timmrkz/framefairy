@@ -281,7 +281,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 			e.FFprobe = guess
 		}
 	}
-	ff := Check{Name: "ffmpeg with libass and libx264"}
+	ff := Check{Name: "ffmpeg"}
 	if err := e.Preflight(ctx); err != nil {
 		ff.Detail = err.Error()
 	} else {

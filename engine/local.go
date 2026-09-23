@@ -207,7 +207,16 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	cmd := exec.Command(server, args...)
 	var logFile *os.File
 	if logDir != "" {
-		if logFile, err = os.Create(filepath.Join(logDir, "llm-server.log")); err == nil {
+		// The model can be loaded ahead of a search, before anything else
+		// of the episode has made its logs folder. Without the folder the
+		// log was lost, and with it the only record of what the model
+		// took from memory.
+		if err = os.MkdirAll(logDir, 0o755); err == nil {
+			logFile, err = os.Create(filepath.Join(logDir, "llm-server.log"))
+		}
+		if err != nil {
+			e.Log.Warn("llama-server's output is not kept: %s", err)
+		} else {
 			cmd.Stdout, cmd.Stderr = logFile, logFile
 		}
 	}
