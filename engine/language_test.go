@@ -585,6 +585,41 @@ func TestTheCacheIsWorkedOutFromTheShape(t *testing.T) {
 	}
 }
 
+// What llama-server said it took, on an M2 Max with Gemma 4 26B A4B and a
+// search of the first half hour, at log level 4 in llm-server.log. The
+// weights are the file, mapped: llama.cpp counts the part of it the
+// processor reads and the part the graphics side reads apart, but they are
+// the same pages of one file. What a model is judged to need has to cover
+// what it really took, and not by so much that a machine is told it
+// cannot hold what it can.
+func TestWhatAModelNeedsCoversWhatLlamaServerTook(t *testing.T) {
+	const mib = 1 << 20
+	var gemma LanguageModel
+	for _, m := range LanguageModels() {
+		if m.Title == "Gemma 4 26B A4B" {
+			gemma = m
+		}
+	}
+	if got := gemma.Shape.cacheBytes(65536); got != 1580*mib {
+		t.Errorf("the cache at 65536 tokens is %d MiB, llama-server made 1280 + 300 MiB", got/mib)
+	}
+	window := perToken(gemma.Shape.WindowLayers, gemma.Shape.WindowKVHeads, gemma.Shape.WindowHeadDim) *
+		int64(gemma.Shape.Window)
+	if window != 200*mib {
+		t.Errorf("a checkpoint of the window is %d MiB, llama-server made 200 MiB", window/mib)
+	}
+	// The cache, the compute buffers on both sides, the output, and the
+	// three checkpoints of 144, 200 and 200 MiB.
+	took := gemma.Download + (1580+415+153+1+544)*mib
+	needs := gemma.NeedsAt(65536)
+	if needs < took {
+		t.Errorf("judged to need %d MiB, and it took %d MiB", needs/mib, took/mib)
+	}
+	if needs > took+(1<<30) {
+		t.Errorf("judged to need %d MiB, a gigabyte more than the %d MiB it took", needs/mib, took/mib)
+	}
+}
+
 // The context a model is judged at has to cover the first search the app
 // makes by itself, or the check answers a question nobody asked. The first
 // search is the first half hour, taken whole up to 45 minutes when that

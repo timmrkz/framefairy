@@ -40,7 +40,8 @@ type LanguageModel struct {
 	// download nobody agreed to is a download nobody wanted.
 	Download int64 `json:"download"`
 	// Needs is the memory it takes to run a search, in bytes: the weights,
-	// the cache the context lives in, and llama.cpp's own working memory.
+	// the cache the context lives in, the checkpoints of the window, and
+	// llama.cpp's own working memory.
 	// Worked out by NeedsAt at judgedContext, never written by hand.
 	Needs int64 `json:"needs"`
 	// Shape is what the model keeps in memory for every token of context.
@@ -58,7 +59,7 @@ type LanguageModel struct {
 
 // What a model needs in memory is its weights, plus the cache its context
 // lives in, plus llama.cpp's working memory. The first is the file. The
-// third is small. The second is what differs, and by more than anything
+// third is small, and so are the checkpoints below. The second is what differs, and by more than anything
 // else about these models.
 //
 // It used to be a quarter of the file, taken from the eighteen gigabytes
@@ -99,27 +100,46 @@ const judgedContext = 65536
 const windowSpare = 512
 
 // workingAllowance is llama.cpp's own working memory on top of the weights
-// and the cache: the buffers a batch is computed in, the output, the
-// runtime. It is an allowance rather than a measurement, set on the
-// cautious side, and it is the one number here that is not read off
-// something. llama-server prints what it really took, as the compute
-// buffer size in llm-server.log, and that is what should replace it.
-const workingAllowance = 2 << 30
+// and the cache: the buffers a batch is computed in, and the output.
+// Measured on an M2 Max with Gemma 4 26B A4B at 65536 tokens, it is 415 MiB
+// on the graphics side, 77 to 153 MiB on the processor and 1 MiB of
+// output, a little over half a gigabyte. The other models have not been
+// measured, and a wider model or a larger vocabulary takes more, so the
+// allowance is a whole gigabyte.
+const workingAllowance = 1 << 30
+
+// checkpoints is how many copies of the window llama-server keeps while it
+// reads a prompt, in ordinary memory, so a following ask that shares the
+// start of the prompt does not read it all again. It makes one where a
+// user message starts and two near the end of the prompt, and a search
+// sends one user message, so it is three however long the episode. The
+// measured three were 144, 200 and 200 MiB for Gemma 4 26B A4B. A model
+// with no window keeps none, because its cache can be cut back instead.
+const checkpoints = 3
+
+func perToken(layers, heads, dim int) int64 { return int64(2 * layers * heads * dim * 2) }
 
 // cacheBytes is the key and value cache for a context of ctx tokens, at
 // two bytes a number, which is llama.cpp's default. Every layer keeps a key
-// and a value for each of its heads.
+// and a value for each of its heads. For Gemma 4 26B A4B at 65536 tokens
+// this says 1280 MiB for the layers that see everything and 300 MiB for
+// the window, and llama-server said the same to the MiB.
 func (s Shape) cacheBytes(ctx int) int64 {
-	perToken := func(layers, heads, dim int) int64 { return int64(2 * layers * heads * dim * 2) }
 	cells := min(ctx, s.Window+windowSpare)
 	return perToken(s.FullLayers, s.FullKVHeads, s.FullHeadDim)*int64(ctx) +
 		perToken(s.WindowLayers, s.WindowKVHeads, s.WindowHeadDim)*int64(cells)
 }
 
+// checkpointBytes is what the checkpoints of the window take, each the
+// window's cache for Window tokens.
+func (s Shape) checkpointBytes() int64 {
+	return checkpoints * perToken(s.WindowLayers, s.WindowKVHeads, s.WindowHeadDim) * int64(s.Window)
+}
+
 // NeedsAt is the memory a search with a context of ctx tokens takes with
 // this model loaded.
 func (m LanguageModel) NeedsAt(ctx int) int64 {
-	return m.Download + m.Shape.cacheBytes(ctx) + workingAllowance
+	return m.Download + m.Shape.cacheBytes(ctx) + m.Shape.checkpointBytes() + workingAllowance
 }
 
 // LanguageModels is every model that can be installed, largest first.

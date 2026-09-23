@@ -92,14 +92,32 @@ context, so this is never a small effect.
 
 So each model in `engine/language.go` carries its shape, read off its
 maker's `config.json`, and what it needs is the weights, plus the cache at
-the context the first search asks for, plus an allowance for llama.cpp's
-own buffers. The allowance is the one number not read off anything. It is
-set on the cautious side until it is measured. llama-server runs at log
-level 4, because its own default leaves the memory out, and from there it
-writes into `llm-server.log` what the cache, its working buffers and the
-checkpoints it keeps of the window each took. The first search is judged
-rather than the longest, and a search of more than about an hour and a
-half asks for more than that.
+the context the first search asks for, plus the checkpoints llama-server
+keeps of a window, plus llama.cpp's own working memory. llama-server runs
+at log level 4, because its own default leaves the memory out, and from
+there it writes into `llm-server.log` what each of these took.
+
+Measured on an M2 Max with Gemma 4 26B A4B and a search of the first half
+hour, at 65 536 tokens of context:
+
+| Part | Took | Worked out |
+| --- | --- | --- |
+| weights | the file, 13.4 GiB | the file |
+| cache | 1 280 + 300 MiB | the same, to the MiB |
+| checkpoints of the window | 144 + 200 + 200 MiB | 3 × 200 MiB |
+| working memory | 415 + 153 + 1 MiB | 1 GiB, for models not measured |
+| **together** | **16.1 GiB** | **16.6 GiB** |
+
+The checkpoints are copies of the window in ordinary memory, so a
+following ask that shares the start of the prompt does not read it all
+again. llama-server makes one where a user message starts and two near the
+end of the prompt, and a search sends one user message, so there are three
+however long the episode. A model with no window keeps none.
+
+macOS let the graphics side of that Mac use 25 559 MiB of its 32 768, and
+the model took 15 750 of them. The first search is judged rather than the
+longest, and a search of more than about an hour and a half asks for more
+than that.
 
 What every Mac is offered, pinned by a test:
 
