@@ -156,6 +156,12 @@ func lockPlan(path string) func() {
 
 func editPlan(path string, change func(top *object, clips []*object) error) error {
 	defer lockPlan(path)()
+	return editPlanLocked(path, change)
+}
+
+// editPlanLocked is editPlan for a caller that already holds the plan's
+// lock.
+func editPlanLocked(path string, change func(top *object, clips []*object) error) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err

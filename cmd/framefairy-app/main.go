@@ -89,6 +89,7 @@ func main() {
 		},
 	})
 	svc.app = app
+	app.Menu.Set(appMenu(app))
 
 	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Frame Fairy",
@@ -222,6 +223,8 @@ type FrameFairy struct {
 	// it was read from stay as they were.
 	said   *engine.Transcript
 	saidBy string
+	// histories are the undo and redo of each episode, see history.go.
+	histories map[string]*history
 }
 
 // Version of the engine.
@@ -423,6 +426,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 			return err
 		}
 	}
+	s.forget(path)
 	return s.store.RemoveEpisode(path)
 }
 
@@ -590,19 +594,22 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 	p := engine.NewProject(nil, path, s.store.Settings().options())
 	logs := engine.ResolvePath(p.LogsDir())
 	gone := 0
-	for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
-		// A plan of this episode, named the way plans are named. Nothing
-		// else is touched, whatever the window asks for.
-		if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
-			continue
+	err := s.edit(path, func() error {
+		for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
+			// A plan of this episode, named the way plans are named.
+			// Nothing else is touched, whatever the window asks for.
+			if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
+				continue
+			}
+			n, err := engine.RemoveRange(plan.Path, p.CaptionsDir(), from, to, duration)
+			if err != nil {
+				return err
+			}
+			gone += n
 		}
-		n, err := engine.RemoveRange(plan.Path, p.CaptionsDir(), from, to, duration)
-		if err != nil {
-			return gone, err
-		}
-		gone += n
-	}
-	return gone, nil
+		return nil
+	})
+	return gone, err
 }
 
 // Captions gives the captions of one clip, on the clip's own clock and in
@@ -879,7 +886,10 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if _, err := engine.SetWordText(p.LogsDir(), start, text, t); err != nil {
+	if err := s.edit(path, func() error {
+		_, err := engine.SetWordText(p.LogsDir(), start, text, t)
+		return err
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -898,7 +908,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	o := s.store.Settings().options()
 	cw, _ := engine.CropWindow(info, o.Width, o.Height)
 	left = max(0, min(left, info.Width-cw))
-	if err := engine.SetCrop(plan, clipID, at, left); err != nil {
+	if err := s.edit(path, func() error { return engine.SetCrop(plan, clipID, at, left) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -919,7 +929,7 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	if size > 0 {
 		values["size"] = size
 	}
-	return engine.SetCaptionStyle(plan, values)
+	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
 // SetCaptionsHeight puts the captions where the box was dragged to, as the
@@ -933,12 +943,14 @@ func (s *FrameFairy) SetCaptionsHeight(path string, y float64) error {
 	if !s.store.Known(path) {
 		return os.ErrNotExist
 	}
-	set := s.store.Settings()
-	set.CaptionY = engine.SnapCaptionY(y)
-	if err := s.store.SetSettings(set); err != nil {
-		return err
-	}
-	return s.followTheHeight(path)
+	return s.edit(path, func() error {
+		set := s.store.Settings()
+		set.CaptionY = engine.SnapCaptionY(y)
+		if err := s.store.SetSettings(set); err != nil {
+			return err
+		}
+		return s.followTheHeight(path)
+	})
 }
 
 // ResetCaptionsHeight puts the captions back where the app puts them.
@@ -946,12 +958,14 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 	if !s.store.Known(path) {
 		return os.ErrNotExist
 	}
-	set := s.store.Settings()
-	set.CaptionY = engine.DefaultCaptionY
-	if err := s.store.SetSettings(set); err != nil {
-		return err
-	}
-	return s.followTheHeight(path)
+	return s.edit(path, func() error {
+		set := s.store.Settings()
+		set.CaptionY = engine.DefaultCaptionY
+		if err := s.store.SetSettings(set); err != nil {
+			return err
+		}
+		return s.followTheHeight(path)
+	})
 }
 
 // SetSearch keeps how many clips a search looks for and how long they may
@@ -1002,7 +1016,7 @@ func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, a
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
-	if err := engine.ResetCrop(plan, clipID, at); err != nil {
+	if err := s.edit(path, func() error { return engine.ResetCrop(plan, clipID, at) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1140,7 +1154,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
-	if err := engine.SetRejected(plan, clipID, removed); err != nil {
+	if err := s.edit(path, func() error { return engine.SetRejected(plan, clipID, removed) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1157,7 +1171,9 @@ func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, st
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause); err != nil {
+	if err := s.edit(path, func() error {
+		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause)
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1186,7 +1202,9 @@ func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, fro
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
+	if err := s.edit(path, func() error {
+		return engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords))
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1199,7 +1217,7 @@ func (s *FrameFairy) JoinCut(ctx context.Context, path, plan, clipID string, at 
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.JoinCut(plan, clipID, at, t); err != nil {
+	if err := s.edit(path, func() error { return engine.JoinCut(plan, clipID, at, t) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1213,7 +1231,9 @@ func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, ind
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
+	if err := s.edit(path, func() error {
+		return engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords))
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

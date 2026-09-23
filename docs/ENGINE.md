@@ -279,6 +279,8 @@ Everything else is in `engine/`:
   plan.go       building the plan: the prompt, the call, the whole answer
   planbuild.go  clips framed and written as the answer arrives
   searchclock.go how far a search has come, against how long it took before
+  undo.go       an edit remembered as the files before and after it, and
+                put back clip by clip, so what landed since stays
   analysis.go   camera switches and framing
   faces.go      the built-in face detector
   clips.go      the plan file and crop geometry

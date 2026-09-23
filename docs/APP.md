@@ -796,6 +796,43 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Undo and redo
+
+**Everything done to an episode's clips can be taken back**, with **Undo**
+and **Redo** in the Edit menu, Cmd-Z and Shift-Cmd-Z. That is a trim, a
+cut made, moved or put back, the crop frame, the caption box moved, a word
+corrected, added or removed, the caption face and size, a clip removed and
+a search removed. Each is one step. Taking one back chooses the clip it
+changed, so nothing changes where nobody is looking. A new edit after an
+undo starts again from there, and what was undone is gone, as in every
+editor.
+
+- **What is in it.** What a person does to the clips, and nothing the app
+  does by itself. Transcribing, searching and rendering make things rather
+  than change them. Moving the playhead, choosing a clip and zooming are
+  not edits. The settings are not in it, apart from the caption height,
+  which is moved in the workspace like everything else here.
+- **A field keeps its own undo.** While a word in the caption box or a
+  number beside the clip is being typed in, Cmd-Z takes back the typing,
+  the way it does in any text field. Once it is saved, the key goes to the
+  episode.
+- **One history per episode, while the app is open.** Everything saves the
+  moment it is done, so closing loses nothing, and there is no history to
+  come back to. It goes 200 steps back.
+- **What landed since stays.** A search writes clips into a plan while its
+  earlier clips are edited, so an undo puts back only what the edit
+  changed, clip by clip, and never the whole plan. A clip that has been
+  changed again since by something the history does not know about, a
+  search over the same stretch above all, is not written over: the undo
+  says it cannot be taken back, and the history of the episode starts
+  again from there.
+
+The engine side is `engine/undo.go`, the app side
+`cmd/framefairy-app/history.go`, and the menu `cmd/framefairy-app/menu.go`.
+The menu has to be the app's own: on macOS the stock Undo takes Cmd-Z
+before the page sees it and hands it to the web view, whose undo only
+knows about text being typed.
+
 ### Work in hand
 
 Everything that runs says so the same way, wherever it runs. There are four

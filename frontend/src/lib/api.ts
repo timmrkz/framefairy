@@ -402,6 +402,10 @@ export const api = {
   // box in the video preview saves it, so the next video starts there too.
   setCaptionsHeight: (path: string, y: number) => call<void>("SetCaptionsHeight", path, y),
   resetCaptionsHeight: (path: string) => call<void>("ResetCaptionsHeight", path),
+  // Take back the last thing done to an episode's clips, or do again what
+  // was taken back. The answer names the clip it changed.
+  undo: (path: string) => call<Undone>("Undo", path),
+  redo: (path: string) => call<Undone>("Redo", path),
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
   clearJobs: () => call<void>("ClearJobs"),
@@ -437,6 +441,18 @@ export interface Chrome {
 // or back from the Dock.
 export function onChrome(fn: (c: Chrome) => void): () => void {
   return Events.On("chrome", (ev) => fn(ev.data as Chrome));
+}
+
+export interface Undone {
+  done: boolean;
+  // The key of the clip it changed, as the clip list has it.
+  clip?: string;
+}
+
+// Undo and Redo in the Edit menu. The menu has the keys, so this is how
+// they reach the window.
+export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
+  return Events.On("undo", (ev) => fn(ev.data as "undo" | "redo"));
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

@@ -21,6 +21,7 @@
     type SourceView,
     type Word,
     type WindowView,
+    onUndo,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
   import { Heard, inEpisode, Newest, nextWindow, shouldLook, shouldTranscribe } from "../lib/flow";
@@ -829,6 +830,43 @@
     foundHeard = found;
     if (found > 0) refreshClips().then(showFirstFound);
   });
+
+  // Undo and Redo, from the Edit menu and its keys. A field being typed in,
+  // a word in the caption box or a number beside the clip, has an undo of
+  // its own for the text in it, and keeps it: the key goes to the field
+  // while it is being typed in and to the episode otherwise. Taking
+  // something back shows what came back, so the clip it changed is chosen
+  // and nothing changes where nobody is looking.
+  let undoing = false;
+  async function undo(what: "undo" | "redo") {
+    const on = document.activeElement as HTMLElement | null;
+    if (on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA" || on.isContentEditable)) {
+      document.execCommand(what);
+      return;
+    }
+    // One at a time. A key held down would otherwise ask for the same step
+    // twice before the first answer is back.
+    if (undoing) return;
+    undoing = true;
+    try {
+      const done = what === "undo" ? await api.undo(path) : await api.redo(path);
+      if (!done?.done) return;
+      problem = "";
+      await load();
+      // The caption height is kept in the settings, so an undo of a drag
+      // is read back from there.
+      const settings = await api.getSettings();
+      captionY = settings.captionY || captionYDefault;
+      onchange();
+      const clip = done.clip ? clips.find((c) => c.key === done.clip) : undefined;
+      if (clip && clip.key !== selected) await select(clip.key);
+    } catch (err) {
+      problem = errorText(err);
+    } finally {
+      undoing = false;
+    }
+  }
+  onMount(() => onUndo(undo));
 
   // The first clip a search finds, shown as soon as it is in the list.
   function showFirstFound() {

@@ -479,6 +479,14 @@ export const Call = {
       }
       case "RemoveSearch":
         return Promise.resolve(null);
+      // Every undo and redo the window asks for, so a probe can see which
+      // reached the episode and which stayed in a field being typed in. The
+      // clip it names is the third, so a probe can see the window go there.
+      case "Undo":
+      case "Redo": {
+        ((window as any).__undone ??= []).push(method);
+        return Promise.resolve({ done: true, clip: "clips.json/03" });
+      }
       // The cuts inside a clip. They answer with the clip as it now is,
       // the way the Go side does, so the timeline draws where the edges
       // really landed rather than where the hand let go.
@@ -681,6 +689,12 @@ export const Events = {
   // never gets anything done. The growing mode sends them, so a test can
   // tell.
   On(name: string, fn: (ev: unknown) => void): () => void {
+    // There is no menu bar here, so a probe presses Undo and Redo with
+    // window.__menu("undo") and window.__menu("redo").
+    if (name === "undo") {
+      (window as any).__menu = (what: string) => fn({ data: what });
+      return () => delete (window as any).__menu;
+    }
     if (name !== "job") return () => {};
     // A transcription that reports where it got to, well ahead of the saved
     // transcript, and that really stops when it is stopped. The job list is
