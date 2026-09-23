@@ -3,9 +3,12 @@
 # speech code or the measurement changes, and by hand, never on every pull
 # request: it downloads the model and a recorded talk, about 700 MB.
 #
-# The runner is a virtual Mac. Whether it reaches the graphics chip and the
-# Neural Engine the way a real one does is part of what this finds out, so
-# its numbers are read beside the same run on a real Mac.
+# The runner is a virtual Mac, an M1 with 3 cores, and it does not reach
+# the Neural Engine the way a real one does, so its CoreML numbers are read
+# beside the same run on a real Mac. The first full run, every provider,
+# thread count, piece length and batch, took longer than the hour a job
+# may take, because CoreML there compiles the model again for every new
+# length of audio. It runs the few that decide things now.
 name: Speech benchmark
 
 on:
@@ -50,5 +53,5 @@ jobs:
           go run ./scripts/speechbench \
             -model "$RUNNER_TEMP/model/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" \
             -audio "$RUNNER_TEMP/talk.wav" -seconds 180 \
-            -providers cpu,coreml -threads 3,6 -pieces 15,30,60 -batch 1,2 \
+            -providers cpu,coreml -threads 3 -pieces 15,30 -batch 1 \
             | tee -a "$GITHUB_STEP_SUMMARY"

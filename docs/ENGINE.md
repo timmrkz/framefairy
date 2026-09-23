@@ -38,6 +38,24 @@ of the quiet moment was measured the same way, over clean, music and
 street: 100 ms 393 wrong in all, 200 ms 414, 300 ms 375, 400 ms 375,
 600 ms 415. 300 and 400 are the same within what one talk can tell.
 
+How fast it hears was measured on the macOS runner, an Apple M1 with 3
+cores, over three minutes of a recorded talk, `scripts/speechbench`:
+
+| | pieces of 15 s | 30 s | 60 s |
+|---|---|---|---|
+| on the processor, 3 threads | 13.5 times real time | 15.0 | 9.2 |
+| on the processor, 6 threads | 5.6 | 6.5 | 6.5 |
+| through CoreML, 3 threads | 7.1 | 0.4 | 0.3 |
+
+Pieces of 15 to 30 s are where it is fastest. More threads than the
+machine has cores make it more than twice as slow, so the app never asks
+for more than the cores it has, and at most 8. Hearing two pieces in one
+pass gains nothing that holds. CoreML is slower on the runner and changes
+a few words: it compiles the model again for every new length of audio,
+and the pieces the app cuts are all of different lengths. Whether a real
+Mac, which the runner is not, reaches the Neural Engine through it with
+pieces of one fixed length is still to be measured on one.
+
 One cut is placed exactly: the end of the window the first search waits
 for. The app gives the transcription that point, `Engine.StopAt`, and the
 piece that reaches it is cut there, so nothing past the window's edge is
