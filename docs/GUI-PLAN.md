@@ -172,6 +172,33 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 
 ---
 
+## Robustness track: the glue never breaks
+
+The engine, the app's Go side and the interface hand work to each other
+all the time: a transcription saves while a search reads, a job reports
+while the window listens, a model is held by one job and let go by
+another, a plan is written by a search while a person edits it. Each of
+these handoffs is an assumption about order and timing. The rule for
+this track: **a slower or poorer moment is fine, a frozen, broken or
+stuck app is not.** Whatever goes wrong ends one piece of work with its
+reason and leaves the app able to go on.
+
+Every batch finds a handoff, writes the test that makes its failure
+happen, under `go test -race` and from several goroutines at once, and
+then makes the code survive it.
+
+| # | Batch | Status |
+|---|---|---|
+| R.1 | An audit of every handoff between engine, app and interface, ranked by what it can break | `[ ]` |
+| R.2 | The job queue under everything the app can do to it at once: add, find, list, cancel, remove an episode, quit, while jobs run, report and panic | `[ ]` |
+| R.3 | Transcripts: a save that is cut short, read while it is written, a pause that lands mid-save, carrying on from a file that is damaged | `[ ]` |
+| R.4 | The model host: loads that fail, hang or are stopped, holders that let go twice or never, the app quitting while a model loads | `[ ]` |
+| R.5 | Plans written by a search while they are edited, undone and removed | `[ ]` |
+| R.6 | The interface: answers that arrive late, out of order or for an episode no longer shown, events that stop, promises that never settle | `[ ]` |
+| R.7 | What the person sees when something fails: a reason in words, and a way on | `[ ]` |
+
+---
+
 ## Training track, separate from the app
 
 Follows `framefairy-training-plan.md`, with one change: nothing of it appears in
