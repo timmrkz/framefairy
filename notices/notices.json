@@ -1,0 +1,511 @@
+[
+  {
+    "name": "github.com/adrg/xdg",
+    "version": "0.5.3",
+    "licence": "MIT",
+    "url": "https://github.com/adrg/xdg",
+    "part": "The app",
+    "texts": [
+      "github.com-adrg-xdg.txt"
+    ]
+  },
+  {
+    "name": "github.com/go-ole/go-ole",
+    "version": "1.3.0",
+    "licence": "MIT",
+    "url": "https://github.com/go-ole/go-ole",
+    "part": "The app",
+    "texts": [
+      "github.com-go-ole-go-ole.txt"
+    ]
+  },
+  {
+    "name": "github.com/godbus/dbus/v5",
+    "version": "5.2.2",
+    "licence": "BSD-2-Clause",
+    "url": "https://github.com/godbus/dbus/v5",
+    "part": "The app",
+    "texts": [
+      "github.com-godbus-dbus-v5.txt"
+    ]
+  },
+  {
+    "name": "github.com/mattn/go-colorable",
+    "version": "0.1.14",
+    "licence": "MIT",
+    "url": "https://github.com/mattn/go-colorable",
+    "part": "The app",
+    "texts": [
+      "github.com-mattn-go-colorable.txt"
+    ]
+  },
+  {
+    "name": "github.com/mattn/go-isatty",
+    "version": "0.0.20",
+    "licence": "MIT",
+    "url": "https://github.com/mattn/go-isatty",
+    "part": "The app",
+    "texts": [
+      "github.com-mattn-go-isatty.txt"
+    ]
+  },
+  {
+    "name": "github.com/wailsapp/wails/v3",
+    "version": "3.0.0-beta.23",
+    "licence": "MIT",
+    "url": "https://github.com/wailsapp/wails/v3",
+    "part": "The app",
+    "texts": [
+      "github.com-wailsapp-wails-v3-internal-go-common-file-dialog.txt",
+      "github.com-wailsapp-wails-v3-internal-webview2-webviewloader.txt",
+      "github.com-wailsapp-wails-v3.txt"
+    ]
+  },
+  {
+    "name": "Go",
+    "version": "1.27",
+    "licence": "BSD-3-Clause",
+    "url": "https://go.dev",
+    "part": "The app",
+    "note": "The Go runtime and standard library are compiled into the app.",
+    "texts": [
+      "go.txt"
+    ]
+  },
+  {
+    "name": "golang.org/x/sys",
+    "version": "0.46.0",
+    "licence": "BSD-3-Clause",
+    "url": "https://golang.org/x/sys",
+    "part": "The app",
+    "texts": [
+      "golang.org-x-sys.txt"
+    ]
+  },
+  {
+    "name": "pico",
+    "version": "facefinder",
+    "licence": "MIT",
+    "url": "https://github.com/nenadmarkus/pico",
+    "part": "The app",
+    "note": "The trained face data is the facefinder cascade from pico.",
+    "texts": [
+      "pico.txt"
+    ]
+  },
+  {
+    "name": "pigo",
+    "version": "1.4.6",
+    "licence": "MIT",
+    "url": "https://github.com/esimov/pigo",
+    "part": "The app",
+    "note": "The face detector that places the crop is adapted from pigo.",
+    "texts": [
+      "pigo.txt"
+    ]
+  },
+  {
+    "name": "@floating-ui/core",
+    "version": "1.8.0",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/@floating-ui/core",
+    "part": "The app's interface",
+    "texts": [
+      "npm-floating-ui-core.txt"
+    ]
+  },
+  {
+    "name": "@floating-ui/dom",
+    "version": "1.8.0",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/@floating-ui/dom",
+    "part": "The app's interface",
+    "texts": [
+      "npm-floating-ui-dom.txt"
+    ]
+  },
+  {
+    "name": "@floating-ui/utils",
+    "version": "0.2.12",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/@floating-ui/utils",
+    "part": "The app's interface",
+    "texts": [
+      "npm-floating-ui-utils.txt"
+    ]
+  },
+  {
+    "name": "@wailsio/runtime",
+    "version": "3.0.0-beta.23",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/@wailsio/runtime",
+    "part": "The app's interface",
+    "texts": [
+      "npm-wailsio-runtime.txt"
+    ]
+  },
+  {
+    "name": "bits-ui",
+    "version": "2.19.2",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/bits-ui",
+    "part": "The app's interface",
+    "texts": [
+      "npm-bits-ui.txt"
+    ]
+  },
+  {
+    "name": "clsx",
+    "version": "2.1.1",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/clsx",
+    "part": "The app's interface",
+    "texts": [
+      "npm-clsx.txt"
+    ]
+  },
+  {
+    "name": "inline-style-parser",
+    "version": "0.2.7",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/inline-style-parser",
+    "part": "The app's interface",
+    "texts": [
+      "npm-inline-style-parser.txt"
+    ]
+  },
+  {
+    "name": "runed",
+    "version": "0.35.1",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/runed",
+    "part": "The app's interface",
+    "texts": [
+      "npm-runed.txt"
+    ]
+  },
+  {
+    "name": "style-to-object",
+    "version": "1.0.14",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/style-to-object",
+    "part": "The app's interface",
+    "texts": [
+      "npm-style-to-object.txt"
+    ]
+  },
+  {
+    "name": "svelte",
+    "version": "5.57.0",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/svelte",
+    "part": "The app's interface",
+    "texts": [
+      "npm-svelte.txt"
+    ]
+  },
+  {
+    "name": "svelte-toolbelt",
+    "version": "0.10.6",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/svelte-toolbelt",
+    "part": "The app's interface",
+    "texts": [
+      "npm-svelte-toolbelt.txt"
+    ]
+  },
+  {
+    "name": "tabbable",
+    "version": "6.5.0",
+    "licence": "MIT",
+    "url": "https://www.npmjs.com/package/tabbable",
+    "part": "The app's interface",
+    "texts": [
+      "npm-tabbable.txt"
+    ]
+  },
+  {
+    "name": "github.com/k2-fsa/sherpa-onnx-go",
+    "version": "1.13.8",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/sherpa-onnx-go",
+    "part": "Speech recognition",
+    "texts": [
+      "github.com-k2-fsa-sherpa-onnx-go.txt"
+    ]
+  },
+  {
+    "name": "github.com/k2-fsa/sherpa-onnx-go-linux",
+    "version": "1.13.8",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/sherpa-onnx-go-linux",
+    "part": "Speech recognition",
+    "texts": [
+      "github.com-k2-fsa-sherpa-onnx-go-linux.txt"
+    ]
+  },
+  {
+    "name": "github.com/k2-fsa/sherpa-onnx-go-macos",
+    "version": "1.13.8",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/sherpa-onnx-go-macos",
+    "part": "Speech recognition",
+    "texts": [
+      "github.com-k2-fsa-sherpa-onnx-go-macos.txt"
+    ]
+  },
+  {
+    "name": "github.com/k2-fsa/sherpa-onnx-go-windows",
+    "version": "1.13.8",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/sherpa-onnx-go-windows",
+    "part": "Speech recognition",
+    "texts": [
+      "github.com-k2-fsa-sherpa-onnx-go-windows.txt"
+    ]
+  },
+  {
+    "name": "ONNX Runtime",
+    "version": "1.28.2",
+    "licence": "MIT",
+    "url": "https://github.com/microsoft/onnxruntime",
+    "part": "Speech recognition",
+    "note": "Runs the speech model. It travels beside the app as a library of its own.",
+    "texts": [
+      "onnxruntime-third-party.txt",
+      "onnxruntime.txt"
+    ]
+  },
+  {
+    "name": "ffmpeg",
+    "version": "7.1.1",
+    "licence": "LGPL-2.1-or-later",
+    "url": "https://ffmpeg.org",
+    "part": "ffmpeg",
+    "note": "Built by us, without --enable-gpl and without libx264, and shipped unmodified beside the app. The source it was built from, with the scripts that built it, is framefairy-tools-source.tar.gz on the same release as the tools, at https://github.com/timmrkz/framefairy/releases.",
+    "texts": [
+      "ffmpeg-copying.lgplv2.1.txt",
+      "ffmpeg-license.txt"
+    ]
+  },
+  {
+    "name": "FreeType",
+    "version": "2.13.3",
+    "licence": "FTL",
+    "url": "https://freetype.org",
+    "part": "ffmpeg",
+    "note": "Portions of this software are copyright © 2024 The FreeType Project (https://freetype.org). All rights reserved.",
+    "texts": [
+      "freetype-ftl.txt",
+      "freetype-license.txt"
+    ]
+  },
+  {
+    "name": "FriBidi",
+    "version": "1.0.16",
+    "licence": "LGPL-2.1-or-later",
+    "url": "https://github.com/fribidi/fribidi",
+    "part": "ffmpeg",
+    "note": "Built into ffmpeg. Its source is in the same archive as ffmpeg's.",
+    "texts": [
+      "fribidi-copying.txt"
+    ]
+  },
+  {
+    "name": "HarfBuzz",
+    "version": "10.1.0",
+    "licence": "MIT-Modern-Variant",
+    "url": "https://harfbuzz.github.io",
+    "part": "ffmpeg",
+    "texts": [
+      "harfbuzz-copying.txt"
+    ]
+  },
+  {
+    "name": "libass",
+    "version": "0.17.3",
+    "licence": "ISC",
+    "url": "https://github.com/libass/libass",
+    "part": "ffmpeg",
+    "note": "Draws the captions into the picture.",
+    "texts": [
+      "libass-copying.txt"
+    ]
+  },
+  {
+    "name": "cpp-httplib",
+    "version": "0.57.1",
+    "licence": "MIT",
+    "url": "https://github.com/yhirose/cpp-httplib",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-cpp-httplib.txt"
+    ]
+  },
+  {
+    "name": "JSON for Modern C++",
+    "version": "vendored",
+    "licence": "MIT",
+    "url": "https://github.com/nlohmann/json",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-json-for-modern-c.txt"
+    ]
+  },
+  {
+    "name": "llama.cpp",
+    "version": "b11105",
+    "licence": "MIT",
+    "url": "https://github.com/ggml-org/llama.cpp",
+    "part": "llama-server",
+    "note": "Built by us and shipped beside the app, to run a language model on this machine.",
+    "texts": [
+      "llama.cpp.txt"
+    ]
+  },
+  {
+    "name": "miniaudio",
+    "version": "vendored",
+    "licence": "MIT-0 OR Unlicense",
+    "url": "https://github.com/mackron/miniaudio",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-miniaudio.txt"
+    ]
+  },
+  {
+    "name": "rotate-bits",
+    "version": "vendored",
+    "licence": "MIT",
+    "url": "https://github.com/jb55/rotate-bits.h",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-rotate-bits.txt"
+    ]
+  },
+  {
+    "name": "sha256",
+    "version": "vendored",
+    "licence": "public domain",
+    "url": "https://github.com/jb55/sha256.c",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-sha256.txt"
+    ]
+  },
+  {
+    "name": "stb_image",
+    "version": "vendored",
+    "licence": "MIT OR Unlicense",
+    "url": "https://github.com/nothings/stb",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-stb-image.txt"
+    ]
+  },
+  {
+    "name": "subprocess.h",
+    "version": "vendored",
+    "licence": "Unlicense",
+    "url": "https://github.com/sheredom/subprocess.h",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-subprocess.h.txt"
+    ]
+  },
+  {
+    "name": "xxHash",
+    "version": "vendored",
+    "licence": "BSD-2-Clause",
+    "url": "https://github.com/Cyan4973/xxHash",
+    "part": "llama-server",
+    "note": "Built into llama-server.",
+    "texts": [
+      "llama-xxhash.txt"
+    ]
+  },
+  {
+    "name": "Anton",
+    "version": "as shipped",
+    "licence": "OFL-1.1",
+    "url": "https://github.com/googlefonts/AntonFont",
+    "part": "Caption fonts",
+    "note": "Built into the app and written out beside the captions it draws.",
+    "texts": [
+      "font-anton.txt"
+    ]
+  },
+  {
+    "name": "Archivo Black",
+    "version": "as shipped",
+    "licence": "OFL-1.1",
+    "url": "https://github.com/Omnibus-Type/ArchivoBlack",
+    "part": "Caption fonts",
+    "note": "Built into the app and written out beside the captions it draws.",
+    "texts": [
+      "font-archivo-black.txt"
+    ]
+  },
+  {
+    "name": "Inter",
+    "version": "as shipped",
+    "licence": "OFL-1.1",
+    "url": "https://github.com/rsms/inter",
+    "part": "Caption fonts",
+    "note": "Built into the app and written out beside the captions it draws.",
+    "texts": [
+      "font-inter.txt"
+    ]
+  },
+  {
+    "name": "Gemma 4",
+    "version": "as fetched",
+    "licence": "Apache-2.0",
+    "url": "https://ai.google.dev/gemma",
+    "part": "Fetched by the app from its maker",
+    "note": "The language models Gemma 4 26B A4B and Gemma 4 12B, © Google.",
+    "texts": [
+      "apache-2.0.txt"
+    ]
+  },
+  {
+    "name": "Ministral 3 8B",
+    "version": "as fetched",
+    "licence": "Apache-2.0",
+    "url": "https://huggingface.co/mistralai",
+    "part": "Fetched by the app from its maker",
+    "note": "A language model, © Mistral AI.",
+    "texts": [
+      "apache-2.0.txt"
+    ]
+  },
+  {
+    "name": "Parakeet TDT 0.6B v3",
+    "version": "v3",
+    "licence": "CC-BY-4.0",
+    "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+    "part": "Fetched by the app from its maker",
+    "note": "The speech model, © NVIDIA. Fetched in the int8 ONNX conversion published by the sherpa-onnx project, which converted it to ONNX and quantised it to int8. Used unmodified from there.",
+    "texts": [
+      "cc-by-4.0.txt"
+    ]
+  },
+  {
+    "name": "Qwen3 14B",
+    "version": "as fetched",
+    "licence": "Apache-2.0",
+    "url": "https://huggingface.co/Qwen",
+    "part": "Fetched by the app from its maker",
+    "note": "A language model, © Alibaba Cloud.",
+    "texts": [
+      "apache-2.0.txt"
+    ]
+  }
+]
