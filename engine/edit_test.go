@@ -595,6 +595,9 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	if !ok || text != "&H0000CCFF" {
 		t.Fatalf("text %q %v", text, ok)
 	}
+	if half, _ := AssColour("#ffcc00", 0.5); half != "&H8000CCFF" {
+		t.Errorf("half clear text %q", half)
+	}
 	box, ok := AssColour("#102030", 0.25)
 	if !ok || box != "&HBF302010" {
 		t.Fatalf("box %q %v", box, ok)
@@ -625,5 +628,27 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	}
 	if view.Style.Primary != "rgba(255, 204, 0, 1)" || view.Style.Box != "rgba(16, 32, 48, 0.251)" {
 		t.Errorf("the preview draws %s on %s", view.Style.Primary, view.Style.Box)
+	}
+}
+
+// A word is shown and hidden by its alpha. A shown word takes the alpha of
+// the text colour, so text given an opacity keeps it in the short, and a
+// colour without one is shown solid.
+func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
+	if got := shownTag("&H8000CCFF"); got != `{\alpha&H80&}` {
+		t.Errorf("half clear text is shown as %s", got)
+	}
+	if got := shownTag("&H00FFFFFF"); got != `{\alpha&H00&}` {
+		t.Errorf("solid text is shown as %s", got)
+	}
+	for _, odd := range []string{"", "&HFFFFFF", "&H80XXCCFF", "junk"} {
+		if got := shownTag(odd); got != `{\alpha&H00&}` {
+			t.Errorf("%q is shown as %s", odd, got)
+		}
+	}
+	line := taggedText([]string{"eins", "zwei"}, [][]int{{0, 1}}, func(i int) bool { return i == 0 },
+		shownTag("&H40FFFFFF"))
+	if line != `{\alpha&H40&}eins {\alpha&HFF&}zwei` {
+		t.Errorf("line %s", line)
 	}
 }

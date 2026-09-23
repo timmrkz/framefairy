@@ -1048,17 +1048,17 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 }
 
 // SetCaptionColours changes the colour of the caption text and of the box
-// behind it, with how opaque the box is from 0 to 1, for a whole clip set,
+// behind it, each with how opaque it is from 0 to 1, for a whole clip set,
 // beside the face and the size. Colours come as #RRGGBB, and an empty one
 // is left as it is.
-func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text, box string,
-	boxOpacity float64) error {
+func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text string,
+	textOpacity float64, box string, boxOpacity float64) error {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return os.ErrNotExist
 	}
 	values := map[string]any{}
 	if text != "" {
-		colour, ok := engine.AssColour(text, 1)
+		colour, ok := engine.AssColour(text, textOpacity)
 		if !ok {
 			return fmt.Errorf("%s is not a colour", engine.Scrub(text, 20))
 		}

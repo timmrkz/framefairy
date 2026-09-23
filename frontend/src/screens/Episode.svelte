@@ -6,6 +6,7 @@
     captionBoxDefault,
     captionOpacityDefault,
     captionTextDefault,
+    captionTextOpacityDefault,
     captionSizeDefault,
     captionYDefault,
     captionYMax,
@@ -766,7 +767,9 @@
     return view;
   });
   // The colours as the controls show them.
-  const textColour = $derived(splitColour(shownCaptions?.style.primary ?? "").hex);
+  const textSplit = $derived(splitColour(shownCaptions?.style.primary ?? ""));
+  const textColour = $derived(textSplit.hex);
+  const textOpacity = $derived(Math.round(textSplit.alpha * 100));
   const boxColour = $derived(splitColour(shownCaptions?.style.box ?? "rgba(0, 0, 0, 0.5)"));
   const boxOpacity = $derived(Math.round(boxColour.alpha * 100));
 
@@ -775,13 +778,20 @@
     colourDraft = { ...colourDraft, ...part };
   }
 
-  async function setCaptionColours(text: string, box: string, opacity: number) {
+  // A colour and how much of it is seen, for the text and for the box, the
+  // share as a percentage. An empty colour is left as it is.
+  async function setCaptionColours(
+    text: string,
+    textShare: number,
+    box: string,
+    boxShare: number,
+  ) {
     if (!current) return;
     problem = "";
     captionsWere = null;
     colourSaving = true;
     try {
-      await api.setCaptionColours(path, current.plan, text, box, opacity / 100);
+      await api.setCaptionColours(path, current.plan, text, textShare / 100, box, boxShare / 100);
       await refreshClips();
     } catch (err) {
       problem = errorText(err);
@@ -856,6 +866,7 @@
     size: number;
     y: number;
     text: string;
+    textOpacity: number;
     box: string;
     opacity: number;
   } | null>(null);
@@ -866,11 +877,13 @@
     size: Math.round(captions?.style.chosenSize ?? captionSizeDefault),
     y: Math.round(captionY),
     text: splitColour(captions?.style.primary ?? "").hex,
+    textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
     box: splitColour(captions?.style.box ?? "").hex,
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
   const coloursMoved = $derived(
     captionsNow.text !== captionTextDefault ||
+      captionsNow.textOpacity !== captionTextOpacityDefault ||
       captionsNow.box !== captionBoxDefault ||
       captionsNow.opacity !== captionOpacityDefault,
   );
@@ -891,7 +904,12 @@
     }
     if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
     if (coloursMoved) {
-      await setCaptionColours(captionTextDefault, captionBoxDefault, captionOpacityDefault);
+      await setCaptionColours(
+        captionTextDefault,
+        captionTextOpacityDefault,
+        captionBoxDefault,
+        captionOpacityDefault,
+      );
     }
     captionsWere = was;
   }
@@ -905,8 +923,13 @@
       await setCaptionStyle(was.font, was.size);
     }
     if (was.y !== captionsNow.y) await setCaptionsHeight(was.y);
-    if (was.text !== captionsNow.text || was.box !== captionsNow.box || was.opacity !== captionsNow.opacity) {
-      await setCaptionColours(was.text, was.box, was.opacity);
+    if (
+      was.text !== captionsNow.text ||
+      was.textOpacity !== captionsNow.textOpacity ||
+      was.box !== captionsNow.box ||
+      was.opacity !== captionsNow.opacity
+    ) {
+      await setCaptionColours(was.text, was.textOpacity, was.box, was.opacity);
     }
   }
 
@@ -1478,8 +1501,8 @@
               <span class="ask">
                 <Info label="What the caption settings do">
                   The face, the size and the colours for every clip of this episode. A line that will
-                  not fit is drawn smaller. The number beside the box is how much of it is seen, 0 for
-                  only the words. <b>Height</b> is how far above the bottom of the short the captions
+                  not fit is drawn smaller. The number beside a colour is how much of it is seen: 100 is
+                  solid, and a box at 0 leaves only the words. <b>Height</b> is how far above the bottom of the short the captions
                   sit, for every episode: drag the caption box in the video preview, or type it here.
                   With the captions any other way than they start out, the mark in this corner turns
                   anticlockwise and puts them back. Once they are back it turns clockwise instead and
@@ -1545,19 +1568,45 @@
             </label>
             <!-- The colours follow the hand in the video preview while they
                  are picked, and are saved when the picker lets go. -->
-            <label class="setting">
+            <!-- The text and how much of it is seen, the same pair as the
+                 box under it. -->
+            <div class="setting">
               <span>Text</span>
-              <span class="field">
+              <span class="field pair">
                 <input
                   class="swatch"
                   type="color"
                   title="The colour the captions are written in"
+                  aria-label="Text colour"
                   value={textColour}
-                  oninput={(e) => drawColour({ primary: joinColour(e.currentTarget.value, 1) })}
-                  onchange={(e) => setCaptionColours(e.currentTarget.value, "", boxOpacity)}
+                  oninput={(e) =>
+                    drawColour({ primary: joinColour(e.currentTarget.value, textOpacity / 100) })}
+                  onchange={(e) =>
+                    setCaptionColours(e.currentTarget.value, textOpacity, "", boxOpacity)}
                 />
+                <input
+                  class="num"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  title="How much of the caption text is seen. 100 is solid, less lets the picture through"
+                  aria-label="Text opacity"
+                  value={textOpacity}
+                  oninput={(e) => {
+                    const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
+                    if (Number.isFinite(v)) drawColour({ primary: joinColour(textColour, v / 100) });
+                  }}
+                  onchange={(e) =>
+                    setCaptionColours(
+                      textColour,
+                      Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
+                      "",
+                      boxOpacity,
+                    )}
+                /><span class="unit">%</span>
               </span>
-            </label>
+            </div>
             <!-- The box and how much of it is seen, side by side, because
                  they are one thing: what is behind the words. -->
             <div class="setting">
@@ -1571,7 +1620,8 @@
                   value={boxColour.hex}
                   oninput={(e) =>
                     drawColour({ box: joinColour(e.currentTarget.value, boxOpacity / 100) })}
-                  onchange={(e) => setCaptionColours("", e.currentTarget.value, boxOpacity)}
+                  onchange={(e) =>
+                    setCaptionColours("", textOpacity, e.currentTarget.value, boxOpacity)}
                 />
                 <input
                   class="num"
@@ -1589,6 +1639,7 @@
                   onchange={(e) =>
                     setCaptionColours(
                       "",
+                      textOpacity,
                       boxColour.hex,
                       Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
                     )}

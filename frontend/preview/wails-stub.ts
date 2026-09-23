@@ -672,8 +672,8 @@ export const Call = {
       case "SetCaptionColours":
         // A probe reads what was saved from here.
         ((window as any).__colours ??= []).push(args.slice(2));
-        if (args[2]) (window as any).__text = hexToCss(String(args[2]), 1);
-        if (args[3]) (window as any).__box = hexToCss(String(args[3]), Number(args[4]));
+        if (args[2]) (window as any).__text = hexToCss(String(args[2]), Number(args[3]));
+        if (args[4]) (window as any).__box = hexToCss(String(args[4]), Number(args[5]));
         return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();

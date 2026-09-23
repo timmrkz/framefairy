@@ -363,8 +363,10 @@ place.
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, and **Box** the
-  colour of the box behind them, with how much of it is seen beside it, 0
-  for only the words and 100 for a box the picture does not show through.
+  colour of the box behind them. Beside each is how much of it is seen:
+  100, where the text starts, is solid, and a box at 0 leaves only the
+  words. A see-through text keeps its opacity in the short, the word on
+  the pill included.
   A colour is drawn in the video preview while it is picked and saved when
   the picker lets go, and Undo takes it back. The height follows the
   caption box in the video preview as it is dragged, not when it is let
