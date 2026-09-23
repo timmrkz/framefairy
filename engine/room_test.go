@@ -174,8 +174,8 @@ func TestTheRateOfWhatIsNotHeardYet(t *testing.T) {
 		t.Error("five minutes decide the rate")
 	}
 	dense := []LineWeight{{0, 3, 20000}, {4, 1000, 20000}}
-	if got := RateOf(dense); got != 40 {
-		t.Errorf("a dense episode weighs %v a second, want 40", got)
+	if got := RateOf(dense); got < 45.99 || got > 46.01 {
+		t.Errorf("a dense episode weighs %v a second, want 40 and 15 percent", got)
 	}
 	light := []LineWeight{{0, 3, 100}, {4, 1000, 100}}
 	if RateOf(light) != SpokenChars {

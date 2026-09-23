@@ -360,6 +360,10 @@ place.
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
+  never more than a window can hold: **Clips** and **Shortest** go no
+  higher than fits, one clip after another at the shortest length, in the
+  longest window that can be drawn anywhere on the episode. A number typed
+  past that is taken back to it, and its `title` says what the most is.
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
@@ -602,6 +606,18 @@ place.
       four hour one. A wall wins over the step, so a window that runs into
       a searched one ends exactly at it. While a window is drawn or moved
       it says what it is, in a pill over the track.
+    - **A window is what one search can do.** It is sent to the model in
+      one request and never split behind anybody's back, so it reaches no
+      further than the model reads at once, and no shorter than the clips
+      asked for need at their shortest. Both are walls: an edge stops
+      exactly there, and the pill says by what, *all the model reads at
+      once*, *all the budget pays for* or *room for 12 clips of 20 s*. How
+      far the model reads is the engine's to say, from the model chosen in
+      the settings, and the range picker adds up the lines a window covers
+      as it is dragged, see [ENGINE.md](ENGINE.md#how-much-one-search-can-read).
+      Moved somewhere busier, a window gives up its end, and moved back it
+      has its length again. When the clips ask for more than the window
+      has, the window grows to hold them, from its end.
     - While clips are being found for it, the window cannot be moved and a
       soft light passes through it every couple of seconds, which is the
       track saying work is in hand. How far the search has come is on the

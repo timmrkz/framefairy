@@ -187,10 +187,11 @@ func WeighLines(t *Transcript) []LineWeight {
 const SpokenChars = 25.0
 
 // RateOf is how many characters a second of this episode makes, from the
-// lines it has so far. Until there are ten minutes of them the starting
-// point stands, and it never goes below it: the rate is used for what has
-// not been heard yet, and guessing that lighter than it turns out is what
-// would let a window through that the engine then refuses.
+// lines it has so far, with 15 percent on top for a stretch busier than the
+// average. Until there are ten minutes of them the starting point stands,
+// and it never goes below it: the rate is used for what has not been heard
+// yet, and guessing that lighter than it turns out is what would let a
+// window through that the engine then refuses.
 func RateOf(lines []LineWeight) float64 {
 	if len(lines) == 0 {
 		return SpokenChars
@@ -203,5 +204,5 @@ func RateOf(lines []LineWeight) float64 {
 	for _, l := range lines {
 		chars += l.Chars
 	}
-	return max(float64(chars)/span, SpokenChars)
+	return max(float64(chars)/span*1.15, SpokenChars)
 }
