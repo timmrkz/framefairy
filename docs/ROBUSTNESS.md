@@ -79,7 +79,10 @@ what became of it.
    next refresh. `frontend/src/screens/Episode.svelte`. Open, R.6.
 9. **Undo taking a clip a search found.** A clip that lands while an edit is
    saved becomes part of that edit, and undoing it removes the clip.
-   `cmd/framefairy-app/history.go`. Open, R.5.
+   Fixed: an edit changes clips and never makes them, so a clip or a plan
+   that appears between the two pictures of an edit is left out of it.
+   `engine/undo.go` `LeaveOutNewClips`, used by the history in
+   `cmd/framefairy-app/history.go`.
 10. **Two settings changes at once lose one.** Settings are read, changed and
     written back outside the store's lock. Fixed: every change is one step
     under the lock, `UpdateSettings`. The test lost the number of clips in

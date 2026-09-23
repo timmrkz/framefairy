@@ -916,7 +916,9 @@ editor.
   come back to. It goes 200 steps back.
 - **What landed since stays.** A search writes clips into a plan while its
   earlier clips are edited, so an undo puts back only what the edit
-  changed, clip by clip, and never the whole plan. A clip that has been
+  changed, clip by clip, and never the whole plan. A clip that lands at
+  the very moment an edit is saved is not part of that edit either, since
+  an edit never makes a clip. A clip that has been
   changed again since by something the history does not know about, a
   search over the same part above all, is not written over: the undo
   says it cannot be taken back, and the history of the episode starts
