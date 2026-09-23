@@ -514,18 +514,24 @@ place.
       nobody asked for it. Deleting the work folder makes the episode new,
       and then it starts over as a new one does. The rule and its tests are
       in `frontend/src/lib/flow.ts`.
-    - **What a search is doing is the head of the list itself.** **New**
-      becomes **Cancel** while work runs, and the line under it fills up as
-      the work goes on. Nothing is added to the column, so the clips never
-      move down. A render shows there in the same way.
-    - **How far a search is, is measured.** The fill in **Cancel** is the
-      share of the search that is done and the info mark says what it is
-      doing, loading the model, reading the transcript or how many clips
-      it has found, and about how long is left. Both are measured against
-      how long the same parts took the last time on this machine, so the
-      very first search with a model has nothing to go on and shows the
-      beam without a fill. The engine keeps the timings, see
-      [ENGINE.md](ENGINE.md).
+    - **What a search is doing is in the row its next clip appears in.**
+      The first of the rows still to come wears the beam and the fill, and
+      says in it what is happening: loading the model, reading the
+      transcript, choosing the moments, writing the clips or how many are
+      found, and about how long is left. Before the transcript reaches the
+      end of the window, the same row says so and fills up as the
+      transcript covers the window. **New** becomes **Cancel** while a
+      search runs and only offers to stop it. A render, which has no row
+      to fill, wears the beam and the fill in the button.
+    - **How far a search is, is measured.** The fill is the share of the
+      search that is done, measured against how long the same parts took
+      the last time on this machine. Inside a part, what the model counts
+      itself beats the clock: the transcript it has read, what it has
+      thought against its budget, the clips it has written. A local model
+      this machine has never timed is measured against a search timed on
+      an M2 Max until its own first search has finished. The API has no
+      such stand-in, so its first search shows the beam without a fill.
+      The engine keeps the timings, see [ENGINE.md](ENGINE.md).
     - **Clips arrive one at a time.** The engine writes each clip to the
       plan the moment it is framed, while the model is still writing the
       next, so the list fills in a row at a time and the rows still to come
@@ -829,7 +835,7 @@ places simply leaves it unused. The engine side is `SetCaptionTime` in
 ### Undo and redo
 
 **Everything done to an episode's clips can be taken back**, with **Undo**
-and **Redo** in the Edit menu, Cmd-Z and Shift-Cmd-Z. That is a trim, a
+and **Redo** in the Edit menu, Cmd-Z and Shift-Cmd-Z, and Redo also answers to Cmd-Y. That is a trim, a
 cut made, moved or put back, the crop frame, the caption box moved, a word
 corrected, added or removed, the caption face and size, a clip removed and
 a search removed. Each is one step. Taking one back chooses the clip it

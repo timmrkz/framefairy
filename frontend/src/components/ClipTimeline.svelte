@@ -1099,10 +1099,11 @@
         and drag across the clip to take out the stretch you drag over, or hold it and double-click
         to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
         words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
-        each from where it appears to where it goes. Where one is a little early or late against
-        what you hear, drag its edge: the left side of a line between two captions is where the one
-        before goes, the right side where the one after appears. An edge moved by hand is in the
-        accent, and a double-click puts it back.
+        each from where it appears to where it goes, and the one the video preview is showing is
+        lit. Where one is a little early or late against what you hear, drag its edge: the left
+        side of a gap between two captions is where the one before goes, the right side where the
+        one after appears. An edge moved by hand has a line that sticks out, and a double-click
+        puts it back.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
@@ -1209,8 +1210,8 @@
         {#each captionBlocks as b (b.i)}
           <div
             class="caption"
-            class:active={capDraft?.index === b.i}
-            style="left: {x(b.from)}%; width: {Math.max(x(b.to) - x(b.from), 0)}%"
+            class:showing={time >= b.from && time < b.to}
+            style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
           ></div>
         {/each}
       </div>
@@ -1448,26 +1449,39 @@
      of pixels, the blocks sit in it with a pixel above and below, and the
      edges are as tall as the band so they never reach the trim and cut
      edges above them. */
+  /* The band along the foot of the track the caption blocks lie in.
+     20 pixels: a block of 14 with 3 above and below it, which is where a
+     mark for an edge put there by hand sticks out. */
   .captions {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    height: 14px;
+    height: 20px;
     pointer-events: none;
     z-index: 1;
   }
 
+  /* A block is drawn a pixel short of its time at each end, so two
+     captions that meet show a gap of two pixels where one goes and the
+     next appears, and every block reads as one of its own. */
   .caption {
     position: absolute;
     top: 3px;
-    height: 8px;
+    height: 14px;
+    margin-left: 1px;
     background: var(--faint);
-    border-radius: 2px;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px var(--line);
   }
 
-  .caption.active {
-    background: var(--muted);
+  /* The caption the video preview is showing lights up, in the app's
+     colour. The accent in this band means that and only that: the white
+     line is the edge under the hand, and the mark that sticks out is an
+     edge put there by hand. */
+  .caption.showing {
+    background: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent-lit);
   }
 
   /* An edge is grabbed on its own side of the line, so where two captions
@@ -1476,7 +1490,7 @@
   .capedge {
     position: absolute;
     bottom: 0;
-    height: 14px;
+    height: 20px;
     width: 8px;
     cursor: ew-resize;
     z-index: 2;
@@ -1489,30 +1503,34 @@
   .capedge::after {
     content: "";
     position: absolute;
-    top: 1px;
-    bottom: 1px;
+    top: 3px;
+    bottom: 3px;
     width: 2px;
     background: var(--text);
     opacity: 0;
   }
 
   .capedge.start::after {
-    left: 0;
+    left: 1px;
   }
 
   .capedge.end::after {
-    right: 0;
+    right: 1px;
   }
 
-  /* An edge put there by hand is marked in the accent, the way a crop
-     moved by hand is, so what was moved can be found again. */
+  /* An edge put there by hand is marked by a line that sticks out of the
+     block above and below, so it can be found again whatever the block
+     under it is doing. */
   .capedge.moved::after {
-    background: var(--accent-hi);
+    top: 0;
+    bottom: 0;
+    background: var(--accent-lit);
     opacity: 1;
   }
 
   .capedge:hover::after,
   .capedge.active::after {
+    background: var(--text);
     opacity: 1;
   }
 

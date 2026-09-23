@@ -55,16 +55,20 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 
 	e := NewEngine(NewLog(io.Discard, false, false))
 	var heard strings.Builder
-	reply, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "Transcript:", 40, 12, 1000, "",
+	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, "Transcript:", 40, 12, 1000, "",
 		&Listener{Text: func(p string) { heard.WriteString(p) }})
 	if err != nil {
 		t.Fatal(err)
 	}
+	reply := answer.Content
 	if reply != `{"clips":[]}` || heard.String() != reply {
 		t.Errorf("reply %q, heard %q", reply, heard.String())
 	}
 	if request["stream"] != true || request["return_progress"] != true {
 		t.Errorf("not asked for a stream: %v", request)
+	}
+	if request["reasoning_budget_tokens"] != 2048.0 || request["reasoning_budget_message"] != thinkEnough {
+		t.Errorf("thinking not held to its budget: %v", request)
 	}
 	format := request["response_format"].(map[string]any)
 	if format["type"] != "json_schema" {

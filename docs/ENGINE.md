@@ -203,7 +203,10 @@ cut out. The decoding is asked of the system's own video decoder,
 VideoToolbox on macOS, and falls back to the processor by itself where
 there is none, which today is every Windows and Linux build. If the system
 decoder refuses a file, the same work is done again on the processor and
-everything after it goes there too. The crop
+everything after it goes there too. Which decoder does the work is found
+once per episode file, by decoding one frame the way framing does and
+reading what ffmpeg says, and written to the log as `framing decodes
+video on VideoToolbox` or `on the processor`. The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
@@ -241,21 +244,34 @@ while the search runs is recorded against the plan it was made about.
 Stopping a search keeps what it had written.
 
 How far a search has come is measured, not guessed, in
-`engine/searchclock.go`. A search is four parts one after the other:
-loading the model, the model reading the transcript, the model writing its
-clips, and the framing still going when it stops. Every search that
-finishes keeps how long each part took, per model, in
+`engine/searchclock.go`. A search is five parts one after the other:
+loading the model, the model reading the transcript, the model thinking,
+the model writing its clips, and the framing still going when it stops.
+Every search that finishes keeps how long each part took, per model, in
 `~/.framefairy/speed.json`: the seconds to load, the transcript characters
-read per second up to the first word of the answer, the seconds per clip,
-and the seconds of framing after the answer. Each new timing counts half,
-so one slow search on a busy machine moves the next estimate without
-taking it over. The next search reports its share and the time left
-against those, about twice a second, with llama-server's own count of the
-prompt it has read standing in for the clock where it gives one. The very
-first search with a model has nothing to be measured against, and says
-what it is doing without saying how far it is. A search against a server
-that was already running loaded nothing, and leaves the loading time as it
-was.
+read per second, the seconds of thinking and the tokens thought a second,
+the seconds per clip, and the seconds of framing after the answer. Each
+new timing counts half, so one slow search on a busy machine moves the
+next estimate without taking it over. The next search reports its share
+and the time left against those, about twice a second. Inside a part,
+what the model counts beats the clock: llama-server's count of the prompt
+it has read, and the tokens it has thought against its budget. A local
+model this machine has not timed yet is measured against a search timed on
+an M2 Max with Gemma 4, which is close enough to say how far it is and is
+replaced by the first search that finishes. The API has no stand-in, and
+its first search says what it is doing without saying how far it is. A
+search against a server that was already running loaded nothing, and
+leaves the loading time as it was. A record from before the thinking was
+timed on its own measured something else, and is replaced.
+
+**The local model thinks on a budget.** Left to itself, Gemma 4 thinks
+about a half hour window for 12,000 tokens or more before it writes a
+word of the answer. On an M2 Max that is four of the five and a half
+minutes a search takes, while loading is 24 seconds and reading the
+transcript 30. So the request carries `reasoning_budget_tokens`, 2,048 by
+default, which is about 45 seconds: when it runs out, llama-server closes
+the thought with a line telling the model to write its answer, and it
+does. `--think` changes it, `-1` is no limit and `0` is no thinking.
 
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when

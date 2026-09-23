@@ -456,12 +456,14 @@ input[type="password"] {
   overflow: auto;
 }
 
-/* A control with work running in it carries the beam, and the beam is
-   drawn inside the control: over its own background, under its own words.
+/* A control with work running in it carries the beam, and so does the
+   card in the clip list a search is filling next. The beam is drawn
+   inside it: over its own background, under its own words.
    A stacking context of the control's own is what puts it there, and the
    rounded corners clip it. Both belong to the control rather than to the
    beam, because only the control knows them. */
-button:has(> .beam) {
+button:has(> .beam),
+li:has(> .beam) {
   position: relative;
   overflow: hidden;
   isolation: isolate;

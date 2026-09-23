@@ -33,7 +33,22 @@ type LocalModel struct {
 	Model string
 	// URL is an already running llama-server. When set, nothing is started.
 	URL string
+	// Think is the most the model may think before it answers, in tokens.
+	// Negative is no limit and 0 is no thinking at all.
+	Think int
 }
+
+// DefaultThink is how much the local model may think before it answers.
+//
+// Left to itself, Gemma 4 thinks about a half hour window for 12,000 tokens
+// or more, which on an M2 Max is four minutes before the first clip is
+// written, and most of every search. 2,048 tokens is 45 seconds. When the
+// budget runs out the model is told so and writes its answer.
+const DefaultThink = 2048
+
+// thinkEnough is what the model is told, at the end of its thoughts, when
+// its budget runs out.
+const thinkEnough = "\n\nThat is enough thinking. Time to write the answer.\n"
 
 // LlamaServerPath decides which llama-server to run, the same way ffmpeg is
 // decided: the one named in the environment, then the one sitting beside the
@@ -251,15 +266,17 @@ type chatError struct {
 }
 
 // CallLocal asks the model on this machine for a plan. The answer is read
-// as it is written, and listen hears it arrive.
+// as it is written, and listen hears it arrive. What comes back is the
+// answer with how the model got to it: how long it read and thought and
+// wrote.
 func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
-	lineCount, count, maxTokens int, logDir string, listen *Listener) (string, error) {
+	lineCount, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
 		listen.part(partLoading)
 		started, stop, err := e.startServer(ctx, m, contextFor(runeLen(prompt), maxTokens), logDir)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		defer stop()
 		url = started
@@ -274,6 +291,10 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": maxTokens,
+		// How long the model may think. The server stops the thought at the
+		// budget and closes it with the message, so the answer follows.
+		"reasoning_budget_tokens":  max(m.Think, -1),
+		"reasoning_budget_message": thinkEnough,
 		// Streamed, with the reading of the prompt reported as it goes and
 		// what it cost at the end, which a stream otherwise leaves out.
 		"stream":          true,
@@ -287,7 +308,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 		},
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if logDir != "" {
 		_ = os.WriteFile(filepath.Join(logDir, "plan-prompt.txt"),
@@ -297,7 +318,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		url+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	request.Header.Set("content-type", "application/json")
 
@@ -305,37 +326,34 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	response, err := localClient.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		}
-		return "", renderErr("the local model did not answer: %s", Scrub(err.Error(), 200))
+		return nil, renderErr("the local model did not answer: %s", Scrub(err.Error(), 200))
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		// A refusal is kept to read. An answer is kept in the saved reply,
+		// with how the model got to it, so there is one file per answer.
 		if logDir != "" {
-			writeJSONText(filepath.Join(logDir, "plan-response.json"), raw)
+			writeJSONText(filepath.Join(logDir, "plan-error.json"), raw)
 		}
 		message := fmt.Sprintf("status %d", response.StatusCode)
 		var refused chatError
 		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
 			message = refused.Error.Message
 		}
-		return "", renderErr("the local model reported an error: %s", Scrub(message, 400))
+		return nil, renderErr("the local model reported an error: %s", Scrub(message, 400))
 	}
 	answer, err := readLocalStream(response.Body, listen)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		}
-		return "", err
-	}
-	if logDir != "" {
-		if kept, err := json.Marshal(answer); err == nil {
-			writeJSONText(filepath.Join(logDir, "plan-response.json"), kept)
-		}
+		return nil, err
 	}
 	if strip(answer.Content) == "" {
-		return "", renderErr("the local model returned no answer")
+		return nil, renderErr("the local model returned no answer")
 	}
 	reading, writing := 0.0, 0.0
 	if t := answer.Timings; t != nil {
@@ -353,5 +371,5 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 		e.Log.Warn("the answer hit the %s token ceiling. Raise --max-tokens if clips are missing.",
 			commas(maxTokens))
 	}
-	return answer.Content, nil
+	return answer, nil
 }

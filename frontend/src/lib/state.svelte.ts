@@ -97,6 +97,12 @@ class Chosen {
     this.windows[path] = { from, to };
   }
 
+  // Forgets an episode that was removed.
+  forget(path: string) {
+    delete this.windows[path];
+    delete this.looked[path];
+  }
+
   of(path: string, duration: number): { from: number; to: number } | null {
     const w = this.windows[path];
     if (!w || w.to <= w.from || w.to > duration + 0.5) return null;

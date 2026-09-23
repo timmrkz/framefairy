@@ -9,7 +9,7 @@
     type EpisodeStatus,
     errorText,
   } from "./lib/api";
-  import { jobs, nav, shell } from "./lib/state.svelte";
+  import { chosen, jobs, nav, shell } from "./lib/state.svelte";
   import Icon from "./components/Icon.svelte";
   import Confirm from "./components/Confirm.svelte";
   import { installFonts } from "./lib/fonts";
@@ -89,6 +89,9 @@
       removing = null;
       await refresh();
       if (nav.view.name === "episode" && nav.view.path === ep.source) nav.go({ name: "empty" });
+      // An episode added again is a new one: its window starts from the
+      // beginning and it looks for its first clips by itself.
+      chosen.forget(ep.source);
     } catch (err) {
       removing = null;
       problem = errorText(err);

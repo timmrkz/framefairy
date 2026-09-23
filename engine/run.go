@@ -41,8 +41,11 @@ type Options struct {
 	LLMURL    string
 	Model     string
 	MaxTokens int
-	Budget    float64
-	Prefill   bool
+	// Think is the most a local model may think, in tokens, negative for
+	// no limit.
+	Think   int
+	Budget  float64
+	Prefill bool
 
 	FFmpeg  string
 	FFprobe string
@@ -80,7 +83,7 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{
 		Count: 12, Min: 20, Max: 30, KeepPause: 0.10, Planner: "local",
-		Model: DefaultModel, MaxTokens: 48000, Budget: 2.00,
+		Model: DefaultModel, MaxTokens: 48000, Think: DefaultThink, Budget: 2.00,
 		Width: 1080, Height: 1920, CRF: 18, Preset: "slow", AudioBitrate: "256k",
 	}
 }
@@ -580,7 +583,8 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 
 // resolveLocal finds the local model and server before anything slow starts.
 func resolveLocal(opts Options) (*LocalModel, error) {
-	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL}
+	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL,
+		Think: opts.Think}
 	if m.URL != "" {
 		return m, nil
 	}

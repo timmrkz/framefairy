@@ -115,8 +115,10 @@ messages, pull request text, code comments and chat replies.
 - Plain, direct language. Short sentences.
 - **One name per thing.** The area the episode plays in is the **video
   preview**, never the picture or the player. The slim strip under it, the
-  whole episode at a glance, is the **range picker**. The waveform below
-  the workspace, the episode up close, is the **clip timeline**. The key is
+  whole episode at a glance, is the **range picker**, and the part of the
+  episode chosen on it is the **window**, never a stretch. The app's own
+  window is the app. The waveform below the workspace, the episode up
+  close, is the **clip timeline**. The key is
   the **space bar**. Taking something away is **remove**, everywhere, in
   every button and every message. Whatever a thing is called in the
   interface, it is called that in the docs and in the code comments too.
@@ -162,7 +164,7 @@ messages, pull request text, code comments and chat replies.
   pointer. Something undoable never asks first, it shows what it did.
 - **What the app can do by itself, it does.** Adding a video is enough: the
   transcription starts, and the first search follows as soon as the
-  transcript covers the chosen stretch. A state every episode passes
+  transcript covers the window. A state every episode passes
   through, like having no transcript yet, is never reported as a failure.
 - **One space between two things.** Every gap in the workspace is `--gap`
   from `frontend/src/app.css`: between the columns, between the video

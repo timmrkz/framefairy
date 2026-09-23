@@ -122,3 +122,18 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 		t.Errorf("segments %+v, on the processor from now on: %v", segments, e.softDecode.Load())
 	}
 }
+
+func TestDecoderIn(t *testing.T) {
+	cases := map[string]string{
+		"[vist#0:0/h264] Using auto hwaccel type videotoolbox with new default device.\n": "VideoToolbox",
+		"Using auto hwaccel type vaapi with new default device.":                          "vaapi",
+		"Stream #0:0: Video: h264\n":                                                      "the processor",
+		"Using auto hwaccel type videotoolbox with new default device.\n" +
+			"Failed setup for format videotoolbox_vld: hwaccel initialisation returned error.": "the processor",
+	}
+	for stderr, want := range cases {
+		if got := decoderIn(stderr); got != want {
+			t.Errorf("%q read as %q, want %q", stderr, got, want)
+		}
+	}
+}

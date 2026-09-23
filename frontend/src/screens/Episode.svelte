@@ -250,6 +250,27 @@
   const coming = $derived(
     finding || starting ? clips.length + Math.max(0, count - foundSoFar) : stillWaiting ? count : 0,
   );
+  // What the row the next clip will appear in is waiting on. While the
+  // transcript has not reached the end of the window, that is the
+  // transcript, and how far it has come is how much of the window it
+  // covers. While a search runs, it is whatever the search says it is
+  // doing.
+  const next = $derived.by(() => {
+    if (finding || starting) {
+      const p = working?.progress;
+      return {
+        what: p?.text || "Starting",
+        left: p && p.remaining > 0 ? `About ${clock(p.remaining)} left` : "",
+        fraction: p && p.fraction >= 0 ? p.fraction : -1,
+      };
+    }
+    if (!stillWaiting) return null;
+    return {
+      what: transcribing ? "Waiting for the transcript" : "The window is not transcribed yet",
+      left: `${clock(Math.max(0, covered))} of ${clock(to)}`,
+      fraction: to > 0 ? Math.min(Math.max(covered / to, 0), 1) : -1,
+    };
+  });
   const waitNote = $derived.by(() => {
     if (finding || starting) {
       return `The model is reading the stretch from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${doing ? ` ${doing}${leftOfWork ? `, about ${leftOfWork}` : ""}.` : leftOfWork ? ` About ${leftOfWork}.` : ""}`;
@@ -904,7 +925,22 @@
       undoing = false;
     }
   }
-  onMount(() => onUndo(undo));
+  // Redo also answers to Cmd-Y, and Ctrl-Y on Windows and Linux, where it
+  // is the usual key. The menu can hold one key for it, so this one is
+  // heard here.
+  function redoKey(e: KeyboardEvent) {
+    if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "y") return;
+    e.preventDefault();
+    undo("redo");
+  }
+  onMount(() => {
+    const off = onUndo(undo);
+    window.addEventListener("keydown", redoKey);
+    return () => {
+      off?.();
+      window.removeEventListener("keydown", redoKey);
+    };
+  });
 
   // The first clip a search finds, shown as soon as it is in the list.
   function showFirstFound() {
@@ -1429,11 +1465,12 @@
               title={`${action.title}${leftOfWork ? `, ${leftOfWork}` : ""}`}
               aria-haspopup={action.label === "New" && covering ? "dialog" : undefined}
             >
-              <!-- How the work is going, inside the button the work was
-                   started from and behind its own words. The control that
-                   started it is the one that should say how it is doing,
-                   and nothing is drawn across the list for it. -->
-              {#if lane.job}<Busy fraction={share} />{/if}
+              <!-- How a render is going, inside the button it was
+                   started from and behind its own words. A search says
+                   how it is going in the row its next clip will appear
+                   in, where it can say what it is doing as well, so the
+                   button only offers to stop it. -->
+              {#if lane.job && !finding}<Busy fraction={share} />{/if}
               <Icon name={action.icon} />
               {action.label}
             </button>
@@ -1443,6 +1480,7 @@
               clips={shown}
               {selected}
               {coming}
+              {next}
               removed={removed?.key ?? ""}
               onselect={select}
               onremove={removeClip}

@@ -168,6 +168,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	}
 
 	reply, haveReply, fresh := "", false, false
+	var how *localAnswer
 	if cachePath != "" {
 		if _, err := os.Stat(cachePath); err == nil {
 			if opts.Fresh {
@@ -206,7 +207,11 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	} else {
 		// A model is going to be asked, so the search has parts that take
 		// time, and the clock says how far it has come through them.
-		clock := newSearchClock(e.Log, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count)
+		budget := -1
+		if opts.Local != nil {
+			budget = opts.Local.Think
+		}
+		clock := newSearchClock(e.Log, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count, budget)
 		go clock.run()
 		defer clock.stop()
 		build.clock = clock
@@ -215,16 +220,19 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 	if !haveReply && opts.Local != nil {
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
-			var err error
-			reply, err = e.CallLocal(ctx, *opts.Local, prompt, len(lines), opts.Count,
+			answer, err := e.CallLocal(ctx, *opts.Local, prompt, len(lines), opts.Count,
 				opts.MaxTokens, opts.LogDir, listen)
+			if err == nil {
+				reply, how = answer.Content, answer
+			}
 			return err
 		})
 		if err != nil {
 			return nil, build.failed(err)
 		}
 		build.answered()
-		saveReply(cachePath, reply)
+		how.Content = ""
+		saveReply(cachePath, reply, how)
 		haveReply, fresh = true, true
 	}
 
@@ -278,7 +286,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			return nil, build.failed(err)
 		}
 		build.answered()
-		saveReply(cachePath, reply)
+		saveReply(cachePath, reply, nil)
 		fresh = true
 	}
 
@@ -372,15 +380,23 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 // saveReply keeps an answer so the same transcript is never planned twice.
 // It is stored parsed when it parses, so the file is readable rather than one
 // long escaped line.
-func saveReply(cachePath, reply string) {
+func saveReply(cachePath, reply string, how *localAnswer) {
 	if cachePath == "" {
 		return
+	}
+	// How the model got to its answer goes beside it, where there is
+	// anything to say: the tokens it read, thought and wrote, and how fast.
+	extra := ""
+	if how != nil {
+		if told, err := json.MarshalIndent(how, "  ", "  "); err == nil {
+			extra = ",\n  \"how\": " + string(told)
+		}
 	}
 	var body []byte
 	if json.Valid([]byte(reply)) {
 		var indented bytes.Buffer
 		if json.Indent(&indented, []byte(reply), "  ", "  ") == nil {
-			body = []byte("{\n  \"parsed\": " + indented.String() + "\n}")
+			body = []byte("{\n  \"parsed\": " + indented.String() + extra + "\n}")
 		}
 	}
 	if body == nil {

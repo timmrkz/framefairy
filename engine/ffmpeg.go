@@ -63,6 +63,9 @@ type Engine struct {
 	// decoder has failed on this machine, and every decode after it is
 	// done on the processor.
 	softDecode atomic.Bool
+	// decoders holds, per episode file, which decoder framing was found to
+	// use, so it is looked up and reported once.
+	decoders sync.Map
 
 	mu               sync.Mutex
 	encoder          Encoder

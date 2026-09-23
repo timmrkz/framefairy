@@ -174,6 +174,30 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 	}
 }
 
+// A caption shown earlier is shown on time again by the undo, and earlier
+// again by the redo.
+func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	change := edited(t, logs, func() error { return SetCaptionTime(path, "01", 10.0, "start", 9.8) })
+	moved := func() bool {
+		got := clipsOf(t, path)["01"].CaptionTimes[wordKey(10.0)].Start
+		return got != nil && near(*got, 9.8)
+	}
+	if _, err := change.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	if moved() {
+		t.Error("the undo left the caption where it was moved")
+	}
+	if _, err := change.Redo(); err != nil {
+		t.Fatal(err)
+	}
+	if !moved() {
+		t.Error("the redo did not move the caption again")
+	}
+}
+
 // Undo and redo from several goroutines at once, as a window firing keys
 // faster than the disk answers would, never leave a plan that does not
 // load, and end on one of the two states the edit knows.

@@ -36,6 +36,55 @@ func (e *Engine) decodeFlags() []string {
 	return []string{"-hwaccel", "auto"}
 }
 
+// decoderUsed says which decoder ffmpeg really uses for this file, by
+// decoding one frame the way framing does and reading what ffmpeg says
+// about it. It is found once per file and written to the log, so a search
+// says whether the system's decoder did the work or the processor did.
+// "auto" picks the system's decoder without a word unless asked to talk,
+// and falls back to the processor for a file it will not take, which is
+// why this asks rather than assumes.
+func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) string {
+	if found, ok := e.decoders.Load(path); ok {
+		return found.(string)
+	}
+	used := "the processor"
+	if flags := e.decodeFlags(); flags != nil {
+		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
+		args = append(args, "-ss", fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
+		said := run(ctx, "", e.FFmpeg, args...)
+		if ctx.Err() != nil {
+			return ""
+		}
+		used = decoderIn(said.Stderr)
+	}
+	if _, known := e.decoders.LoadOrStore(path, used); !known {
+		e.Log.Info("framing decodes video on %s", used)
+	}
+	return used
+}
+
+// decoderIn reads the decoder from what ffmpeg says with -loglevel verbose.
+func decoderIn(stderr string) string {
+	const marker = "Using auto hwaccel type "
+	if strings.Contains(stderr, "Failed setup for format") {
+		return "the processor"
+	}
+	at := strings.Index(stderr, marker)
+	if at < 0 {
+		return "the processor"
+	}
+	words := fields(stderr[at+len(marker):])
+	if len(words) == 0 {
+		return "the processor"
+	}
+	switch name := words[0]; name {
+	case "videotoolbox":
+		return "VideoToolbox"
+	default:
+		return Scrub(name, 20)
+	}
+}
+
 // DetectShots finds camera switches inside one span, as absolute times.
 //
 // Only the spans a clip keeps get scanned. The switches are hard cuts
@@ -428,6 +477,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 	}
 	ordered := append([]Span(nil), spans...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
+	e.decoderUsed(ctx, path, ordered[0].Start)
 
 	type shot struct {
 		key   float64
