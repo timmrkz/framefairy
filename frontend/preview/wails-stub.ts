@@ -313,6 +313,13 @@ export const Call = {
     const started = ((window as any).__started ??= Date.now());
     const growing = location.search.includes("growing");
     const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
+    // What is written down of it. The real transcription saves every 8 s of
+    // work, minutes of audio apart, while every chunk it hears is reported
+    // at once. With ?lagging the saved transcript trails the same way, which
+    // is what the first search used to wait for.
+    const saved = location.search.includes("lagging")
+      ? Math.min(600 + Math.floor((Date.now() - started) / 8000) * 8 * 600, 14423)
+      : grown;
     // A search that really runs and really finishes, for testing what the
     // workspace does the moment the first clips arrive.
     const found = location.search.includes("found");
@@ -432,7 +439,7 @@ export const Call = {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: landed().length ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
         }
         if (growing) {
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: grown, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: false });
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: saved, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: false });
         }
         if (location.search.includes("transcribing")) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 1200, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true });
@@ -835,6 +842,9 @@ export const Events = {
     const timer = setInterval(() => {
       const gone = !!(window as any).__stopped;
       const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
+      // When each edge was sent, so a probe can tell how long the
+      // interface took to act on one from how long the stub took to say it.
+      ((window as any).__heardSent ??= []).push({ at: Date.now() - started, covered: grown });
       fn({
         data: {
           job: {

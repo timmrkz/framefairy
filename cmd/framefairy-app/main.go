@@ -1003,10 +1003,12 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project,
 		}
 		p.Log().ProgressOf(label, share, remaining)
 		// The file is read once a second, because it is the whole
-		// transcript. How far the audio has been heard is a number the
-		// queue already holds, so it is looked at four times as often, and
-		// the pause comes within a quarter of a second of the window's end.
-		if err := s.untilHeard(ctx, p.Source, end, pausedOnce); err != nil {
+		// transcript. What the queue holds, how far the audio has been
+		// heard and whether the transcription still runs, is looked at
+		// every 20 ms, so the pause comes the moment the window has been
+		// heard and the search starts the moment the pause has written
+		// down what it heard.
+		if err := s.untilNews(ctx, p.Source, end, !pausedOnce, paused != nil); err != nil {
 			p.Log().ClearProgress()
 			return paused, engine.ErrCancelled
 		}
@@ -1017,20 +1019,27 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project,
 // here, because a real transcript needs a real recogniser.
 var coverage = engine.Coverage
 
-// untilHeard waits a second, or less if the audio of the episode has been
-// heard to end before that and the transcription is still to be paused.
-func (s *FrameFairy) untilHeard(ctx context.Context, path string, end float64, pausedOnce bool) error {
-	for range 4 {
+// untilNews waits a second, or less if something has happened that the
+// wait for the transcript has to act on at once: before the pause, the
+// audio heard to the end of the window, and after it, the transcription
+// having stopped, which is when what it heard is on disk. After the pause
+// it used to sleep the whole second regardless, and the search started up
+// to a second after it could have.
+func (s *FrameFairy) untilNews(ctx context.Context, path string, end float64,
+	toPause, pausedHere bool) error {
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(20 * time.Millisecond):
 		}
-		if pausedOnce {
-			continue
+		job, ok := s.jobs.find(path, "transcribe")
+		running := ok && job.State == JobRunning
+		if pausedHere && !running {
+			return nil
 		}
-		if job, ok := s.jobs.find(path, "transcribe"); ok && job.State == JobRunning &&
-			job.Progress != nil && job.Progress.Covered >= end-0.05 {
+		if toPause && running && job.Progress != nil && job.Progress.Covered >= end-0.05 {
 			return nil
 		}
 	}

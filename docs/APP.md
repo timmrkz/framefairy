@@ -324,12 +324,14 @@ place.
   it at any point: it has a place of its own, on the range picker, at the
   edge it moves. The two run in lanes of their own, and a head that carried
   both is how it came to say **Transcribing** over a list of clips.
-- **New waits until a search could run.** A search reads the transcript off
-  disk, so **New** is off until the saved transcript reaches the end of the
-  chosen window, and says how far it has got and how far it needs to go.
-  It goes by what is written down rather than by what has been heard,
-  because a search started on the second one would read a transcript that
-  stops short of the window it was asked for.
+- **New waits until a search could run.** **New** is off until the
+  episode has been heard to the end of the chosen window, and says how far
+  it has got and how far it needs to go. It goes by what has been heard,
+  the edge the range picker draws, not by what has been written down. A
+  search reads the transcript off disk, so the search pauses the
+  transcription, the pause writes down all it heard, and the search reads
+  that. Going by what was written down made every search wait for the next
+  save, which comes every 8 s of work, minutes of audio apart.
 - **The transcription is worked from the edge it moves.** On the range
   picker, at the transcript's edge, a mark appears while the pointer is on
   the track and does the one thing there is to do: pause it while it reads,
@@ -532,14 +534,15 @@ place.
       starts with it in memory. **While clips are found, the transcription
       waits**, on this episode and any other, so the model has the
       machine to itself, and it carries on by itself when the search
-      ends. One paused by hand stays paused. The search waits for the
-      audio to be heard to the end of the window, not for the next time
-      the transcript is written down, which is seconds apart and minutes
-      of audio. The moment it is heard, the transcription is paused, the
-      pause writes down all it heard, and the search starts on that. So
-      the range picker's edge stops a little past the end of the window
-      rather than running on across the track while the first row sits
-      full, and it carries on from where it stopped. It
+      ends. One paused by hand stays paused. The first search is asked
+      for the moment the audio has been heard to the end of the window,
+      not the next time the transcript is written down, which is every
+      8 s of work and minutes of audio apart. The search pauses the
+      transcription at once, the pause writes down all it heard, and the
+      search starts the moment that is on disk. The transcription hears in
+      chunks of 15 to 30 s, so its edge stops at most two chunks past the
+      end of the window, about a minute of audio, and carries on from
+      there after the search. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and

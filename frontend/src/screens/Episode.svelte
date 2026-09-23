@@ -172,7 +172,7 @@
       off: !readyToLook,
       primary: true,
       title: !readyToLook
-        ? `The transcript reaches ${clock(covered)}. Clips can be looked for once it reaches ${clock(to)}`
+        ? `The episode is heard up to ${clock(heard)}. Clips can be looked for once it reaches ${clock(to)}`
         : covering
           ? "Look at the window again, removing the clips it has"
           : "Look for clips in the window",
@@ -237,12 +237,16 @@
   let stoppedAt = $state<number | null>(null);
   const shownHeard = $derived(stoppedAt ?? heard);
 
-  // A search reads the transcript off disk, so it can only run where the
-  // saved transcript reaches. It goes by covered and not by heard for that
-  // reason: heard runs ahead of what has been written down, and a search
-  // started on it would read a transcript that stops short of the window
-  // it was asked for. shouldLook keeps to covered for the same reason.
-  const readyToLook = $derived(duration > 0 && to > 0 && covered >= to - 0.5);
+  // A search can be asked for the moment the window has been heard. It
+  // reads the transcript off disk, and the Go side makes sure that is
+  // there: the search pauses the transcription, the pause writes down all
+  // it heard, and then it reads. This used to go by what was saved, which
+  // is written every 8 s of work, minutes of audio apart, and read here
+  // every 2 s: the first search was asked for up to 10 s after the window
+  // had been heard, and the transcription ran on minutes past its end.
+  // Everything that decides about a search goes by heard for that reason,
+  // shouldLook and shouldWarm too.
+  const readyToLook = $derived(duration > 0 && to > 0 && heard >= to - 0.5);
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -257,7 +261,7 @@
   // window. The list waits with a row of placeholders and the info
   // mark beside the head says why, the same mark that tells what the list
   // is once there are clips in it.
-  const stillWaiting = $derived(!busy && waitingOnWords && covered < to - 0.5);
+  const stillWaiting = $derived(!busy && waitingOnWords && heard < to - 0.5);
   // A new episode's first search is on its way: nobody has searched it,
   // and it starts by itself the moment the transcript covers the window.
   // From then on it is work in hand, with the row that says so and a
@@ -1183,7 +1187,7 @@
   $effect(() => {
     if (!source || !status) return;
     const look = shouldLook({
-      covered,
+      covered: heard,
       to,
       plans: status.plans?.length ?? 0,
       clips: clips.length,
@@ -1202,7 +1206,7 @@
   $effect(() => {
     if (!source || !status || chosen.warmed[path]) return;
     const warm = shouldWarm({
-      covered,
+      covered: heard,
       to,
       plans: status.plans?.length ?? 0,
       clips: clips.length,

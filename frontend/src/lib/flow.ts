@@ -21,8 +21,11 @@ export function shouldTranscribe(s: TranscribeState): boolean {
 }
 
 export type SearchState = {
-  // How far the transcript reaches, in seconds, and the end of the window
-  // chosen on the range picker.
+  // How far the episode has been heard, in seconds, and the end of the
+  // window chosen on the range picker. Heard, not saved: the transcript is
+  // written seconds of work apart, and a search waited for that while the
+  // transcription ran minutes past the window. The Go side waits for the
+  // words to be on disk before the search reads them.
   covered: number;
   to: number;
   // What the episode already has.

@@ -123,6 +123,7 @@ func TestASearchStartsWhenTheWindowIsHeard(t *testing.T) {
 	s, path, _ := library(t)
 	var mu sync.Mutex
 	saved, heard := 0.0, 0.0
+	var savedAt time.Time
 	was := coverage
 	coverage = func(string, string) (float64, bool) {
 		mu.Lock()
@@ -142,6 +143,7 @@ func TestASearchStartsWhenTheWindowIsHeard(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 				mu.Lock()
 				saved = heard
+				savedAt = time.Now()
 				mu.Unlock()
 				return "", engine.ErrCancelled
 			case <-time.After(50 * time.Millisecond):
@@ -160,9 +162,16 @@ func TestASearchStartsWhenTheWindowIsHeard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	returned := time.Now()
 	mu.Lock()
-	gotSaved, gotHeard := saved, heard
+	gotSaved, gotHeard, landed := saved, heard, savedAt
 	mu.Unlock()
+	// The search starts the moment the paused transcription has written
+	// down what it heard. The wait used to sleep a full second after the
+	// pause before it looked at the transcript again.
+	if lag := returned.Sub(landed); lag > 150*time.Millisecond {
+		t.Errorf("the search started %s after the transcript was written down", lag)
+	}
 	if len(paused) != 1 || paused[0] != path {
 		t.Errorf("paused %v, want the episode's transcription handed back", paused)
 	}

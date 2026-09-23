@@ -104,7 +104,22 @@ what became of it.
     kept. `engine/transcript.go`. Tested beside it: a transcript cut short,
     not JSON, or without its loudness is started again, and six readers
     while it is written never see it go back or end early.
-12. **Smaller ones.** Stopping llama-server read its state while another
+12. **The first search waited for the saved transcript.** The wait in the
+    Go side paused the transcription the moment the window was heard, but
+    the interface only asked for the first search once the saved transcript
+    covered the window, and that is written every 8 s of work and read every
+    2 s. So the search came up to 10 s after the window had been heard, and
+    the transcription ran minutes of audio past it, which Tim saw on the
+    range picker. The test for the earlier fix drove the Go side directly
+    and never went through the interface, which is how it passed. Fixed:
+    every decision about a search in the interface goes by what has been
+    heard, and after the pause the Go side starts the search the moment
+    the transcript is on disk rather than a second later. Measured in the
+    preview harness with a saved transcript that trails like the real one,
+    `?growing&lagging`: the search was asked for 6.1 s after the window was
+    heard before, and 2 ms after now. In Go, 0.9 s from the transcript on
+    disk to the search before, under 150 ms now.
+13. **Smaller ones.** Stopping llama-server read its state while another
     goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
     loading costs one search.
     A warm-up for a search that failed still loads the model. The job list,

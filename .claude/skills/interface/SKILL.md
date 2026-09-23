@@ -551,6 +551,16 @@ picker drew what had been heard and the search waited for what had been
 written down, seconds and minutes of audio apart. When a number drives
 what the person sees, the work it stands for waits on that same number.
 
+**Prove a fix on the path the person takes.** The heard-based pause was
+tested by calling the Go wait directly, and it passed, while the
+interface only asked for the search once the saved transcript covered the
+window, so the pause never came into play and Tim saw the same overrun
+again. A probe for anything the app does by itself starts where the
+person starts, adding the episode, and measures what they see, here the
+time from the edge passing the window to the search being asked for,
+with a stub that behaves like the real thing: `?growing&lagging` saves
+the transcript every 8 s the way the engine does.
+
 **A focusable thing keeps the focus a click gave it.** A caption block
 with `tabindex` took the focus on a click, and the first arrow key made
 `:focus-visible` true, so a ring stayed round a caption the video preview
