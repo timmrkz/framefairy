@@ -261,9 +261,9 @@
      shorter than the trigger, where the difference is a pixel or two.
 
      The most is what the placement says there is room for, so a name
-     longer than the window has left cannot push the list off the side of
-     it. That is the one case a name is still cut short, and the whole of
-     it is in the row's title. */
+     longer than the room that is left cannot push the list off the side
+     of the app. That is the one case a name is still cut short, and the
+     whole of it is in the row's title. */
   .pick-list {
     z-index: 60;
     width: max-content;

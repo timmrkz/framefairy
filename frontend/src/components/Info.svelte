@@ -23,10 +23,10 @@
   let bubble = $state<HTMLSpanElement>();
   // The bubble is only in the page while it is up. Hidden, it would still
   // count towards how tall the workspace is, and the workspace is meant to
-  // fit the window.
+  // fit the app without scrolling.
   const shown = $derived(open || nearMark || nearBubble);
 
-  // The bubble hangs from the window itself rather than from the mark. An
+  // The bubble hangs from the page itself rather than from the mark. An
   // info mark sits in the top right corner of the area it explains, and
   // those areas clip what is inside them, so a bubble that stayed there
   // would be cut off at the edge of a track only a few pixels tall. Out
@@ -41,10 +41,10 @@
   }
 
   // Where it ended up having to go: under the mark, above it when there is
-  // no room below, and moved sideways when it would leave the window. A
+  // no room below, and moved sideways when it would leave the app. A
   // bubble that runs off the screen is a bubble nobody can read. It stays
   // out of sight until it has been measured and put somewhere, so it never
-  // shows in the corner of the window first.
+  // shows in the corner of the app first.
   let at = $state<{ top: number; left: number } | null>(null);
   let above = $state(false);
 

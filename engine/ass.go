@@ -34,6 +34,9 @@ type Style struct {
 	Highlight bool
 	// HighlightColour is the pill colour as an ASS colour tag value.
 	HighlightColour string
+	// HighlightAlpha is how see-through the pill is, as the two hex digits
+	// an ASS alpha tag takes. 00 is solid.
+	HighlightAlpha string
 }
 
 // DefaultStyle is the caption look used unless a plan or a flag says
@@ -129,11 +132,37 @@ func highlightColour(value any, fallback string) string {
 	return "&H" + rgb[4:6] + rgb[2:4] + rgb[0:2] + "&"
 }
 
-// LooksLikeColour says whether a value is one the engine and the window can
+// LooksLikeColour says whether a value is one the engine and the app can
 // both use: #RRGGBB, RRGGBB or an ASS colour. The app asks before keeping a
 // colour a person typed or a settings file carried.
 func LooksLikeColour(value string) bool {
 	return highlightColour(value, "") != ""
+}
+
+// AssColour turns a colour picked in the app, #RRGGBB, and how opaque it
+// is, from 0 to 1, into the &HAABBGGRR the render takes. ASS counts the
+// alpha backwards: 00 is opaque and FF is clear.
+func AssColour(hex string, opacity float64) (string, bool) {
+	if !strings.HasPrefix(hex, "#") || len(hex) != 7 || !isHex(hex[1:]) || !isFinite(opacity) {
+		return "", false
+	}
+	clear := int(math.Round((1 - math.Max(0, math.Min(opacity, 1))) * 255))
+	rgb := strings.ToUpper(hex[1:])
+	return fmt.Sprintf("&H%02X%s%s%s", clear, rgb[4:6], rgb[2:4], rgb[0:2]), true
+}
+
+// isAssColour says whether a value is a whole &HAABBGGRR colour.
+func isAssColour(value string) bool {
+	return len(value) == 10 && strings.HasPrefix(value, "&H") && isHex(value[2:])
+}
+
+func isHex(text string) bool {
+	for _, r := range text {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return text != ""
 }
 
 func cleanColour(value any, fallback string) string {
@@ -193,7 +222,30 @@ func ResolveStyle(overrides map[string]any) Style {
 		Highlight:     number("highlight") != 0,
 		HighlightColour: highlightColour(s["highlight_colour"],
 			highlightColour(DefaultStyle["highlight_colour"], "&H6F23B4&")),
+		HighlightAlpha: highlightAlpha(s["highlight_colour"]),
 	}
+}
+
+// highlightAlpha is the alpha of a highlight colour given as a whole
+// &HAABBGGRR, which is how the app keeps one with an opacity. A colour
+// given as #RRGGBB, or one that is no colour at all, is solid.
+func highlightAlpha(value any) string {
+	text := strings.ToUpper(strip(pyStr(value)))
+	if !strings.HasPrefix(text, "&H") || highlightColour(text, "") == "" {
+		return "00"
+	}
+	return alphaOf(text)
+}
+
+// HighlightWeb is the highlight colour with its opacity, as the video
+// preview draws it.
+func (s Style) HighlightWeb() string {
+	bgr := strings.TrimSuffix(strings.TrimPrefix(s.HighlightColour, "&H"), "&")
+	alpha := s.HighlightAlpha
+	if alpha == "" {
+		alpha = "00"
+	}
+	return WebColour("&H" + alpha + bgr)
 }
 
 // Where the captions may sit, as the distance from the bottom of a

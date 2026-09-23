@@ -8,7 +8,7 @@ import (
 	"framefairy/engine"
 )
 
-// The key of a clip comes from the window, so it is checked before it is
+// The key of a clip comes from the interface, so it is checked before it is
 // written down, and checked again when it is read back. It never reaches a
 // path, but a file in an episode's folder is a file all the same.
 func TestOnlyAKeyIsEverKept(t *testing.T) {
@@ -38,7 +38,8 @@ func TestOnlyAKeyIsEverKept(t *testing.T) {
 }
 
 // What is written down comes back, and a folder holding anything else
-// comes back as no clip rather than as an error the window has to handle.
+// comes back as no clip rather than as an error the interface has to
+// handle.
 func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "ep.mp4")

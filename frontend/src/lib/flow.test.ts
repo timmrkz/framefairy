@@ -10,7 +10,10 @@ import {
   shouldChase,
   saidWord,
   inEpisode,
+  inClip,
+  draftCaptions,
   shouldLook,
+  shouldWarm,
   shouldTranscribe,
   type SearchState,
 } from "./flow";
@@ -43,7 +46,7 @@ describe("a new episode transcribes itself", () => {
 });
 
 describe("the first clips are found by themselves", () => {
-  test("not before the transcript reaches the end of the stretch", () => {
+  test("not before the transcript reaches the end of the window", () => {
     expect(shouldLook({ ...idle, covered: 1200 })).toBe(false);
   });
 
@@ -59,11 +62,11 @@ describe("the first clips are found by themselves", () => {
     expect(shouldLook({ ...idle, covered: 14423 })).toBe(true);
   });
 
-  test("with a stretch that is the whole episode", () => {
+  test("with a window that is the whole episode", () => {
     expect(shouldLook({ ...idle, to: 14423, covered: 14423 })).toBe(true);
   });
 
-  test("but not while there is no stretch yet", () => {
+  test("but not while there is no window yet", () => {
     expect(shouldLook({ ...idle, to: 0, covered: 14423 })).toBe(false);
   });
 
@@ -87,6 +90,26 @@ describe("the first clips are found by themselves", () => {
     // The plans and the clips are gone, but the episode remembers that
     // somebody looked, so the machine is not spent on it unasked.
     expect(shouldLook({ ...idle, covered: 1800, plans: 0, clips: 0, looked: true })).toBe(false);
+  });
+});
+
+describe("the model is loaded for the first search before it starts", () => {
+  test("while the transcript is on its way to the end of the window", () => {
+    expect(shouldWarm({ ...idle, covered: 1200 })).toBe(true);
+  });
+
+  test("not once the search itself can start", () => {
+    expect(shouldWarm({ ...idle, covered: 1800 })).toBe(false);
+  });
+
+  test("not for an episode that has been searched, or is being", () => {
+    expect(shouldWarm({ ...idle, covered: 1200, looked: true })).toBe(false);
+    expect(shouldWarm({ ...idle, covered: 1200, plans: 1 })).toBe(false);
+    expect(shouldWarm({ ...idle, covered: 1200, busy: true })).toBe(false);
+  });
+
+  test("not while there is no window yet", () => {
+    expect(shouldWarm({ ...idle, to: 0, covered: 0 })).toBe(false);
   });
 });
 
@@ -145,17 +168,17 @@ describe("the window moves on when it chooses for itself", () => {
     expect(w).toEqual({ from: half, to: 2 * half });
   });
 
-  test("a stretch a little longer than the half hour is taken whole", () => {
+  test("a part a little longer than the half hour is taken whole", () => {
     const w = nextWindow([{ from: 0, to: 40 * 60 }], [], hours, half);
     expect(w).toEqual({ from: 0, to: 40 * 60 });
   });
 
-  test("a stretch well over the half hour gives up only that much", () => {
+  test("a part well over the half hour gives up only that much", () => {
     const w = nextWindow([{ from: 0, to: 60 * 60 }], [], hours, half);
     expect(w).toEqual({ from: 0, to: half });
   });
 
-  test("an episode searched end to end rests on the last stretch", () => {
+  test("an episode searched end to end rests on the last part", () => {
     const searched = [
       { from: 0, to: half },
       { from: half, to: hours },
@@ -435,6 +458,25 @@ describe("inEpisode", () => {
   });
 });
 
+describe("inClip", () => {
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+
+  test("is the way back from inEpisode", () => {
+    for (const at of [0, 1.5, 3, 4, 5, 7.25, 8]) {
+      expect(inClip(two, inEpisode(two, at))).toBeCloseTo(at, 9);
+    }
+  });
+
+  test("puts a moment the clip cuts out where the clip comes back", () => {
+    expect(inClip(two, 15)).toBe(4);
+    expect(inClip(two, 5)).toBe(0);
+    expect(inClip(two, 99)).toBe(8);
+  });
+});
+
 describe("saidWord", () => {
   const two = [
     { start: 10, end: 14 },
@@ -491,7 +533,7 @@ describe("saidWord", () => {
 // it came from.
 //
 // So the path is walked here, forwards the way the engine walks it and
-// backwards the way the window does, and every word has to come home. If
+// backwards the way the app does, and every word has to come home. If
 // the engine ever lays them out differently this fails, which is the
 // point of writing it down.
 describe("a caption word finds its way home", () => {
@@ -662,5 +704,43 @@ describe("shouldChase", () => {
   test("a playing picture is never chased", () => {
     expect(shouldChase({ wanted: 100, at: 101.2, playing: true, tries: 0 })).toBe(false);
     expect(shouldChase({ wanted: 100, at: 90, playing: true, tries: 0 })).toBe(false);
+  });
+});
+
+describe("draftCaptions", () => {
+  // Two captions that meet at 2, and a third after a pause.
+  const three = [
+    { start: 0, end: 2 },
+    { start: 2, end: 3.5 },
+    { start: 4.5, end: 6 },
+  ];
+
+  test("a caption that appears later keeps the one before up until it does", () => {
+    const got = draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
+    expect(got[0].end).toBe(2.4);
+    expect(got[1].start).toBe(2.4);
+  });
+
+  test("a caption that appears earlier ends the one before", () => {
+    const got = draftCaptions(three, { index: 1, edge: "start", at: 1.6 });
+    expect(got[0].end).toBe(1.6);
+  });
+
+  test("after a pause, appearing later leaves the one before alone", () => {
+    const got = draftCaptions(three, { index: 2, edge: "start", at: 4.8 });
+    expect(got[1].end).toBe(3.5);
+    expect(got[2].start).toBe(4.8);
+  });
+
+  test("going earlier leaves a gap and moves nothing else", () => {
+    const got = draftCaptions(three, { index: 0, edge: "end", at: 1.5 });
+    expect(got[0].end).toBe(1.5);
+    expect(got[1].start).toBe(2);
+  });
+
+  test("changes nothing it is handed", () => {
+    draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
+    expect(three[0].end).toBe(2);
+    expect(draftCaptions(three, null)).toBe(three);
   });
 });

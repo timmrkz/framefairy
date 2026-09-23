@@ -7,7 +7,7 @@ On macOS, `make` does all of this page by itself, and `make check` shows
 what is still missing. The models are not on it at all any more: the app
 fetches the speech model and the language model on its first run, the way a
 customer gets them, and `make models` is left for the command line, which
-has no window to ask in. The steps below are the same work by hand, for
+has nowhere to ask. The steps below are the same work by hand, for
 every system.
 
 ## 1. A C compiler and Go
@@ -105,7 +105,7 @@ The Claude API remains available with `--planner api`, see step 6.
 
 ## 5. For the app only
 
-The app's window needs the system web view, which macOS and Windows already
+The app needs the system web view, which macOS and Windows already
 have. Linux needs the development packages for it:
 
 ```

@@ -22,7 +22,7 @@ const (
 	JobCancelled = "cancelled"
 )
 
-// Job is one engine step the window asked for.
+// Job is one engine step the interface asked for.
 type Job struct {
 	ID      string `json:"id"`
 	Episode string `json:"episode"`
@@ -46,7 +46,7 @@ type Job struct {
 	ctx    context.Context
 }
 
-// JobUpdate is what the window receives on the "job" event.
+// JobUpdate is what the interface receives on the "job" event.
 type JobUpdate struct {
 	Job   Job           `json:"job"`
 	Event *engine.Event `json:"event,omitempty"`
@@ -111,10 +111,10 @@ func laneFor(kind string) string {
 //
 // Looking first and then adding is two locks with a gap between them, and
 // two calls that arrive together both look, both see nothing, and both add.
-// The window can do that by being opened twice, or by a customer pressing a
-// button twice, and the result is two transcriptions of one episode or two
-// downloads writing over each other's unpacking folder. So the looking and
-// the adding happen under one lock.
+// The interface can do that by being opened twice, or by a customer
+// pressing a button twice, and the result is two transcriptions of one
+// episode or two downloads writing over each other's unpacking folder. So
+// the looking and the adding happen under one lock.
 func (q *queue) addOnce(episode, kind, label string,
 	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
 	return q.queue(episode, kind, label, true, work)
@@ -155,8 +155,8 @@ func (q *queue) queue(episode, kind, label string, once bool,
 	return snapshot
 }
 
-// refuse records a job that was never started, so the window hears why in
-// the same place it hears everything else about its jobs.
+// refuse records a job that was never started, so the interface hears why
+// in the same place it hears everything else about its jobs.
 func (q *queue) refuse(episode, kind, label, reason string) Job {
 	lane := laneFor(kind)
 	q.mu.Lock()
@@ -291,7 +291,7 @@ func (q *queue) runJob(job *Job) {
 
 	log := engine.NewLog(io.Discard, false, false)
 	log.SetSink(func(ev engine.Event) {
-		// Detail lines are for bug reports, not for the window.
+		// Detail lines are for bug reports, not for the interface.
 		if ev.Kind == engine.EventDetail {
 			return
 		}
@@ -333,8 +333,8 @@ func (q *queue) runJob(job *Job) {
 }
 
 // run does the work of a job and turns a panic into a job that failed. A
-// desktop app that dies takes the window, the other lane and whatever was
-// being transcribed with it, and one bad episode is not worth that.
+// desktop app that dies takes the interface, the other lane and whatever
+// was being transcribed with it, and one bad episode is not worth that.
 func run(job *Job, project *engine.Project) (result string, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {

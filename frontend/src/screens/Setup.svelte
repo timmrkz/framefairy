@@ -10,7 +10,7 @@
   //
   // Nothing here is a box over the workspace. Until the question is
   // answered there is no workspace to put a box over, so this is the
-  // window.
+  // whole app.
   import { onMount } from "svelte";
   import { api, errorText, fitNote, memorySize, size, type ModelRow, type SetupState } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
@@ -42,7 +42,7 @@
     }
   }
 
-  // The rows the two lists draw. The Go side stays factual and the window
+  // The rows the two lists draw. The Go side stays factual and the interface
   // does the wording, so the same fact is never worded two ways.
   const speechRows = $derived<ModelRow[]>(
     (setup?.speech ?? []).map((m) => ({
@@ -279,12 +279,12 @@
 </section>
 
 <style>
-  /* One column in the middle of the window, and only as tall as what is
-     in it. The setup is a few lines and two cards: a column stretched to
-     the height of the window would be a strip of nothing between the last
-     card and the foot, which grows as the window does. So the whole of it
-     stands in the middle instead, and a window too short for it lets the
-     step scroll rather than the page. */
+  /* One column in the middle of the app, and only as tall as what is in
+     it. The setup is a few lines and two cards: a column stretched to the
+     height of the app would be a strip of nothing between the last card
+     and the foot, which grows as the app does. So the whole of it stands
+     in the middle instead, and an app too short for it lets the step
+     scroll rather than the page. */
   .setup {
     display: flex;
     flex-direction: column;
@@ -372,7 +372,7 @@
   }
 
   /* The step is as tall as what is in it, and gives way first when the
-     window is too short for the whole setup. */
+     app is too short for the whole setup. */
   .stage {
     flex: 0 1 auto;
     min-height: 0;

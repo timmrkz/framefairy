@@ -20,7 +20,7 @@ const files = import.meta.glob("./*.svelte", {
 // Those two cannot be one element. An element with a z-index makes a
 // stacking context, so a time written inside its line is held at the
 // line's level however high its own z-index is. That is exactly how the
-// times came to disappear under a window drawn over a stretch that had
+// times came to disappear under a window drawn over a part that had
 // already been searched: the line was put under the window and took its
 // time down with it.
 //
@@ -63,7 +63,7 @@ describe("the ruler on the range picker", () => {
     const time = layerOf(css, ".time");
     expect(line, "the ruler line goes under the window, or it paints over its border")
       .toBeLessThan(window);
-    expect(time, "the time goes over the window, or a searched stretch swallows it")
+    expect(time, "the time goes over the window, or a searched part swallows it")
       .toBeGreaterThan(window);
   });
 

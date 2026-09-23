@@ -9,7 +9,7 @@
     type EpisodeStatus,
     errorText,
   } from "./lib/api";
-  import { jobs, nav, shell } from "./lib/state.svelte";
+  import { chosen, jobs, nav, shell } from "./lib/state.svelte";
   import Icon from "./components/Icon.svelte";
   import Confirm from "./components/Confirm.svelte";
   import { installFonts } from "./lib/fonts";
@@ -34,7 +34,7 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
-  // What the window is showing, said once, in the bar at the top. The
+  // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
   const title = $derived.by(() => {
     if (nav.view.name === "episode") {
@@ -51,7 +51,7 @@
 
   // The first run. A new copy of the app cannot transcribe without a
   // speech model and cannot find clips until somebody has said how, so
-  // until both are answered the setup is the window: no sidebar, no
+  // until both are answered the setup is the whole app: no sidebar, no
   // workspace, nothing to press that would not work.
   //
   // Null until the Go side has answered, so the workspace never flashes up
@@ -89,6 +89,9 @@
       removing = null;
       await refresh();
       if (nav.view.name === "episode" && nav.view.path === ep.source) nav.go({ name: "empty" });
+      // An episode added again is a new one: its window starts from the
+      // beginning and it looks for its first clips by itself.
+      chosen.forget(ep.source);
     } catch (err) {
       removing = null;
       problem = errorText(err);
@@ -140,7 +143,7 @@
     on.blur();
   }
 
-  // Where macOS put the window's own furniture. All zeros away from
+  // Where macOS put the title bar and its buttons. All zeros away from
   // macOS, where the system draws its own title bar, and then the bar is
   // an ordinary header and the stylesheet keeps its own numbers.
   //
@@ -196,19 +199,20 @@
 </script>
 
 <div class="shell" style={shellStyle}>
-  <!-- The bar across the top: the window's own buttons, and the name of
-       what is on screen beside them. It is the whole width of the window,
-       so the sidebar opens under it and never covers the name. -->
+  <!-- The bar across the top: the close, minimise and zoom buttons, and
+       the name of what is on screen beside them. It is the whole width of
+       the app, so the sidebar opens under it and never covers the name. -->
   <!-- The bar is the title bar. macOS lays that out and puts its three
        buttons on its middle, and the app takes the height it was given
        rather than asking for one.
        This used to say that nothing the app can set moves those buttons,
        which is false and cost a great deal: Electron apps move them and
        VS Code does, and chrome_darwin.go already holds the handle, since
-       it asks the window for standardWindowButton: and reads the frame.
+       it asks the app's window for standardWindowButton: and reads the
+       frame.
        What was really wrong was asking for a toolbar, which makes the bar
        taller and makes macOS inset the buttons to centre them in it. See
-       the window options in main.go.
+       the WebviewWindowOptions in main.go.
        Then the buttons are on the bar's middle because the bar is what
        they were centred in. The name goes in a box whose middle is their
        middle, which is the same thing said the other way round. Where the
@@ -221,7 +225,7 @@
   <div class="body" class:alone={settingUp !== false}>
   {#if settingUp === null}
     <!-- Nothing, for the moment it takes to ask. The bar is already there,
-         so the window is not blank. -->
+         so the app is not blank. -->
   {:else if settingUp}
     <Setup
       ondone={() => {
@@ -402,16 +406,17 @@
     height: 100%;
   }
 
-  /* The bar is the window's own: it is what you drag the window by, it
-     holds the window buttons on macOS, and it says what is on screen. */
+  /* The bar belongs to the app as a whole: it is what you drag the app
+     by, it holds the close, minimise and zoom buttons on macOS, and it
+     says what is on screen. */
   /* Exactly as tall as the title bar macOS laid out, which the shell sets
-     from the window, or the token where the system draws its own bar. The
-     line at the foot is drawn inside that height rather than under it, so
-     the bar is the title bar and nothing else.
+     from what macOS answers, or the token where the system draws its own
+     bar. The line at the foot is drawn inside that height rather than
+     under it, so the bar is the title bar and nothing else.
      The line was taken out once and put back. Read off VS Code and
      Terminal: both draw one under their title bar, and VS Code's is
      brighter against its own bar than ours is against ours. It was never
-     what made this window look unlike theirs. */
+     what made the app look unlike theirs. */
   .bar {
     position: relative;
     flex: none;
@@ -426,7 +431,7 @@
      middle of the box is the middle of the buttons. It starts one space
      after the last of them. Nothing is moved by a transform, so nothing
      is put on a compositing surface of its own and the whole pixel rule
-     holds. Where the window has no buttons in the page the box is the
+     holds. Where there are no buttons in the page the box is the
      bar, and the name is centred in it. */
   .bar .name {
     position: absolute;
@@ -494,15 +499,15 @@
     min-height: 0;
   }
 
-  /* The setup has the whole window, rail and all: there is nothing on the
+  /* The setup has the whole app, rail and all: there is nothing on the
      rail worth reaching for until it is done.
 
-     The row is the window and not the setup. Left implicit it is sized to
-     what is in it, which on a window too short for the whole setup makes
-     the row taller than the window, and then the foot of the setup is
-     below the bottom edge with nothing to scroll: the page itself never
-     scrolls. minmax(0, 1fr) is the row being the window's own height and
-     what is in it being allowed to give way. */
+     The row is as tall as the app, not as tall as the setup. Left
+     implicit it is sized to what is in it, which in an app too short for
+     the whole setup makes the row taller than the app, and then the foot
+     of the setup is below the bottom edge with nothing to scroll: the
+     page itself never scrolls. minmax(0, 1fr) is the row being the app's
+     own height and what is in it being allowed to give way. */
   .body.alone {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);

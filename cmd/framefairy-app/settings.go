@@ -66,8 +66,8 @@ func defaultSettings() Settings {
 }
 
 // tidy fills in what a settings file written by an earlier version does not
-// have, and refuses a colour that is not one. What arrives from the window
-// is not to be trusted any more than what arrives from a file.
+// have, and refuses a colour that is not one. What arrives from the
+// interface is not to be trusted any more than what arrives from a file.
 func (s *Settings) tidy() {
 	if strings.EqualFold(s.HighlightColour, wasDefaultColour) {
 		s.HighlightColour = defaultColour
@@ -242,7 +242,7 @@ func (s *store) RemoveEpisode(path string) error {
 
 // Known reports whether a file belongs to an episode in the library, either
 // the episode itself or something in its work folder. Only those files are
-// served to the window.
+// served to the interface.
 //
 // A path is judged by where it really leads. A link inside a work folder
 // can point anywhere, and a name is not a promise, so both the path and the

@@ -20,7 +20,7 @@ type PlanSummary struct {
 	Name string  `json:"name"`
 	From float64 `json:"from"`
 	To   float64 `json:"to"` // zero for a whole-episode plan
-	// Stretches of the window that were given back, so the model may read
+	// Parts of the window that were given back, so the model may read
 	// them again. They are inside the window and never overlap.
 	Removed  []Window  `json:"removed,omitempty"`
 	Clips    int       `json:"clips"`
@@ -230,7 +230,7 @@ func (t *Transcript) Duration() float64 {
 }
 
 // Peaks gives the loudest reading in each of buckets equal parts of a
-// stretch, in dB, for drawing a waveform at any zoom. Parts outside the
+// part, in dB, for drawing a waveform at any zoom. Parts outside the
 // transcript are silent at -90 dB.
 //
 // It never gives more parts than it measured. Loudness is read every
@@ -272,7 +272,7 @@ func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 	return out
 }
 
-// Silences are the stretches quieter than the floor that last at least
+// Silences are the parts quieter than the floor that last at least
 // minimum seconds. Dragging a cut snaps to them.
 func (t *Transcript) Silences(minimum float64) []Span {
 	var out []Span
@@ -298,7 +298,7 @@ func (t *Transcript) Silences(minimum float64) []Span {
 	return out
 }
 
-// WordsBetween are the words that lie inside a stretch.
+// WordsBetween are the words that lie inside a part.
 func (t *Transcript) WordsBetween(from, to float64) []Cue {
 	first := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].End > from })
 	var out []Cue
@@ -337,7 +337,7 @@ type ClipView struct {
 	CaptionYMoved bool `json:"captionYMoved"`
 }
 
-// SegmentView is one kept stretch of the source.
+// SegmentView is one kept part of the source.
 type SegmentView struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
@@ -430,10 +430,19 @@ type CaptionView struct {
 	Start float64           `json:"start"`
 	End   float64           `json:"end"`
 	Lines []CaptionLineView `json:"lines"`
+	// First and Last are when the word the caption begins on and the word
+	// it ends on start in the episode, which is what a caption moved by
+	// hand is kept against. Nought where there is no such word.
+	First float64 `json:"first"`
+	Last  float64 `json:"last"`
+	// StartMoved and EndMoved say the caption appears or goes where it was
+	// put by hand rather than where its words put it.
+	StartMoved bool `json:"startMoved,omitempty"`
+	EndMoved   bool `json:"endMoved,omitempty"`
 }
 
 // CaptionStyleView is the caption look with every measure as a share of the
-// frame height, which is how the render scales it too. A window can then
+// frame height, which is how the render scales it too. The app can then
 // draw the captions over a picture of any size.
 type CaptionStyleView struct {
 	Font string `json:"font"`
@@ -516,13 +525,24 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,
 		Radius: s.Radius / authored, Primary: WebColour(s.Primary),
 		Box: WebColour(s.BackColour), Highlight: s.Highlight,
-		HighlightColour: WebColour(s.HighlightColour),
+		HighlightColour: s.HighlightWeb(),
 	}}
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
 	}
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
+		if len(c.Words) > 0 {
+			first, last := c.Words[0], c.Words[len(c.Words)-1]
+			if w, ok := SaidWord(*clip, (first.Start+first.End)/2); ok {
+				item.First = w.Start
+				item.StartMoved = clip.CaptionTimes[wordKey(w.Start)].Start != nil
+			}
+			if w, ok := SaidWord(*clip, (last.Start+last.End)/2); ok {
+				item.Last = w.Start
+				item.EndMoved = clip.CaptionTimes[wordKey(w.Start)].End != nil
+			}
+		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}
 			for _, w := range line {

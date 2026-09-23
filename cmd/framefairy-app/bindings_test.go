@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The window calls the Go side by name and by position, and nothing in
+// The interface calls the Go side by name and by position, and nothing in
 // either language checks that the two agree. TypeScript knows the shape of
 // api.ts and nothing about main.go, Go knows the methods and nothing about
 // who calls them, and the runtime finds out at the moment a hand reaches
@@ -45,7 +45,7 @@ func TestEveryCallReachesItsMethod(t *testing.T) {
 	}
 }
 
-// Every method of the service that the window could call, and how many
+// Every method of the service that the interface could call, and how many
 // arguments it takes. The context is not one of them: Wails fills it in.
 func serviceMethods(t *testing.T) map[string]int {
 	t.Helper()
@@ -82,7 +82,7 @@ func serviceMethods(t *testing.T) map[string]int {
 
 // How many arguments a caller hands in. A field can name several at once,
 // as in "path, plan, clipID string", and a leading context is Wails's to
-// fill rather than the window's to send.
+// fill rather than the interface's to send.
 func takes(params *ast.FieldList) int {
 	n := 0
 	for i, f := range params.List {

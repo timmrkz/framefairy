@@ -6,12 +6,28 @@
   //              for as long as the work runs
   //   the motes  specks of that light drifting up through the control,
   //              behind its own words
-  //   the fill   how far the work has come, when that is known
+  //   the fill   how far the work has come, when that is known, with a
+  //              light passing over what is done
   //
   // The control it sits in needs nothing of its own: app.css gives any
   // button holding a beam its rounded clip and a stacking context, so the
   // beam lies over the control's background and under its words.
-  let { fraction = -1 }: { fraction?: number } = $props();
+  //
+  // It is the one way work in hand is drawn, so it is used, never copied.
+  // Where there is no edge to run round, the range picker, rim is off and
+  // the motes and the fill are the same as everywhere else.
+  //
+  // Work that is paused is still, not gone. How far it got is as true as
+  // it was, so the fill stays as it is, and what says the work is running,
+  // the beam, the motes and the light over the fill, stops. The head keeps
+  // its line and loses the glow thrown ahead of it, because nothing is
+  // going ahead. So running and paused are told apart by movement, and a
+  // paused piece of work reads as the same thing, stopped.
+  let {
+    fraction = -1,
+    rim = true,
+    still = false,
+  }: { fraction?: number; rim?: boolean; still?: boolean } = $props();
 
   // Where the motes rise and how long each one takes. Fixed rather than
   // drawn at random, because a random number would be a new one on every
@@ -25,16 +41,26 @@
   ];
 </script>
 
-<span class="beam" aria-hidden="true">
-  <span class="ring"></span>
-  {#each motes as m (m.at)}
-    <i
-      class="mote"
-      style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"
-    ></i>
-  {/each}
+<span class="beam" class:still aria-hidden="true">
+  {#if rim && !still}<span class="ring"></span>{/if}
+  {#if !still}
+    {#each motes as m (m.at)}
+      <i
+        class="mote"
+        style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"
+      ></i>
+    {/each}
+  {/if}
   {#if fraction >= 0}
-    <span class="fill"><i style="width: {Math.min(fraction, 1) * 100}%"></i></span>
+    <!-- The fill is as wide as the control and slides in from the left,
+         so it is moved and never laid out again: a width that changes is
+         worked out on the main thread every frame, a transform is carried
+         by the compositor, and what moves beside it, the head of the range
+         picker's shade, moves the same way and stays with it. -->
+    <span class="fill"
+      ><i style="transform: translateX({(Math.min(Math.max(fraction, 0), 1) - 1) * 100}%)"
+      ></i></span
+    >
   {/if}
 </span>
 
@@ -107,7 +133,7 @@
      fastest is near three to one, which is enough to see without ever
      looking like a fault. It never stops and it never goes back: a light
      that hesitates on a border reads as broken and a light that backs up
-     reads as a stutter, so the slowest stretch is still three fifths of
+     reads as a stutter, so the slowest part is still three fifths of
      the round's own pace. A plain turn for an engine that cannot read the
      curve, then the curve. */
   .ring::before {
@@ -219,11 +245,14 @@
 
   .fill i {
     display: block;
+    position: relative;
+    width: 100%;
     height: 100%;
+    overflow: hidden;
     background: linear-gradient(
       90deg,
-      var(--wash-from, var(--accent-faint)) 0%,
-      var(--wash-to, var(--accent-wash)) 100%
+      var(--wash-from, var(--accent-fill)) 0%,
+      var(--wash-to, var(--accent-fill-hi)) 100%
     );
     /* The head of the fill: a line of light with a glow thrown ahead of
        it, so where the work has got to is something to look at rather
@@ -231,7 +260,36 @@
     box-shadow:
       inset -2px 0 var(--lit, var(--accent-lit)),
       10px 0 14px -6px var(--lit, var(--accent-lit));
-    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    /* How it follows the number. A control's work reports in steps, so it
+       eases to each. The range picker's transcription reports about once
+       a second and glides between reports, so it says so. */
+    transition: transform var(--fill-glide, 0.25s cubic-bezier(0.4, 0, 0.2, 1));
+  }
+
+  /* The light passing over what is done, the same light the bar in
+     Activity carries, so what is done is alive to look at rather than a
+     flat wash, and a fill never stands still while the work runs. */
+  .fill i::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.16) 50%,
+      transparent 100%
+    );
+    animation: sheen 2.4s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+  }
+
+  /* Paused: the fill and the line at its head, and nothing that moves. */
+  .still .fill i {
+    box-shadow: inset -2px 0 var(--lit, var(--accent-lit));
+  }
+
+  .still .fill i::after {
+    animation: none;
+    opacity: 0;
   }
 
   /* Where the rim cannot be cut out of the square, there is no beam and
@@ -249,6 +307,11 @@
   /* Nothing moves, and the beam is a steady rim of the app's colour, so a
      control with work in it still says so. */
   @media (prefers-reduced-motion: reduce) {
+    .fill i::after {
+      animation: none;
+      opacity: 0;
+    }
+
     .ring::before {
       animation: none;
       background: var(--accent-hi);

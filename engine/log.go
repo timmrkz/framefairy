@@ -19,6 +19,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +44,11 @@ type Log struct {
 	busy    bool
 	stageMu sync.Mutex
 	stages  []string
+	// held is set while one piece of work owns the progress line, a search
+	// above all: what its steps report along the way, ffmpeg finding camera
+	// switches for one clip, would otherwise take the line from it every
+	// half second, and a person would read neither.
+	held atomic.Bool
 }
 
 // NewLog makes a logger writing to w. Colour is only used when w is a
@@ -146,6 +152,9 @@ func (l *Log) Detail(format string, a ...any) {
 // Progress writes a single line that rewrites itself, so a long step visibly
 // ticks. Use it where the share done is not known.
 func (l *Log) Progress(text string) {
+	if l.held.Load() {
+		return
+	}
 	l.showProgress(text)
 	l.send(Event{Kind: EventProgress, Text: text, Fraction: Unknown, Remaining: Unknown})
 }
@@ -159,9 +168,33 @@ func (l *Log) ProgressOf(label string, fraction, remaining float64) {
 // ProgressTo reports the same and adds the second of the episode the work
 // has reached, which is 0 where that means nothing. A transcription saves
 // what it has every few seconds, so what is on disk lags a long way behind
-// what the machine has already heard, and a window that followed the file
-// alone would step rather than move.
+// what the machine has already heard, and the app, if it followed the file
+// alone, would step rather than move.
 func (l *Log) ProgressTo(label string, fraction, remaining, covered float64) {
+	l.progress(label, fraction, remaining, covered, 0)
+}
+
+// ProgressFound reports how far a search is, with how many clips it has
+// written to its plan so far.
+func (l *Log) ProgressFound(label string, fraction, remaining float64, found int) {
+	l.report(label, fraction, remaining, 0, found)
+}
+
+// HoldProgress gives the progress line to whoever reports through
+// ProgressFound until it is let go, and nothing else is shown on it
+// meanwhile.
+func (l *Log) HoldProgress(hold bool) {
+	l.held.Store(hold)
+}
+
+func (l *Log) progress(label string, fraction, remaining, covered float64, found int) {
+	if l.held.Load() {
+		return
+	}
+	l.report(label, fraction, remaining, covered, found)
+}
+
+func (l *Log) report(label string, fraction, remaining, covered float64, found int) {
 	// math.Min and math.Max hand a NaN straight back, so a share that is
 	// not a number has to be caught before it is held to 0 and 1.
 	fraction = sane(fraction)
@@ -179,7 +212,7 @@ func (l *Log) ProgressTo(label string, fraction, remaining, covered float64) {
 	}
 	l.showProgress(text)
 	l.send(Event{Kind: EventProgress, Text: label, Fraction: roundTo(fraction, 4),
-		Remaining: roundTo(remaining, 1), Covered: roundTo(covered, 3)})
+		Remaining: roundTo(remaining, 1), Covered: roundTo(covered, 3), Found: found})
 }
 
 func (l *Log) showProgress(text string) {

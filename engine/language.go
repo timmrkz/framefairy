@@ -28,7 +28,7 @@ import (
 type LanguageModel struct {
 	// Name is the file it lands as, in the models folder.
 	Name string `json:"name"`
-	// Title is what it is called in the window, Maker who made it. They
+	// Title is what it is called in the app, Maker who made it. They
 	// are apart because a list of models is read by maker first: Google's
 	// Gemma and Meta's Llama are the same kind of thing from two houses.
 	Title string `json:"title"`
@@ -204,7 +204,7 @@ func LanguageModels() []LanguageModel {
 // smallest, because the smallest is the one most likely to run, and a
 // recommendation that cannot be checked should be the cautious one.
 //
-// It answers with nothing when nothing fits. Then the window says so and
+// It answers with nothing when nothing fits. Then the app says so and
 // the Anthropic API is the way through, which is the whole reason there
 // are two ways.
 func RecommendedFor(total int64) (LanguageModel, bool) {

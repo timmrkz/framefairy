@@ -77,7 +77,7 @@ const snapCut = (list: { start: number; end: number }[], from: number, to: numbe
   return [Math.max(0, a), b];
 };
 
-// Taking a stretch out of a set of pieces. A piece the cut straddles becomes
+// Taking a part out of a set of pieces. A piece the cut straddles becomes
 // two, and both keep the framing, exactly as the engine does it.
 const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
   const out: Piece[] = [];
@@ -138,12 +138,19 @@ const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
   return clip(n, at, title, rendered);
 };
 
-// The caption look, as far as anything can change it here: the face and
-// the size the window asked for last. Without these the window could ask
+// The caption look, as far as anything can change it here: the face and the
+// size the interface asked for last. Without these the interface could ask
 // for a face all day and always be told Inter Black, so a probe about
 // picking one would pass whatever the picking did.
 const face = () => (window as any).__face ?? "Inter Black";
 const size = () => (window as any).__size ?? 100;
+// The caption colours, reported the way the engine reports them: the text
+// opaque white and the box black and half clear until they are changed.
+const textCss = () => (window as any).__text ?? "rgba(255, 255, 255, 1)";
+const boxCss = () => (window as any).__box ?? "rgba(0, 0, 0, 0.498)";
+const pillCss = () => (window as any).__pill ?? "rgba(148, 33, 146, 1)";
+const hexToCss = (hex: string, alpha: number) =>
+  `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, ${Math.round(alpha * 255) / 255})`;
 
 // The clip a call names, whatever has been done to it since.
 const clipOf = (id: string) => {
@@ -155,7 +162,7 @@ const clipOf = (id: string) => {
 // the caption box is where words are corrected and a word in it has to be
 // able to say which word of the episode it is. Made up cues could never
 // answer that, so a probe about correcting a word would pass whatever the
-// window did.
+// interface did.
 //
 // Two things the engine does and this does with it: the words are put on
 // the clip's own clock, with the cuts taken out of it, and a correction
@@ -163,7 +170,9 @@ const clipOf = (id: string) => {
 // one moment they both came from.
 const captionCues = (id: string) => {
   const c = clipOf(id);
-  const onClipClock: { start: number; end: number; text: string }[] = [];
+  // Each word also keeps when it starts in the episode, which is what a
+  // caption moved by hand is kept against.
+  const onClipClock: { start: number; end: number; text: string; said: number }[] = [];
   let offset = 0;
   for (const p of c.segments) {
     for (const w of c.words) {
@@ -172,6 +181,7 @@ const captionCues = (id: string) => {
         start: offset + (w.start - p.start),
         end: offset + (w.end - p.start),
         text: w.text,
+        said: w.start,
       });
     }
     offset += p.end - p.start;
@@ -188,7 +198,7 @@ const captionCues = (id: string) => {
     parts.forEach((part, i) => {
       const to =
         i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
-      drawn.push({ start: from, end: to, text: part });
+      drawn.push({ start: from, end: to, text: part, said: w.said });
       from = to;
     });
   }
@@ -199,19 +209,51 @@ const captionCues = (id: string) => {
     const eight = drawn.slice(i, i + 8);
     // A cue stays up a little past its last word, and never past the start
     // of the one after it. The engine clamps it the same way, and without
-    // the clamp two cues cover the same moment: the window takes the first
+    // the clamp two cues cover the same moment: the interface takes the first
     // that covers it, so the caption box went on showing the cue before
     // while the playhead stood in a word of the cue after, and that word
     // lit nothing at all.
     const next = drawn[i + 8];
+    const first = eight[0].said;
+    const last = eight[eight.length - 1].said;
     cues.push({
       start: eight[0].start,
       end: Math.min(eight[eight.length - 1].end + 0.4, next ? next.start : Infinity),
       lines: [{ words: eight.slice(0, 4) }, { words: eight.slice(4) }].filter(
         (line) => line.words.length > 0,
       ),
+      first,
+      last,
+      startMoved: false,
+      endMoved: false,
     });
   }
+  // Captions moved by hand, put where they were put. The engine's rules on
+  // clamping are its own and are tested there. This is enough for a probe
+  // to see a moved caption come back moved.
+  const moved = ((window as any).__captionTimes ??= {}) as Record<string, number>;
+  const onClip = (at: number) => {
+    let sum = 0;
+    for (const p of c.segments) {
+      if (at < p.start) return sum;
+      if (at <= p.end) return sum + at - p.start;
+      sum += p.end - p.start;
+    }
+    return sum;
+  };
+  cues.forEach((cue, i) => {
+    const start = moved[`${id}:${cue.first}:start`];
+    if (start !== undefined) {
+      cue.start = onClip(start);
+      cue.startMoved = true;
+      if (cues[i - 1] && cues[i - 1].end > cue.start) cues[i - 1].end = cue.start;
+    }
+    const end = moved[`${id}:${cue.last}:end`];
+    if (end !== undefined) {
+      cue.end = onClip(end);
+      cue.endMoved = true;
+    }
+  });
   return cues;
 };
 
@@ -267,7 +309,7 @@ export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const method = name.split(".").pop();
     // A transcription that really grows, for testing that the first search
-    // starts by itself the moment it reaches the end of the chosen stretch.
+    // starts by itself the moment it reaches the end of the window.
     const started = ((window as any).__started ??= Date.now());
     const growing = location.search.includes("growing");
     const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
@@ -278,9 +320,20 @@ export const Call = {
     const carriedOn = () => !!(window as any).__carriedOn;
     const stopped = () => !!(window as any).__stopped;
     const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
-    const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < 2500;
-    const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= 2500;
-    const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Reading the transcript", fraction: 0.4, remaining: 60 } : undefined });
+    // The search lasts six seconds and its clips land one at a time on the
+    // way, the way the engine writes each one the moment it is framed. They
+    // land in the order the model wrote them, which is not the order of the
+    // episode, so what is new in the list is not always at its end.
+    const searchFor = 6000;
+    const landOrder = [3, 1, 7, 2, 12, 5, 4, 9, 6, 11, 8, 10];
+    const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < searchFor;
+    const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= searchFor;
+    const landed = () => {
+      if (!found || !askedAt()) return [] as number[];
+      const since = Date.now() - askedAt();
+      return landOrder.filter((_, k) => since >= 700 + k * 350);
+    };
+    const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Finding clips", fraction: 0.4, remaining: 60 } : undefined });
     switch (method) {
       case "Version":
         return Promise.resolve("0.1.0");
@@ -305,7 +358,7 @@ export const Call = {
         };
         const planner = (window as any).__planner ?? "";
         const key = !!(window as any).__key;
-        // Two models from two houses, so the choice the window has to put
+        // Two models from two houses, so the choice the interface has to put
         // is a real one, and so the memory below has something to say. The
         // small one fits any machine, the big one fits none of the ones
         // the harness pretends to be.
@@ -357,6 +410,10 @@ export const Call = {
       case "InstallLanguageModel":
         (window as any).__llmAt ??= Date.now();
         return Promise.resolve(llmJob());
+      case "WarmModel":
+        // A probe reads which windows the model was loaded for.
+        ((window as any).__warmed ??= []).push(args.slice(1));
+        return Promise.resolve(null);
       case "ChoosePlanner":
         (window as any).__planner = args[0];
         return Promise.resolve(null);
@@ -372,7 +429,7 @@ export const Call = {
         ]);
       case "Episode":
         if (found) {
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: done() ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: landed().length ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
         }
         if (growing) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: grown, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: false });
@@ -387,7 +444,7 @@ export const Call = {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
         }
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
-      // Every search this window asks for, so a test can see the first one
+      // Every search the interface asks for, so a test can see the first one
       // start by itself.
       case "Plan": {
         const asked = ((window as any).__planned ??= []);
@@ -402,8 +459,10 @@ export const Call = {
         return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
       case "Clips":
         if (found) {
-          if (!done()) return Promise.resolve([]);
-          return Promise.resolve(Array.from({ length: 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)));
+          const there = new Set(landed());
+          return Promise.resolve(
+            Array.from({ length: 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
+          );
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve([]);
         return Promise.resolve([
@@ -414,7 +473,7 @@ export const Call = {
         ]);
       case "Coverage":
         if (found) {
-          if (!done()) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
+          if (!landed().length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
           return Promise.resolve({ searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 12 }], free: [{ from: 1800, to: 14423 }] });
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
@@ -425,7 +484,7 @@ export const Call = {
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[1])),
-          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: "#ffffff", box: "rgba(0,0,0,0.85)", highlight: true, highlightColour: "#b4236f" },
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: true, highlightColour: pillCss() },
         });
       case "Fonts":
         return Promise.resolve([
@@ -436,7 +495,7 @@ export const Call = {
       // What the app remembers of an episode between runs. The preview
       // starts each time with nothing chosen, so a probe sees what a first
       // opening looks like unless it says otherwise.
-      // Where macOS put the window's own furniture. Zeros stand for the
+      // Where macOS put the title bar and its buttons. Zeros stand for the
       // systems that draw their own title bar, which is what a probe sees
       // unless it asks for ?mac, and those numbers are what a 2026 Mac
       // with the automatic toolbar style answers.
@@ -466,6 +525,26 @@ export const Call = {
       }
       case "RemoveSearch":
         return Promise.resolve(null);
+      // A caption moved by hand, kept the way the engine keeps it, against
+      // the word and the edge. Below nought puts it back.
+      case "SetCaptionTime": {
+        const [, , id, word, edge, at] = args as [string, string, string, number, string, number];
+        const moved = ((window as any).__captionTimes ??= {}) as Record<string, number>;
+        const key = `${id}:${word}:${edge}`;
+        if (at < 0) delete moved[key];
+        else moved[key] = at;
+        const n = Number(id);
+        return Promise.resolve(clip(n, [57, 400, 902, 1400][n - 1] ?? 60, ["Mein Arm ist zersprungen", "Der Typ vor mir auf einmal", "Warum ich nie wieder", "Ein echtes Thema"][n - 1] ?? "Clip", n === 1));
+      }
+      // Every undo and redo the interface asks for, so a probe can see which
+      // reached the episode and which stayed in a field being typed in. The
+      // clip it names is the third, so a probe can see the interface go
+      // there.
+      case "Undo":
+      case "Redo": {
+        ((window as any).__undone ??= []).push(method);
+        return Promise.resolve({ done: true, clip: "clips.json/03" });
+      }
       // The cuts inside a clip. They answer with the clip as it now is,
       // the way the Go side does, so the timeline draws where the edges
       // really landed rather than where the hand let go.
@@ -565,7 +644,7 @@ export const Call = {
             lane: "work",
             progress: {
               stage: "plan",
-              text: "Reading the transcript",
+              text: "Finding clips",
               fraction: q.includes("unknown") ? -1 : 0.42,
               remaining: 130,
             },
@@ -591,6 +670,13 @@ export const Call = {
         if (args[2]) (window as any).__face = String(args[2]);
         if (Number(args[3]) > 0) (window as any).__size = Number(args[3]);
         return Promise.resolve(null);
+      case "SetCaptionColours":
+        // A probe reads what was saved from here.
+        ((window as any).__colours ??= []).push(args.slice(2));
+        if (args[2]) (window as any).__text = hexToCss(String(args[2]), Number(args[3]));
+        if (args[4]) (window as any).__box = hexToCss(String(args[4]), Number(args[5]));
+        if (args[6]) (window as any).__pill = hexToCss(String(args[6]), Number(args[7] ?? 1));
+        return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();
         if (!text) return Promise.reject(new Error("a word cannot be empty"));
@@ -605,7 +691,7 @@ export const Call = {
         const to = Number(args[2]) || 14423;
         // Never more buckets than there are measurements, the way the Go
         // side answers. Without this the stub hands back five buckets
-        // carrying the same ten milliseconds and the window has no way to
+        // carrying the same ten milliseconds and the interface has no way to
         // know it.
         const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
         // The peaks come from the transcript, so while it is being made
@@ -663,16 +749,23 @@ export const Call = {
 };
 
 export const Events = {
-  // The Go side sends a job event every second while work runs, and a
-  // window that re-subscribes to anything on every one of those events
+  // The Go side sends a job event every second while work runs, and an
+  // interface that re-subscribes to anything on every one of those events
   // never gets anything done. The growing mode sends them, so a test can
   // tell.
   On(name: string, fn: (ev: unknown) => void): () => void {
+    // There is no menu bar here, so a probe presses Undo and Redo with
+    // window.__menu("undo") and window.__menu("redo").
+    if (name === "undo") {
+      (window as any).__menu = (what: string) => fn({ data: what });
+      return () => delete (window as any).__menu;
+    }
     if (name !== "job") return () => {};
     // A transcription that reports where it got to, well ahead of the saved
     // transcript, and that really stops when it is stopped. The job list is
     // only ever kept current by these events, so without them a cancelled
-    // job stays in the window's hands and the pause cannot be tested at all.
+    // job stays in the interface's hands and the pause cannot be tested at
+    // all.
     if (location.search.includes("transcribing")) {
       const timer = setInterval(() => {
         const gone = !!(window as any).__stopped;
@@ -708,12 +801,19 @@ export const Events = {
       return () => clearInterval(timer);
     }
     if (location.search.includes("found")) {
+      // Reported the way the engine reports a search: what it is doing, how
+      // far it is, and how many clips it has written, which is what tells
+      // the interface to read the list again.
       const timer = setInterval(() => {
         const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;
         if (!at) return;
-        const state = Date.now() - at < 2500 ? "running" : "done";
-        fn({ data: { job: { id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Reading the transcript", fraction: 0.4, remaining: 60 } : undefined }, event: { kind: "progress", text: "Reading", elapsed: 1 } } });
-      }, 500);
+        const since = Date.now() - at;
+        const state = since < 6000 ? "running" : "done";
+        const found = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((k) => since >= 700 + k * 350).length;
+        const text = found ? `${found} of 12 found` : "Finding clips";
+        const progress = { kind: "progress", stage: "plan", text, fraction: Math.min(since / 6000, 0.99), remaining: Math.max((6000 - since) / 1000, 0), found, elapsed: since / 1000, time: "" };
+        fn({ data: { job: { id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? progress : undefined }, event: progress } });
+      }, 250);
       return () => clearInterval(timer);
     }
     if (!location.search.includes("growing")) return () => {};

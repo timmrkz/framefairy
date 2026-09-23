@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// The window asks for a frame every time the playhead moves, and walking
+// The app asks for a frame every time the playhead moves, and walking
 // the clip list with the arrow keys moves it as fast as a key repeats. So
 // several asks for the same frame, and for frames either side of it, are
 // in the air at once. Each one wrote to a temporary file named after the
 // frame alone, so two asks for the same frame wrote over each other and
-// what was left behind was half of one and half of the other. The window
+// what was left behind was half of one and half of the other. The app
 // then showed that, and went on showing it, because a frame once written
 // is kept.
 func TestTheSameFrameAskedForFromEveryDirectionAtOnce(t *testing.T) {

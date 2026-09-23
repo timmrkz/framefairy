@@ -49,18 +49,26 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 		}
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &request)
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"clips\":[]}"},"finish_reason":"stop"}],`+
-			`"usage":{"prompt_tokens":10,"completion_tokens":5},"timings":{"prompt_per_second":100,"predicted_per_second":10}}`)
+		writeLocalStream(w, `{"clips":[]}`, 4)
 	}))
 	defer server.Close()
 
 	e := NewEngine(NewLog(io.Discard, false, false))
-	reply, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "Transcript:", 40, 12, 1000, "")
+	var heard strings.Builder
+	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, "Transcript:", 40, 12, 1000, "",
+		&Listener{Text: func(p string) { heard.WriteString(p) }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reply != `{"clips":[]}` {
-		t.Errorf("reply %q", reply)
+	reply := answer.Content
+	if reply != `{"clips":[]}` || heard.String() != reply {
+		t.Errorf("reply %q, heard %q", reply, heard.String())
+	}
+	if request["stream"] != true || request["return_progress"] != true {
+		t.Errorf("not asked for a stream: %v", request)
+	}
+	if request["reasoning_budget_tokens"] != 2048.0 || request["reasoning_budget_message"] != thinkEnough {
+		t.Errorf("thinking not held to its budget: %v", request)
 	}
 	format := request["response_format"].(map[string]any)
 	if format["type"] != "json_schema" {
@@ -79,8 +87,23 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	e := NewEngine(NewLog(io.Discard, false, false))
-	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "x", 1, 1, 10, "")
+	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestServerStamp(t *testing.T) {
+	got, ok := serverStamp("0.19.335.706 I srv    load_model: loading model '/models/gemma.gguf'")
+	if !ok || got < 19.3357 || got > 19.3358 {
+		t.Errorf("read %v %v", got, ok)
+	}
+	if got, _ := serverStamp("1.02.949.664 I slot print_timing"); got < 62.94 || got > 62.95 {
+		t.Errorf("a minute in read %v", got)
+	}
+	for _, bad := range []string{"", "load_model: loading", "a.b.c.d x", "0.19.335 x"} {
+		if _, ok := serverStamp(bad); ok {
+			t.Errorf("%q read as a time", bad)
+		}
 	}
 }

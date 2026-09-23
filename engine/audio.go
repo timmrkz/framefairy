@@ -50,7 +50,7 @@ const frameSamples = SampleRate / 100
 const pauseFrames = 15
 
 // Chunks are cut at the quietest moment between these lengths. The model
-// could take longer stretches, but its memory use grows with the square of
+// could take longer parts, but its memory use grows with the square of
 // the length.
 const (
 	chunkMin = 15.0
@@ -68,7 +68,7 @@ type Transcript struct {
 	Start  float64
 	// Silence threshold in dB. Anything quieter counts as a pause.
 	Floor float64
-	// Mean level in dB over the whole stretch.
+	// Mean level in dB over the whole window.
 	Mean float64
 }
 
@@ -245,7 +245,7 @@ func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 // NoiseFloor turns the mean level into a silence threshold. A fixed value
 // treats a lowered voice as silence, and a voice dropping for the serious
 // part of a story is exactly the material worth keeping, so the threshold
-// sits a fixed distance below the stretch's own level.
+// sits a fixed distance below the window's own level.
 func NoiseFloor(mean float64) float64 {
 	return math.Max(-55.0, math.Min(mean-22, -35.0))
 }
@@ -304,15 +304,22 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	buf := make([]byte, frameSamples*4*50)
 
 	lastSave := time.Now()
+	// How far the audio has been heard and how far of it is written down.
+	heardTo, savedTo := window.Start, window.Start
+	keep := func(covered float64) {
+		frames := int(math.Round((covered - window.Start) / FrameSeconds))
+		words := append([]Cue(nil), raw...)
+		sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
+		save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered)
+		savedTo = covered
+	}
 	recognise := func(samples []float32, at float64) {
 		raw = append(raw, TokensToWords(rec.Recognize(samples, SampleRate), at)...)
 		covered := at + float64(len(samples))/SampleRate
+		heardTo = covered
 		if save != nil && time.Since(lastSave) >= checkpointEvery {
 			lastSave = time.Now()
-			frames := int(math.Round((covered - window.Start) / FrameSeconds))
-			words := append([]Cue(nil), raw...)
-			sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
-			save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered)
+			keep(covered)
 		}
 		done := covered - window.Start
 		elapsed := time.Since(started).Seconds()
@@ -344,7 +351,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		carry = append([]byte{}, data[whole:]...)
 
 		// Loudness frames for everything that has arrived and is not yet
-		// measured. Frames are kept for the whole stretch.
+		// measured. Frames are kept for the whole window.
 		measuredUpTo := int(math.Round((chunkStart-window.Start)/FrameSeconds)) * frameSamples
 		for len(t.Frames)*frameSamples+frameSamples <= measuredUpTo+len(pending) {
 			offset := len(t.Frames)*frameSamples - measuredUpTo
@@ -372,6 +379,15 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	}
 	waitErr := cmd.Wait()
 	if ctx.Err() != nil {
+		// Stopped, by pause or by a search that wants the machine. What was
+		// heard since the last save is written down before it goes, so
+		// carrying on starts where the work really got to. Without this a
+		// pause threw away up to checkpointEvery of work, minutes of audio
+		// at the speed the recogniser runs, and the range picker's edge
+		// stood still for all of them after it carried on.
+		if save != nil && heardTo > savedTo {
+			keep(heardTo)
+		}
 		e.Log.ClearProgress()
 		return nil, ctx.Err()
 	}
@@ -385,7 +401,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	}
 	e.Log.ClearProgress()
 	if count == 0 {
-		return nil, renderErr("%s has no audio in that stretch", path)
+		return nil, renderErr("%s has no audio in that part", path)
 	}
 
 	t.Mean = 10 * math.Log10(sumSquares/float64(count)+1e-20)

@@ -25,7 +25,7 @@ func (e *Engine) Still(ctx context.Context, source string, at float64, width int
 		return "", err
 	}
 	// A file of its own to write into, never one named after the frame.
-	// The window asks for a frame every time the playhead moves, and
+	// The app asks for a frame every time the playhead moves, and
 	// walking the clip list with the arrow keys moves it as fast as a key
 	// repeats, so several asks for the same frame are in the air at once.
 	// Sharing one temporary file meant two of them wrote over each other

@@ -251,8 +251,13 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 // A 429 or a 529 is the API asking to be asked again later. Failing on those
 // throws away the input tokens already paid for, which is the expensive way
 // to handle a temporary condition.
+//
+// A streamed answer is read as it arrives and listen hears it. One that
+// breaks off before a word of it was heard is asked for again like any
+// other failure. One that breaks off after cannot be, because what was
+// heard has already been acted on.
 func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, error),
-	logDir, tag string) (*apiReply, []byte, error) {
+	logDir, tag string, stream bool, listen *Listener) (*apiReply, []byte, error) {
 	delay := 2.0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		e.Calls.Attempts++
@@ -300,6 +305,38 @@ func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, err
 				continue
 			}
 			return nil, nil, renderErr("cannot reach the API: %s", Scrub(err.Error(), 200))
+		}
+		if stream && response.StatusCode >= 200 && response.StatusCode <= 299 {
+			data, heard, err := readClaudeStream(response.Body, listen)
+			response.Body.Close()
+			if err == nil {
+				body, _ := json.Marshal(data)
+				if logDir != "" {
+					writeJSONText(filepath.Join(logDir, tag+"-response.json"), body)
+				}
+				if attempt > 1 {
+					e.Log.OK("the API answered on attempt %d", attempt)
+				}
+				return data, body, nil
+			}
+			if ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
+			refused, fromServer := asStreamError(err)
+			worthAgain := !heard && attempt < maxAttempts && (!fromServer || refused.transient())
+			if !worthAgain {
+				if fromServer {
+					return nil, nil, renderErr("the API reported an error: %s", Scrub(refused.Error(), 400))
+				}
+				return nil, nil, renderErr("the API's answer broke off: %s", Scrub(err.Error(), 200))
+			}
+			e.Log.Warn("the API's answer broke off (%s), retrying in %ss", Scrub(err.Error(), 80),
+				fixed(delay, 0))
+			if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
+				return nil, nil, err
+			}
+			delay = min(delay*2, 60)
+			continue
 		}
 		body, readErr := io.ReadAll(response.Body)
 		response.Body.Close()
@@ -517,17 +554,38 @@ type requestBody struct {
 	MaxTokens int       `json:"max_tokens"`
 	System    string    `json:"system"`
 	Messages  []message `json:"messages"`
+	Stream    bool      `json:"stream,omitempty"`
 }
 
-// CallClaude makes one call. The reply is on disk before anything parses it.
+// CallClaude makes one call. The answer is streamed, and listen hears it as
+// it is written. The whole reply is on disk before anything parses it.
 func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens int,
-	logDir, tag, system string) (string, error) {
+	logDir, tag, system string, listen *Listener) (string, error) {
 	e.Calls.Requests++
 	if system == "" {
 		system = SystemPrompt
 	}
 	build := func(prefill bool) ([]byte, error) {
-		return json.Marshal(requestBody{model, maxTokens, system, messages(prompt, prefill)})
+		return json.Marshal(requestBody{model, maxTokens, system, messages(prompt, prefill), true})
+	}
+	// A prefilled reply begins with the brace that was sent for it, which
+	// the API does not send back. Whoever listens hears it first, so what
+	// they hear is the answer that is returned. Whether there is a prefill
+	// is only known once the API has taken the request.
+	opened := false
+	heard := listen
+	if listen != nil && listen.Text != nil {
+		copied := *listen
+		copied.Text = func(piece string) {
+			if !opened {
+				opened = true
+				if e.Prefill {
+					listen.Text("{")
+				}
+			}
+			listen.Text(piece)
+		}
+		heard = &copied
 	}
 	if logDir != "" {
 		if err := os.MkdirAll(logDir, 0o755); err != nil {
@@ -540,8 +598,9 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", APIURL, model,
 		maxTokens, commas(runeLen(prompt)))
+	listen.part(partReading)
 	started := time.Now()
-	data, _, err := e.post(ctx, build, logDir, tag)
+	data, _, err := e.post(ctx, build, logDir, tag, true, heard)
 	if err != nil {
 		return "", err
 	}
@@ -591,10 +650,13 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 // request, it is a ceiling set too low for how hard the model found the task.
 // Failing there throws away everything already paid for, so the ceiling is
 // raised once and the question asked again.
+//
+// A ceiling spent thinking is spent before a word of the answer is written,
+// so nothing has been heard yet and asking again is safe.
 func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model string,
-	maxTokens int, logDir, tag string) (string, error) {
+	maxTokens int, logDir, tag string, listen *Listener) (string, error) {
 	facts := FactsFor(model)
-	text, err := e.CallClaude(ctx, prompt, model, maxTokens, logDir, tag, "")
+	text, err := e.CallClaude(ctx, prompt, model, maxTokens, logDir, tag, "", listen)
 	if err == nil {
 		return text, nil
 	}
@@ -605,7 +667,7 @@ func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model strin
 	}
 	e.Log.Warn("the model used the whole %s token ceiling thinking and never "+
 		"answered. Asking again with %s.", commas(maxTokens), commas(headroom))
-	return e.CallClaude(ctx, prompt, model, headroom, logDir, tag, "")
+	return e.CallClaude(ctx, prompt, model, headroom, logDir, tag, "", listen)
 }
 
 // RepairJSON asks the model to fix its own output, sending only the broken
@@ -615,13 +677,13 @@ func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model strin
 func (e *Engine) RepairJSON(ctx context.Context, broken, model, logDir string) (string, error) {
 	build := func(prefill bool) ([]byte, error) {
 		return json.Marshal(requestBody{model, min(8000, runeLen(broken)/2+2000),
-			repairSystem, messages(Scrub(broken, 60000), prefill)})
+			repairSystem, messages(Scrub(broken, 60000), prefill), false})
 	}
 	e.Calls.Requests++
 	e.Log.Info("asking for a repair of %s characters (the transcript is not resent)",
 		commas(runeLen(broken)))
 	started := time.Now()
-	data, _, err := e.post(ctx, build, logDir, "repair")
+	data, _, err := e.post(ctx, build, logDir, "repair", false, nil)
 	if err != nil {
 		return "", err
 	}

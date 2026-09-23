@@ -8,7 +8,7 @@ import (
 func TestWhereTheModelHasLooked(t *testing.T) {
 	plans := []PlanSummary{
 		{From: 600, To: 1200},
-		// Two passes that meet become one stretch.
+		// Two passes that meet become one part.
 		{From: 1200, To: 1800},
 		{From: 120, To: 300},
 	}

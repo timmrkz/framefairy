@@ -42,6 +42,7 @@
     captions = null,
     time = $bindable(0),
     still = "",
+    stillAt = -1,
     onplayclip,
     onstill,
     oncaptionmoved,
@@ -62,9 +63,12 @@
     captions?: CaptionsView | null;
     time?: number;
     still?: string;
+    // The second the still was read for. It is only shown for that second,
+    // never for wherever the playhead happens to be when it goes stale.
+    stillAt?: number;
     onplayclip?: (clip: ClipEntry) => void;
     // Asks for the frame at a moment of the episode, for as long as the
-    // window cannot show that moment itself.
+    // app cannot show that moment itself.
     onstill?: (at: number) => void;
     // Where the caption box is while it is being dragged, so the setting
     // beside it says what you are doing as you do it. Letting go saves,
@@ -113,7 +117,7 @@
   let video: HTMLVideoElement;
   let failed = $state("");
   // The moment the picture is really showing, and whether it shows
-  // anything at all. While the machine is busy the window often cannot
+  // anything at all. While the machine is busy the app often cannot
   // read the file, and then a seek is dropped and the picture stays where
   // it was. The workspace fills in with a frame read from the file.
   let ready = $state(false);
@@ -234,9 +238,9 @@
   }
 
   // True from the moment playing is asked for until it is stopped again. A
-  // window that has not read the file yet refuses to play, which used to
-  // mean the first press of the space bar did nothing at all and the
-  // second one worked. The press is remembered instead, and the picture
+  // video element that has not read the file yet refuses to play, which
+  // used to mean the first press of the space bar did nothing at all and
+  // the second one worked. The press is remembered instead, and the picture
   // starts the moment it can.
   let wantPlay = false;
 
@@ -280,9 +284,25 @@
     frame = requestAnimationFrame(tick);
   }
 
+  // A jump the playing clip makes by itself, over a cut or from its end back
+  // to its start while it loops. Until the picture has landed, the playhead
+  // stays with the picture: moved at once, it would take the crop frame and
+  // the captions with it while the old frame is still on screen, and the
+  // picture would read as not showing the playhead, which is what calls in
+  // a still frame from the file. That still, read for another moment, was
+  // the frame that flashed on every loop.
+  let jumping = false;
+
   function tick() {
     frame = 0;
     if (!video) return;
+    if (jumping) {
+      if (video.seeking) {
+        if (!video.paused) frame = requestAnimationFrame(tick);
+        return;
+      }
+      jumping = false;
+    }
     if (clip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
       // jumps every cut and stops where the clip ends.
@@ -303,7 +323,10 @@
           }
           atPiece = 0;
         }
+        jumping = true;
         video.currentTime = pieces[atPiece].start;
+        frame = requestAnimationFrame(tick);
+        return;
       }
     }
     time = video.currentTime;
@@ -663,7 +686,7 @@
         caption box to correct it: Enter saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
-    {#if still && stale}
+    {#if still && stale && Math.abs(stillAt - time) <= 0.6}
       <img src={still} alt="" />
     {/if}
     <!-- svelte-ignore a11y_media_has_caption -->
@@ -704,7 +727,7 @@
         // Saying so is what puts the still in its place. pictureIsStale
         // asks whether the picture is ready and what second it is showing,
         // and ready was set in two places and cleared in none, so after a
-        // reset the window went on believing a black element was showing
+        // reset the app went on believing a black element was showing
         // the right frame. With the seek that failed anywhere within half
         // a second of the playhead, nothing counted as stale, no frame was
         // asked for, and nothing was drawn over the black. That is a video
@@ -722,7 +745,7 @@
       <div
         class="frame"
         class:outside={!crop.inside}
-        class:dragging={dragLeft !== null}
+        class:lit={dragLeft !== null}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}
@@ -786,7 +809,7 @@
                    two is split into two halves of nothing, both starting
                    where it did, and a key that was the moment alone would
                    then be the same key twice, which is not a caption that
-                   looks wrong but a window that stops. -->
+                   looks wrong but an app that stops. -->
               <!-- Each word says which moment it stands for. Nothing on
                    screen reads it: it is there so a probe can, because
                    which word lights up is decided by comparing two clocks
@@ -846,7 +869,7 @@
   }
 
   /* As tall and as wide as the workspace worked out, which it did from the
-     window itself. Nothing here measures anything. */
+     size of the app itself. Nothing here measures anything. */
   .screen {
     position: relative;
     height: var(--pic-h);
@@ -879,19 +902,19 @@
     pointer-events: none;
   }
 
+  /* The crop. Its line and corners are the frame in app.css, the same
+     as the window on the range picker and the clip on the clip timeline. */
   .frame {
     position: absolute;
     top: 0;
     bottom: 0;
     z-index: 2;
-    border: 2px solid var(--accent);
     cursor: grab;
     touch-action: none;
   }
 
-  .frame.dragging {
+  .frame.lit {
     cursor: grabbing;
-    border-color: var(--accent-hi);
   }
 
   .frame.outside {
@@ -1019,21 +1042,11 @@
     border-radius: 0.2em;
   }
 
+  /* The pop is in app.css, because the caption block on the clip timeline
+     makes the same one. */
   .line span.now {
     background: var(--pill);
     animation: pop 0.22s ease-out;
-  }
-
-  @keyframes pop {
-    from {
-      transform: scale(0.88);
-    }
-    55% {
-      transform: scale(1.12);
-    }
-    to {
-      transform: scale(1);
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {

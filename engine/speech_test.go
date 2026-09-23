@@ -279,7 +279,7 @@ func TestLinksInAnArchiveAreNotWritten(t *testing.T) {
 	}
 }
 
-// The list is what the window offers, so it has to be offerable: every
+// The list is what the app offers, so it has to be offerable: every
 // entry needs the words a person reads before agreeing to a download, and
 // exactly one is the one to reach for when nobody has chosen.
 func TestEverySpeechModelCanBeOffered(t *testing.T) {
@@ -296,7 +296,7 @@ func TestEverySpeechModelCanBeOffered(t *testing.T) {
 		if m.URL == "" || !strings.HasPrefix(m.URL, "https://") {
 			t.Errorf("%s is not fetched over https: %q", m.Name, m.URL)
 		}
-		// Without this the window cannot say what the download costs, and
+		// Without this the app cannot say what the download costs, and
 		// a download nobody agreed to is a download nobody wanted.
 		if m.Download <= 0 {
 			t.Errorf("%s does not say how big it is", m.Name)

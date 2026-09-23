@@ -188,6 +188,13 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		{"font": ""},
 		{"unknown": 1.0},
 		{"size": nil},
+		{"primary": "#FFFFFF"},
+		{"primary": "&H00FFFFFF\nStyle: b"},
+		{"back_colour": "&H80000"},
+		{"back_colour": 5.0},
+		{"highlight_colour": "red"},
+		{"highlight_colour": "#942192\nStyle: b"},
+		{"highlight_colour": "&H922194&"},
 	} {
 		if err := SetCaptionStyle(path, bad); err == nil {
 			t.Errorf("%v was accepted", bad)
@@ -275,13 +282,13 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 		t.Errorf("the plan's own look was changed to %v", plan["margin_v"])
 	}
 
-	// What the window draws sits in the same place.
+	// What the app draws sits in the same place.
 	view, err := ClipCaptionsView(editedPlan, "01", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if view.Style.MarginV*1920 != CaptionYMin {
-		t.Errorf("the window draws at %v", view.Style.MarginV*1920)
+		t.Errorf("the app draws at %v", view.Style.MarginV*1920)
 	}
 
 	if err := ResetCaptionY(editedPlan, "01"); err != nil {
@@ -315,7 +322,7 @@ func FuzzPlanEdits(f *testing.F) {
 		path := editablePlanPath(t)
 		tr := editableTranscript()
 		// Times are read as tenths of a second from 0 to 25.5, which covers
-		// the whole plan and a good stretch either side of it.
+		// the whole plan and a good part either side of it.
 		at := func(b byte) float64 { return float64(b) / 10 }
 		lastRevision := 0
 		for i := 0; i+2 < len(script); i += 3 {
@@ -325,7 +332,7 @@ func FuzzPlanEdits(f *testing.F) {
 			}
 			switch script[i] % 9 {
 			case 6:
-				// A cut takes a stretch out of the middle, so this is the
+				// A cut takes a part out of the middle, so this is the
 				// one edit that makes pieces rather than only moving them.
 				_ = CutClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 7:
@@ -443,22 +450,22 @@ func TestRemovingAPlanKeepsTheWorkItLeavesBehind(t *testing.T) {
 	if err != nil || string(body) != "corrected by hand" {
 		t.Errorf("moved aside as %q, %v", body, err)
 	}
-	// Doing it twice is not an error, because the stretch is gone either way.
+	// Doing it twice is not an error, because the part is gone either way.
 	if err := RemovePlan(plan, captions); err != nil {
 		t.Errorf("second removal: %s", err)
 	}
 }
 
-// The stretches carry the plans behind them, so letting go of one knows
+// The parts carry the plans behind them, so letting go of one knows
 // exactly what to take with it.
-func TestSearchedStretchesCarryTheirPlans(t *testing.T) {
+func TestSearchedPartsCarryTheirPlans(t *testing.T) {
 	looked := SearchedPlans([]PlanSummary{
 		{Path: "/a/clips-0-600.json", From: 0, To: 600, Clips: 4},
 		{Path: "/a/clips-600-900.json", From: 600, To: 900, Clips: 2},
 		{Path: "/a/clips-1800-2400.json", From: 1800, To: 2400, Clips: 3},
 	}, 3600)
 	if len(looked) != 2 {
-		t.Fatalf("stretches %v", looked)
+		t.Fatalf("parts %v", looked)
 	}
 	if looked[0].Start != 0 || looked[0].End != 900 || looked[0].Clips != 6 ||
 		len(looked[0].Plans) != 2 {
@@ -517,10 +524,10 @@ func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
 	}
 }
 
-// A stretch of a search can be given back on its own. The clips inside it
-// go, the clips outside it stay, and the plan says the stretch may be read
+// A part of a search can be given back on its own. The clips inside it
+// go, the clips outside it stay, and the plan says the part may be read
 // again, which is what leaves a hole in what was searched.
-func TestAStretchOfASearchCanBeGivenBack(t *testing.T) {
+func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 	path := editablePlanPath(t)
 	captions := filepath.Join(filepath.Dir(filepath.Dir(path)), "captions")
 	if err := os.MkdirAll(captions, 0o755); err != nil {
@@ -565,7 +572,7 @@ func TestAStretchOfASearchCanBeGivenBack(t *testing.T) {
 		t.Error("the captions of the clip that went were left behind")
 	}
 
-	// What is left of the window: everything but the stretch given back.
+	// What is left of the window: everything but the part given back.
 	summary := PlanSummaries(filepath.Dir(path))
 	if len(summary) != 1 {
 		t.Fatalf("plans: %v", summary)
@@ -580,5 +587,97 @@ func TestAStretchOfASearchCanBeGivenBack(t *testing.T) {
 	}
 	if isFile(path) {
 		t.Error("a plan with nothing left of its window stayed")
+	}
+}
+
+// The text and the box of the captions take a colour each, the box with how
+// much of the picture shows through it, and the video preview is told the
+// same colours the render will use.
+func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
+	text, ok := AssColour("#ffcc00", 1)
+	if !ok || text != "&H0000CCFF" {
+		t.Fatalf("text %q %v", text, ok)
+	}
+	if half, _ := AssColour("#ffcc00", 0.5); half != "&H8000CCFF" {
+		t.Errorf("half clear text %q", half)
+	}
+	box, ok := AssColour("#102030", 0.25)
+	if !ok || box != "&HBF302010" {
+		t.Fatalf("box %q %v", box, ok)
+	}
+	for _, bad := range []string{"", "ffcc00", "#fc0", "#gggggg", "#ffcc00\n"} {
+		if _, ok := AssColour(bad, 1); ok {
+			t.Errorf("%q was taken for a colour", bad)
+		}
+	}
+	if _, ok := AssColour("#ffcc00", math.NaN()); ok {
+		t.Error("an opacity that is not a number was taken")
+	}
+
+	path := editablePlanPath(t)
+	if err := SetCaptionStyle(path, map[string]any{"primary": text, "back_colour": box}); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := ResolveStyle(plan.CaptionStyle()); s.Primary != text || s.BackColour != box {
+		t.Errorf("the render would draw %s on %s", s.Primary, s.BackColour)
+	}
+	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "#00aa00"}); err != nil {
+		t.Fatal(err)
+	}
+	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
+		t.Errorf("the pill is %s", view.Style.HighlightColour)
+	}
+	// A highlight with an opacity is kept whole, and the pill is as clear
+	// in the short as in the video preview.
+	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "&H6600AA00"}); err != nil {
+		t.Fatal(err)
+	}
+	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
+		t.Errorf("the pill is %s", view.Style.HighlightColour)
+	}
+	if plan, _, err := LoadClips(path); err != nil {
+		t.Fatal(err)
+	} else if s := ResolveStyle(plan.CaptionStyle()); s.HighlightColour != "&H00AA00&" || s.HighlightAlpha != "66" {
+		t.Errorf("the render would draw the pill %s at %s", s.HighlightColour, s.HighlightAlpha)
+	}
+	view, err := ClipCaptionsView(path, "01", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Style.Primary != "rgba(255, 204, 0, 1)" || view.Style.Box != "rgba(16, 32, 48, 0.251)" {
+		t.Errorf("the preview draws %s on %s", view.Style.Primary, view.Style.Box)
+	}
+}
+
+// A word is shown and hidden by its alpha. A shown word takes the alpha of
+// the text colour, so text given an opacity keeps it in the short, and a
+// colour without one is shown solid.
+func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
+	if got := shownTag("&H8000CCFF"); got != `{\alpha&H80&}` {
+		t.Errorf("half clear text is shown as %s", got)
+	}
+	if got := shownTag("&H00FFFFFF"); got != `{\alpha&H00&}` {
+		t.Errorf("solid text is shown as %s", got)
+	}
+	for _, odd := range []string{"", "&HFFFFFF", "&H80XXCCFF", "junk"} {
+		if got := shownTag(odd); got != `{\alpha&H00&}` {
+			t.Errorf("%q is shown as %s", odd, got)
+		}
+	}
+	// The pill's alpha: a colour given as #RRGGBB, or no colour, is solid.
+	for value, want := range map[any]string{"#942192": "00", "&H6600AA00": "66", "&H00AA00&": "00",
+		"942192AB": "00", nil: "00", "&HZZ00AA00": "00"} {
+		if got := alphaOrSolid(highlightAlpha(value)); got != want {
+			t.Errorf("the pill of %v is %s clear", value, got)
+		}
+	}
+	line := taggedText([]string{"eins", "zwei"}, [][]int{{0, 1}}, func(i int) bool { return i == 0 },
+		shownTag("&H40FFFFFF"))
+	if line != `{\alpha&H40&}eins {\alpha&HFF&}zwei` {
+		t.Errorf("line %s", line)
 	}
 }

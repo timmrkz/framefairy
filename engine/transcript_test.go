@@ -97,7 +97,7 @@ func TestTranscriptionResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Exactly the same, because carrying on drops samples by count rather
-	// than asking ffmpeg to seek. TestAStretchOfAudioLinesUpWithTheWholeEpisode
+	// than asking ffmpeg to seek. TestAPartOfAudioLinesUpWithTheWholeEpisode
 	// covers why that matters.
 	if len(resumed.Frames) != len(full.Frames) {
 		t.Errorf("frames %d after resuming, %d in one go", len(resumed.Frames), len(full.Frames))
@@ -298,11 +298,11 @@ func beatEpisode(t *testing.T, seconds string) string {
 	return path
 }
 
-// TestAStretchOfAudioLinesUpWithTheWholeEpisode is the reason the engine
+// TestAPartOfAudioLinesUpWithTheWholeEpisode is the reason the engine
 // counts samples itself instead of asking ffmpeg to seek. Starting part way
 // in has to give exactly the audio the whole episode has there, or every
 // word after that point carries a time that is out by the difference.
-func TestAStretchOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
+func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	source := beatEpisode(t, "12")
 	var calls int32
 	rec := fakeRecognizer{&calls}
@@ -317,7 +317,7 @@ func TestAStretchOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if part.Start != 4 {
-		t.Errorf("the stretch starts at %v", part.Start)
+		t.Errorf("the part starts at %v", part.Start)
 	}
 	const offset = 400 // 4 seconds of 10 ms frames
 	if len(whole.Frames)-offset != len(part.Frames) {
@@ -334,7 +334,7 @@ func TestAStretchOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 		return -1
 	}
 	if i := differsAt(0); i >= 0 {
-		t.Errorf("frame %d of the stretch reads %v, the whole episode has %v at the same moment",
+		t.Errorf("frame %d of the part reads %v, the whole episode has %v at the same moment",
 			i, part.Frames[i], whole.Frames[offset+i])
 	}
 	// And the tone really is uneven enough that a shift would have shown.
@@ -440,5 +440,49 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 	}
 	if last := reached[len(reached)-1]; last < 69.9 || last > 70.1 {
 		t.Errorf("the last moment reported is %v, the episode is 70 s", last)
+	}
+}
+
+// A transcription that is stopped writes down everything it heard before it
+// goes, not only what the last save held. A search pauses it, and carrying
+// on afterwards has to start where the work really got to, or minutes of
+// audio are heard twice and the range picker's edge stands still for them.
+func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
+	source := testEpisode(t, "70")
+	saved := checkpointEvery
+	checkpointEvery = time.Hour
+	defer func() { checkpointEvery = saved }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	heard := 0.0
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress || ev.Covered <= 0 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		heard = ev.Covered
+		if heard > 20 {
+			cancel()
+		}
+	})
+	var calls int32
+	e := NewEngine(log)
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Transcribe(ctx); err == nil {
+		t.Fatal("a stopped transcription finished")
+	}
+	mu.Lock()
+	want := heard
+	mu.Unlock()
+	covered, done := Coverage(source, base.ASRModel)
+	if done || want <= 20 || covered < want-0.001 {
+		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
 	}
 }

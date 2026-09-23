@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,7 +34,22 @@ type LocalModel struct {
 	Model string
 	// URL is an already running llama-server. When set, nothing is started.
 	URL string
+	// Think is the most the model may think before it answers, in tokens.
+	// Negative is no limit and 0 is no thinking at all.
+	Think int
 }
+
+// DefaultThink is how much the local model may think before it answers.
+//
+// Left to itself, Gemma 4 thinks about a half hour window for 12,000 tokens
+// or more, which on an M2 Max is four minutes before the first clip is
+// written, and most of every search. 2,048 tokens is 45 seconds. When the
+// budget runs out the model is told so and writes its answer.
+const DefaultThink = 2048
+
+// thinkEnough is what the model is told, at the end of its thoughts, when
+// its budget runs out.
+const thinkEnough = "\n\nThat is enough thinking. Time to write the answer.\n"
 
 // LlamaServerPath decides which llama-server to run, the same way ffmpeg is
 // decided: the one named in the environment, then the one sitting beside the
@@ -180,11 +196,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	}
 	args := []string{"-m", m.Model, "--host", "127.0.0.1", "--port", itoa(port),
 		"-c", itoa(contextSize), "-ngl", "999",
-		// One slot. Only one request is ever sent, and left to itself the
-		// server makes four and a sliding window cache for each, which is
-		// memory nothing uses. Said here rather than left to a default,
-		// because the memory a model is judged by assumes it. See
-		// windowSpare in language.go.
+		// One ask at a time, with the whole context for it. It also keeps
+		// what one ask read for the next, so a search that follows a
+		// warm-up finds the start of its prompt already read. Left to
+		// itself the server makes four slots and a sliding window cache
+		// for each, which is memory nothing uses, and the memory a model
+		// is judged by assumes one. See windowSpare in language.go.
 		"-np", "1"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	cmd := exec.Command(server, args...)
@@ -232,13 +249,24 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 				"in %s", server, err, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
-		e.Log.Progress(fmt.Sprintf("loading the language model %.0fs", time.Since(started).Seconds()))
+		// How far the loading is, is the search's to say: it knows how long
+		// it took before.
 		response, err := localClient.Get(url + "/health")
 		if err == nil {
 			response.Body.Close()
 			if response.StatusCode == http.StatusOK {
-				e.Log.ClearProgress()
-				e.Log.Detail("model loaded in %ss", fixed(time.Since(started).Seconds(), 1))
+				took := time.Since(started).Seconds()
+				if logFile != nil {
+					if before, ok := setupTime(logFile.Name()); ok {
+						// What loading costs is worth knowing in two parts:
+						// llama-server setting itself and the graphics up,
+						// and reading the model into memory.
+						e.Log.Info("model loaded in %ss, %ss of it before llama-server began reading the model",
+							fixed(took, 1), fixed(before, 1))
+						return url, stop, nil
+					}
+				}
+				e.Log.Info("model loaded in %ss", fixed(took, 1))
 				return url, stop, nil
 			}
 		}
@@ -249,39 +277,72 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	}
 }
 
-type chatReply struct {
-	Choices []struct {
-		Message struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
-	Timings struct {
-		PromptPerSecond    float64 `json:"prompt_per_second"`
-		PredictedPerSecond float64 `json:"predicted_per_second"`
-	} `json:"timings"`
+// setupTime reads from llama-server's log how long it took before it began
+// reading the model file. Each line starts with the time since it started,
+// minutes, seconds, milliseconds and microseconds, as in 0.19.335.706.
+func setupTime(logPath string) (float64, bool) {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.Contains(line, "load_model: loading model") {
+			continue
+		}
+		return serverStamp(line)
+	}
+	return 0, false
+}
+
+func serverStamp(line string) (float64, bool) {
+	words := fields(line)
+	if len(words) == 0 {
+		return 0, false
+	}
+	parts := strings.Split(words[0], ".")
+	if len(parts) != 4 {
+		return 0, false
+	}
+	var n [4]int
+	for i, part := range parts {
+		v, err := strconv.Atoi(part)
+		if err != nil || v < 0 {
+			return 0, false
+		}
+		n[i] = v
+	}
+	return float64(n[0])*60 + float64(n[1]) + float64(n[2])/1e3 + float64(n[3])/1e6, true
+}
+
+// chatError is what llama-server says when it refuses a request.
+type chatError struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// CallLocal asks the model on this machine for a plan.
+// CallLocal asks the model on this machine for a plan. The answer is read
+// as it is written, and listen hears it arrive. What comes back is the
+// answer with how the model got to it: how long it read and thought and
+// wrote.
 func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
-	lineCount, count, maxTokens int, logDir string) (string, error) {
+	lineCount, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
-		started, stop, err := e.startServer(ctx, m, contextFor(runeLen(prompt), maxTokens), logDir)
-		if err != nil {
-			return "", err
+		// A model loaded while the transcript was still on its way is used
+		// as it is. The search lets go of it when it is done, and it stops.
+		size := contextFor(runeLen(prompt), maxTokens)
+		if !modelReady(m.Model, size) {
+			listen.part(partLoading)
 		}
-		defer stop()
-		url = started
+		held, release, err := e.holdModel(ctx, m, size, logDir)
+		if err != nil {
+			return nil, err
+		}
+		defer release(0)
+		url = held
 	}
+	listen.part(partReading)
 
 	schema := json.RawMessage(planSchema(lineCount, count))
 	body, err := json.Marshal(map[string]any{
@@ -291,7 +352,15 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": maxTokens,
-		"stream":     false,
+		// How long the model may think. The server stops the thought at the
+		// budget and closes it with the message, so the answer follows.
+		"reasoning_budget_tokens":  max(m.Think, -1),
+		"reasoning_budget_message": thinkEnough,
+		// Streamed, with the reading of the prompt reported as it goes and
+		// what it cost at the end, which a stream otherwise leaves out.
+		"stream":          true,
+		"stream_options":  map[string]any{"include_usage": true},
+		"return_progress": true,
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
@@ -300,7 +369,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 		},
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if logDir != "" {
 		_ = os.WriteFile(filepath.Join(logDir, "plan-prompt.txt"),
@@ -310,67 +379,58 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		url+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	request.Header.Set("content-type", "application/json")
 
-	// The server answers only once it is done, so the wait is shown as a
-	// running clock.
-	done := make(chan struct{})
 	started := time.Now()
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				e.Log.Progress(fmt.Sprintf("reading the transcript and choosing %.0fs",
-					time.Since(started).Seconds()))
-			}
-		}
-	}()
 	response, err := localClient.Do(request)
-	close(done)
-	e.Log.ClearProgress()
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		}
-		return "", renderErr("the local model did not answer: %s", Scrub(err.Error(), 200))
+		return nil, renderErr("the local model did not answer: %s", Scrub(err.Error(), 200))
 	}
-	raw, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		return "", renderErr("the local model's answer could not be read: %s", err)
-	}
-	if logDir != "" {
-		writeJSONText(filepath.Join(logDir, "plan-response.json"), raw)
-	}
-	var reply chatReply
-	if err := json.Unmarshal(raw, &reply); err != nil {
-		return "", renderErr("the local model returned something that is not JSON: %s",
-			pyRepr(Scrub(string(raw), 200)))
-	}
-	if reply.Error != nil || response.StatusCode != http.StatusOK {
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		// A refusal is kept to read. An answer is kept in the saved reply,
+		// with how the model got to it, so there is one file per answer.
+		if logDir != "" {
+			writeJSONText(filepath.Join(logDir, "plan-error.json"), raw)
+		}
 		message := fmt.Sprintf("status %d", response.StatusCode)
-		if reply.Error != nil {
-			message = reply.Error.Message
+		var refused chatError
+		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
+			message = refused.Error.Message
 		}
-		return "", renderErr("the local model reported an error: %s", Scrub(message, 400))
+		return nil, renderErr("the local model reported an error: %s", Scrub(message, 400))
 	}
-	if len(reply.Choices) == 0 || strip(reply.Choices[0].Message.Content) == "" {
-		return "", renderErr("the local model returned no answer")
+	answer, err := readLocalStream(response.Body, listen)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
 	}
-	choice := reply.Choices[0]
+	if strip(answer.Content) == "" {
+		return nil, renderErr("the local model returned no answer")
+	}
+	reading, writing := 0.0, 0.0
+	if t := answer.Timings; t != nil {
+		reading, writing = t.PromptPerSecond, t.PredictedPerSecond
+	}
 	e.Log.Info("local model answered in %ss  read %s tok at %s tok/s  wrote %s tok at %s tok/s",
 		fixed(time.Since(started).Seconds(), 1),
-		commas(reply.Usage.PromptTokens), fixed(reply.Timings.PromptPerSecond, 0),
-		commas(reply.Usage.CompletionTokens), fixed(reply.Timings.PredictedPerSecond, 1))
-	if choice.FinishReason == "length" {
+		commas(answer.PromptTokens), fixed(reading, 0),
+		commas(answer.Written), fixed(writing, 1))
+	if answer.Reasoning > 0 {
+		e.Log.Detail("the model thought for %s characters before it answered",
+			commas(answer.Reasoning))
+	}
+	if answer.FinishReason == "length" {
 		e.Log.Warn("the answer hit the %s token ceiling. Raise --max-tokens if clips are missing.",
 			commas(maxTokens))
 	}
-	return choice.Message.Content, nil
+	return answer, nil
 }

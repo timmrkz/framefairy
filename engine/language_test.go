@@ -36,7 +36,7 @@ func TestEveryLanguageModelCanBeOffered(t *testing.T) {
 	seen := map[string]bool{}
 	for _, m := range models {
 		if m.Name == "" || m.Title == "" || m.Maker == "" || m.About == "" {
-			t.Errorf("a model the window cannot describe: %+v", m)
+			t.Errorf("a model the app cannot describe: %+v", m)
 		}
 		if !strings.HasSuffix(m.Name, ".gguf") {
 			t.Errorf("%s does not land as a .gguf, which is the only thing llama-server reads", m.Name)
@@ -146,7 +146,7 @@ func TestWhatEachMachineIsOffered(t *testing.T) {
 	}
 
 	// A machine too small for any of them is offered none, and then the
-	// window says so rather than promising something that cannot work.
+	// app says so rather than promising something that cannot work.
 	if _, ok := RecommendedFor(1 * gb); ok {
 		t.Error("a 1 GB machine was offered a model")
 	}

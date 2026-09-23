@@ -1,6 +1,6 @@
 # framefairy-app, the desktop app
 
-The app does what the command line does, with a window: it transcribes an
+The app does what the command line does, on screen: it transcribes an
 episode, finds the moments worth clipping, lets you check and adjust them on
 a timeline and renders them as vertical shorts. It runs the same engine as
 `framefairy`, so both give the same results from the same files.
@@ -27,7 +27,7 @@ interface come with the packaging work.
 
 A new copy of the app on a machine with nothing on it needs two things, and
 only one of them is a question. Until both are answered the setup is the
-window: no sidebar, no workspace, nothing to press that would not work.
+whole app: no sidebar, no workspace, nothing to press that would not work.
 
 **Speech** is always local. No speech model ships with the app, so the app
 fetches one. There is one today, which is not a choice, so the app says what
@@ -154,25 +154,25 @@ the default would mean that Enter, or a second Return still held down from
 somewhere else, throws work away, and the whole reason this box exists is
 that a click which throws work away has to be a click you meant.
 
-### The window
+### The bar
 
-A bar runs across the top of the window. It holds the window's own buttons
-on macOS, it is what the window is dragged by, and it says what is on
+A bar runs across the top of the app. It holds the close, minimise and zoom
+buttons on macOS, it is what the app is dragged by, and it says what is on
 screen: the name of the episode, or **Activity** or **Settings**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
 On macOS the bar **is** the title bar. macOS lays that out and centres its
 three buttons in it, and nothing an app can set moves them by a pixel: the
-height the window asks to leave empty only says how far down a drag still
-moves the window. So the app takes the height it was given rather than
+height the app asks macOS to leave empty only says how far down a drag
+still moves the app. So the app takes the height it was given rather than
 asking for one, and then the buttons are on the bar's middle because the
 bar is what they were centred in. Everywhere else the system draws its own
-title bar above the window and this one is an ordinary header.
+title bar above the app and this one is an ordinary header.
 
 The Go side measures and the stylesheet lays out. `FrameFairy.Chrome` answers
 four numbers in whole pixels, the title bar's height and the left edge,
-right edge and middle of the window buttons, and the window is told again
+right edge and middle of those buttons, and the interface is told again
 on the `chrome` event whenever the answer changes: a resize, either way
 through fullscreen, another display, another scale, light or dark, back
 from the Dock. Nothing is ever moved, so there is nothing that can snap
@@ -189,23 +189,23 @@ centred and not the space a line of text reserves around them, and then it
 is padded back out so a name with a tail below the baseline, `YouTube.mp4`,
 keeps it. A name too long for the bar ends in an ellipsis.
 
-The window's own colour is the bar's colour, `--ink-1`. It is only ever
-seen where the page does not paint, which on macOS 26 is the sliver
-between the window's rounded corner and the webview's, and at the top that
+The colour of the app's window itself is the bar's colour, `--ink-1`. It
+is only ever seen where the page does not paint, which on macOS 26 is the
+sliver between its rounded corner and the webview's, and at the top that
 sliver is inside the bar.
 
 ### The workspace
 
 Selecting an episode opens its workspace. It is three columns, the settings
 on the left, the video preview in the middle and the clips on the right, with
-the clip up close under all three. It fits the window without scrolling.
+the clip up close under all three. It fits the app without scrolling.
 
-The picture always agrees with the playhead. Whenever the window cannot show
+The picture always agrees with the playhead. Whenever the app cannot show
 the moment the playhead stands on, which is what happens while the machine is
 busy transcribing or searching and a seek is dropped, the frame under the
 playhead is read from the file by the engine and shown instead. The moment
-the window catches up it takes over by itself. The engine keeps one frame per
-second of an episode in its work folder, so going back over a stretch costs
+the app catches up it takes over by itself. The engine keeps one frame per
+second of an episode in its work folder, so going back over a part costs
 nothing.
 
 Opening an episode that already has clips opens on one of them: the clip it
@@ -230,21 +230,21 @@ without could not be relied on for either.
 The video preview is as big as the room allows and keeps the shape of the
 episode, so it grows until either the height or the width runs out. The
 middle column is exactly as wide as the picture, and the settings and the
-clip list share everything left over. A wider window makes those two wider
+clip list share everything left over. A wider app makes those two wider
 rather than leaving a strip of nothing beside the picture, and a taller
-window makes the picture bigger. Once the picture is as wide as it may be,
+app makes the picture bigger. Once the picture is as wide as it may be,
 the height left over goes to the two tracks: the clip timeline grows and the
 range picker stays exactly half of it, so nothing is left empty at the foot
-of the window.
+of the app.
 
-All of that is one expression in the stylesheet, worked out from the window
-itself and the tokens in `app.css`. Two things it cannot know come in as
-custom properties, the shape of the episode and the height of an error line
-above the workspace, and neither changes because the window changed. So
-dragging the window edge costs no JavaScript at all and the workspace keeps
-up with the edge instead of arriving a frame behind it. The waveform is the
+All of that is one expression in the stylesheet, worked out from the size
+of the app itself and the tokens in `app.css`. Two things it cannot know
+come in as custom properties, the shape of the episode and the height of an
+error line above the workspace, and neither changes because the app was
+resized. So dragging the edge of the app costs no JavaScript at all and the
+workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
-nothing is laid out from the answer. The stretch chosen on the range picker stays with the episode
+nothing is laid out from the answer. The window chosen on the range picker stays with the episode
 while the app runs, so leaving the workspace and coming back does not throw
 it away.
 
@@ -256,7 +256,7 @@ picker**. The waveform under the whole workspace, the episode up close, is the
 Nothing explains itself in a line of text that is always on screen. Every
 control says what it is for when the pointer rests on it, and the small info
 marks open a bubble that says more, on hover or on a click. A bubble is a few
-sentences, never an essay, and it hangs from the window rather than from the
+sentences, never an essay, and it hangs from the page rather than from the
 area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
@@ -294,7 +294,7 @@ place.
   seconds, but every chunk the recogniser finishes says how far it has come,
   and the edge follows that. Nothing on that track moves of its own accord
   unless work is running on it: the window while a search runs, and the
-  stretch with no transcript yet while the reading runs.
+  part with no transcript yet while the reading runs.
 - **The clip list is a stack of cards**, each clip its own, with air
   between them and the app's colour down the edge of the chosen one. It has
   no box around it: the ends go under a veil, so a card scrolling out of
@@ -323,10 +323,10 @@ place.
   both is how it came to say **Transcribing** over a list of clips.
 - **New waits until a search could run.** A search reads the transcript off
   disk, so **New** is off until the saved transcript reaches the end of the
-  chosen stretch, and says how far it has got and how far it needs to go.
+  chosen window, and says how far it has got and how far it needs to go.
   It goes by what is written down rather than by what has been heard,
   because a search started on the second one would read a transcript that
-  stops short of the stretch it was asked for.
+  stops short of the window it was asked for.
 - **The transcription is worked from the edge it moves.** On the range
   picker, at the transcript's edge, a mark appears while the pointer is on
   the track and does the one thing there is to do: pause it while it reads,
@@ -355,15 +355,27 @@ place.
 - **The clip list waits in the shape it will have.** While the transcript is
   still coming, and while a search runs, the list holds as many rows as the
   search was asked for, with the light passing over them, so it does not
-  fill out from four rows to twelve. Nothing is written in the empty space:
+  fill out from four rows to twelve. The clips of earlier searches are not
+  counted against it, and each clip that lands takes the place of one of
+  the rows. Nothing is written in the empty space:
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
-  **Captions** holds the face and the size for every clip of the episode, and
-  the height the captions sit at, which is kept for every episode. The
-  height follows the black box in the picture as it is dragged, not when it
-  is let go, and a mark at the end of the **Captions** row puts the captions
-  back as they start out, the font, the size and the height together, because
+  **Captions** holds the face, the size and the colours for every clip of
+  the episode, and the height the captions sit at, which is kept for every
+  episode. **Text** is the colour the words are written in, **Box** the
+  colour of the box behind them and **Highlight** the pill behind the word
+  being spoken. Beside each is how much of it is seen:
+  100, where the text and the highlight start, is solid, and a box at 0
+  leaves only the words. A see-through text keeps its opacity in the
+  short, the word on the pill included, and a see-through pill lets the
+  box and the picture through, in the short as in the video preview.
+  A colour is drawn in the video preview while it is picked and saved when
+  the picker lets go, and Undo takes it back. The height follows the
+  caption box in the video preview as it is dragged, not when it is let
+  go, and a mark at the end of the **Captions** row puts the captions back
+  as they start out, the font, the size, the height and the colours
+  together, because
   it is beside the head of the whole group and not beside one row of it. It
   turns anticlockwise for that, and once they are back it turns clockwise
   instead and puts them as you had them, so one click is undone by one click.
@@ -371,7 +383,7 @@ place.
   many clips a search looks for and how long they may be are set here and
   nowhere else, and they are kept for the next episode too. Every setting is one row, the name
   on the left and the control on the right, all of them the same width. A
-  unit stands inside its field, right beside the number. Which stretch is
+  unit stands inside its field, right beside the number. Which part is
   searched is chosen on the track, not here.
 - **Video preview:** the episode, with one **Play** button that plays from where
   the playhead stands. The space bar does the same, unless a field has the
@@ -399,6 +411,12 @@ place.
       landed, and chasing it pulls the picture back to where playing began
       and then empties the element. **Loop** starts it over instead, which is how
       a clip is judged. It stays on until it is switched off again.
+    - **A jump a playing clip makes by itself**, over a cut or from its end
+      back to its start, moves the playhead when the picture has landed and
+      not before, so the crop frame, the captions and the picture change
+      together. A frame read from the file is only drawn over the video
+      preview for the second it was read for. Before, one read for another
+      moment flashed up on every loop while the seek was on its way.
     - While the playhead is inside the clip, its captions are drawn inside
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
@@ -429,7 +447,7 @@ place.
   the width before anything is measured, so the placement measures what it
   will get.
 
-  A name longer than the window has room for is the one case a list cannot
+  A name longer than the app has room for is the one case a list cannot
   grow into, and the whole of a name is in the row's title either way. The row under the pointer and the row the
   keyboard is on are the same row, in `--ink-3`, and what is chosen is in
   the accent with a tick that keeps its place whether or not it is there.
@@ -505,24 +523,62 @@ place.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the transcription starts, and the moment it covers the
-      stretch chosen on the track the first search runs. Until then the info
-      mark beside the head says so, and the stretch can still be moved. It
+      window chosen on the track the first search runs. Until then the
+      first row of the clip list says so, and the window can still be
+      moved. The local model is loaded in the meantime, so the search
+      starts with it in memory. **While clips are found, the transcription
+      waits**, on this episode and any other, so the model has the
+      machine to itself, and it carries on by itself when the search
+      ends. One paused by hand stays paused. The search waits for the
+      audio to be heard to the end of the window, not for the next time
+      the transcript is written down, which is seconds apart and minutes
+      of audio. The moment it is heard, the transcription is paused, the
+      pause writes down all it heard, and the search starts on that. So
+      the range picker's edge stops a little past the end of the window
+      rather than running on across the track while the first row sits
+      full, and it carries on from where it stopped. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
       nobody asked for it. Deleting the work folder makes the episode new,
       and then it starts over as a new one does. The rule and its tests are
       in `frontend/src/lib/flow.ts`.
-    - **What a search is doing is the head of the list itself.** **New**
-      becomes **Cancel** while work runs, and the line under it fills up as
-      the work goes on. Nothing is added to the column, so the clips never
-      move down. A render shows there in the same way. The model answers
-      with the whole set at once, so the clips all land together, and they
-      are in the list the moment the answer is written rather than when the
-      job has wrapped up.
-    - **New**, above the list, finds clips in the stretch chosen on the
+    - **What a search is doing is in the row its next clip appears in.**
+      The first of the rows still to come wears the beam and the fill and
+      says two things: Waiting for the transcript with the window it is
+      waiting to cover, then Finding clips, then how many are found, with
+      about how long is left under it. Loading the model, reading and
+      thinking are the machine's steps and are not spelled out. A headline
+      stays at least two and a half seconds and a count of clips at least
+      one, so it can be read, while the fill and the time left move at
+      once. The time left moves in steps of five seconds. Only the search
+      reports on that row: what ffmpeg says while it frames a clip goes to
+      the log. **New** becomes **Cancel** the moment a first search is on
+      its way, while it still waits for the transcript, and there it calls
+      the search off before it starts. While a search runs, Cancel stops
+      it. A render, which has no row to fill, wears the beam and the fill
+      in the button.
+    - **How far a search is, is measured.** The fill is the share of the
+      search that is done, measured against how long the same parts took
+      the last time on this machine. Inside a part, what the model counts
+      itself beats the clock: the transcript it has read, what it has
+      thought against its budget, the clips it has written. A local model
+      this machine has never timed is measured against a search timed on
+      an M2 Max until its own first search has finished. The API has no
+      such stand-in, so its first search shows the beam without a fill.
+      The engine keeps the timings, see [ENGINE.md](ENGINE.md).
+    - **Clips arrive one at a time.** The engine writes each clip to the
+      plan the moment it is framed, while the model is still writing the
+      next, so the list fills in a row at a time and the rows still to come
+      shrink as it does. The first clip found is put on screen as soon as
+      it lands, unless another clip was picked after the search began: a
+      clip taken away from the hand that is working on it is worse than
+      one shown a little later. A clip that has landed can be played,
+      trimmed and corrected while the rest are still coming. Stopping a
+      search keeps the clips it had found.
+    - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
-      already there. Choosing a stretch that was searched before and asking
+      already there. Choosing a window that was searched before and asking
       again replaces its clips and everything done to them, so it asks
       first.
     - The trash can on a row removes that clip. Its mark leaves the track at
@@ -532,10 +588,10 @@ place.
       over it. The clip stays in the plan with everything done to it, and a
       render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
-  preview and exactly as wide as it. It is where the stretch to search is
+  preview and exactly as wide as it. It is where the window to search is
   chosen, and it shows what has been searched, where the clips are, how far
   the transcript has come and where the playhead stands.
-    - Drag across it to choose the stretch to search, or drag the window or
+    - Drag across it to choose the window to search, or drag the window or
       its edges. Long episodes open with the first 30 minutes chosen. The
       window is a box on all four sides, placed in whole pixels, so every
       edge of it is drawn the same. The border of the box is the edge, and
@@ -544,38 +600,38 @@ place.
       the pointer or holds the keyboard focus.
     - **Edges land on a round step**, the smallest one that is still about
       eight pixels wide: ten seconds for a short episode, five minutes for a
-      four hour one. A wall wins over the step, so a stretch that runs into
-      a searched one ends exactly at it. While a stretch is drawn or moved
+      four hour one. A wall wins over the step, so a window that runs into
+      a searched one ends exactly at it. While a window is drawn or moved
       it says what it is, in a pill over the track.
     - While clips are being found for it, the window cannot be moved and a
       soft light passes through it every couple of seconds, which is the
       track saying work is in hand. How far the search has come is on the
       line under the head of the clip list, so the window only has to say
       that something is running.
-    - A window drawn over a stretch that was searched already is a window
-      onto what that stretch would be without it: the plain track, as it
+    - A window drawn over a part that was searched already is a window
+      onto what that part would be without it: the plain track, as it
       looks where nobody has looked yet, and the clips inside it are not
       drawn. So what the trash can in its corner does is plain before it is
       pressed. The trash can waits until the window is under the pointer,
       and the times are drawn over everything, so nothing laid on the track
       ever hides where you are.
-    - A stretch that has been searched is marked. **The window may be drawn
+    - A part that has been searched is marked. **The window may be drawn
       anywhere**, over a mark, part of one or none at all: the window is the
-      stretch you mean, and what happens to it is decided by the button you
+      window you mean, and what happens to it is decided by the button you
       press. The model still never gets the same material twice by
       accident, because a window that lies over a mark says so before
       anything is searched.
     - **Looking again.** **New** over material that was searched asks
-      first. It names the stretch and how many clips are in it, and on Look
-      again those clips are removed and the model reads the stretch as if
+      first. It names the window and how many clips are in it, and on Look
+      again those clips are removed and the model reads the window as if
       for the first time. Clips outside the window stay as they are.
     - **Removing what the window covers.** A window that lies over a mark
       wears a trash can in its top right corner, just outside it when the
       window is too narrow to hold it. It asks first, because the clips in
-      the stretch leave the list along with every trim, crop and caption
+      the window leave the list along with every trim, crop and caption
       place. Clips already rendered stay as files on disk, and the caption
       files of the clips are moved aside rather than deleted. Afterwards
-      that stretch is free again, even when it is the middle of a longer
+      that part is free again, even when it is the middle of a longer
       search: the plan keeps the rest of its window and notes the part it
       gave back.
     - A mark for every clip sits inside the track, green once rendered.
@@ -593,7 +649,7 @@ place.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
   tall as the video preview and the range picker need. If the transcript has
-  not reached the end of the chosen stretch yet, a search waits for it and
+  not reached the end of the chosen window yet, a search waits for it and
   starts by itself.
 - **One mark explains one thing, where that thing is.** The video preview,
   the range picker and the clip timeline each carry their own info mark in
@@ -663,11 +719,13 @@ place.
       now, where a short will show them, and a magnifier that could only
       read was a second place to look at the same words. So it came out,
       and the track is the waveform and the playhead and nothing else.
-    - **The clip is one thing, holes and all.** Two rules in the accent run
-      above and below it from its first piece to its last, whatever is cut
-      out in between, so a clip with a cut in it reads as one clip and not
-      as two standing in a row. The accent wash inside the rules says
-      which parts are kept. A stretch the clip leaves out, usually dead
+    - **The clip is one thing, holes and all.** One frame in the accent,
+      with its corners just rounded, runs round it from its first piece to
+      its last, whatever is cut out in between, so a clip with a cut in it
+      reads as one clip and not as two standing in a row. It is drawn over
+      the time lines, the cuts and the captions, so nothing crosses it. An
+      edge of it widens under the pointer and while it is dragged. The accent wash inside the rules says
+      which parts are kept. A part the clip leaves out, usually dead
       air the engine found, is the track's own background with an accent
       line at each end, the way an editor marks the place two shots were
       joined: what is not in the clip looks like everything else that is
@@ -675,9 +733,9 @@ place.
     - **The cuts can be changed.** Each one carries a handle on either edge,
       in the accent's lighter shade so it is not taken for the clip's own
       edge. Dragging a handle moves that edge of the cut, and a double-click
-      on the block puts the stretch back.
+      on the block puts the part back.
     - **Shift is the cutting hand.** Holding it and dragging across the clip
-      takes out the stretch dragged over. Holding it and double-clicking
+      takes out the part dragged over. Holding it and double-clicking
       takes one out where the click lands, forty pixels wide, which is wide
       enough to see and to take hold of by either edge and drag to size.
       Forty pixels and not a quarter of a second, because what has to stay
@@ -696,12 +754,12 @@ place.
       because there is nothing there left to take out. Without shift the
       same drag moves the playhead, so nothing that worked before works
       differently, and a shift-click with no drag does nothing.
-    - **A stretch put back goes back in with the same gesture.** The
+    - **A part put back goes back in with the same gesture.** The
       double-click that puts a cut back is remembered, so a second
-      double-click in the same place takes the stretch out again, edge for
+      double-click in the same place takes the part out again, edge for
       edge. It is forgotten as soon as anything else about that clip
-      changes, because a stretch put back into a clip that has moved on is
-      not the stretch that was taken out.
+      changes, because a part put back into a clip that has moved on is
+      not the part that was taken out.
     - **A cut lands on the frame.** The edges stay where the hand put them,
       rounded to a whole frame of the episode and no further, because a
       double-click and a drag both say where exactly and moving the edges
@@ -781,6 +839,92 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Caption timing
+
+A caption appears when its first word is said and goes when the next one
+appears, or a moment after its last word when a pause follows. Where the
+timing of the words is a little off from what is heard, a caption can be
+moved by hand, on the clip timeline.
+
+- **The captions run across the middle of the clip timeline**, each a
+  block from where it appears to where it goes, on the same clock as
+  everything else on it. A click on a block puts the playhead on that
+  caption's first word.
+- **Either edge is dragged.** Where two captions meet, the line between
+  them has two sides: the left side is where the one before goes, the
+  right side where the one after appears. Dragging the left side leaves a
+  gap and moves nothing else. Dragging the right side moves when the next
+  caption appears, and the one before goes with it, so nothing is left bare
+  that was not bare before. Nothing overlaps, because the picture shows one
+  caption at a time. An edge lands on a whole frame.
+- **The caption box in the video preview follows the drag**, so what is
+  seen while dragging is what is saved.
+- **A block is its caption in the short's colours**: the box colour, as
+  see-through as the box is set to be, over the waveform the way the box
+  lies over the picture, with a bar in the colour of the words, so every
+  colour and every opacity picked in the captions column is seen here too,
+  while it is picked. The blocks lie over everything else on the clip
+  timeline, the clip frame, the time lines and the playhead included. The
+  colours never change with the state, because a dimmed colour is another
+  colour. At rest the bar is a hairline and under the pointer it is
+  thicker. The caption the video preview is showing wears the highlight
+  colour over its box, with its own opacity, the pill the spoken word
+  wears, and pops with the same animation that pill makes in the video
+  preview, on every word as the pill does, so walking the words with shift
+  and the arrow keys pops the pill and the block together. A block takes no focus, so no focus ring is left
+  round one when the keys walk the words on. A click puts the
+  playhead a frame into the caption's first word, so the video preview
+  shows that word lit, the first caption of a clip included, which is on
+  screen from the clip's first frame, before its first word. The edge
+  under the pointer, or the one being dragged, is a white line with a dark
+  edge that goes again when the hand lets go. Two captions that meet have
+  a gap of two pixels between them.
+- **A click on an edge puts the playhead on it**, the way a clip edge does,
+  which is how a caption is heard from where it appears.
+
+A moved caption is kept in the clip's plan against the word it begins or
+ends on, by when that word starts in the episode, so it survives the
+clip's pieces moving, and a size or face that breaks the captions in other
+places simply leaves it unused. The engine side is `SetCaptionTime` in
+`engine/edit.go` and `moveCaptions` in `engine/lines.go`.
+
+### Undo and redo
+
+**Everything done to an episode's clips can be taken back**, with **Undo**
+and **Redo** in the Edit menu, Cmd-Z and Cmd-Y, Ctrl-Z and Ctrl-Y on Windows and Linux. That is a trim, a
+cut made, moved or put back, the crop frame, the caption box moved, a word
+corrected, added or removed, the caption face, size and colours, a clip removed and
+a search removed. Each is one step. Taking one back chooses the clip it
+changed, so nothing changes where nobody is looking. A new edit after an
+undo starts again from there, and what was undone is gone, as in every
+editor.
+
+- **What is in it.** What a person does to the clips, and nothing the app
+  does by itself. Transcribing, searching and rendering make things rather
+  than change them. Moving the playhead, choosing a clip and zooming are
+  not edits. The settings are not in it, apart from the caption height,
+  which is moved in the workspace like everything else here.
+- **A field keeps its own undo.** While a word in the caption box or a
+  number beside the clip is being typed in, Cmd-Z takes back the typing,
+  the way it does in any text field. Once it is saved, the key goes to the
+  episode.
+- **One history per episode, while the app is open.** Everything saves the
+  moment it is done, so closing loses nothing, and there is no history to
+  come back to. It goes 200 steps back.
+- **What landed since stays.** A search writes clips into a plan while its
+  earlier clips are edited, so an undo puts back only what the edit
+  changed, clip by clip, and never the whole plan. A clip that has been
+  changed again since by something the history does not know about, a
+  search over the same part above all, is not written over: the undo
+  says it cannot be taken back, and the history of the episode starts
+  again from there.
+
+The engine side is `engine/undo.go`, the app side
+`cmd/framefairy-app/history.go`, and the menu `cmd/framefairy-app/menu.go`.
+The menu has to be the app's own: on macOS the stock Undo takes Cmd-Z
+before the page sees it and hands it to the web view, whose undo only
+knows about text being typed.
+
 ### Work in hand
 
 Everything that runs says so the same way, wherever it runs. There are four
@@ -801,15 +945,31 @@ things and no others, and each one means one thing.
   its own words. They are the beam's, not a thing of their own, and they
   are why a control with nothing to report is still alive to look at.
 - **The fill.** How far the work has come, when that is known. Inside the
-  control it is a wash with a bright head at the front, so where the work
-  has got to is a line rather than the place one shade becomes another. In
+  control it is a wash of the app's colour, 30 percent at the start and 50
+  at the head, with a bright line at the front, so what is done can be told
+  from what is left with daylight on the screen, and a light passes over
+  what is done, the one the bar in Activity carries, so a fill is never a
+  flat wash. The fill slides by a transform rather than growing, so it
+  moves with whatever moves beside it. The range picker draws the reading
+  of the episode with `Busy.svelte` itself, fill, head, glow and motes,
+  without the rim, and the row of the clip list that waits for the
+  transcript fills by the same line, so the two never say different
+  things.
+- **Paused work is still, not gone.** How far it got stays true, so the
+  fill stays where it is, and everything that says the work is running
+  stops: no beam, no motes, no light over the fill, and the head keeps its
+  line without the glow ahead of it. Running and paused are told apart by
+  movement. The range picker shows a transcription paused by hand, or
+  waiting while a search has the machine, this way, with the mark that
+  carries it on at the head of the fill. In
   Activity, where a job has no control of its own, the same fill lies in a
   track of its own, with a light travelling over what is already done. Work that cannot
   say how far it has come shuttles across that track instead of standing at
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
-  will have, the part of the clip timeline the transcript has not reached,
-  the stretch on the range picker while clips are being found for it. The
+  will have, which are already rows of the list and brighten under the
+  pointer the way a clip's row does while they go on breathing, the part of the clip timeline the transcript has not reached,
+  the window on the range picker while clips are being found for it. The
   place itself dims and comes back, two seconds, in and out. It is
   `animate-pulse`, which is what
   [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton) and
@@ -859,14 +1019,14 @@ animation at all at rest.
 and the fill inside a control. The track, the shimmer and the pulse are in
 `frontend/src/app.css`, because they are worn by things that are not
 controls. The track is `.progress` there and not `.bar`, because the bar is
-the one across the top of the window, and while the two shared a name the
+the one across the top of the app, and while the two shared a name the
 bar was picking up the track's rounded corners.
 
-### What the window may ask for
+### What the interface may ask for
 
 Every call that names a file is checked against the library before anything
 is read, written or started, and a path is judged by where it really leads.
-The window only ever names files it was given, so this is the last line
+The interface only ever names files it was given, so this is the last line
 rather than the first, but it is the line that holds when something else
 asks.
 
@@ -882,6 +1042,10 @@ rendering clips never wait for it.
 ### Settings
 
 **This machine** tests what the engine needs and says what is missing.
+**Video decoding** says which of the system's own video decoders this
+ffmpeg can use, VideoToolbox on a Mac, or that decoding is done on the
+processor. Which one a file really went through is in the log of its
+search.
 **Speech** is the same list of models the first run shows, so a model can be
 installed or added later without going through the setup again, and it
 installs the same way, as a job with the same fill. **Finding clips** holds
@@ -893,12 +1057,15 @@ to give it a key. With **On this machine** chosen, the same list of language
 models the first run shows, judged against the same memory.
 
 The rest is paths to ffmpeg, llama-server and the models, and the output
-folder. **Colours** holds two, and they are together because the whole point
-is that they are two: **the app** is what the app picks things out in, the
-chosen clip, the window on the range picker, a button that matters, and **the
-word highlight** is the pill behind the word being spoken, burned into the
-short. A taste in one is not a taste in the other. They start out the same,
-`#942192`, so an app nobody has touched looks of a piece with what it makes.
+folder. **Colours** holds **the app**, what the app picks things out in, the
+chosen clip, the window on the range picker, a button that matters. The
+colours burned into a short, the words, their box and the pill behind the
+word being spoken, are set together in the captions column of the
+workspace, where the video preview and the clip timeline show them as they
+are picked. A taste in one is not a taste in the other. The app and the pill
+start out the same, `#942192`, so an app nobody has touched looks of a piece
+with what it makes. A highlight colour chosen here before is still the one a
+search gets until its own is picked in the captions column.
 The app's colour is the only one the interface has: the lighter shade under
 the pointer and the wash behind a chosen clip are mixed from it, so changing
 it moves all three, and it moves as the colour is picked rather than when it
@@ -943,7 +1110,7 @@ Homebrew's ffmpeg and llama-server even when it is started from Finder.
 
 | Part | Where | What |
 | --- | --- | --- |
-| Go side | `cmd/framefairy-app/` | the window, the calls the interface makes, the job queue, settings |
+| Go side | `cmd/framefairy-app/` | the app's window, the calls the interface makes, the job queue, settings |
 | Interface | `frontend/` | Svelte 5 and TypeScript, no Go |
 | Built interface | `cmd/framefairy-app/dist/app/` | made by make from `frontend/`, embedded into the program, not in git |
 

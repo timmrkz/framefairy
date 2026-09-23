@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// A clip is a set of kept stretches, so every cut is a gap between two of
+// A clip is a set of kept parts, so every cut is a gap between two of
 // them. These tests hold the properties that make that safe to hand to a
 // person: the framing never moves because a cut was made, the words always
 // say what the clip now holds, and an edit that would leave something the
@@ -123,7 +123,7 @@ func TestACutSnapsToTheWordsAroundIt(t *testing.T) {
 }
 
 // A word is in the clip when the clip holds the moment it is spoken, so
-// cutting a stretch out has to take its words with it. The captions are
+// cutting a part out has to take its words with it. The captions are
 // built from the words, so a clip whose words still list what was cut
 // would burn in a line nobody says.
 func TestCuttingTakesTheWordsWithIt(t *testing.T) {
@@ -141,7 +141,7 @@ func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 		t.Fatalf("the clip says %q", got)
 	}
 
-	// Now cut the stretch the last two words are spoken in, and they go.
+	// Now cut the part the last two words are spoken in, and they go.
 	if err := CutClip(path, "01", 13.95, 16, cutsTranscript(), 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
@@ -370,8 +370,8 @@ func TestACutThatSwallowsAPieceDropsIt(t *testing.T) {
 }
 
 // Putting a cut back is the undo of making one, so the two pieces become
-// one again and the clip plays the stretch it used to leave out.
-func TestJoiningACutPutsTheStretchBack(t *testing.T) {
+// one again and the clip plays the part it used to leave out.
+func TestJoiningACutPutsThePartBack(t *testing.T) {
 	path := cutsPlanPath(t)
 	before := clipByID(t, path, "02")
 	if len(ClipCuts(before)) != 1 {
@@ -685,7 +685,7 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		if err := JoinCut(path, "01", 13, tr); err != nil {
 			t.Fatal(err)
 		}
-		// Exactly the stretch that was put back, sent as it stands, which
+		// Exactly the part that was put back, sent as it stands, which
 		// is what the timeline does: snapping something already snapped
 		// would move it.
 		if err := CutClip(path, "01", 12, 14, tr, 0.1, ToFrames); err != nil {

@@ -234,6 +234,8 @@ var safeName = regexp.MustCompile(`^[A-Za-z0-9_-]*$`)
 // or two clips that would overwrite each other's files.
 func FuzzLoadClips(f *testing.F) {
 	f.Add(`{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 0, "end": 1}]}]}`)
+	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
+		` "caption_times": {"100": {"start": 0.05, "end": "x"}, "y": 3, "200": {"end": 1e308}}}]}`)
 	f.Add(`{"clips": [{"id": "../../x", "segments": [{"start": "00:01:00", "end": "1e3"}]}]}`)
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1, "crop_x": -5}],` +
 		`"words": [[0, 1, "eins"]]}]}`)

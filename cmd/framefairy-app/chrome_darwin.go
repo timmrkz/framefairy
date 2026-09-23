@@ -16,16 +16,17 @@ struct chromeOut {
 	bool fullscreen;
 };
 
-// chromeMeasure asks the window where macOS put its own furniture.
+// chromeMeasure asks the app's window where macOS put its own furniture.
 //
 // Everything is worked out in the content view's own space, which is the
-// page, because the window is asked for a title bar the page reaches
+// page, because the app's window is asked for a title bar the page reaches
 // under. AppKit counts upwards from the bottom, so a distance from the top
 // is the top of that space less whatever is being asked about.
 //
 // contentLayoutRect is the part of the content area the title bar and the
 // toolbar do not cover, so the height of the bar is what is left above it.
-// It is given in the window's space, hence the conversion from nil.
+// It is given in the space of the whole NSWindow, hence the conversion
+// from nil.
 //
 // It answers zeros where there is nothing to ask, and the app leaves the
 // bar as the stylesheet has it.
@@ -65,8 +66,8 @@ import "C"
 
 import "unsafe"
 
-// chromeMeasure asks macOS about the window. It must be called on the main
-// thread, which is what the caller sees to.
+// chromeMeasure asks macOS about the app's window. It must be called on
+// the main thread, which is what the caller sees to.
 func chromeMeasure(window unsafe.Pointer) chromeRaw {
 	if window == nil {
 		return chromeRaw{}

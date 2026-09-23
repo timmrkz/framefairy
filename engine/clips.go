@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Segment is one continuous stretch of the source that ends up in a clip.
+// Segment is one continuous part of the source that ends up in a clip.
 type Segment struct {
 	Start float64
 	End   float64
@@ -40,6 +40,20 @@ type Clip struct {
 	// the bottom of a 1080x1920 frame, when it was placed by hand. Nil means
 	// the place the caption style gives.
 	CaptionY *float64
+	// CaptionTimes are captions moved by hand, where the timing of the
+	// words is a little off from what is heard. Each is kept against the
+	// word a caption begins or ends on, by the millisecond that word starts
+	// in the episode, so it survives the clip's pieces moving and the
+	// captions breaking in other places.
+	CaptionTimes map[string]CaptionTime
+}
+
+// CaptionTime is when a caption that begins on a word is shown, and when a
+// caption that ends on a word goes, in seconds of the episode. Either may
+// be unset.
+type CaptionTime struct {
+	Start *float64
+	End   *float64
 }
 
 // Duration of the finished clip in seconds.
@@ -364,13 +378,14 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			}
 		}
 		clips = append(clips, Clip{
-			Rejected: rejected,
-			CaptionY: captionY,
-			ID:       SanitiseName(idText, fallback),
-			Slug:     SanitiseName(slugText, ""),
-			Title:    Scrub(titleText, 200),
-			Segments: segments,
-			Words:    spoken,
+			Rejected:     rejected,
+			CaptionY:     captionY,
+			CaptionTimes: readCaptionTimes(entry["caption_times"]),
+			ID:           SanitiseName(idText, fallback),
+			Slug:         SanitiseName(slugText, ""),
+			Title:        Scrub(titleText, 200),
+			Segments:     segments,
+			Words:        spoken,
 		})
 	}
 
@@ -434,3 +449,39 @@ func ClampCropX(cropX *int, cropW, sourceW int) int {
 func intPtr(n int) *int { return &n }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// readCaptionTimes takes the captions moved by hand out of a plan, which is
+// untrusted like the rest of it. A key that is not a millisecond, a time
+// that is not a moment of an episode, and anything that is not what it
+// should be are left out, and the caption is where the words put it.
+func readCaptionTimes(raw any) map[string]CaptionTime {
+	fields, ok := raw.(map[string]any)
+	if !ok || len(fields) == 0 {
+		return nil
+	}
+	out := map[string]CaptionTime{}
+	for key, value := range fields {
+		ms, err := strconv.ParseInt(key, 10, 64)
+		if err != nil || ms < 0 || ms > MaxEpisodeSeconds*1000 || strconv.FormatInt(ms, 10) != key {
+			continue
+		}
+		edges, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		var t CaptionTime
+		for name, into := range map[string]**float64{"start": &t.Start, "end": &t.End} {
+			v, ok := toFloat(edges[name])
+			if ok && isFinite(v) && v >= 0 && v <= MaxEpisodeSeconds {
+				*into = &v
+			}
+		}
+		if t.Start != nil || t.End != nil {
+			out[key] = t
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

@@ -90,7 +90,7 @@ func DefaultTrainingDir() string {
 // The one folder, set when a program starts and whenever the app's
 // settings are saved: everything that records reads it, so there is one
 // place and no path travels through the engine. Jobs record from their own
-// goroutines while the window saves settings on another, so it is read and
+// goroutines while the app saves settings on another, so it is read and
 // written behind a lock.
 var (
 	dirMu       sync.RWMutex
@@ -448,7 +448,7 @@ func cutsOf(segments [][2]float64) [][2]float64 {
 }
 
 // cutsMissing are the cuts of a that no cut of b overlaps, limited to the
-// stretch both clips cover.
+// part both clips cover.
 func cutsMissing(a, b [][2]float64, from, to float64) [][2]float64 {
 	out := [][2]float64{}
 	for _, cut := range a {
@@ -604,12 +604,32 @@ func RecordDecision(planPath, clipID, event string, reasons []string) error {
 	return appendRecord(filepath.Join(dir, "decisions.jsonl"), record)
 }
 
+// planIDFor is the id a plan will be recorded under, decided before the
+// model has answered. A reused answer keeps the id it was recorded with.
+func planIDFor(opts PlanOptions, replyKey string, fresh bool) string {
+	if opts.LogDir == "" || !opts.Record {
+		return ""
+	}
+	if !fresh {
+		if rec, ok := findPlanRecord(TrainingDir(), replyKey); ok {
+			return rec.PlanID
+		}
+	}
+	return newPlanID(time.Now())
+}
+
 // recordPlan appends a plan record for a new model answer and returns its
 // id. A reused answer, or the same answer to the same prompt given again,
 // keeps the id it was first recorded with.
+//
+// A search writes its clips to the plan as they come, and the app may
+// edit one before the answer is finished, so the id is decided before the
+// first clip lands and passed in here as planned. A decision about a clip
+// is only recorded against a plan with an id, and one made while the search
+// was running would otherwise be lost.
 func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, lines []Line,
 	prompt, replyKey string, fresh bool, entries []PlanEntry, ids []string,
-	segments map[string][][2]float64) string {
+	segments map[string][][2]float64, planned string) string {
 	if opts.LogDir == "" || !opts.Record {
 		return ""
 	}
@@ -620,12 +640,15 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 		}
 	}
 	now := time.Now()
+	if planned == "" {
+		planned = newPlanID(now)
+	}
 	kind, model := "api", opts.Model
 	if opts.Local != nil {
 		kind, model = "local", strings.TrimPrefix(opts.Model, "local:")
 	}
 	record := PlanRecord{
-		Schema: TrainingSchema, PlanID: newPlanID(now), Created: now.UTC().Format(time.RFC3339),
+		Schema: TrainingSchema, PlanID: planned, Created: now.UTC().Format(time.RFC3339),
 		Engine: Version, PromptVersion: PromptVersion,
 		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(sourcePath),
 			Transcript: wordsHash(lines),
