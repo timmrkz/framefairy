@@ -63,7 +63,7 @@ func Open(dir string) (engine.Recognizer, error) {
 	return &Recognizer{impl: impl}, nil
 }
 
-// Recognize transcribes one stretch of 16 kHz mono audio. Times are seconds
+// Recognize transcribes one piece of 16 kHz mono audio. Times are seconds
 // from the start of the samples.
 func (r *Recognizer) Recognize(samples []float32, sampleRate int) []engine.Token {
 	if len(samples) == 0 {

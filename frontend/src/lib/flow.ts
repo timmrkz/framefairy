@@ -1,7 +1,7 @@
 // What the app does by itself, in one place and away from the screen, so
 // it can be tested. Two promises live here: adding a video is enough for
 // it to be transcribed, and the first clips are found as soon as the
-// transcript covers the chosen stretch. Both have broken before, which is
+// transcript covers the window. Both have broken before, which is
 // why they are written as plain rules with tests beside them.
 
 export type TranscribeState = {
@@ -21,7 +21,7 @@ export function shouldTranscribe(s: TranscribeState): boolean {
 }
 
 export type SearchState = {
-  // How far the transcript reaches, in seconds, and the end of the stretch
+  // How far the transcript reaches, in seconds, and the end of the window
   // chosen on the range picker.
   covered: number;
   to: number;
@@ -36,8 +36,8 @@ export type SearchState = {
   looked: boolean;
 };
 
-// The first search follows the transcript: as soon as it covers the chosen
-// stretch, and only for an episode nobody has ever searched. Whether the
+// The first search follows the transcript: as soon as it covers the
+// window, and only for an episode nobody has ever searched. Whether the
 // transcript is finished is not part of it, so an episode that was already
 // transcribed when it was added gets its clips too. An episode that was
 // searched before and emptied since is not searched again, because a search
@@ -97,13 +97,13 @@ export function pictureIsStale(s: PictureState): boolean {
   return Math.abs(s.shows - s.at) > 0.5;
 }
 
-// A stretch of the episode, in seconds. The range picker works in these.
-export type Stretch = { from: number; to: number };
+// A part of the episode, in seconds. The range picker works in these.
+export type Span = { from: number; to: number };
 
 // Where the window goes when it has to choose for itself: the first
-// stretch nobody has looked at, and at most the first half hour of it.
+// part nobody has looked at, and at most the first half hour of it.
 // With the whole episode searched there is no free room left, so it rests
-// on the last stretch that was searched, which is the one whose clips are
+// on the last part that was searched, which is the one whose clips are
 // on screen.
 //
 // A window is never left lying on material that has just been searched. It
@@ -111,18 +111,18 @@ export type Stretch = { from: number; to: number };
 // can offers to throw away the clips that were only just found, which is
 // the opposite of what the search was for.
 export function nextWindow(
-  free: Stretch[],
-  searched: Stretch[],
+  free: Span[],
+  searched: Span[],
   duration: number,
   firstLook: number,
-): Stretch {
+): Span {
   const room = free.find((w) => w.to - w.from > 0.5);
   if (!room) {
     const last = searched[searched.length - 1];
     return { from: last?.from ?? 0, to: last?.to ?? duration };
   }
   const span = room.to - room.from;
-  // A stretch only a little longer than the half hour is taken whole,
+  // A part only a little longer than the half hour is taken whole,
   // rather than leaving a scrap behind that is too short to search.
   return { from: room.from, to: room.from + (span > firstLook * 1.5 ? firstLook : span) };
 }

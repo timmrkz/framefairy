@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-// Window is the stretch of the episode a run works on, in seconds.
+// Window is the part of the episode a run works on, in seconds.
 type Window struct {
 	Start float64
 	End   float64

@@ -181,7 +181,7 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 
 // lost is a step that cannot be taken, because what it would put back was
 // changed since by something the history does not know about, a search
-// over the same stretch above all. Everything before it may rest on it, so
+// over the same part above all. Everything before it may rest on it, so
 // the history of the episode starts again from here.
 func (s *FrameFairy) lost(h *history) error {
 	h.undo, h.redo = nil, nil

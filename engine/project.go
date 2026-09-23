@@ -86,18 +86,18 @@ func (p *Project) Transcribe(ctx context.Context) error {
 
 // PlanRequest is what the app asks the planner for.
 type PlanRequest struct {
-	// From and To limit planning to a stretch, in seconds. Zero To means the
+	// From and To limit planning to a window, in seconds. Zero To means the
 	// end of the episode.
 	From, To float64
 	Count    int
 	Min, Max float64
-	// Replan asks the model again even if a plan for this stretch exists.
+	// Replan asks the model again even if a plan for this window exists.
 	Replan bool
 }
 
-// Plan makes candidate clips and returns the plan file's path. A stretch
+// Plan makes candidate clips and returns the plan file's path. A window
 // that is not the whole episode gets its own plan file, as with --from and
-// --to on the command line. An existing plan for the same stretch is reused
+// --to on the command line. An existing plan for the same window is reused
 // unless Replan is set.
 func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	opts := p.Base
@@ -138,7 +138,7 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	return filepath.Join(p.LogsDir(), name), nil
 }
 
-// PlanName is the plan file for a stretch, or for the whole episode when
+// PlanName is the plan file for a window, or for the whole episode when
 // window is nil.
 func PlanName(window *Window) string {
 	if window == nil {

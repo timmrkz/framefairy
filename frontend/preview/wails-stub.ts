@@ -77,7 +77,7 @@ const snapCut = (list: { start: number; end: number }[], from: number, to: numbe
   return [Math.max(0, a), b];
 };
 
-// Taking a stretch out of a set of pieces. A piece the cut straddles becomes
+// Taking a part out of a set of pieces. A piece the cut straddles becomes
 // two, and both keep the framing, exactly as the engine does it.
 const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
   const out: Piece[] = [];
@@ -302,7 +302,7 @@ export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const method = name.split(".").pop();
     // A transcription that really grows, for testing that the first search
-    // starts by itself the moment it reaches the end of the chosen stretch.
+    // starts by itself the moment it reaches the end of the window.
     const started = ((window as any).__started ??= Date.now());
     const growing = location.search.includes("growing");
     const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);

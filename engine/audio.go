@@ -50,7 +50,7 @@ const frameSamples = SampleRate / 100
 const pauseFrames = 15
 
 // Chunks are cut at the quietest moment between these lengths. The model
-// could take longer stretches, but its memory use grows with the square of
+// could take longer parts, but its memory use grows with the square of
 // the length.
 const (
 	chunkMin = 15.0
@@ -68,7 +68,7 @@ type Transcript struct {
 	Start  float64
 	// Silence threshold in dB. Anything quieter counts as a pause.
 	Floor float64
-	// Mean level in dB over the whole stretch.
+	// Mean level in dB over the whole window.
 	Mean float64
 }
 
@@ -245,7 +245,7 @@ func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 // NoiseFloor turns the mean level into a silence threshold. A fixed value
 // treats a lowered voice as silence, and a voice dropping for the serious
 // part of a story is exactly the material worth keeping, so the threshold
-// sits a fixed distance below the stretch's own level.
+// sits a fixed distance below the window's own level.
 func NoiseFloor(mean float64) float64 {
 	return math.Max(-55.0, math.Min(mean-22, -35.0))
 }
@@ -344,7 +344,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		carry = append([]byte{}, data[whole:]...)
 
 		// Loudness frames for everything that has arrived and is not yet
-		// measured. Frames are kept for the whole stretch.
+		// measured. Frames are kept for the whole window.
 		measuredUpTo := int(math.Round((chunkStart-window.Start)/FrameSeconds)) * frameSamples
 		for len(t.Frames)*frameSamples+frameSamples <= measuredUpTo+len(pending) {
 			offset := len(t.Frames)*frameSamples - measuredUpTo
@@ -385,7 +385,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	}
 	e.Log.ClearProgress()
 	if count == 0 {
-		return nil, renderErr("%s has no audio in that stretch", path)
+		return nil, renderErr("%s has no audio in that part", path)
 	}
 
 	t.Mean = 10 * math.Log10(sumSquares/float64(count)+1e-20)

@@ -75,7 +75,7 @@
     lit?: Word[];
     onseek: (t: number) => void;
     ontrim?: (start: number, end: number) => Promise<void>;
-    // The cuts inside the clip: taking a stretch out, putting one back, and
+    // The cuts inside the clip: taking a part out, putting one back, and
     // moving the edges of one that is already there.
     // toWords says whether the engine should put the edges on the words
     // around them. Alt held while dragging says no: the edges land on the
@@ -135,7 +135,7 @@
   let loaded = false;
   // How far the transcript had come when this view was read.
   let loadedTo = $state(-1);
-  // The stretch the words and the waveform were read for. It is wider than
+  // The part the words and the waveform were read for. It is wider than
   // the view, so a swipe has somewhere to go before anything is read again.
   let data = $state({ from: 0, to: 1 });
   // True while the view is where a hand put it. Until it is let go of, the
@@ -180,7 +180,7 @@
 
   function scrub(event: PointerEvent) {
     if (event.button !== 0) return;
-    // Shift and a drag marks a stretch to take out instead of moving the
+    // Shift and a drag marks a part to take out instead of moving the
     // playhead. Everything else about the track is unchanged.
     if (event.shiftKey && editable && oncut) {
       event.preventDefault();
@@ -215,7 +215,7 @@
     return out.filter((p) => p.end > p.start);
   });
 
-  // A cut is a stretch the clip leaves out, which is the gap between two
+  // A cut is a part the clip leaves out, which is the gap between two
   // pieces. The engine counts them from the first, and so does the timeline,
   // because that is what a move names.
   //
@@ -242,7 +242,7 @@
   const editable = $derived(!!clip && !locked && !saving && !cutSaving);
 
   // The pieces as they are drawn, with a cut being moved or drawn applied.
-  // A cut being drawn takes its stretch out of the pieces at once rather
+  // A cut being drawn takes its part out of the pieces at once rather
   // than being a block laid over them, so the wash parts under the hand and
   // the count under the timeline follows the drag. What is happening is
   // shown while it happens.
@@ -347,7 +347,7 @@
   }
 
   // Drawing a cut is a drag across the clip with shift held, which is how
-  // a stretch is marked in an editing timeline. Without shift the same drag
+  // a part is marked in an editing timeline. Without shift the same drag
   // moves the playhead, so nothing that worked before works differently.
   function drawCut(event: PointerEvent) {
     const target = event.currentTarget as HTMLElement;
@@ -414,8 +414,8 @@
   // other.
   const cutAtOnce = 40;
 
-  // Shift and a double-click takes a stretch out where you click, the way
-  // shift and a drag takes out the stretch you drag across. Shift is the
+  // Shift and a double-click takes a part out where you click, the way
+  // shift and a drag takes out the part you drag across. Shift is the
   // cutting hand on this track either way. Where it goes exactly, and
   // whether it goes at all, is cutAt in lib/api.ts, which has the tests.
   async function cutHere(at: number, wide: number) {
@@ -432,11 +432,11 @@
   }
 
   // The cut that was last put back, so the same double-click in the same
-  // place can put it in again. Taking a stretch out is one double-click,
+  // place can put it in again. Taking a part out is one double-click,
   // and nothing that takes one click may cost more than one to undo. It
   // belongs to the clip it was in, and it is forgotten the moment anything
-  // else about that clip's cuts changes, because a stretch put back into a
-  // clip that has moved on is not the stretch that was taken out.
+  // else about that clip's cuts changes, because a part put back into a
+  // clip that has moved on is not the part that was taken out.
   let undone = $state<{ key: string; from: number; to: number } | null>(null);
 
   // A double-click puts a cut back, the way a double-click undoes an edit
@@ -456,7 +456,7 @@
     }
   }
 
-  // Putting back what was just put back. The stretch is taken out again
+  // Putting back what was just put back. The part is taken out again
   // exactly as it was, edge for edge, so it is sent as it stands rather
   // than snapped afresh: snapping it again would be snapping something
   // already snapped, and on a cut made a frame at a time it would move.
@@ -475,8 +475,8 @@
   // the episode moves through what is already in hand. The waveform is drawn
   // by time, so what is read and what is shown need not line up.
   //
-  // What is drawn and the stretch it was read for are set in the same
-  // breath, or the old readings would be drawn against the new stretch for
+  // What is drawn and the part it was read for are set in the same
+  // breath, or the old readings would be drawn against the new part for
   // as long as the reading takes, which looks like the waveform jumping
   // about. A reading that comes back after a newer one is dropped.
   let latest = 0;
@@ -587,7 +587,7 @@
   // dealt to the element holding it. A handler on the cut is never reached.
   function fitView(event?: MouseEvent) {
     // Shift is the cutting hand on this track, so a double-click with it
-    // held takes a stretch out where it lands and never moves the view. It
+    // held takes a part out where it lands and never moves the view. It
     // used to fit the clip instead, which is why holding shift and
     // double-clicking read as nothing happening: the one gesture that
     // looked like it ought to cut only zoomed.
@@ -781,7 +781,7 @@
   // what comes after it is exactly silent. Taking the edge from the same
   // readings the waveform is drawn from means the part that waits can
   // never lie over a waveform that is already there, and never leave a
-  // stretch with neither.
+  // part with neither.
   const soundEdge = $derived.by(() => {
     if (!peaks.length) return data.from;
     let last = -1;
@@ -930,7 +930,7 @@
       if (Math.abs(draft.start - first) < 0.01 && Math.abs(draft.end - last) < 0.01) return;
       saving = true;
       try {
-        // A clip whose edges have moved is not the clip the stretch was
+        // A clip whose edges have moved is not the clip the part was
         // taken out of, so there is nothing to put back any more.
         undone = null;
         await ontrim?.(draft.start, draft.end);
@@ -1094,9 +1094,9 @@
         next clip and starts it from the top. Drag
         a clip edge to trim it. The words are in the picture, in the caption box, which is where
         they are read and where they are corrected. A hatched block inside a clip is
-        a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
+        a part it leaves out. Drag either edge of one to change it, double-click one to put it
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
-        and drag across the clip to take out the stretch you drag over, or hold it and double-click
+        and drag across the clip to take out the part you drag over, or hold it and double-click
         to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
         words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
         each from where it appears to where it goes, and the one the video preview is showing is
@@ -1151,8 +1151,8 @@
         class:drawing={!!drawnCut && Math.abs(c.from - drawnCut.from) < 0.001}
         style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
         title={editable
-          ? "A stretch the clip leaves out. Drag an edge to change it, double-click to put it back."
-          : "A stretch the clip leaves out."}
+          ? "A part the clip leaves out. Drag an edge to change it, double-click to put it back."
+          : "A part the clip leaves out."}
       ></div>
     {/each}
     {#if editable && onmovecut}
@@ -1379,7 +1379,7 @@
     pointer-events: none;
   }
 
-  /* A stretch the clip leaves out. It is the track's own background and
+  /* A part the clip leaves out. It is the track's own background and
      nothing else: what is not in the clip looks like everything else that
      is not in the clip, which is the plainest way to say it. It used to
      be hatched, and a hatch over a waveform is a second pattern laid on a

@@ -156,8 +156,8 @@
       title: !readyToLook
         ? `The transcript reaches ${clock(covered)}. Clips can be looked for once it reaches ${clock(to)}`
         : covering
-          ? "Look at this stretch again, removing the clips it has"
-          : "Look for clips in the chosen stretch",
+          ? "Look at the window again, removing the clips it has"
+          : "Look for clips in the window",
     };
   });
 
@@ -191,7 +191,7 @@
   // draws this one, so its edge moves with the work. Everything that reads
   // the transcript keeps to covered, because that is what is on disk: a
   // search that started on this number would read a transcript that stops
-  // short of the stretch it was asked for.
+  // short of the window it was asked for.
   // The mark the edge is drawn from. It only ever grows, because it says
   // how much of the episode has been read and reading does not unhappen.
   // Pausing showed that plainly: the live number disappears at the one
@@ -215,7 +215,7 @@
   // A search reads the transcript off disk, so it can only run where the
   // saved transcript reaches. It goes by covered and not by heard for that
   // reason: heard runs ahead of what has been written down, and a search
-  // started on it would read a transcript that stops short of the stretch
+  // started on it would read a transcript that stops short of the window
   // it was asked for. shouldLook keeps to covered for the same reason.
   const readyToLook = $derived(duration > 0 && to > 0 && covered >= to - 0.5);
   // The range picker carries the transcription: how far it has come is what
@@ -229,7 +229,7 @@
       : "",
   );
   // There is nothing to list until the transcript reaches the end of the
-  // chosen stretch. The list waits with a row of placeholders and the info
+  // window. The list waits with a row of placeholders and the info
   // mark beside the head says why, the same mark that tells what the list
   // is once there are clips in it.
   const stillWaiting = $derived(!busy && waitingOnWords && covered < to - 0.5);
@@ -273,15 +273,15 @@
   });
   const waitNote = $derived.by(() => {
     if (finding || starting) {
-      return `The model is reading the stretch from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${doing ? ` ${doing}${leftOfWork ? `, about ${leftOfWork}` : ""}.` : leftOfWork ? ` About ${leftOfWork}.` : ""}`;
+      return `The model is reading the window from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${doing ? ` ${doing}${leftOfWork ? `, about ${leftOfWork}` : ""}.` : leftOfWork ? ` About ${leftOfWork}.` : ""}`;
     }
     if (!stillWaiting) return "";
     const first = transcribing
       ? `The episode is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
-      : "The episode is not transcribed to the end of the chosen stretch yet.";
+      : "The episode is not transcribed to the end of the window yet.";
     return `${first} Clips are found by themselves once the transcript reaches ${clock(to)}, and the window on the range picker can be moved and resized while it runs.`;
   });
-  // The stretch stays with the episode while the app runs, so leaving the
+  // The window stays with the episode while the app runs, so leaving the
   // workspace and coming back does not throw away what was chosen.
   $effect(() => {
     if (duration > 0 && to > from) chosen.keep(path, from, to);
@@ -303,7 +303,7 @@
   // frame that has nothing to do with the playhead. Whenever the video
   // preview says it cannot show the playhead, the frame under it is read
   // from the file instead. The engine keeps one frame per second of an
-  // episode, so going back over a stretch costs nothing.
+  // episode, so going back over a part costs nothing.
   let asking = 0;
   // Which ask the picture is from. Several are in the air whenever the
   // playhead is moved quickly, and an answer that took longer to read
@@ -373,8 +373,8 @@
     }
   }
 
-  // The window moves on to the first stretch nobody has looked at. What was
-  // chosen before does not come into it: after a search that stretch is a
+  // The window moves on to the first part nobody has looked at. What was
+  // chosen before does not come into it: after a search that part is a
   // wall, and a window left on it hides the clip marks it just made.
   function moveWindowOn() {
     const next = nextWindow(coverage.free, coverage.searched, duration, firstLook);
@@ -821,26 +821,26 @@
     api.setSearch(count, min, max).catch((err) => (problem = errorText(err)));
   }
 
-  // Clips for a stretch that already has some are asked for again, which
+  // Clips for a window that already has some are asked for again, which
   // replaces what is there. That is not something to do by accident.
   let confirmReplace = $state(false);
 
-  // Removing what the window covers: the clips in the stretch go and the
+  // Removing what the window covers: the clips in it go and the
   // model may read it again. Also not something to do by accident.
   let removingSearch = $state<{ from: number; to: number } | null>(null);
 
-  async function removeRange(stretch: { from: number; to: number }, thenSearch: boolean) {
+  async function removeRange(span: { from: number; to: number }, thenSearch: boolean) {
     removingSearch = null;
     confirmReplace = false;
     problem = "";
     try {
-      await api.removeSearch(path, stretch.from, stretch.to);
+      await api.removeSearch(path, span.from, span.to);
       removed = null;
       await load();
       if (!clips.some((c) => c.key === selected)) selected = "";
       await refreshCoverage();
       onchange();
-      // A search of its own follows when the stretch was given back in
+      // A search of its own follows when the window was given back in
       // order to look at it again. The window stays where it is then.
       if (thenSearch) await findClips(true);
       else openWindow();
@@ -961,8 +961,8 @@
   });
 
   // An episode that was just added finds its first clips by itself. The
-  // The first search starts the moment the transcript covers the chosen
-  // stretch, so adding a video is all it takes to end up with clips. The
+  // first search starts the moment the transcript covers the window, so
+  // adding a video is all it takes to end up with clips. The
   // rule itself is in lib/flow.ts, with its tests.
   $effect(() => {
     if (!source || !status) return;
@@ -1042,7 +1042,7 @@
     load().then(() => {
       const plan = finished.find((j) => j.kind === "plan" && j.state === "done")?.result;
       if (!plan) return;
-      // The stretch just searched is a wall now, so the window moves on to
+      // The window just searched is a wall now, so the window moves on to
       // the next one nobody has looked at. It would otherwise sit on the
       // clips it just found, lying over their marks as an X-ray and
       // offering to throw them away.
@@ -1051,7 +1051,7 @@
       // picked since is where the hand is now. Otherwise the search's
       // first clip, the way it always was.
       showFirstFound();
-      // A stretch searched again comes back under the names it had, so
+      // A window searched again comes back under the names it had, so
       // nothing in the list is new. Its first clip, as long as nobody has
       // picked another.
       if (!shownFirst && selected === pickedBefore) {
@@ -1191,7 +1191,7 @@
     playhead={time}
     onseek={seekTo}
     searched={coverage.searched}
-    onremove={(stretch) => (removingSearch = stretch)}
+    onremove={(span) => (removingSearch = span)}
     locked={finding || starting}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
@@ -1218,10 +1218,10 @@
       oncancel={() => (confirmReplace = false)}
     >
       <p>
-        Part of this stretch has been searched already. The
+        Part of this window has been searched already. The
         {inWindow}
         {inWindow === 1 ? "clip" : "clips"} in it are removed first, with every trim, crop and
-        caption place you gave them, and the model reads the stretch as if for the first time.
+        caption place you gave them, and the model reads the window as if for the first time.
         Clips outside it stay as they are, and clips you have rendered stay as files on disk.
       </p>
       {#snippet actions()}
@@ -1232,21 +1232,21 @@
   {/if}
 
   {#if removingSearch}
-    {@const stretch = removingSearch}
+    {@const span = removingSearch}
     <Confirm
-      title="Remove the clips in {clock(stretch.from)} to {clock(stretch.to)}?"
+      title="Remove the clips in {clock(span.from)} to {clock(span.to)}?"
       oncancel={() => (removingSearch = null)}
     >
       <p>
         The {inWindow}
-        {inWindow === 1 ? "clip" : "clips"} in this stretch leave the list, with every trim, crop
+        {inWindow === 1 ? "clip" : "clips"} in this part leave the list, with every trim, crop
         and caption place you gave them. Clips you have rendered stay as files on disk. Afterwards
-        the stretch is free again, and the model will read it as if for the first time. What was
+        the part is free again, and the model will read it as if for the first time. What was
         searched outside it stays searched.
       </p>
       {#snippet actions()}
         <button onclick={() => (removingSearch = null)}>Cancel</button>
-        <button class="danger" onclick={() => removeRange(stretch, false)}>Remove</button>
+        <button class="danger" onclick={() => removeRange(span, false)}>Remove</button>
       {/snippet}
     </Confirm>
   {/if}
@@ -1275,8 +1275,8 @@
             <h3>New clips</h3>
             <span class="ask">
               <Info label="What finding clips does">
-                The model reads the stretch chosen on the <b>range picker</b> and answers with the
-                moments worth clipping. A stretch it has read is marked there.
+                The model reads the window chosen on the <b>range picker</b> and answers with the
+                moments worth clipping. A part it has read is marked there.
               </Info>
             </span>
           </div>
@@ -1452,7 +1452,7 @@
                 {:else}
                   Every clip found, in the order they were spoken, and on the
                   <b>range picker</b> as marks. Click one to work on it, the trash can takes it
-                  out. <b>New</b> looks in the stretch chosen on the <b>range picker</b>.
+                  out. <b>New</b> looks in the window chosen on the <b>range picker</b>.
                 {/if}
               </Info>
             </span>

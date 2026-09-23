@@ -18,7 +18,7 @@ type Cue struct {
 	Text  string
 }
 
-// Span is a stretch of time, in seconds.
+// Span runs from Start to End, in seconds.
 type Span struct {
 	Start float64
 	End   float64

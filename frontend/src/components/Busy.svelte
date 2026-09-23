@@ -107,7 +107,7 @@
      fastest is near three to one, which is enough to see without ever
      looking like a fault. It never stops and it never goes back: a light
      that hesitates on a border reads as broken and a light that backs up
-     reads as a stutter, so the slowest stretch is still three fifths of
+     reads as a stutter, so the slowest part is still three fifths of
      the round's own pace. A plain turn for an engine that cannot read the
      curve, then the curve. */
   .ring::before {

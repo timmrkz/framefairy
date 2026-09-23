@@ -315,7 +315,7 @@ func FuzzPlanEdits(f *testing.F) {
 		path := editablePlanPath(t)
 		tr := editableTranscript()
 		// Times are read as tenths of a second from 0 to 25.5, which covers
-		// the whole plan and a good stretch either side of it.
+		// the whole plan and a good part either side of it.
 		at := func(b byte) float64 { return float64(b) / 10 }
 		lastRevision := 0
 		for i := 0; i+2 < len(script); i += 3 {
@@ -325,7 +325,7 @@ func FuzzPlanEdits(f *testing.F) {
 			}
 			switch script[i] % 9 {
 			case 6:
-				// A cut takes a stretch out of the middle, so this is the
+				// A cut takes a part out of the middle, so this is the
 				// one edit that makes pieces rather than only moving them.
 				_ = CutClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 7:
@@ -443,22 +443,22 @@ func TestRemovingAPlanKeepsTheWorkItLeavesBehind(t *testing.T) {
 	if err != nil || string(body) != "corrected by hand" {
 		t.Errorf("moved aside as %q, %v", body, err)
 	}
-	// Doing it twice is not an error, because the stretch is gone either way.
+	// Doing it twice is not an error, because the part is gone either way.
 	if err := RemovePlan(plan, captions); err != nil {
 		t.Errorf("second removal: %s", err)
 	}
 }
 
-// The stretches carry the plans behind them, so letting go of one knows
+// The parts carry the plans behind them, so letting go of one knows
 // exactly what to take with it.
-func TestSearchedStretchesCarryTheirPlans(t *testing.T) {
+func TestSearchedPartsCarryTheirPlans(t *testing.T) {
 	looked := SearchedPlans([]PlanSummary{
 		{Path: "/a/clips-0-600.json", From: 0, To: 600, Clips: 4},
 		{Path: "/a/clips-600-900.json", From: 600, To: 900, Clips: 2},
 		{Path: "/a/clips-1800-2400.json", From: 1800, To: 2400, Clips: 3},
 	}, 3600)
 	if len(looked) != 2 {
-		t.Fatalf("stretches %v", looked)
+		t.Fatalf("parts %v", looked)
 	}
 	if looked[0].Start != 0 || looked[0].End != 900 || looked[0].Clips != 6 ||
 		len(looked[0].Plans) != 2 {
@@ -517,10 +517,10 @@ func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
 	}
 }
 
-// A stretch of a search can be given back on its own. The clips inside it
-// go, the clips outside it stay, and the plan says the stretch may be read
+// A part of a search can be given back on its own. The clips inside it
+// go, the clips outside it stay, and the plan says the part may be read
 // again, which is what leaves a hole in what was searched.
-func TestAStretchOfASearchCanBeGivenBack(t *testing.T) {
+func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 	path := editablePlanPath(t)
 	captions := filepath.Join(filepath.Dir(filepath.Dir(path)), "captions")
 	if err := os.MkdirAll(captions, 0o755); err != nil {
@@ -565,7 +565,7 @@ func TestAStretchOfASearchCanBeGivenBack(t *testing.T) {
 		t.Error("the captions of the clip that went were left behind")
 	}
 
-	// What is left of the window: everything but the stretch given back.
+	// What is left of the window: everything but the part given back.
 	summary := PlanSummaries(filepath.Dir(path))
 	if len(summary) != 1 {
 		t.Fatalf("plans: %v", summary)

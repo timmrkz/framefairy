@@ -83,7 +83,7 @@ function read(): boolean {
 
 export const shell = new Shell();
 
-// The stretch chosen on the range picker, for as long as the app runs.
+// The window chosen on the range picker, for as long as the app runs.
 // Going to the activity page and coming back is no reason to lose it, and
 // neither is looking at another episode in between.
 class Chosen {

@@ -390,7 +390,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 }
 
 // land writes a framed clip to the plan. The first one makes the plan, in
-// place of whatever plan was there for this stretch, and each after it is
+// place of whatever plan was there for this window, and each after it is
 // added through the same edit the window uses.
 func (b *planBuilder) land(clip PlanClip) error {
 	b.writing.Lock()
@@ -423,7 +423,7 @@ func (b *planBuilder) land(clip PlanClip) error {
 					"The rest are left out.")
 				return nil
 			case errors.Is(err, errNotAdded):
-				b.e.Log.Detail("%s left out: its stretch was removed while it was on its way", clip.ID)
+				b.e.Log.Detail("%s left out: its part was removed while it was on its way", clip.ID)
 				return nil
 			}
 			return err

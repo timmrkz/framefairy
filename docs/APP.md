@@ -204,7 +204,7 @@ the moment the playhead stands on, which is what happens while the machine is
 busy transcribing or searching and a seek is dropped, the frame under the
 playhead is read from the file by the engine and shown instead. The moment
 the window catches up it takes over by itself. The engine keeps one frame per
-second of an episode in its work folder, so going back over a stretch costs
+second of an episode in its work folder, so going back over a part costs
 nothing.
 
 Opening an episode that already has clips opens on one of them: the clip it
@@ -243,7 +243,7 @@ above the workspace, and neither changes because the window changed. So
 dragging the window edge costs no JavaScript at all and the workspace keeps
 up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
-nothing is laid out from the answer. The stretch chosen on the range picker stays with the episode
+nothing is laid out from the answer. The window chosen on the range picker stays with the episode
 while the app runs, so leaving the workspace and coming back does not throw
 it away.
 
@@ -293,7 +293,7 @@ place.
   seconds, but every chunk the recogniser finishes says how far it has come,
   and the edge follows that. Nothing on that track moves of its own accord
   unless work is running on it: the window while a search runs, and the
-  stretch with no transcript yet while the reading runs.
+  part with no transcript yet while the reading runs.
 - **The clip list is a stack of cards**, each clip its own, with air
   between them and the app's colour down the edge of the chosen one. It has
   no box around it: the ends go under a veil, so a card scrolling out of
@@ -322,10 +322,10 @@ place.
   both is how it came to say **Transcribing** over a list of clips.
 - **New waits until a search could run.** A search reads the transcript off
   disk, so **New** is off until the saved transcript reaches the end of the
-  chosen stretch, and says how far it has got and how far it needs to go.
+  chosen window, and says how far it has got and how far it needs to go.
   It goes by what is written down rather than by what has been heard,
   because a search started on the second one would read a transcript that
-  stops short of the stretch it was asked for.
+  stops short of the window it was asked for.
 - **The transcription is worked from the edge it moves.** On the range
   picker, at the transcript's edge, a mark appears while the pointer is on
   the track and does the one thing there is to do: pause it while it reads,
@@ -372,7 +372,7 @@ place.
   many clips a search looks for and how long they may be are set here and
   nowhere else, and they are kept for the next episode too. Every setting is one row, the name
   on the left and the control on the right, all of them the same width. A
-  unit stands inside its field, right beside the number. Which stretch is
+  unit stands inside its field, right beside the number. Which part is
   searched is chosen on the track, not here.
 - **Video preview:** the episode, with one **Play** button that plays from where
   the playhead stands. The space bar does the same, unless a field has the
@@ -506,8 +506,8 @@ place.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the transcription starts, and the moment it covers the
-      stretch chosen on the track the first search runs. Until then the info
-      mark beside the head says so, and the stretch can still be moved. It
+      window chosen on the track the first search runs. Until then the info
+      mark beside the head says so, and the window can still be moved. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
@@ -541,9 +541,9 @@ place.
       one shown a little later. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
       search keeps the clips it had found.
-    - **New**, above the list, finds clips in the stretch chosen on the
+    - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
-      already there. Choosing a stretch that was searched before and asking
+      already there. Choosing a window that was searched before and asking
       again replaces its clips and everything done to them, so it asks
       first.
     - The trash can on a row removes that clip. Its mark leaves the track at
@@ -553,10 +553,10 @@ place.
       over it. The clip stays in the plan with everything done to it, and a
       render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
-  preview and exactly as wide as it. It is where the stretch to search is
+  preview and exactly as wide as it. It is where the window to search is
   chosen, and it shows what has been searched, where the clips are, how far
   the transcript has come and where the playhead stands.
-    - Drag across it to choose the stretch to search, or drag the window or
+    - Drag across it to choose the window to search, or drag the window or
       its edges. Long episodes open with the first 30 minutes chosen. The
       window is a box on all four sides, placed in whole pixels, so every
       edge of it is drawn the same. The border of the box is the edge, and
@@ -565,38 +565,38 @@ place.
       the pointer or holds the keyboard focus.
     - **Edges land on a round step**, the smallest one that is still about
       eight pixels wide: ten seconds for a short episode, five minutes for a
-      four hour one. A wall wins over the step, so a stretch that runs into
-      a searched one ends exactly at it. While a stretch is drawn or moved
+      four hour one. A wall wins over the step, so a window that runs into
+      a searched one ends exactly at it. While a window is drawn or moved
       it says what it is, in a pill over the track.
     - While clips are being found for it, the window cannot be moved and a
       soft light passes through it every couple of seconds, which is the
       track saying work is in hand. How far the search has come is on the
       line under the head of the clip list, so the window only has to say
       that something is running.
-    - A window drawn over a stretch that was searched already is a window
-      onto what that stretch would be without it: the plain track, as it
+    - A window drawn over a part that was searched already is a window
+      onto what that part would be without it: the plain track, as it
       looks where nobody has looked yet, and the clips inside it are not
       drawn. So what the trash can in its corner does is plain before it is
       pressed. The trash can waits until the window is under the pointer,
       and the times are drawn over everything, so nothing laid on the track
       ever hides where you are.
-    - A stretch that has been searched is marked. **The window may be drawn
+    - A part that has been searched is marked. **The window may be drawn
       anywhere**, over a mark, part of one or none at all: the window is the
-      stretch you mean, and what happens to it is decided by the button you
+      window you mean, and what happens to it is decided by the button you
       press. The model still never gets the same material twice by
       accident, because a window that lies over a mark says so before
       anything is searched.
     - **Looking again.** **New** over material that was searched asks
-      first. It names the stretch and how many clips are in it, and on Look
-      again those clips are removed and the model reads the stretch as if
+      first. It names the window and how many clips are in it, and on Look
+      again those clips are removed and the model reads the window as if
       for the first time. Clips outside the window stay as they are.
     - **Removing what the window covers.** A window that lies over a mark
       wears a trash can in its top right corner, just outside it when the
       window is too narrow to hold it. It asks first, because the clips in
-      the stretch leave the list along with every trim, crop and caption
+      the window leave the list along with every trim, crop and caption
       place. Clips already rendered stay as files on disk, and the caption
       files of the clips are moved aside rather than deleted. Afterwards
-      that stretch is free again, even when it is the middle of a longer
+      that part is free again, even when it is the middle of a longer
       search: the plan keeps the rest of its window and notes the part it
       gave back.
     - A mark for every clip sits inside the track, green once rendered.
@@ -614,7 +614,7 @@ place.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
   tall as the video preview and the range picker need. If the transcript has
-  not reached the end of the chosen stretch yet, a search waits for it and
+  not reached the end of the chosen window yet, a search waits for it and
   starts by itself.
 - **One mark explains one thing, where that thing is.** The video preview,
   the range picker and the clip timeline each carry their own info mark in
@@ -688,7 +688,7 @@ place.
       above and below it from its first piece to its last, whatever is cut
       out in between, so a clip with a cut in it reads as one clip and not
       as two standing in a row. The accent wash inside the rules says
-      which parts are kept. A stretch the clip leaves out, usually dead
+      which parts are kept. A part the clip leaves out, usually dead
       air the engine found, is the track's own background with an accent
       line at each end, the way an editor marks the place two shots were
       joined: what is not in the clip looks like everything else that is
@@ -696,9 +696,9 @@ place.
     - **The cuts can be changed.** Each one carries a handle on either edge,
       in the accent's lighter shade so it is not taken for the clip's own
       edge. Dragging a handle moves that edge of the cut, and a double-click
-      on the block puts the stretch back.
+      on the block puts the part back.
     - **Shift is the cutting hand.** Holding it and dragging across the clip
-      takes out the stretch dragged over. Holding it and double-clicking
+      takes out the part dragged over. Holding it and double-clicking
       takes one out where the click lands, forty pixels wide, which is wide
       enough to see and to take hold of by either edge and drag to size.
       Forty pixels and not a quarter of a second, because what has to stay
@@ -717,12 +717,12 @@ place.
       because there is nothing there left to take out. Without shift the
       same drag moves the playhead, so nothing that worked before works
       differently, and a shift-click with no drag does nothing.
-    - **A stretch put back goes back in with the same gesture.** The
+    - **A part put back goes back in with the same gesture.** The
       double-click that puts a cut back is remembered, so a second
-      double-click in the same place takes the stretch out again, edge for
+      double-click in the same place takes the part out again, edge for
       edge. It is forgotten as soon as anything else about that clip
-      changes, because a stretch put back into a clip that has moved on is
-      not the stretch that was taken out.
+      changes, because a part put back into a clip that has moved on is
+      not the part that was taken out.
     - **A cut lands on the frame.** The edges stay where the hand put them,
       rounded to a whole frame of the episode and no further, because a
       double-click and a drag both say where exactly and moving the edges
@@ -859,7 +859,7 @@ editor.
   earlier clips are edited, so an undo puts back only what the edit
   changed, clip by clip, and never the whole plan. A clip that has been
   changed again since by something the history does not know about, a
-  search over the same stretch above all, is not written over: the undo
+  search over the same part above all, is not written over: the undo
   says it cannot be taken back, and the history of the episode starts
   again from there.
 
@@ -897,7 +897,7 @@ things and no others, and each one means one thing.
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, the part of the clip timeline the transcript has not reached,
-  the stretch on the range picker while clips are being found for it. The
+  the window on the range picker while clips are being found for it. The
   place itself dims and comes back, two seconds, in and out. It is
   `animate-pulse`, which is what
   [shadcn/ui](https://www.shadcn-svelte.com/docs/components/skeleton) and

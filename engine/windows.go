@@ -5,27 +5,27 @@ import (
 	"sort"
 )
 
-// Where the model has already looked. A search covers the stretch it was
-// made over, and a stretch is never put to the model twice by accident, so
+// Where the model has already looked. A search covers the window it was
+// made over, and a window is never put to the model twice by accident, so
 // the window says what it is about to look at again and asks first.
 // Without that, two passes over the same material would come back with the
 // same moments, and the list would hold each of them twice.
 //
-// A stretch can be given back, in whole or in part: the clips inside it go
-// and the plan notes the stretch as one the model may read again. That is
+// A window can be given back, in whole or in part: the clips inside it go
+// and the plan notes the window as one the model may read again. That is
 // why a plan is a window with holes in it rather than a plain window.
 
-// Searched is a stretch an episode has been searched over, with the plans
-// that cover it. Plans that meet or overlap end up in one stretch.
+// Searched is a part an episode has been searched over, with the plans
+// that cover it. Plans that meet or overlap end up in one part.
 type Searched struct {
 	Window
 	Plans []string
 	Clips int
 }
 
-// readWindows takes the stretches out of a plan's planned_with, which is
+// readWindows takes the windows out of a plan's planned_with, which is
 // untrusted like everything else a plan file says. Anything that is not a
-// pair of numbers making a stretch is left out.
+// pair of numbers making a window is left out.
 func readWindows(raw any) []Window {
 	list, ok := raw.([]any)
 	if !ok {
@@ -47,7 +47,7 @@ func readWindows(raw any) []Window {
 	return MergeWindows(out)
 }
 
-// MergeWindows puts stretches in order and joins the ones that touch.
+// MergeWindows puts windows in order and joins the ones that touch.
 func MergeWindows(in []Window) []Window {
 	if len(in) == 0 {
 		return nil
@@ -66,7 +66,7 @@ func MergeWindows(in []Window) []Window {
 	return out
 }
 
-// Without takes the stretches out of a window, which leaves the pieces of
+// Without takes the parts out of a window, which leaves the pieces of
 // it that are still there.
 func Without(w Window, holes []Window) []Window {
 	left := []Window{w}
@@ -89,7 +89,7 @@ func Without(w Window, holes []Window) []Window {
 	return left
 }
 
-// SearchedPlans gives the stretches an episode has been searched over, in
+// SearchedPlans gives the parts an episode has been searched over, in
 // order and merged where they meet, each with the plans behind it. A plan
 // made without a window covers the whole episode.
 func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
@@ -107,7 +107,7 @@ func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
 			continue
 		}
 		// What was given back is not searched any more, so a plan can leave
-		// more than one stretch behind.
+		// more than one part behind.
 		for _, piece := range Without(w, p.Removed) {
 			found = append(found, Searched{Window: piece, Plans: []string{p.Path}, Clips: p.Clips})
 		}
@@ -127,7 +127,7 @@ func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
 	return merged
 }
 
-// SearchedWindows is the same, as plain stretches.
+// SearchedWindows is the same, as plain parts.
 func SearchedWindows(plans []PlanSummary, duration float64) []Window {
 	var out []Window
 	for _, s := range SearchedPlans(plans, duration) {
@@ -136,8 +136,8 @@ func SearchedWindows(plans []PlanSummary, duration float64) []Window {
 	return out
 }
 
-// FreeWindows gives what is left of an episode, the stretches nobody has
-// searched yet. Anything shorter than least is left out, because a stretch
+// FreeWindows gives what is left of an episode, the parts nobody has
+// searched yet. Anything shorter than least is left out, because a part
 // too short to hold a clip is not worth offering.
 func FreeWindows(searched []Window, duration, least float64) []Window {
 	var free []Window

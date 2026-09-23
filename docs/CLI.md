@@ -158,7 +158,7 @@ and a unique beginning of an option name is enough.
 
 ## Working a long episode in passes
 
-`--from` and `--to` restrict a run to one stretch:
+`--from` and `--to` restrict a run to one window:
 
 ```
 framefairy episode.mp4 --from 0       --to 1:00:00

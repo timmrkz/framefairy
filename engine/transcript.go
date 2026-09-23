@@ -46,7 +46,7 @@ func stampOf(path string) (sourceStamp, error) {
 		Modified: info.ModTime().UTC().Format(time.RFC3339Nano)}, nil
 }
 
-// TranscriptName is the cache file for a stretch of the episode.
+// TranscriptName is the cache file for a window of the episode.
 func TranscriptName(window *Window) string {
 	if window == nil {
 		return "words.json"
@@ -142,7 +142,7 @@ func Coverage(source, asrModelDir string) (float64, bool) {
 }
 
 // readTranscript loads a cached transcript if it belongs to this source,
-// model and stretch. A mismatch is not an error, just a reason to transcribe.
+// model and window. A mismatch is not an error, just a reason to transcribe.
 func readTranscript(path string, stamp sourceStamp, model string, window Window,
 	silenceDB *float64) (*Transcript, bool) {
 	file, words, frames, ok := readTranscriptFile(path, stamp, model)
@@ -246,7 +246,7 @@ func DefaultModelDir() string {
 // ModelName is the speech model this version is built and tested against.
 const ModelName = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 
-// LoadTranscript returns the words for a stretch of the episode, from the
+// LoadTranscript returns the words for a window of the episode, from the
 // cache when it is still valid and from the recogniser otherwise.
 func (e *Engine) LoadTranscript(ctx context.Context, source string, window Window,
 	logsDir, modelDir string, silenceDB *float64, windowed bool) (*Transcript, error) {
@@ -372,7 +372,7 @@ func ModelHelp(dir string) string {
 		"  or point --asr-model at a folder that has it."
 }
 
-// WriteTranscriptSRT writes the whole stretch as an srt file, for reading
+// WriteTranscriptSRT writes the whole window as an srt file, for reading
 // and checking. It is not used for rendering.
 func WriteTranscriptSRT(t *Transcript, path string) error {
 	lines := BuildLines(t.Words, nil, nil)

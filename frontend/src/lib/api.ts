@@ -157,7 +157,7 @@ export interface CaptionsView {
   style: CaptionStyle;
 }
 
-// A stretch of an episode, in seconds. A searched stretch also says which
+// A part of an episode, in seconds. A searched part also says which
 // plans cover it and how many clips they hold, so it can be let go of.
 export interface WindowView {
   from: number;
@@ -359,7 +359,7 @@ export const api = {
   source: (path: string) => call<SourceView>("Source", path),
   clips: (path: string) => call<ClipEntry[]>("Clips", path),
   coverage: (path: string, least: number) => call<CoverageView>("Coverage", path, least),
-  // Gives a stretch of an episode back: the clips in it go and the model
+  // Gives a part of an episode back: the clips in it go and the model
   // may read it again. It answers with how many clips went.
   removeSearch: (path: string, from: number, to: number) =>
     call<number>("RemoveSearch", path, from, to),
@@ -375,7 +375,7 @@ export const api = {
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
   trimClip: (path: string, plan: string, clip: string, start: number, end: number) =>
     call<ClipEntry>("TrimClip", path, plan, clip, start, end),
-  // The cuts inside a clip: the stretches it leaves out. Making one, moving
+  // The cuts inside a clip: the parts it leaves out. Making one, moving
   // one and putting one back. The edges land on words, so what comes back
   // is what to draw, never what was asked for.
   // toWords puts the edges on the words around them, which is what nearly
@@ -606,7 +606,7 @@ export function snapEnd(words: Word[], at: number, keepPause: number): number {
 // works that width out from a fixed number of pixels at whatever zoom it
 // is on. A cut nobody can see is a cut nobody can change. Below the least
 // a cut may be it is held open at that, so a timeline zoomed in far enough
-// that those pixels are worth less than the least still takes a stretch
+// that those pixels are worth less than the least still takes a part
 // out rather than doing nothing.
 //
 // And it stays inside the piece it falls in, with room left on both sides,

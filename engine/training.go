@@ -448,7 +448,7 @@ func cutsOf(segments [][2]float64) [][2]float64 {
 }
 
 // cutsMissing are the cuts of a that no cut of b overlaps, limited to the
-// stretch both clips cover.
+// part both clips cover.
 func cutsMissing(a, b [][2]float64, from, to float64) [][2]float64 {
 	out := [][2]float64{}
 	for _, cut := range a {

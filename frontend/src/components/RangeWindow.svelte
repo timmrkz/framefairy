@@ -1,7 +1,8 @@
 <script lang="ts">
-  // The whole episode as one slim track. The window you drag chooses the
-  // stretch the model reads. Clip marks, the playhead and time labels sit
-  // inside the track. A click without dragging moves the player.
+  // The whole episode as one slim track. The window you drag is the part
+  // of the episode the model reads. Clip marks, the playhead and time
+  // labels sit inside the track. A click without dragging moves the video
+  // preview.
   import { onMount } from "svelte";
   import { clock, type WindowView } from "../lib/api";
   import Busy from "./Busy.svelte";
@@ -39,13 +40,13 @@
     onmark?: (key: string) => void;
     playhead?: number;
     onseek?: (time: number) => void;
-    // The stretches already searched for clips, in order and merged. They
+    // The parts already searched for clips, in order and merged. They
     // are drawn as marks on the track. A window may be drawn over them,
     // and what that means is decided by whoever acts on the window.
     searched?: WindowView[];
     // Removing what the window covers, which lets the clips in it go and
-    // leaves the stretch free to be searched again. The caller asks first.
-    onremove?: (stretch: { from: number; to: number }) => void;
+    // leaves that part free to be searched again. The caller asks first.
+    onremove?: (span: { from: number; to: number }) => void;
     locked?: boolean;
     // How the reading of the episode stands. The transcript's edge is drawn
     // here already, so the one thing to do about it belongs here too rather
@@ -97,7 +98,7 @@
     return Math.round(Math.min(Math.max(t, 0), duration) * scale);
   }
 
-  // Edges land on a round step, so a stretch is something you can say out
+  // Edges land on a round step, so a window is something you can say out
   // loud. The step is the smallest round one that is still about eight
   // pixels wide, which keeps it useful for a fifteen minute episode and for
   // a four hour one.
@@ -161,7 +162,7 @@
     return share * duration;
   }
 
-  // While a stretch is being drawn or moved it says what it is, because a
+  // While a window is being drawn or moved it says what it is, because a
   // step the pointer lands on is worth seeing in seconds.
   let showing = $state(false);
 
@@ -352,7 +353,7 @@
       class:shown={overWindow}
       class:beside={at(to) - at(from) < 40}
       style="left: {at(to)}px"
-      title="Remove the clips in this stretch, so the model can read it again"
+      title="Remove the clips in the window, so the model can read it again"
       aria-label="Remove the clips from {clock(from)} to {clock(to)}"
       aria-haspopup="dialog"
       onpointerdown={(e) => e.stopPropagation()}
@@ -365,7 +366,7 @@
   {/if}
   <!-- A clip the window lies over is on its way out, so it is not drawn:
        what the window shows is what the range picker would look like with
-       that stretch given back. -->
+       that part given back. -->
   {#each marks as m (m.key)}
     {#if !(covering && m.end > from && m.start < to)}
     <button
@@ -389,7 +390,7 @@
        A time written inside its own line cannot have both: an element with
        a z-index makes a stacking context, so the time would be held at the
        line's level however high its own is, and a window drawn over a
-       stretch already searched would swallow it. -->
+       part already searched would swallow it. -->
   {#each ticks as tick (tick.t)}
     <div class="tick" style="left: {at(tick.t)}px"></div>
   {/each}
@@ -415,9 +416,9 @@
         mark on the line pauses the reading or carries it on. Clips can be looked for once the line
         passes the window.
       {:else}
-        The whole episode. Drag for a stretch to search, or drag the window and its edges.
-        Double-click for all of it. A shaded stretch has been searched, and the marks in it are its
-        clips.
+        The whole episode. Drag to draw the window the model will search, or drag the window and
+        its edges. Double-click for all of it. A shaded part has been searched, and the marks in it
+        are its clips.
       {/if}
     </Info>
   </span>
@@ -429,7 +430,7 @@
       style="left: {at(from)}px"
       role="slider"
       tabindex="0"
-      aria-label="Start of the stretch"
+      aria-label="Start of the window"
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={from}
@@ -446,7 +447,7 @@
       style="left: {at(to)}px"
       role="slider"
       tabindex="0"
-      aria-label="End of the stretch"
+      aria-label="End of the window"
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={to}
@@ -538,7 +539,7 @@
   }
 
   /* The ruler behind the track, the same as on the clip timeline. It is
-     over the searched stretch, so the minutes can still be read there,
+     over the searched parts, so the minutes can still be read there,
      and under the window, because a tick that falls on the edge of the
      window would paint over half of its border and leave the window
      looking as if it were behind the wall it sits on. */
@@ -554,7 +555,7 @@
   /* The same place and the same colour as the times on the clip
      timeline, and quiet enough to stay behind what the track is about,
      but never behind anything laid over the track. Over the window, which
-     is 3, so a window drawn across a stretch that was searched already
+     is 3, so a window drawn across a part that was searched already
      does not swallow the minutes it covers. A layer of its own rather
      than a child of the line, which sits under the window. */
   .time {
@@ -716,7 +717,7 @@
      the window starts and ends is as plain as how tall it is. Nothing else
      is drawn on its edges: a second bar beside the border is what made one
      side look thicker than the others and the corners look broken. */
-  /* Over the searched stretches, always. A searched stretch is a fact
+  /* Over the searched parts, always. A searched part is a fact
      about the episode and the window is what you are doing to it, so the
      window is never partly under one, not even where the two touch
      exactly. */
@@ -737,7 +738,7 @@
   }
 
   /* A window drawn over material that was searched already is a window
-     onto what that stretch would be without it: the track as it looks
+     onto what that part would be without it: the track as it looks
      where nobody has looked yet, with the clips inside it gone. So what
      the button in its corner does is plain before it is pressed. */
   .window.xray {
@@ -752,8 +753,8 @@
   }
 
   /* While clips are being found for it, the window cannot be moved. The
-     stretch wears the shimmer, the same light that lies over every place
-     in the app waiting to be filled, because that is what this stretch
+     window wears the shimmer, the same light that lies over every place
+     in the app waiting to be filled, because that is what this window
      is: the clips in it are on their way. Stripes were tried and they
      tile badly, the diagonal starts over at the edge of the repeat, which
      shows as a seam down the middle of the window. */

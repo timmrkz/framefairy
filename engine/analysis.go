@@ -142,7 +142,7 @@ func (e *Engine) DetectShots(ctx context.Context, path string, start, end float6
 	return cuts, nil
 }
 
-// sampleGray pulls a handful of small greyscale frames from one stretch.
+// sampleGray pulls a handful of small greyscale frames from one part.
 func (e *Engine) sampleGray(ctx context.Context, path string, start, duration float64,
 	width, height, frames int) [][]byte {
 	rate := math.Max(1.0, float64(frames)/math.Max(duration, 0.1))

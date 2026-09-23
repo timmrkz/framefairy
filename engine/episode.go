@@ -20,7 +20,7 @@ type PlanSummary struct {
 	Name string  `json:"name"`
 	From float64 `json:"from"`
 	To   float64 `json:"to"` // zero for a whole-episode plan
-	// Stretches of the window that were given back, so the model may read
+	// Parts of the window that were given back, so the model may read
 	// them again. They are inside the window and never overlap.
 	Removed  []Window  `json:"removed,omitempty"`
 	Clips    int       `json:"clips"`
@@ -230,7 +230,7 @@ func (t *Transcript) Duration() float64 {
 }
 
 // Peaks gives the loudest reading in each of buckets equal parts of a
-// stretch, in dB, for drawing a waveform at any zoom. Parts outside the
+// part, in dB, for drawing a waveform at any zoom. Parts outside the
 // transcript are silent at -90 dB.
 //
 // It never gives more parts than it measured. Loudness is read every
@@ -272,7 +272,7 @@ func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 	return out
 }
 
-// Silences are the stretches quieter than the floor that last at least
+// Silences are the parts quieter than the floor that last at least
 // minimum seconds. Dragging a cut snaps to them.
 func (t *Transcript) Silences(minimum float64) []Span {
 	var out []Span
@@ -298,7 +298,7 @@ func (t *Transcript) Silences(minimum float64) []Span {
 	return out
 }
 
-// WordsBetween are the words that lie inside a stretch.
+// WordsBetween are the words that lie inside a part.
 func (t *Transcript) WordsBetween(from, to float64) []Cue {
 	first := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].End > from })
 	var out []Cue
@@ -337,7 +337,7 @@ type ClipView struct {
 	CaptionYMoved bool `json:"captionYMoved"`
 }
 
-// SegmentView is one kept stretch of the source.
+// SegmentView is one kept part of the source.
 type SegmentView struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`

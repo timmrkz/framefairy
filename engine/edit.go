@@ -200,7 +200,7 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 }
 
 // writePlanFile puts a whole new plan where a plan goes. A search that has
-// just finished uses it, and so does a search over a stretch that was
+// just finished uses it, and so does a search over a window that was
 // searched before, which lands on a file that is already there.
 //
 // It takes the same lock every edit takes, because the file has two
@@ -221,7 +221,7 @@ func writePlanFile(path string, body []byte) error {
 // Writing over the file itself would be wrong twice. The window reads the
 // clips and the coverage about once a second while a search runs, and it
 // would read a plan that is half there: the clip list empties itself, and
-// the range picker reports a stretch it has already searched as free and
+// the range picker reports a part it has already searched as free and
 // offers it to the model a second time. And a write that goes wrong part
 // of the way through would have taken the plan that was there with it.
 //
@@ -251,9 +251,9 @@ func replacePlan(path string, body []byte) error {
 }
 
 // errNotAdded is a clip that was not added because the plan no longer has
-// room for it: the stretch it lies in was given back while it was on its
+// room for it: the part it lies in was given back while it was on its
 // way.
-var errNotAdded = errors.New("the stretch this clip lies in was removed")
+var errNotAdded = errors.New("the part this clip lies in was removed")
 
 // appendClip adds a clip to a plan that a search is still writing. It goes
 // through editPlan, so an edit the window makes at the same moment is kept,
@@ -449,7 +449,7 @@ func TrimClip(planPath, clipID string, start, end float64, t *Transcript, keepPa
 		}
 		if first == nil {
 			// The new edges hold none of the old pieces, so the whole
-			// stretch becomes one piece with the framing of the nearest one.
+			// part becomes one piece with the framing of the nearest one.
 			var nearest *object
 			for _, item := range list {
 				if seg, ok := item.(*object); ok {
@@ -547,19 +547,19 @@ func segmentObjects(c *object) []*object {
 	return pieces
 }
 
-// MinCut is the shortest stretch worth taking out of a clip.
+// MinCut is the shortest part worth taking out of a clip.
 const MinCut = 0.05
 
 // MinClip is the least a clip may be left holding.
 const MinClip = 1.0
 
-// Cut is one stretch a clip leaves out, the gap between two pieces.
+// Cut is one part a clip leaves out, the gap between two pieces.
 type Cut struct {
 	From float64
 	To   float64
 }
 
-// ClipCuts are the stretches a clip leaves out, in order. They are the gaps
+// ClipCuts are the parts a clip leaves out, in order. They are the gaps
 // between its pieces, so a clip in one piece has none.
 func ClipCuts(c Clip) []Cut {
 	var cuts []Cut
@@ -682,7 +682,7 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
 }
 
-// CutClip takes a stretch out of the middle of a clip. A piece the cut lands
+// CutClip takes a part out of the middle of a clip. A piece the cut lands
 // inside becomes two, and both keep the framing of the piece they came from,
 // so cutting never moves the picture. A piece the cut swallows whole goes.
 // With ToWords the edges move onto the words around them, with ToFrames they
@@ -706,7 +706,7 @@ func CutClip(planPath, clipID string, from, to float64, t *Transcript,
 	})
 }
 
-// applyCut takes a stretch out of a set of pieces. A piece the cut straddles
+// applyCut takes a part out of a set of pieces. A piece the cut straddles
 // is split, and the half that is kept on each side is a copy of the whole,
 // so the framing and the automatic framing behind it travel with both.
 func applyCut(pieces []*object, from, to float64) []*object {
@@ -734,7 +734,7 @@ func applyCut(pieces []*object, from, to float64) []*object {
 	return out
 }
 
-// JoinCut puts back the stretch a clip leaves out at a moment, so the two
+// JoinCut puts back the part a clip leaves out at a moment, so the two
 // pieces around it become one. The framing of the piece before the cut is
 // the one the joined piece keeps, because that is the shot it opens on.
 func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
@@ -1017,7 +1017,7 @@ func IsPlanFile(path string) bool {
 var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
-// with it the clips it held. The stretch it covered is free to be searched
+// with it the clips it held. The part it covered is free to be searched
 // again afterwards.
 //
 // The caption files of its clips are moved aside rather than deleted,
@@ -1074,7 +1074,7 @@ func setCaptionsAside(captionsDir string, clips []Clip) error {
 	return nil
 }
 
-// ClipSpan is the stretch of the episode a clip was cut from, from the
+// ClipSpan is the part of the episode a clip was cut from, from the
 // start of its first piece to the end of its last.
 func ClipSpan(c Clip) (float64, float64) {
 	if len(c.Segments) == 0 {
@@ -1083,8 +1083,8 @@ func ClipSpan(c Clip) (float64, float64) {
 	return c.Segments[0].Start, c.Segments[len(c.Segments)-1].End
 }
 
-// RemoveRange gives a stretch of a plan's window back. The clips that lie
-// in the stretch go with it, and the plan notes the stretch as one the
+// RemoveRange gives a part of a plan's window back. The clips that lie
+// in the part go with it, and the plan notes the part as one the
 // model may read again, so the range picker shows it as free. A plan whose
 // whole window is given back goes altogether.
 //
@@ -1162,7 +1162,7 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 	return len(going), nil
 }
 
-// orderedWindows reads stretches out of a plan being edited, where objects
+// orderedWindows reads windows out of a plan being edited, where objects
 // keep their key order. It is readWindows for that tree.
 func orderedWindows(raw any) []Window {
 	list, ok := raw.([]any)
@@ -1185,7 +1185,7 @@ func orderedWindows(raw any) []Window {
 	return MergeWindows(out)
 }
 
-// planWindow is the stretch a plan was made over. A plan without one was
+// planWindow is the window a plan was made over. A plan without one was
 // made over the whole episode.
 func planWindow(plan Plan, duration float64) Window {
 	made := plan.PlannedWith()

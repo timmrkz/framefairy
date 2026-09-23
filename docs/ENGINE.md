@@ -25,7 +25,7 @@ The recogniser's own timings are what gets stored in `words.json`. The
 correction is applied on every load, so improving it never needs a new
 transcription.
 
-Transcribing a stretch that does not start at the beginning, after an
+Transcribing a window that does not start at the beginning, after an
 interrupted run carried on or with `--from`, decodes from the start of the
 file and drops the samples before it, rather than asking ffmpeg to seek. A
 seek into a compressed stream lands on a packet, and what a build does with
@@ -85,20 +85,20 @@ one word where two were said, so a correction like "Und da" for "Und" turns
 into two words that share the span the recogniser measured, split by how
 long they are. The audio is not read again for this. The recogniser timed
 the sound as a whole, and the highlight only has to run over the words
-inside that stretch, which is exactly how they were spoken. It is the same
+inside that part, which is exactly how they were spoken. It is the same
 rule an edited srt file gets, further down. Corrections stay one entry per
 recognised word, so writing one word again undoes it.
 
-Each search is saved under the stretch it was made over, `clips-<from>-<to>.json`,
+Each search is saved under the window it was made over, `clips-<from>-<to>.json`,
 so passes add up instead of overwriting each other. The model is only ever
-shown the stretch it is asked about and knows nothing of earlier passes, so
+shown the window it is asked about and knows nothing of earlier passes, so
 two passes over the same material would come back with the same moments. The
 app therefore lets a window be drawn only where nobody has looked yet, which
 `SearchedWindows` and `FreeWindows` work out from the plans on disk. A plan
-carries the window it was made over in `planned_with`, and the stretches of
+carries the window it was made over in `planned_with`, and the parts of
 it that were given back again in `planned_with.removed`, so a search is a
 window with holes in it. `RemoveRange` makes a hole: the clips inside the
-stretch go, their caption files are moved aside, and a plan with nothing
+part go, their caption files are moved aside, and a plan with nothing
 left of its window goes altogether.
 
 ## The bouncing word
@@ -235,9 +235,9 @@ machine, framing decodes video with ffmpeg on the processor, and writing a
 clip to the plan is a few kilobytes. So each clip is framed by one of two
 framers while the model goes on writing, and written to the plan the
 moment it is framed. The first clip makes the plan, in place of whatever
-plan was there for the stretch, and each after it goes in through
+plan was there for the window, and each after it goes in through
 `editPlan`, so an edit the window makes to a clip that has already landed
-is kept. A clip that lands in a stretch removed while it was on its way is
+is kept. A clip that lands in a part removed while it was on its way is
 left out, and a plan removed altogether takes no more clips. The plan's
 id is decided before the first clip lands, so a decision about a clip made
 while the search runs is recorded against the plan it was made about.

@@ -66,7 +66,7 @@ type Options struct {
 	MarginV         *int
 	RefreshCaptions bool
 	// ExactPlan never falls back to another plan file when the one for this
-	// stretch is missing, it makes the plan instead. The app sets it, the
+	// window is missing, it makes the plan instead. The app sets it, the
 	// command line does not.
 	ExactPlan bool
 	// NoRecord stops training records from being written.

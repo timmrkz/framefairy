@@ -45,7 +45,7 @@ describe("a new episode transcribes itself", () => {
 });
 
 describe("the first clips are found by themselves", () => {
-  test("not before the transcript reaches the end of the stretch", () => {
+  test("not before the transcript reaches the end of the window", () => {
     expect(shouldLook({ ...idle, covered: 1200 })).toBe(false);
   });
 
@@ -61,11 +61,11 @@ describe("the first clips are found by themselves", () => {
     expect(shouldLook({ ...idle, covered: 14423 })).toBe(true);
   });
 
-  test("with a stretch that is the whole episode", () => {
+  test("with a window that is the whole episode", () => {
     expect(shouldLook({ ...idle, to: 14423, covered: 14423 })).toBe(true);
   });
 
-  test("but not while there is no stretch yet", () => {
+  test("but not while there is no window yet", () => {
     expect(shouldLook({ ...idle, to: 0, covered: 14423 })).toBe(false);
   });
 
@@ -147,17 +147,17 @@ describe("the window moves on when it chooses for itself", () => {
     expect(w).toEqual({ from: half, to: 2 * half });
   });
 
-  test("a stretch a little longer than the half hour is taken whole", () => {
+  test("a part a little longer than the half hour is taken whole", () => {
     const w = nextWindow([{ from: 0, to: 40 * 60 }], [], hours, half);
     expect(w).toEqual({ from: 0, to: 40 * 60 });
   });
 
-  test("a stretch well over the half hour gives up only that much", () => {
+  test("a part well over the half hour gives up only that much", () => {
     const w = nextWindow([{ from: 0, to: 60 * 60 }], [], hours, half);
     expect(w).toEqual({ from: 0, to: half });
   });
 
-  test("an episode searched end to end rests on the last stretch", () => {
+  test("an episode searched end to end rests on the last part", () => {
     const searched = [
       { from: 0, to: half },
       { from: half, to: hours },

@@ -89,7 +89,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A stretch is cut from the whole transcript, never transcribed again.
+	// A window is cut from the whole transcript, never transcribed again.
 	heard = 0
 	plan, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 1})
 	if err != nil {
@@ -105,7 +105,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("model asked %d times", asked)
 	}
 
-	// The same stretch again reuses the plan, a new stretch makes its own,
+	// The same window again reuses the plan, a new window makes its own,
 	// even though another plan exists.
 	if _, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 1}); err != nil {
 		t.Fatal(err)

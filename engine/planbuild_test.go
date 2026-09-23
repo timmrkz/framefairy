@@ -185,7 +185,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	}
 }
 
-func TestAClipDoesNotLandInAStretchRemovedWhileItWasOnItsWay(t *testing.T) {
+func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
 	letGo := make(chan struct{})
 	p, path := searching(t, letGo)
 	finished := make(chan error, 1)

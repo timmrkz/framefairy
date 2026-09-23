@@ -43,7 +43,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.1 | Structured events from the log, `--events FILE` | `[x]` |
 | 1.2 | `Project` with separate steps on top of `Run`, windows cut from the whole transcript | `[x]` |
 | 1.3 | Episode status from the files on disk | `[x]` |
-| 1.4 | Waveform peaks, silences, words in a stretch, plan views | `[x]` |
+| 1.4 | Waveform peaks, silences, words in a window, plan views | `[x]` |
 | 1.5 | Thumbnails per clip and the playback copy of the episode | `[ ]` |
 | 1.6 | Plan edits: keep or reject `[x]`, trim edges `[x]`, change the cuts inside a clip with snapping `[x]` | `[x]` |
 | 1.7 | Caption edits in the plan, with SRT export and import | `[ ]` |
@@ -68,17 +68,17 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.7 | Playback from the episode copy, instead of rendered previews | `[ ]` |
 | 2.8 | Activity: progress, cancel, log per job, show in folder | `[~]` |
 | 2.9 | First run on Tim's Mac, fixes from his notes | `[~]` |
-| 2.10 | Transcription in its own background lane, saved as it goes and resumed after a pause. Finding clips starts as soon as the transcript reaches the end of the chosen stretch | `[x]` |
+| 2.10 | Transcription in its own background lane, saved as it goes and resumed after a pause. Finding clips starts as soon as the transcript reaches the end of the chosen window | `[x]` |
 | 2.12 | One workspace per episode: player with the crop of the selected clip, clip list beside it, clip marks and playhead on the timeline, play a clip with its cuts. The separate clips page is gone | `[x]` |
 | 2.14 | Slim range picker with clip marks, time labels and playhead inside, one search row, no overlap with the player, button-free clip list, Render in the clip panel, keep and reject removed from the app | `[x]` |
 | 2.13 | Remove an episode with or without deleting its files, time window locked while clips are found | `[x]` |
 | 2.15 | One Play button that plays from the playhead and stops at the end of the clip, space bar for play and pause, the clip's captions drawn in the video preview, the clip list as tall as the video preview, words corrected in the caption box | `[x]` |
 | 2.11 | Episode opens with a frame preview and the time window right away, first 30 minutes chosen for long episodes, waveform filling in during transcription | `[x]` |
-| 2.18 | Searched stretches marked on the range picker, a window drawn only outside them, and a click on a marked stretch to search it again | `[x]` |
-| 2.17 | One box over the workspace for what cannot be taken back: removing an episode, and finding clips again for a stretch that already has some | `[x]` |
+| 2.18 | Searched parts marked on the range picker, a window drawn only outside them, and a click on a marked part to search it again | `[x]` |
+| 2.17 | One box over the workspace for what cannot be taken back: removing an episode, and finding clips again for a window that already has some | `[x]` |
 | 2.55 | The remove box reads Cancel, Keep, Delete, in plainer words, with what is destructive marked rather than made the answer Enter gives | `[x]` |
 | 2.54 | The crosshair goes to the playhead, always, and puts it in the middle. Going back to the clip is what clicking the clip does | `[x]` |
-| 2.53 | A ruler is two layers, the line behind and the time in front, so a window over a searched stretch no longer swallows the minutes it covers, with the shape of it tested rather than only the numbers | `[x]` |
+| 2.53 | A ruler is two layers, the line behind and the time in front, so a window over a searched part no longer swallows the minutes it covers, with the shape of it tested rather than only the numbers | `[x]` |
 | 2.52 | Nothing a job reports can be a number JSON cannot carry, so a share worked out from a length nobody could measure never silences the window about that job | `[x]` |
 | 2.51 | A plan is replaced in one step and under the lock the edits take, so the clip list and the coverage never read one half written, and removing an episode refuses rather than deleting under a job that will not stop | `[x]` |
 | 2.50 | The bar is the title bar: macOS is asked how tall it laid it out and where it put its buttons, and is told again whenever it lays it out afresh, so the buttons are centred in the bar by construction rather than by a number | `[x]` |
@@ -106,13 +106,13 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.29 | The playback buttons in the row above the clip timeline, nothing under the range picker, a clip list on a surface of its own, a mark instead of **Fit**, and a clip in the list putting the timeline back on it | `[x]` |
 | 2.28 | The window on the range picker put right: one box with one border and no bars beside it, and a light passing through it while clips are being found instead of stripes that tiled badly | `[x]` |
 | 2.27 | Breaking the app on purpose: every path checked against the library, links not followed out of it, plans that would edit the wrong clip refused, edits of one plan one at a time, and a paused transcription that stays paused | `[x]` |
-| 2.26 | A video preview as big as the window allows, the two timelines named, one word for removing, and stretches that land on a round step | `[x]` |
+| 2.26 | A video preview as big as the window allows, the two timelines named, one word for removing, and windows that land on a round step | `[x]` |
 | 2.25 | A swipe that stays put, time labels on the clip timeline, the transcript kept in memory, and a removed clip seen going: its row stays in place in red for ten seconds with **Put it back** | `[x]` |
 | 2.24 | Two fingers on the clip timeline: a swipe along the episode, a pinch to zoom, and **Fit** to put the view back | `[x]` |
-| 2.23 | Removing a search from the range picker, which leaves its stretch free to be searched again and takes its clips with it | `[x]` |
-| 2.22 | The track put right: a click anywhere moves the player, a window never lies across a searched stretch, and a seek that arrives before the video has read its index still lands | `[x]` |
+| 2.23 | Removing a search from the range picker, which leaves its part free to be searched again and takes its clips with it | `[x]` |
+| 2.22 | The track put right: a click anywhere moves the player, a window never lies across a searched part, and a seek that arrives before the video has read its index still lands | `[x]` |
 | 2.21 | The search where the clips appear: its progress and **Cancel** under the head of the clip list, the window boxed on all four sides and striped while it is being searched, and the clips shown as soon as the answer is written | `[x]` |
-| 2.20 | The transcription on the range picker instead of a bar of its own, the first search for a new episode starting by itself once the transcript covers the stretch, the words and the waveform arriving as the transcript grows, and a settings column of one row per setting | `[x]` |
+| 2.20 | The transcription on the range picker instead of a bar of its own, the first search for a new episode starting by itself once the transcript covers the window, the words and the waveform arriving as the transcript grows, and a settings column of one row per setting | `[x]` |
 | 2.19 | The clip timeline cleared up: the waveform has the whole track, no words are written over it, and the lens opens and closes on a click of the magnifier, which never moves the playhead | `[x]` |
 | 2.16 | A collapsing sidebar that lies over the workspace, the settings it uncovers in a column of their own, **New** above the clip list, a clip removed with the trash can and put back again, help in info bubbles instead of standing text, and the whole workspace fitting the window | `[x]` |
 

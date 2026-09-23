@@ -97,7 +97,7 @@ func TestTranscriptionResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Exactly the same, because carrying on drops samples by count rather
-	// than asking ffmpeg to seek. TestAStretchOfAudioLinesUpWithTheWholeEpisode
+	// than asking ffmpeg to seek. TestAPartOfAudioLinesUpWithTheWholeEpisode
 	// covers why that matters.
 	if len(resumed.Frames) != len(full.Frames) {
 		t.Errorf("frames %d after resuming, %d in one go", len(resumed.Frames), len(full.Frames))
@@ -298,11 +298,11 @@ func beatEpisode(t *testing.T, seconds string) string {
 	return path
 }
 
-// TestAStretchOfAudioLinesUpWithTheWholeEpisode is the reason the engine
+// TestAPartOfAudioLinesUpWithTheWholeEpisode is the reason the engine
 // counts samples itself instead of asking ffmpeg to seek. Starting part way
 // in has to give exactly the audio the whole episode has there, or every
 // word after that point carries a time that is out by the difference.
-func TestAStretchOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
+func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	source := beatEpisode(t, "12")
 	var calls int32
 	rec := fakeRecognizer{&calls}
@@ -317,7 +317,7 @@ func TestAStretchOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if part.Start != 4 {
-		t.Errorf("the stretch starts at %v", part.Start)
+		t.Errorf("the part starts at %v", part.Start)
 	}
 	const offset = 400 // 4 seconds of 10 ms frames
 	if len(whole.Frames)-offset != len(part.Frames) {
@@ -334,7 +334,7 @@ func TestAStretchOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 		return -1
 	}
 	if i := differsAt(0); i >= 0 {
-		t.Errorf("frame %d of the stretch reads %v, the whole episode has %v at the same moment",
+		t.Errorf("frame %d of the part reads %v, the whole episode has %v at the same moment",
 			i, part.Frames[i], whole.Frames[offset+i])
 	}
 	// And the tone really is uneven enough that a shift would have shown.

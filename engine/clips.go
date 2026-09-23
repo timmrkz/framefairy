@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Segment is one continuous stretch of the source that ends up in a clip.
+// Segment is one continuous part of the source that ends up in a clip.
 type Segment struct {
 	Start float64
 	End   float64

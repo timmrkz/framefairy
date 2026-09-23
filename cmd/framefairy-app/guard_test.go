@@ -121,7 +121,7 @@ func TestTheMediaRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	t.Error("Known says a link out of the work folder belongs to the episode")
 }
 
-// Removing a stretch takes the clips in it out of the plans. Anything else
+// Removing a part takes the clips in it out of the plans. Anything else
 // in the work folder, a render or a transcript, stays where it is.
 func TestRemoveSearchOnlyTouchesPlans(t *testing.T) {
 	svc, mine, _ := library(t)

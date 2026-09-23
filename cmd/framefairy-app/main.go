@@ -526,7 +526,7 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	return out, nil
 }
 
-// WindowView is a stretch of an episode, in seconds. A searched stretch
+// WindowView is a part of an episode, in seconds. A searched part
 // also says which plans cover it and how many clips they hold, so it can be
 // let go of again.
 type WindowView struct {
@@ -544,8 +544,8 @@ type CoverageView struct {
 	Free     []WindowView `json:"free"`
 }
 
-// Coverage gives the stretches of an episode that have been searched for
-// clips and the stretches that are still free, leaving out free stretches
+// Coverage gives the parts of an episode that have been searched for
+// clips and the parts that are still free, leaving out free parts
 // too short to hold a clip of least seconds.
 func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (CoverageView, error) {
 	if !s.store.Known(path) {
@@ -570,9 +570,9 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (
 	return out, nil
 }
 
-// RemoveSearch gives a stretch of an episode back: the clips inside it
-// leave the list and the stretch is free to be searched again. It is a
-// stretch, not a whole search, so a part of what was searched can go while
+// RemoveSearch gives a part of an episode back: the clips inside it
+// leave the list and the part is free to be searched again. It is a
+// part, not a whole search, so a part of what was searched can go while
 // the rest of it stays. A plan with nothing left of its window goes
 // altogether. Caption files are moved aside rather than deleted, and
 // rendered files stay where they are.
@@ -666,7 +666,8 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	return t, nil
 }
 
-// Waveform returns the loudest level in each of buckets parts of a stretch.
+// Waveform returns the loudest level in each of buckets pieces of a part
+// of the episode.
 // An episode waiting for its first transcription has no waveform yet, which
 // is an empty answer and not a failure.
 //
@@ -705,8 +706,8 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	})
 }
 
-// Plan queues finding clips in a stretch of an episode. It starts as soon as
-// the transcript reaches the end of the stretch, while the rest of the
+// Plan queues finding clips in a window of an episode. It starts as soon as
+// the transcript reaches the end of the window, while the rest of the
 // episode is still being transcribed.
 func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 	if !s.store.Known(path) {
@@ -726,7 +727,7 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 	})
 }
 
-// waitForTranscript blocks until the transcript covers the stretch, and
+// waitForTranscript blocks until the transcript covers the window, and
 // starts the transcription if nothing is transcribing this episode.
 func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, req engine.PlanRequest) error {
 	asrDir := s.store.Settings().ASRModel
@@ -846,14 +847,14 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 	})
 }
 
-// WordsView is the words of a stretch, with the lead-in and lead-out the
+// WordsView is the words of a part, with the lead-in and lead-out the
 // renderer leaves around a cut, so the window can snap edges the same way.
 type WordsView struct {
 	Words     []engine.WordView `json:"words"`
 	KeepPause float64           `json:"keepPause"`
 }
 
-// Words returns the words spoken in a stretch. Before the first
+// Words returns the words spoken in a part. Before the first
 // transcription there are none, which is an empty answer and not a failure.
 func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
 	if !s.store.Known(path) {
@@ -868,7 +869,7 @@ func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
 	if err != nil {
 		return WordsView{}, err
 	}
-	// One word either side, so an edge can snap past the stretch.
+	// One word either side, so an edge can snap past the part.
 	words := t.WordsBetween(from-5, to+5)
 	for _, w := range words {
 		out.Words = append(out.Words, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
@@ -1213,7 +1214,7 @@ func (s *FrameFairy) cutting(path, plan string) (*engine.Transcript, engine.Opti
 	return t, opts, nil
 }
 
-// CutClip takes a stretch out of the middle of a clip and returns it as it
+// CutClip takes a part out of the middle of a clip and returns it as it
 // is now. With toWords the edges land on the words around them, without it
 // they stay exactly where the hand put them.
 func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, from, to float64, toWords bool) (ClipEntry, error) {
@@ -1229,7 +1230,7 @@ func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, fro
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// JoinCut puts back the stretch a clip leaves out at a moment and returns
+// JoinCut puts back the part a clip leaves out at a moment and returns
 // the clip as it is now.
 func (s *FrameFairy) JoinCut(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	t, _, err := s.cutting(path, plan)

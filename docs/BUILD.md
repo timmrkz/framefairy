@@ -96,7 +96,7 @@ anything asynchronous use it from several goroutines at once and let
 many more times over. Those cover
 the rules the app follows by itself, in `frontend/src/lib/flow.ts`: that a
 new episode transcribes itself and that the first clips are found as soon as
-the transcript covers the chosen stretch. Both have broken before, so they
+the transcript covers the chosen window. Both have broken before, so they
 are written as plain functions with tests beside them. It all needs no
 model, no network and no API key. Speech comes from a fake recogniser and
 planning from a fake llama-server, both in `engine/project_test.go`. The
