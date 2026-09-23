@@ -977,6 +977,25 @@
     }));
   });
 
+  // The last word of a caption to have begun, counted through its lines,
+  // or -1 before its first. The block of the caption shown is drawn afresh
+  // whenever it changes, so it pops on every word the way the pill does in
+  // the video preview, where each word lights up in turn, and not again in
+  // the pause after a word. Walking the words with shift and the arrow
+  // keys pops both at once.
+  const spokenAt = $derived(clip && segments.length ? inClip(segments, time) : -1);
+  function wordNow(c: CaptionCue): number {
+    let k = -1;
+    let n = 0;
+    for (const line of c.lines ?? []) {
+      for (const w of line.words ?? []) {
+        if (spokenAt >= w.start) k = n;
+        n++;
+      }
+    }
+    return k;
+  }
+
   // Where a click on a caption puts the playhead: a frame into its first
   // word, on the clip's own clock and then in the episode, the same step
   // the arrow keys take into a word. A word is lit from its start, and a
@@ -1241,16 +1260,21 @@
                focus is, and a block that kept it from a click wore the
                focus ring the moment a key was pressed, round a caption the
                video preview had long left. -->
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
-          <div
-            class="caption"
-            class:showing={time >= b.from && time < b.to}
-            style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
-            role="button"
-            title="Put the playhead where this caption appears"
-            onpointerdown={(e) => e.stopPropagation()}
-            onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
-          ><i></i></div>
+          <!-- Drawn afresh on every word of the caption shown, which is what
+               starts its pop again. A key on the list would not do it: the
+               list is only looked at again when the captions change. -->
+          {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+            <div
+              class="caption"
+              class:showing={time >= b.from && time < b.to}
+              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
+              role="button"
+              title="Put the playhead where this caption appears"
+              onpointerdown={(e) => e.stopPropagation()}
+              onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
+            ><i></i></div>
+          {/key}
         {/each}
       </div>
       {#if !locked && oncaptiontime}

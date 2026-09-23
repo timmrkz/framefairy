@@ -868,8 +868,9 @@ moved by hand, on the clip timeline.
   colour. At rest the bar is a hairline and under the pointer it is
   thicker. The caption the video preview is showing wears the highlight
   colour over its box, with its own opacity, the pill the spoken word
-  wears, and pops into place with the same animation that pill makes in
-  the video preview. A block takes no focus, so no focus ring is left
+  wears, and pops with the same animation that pill makes in the video
+  preview, on every word as the pill does, so walking the words with shift
+  and the arrow keys pops the pill and the block together. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
