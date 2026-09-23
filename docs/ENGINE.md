@@ -305,7 +305,8 @@ llama-server -m ~/.framefairy/models/gemma-4-26B_q4_0-it.gguf -c 65536 -ngl 999 
 framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 ```
 
-The server's output is kept in `logs/llm-server.log`.
+The server's output is kept in `logs/llm-server.log`, at log level 4,
+which is the first level where llama.cpp says what it took from memory.
 
 ## The code
 

@@ -94,10 +94,12 @@ So each model in `engine/language.go` carries its shape, read off its
 maker's `config.json`, and what it needs is the weights, plus the cache at
 the context the first search asks for, plus an allowance for llama.cpp's
 own buffers. The allowance is the one number not read off anything. It is
-set on the cautious side, and llama-server prints the real figure in
-`llm-server.log` every time it starts. The first search is judged rather
-than the longest, and a search of more than about an hour and a half asks
-for more than that.
+set on the cautious side until it is measured. llama-server runs at log
+level 4, because its own default leaves the memory out, and from there it
+writes into `llm-server.log` what the cache, its working buffers and the
+checkpoints it keeps of the window each took. The first search is judged
+rather than the longest, and a search of more than about an hour and a
+half asks for more than that.
 
 What every Mac is offered, pinned by a test:
 

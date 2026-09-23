@@ -122,7 +122,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	}
 	dir := t.TempDir()
 	server := filepath.Join(dir, "llama-server")
-	script := "#!/bin/sh\necho 'buffer size stand-in'\nexec sleep 30\n"
+	script := "#!/bin/sh\necho \"buffer size stand-in $*\"\nexec sleep 30\n"
 	if err := os.WriteFile(server, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -154,5 +154,9 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	<-done
 	if !strings.Contains(string(body), "buffer size") {
 		t.Fatalf("no server output in %s, got %q", logFile, body)
+	}
+	// What the model took from memory is only in the log from level 4.
+	if !strings.Contains(string(body), "-lv 4") {
+		t.Errorf("llama-server was not asked to say what it took from memory: %q", body)
 	}
 }
