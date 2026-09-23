@@ -23,11 +23,13 @@
     snapCut,
     snapEnd,
     snapStart,
+    intoWord,
     wordStep,
     type ClipEntry,
     type Word,
+    type CaptionCue,
   } from "../lib/api";
-  import { insideClip } from "../lib/flow";
+  import { draftCaptions, inClip, inEpisode, insideClip, type CaptionDraft } from "../lib/flow";
   import Info from "./Info.svelte";
 
   let {
@@ -46,6 +48,10 @@
     onjoincut,
     onmovecut,
     onwalkclip,
+    captions = [],
+    captionLook = null,
+    oncaptiontime,
+    oncaptiondraft,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -71,7 +77,7 @@
     lit?: Word[];
     onseek: (t: number) => void;
     ontrim?: (start: number, end: number) => Promise<void>;
-    // The cuts inside the clip: taking a stretch out, putting one back, and
+    // The cuts inside the clip: taking a part out, putting one back, and
     // moving the edges of one that is already there.
     // toWords says whether the engine should put the edges on the words
     // around them. Alt held while dragging says no: the edges land on the
@@ -83,6 +89,23 @@
     // clip beside it are not here to walk on to, they arrive with its
     // captions, so the workspace is asked and it takes it from there.
     onwalkclip?: (back: boolean) => void;
+    // The clip's captions, on the clip's clock, as the render shows them.
+    // They are drawn along the foot of the track, and either edge of one
+    // can be dragged where the words are a little off from what is heard.
+    captions?: CaptionCue[];
+    // The colours the captions are burned in, as the video preview draws
+    // them: the words, the box behind them and the pill behind the word
+    // being spoken. A block wears all three, so a colour picked for the
+    // short is seen here too.
+    captionLook?: { text: string; box: string; highlight: string } | null;
+    // A caption edge let go of: the word it begins or ends on and the new
+    // moment, both in the episode, or a moment below nought to put it back
+    // where its words put it. True when it was saved.
+    oncaptiontime?: (word: number, edge: "start" | "end", at: number) => Promise<boolean>;
+    // A caption edge while it is being dragged, on the clip's clock, so
+    // the caption box in the video preview can follow it. Null once the
+    // captions have come back with it saved.
+    oncaptiondraft?: (draft: CaptionDraft | null) => void;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -119,7 +142,7 @@
   let loaded = false;
   // How far the transcript had come when this view was read.
   let loadedTo = $state(-1);
-  // The stretch the words and the waveform were read for. It is wider than
+  // The part the words and the waveform were read for. It is wider than
   // the view, so a swipe has somewhere to go before anything is read again.
   let data = $state({ from: 0, to: 1 });
   // True while the view is where a hand put it. Until it is let go of, the
@@ -164,7 +187,7 @@
 
   function scrub(event: PointerEvent) {
     if (event.button !== 0) return;
-    // Shift and a drag marks a stretch to take out instead of moving the
+    // Shift and a drag marks a part to take out instead of moving the
     // playhead. Everything else about the track is unchanged.
     if (event.shiftKey && editable && oncut) {
       event.preventDefault();
@@ -199,7 +222,7 @@
     return out.filter((p) => p.end > p.start);
   });
 
-  // A cut is a stretch the clip leaves out, which is the gap between two
+  // A cut is a part the clip leaves out, which is the gap between two
   // pieces. The engine counts them from the first, and so does the timeline,
   // because that is what a move names.
   //
@@ -226,7 +249,7 @@
   const editable = $derived(!!clip && !locked && !saving && !cutSaving);
 
   // The pieces as they are drawn, with a cut being moved or drawn applied.
-  // A cut being drawn takes its stretch out of the pieces at once rather
+  // A cut being drawn takes its part out of the pieces at once rather
   // than being a block laid over them, so the wash parts under the hand and
   // the count under the timeline follows the drag. What is happening is
   // shown while it happens.
@@ -331,7 +354,7 @@
   }
 
   // Drawing a cut is a drag across the clip with shift held, which is how
-  // a stretch is marked in an editing timeline. Without shift the same drag
+  // a part is marked in an editing timeline. Without shift the same drag
   // moves the playhead, so nothing that worked before works differently.
   function drawCut(event: PointerEvent) {
     const target = event.currentTarget as HTMLElement;
@@ -398,8 +421,8 @@
   // other.
   const cutAtOnce = 40;
 
-  // Shift and a double-click takes a stretch out where you click, the way
-  // shift and a drag takes out the stretch you drag across. Shift is the
+  // Shift and a double-click takes a part out where you click, the way
+  // shift and a drag takes out the part you drag across. Shift is the
   // cutting hand on this track either way. Where it goes exactly, and
   // whether it goes at all, is cutAt in lib/api.ts, which has the tests.
   async function cutHere(at: number, wide: number) {
@@ -416,11 +439,11 @@
   }
 
   // The cut that was last put back, so the same double-click in the same
-  // place can put it in again. Taking a stretch out is one double-click,
+  // place can put it in again. Taking a part out is one double-click,
   // and nothing that takes one click may cost more than one to undo. It
   // belongs to the clip it was in, and it is forgotten the moment anything
-  // else about that clip's cuts changes, because a stretch put back into a
-  // clip that has moved on is not the stretch that was taken out.
+  // else about that clip's cuts changes, because a part put back into a
+  // clip that has moved on is not the part that was taken out.
   let undone = $state<{ key: string; from: number; to: number } | null>(null);
 
   // A double-click puts a cut back, the way a double-click undoes an edit
@@ -440,7 +463,7 @@
     }
   }
 
-  // Putting back what was just put back. The stretch is taken out again
+  // Putting back what was just put back. The part is taken out again
   // exactly as it was, edge for edge, so it is sent as it stands rather
   // than snapped afresh: snapping it again would be snapping something
   // already snapped, and on a cut made a frame at a time it would move.
@@ -459,8 +482,8 @@
   // the episode moves through what is already in hand. The waveform is drawn
   // by time, so what is read and what is shown need not line up.
   //
-  // What is drawn and the stretch it was read for are set in the same
-  // breath, or the old readings would be drawn against the new stretch for
+  // What is drawn and the part it was read for are set in the same
+  // breath, or the old readings would be drawn against the new part for
   // as long as the reading takes, which looks like the waveform jumping
   // about. A reading that comes back after a newer one is dropped.
   let latest = 0;
@@ -571,7 +594,7 @@
   // dealt to the element holding it. A handler on the cut is never reached.
   function fitView(event?: MouseEvent) {
     // Shift is the cutting hand on this track, so a double-click with it
-    // held takes a stretch out where it lands and never moves the view. It
+    // held takes a part out where it lands and never moves the view. It
     // used to fit the clip instead, which is why holding shift and
     // double-clicking read as nothing happening: the one gesture that
     // looked like it ought to cut only zoomed.
@@ -765,7 +788,7 @@
   // what comes after it is exactly silent. Taking the edge from the same
   // readings the waveform is drawn from means the part that waits can
   // never lie over a waveform that is already there, and never leave a
-  // stretch with neither.
+  // part with neither.
   const soundEdge = $derived.by(() => {
     if (!peaks.length) return data.from;
     let last = -1;
@@ -914,7 +937,7 @@
       if (Math.abs(draft.start - first) < 0.01 && Math.abs(draft.end - last) < 0.01) return;
       saving = true;
       try {
-        // A clip whose edges have moved is not the clip the stretch was
+        // A clip whose edges have moved is not the clip the part was
         // taken out of, so there is nothing to put back any more.
         undone = null;
         await ontrim?.(draft.start, draft.end);
@@ -926,6 +949,137 @@
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  // The captions along the foot of the track. A caption appears when its
+  // first word is said and goes when the next appears, or a moment after
+  // its last word when a pause follows, and where that is a little off
+  // from what is heard, either edge is dragged. The two sides of the line
+  // between two captions are two edges: the left side is where the one
+  // before goes, the right side where the one after appears. Dragging the
+  // first leaves a gap, dragging the second takes the one before along.
+  let capDraft = $state<CaptionDraft | null>(null);
+  let capMoving = $state(false);
+  let capSaving = $state(false);
+  // The captions a draft was made against. The draft is let go of when
+  // they come back changed, so the block never jumps back to where it was
+  // while the saved captions are on their way.
+  let capHeld: CaptionCue[] | undefined;
+  const clipLength = $derived(segments.reduce((sum, p) => sum + p.end - p.start, 0));
+
+  const captionBlocks = $derived.by(() => {
+    if (!clip || !captions?.length || !segments.length) return [];
+    return draftCaptions(captions, capDraft).map((c, i) => ({
+      i,
+      c: captions[i],
+      from: inEpisode(segments, c.start),
+      to: inEpisode(segments, Math.min(c.end, clipLength)),
+    }));
+  });
+
+  // The last word of a caption to have begun, counted through its lines,
+  // or -1 before its first. The block of the caption shown is drawn afresh
+  // whenever it changes, so it pops on every word the way the pill does in
+  // the video preview, where each word lights up in turn, and not again in
+  // the pause after a word. Walking the words with shift and the arrow
+  // keys pops both at once.
+  const spokenAt = $derived(clip && segments.length ? inClip(segments, time) : -1);
+  function wordNow(c: CaptionCue): number {
+    let k = -1;
+    let n = 0;
+    for (const line of c.lines ?? []) {
+      for (const w of line.words ?? []) {
+        if (spokenAt >= w.start) k = n;
+        n++;
+      }
+    }
+    return k;
+  }
+
+  // Where a click on a caption puts the playhead: a frame into its first
+  // word, on the clip's own clock and then in the episode, the same step
+  // the arrow keys take into a word. A word is lit from its start, and a
+  // moment read back through the episode can land a hair before it.
+  function firstWordOf(c: CaptionCue): number | null {
+    const word = c.lines?.[0]?.words?.[0];
+    if (!word || !segments.length) return null;
+    return inEpisode(segments, intoWord(word, frame));
+  }
+
+  $effect(() => {
+    if (capDraft && !capMoving && !capSaving && captions !== capHeld) {
+      capDraft = null;
+      oncaptiondraft?.(null);
+    }
+  });
+
+  function grabCaption(i: number, edge: "start" | "end", event: PointerEvent) {
+    if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return;
+    const c = captions[i];
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const from = event.clientX;
+    capHeld = captions;
+    let moved = false;
+    const move = (e: PointerEvent) => {
+      if (!moved && Math.abs(e.clientX - from) > 2) {
+        moved = true;
+        capMoving = true;
+      }
+      if (!moved) return;
+      // On the clip's clock, a whole frame at a time, and never over the
+      // caption beside it or past its own other edge.
+      let at = Math.round(inClip(segments, timeAt(e.clientX)) / frame) * frame;
+      const shortest = 0.1;
+      if (edge === "start") {
+        const low = i > 0 ? captions[i - 1].start + shortest : 0;
+        at = Math.min(Math.max(at, low), c.end - shortest);
+      } else {
+        const high = i + 1 < captions.length ? captions[i + 1].start : clipLength;
+        at = Math.min(Math.max(at, c.start + shortest), high);
+      }
+      capDraft = { index: i, edge, at };
+      oncaptiondraft?.(capDraft);
+    };
+    const up = async () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      capMoving = false;
+      const d = capDraft;
+      const word = edge === "start" ? c.first : c.last;
+      if (!moved || !d || word === undefined) {
+        // A click on an edge puts the playhead on it, the way a clip edge
+        // does, which is how a caption is heard from where it appears.
+        capDraft = null;
+        oncaptiondraft?.(null);
+        if (!moved) onseek(inEpisode(segments, edge === "start" ? c.start : Math.min(c.end, clipLength)));
+        return;
+      }
+      capSaving = true;
+      const saved = await oncaptiontime(word, edge, inEpisode(segments, d.at));
+      capSaving = false;
+      if (!saved) {
+        capDraft = null;
+        oncaptiondraft?.(null);
+      }
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
+
+  // A double-click on an edge put there by hand puts it back where its
+  // words put it.
+  function resetCaption(i: number, edge: "start" | "end") {
+    const c = captions?.[i];
+    if (!c || !oncaptiontime || locked) return;
+    const word = edge === "start" ? c.first : c.last;
+    const moved = edge === "start" ? c.startMoved : c.endMoved;
+    if (word === undefined || !moved) return;
+    oncaptiontime(word, edge, -1);
   }
 
   // Where in the episode this is. Without them a swipe leaves you nowhere,
@@ -976,11 +1130,15 @@
         next clip and starts it from the top. Drag
         a clip edge to trim it. The words are in the picture, in the caption box, which is where
         they are read and where they are corrected. A hatched block inside a clip is
-        a stretch it leaves out. Drag either edge of one to change it, double-click one to put it
+        a part it leaves out. Drag either edge of one to change it, double-click one to put it
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
-        and drag across the clip to take out the stretch you drag over, or hold it and double-click
+        and drag across the clip to take out the part you drag over, or hold it and double-click
         to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
-        words instead, which takes the whole pause a cut falls in.
+        words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
+        each from where it appears to where it goes, and the one the video preview is showing is
+        lit. Where one is a little early or late against what you hear, drag its edge: the left
+        side of a gap between two captions is where the one before goes, the right side where the
+        one after appears. A double-click on an edge moved by hand puts it back.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
@@ -1011,12 +1169,17 @@
          a row. -->
     {#if wholeClip}
       <div
-        class="span"
+        class="span frame"
         style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
       ></div>
     {/if}
     {#each drawnPieces as p, i (i)}
-      <div class="piece" style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"></div>
+      <div
+        class="piece"
+        class:first={i === 0}
+        class:last={i === drawnPieces.length - 1}
+        style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"
+      ></div>
     {/each}
     <!-- A cut is drawn over the pieces rather than between them, so a cut
          being dragged wider is seen taking the piece rather than waiting
@@ -1028,8 +1191,8 @@
         class:drawing={!!drawnCut && Math.abs(c.from - drawnCut.from) < 0.001}
         style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
         title={editable
-          ? "A stretch the clip leaves out. Drag an edge to change it, double-click to put it back."
-          : "A stretch the clip leaves out."}
+          ? "A part the clip leaves out. Drag an edge to change it, double-click to put it back."
+          : "A part the clip leaves out."}
       ></div>
     {/each}
     {#if editable && onmovecut}
@@ -1079,6 +1242,79 @@
         aria-valuenow={end}
         onpointerdown={(e) => grab("end", e)}
       ></div>
+    {/if}
+    {#if captionBlocks.length}
+      <!-- The captions across the middle of the track, each a block from
+           where it appears to where it goes. -->
+      <div
+        class="captions"
+        style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
+          'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
+      >
+        {#each captionBlocks as b (b.i)}
+          <!-- A click puts the playhead on the caption's first word, where
+               the video preview shows it spoken. That is where it appears,
+               except for the first caption of a clip, which is on screen
+               from the clip's first frame, before its first word. -->
+          <!-- A block takes no focus. The keys walk the words wherever the
+               focus is, and a block that kept it from a click wore the
+               focus ring the moment a key was pressed, round a caption the
+               video preview had long left. -->
+          <!-- Drawn afresh on every word of the caption shown, which is what
+               starts its pop again. A key on the list would not do it: the
+               list is only looked at again when the captions change. -->
+          {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+            <div
+              class="caption"
+              class:showing={time >= b.from && time < b.to}
+              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
+              role="button"
+              title="Put the playhead where this caption appears"
+              onpointerdown={(e) => e.stopPropagation()}
+              onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
+            ><i></i></div>
+          {/key}
+        {/each}
+      </div>
+      {#if !locked && oncaptiontime}
+        {#each captionBlocks as b (b.i)}
+          <div
+            class="capedge start"
+            class:active={capDraft?.index === b.i && capDraft.edge === "start"}
+            style="left: {x(b.from)}%"
+            role="slider"
+            tabindex="-1"
+            aria-label="When caption {b.i + 1} appears"
+            aria-valuenow={b.c.start}
+            title={b.c.startMoved
+              ? "When this caption appears, put here by hand. Drag to move it, double-click to put it back where its words put it."
+              : "When this caption appears. Drag to move it."}
+            onpointerdown={(e) => grabCaption(b.i, "start", e)}
+            ondblclick={(e) => {
+              e.stopPropagation();
+              resetCaption(b.i, "start");
+            }}
+          ></div>
+          <div
+            class="capedge end"
+            class:active={capDraft?.index === b.i && capDraft.edge === "end"}
+            style="left: {x(b.to)}%"
+            role="slider"
+            tabindex="-1"
+            aria-label="When caption {b.i + 1} goes"
+            aria-valuenow={b.c.end}
+            title={b.c.endMoved
+              ? "When this caption goes, put here by hand. Drag to move it, double-click to put it back where its words put it."
+              : "When this caption goes. Drag to move it."}
+            onpointerdown={(e) => grabCaption(b.i, "end", e)}
+            ondblclick={(e) => {
+              e.stopPropagation();
+              resetCaption(b.i, "end");
+            }}
+          ></div>
+        {/each}
+      {/if}
     {/if}
   </div>
     {#if time >= view.from && time <= view.to}
@@ -1133,7 +1369,7 @@
 
   .track {
     position: relative;
-    /* As tall as the window allows, set by the workspace. */
+    /* As tall as the height of the app allows, set by the workspace. */
     height: var(--wave-h, 112px);
     background: var(--ink-1);
     border: 1px solid var(--line);
@@ -1188,9 +1424,12 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    border-top: 2px solid var(--accent);
-    border-bottom: 2px solid var(--accent);
+    /* Its line and corners are the frame in app.css, the same as the crop
+       in the video preview and the window on the range picker. */
     pointer-events: none;
+    /* Over the time lines, the cuts and the captions, so the clip is one
+       solid frame that nothing on the track crosses. */
+    z-index: 2;
   }
 
   /* What the clip keeps. The wash is the one thing that says which parts
@@ -1203,7 +1442,21 @@
     pointer-events: none;
   }
 
-  /* A stretch the clip leaves out. It is the track's own background and
+  /* The wash at the clip's two ends takes the frame's corners, so none of
+     it shows outside them. */
+  .piece.first {
+    border-radius: var(--frame-radius) 0 0 var(--frame-radius);
+  }
+
+  .piece.last {
+    border-radius: 0 var(--frame-radius) var(--frame-radius) 0;
+  }
+
+  .piece.first.last {
+    border-radius: var(--frame-radius);
+  }
+
+  /* A part the clip leaves out. It is the track's own background and
      nothing else: what is not in the clip looks like everything else that
      is not in the clip, which is the plainest way to say it. It used to
      be hatched, and a hatch over a waveform is a second pattern laid on a
@@ -1269,6 +1522,133 @@
     opacity: 1;
   }
 
+  /* The captions in a band across the middle of the track, where the
+     waveform is at its quietest, with room above and below them. The band
+     is 24 pixels, a block of 16 with 4 above and below it, and it lands on
+     a whole pixel whatever height the track is. */
+  .captions {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: round(down, calc(50% - 12px), 1px);
+    height: 24px;
+    pointer-events: none;
+    /* Over everything else on the track, the clip frame, the time lines
+       and their times and the playhead, the way the captions lie over the
+       picture in the short, so a box that lets the picture through lets
+       the track through here and nothing is drawn across a caption. */
+    z-index: 5;
+  }
+
+  /* A block is the caption in the colours the short burns it in: the box
+     colour, as see-through as the box is in the short, over the waveform
+     the way the box lies over the picture, and a bar in the colour of the
+     words. The colours are the short's and never change with the state,
+     because a dimmed colour is another colour. At rest the bar is a
+     hairline, and under the pointer it grows.
+
+     The caption the video preview is showing wears the highlight colour
+     over its box, the pill over the box the way the short draws it, each
+     as see-through as it is set to be, so it shows two colours, the
+     highlight and the words. It bounces into place with the same pop the
+     pill makes in the video preview.
+
+     A block is drawn a pixel short of its time at each end, so two
+     captions that meet show a gap. */
+  .caption {
+    position: absolute;
+    top: 4px;
+    height: 16px;
+    margin-left: 1px;
+    box-sizing: border-box;
+    padding: 0 6px;
+    display: flex;
+    align-items: center;
+    background: var(--cap-box);
+    border-radius: 3px;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+
+  .caption.showing {
+    z-index: 1;
+    background:
+      linear-gradient(var(--cap-pill), var(--cap-pill)),
+      var(--cap-box);
+    animation: pop 0.22s ease-out;
+  }
+
+  .caption i {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--cap-text);
+    transition: height 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .caption:hover i,
+  .caption.showing i {
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caption i {
+      transition: none;
+    }
+
+    .caption.showing {
+      animation: none;
+    }
+  }
+
+  /* An edge is grabbed on its own side of the gap, so where two captions
+     meet the left side is the one before going and the right side the one
+     after appearing. It stands in the band, as tall as it. */
+  .capedge {
+    position: absolute;
+    top: round(down, calc(50% - 12px), 1px);
+    height: 24px;
+    width: 8px;
+    cursor: ew-resize;
+    z-index: 6;
+  }
+
+  .capedge.end {
+    margin-left: -8px;
+  }
+
+  /* The handle: a white line with a dark edge, which shows on any colour
+     a caption can have. */
+  .capedge::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: var(--text);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+    border-radius: 1px;
+    opacity: 0;
+  }
+
+  .capedge.start::after {
+    left: 1px;
+  }
+
+  .capedge.end::after {
+    right: 1px;
+  }
+
+  /* The handle shows while the pointer is on it and while it is dragged,
+     and goes again when the hand lets go. */
+  .capedge:hover::after,
+  .capedge.active::after {
+    opacity: 1;
+  }
+
   /* The playhead. */
   .at {
     position: absolute;
@@ -1288,6 +1668,8 @@
     z-index: 2;
   }
 
+  /* The frame draws the clip's sides, so the edge only shows itself when
+     it is reached or dragged, wider and brighter. */
   .edge::after {
     content: "";
     position: absolute;
@@ -1295,7 +1677,8 @@
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--accent);
+    background: transparent;
+    border-radius: 2px;
   }
 
   .edge:hover::after,

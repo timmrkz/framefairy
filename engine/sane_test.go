@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// Every event the window is told about is encoded as JSON, and JSON has no
+// Every event the app is told about is encoded as JSON, and JSON has no
 // way to say NaN or infinity. An event carrying one cannot be encoded at
-// all, so the window stops hearing about that job: no progress, and no
+// all, so the app stops hearing about that job: no progress, and no
 // word that it finished either, which leaves the button it was started
 // from saying it is working for ever.
 //
@@ -48,7 +48,7 @@ func TestAnEventTheWindowCannotBeToldAboutIsNeverSent(t *testing.T) {
 			t.Fatalf("%s: %d events", c.what, len(got))
 		}
 		if _, err := json.Marshal(got[0]); err != nil {
-			t.Errorf("%s: the window could not be told: %v", c.what, err)
+			t.Errorf("%s: the app could not be told: %v", c.what, err)
 		}
 	}
 }

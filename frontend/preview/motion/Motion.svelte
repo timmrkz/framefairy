@@ -69,7 +69,7 @@
     ["The beam", "New, Cancel, Pause, Render, Check again, and the pause mark in the clip list head"],
     ["The motes", "wherever the beam is, they are part of it"],
     ["The fill", "in New, in Pause and in Render while their work has a number, and as a track in Activity"],
-    ["The shimmer", "the clips not found yet, the part of the clip timeline the transcript has not reached, the stretch on the range picker while a search runs"],
+    ["The shimmer", "the clips not found yet, the part of the clip timeline the transcript has not reached, the window on the range picker while a search runs"],
     ["The pulse", "the dot beside an episode in the sidebar, the dot on Activity on the rail, and the dot on a running job"],
   ];
 </script>
@@ -105,7 +105,7 @@
       faint wash goes round three times in the same time, so the two are
       never in the same place twice. It never stands still and it never goes
       back, because a light that hesitates on a border reads as broken and
-      one that backs up reads as a stutter: the slowest stretch is still
+      one that backs up reads as a stutter: the slowest part is still
       three fifths of the round's own pace and the quickest is a little over
       one and a half. On a control that is already the app's colour the light
       is white, because the app's colour cannot be seen on itself.
@@ -164,7 +164,7 @@
       can be looked at again. Pick one and it
       becomes the only one, everywhere a place waits: the clips not found
       yet, the part of the clip timeline the transcript has not reached, the
-      stretch on the range picker while a search runs.
+      window on the range picker while a search runs.
     </p>
 
     {#each ways as way (way.key)}
@@ -188,8 +188,8 @@
     <h2>The pulse</h2>
     <p class="muted">
       Work running somewhere else. The dot keeps its size and its place, and a
-      ring widens out of it and fades, so a job running behind the window is
-      seen from the corner of the eye and nothing moves for it.
+      ring widens out of it and fades, so a job running out of sight is seen
+      from the corner of the eye and nothing moves for it.
     </p>
     <div class="row dots">
       <span class="dot busy"></span>

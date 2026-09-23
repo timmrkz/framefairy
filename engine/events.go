@@ -46,6 +46,10 @@ type Event struct {
 	// finishes, which is far more often than it saves what it has, so the
 	// range picker can follow the transcript as it grows.
 	Covered float64 `json:"covered,omitempty"`
+	// Found is how many clips a search has written to its plan so far. The
+	// app reads the list again when it changes, rather than on a timer
+	// that is always a little late.
+	Found int `json:"found,omitempty"`
 	// Duration is how long a finished or failed step took, in seconds.
 	Duration float64 `json:"duration,omitempty"`
 	// Elapsed is the seconds since the log was made.
@@ -67,7 +71,7 @@ func (l *Log) SetSink(fn Sink) {
 // sane makes a number one JSON can carry. A share worked out from a
 // duration nobody could measure is 0/0, and a rate from no elapsed time is
 // an infinity, and either of those in an event is an event that cannot be
-// encoded at all. The window would then stop hearing about that job
+// encoded at all. The app would then stop hearing about that job
 // entirely, progress and finish alike, and the button it was started from
 // would say it is working for ever. Whatever cannot be a number is simply
 // not known.
@@ -79,7 +83,7 @@ func sane(v float64) float64 {
 }
 
 func (l *Log) send(ev Event) {
-	// Every event goes to the window through here, so this is the place
+	// Every event goes to the app through here, so this is the place
 	// that answers for what an event may carry.
 	ev.Fraction = sane(ev.Fraction)
 	ev.Remaining = sane(ev.Remaining)

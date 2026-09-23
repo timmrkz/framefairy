@@ -428,11 +428,11 @@ func Captions(clip Clip, maxChars int) []Caption {
 		if len(out) > 0 && end-start < minCaption {
 			// Too brief to read on its own, so it rides with the one before.
 			prev := out[len(out)-1]
-			out[len(out)-1] = Caption{prev.Start, end, prev.Text + " " + text(g.words),
-				append(prev.Words, g.words...)}
+			out[len(out)-1] = Caption{Start: prev.Start, End: end,
+				Text: prev.Text + " " + text(g.words), Words: append(prev.Words, g.words...)}
 			continue
 		}
-		out = append(out, Caption{start, end, text(g.words), g.words})
+		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words})
 	}
 	// Held a second past the end. Constant frame rate output usually lands a
 	// frame or two beyond the planned length, and a caption that stops
@@ -443,5 +443,130 @@ func Captions(clip Clip, maxChars int) []Caption {
 	if out[0].Start < 0.12 {
 		out[0].Start = 0
 	}
+	return moveCaptions(clip, out)
+}
+
+// The shortest a caption moved by hand may be shown for.
+const shortestMoved = 0.1
+
+// moveCaptions puts the captions moved by hand where they were put. A
+// caption shown earlier or later takes the one before it along where the
+// two met, so nothing is left bare between them that was not bare before.
+// A caption that goes earlier leaves the gap it makes, and one that stays
+// longer stops where the next one begins. Nothing ever overlaps, because
+// the picture shows one caption at a time.
+func moveCaptions(clip Clip, captions []Caption) []Caption {
+	if len(clip.CaptionTimes) == 0 || len(captions) == 0 {
+		return captions
+	}
+	out := append([]Caption(nil), captions...)
+	for i := range out {
+		key, ok := captionAnchor(clip, out[i], false)
+		if !ok {
+			continue
+		}
+		t := clip.CaptionTimes[key]
+		if t.Start == nil {
+			continue
+		}
+		low := 0.0
+		if i > 0 {
+			low = out[i-1].Start + shortestMoved
+		}
+		high := out[i].End - shortestMoved
+		if high < low {
+			continue
+		}
+		start := min(max(ClipTime(clip, *t.Start), low), high)
+		if i > 0 {
+			met := math.Abs(out[i-1].End-out[i].Start) < 0.001
+			if met || out[i-1].End > start {
+				out[i-1].End = start
+			}
+		}
+		out[i].Start = start
+	}
+	for i := range out {
+		key, ok := captionAnchor(clip, out[i], true)
+		if !ok {
+			continue
+		}
+		t := clip.CaptionTimes[key]
+		if t.End == nil {
+			continue
+		}
+		high := math.Inf(1)
+		if i+1 < len(out) {
+			high = out[i+1].Start
+		}
+		out[i].End = min(max(ClipTime(clip, *t.End), out[i].Start+shortestMoved), high)
+	}
 	return out
+}
+
+// captionAnchor is the word a caption begins on, or ends on, as the key its
+// timing is kept under: the millisecond it starts in the episode.
+func captionAnchor(clip Clip, c Caption, last bool) (string, bool) {
+	if len(c.Words) == 0 {
+		return "", false
+	}
+	w := c.Words[0]
+	if last {
+		w = c.Words[len(c.Words)-1]
+	}
+	said, ok := SaidWord(clip, (w.Start+w.End)/2)
+	if !ok {
+		return "", false
+	}
+	return wordKey(said.Start), true
+}
+
+// EpisodeTime is the moment of the episode a moment of a clip shows.
+func EpisodeTime(clip Clip, at float64) float64 {
+	offset := 0.0
+	for _, s := range clip.Segments {
+		if at < offset+s.Duration() {
+			return s.Start + math.Max(at-offset, 0)
+		}
+		offset += s.Duration()
+	}
+	if len(clip.Segments) == 0 {
+		return at
+	}
+	return clip.Segments[len(clip.Segments)-1].End
+}
+
+// ClipTime is the moment of a clip that shows a moment of the episode. A
+// moment the clip cuts out is the moment the clip comes back.
+func ClipTime(clip Clip, at float64) float64 {
+	offset := 0.0
+	for _, s := range clip.Segments {
+		if at < s.Start {
+			return offset
+		}
+		if at <= s.End {
+			return offset + at - s.Start
+		}
+		offset += s.Duration()
+	}
+	return offset
+}
+
+// SaidWord is the word of a clip that is being said at a moment of the
+// clip, as the plan has it, on the episode's clock. A word split into
+// several by a correction is one word here, the one the correction is
+// kept against.
+func SaidWord(clip Clip, at float64) (Cue, bool) {
+	when := EpisodeTime(clip, at)
+	near, off := Cue{}, math.Inf(1)
+	for _, w := range clip.Words {
+		if when >= w.Start && when < w.End {
+			return w, true
+		}
+		away := math.Max(w.Start-when, when-w.End)
+		if away < off {
+			near, off = w, away
+		}
+	}
+	return near, off <= 0.02
 }

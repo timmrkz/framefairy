@@ -286,11 +286,10 @@
       </div>
     </div>
 
-    <!-- The two colours together, because the whole point is that they are
-         two. One is what the app picks things out in, the other is burned
-         into the framefairy, and a taste in one is not a taste in the other.
-         They start out the same, so an app nobody has touched looks of a
-         piece with what it makes. -->
+    <!-- The colour the app picks things out in. The colours burned into a
+         short, the words, their box and the pill behind the word being
+         spoken, are set together in the captions column of the workspace,
+         where the video preview and the clip timeline show them at once. -->
     <div class="panel">
       <h2>Colours</h2>
       <div class="grid">
@@ -303,11 +302,6 @@
             bind:value={settings.appColour}
             aria-label="The app's colour as hex"
           />
-        </div>
-        <label for="colour">The word highlight</label>
-        <div class="row">
-          <input id="colour" type="color" bind:value={settings.highlightColour} />
-          <input type="text" class="hex num" bind:value={settings.highlightColour} aria-label="Highlight colour as hex" />
         </div>
       </div>
     </div>
@@ -364,7 +358,7 @@
 <style>
   /* A setting is a name and a control beside it, which only gets harder to
      read the wider it is. So the page keeps its width and stands in the
-     middle of the window rather than against the left of it. */
+     middle of the app rather than against the left of it. */
   section {
     padding: var(--gap) var(--edge) var(--edge);
     display: flex;
@@ -466,7 +460,7 @@
 
   /* Every field in this column is its own width, no wider than what it
      holds, so the column is a column of fields and not a column of boxes
-     stretched across the window. A list keeps room for the longest thing
+     stretched across the app. A list keeps room for the longest thing
      it can say, so it is that wide and stays that wide. */
   .grid :global(button.pick) {
     width: max-content;

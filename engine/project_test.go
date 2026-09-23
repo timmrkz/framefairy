@@ -30,18 +30,13 @@ func (f fakeRecognizer) Recognize(samples []float32, rate int) []Token {
 
 func (fakeRecognizer) Close() {}
 
-// fakeModel answers like llama-server with one clip made of the first line.
+// fakeModel answers like llama-server with one clip made of the first line,
+// streamed a few characters at a time the way the real one sends it.
 func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(asked, 1)
 		plan := `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`
-		reply := map[string]any{
-			"choices": []any{map[string]any{
-				"message":       map[string]any{"content": plan},
-				"finish_reason": "stop",
-			}},
-		}
-		_ = json.NewEncoder(w).Encode(reply)
+		writeLocalStream(w, plan, 7)
 	}))
 }
 
@@ -94,7 +89,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A stretch is cut from the whole transcript, never transcribed again.
+	// A window is cut from the whole transcript, never transcribed again.
 	heard = 0
 	plan, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 1})
 	if err != nil {
@@ -110,7 +105,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("model asked %d times", asked)
 	}
 
-	// The same stretch again reuses the plan, a new stretch makes its own,
+	// The same window again reuses the plan, a new window makes its own,
 	// even though another plan exists.
 	if _, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 1}); err != nil {
 		t.Fatal(err)

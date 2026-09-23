@@ -54,7 +54,7 @@ func ApplyCorrections(words []Cue, corrections map[string]string) {
 // cue per word. The recogniser heard one word where more than one was said,
 // so the span it measured is shared out by how long the words are. The audio
 // is never read again for this: the highlight only has to run over the words
-// inside the stretch where they were spoken.
+// inside the part where they were spoken.
 func SplitCorrected(words []Cue) []Cue {
 	out := make([]Cue, 0, len(words))
 	for _, word := range words {

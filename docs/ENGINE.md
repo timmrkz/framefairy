@@ -25,7 +25,7 @@ The recogniser's own timings are what gets stored in `words.json`. The
 correction is applied on every load, so improving it never needs a new
 transcription.
 
-Transcribing a stretch that does not start at the beginning, after an
+Transcribing a window that does not start at the beginning, after an
 interrupted run carried on or with `--from`, decodes from the start of the
 file and drops the samples before it, rather than asking ffmpeg to seek. A
 seek into a compressed stream lands on a packet, and what a build does with
@@ -66,7 +66,14 @@ picture. A cut swallows any word it touches and then leaves `--keep-pause`
 of air on each side that stays, which is why a cut dragged over a pause
 takes the whole pause and one dragged over speech takes whole words.
 
-Captions are made of the same words. A caption is a run of up to 38
+Captions are made of the same words. Where their timing is a little off
+from what is heard, a caption is moved by hand: the plan keeps, per clip,
+when the caption that begins on a word appears and when the one that ends
+on a word goes, in `caption_times` keyed by the millisecond that word
+starts in the episode. `moveCaptions` in `engine/lines.go` puts them there
+when captions are built, never over the caption beside them and never
+shorter than a tenth of a second, and a timing kept against a word that no
+longer begins or ends a caption is left unused. A caption is a run of up to 38
 characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next
 caption appears, or until shortly after its last word when a pause follows.
@@ -78,20 +85,20 @@ one word where two were said, so a correction like "Und da" for "Und" turns
 into two words that share the span the recogniser measured, split by how
 long they are. The audio is not read again for this. The recogniser timed
 the sound as a whole, and the highlight only has to run over the words
-inside that stretch, which is exactly how they were spoken. It is the same
+inside that part, which is exactly how they were spoken. It is the same
 rule an edited srt file gets, further down. Corrections stay one entry per
 recognised word, so writing one word again undoes it.
 
-Each search is saved under the stretch it was made over, `clips-<from>-<to>.json`,
+Each search is saved under the window it was made over, `clips-<from>-<to>.json`,
 so passes add up instead of overwriting each other. The model is only ever
-shown the stretch it is asked about and knows nothing of earlier passes, so
+shown the window it is asked about and knows nothing of earlier passes, so
 two passes over the same material would come back with the same moments. The
 app therefore lets a window be drawn only where nobody has looked yet, which
 `SearchedWindows` and `FreeWindows` work out from the plans on disk. A plan
-carries the window it was made over in `planned_with`, and the stretches of
+carries the window it was made over in `planned_with`, and the parts of
 it that were given back again in `planned_with.removed`, so a search is a
 window with holes in it. `RemoveRange` makes a hole: the clips inside the
-stretch go, their caption files are moved aside, and a plan with nothing
+part go, their caption files are moved aside, and a plan with nothing
 left of its window goes altogether.
 
 ## The bouncing word
@@ -107,8 +114,10 @@ line. That costs one extra short ffmpeg pass per clip. The active word is
 drawn on its own layer over the line with that word hidden, which is why its
 neighbours never move.
 
-The colour is set with `--highlight-colour` or with `"highlight_colour"` in
-`caption_style` in `clips.json`, as `#RRGGBB`. `--no-highlight`, or
+The colour is set with `"highlight_colour"` in `caption_style` in
+`clips.json`, as `#RRGGBB`, or as `&HAABBGGRR` when the pill is given an
+opacity, which is how the captions column of the app puts it. A pill that
+lets the picture through is drawn with that alpha. `--highlight-colour` is the colour for a plan that has none. `--no-highlight`, or
 `"highlight": 0` in `caption_style`, gives plain captions.
 
 Captions sit 300 pixels above the bottom of a 1080x1920 frame, which keeps
@@ -187,7 +196,19 @@ shortest longer than the longest or no clips at all.
 ## Framing
 
 Each camera angle in a clip gets one crop, measured across the whole shot and
-held still, so removing a pause never makes the picture jump. The crop
+held still, so removing a pause never makes the picture jump. Framing
+decodes only what a clip keeps. Each kept span is searched for camera
+switches on its own, and where the clip leaves the episode and comes back,
+the frame it leaves on is compared with the frame it comes back to, which
+answers whether it comes back to the same camera without decoding what was
+cut out. The decoding is asked of the system's own video decoder,
+VideoToolbox on macOS, and falls back to the processor by itself where
+there is none, which today is every Windows and Linux build. If the system
+decoder refuses a file, the same work is done again on the processor and
+everything after it goes there too. Which decoder does the work is found
+once per episode file, by decoding one frame the way framing does and
+reading what ffmpeg says, and written to the log as `framing decodes
+video on VideoToolbox` or `on the processor`. The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
@@ -200,6 +221,79 @@ loaded, sends the transcript and stops the server again. The model's context
 is sized to the transcript, about 64,000 tokens for an hour, which keeps
 memory use down. The answer is held to the plan's JSON format while it is
 written, so it always parses.
+
+The answer is read as it is written, from llama-server and from the API
+alike, in `engine/stream.go`. Each clip is taken the moment its closing
+brace arrives, by a scanner that only reads objects directly inside the
+list named `clips`, so a brace in a title or a sentence before the answer is
+read past. What it hands out still goes through every check a whole answer
+does. An API answer that breaks off before a word of it arrived is asked
+for again. One that breaks off after is not, because what arrived has
+already been used.
+
+A search is three kinds of work that no longer wait on each other, in
+`engine/planbuild.go`. The model writes on the graphics side of the
+machine, framing decodes video with ffmpeg on the processor, and writing a
+clip to the plan is a few kilobytes. So each clip is framed by one of
+several framers while the model goes on writing, and written to the plan
+the moment it is framed. There are as many framers as a third of the
+cores, at least two and at most four: framing the last clips after the
+answer took 25 seconds on an M2 Max with two. The first clip is framed on
+its own, because it is the one a person waits for and every clip framed
+beside it takes a share of the cores, the memory and the system decoder
+from it. The others start once it has landed. While a search runs, its
+clock owns the progress line, so what ffmpeg reports while it frames a
+clip does not take the line from it. The first clip makes the plan, in place of whatever
+plan was there for the window, and each after it goes in through
+`editPlan`, so an edit the app makes to a clip that has already landed
+is kept. A clip that lands in a part removed while it was on its way is
+left out, and a plan removed altogether takes no more clips. The plan's
+id is decided before the first clip lands, so a decision about a clip made
+while the search runs is recorded against the plan it was made about.
+Stopping a search keeps what it had written.
+
+How far a search has come is measured, not guessed, in
+`engine/searchclock.go`. A search is five parts one after the other:
+loading the model, the model reading the transcript, the model thinking,
+the model writing its clips, and the framing still going when it stops.
+Every search that finishes keeps how long each part took, per model, in
+`~/.framefairy/speed.json`: the seconds to load, the transcript characters
+read per second, the seconds of thinking and the tokens thought a second,
+the seconds per clip, and the seconds of framing after the answer. Each
+new timing counts half, so one slow search on a busy machine moves the
+next estimate without taking it over. The next search reports its share
+and the time left against those, about twice a second. Inside a part,
+what the model counts beats the clock: llama-server's count of the prompt
+it has read, and the tokens it has thought against its budget. A local
+model this machine has not timed yet is measured against a search timed on
+an M2 Max with Gemma 4, which is close enough to say how far it is and is
+replaced by the first search that finishes. The API has no stand-in, and
+its first search says what it is doing without saying how far it is. A
+search against a server that was already running loaded nothing, and
+leaves the loading time as it was. A record from before the thinking was
+timed on its own measured something else, and is replaced.
+
+**The model is loaded before the search needs it.** Loading takes
+llama-server about 24 seconds. The running server belongs to the
+program rather than to one search, in `engine/modelhost.go`: a search
+that finds the model loaded uses it, and one that finds it loading waits
+for it. The app loads it for the first search of a new episode while the
+transcript is still on its way to the end of the window, and a search
+that is waiting for the transcript loads it while it waits. A model
+loaded ahead waits five minutes for its search. A search lets go of it
+the moment it is done and it stops, because a model left in memory
+between searches that are days apart is memory taken from everything
+else. One model runs at a time, and the app stops it when it closes. The
+server runs one ask at a time (`-np 1`) with the whole context for it.
+
+**The local model thinks on a budget.** Left to itself, Gemma 4 thinks
+about a half hour window for 12,000 tokens or more before it writes a
+word of the answer. On an M2 Max that is four of the five and a half
+minutes a search takes, while loading is 24 seconds and reading the
+transcript 30. So the request carries `reasoning_budget_tokens`, 2,048 by
+default, which is about 45 seconds: when it runs out, llama-server closes
+the thought with a line telling the model to write its answer, and it
+does. `--think` changes it, `-1` is no limit and `0` is no thinking.
 
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when
@@ -225,7 +319,13 @@ Everything else is in `engine/`:
   highlight.go  word timings for captions and the bouncing highlight
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
-  plan.go       building the plan
+  stream.go     answers read as they are written, and each clip taken
+                the moment it is whole
+  plan.go       building the plan: the prompt, the call, the whole answer
+  planbuild.go  clips framed and written as the answer arrives
+  searchclock.go how far a search has come, against how long it took before
+  undo.go       an edit remembered as the files before and after it, and
+                put back clip by clip, so what landed since stays
   analysis.go   camera switches and framing
   faces.go      the built-in face detector
   clips.go      the plan file and crop geometry
@@ -243,7 +343,7 @@ Everything else is in `engine/`:
                 answers for what an event may carry: a share or a time
                 that is not a number becomes Unknown, because JSON
                 cannot say NaN and an event nobody can encode is a job
-                the window stops hearing about altogether
+                the app stops hearing about altogether
   project.go    one episode driven step by step, as the app does it
   episode.go    status, waveform, silences and plan views for the app,
                 and the note that an episode has been searched once

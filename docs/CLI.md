@@ -49,7 +49,9 @@ episode.framefairy/
 │   ├── words.json     the transcript, reused on every later run
 │   ├── clips.json     the plan
 │   ├── proof.txt      what each clip contains, in text
-│   └── ...            prompts, raw replies and token usage
+│   ├── reply-*.json   each answer of the model, reused for the same prompt,
+│   │                  with how long a local model read, thought and wrote
+│   └── ...            prompts, the model's log and token usage
 ├── captions/          per-clip srt and word timings, plus generated ass
 ├── preview/           renders from --preview
 └── out/               the finished clips and nothing else
@@ -115,7 +117,7 @@ fits.
 | `--font "Inter Black"` | Inter Black | caption font: Inter Black, Anton and Archivo Black ship inside the program, any other name has to be installed on the machine |
 | `--font-size 96` | 96 | caption size, in pixels of a 1080x1920 frame |
 | `--margin-v 300` | 300 | caption distance from the bottom edge, same scale |
-| `--highlight-colour "#942192"` | purple | colour of the pill behind the word being spoken |
+| `--highlight-colour "#942192"` | purple | colour of the pill behind the word being spoken, for a plan that was not given one in the app |
 | `--no-highlight` | off | plain captions, without the bouncing word |
 | `--refresh-captions` | off | rebuild per-clip captions, discarding manual corrections |
 
@@ -130,6 +132,7 @@ fits.
 | `--model claude-sonnet-5` | claude-sonnet-5 | the Claude model, with `--planner api` |
 | `--budget 2.00` | $2.00 | with `--planner api`, refuse a request estimated to cost more than this |
 | `--max-tokens 48000` | 48000 | ceiling on the reply length |
+| `--think 2048` | 2048 | with `--planner local`, how many tokens the model may think before it answers. `-1` is no limit, `0` is no thinking |
 | `--prefill` | off | with `--planner api`, start the reply with an opening brace |
 
 **Tools and output**
@@ -155,7 +158,7 @@ and a unique beginning of an option name is enough.
 
 ## Working a long episode in passes
 
-`--from` and `--to` restrict a run to one stretch:
+`--from` and `--to` restrict a run to one window:
 
 ```
 framefairy episode.mp4 --from 0       --to 1:00:00

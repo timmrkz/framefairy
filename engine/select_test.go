@@ -121,7 +121,7 @@ func TestValidatePlanRefusesRangesThatAreNotLines(t *testing.T) {
 	}
 	// A range that overlaps the one before it, or goes backwards in the
 	// transcript, is dropped and what is left still runs forwards. Keeping
-	// both would play a stretch twice.
+	// both would play a part twice.
 	for _, keep := range []string{"[[1, 4], [3, 6]]", "[[5, 6], [1, 2]]"} {
 		good, problems, err := ValidatePlan(planWith(keep), 10)
 		if err != nil || len(good) != 1 || len(problems) != 1 {

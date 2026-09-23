@@ -133,6 +133,9 @@ func specs() []flagSpec {
 			"a limit, not a charge. Current models think before they answer and those tokens come " +
 			"out of the same ceiling, so it needs headroom (default 48000)",
 			intValue("--max-tokens", func(o *engine.Options, v int) { o.MaxTokens = v })},
+		{[]string{"--think"}, kInt, "TOKENS", "how long the local model may think before it " +
+			"answers, in tokens. -1 is no limit, 0 is no thinking (default 2048)",
+			intValue("--think", func(o *engine.Options, v int) { o.Think = v })},
 		{[]string{"--ffmpeg"}, kString, "FFMPEG", "path to an ffmpeg built with libass, if the one on " +
 			"PATH is not",
 			func(o *engine.Options, v string) error { o.FFmpeg = v; return nil }},

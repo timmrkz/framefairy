@@ -135,8 +135,8 @@ func TestSilencesAndPeaks(t *testing.T) {
 
 // Loudness is read every hundredth of a second and no finer, so asking for
 // more parts than that gives parts that share a reading. Five buckets
-// inside one reading are five copies of it, and a window drawing a line
-// between its buckets cannot tell that from five readings that agree: the
+// inside one reading are five copies of it, and the app, drawing a line
+// between its buckets, cannot tell that from five readings that agree: the
 // line comes out flat where the sound was rising, which is what made the
 // clip timeline look like a display with too few pixels. The answer says
 // how fine the measurement was by being that long.

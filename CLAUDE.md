@@ -115,8 +115,11 @@ messages, pull request text, code comments and chat replies.
 - Plain, direct language. Short sentences.
 - **One name per thing.** The area the episode plays in is the **video
   preview**, never the picture or the player. The slim strip under it, the
-  whole episode at a glance, is the **range picker**. The waveform below
-  the workspace, the episode up close, is the **clip timeline**. The key is
+  whole episode at a glance, is the **range picker**, and the part of the
+  episode chosen on it is the **window**, never a stretch. In the
+  interface and in the code comments, where the app's own window is meant,
+  it is the app. The waveform below the workspace, the episode up close,
+  is the **clip timeline**. The key is
   the **space bar**. Taking something away is **remove**, everywhere, in
   every button and every message. Whatever a thing is called in the
   interface, it is called that in the docs and in the code comments too.
@@ -162,7 +165,7 @@ messages, pull request text, code comments and chat replies.
   pointer. Something undoable never asks first, it shows what it did.
 - **What the app can do by itself, it does.** Adding a video is enough: the
   transcription starts, and the first search follows as soon as the
-  transcript covers the chosen stretch. A state every episode passes
+  transcript covers the window. A state every episode passes
   through, like having no transcript yet, is never reported as a failure.
 - **One space between two things.** Every gap in the workspace is `--gap`
   from `frontend/src/app.css`: between the columns, between the video
@@ -221,7 +224,15 @@ messages, pull request text, code comments and chat replies.
   shimmer over a place waiting to be filled, and the pulse on a dot for work
   running somewhere else. They are in `Busy.svelte` and `app.css`. A new
   kind of loading is not a new animation, it is one of these five in a new
-  place.
+  place. Work that is paused keeps its fill and stops moving, it does not
+  disappear. **An animation used in two places is one component, used, never
+  copied**: a copy made to look alike drifts the day either is changed,
+  and then the two do not look the same. A change to how work looks is
+  made once and is true everywhere.
+- **One frame for what is chosen.** The crop in the video preview, the
+  window on the range picker and the clip on the clip timeline are one
+  thing in three places, drawn by `.frame` in `app.css` with the same
+  line, corners and colour, and lit the same way under the hand.
 - **One list to pick from.** Every list a person picks from in the app is
   `Pick.svelte`, and there is no `<select>` anywhere. A `<select>` is drawn
   by the system: on macOS the webview hands the whole list to AppKit, which

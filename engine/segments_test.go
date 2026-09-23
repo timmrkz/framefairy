@@ -8,7 +8,7 @@ import (
 )
 
 // What makes a clip good is what is inside it and what is not. These tests
-// work on the step that turns the model's line ranges into stretches of the
+// work on the step that turns the model's line ranges into parts of the
 // episode, and on the captions made from them.
 
 func lineOf(words ...Cue) Line { return Line{Cues: words} }

@@ -122,6 +122,13 @@ export interface CaptionCue {
   start: number;
   end: number;
   lines: CaptionLine[];
+  // When the word the caption begins on and the word it ends on start in
+  // the episode. A caption moved by hand is kept against these.
+  first?: number;
+  last?: number;
+  // The caption appears, or goes, where it was put by hand.
+  startMoved?: boolean;
+  endMoved?: boolean;
 }
 
 // The caption look, with every measure as a share of the frame height.
@@ -150,7 +157,7 @@ export interface CaptionsView {
   style: CaptionStyle;
 }
 
-// A stretch of an episode, in seconds. A searched stretch also says which
+// A part of an episode, in seconds. A searched part also says which
 // plans cover it and how many clips they hold, so it can be let go of.
 export interface WindowView {
   from: number;
@@ -196,6 +203,8 @@ export interface EngineEvent {
   // The second of the episode the work has reached, where that means
   // anything. A transcription sets it on every chunk it hears.
   covered?: number;
+  // How many clips a search has written to its plan so far.
+  found?: number;
   duration?: number;
   elapsed: number;
   time: string;
@@ -310,15 +319,15 @@ export interface SetupState {
   // is a default rather than a decision.
   chosen: boolean;
   ready: boolean;
-  // The job of a model install in hand, so a window opened again while one
-  // runs picks it up rather than starting a second.
+  // The job of a model install in hand, so the app, opened again while one
+  // runs, picks it up rather than starting a second.
   installing?: string;
 }
 
 export const api = {
   version: () => call<string>("Version"),
   platform: () => call<string>("Platform"),
-  // Where macOS put the window's own furniture, in whole CSS pixels, or
+  // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
   chrome: () => call<Chrome>("Chrome"),
   // The clip of an episode that was last worked on, so opening it again
@@ -345,12 +354,15 @@ export const api = {
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
   addEpisodes: () => call<string[] | null>("AddEpisodes"),
+  // Loads the local model for the first search of an episode while the
+  // transcript is still on its way. Nothing comes back and nothing waits.
+  warmModel: (path: string, from: number, to: number) => call<void>("WarmModel", path, from, to),
   removeEpisode: (path: string, deleteWork: boolean) =>
     call<void>("RemoveEpisode", path, deleteWork),
   source: (path: string) => call<SourceView>("Source", path),
   clips: (path: string) => call<ClipEntry[]>("Clips", path),
   coverage: (path: string, least: number) => call<CoverageView>("Coverage", path, least),
-  // Gives a stretch of an episode back: the clips in it go and the model
+  // Gives a part of an episode back: the clips in it go and the model
   // may read it again. It answers with how many clips went.
   removeSearch: (path: string, from: number, to: number) =>
     call<number>("RemoveSearch", path, from, to),
@@ -366,7 +378,7 @@ export const api = {
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
   trimClip: (path: string, plan: string, clip: string, start: number, end: number) =>
     call<ClipEntry>("TrimClip", path, plan, clip, start, end),
-  // The cuts inside a clip: the stretches it leaves out. Making one, moving
+  // The cuts inside a clip: the parts it leaves out. Making one, moving
   // one and putting one back. The edges land on words, so what comes back
   // is what to draw, never what was asked for.
   // toWords puts the edges on the words around them, which is what nearly
@@ -387,6 +399,18 @@ export const api = {
   ) => call<ClipEntry>("MoveCut", path, plan, clip, index, from, to, toWords),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
+  // When a caption appears or goes, where the words are a little off from
+  // what is heard. word is the word it begins or ends on and at the moment,
+  // both in the episode. A moment below nought puts it back where its
+  // words put it.
+  setCaptionTime: (
+    path: string,
+    plan: string,
+    clip: string,
+    word: number,
+    edge: "start" | "end",
+    at: number,
+  ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),
   removeClip: (path: string, plan: string, clip: string, removed: boolean) =>
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),
@@ -396,10 +420,38 @@ export const api = {
     call<ClipEntry>("ResetCrop", path, plan, clip, at),
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>
     call<void>("SetCaptionStyle", path, plan, font, size),
+  // The colour of the caption text and of the box behind it, as #rrggbb,
+  // each with how opaque it is from 0 to 1, and the colour of the pill
+  // behind the word being spoken. An empty colour is left alone.
+  setCaptionColours: (
+    path: string,
+    plan: string,
+    text: string,
+    textOpacity: number,
+    box: string,
+    boxOpacity: number,
+    highlight: string,
+    highlightOpacity: number,
+  ) =>
+    call<void>(
+      "SetCaptionColours",
+      path,
+      plan,
+      text,
+      textOpacity,
+      box,
+      boxOpacity,
+      highlight,
+      highlightOpacity,
+    ),
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview saves it, so the next video starts there too.
   setCaptionsHeight: (path: string, y: number) => call<void>("SetCaptionsHeight", path, y),
   resetCaptionsHeight: (path: string) => call<void>("ResetCaptionsHeight", path),
+  // Take back the last thing done to an episode's clips, or do again what
+  // was taken back. The answer names the clip it changed.
+  undo: (path: string) => call<Undone>("Undo", path),
+  redo: (path: string) => call<Undone>("Redo", path),
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
   clearJobs: () => call<void>("ClearJobs"),
@@ -416,25 +468,37 @@ export function onJob(fn: (u: JobUpdate) => void): () => void {
   return Events.On("job", (ev) => fn(ev.data as JobUpdate));
 }
 
-// Where macOS put the window's own furniture, in whole CSS pixels. All
+// Where macOS put the title bar and its buttons, in whole CSS pixels. All
 // zeros means the system draws its own title bar, which is every other
 // system, and then the stylesheet keeps its own numbers.
 export interface Chrome {
   // The title bar's height, which is the height of the bar the app draws.
   bar: number;
-  // The left edge of the first window button and the right edge of the
+  // The left edge of the first of those buttons and the right edge of the
   // last, so the name of what is on screen starts after them.
   left: number;
   right: number;
-  // The middle of the window buttons, from the top of the page.
+  // The middle of those buttons, from the top of the page.
   middle: number;
 }
 
-// The window is told again whenever the answer changes: a resize, either
+// The app is told again whenever the answer changes: a resize, either
 // way through fullscreen, another display, another scale, light or dark,
 // or back from the Dock.
 export function onChrome(fn: (c: Chrome) => void): () => void {
   return Events.On("chrome", (ev) => fn(ev.data as Chrome));
+}
+
+export interface Undone {
+  done: boolean;
+  // The key of the clip it changed, as the clip list has it.
+  clip?: string;
+}
+
+// Undo and Redo in the Edit menu. The menu has the keys, so this is how
+// they reach the app.
+export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
+  return Events.On("undo", (ev) => fn(ev.data as "undo" | "redo"));
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
@@ -517,6 +581,15 @@ export function errorText(err: unknown): string {
 // values as DefaultStyle in the engine, so putting them back here and
 // rendering with no settings at all come to the same picture.
 export const captionFontDefault = "Inter Black";
+// The colours the captions start out in: white text on a black box that
+// lets half the picture through, as the engine's own style has them.
+export const captionTextDefault = "#ffffff";
+export const captionTextOpacityDefault = 100;
+export const captionBoxDefault = "#000000";
+export const captionOpacityDefault = 50;
+// The pill behind the word being spoken, as the engine's own style has it.
+export const captionHighlightDefault = "#942192";
+export const captionHighlightOpacityDefault = 100;
 export const captionSizeDefault = 96;
 export const captionYDefault = 300;
 export const captionYStep = 40;
@@ -569,7 +642,7 @@ export function snapEnd(words: Word[], at: number, keepPause: number): number {
 // works that width out from a fixed number of pixels at whatever zoom it
 // is on. A cut nobody can see is a cut nobody can change. Below the least
 // a cut may be it is held open at that, so a timeline zoomed in far enough
-// that those pixels are worth less than the least still takes a stretch
+// that those pixels are worth less than the least still takes a part
 // out rather than doing nothing.
 //
 // And it stays inside the piece it falls in, with room left on both sides,

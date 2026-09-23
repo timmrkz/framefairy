@@ -44,7 +44,7 @@ something fails.
 **The models are not make's business.** The app fetches the speech model and
 the language model itself, on first run, which is what a customer does and
 so is what this machine should do too. `make models` is still there for the
-command line, which has no window to ask in.
+command line, which has nowhere to ask.
 
 **A build runner never installs anything.** `CI` in the environment turns
 step 1 and step 2 off, so what CI builds is what its own workflow asked for
@@ -90,13 +90,13 @@ speech model it fetches itself, and it asks once how clips should be found.
 `make test` runs every Go test under the race detector, type checks the
 interface and runs the interface's own tests with vitest,
 `frontend/src/**/*.test.ts`. The app is a queue of jobs on their own
-goroutines and a window asking them things from another, so the tests of
+goroutines and an interface asking them things from another, so the tests of
 anything asynchronous use it from several goroutines at once and let
 `-race` judge. The fuzzing runs without the detector: it is the same code,
 many more times over. Those cover
 the rules the app follows by itself, in `frontend/src/lib/flow.ts`: that a
 new episode transcribes itself and that the first clips are found as soon as
-the transcript covers the chosen stretch. Both have broken before, so they
+the transcript covers the chosen window. Both have broken before, so they
 are written as plain functions with tests beside them. It all needs no
 model, no network and no API key. Speech comes from a fake recogniser and
 planning from a fake llama-server, both in `engine/project_test.go`. The
@@ -105,7 +105,7 @@ suite still passes on a machine without it.
 
 The parts that read what a model, a plan file or a caption file contains
 also have fuzz targets, named `Fuzz...` next to the ordinary tests. `make
-test` fuzzes every one of the 15 of them, because a fuzz target that only
+test` fuzzes every one of the 16 of them, because a fuzz target that only
 ever sees its seeds is not fuzzing.
 
 The work is a number of executions, `FUZZTIME`, 10000 per target, and not a

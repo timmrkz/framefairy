@@ -3,6 +3,7 @@
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
 
+  import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
 
   let {
@@ -10,6 +11,7 @@
     selected,
     removed = "",
     coming = 0,
+    next = null,
     onselect,
     onremove,
     onputback,
@@ -21,6 +23,11 @@
     // many rows wait in place, so the list is already the shape it is
     // about to be, and the info mark at the head says what is going on.
     coming?: number;
+    // What the first of those rows is waiting on, while it waits: what is
+    // being done, how long is left, and how far it has come, -1 when that
+    // is not known. That row wears the work running, because it is where
+    // the next clip will appear.
+    next?: { what: string; left: string; fraction: number } | null;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -32,9 +39,9 @@
     onputback?: () => void;
   } = $props();
 
-  // A search hands in all its clips at once, so in practice this is either
-  // all of them or none. Counting what is there anyway means a list that
-  // is partly filled never shows more rows than the search will hold.
+  // A search writes each clip the moment it is found, so the list fills in
+  // one row at a time and the rows still to come shrink as it does. What
+  // is handed in already counts the clips that are there.
   const ghosts = $derived.by(() => {
     const n = Math.max(0, coming - clips.length);
     return Array.from({ length: n }, (_, i) => i);
@@ -86,7 +93,15 @@
        twelve is what a search is asked for, so a full list covers the
        round exactly once. -->
   {#each ghosts as row (row)}
-    <li class="ghost waiting" style="--wait-in: {row * 800}ms"></li>
+    {#if row === 0 && next}
+      <li class="ghost next" aria-live="polite">
+        <Busy fraction={next.fraction} />
+        <span class="title">{next.what}</span>
+        <span class="meta muted num">{next.left}</span>
+      </li>
+    {:else}
+      <li class="ghost waiting" style="--wait-in: {row * 800}ms"></li>
+    {/if}
   {/each}
 </ol>
 
@@ -240,5 +255,28 @@
   .ghost {
     height: 56px;
     background: var(--ink-2);
+  }
+
+  /* A row still to come answers the pointer the way a clip's row does,
+     a step brighter, because it is already a row of the list. The shimmer
+     is the row's own breath and goes on under it, so the two are seen
+     together. */
+  .ghost:hover {
+    background: var(--ink-3);
+  }
+
+  .next:hover {
+    background: var(--ink-2);
+  }
+
+  /* The row the next clip will appear in, saying what it is waiting on,
+     laid out as a clip's row is, a line of what and a line of how long. */
+  .next {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 0 10px;
+    background: var(--ink-1);
   }
 </style>

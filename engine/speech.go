@@ -23,7 +23,7 @@ import (
 //
 // There is one model today and the list is written for more, because the
 // moment there are two the question becomes a choice somebody has to make
-// and the window has to ask it. One is not a choice, so the window says
+// and the app has to ask it. One is not a choice, so the app says
 // what it is about to do rather than asking.
 
 // SpeechModel is one recogniser that can be installed.
@@ -31,7 +31,7 @@ type SpeechModel struct {
 	// Name is the folder it unpacks to, under the models folder, and the
 	// name the engine knows it by.
 	Name string `json:"name"`
-	// Title is what it is called in the window.
+	// Title is what it is called in the app.
 	Title string `json:"title"`
 	// About is one line saying what it is for.
 	About string `json:"about"`
@@ -49,7 +49,7 @@ type SpeechModel struct {
 	// SHA256 of the archive. What arrives over a network is untrusted, and
 	// a model that is not what it claims to be is not unpacked.
 	SHA256 string `json:"-"`
-	// Recommended marks the one the window offers when nobody has chosen.
+	// Recommended marks the one the app offers when nobody has chosen.
 	Recommended bool `json:"recommended"`
 }
 
@@ -141,7 +141,7 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 		}
 
 		// Unpacking has no share to report, so it says what it is doing
-		// and the window shows work in hand without a number, which it
+		// and the app shows work in hand without a number, which it
 		// already knows how to do.
 		// What is happening, and not what it is happening to: the job
 		// carries the model's title, so saying it here as well would put
@@ -283,7 +283,7 @@ func hashInto(sum io.Writer, path string, n int64) error {
 
 // copyWithProgress is io.Copy that says how far it has got, about once a
 // second. More often than that is a job event a second for no reason, and
-// the window redraws for every one of them.
+// the app redraws for every one of them.
 //
 // done starts at what was already there, so a download carrying on shows
 // how far the file has come rather than how far this attempt has.

@@ -3,11 +3,13 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -155,6 +157,12 @@ func lockPlan(path string) func() {
 
 func editPlan(path string, change func(top *object, clips []*object) error) error {
 	defer lockPlan(path)()
+	return editPlanLocked(path, change)
+}
+
+// editPlanLocked is editPlan for a caller that already holds the plan's
+// lock.
+func editPlanLocked(path string, change func(top *object, clips []*object) error) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -193,11 +201,11 @@ func editPlan(path string, change func(top *object, clips []*object) error) erro
 }
 
 // writePlanFile puts a whole new plan where a plan goes. A search that has
-// just finished uses it, and so does a search over a stretch that was
+// just finished uses it, and so does a search over a window that was
 // searched before, which lands on a file that is already there.
 //
 // It takes the same lock every edit takes, because the file has two
-// writers: the search that makes a plan and the window that edits one.
+// writers: the search that makes a plan and the app that edits one.
 // Without the lock a search can land in the middle of an edit reading the
 // file, changing it and writing it back.
 func writePlanFile(path string, body []byte) error {
@@ -211,10 +219,10 @@ func writePlanFile(path string, body []byte) error {
 // replacePlan puts new contents in a plan file in one step. The caller
 // holds the lock for that plan.
 //
-// Writing over the file itself would be wrong twice. The window reads the
+// Writing over the file itself would be wrong twice. The app reads the
 // clips and the coverage about once a second while a search runs, and it
 // would read a plan that is half there: the clip list empties itself, and
-// the range picker reports a stretch it has already searched as free and
+// the range picker reports a part it has already searched as free and
 // offers it to the model a second time. And a write that goes wrong part
 // of the way through would have taken the plan that was there with it.
 //
@@ -241,6 +249,69 @@ func replacePlan(path string, body []byte) error {
 		return err
 	}
 	return os.Rename(name, path)
+}
+
+// errNotAdded is a clip that was not added because the plan no longer has
+// room for it: the part it lies in was given back while it was on its
+// way.
+var errNotAdded = errors.New("the part this clip lies in was removed")
+
+// appendClip adds a clip to a plan that a search is still writing. It goes
+// through editPlan, so an edit the app makes at the same moment is kept,
+// and so is the plan's shape.
+//
+// Removing part of a search while it runs leaves a hole in the plan, and a
+// clip that arrives afterwards inside that hole is not added, because it
+// would bring back what was just taken away. A plan that is gone
+// altogether is reported as the missing file it is.
+func appendClip(path string, clip PlanClip) error {
+	body, err := MarshalPlan(clip)
+	if err != nil {
+		return err
+	}
+	value, err := decodeOrdered(body)
+	if err != nil {
+		return err
+	}
+	added, ok := value.(*object)
+	if !ok {
+		return renderErr("a clip must be a JSON object")
+	}
+	start, end := 0.0, 0.0
+	if len(clip.Segments) > 0 {
+		start, end = float64(clip.Segments[0].Start), float64(clip.Segments[len(clip.Segments)-1].End)
+	}
+	refused := false
+	err = editPlan(path, func(top *object, clips []*object) error {
+		if made, ok := top.values["planned_with"].(*object); ok {
+			for _, hole := range orderedWindows(made.values["removed"]) {
+				if end > hole.Start && start < hole.End {
+					refused = true
+					return errNotAdded
+				}
+			}
+		}
+		for i, c := range clips {
+			fallback := twoDigits(i + 1)
+			text := fallback
+			if raw, ok := c.get("id"); ok {
+				text = pyStr(raw)
+			}
+			if SanitiseName(text, fallback) == clip.ID {
+				// Already there, which a search that was asked again
+				// for the same answer would otherwise write twice.
+				refused = true
+				return errNotAdded
+			}
+		}
+		list, _ := top.values["clips"].([]any)
+		top.set("clips", append(list, added))
+		return nil
+	})
+	if refused {
+		return errNotAdded
+	}
+	return err
 }
 
 func findClip(clips []*object, id string) (*object, error) {
@@ -379,7 +450,7 @@ func TrimClip(planPath, clipID string, start, end float64, t *Transcript, keepPa
 		}
 		if first == nil {
 			// The new edges hold none of the old pieces, so the whole
-			// stretch becomes one piece with the framing of the nearest one.
+			// part becomes one piece with the framing of the nearest one.
 			var nearest *object
 			for _, item := range list {
 				if seg, ok := item.(*object); ok {
@@ -477,19 +548,19 @@ func segmentObjects(c *object) []*object {
 	return pieces
 }
 
-// MinCut is the shortest stretch worth taking out of a clip.
+// MinCut is the shortest part worth taking out of a clip.
 const MinCut = 0.05
 
 // MinClip is the least a clip may be left holding.
 const MinClip = 1.0
 
-// Cut is one stretch a clip leaves out, the gap between two pieces.
+// Cut is one part a clip leaves out, the gap between two pieces.
 type Cut struct {
 	From float64
 	To   float64
 }
 
-// ClipCuts are the stretches a clip leaves out, in order. They are the gaps
+// ClipCuts are the parts a clip leaves out, in order. They are the gaps
 // between its pieces, so a clip in one piece has none.
 func ClipCuts(c Clip) []Cut {
 	var cuts []Cut
@@ -612,7 +683,7 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
 }
 
-// CutClip takes a stretch out of the middle of a clip. A piece the cut lands
+// CutClip takes a part out of the middle of a clip. A piece the cut lands
 // inside becomes two, and both keep the framing of the piece they came from,
 // so cutting never moves the picture. A piece the cut swallows whole goes.
 // With ToWords the edges move onto the words around them, with ToFrames they
@@ -636,7 +707,7 @@ func CutClip(planPath, clipID string, from, to float64, t *Transcript,
 	})
 }
 
-// applyCut takes a stretch out of a set of pieces. A piece the cut straddles
+// applyCut takes a part out of a set of pieces. A piece the cut straddles
 // is split, and the half that is kept on each side is a copy of the whole,
 // so the framing and the automatic framing behind it travel with both.
 func applyCut(pieces []*object, from, to float64) []*object {
@@ -664,7 +735,7 @@ func applyCut(pieces []*object, from, to float64) []*object {
 	return out
 }
 
-// JoinCut puts back the stretch a clip leaves out at a moment, so the two
+// JoinCut puts back the part a clip leaves out at a moment, so the two
 // pieces around it become one. The framing of the piece before the cut is
 // the one the joined piece keeps, because that is the shot it opens on.
 func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
@@ -777,6 +848,21 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 				return renderErr("%s is not a caption size between 8 and 400",
 					Scrub(pyStr(value), 40))
 			}
+		case "highlight_colour":
+			// The pill behind the word being spoken, as #RRGGBB, or as
+			// &HAABBGGRR when it is given an opacity.
+			text, ok := value.(string)
+			hex := ok && len(text) == 7 && strings.HasPrefix(text, "#") && isHex(text[1:])
+			if !hex && (!ok || !isAssColour(text)) {
+				return renderErr("%s is not a highlight colour", Scrub(pyStr(value), 40))
+			}
+		case "primary", "back_colour":
+			// The colour of the text and of the box behind it, written the
+			// way the render takes them, &HAABBGGRR.
+			text, ok := value.(string)
+			if !ok || !isAssColour(text) {
+				return renderErr("%s is not a caption colour", Scrub(pyStr(value), 40))
+			}
 		default:
 			return renderErr("the caption setting %s cannot be changed here", Scrub(key, 40))
 		}
@@ -810,6 +896,74 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 		c.set("caption_y", SnapCaptionY(y))
 		return nil
 	})
+}
+
+// SetCaptionTime moves the caption that begins or ends on a word of a clip,
+// where the timing of the words is a little off from what is heard. word
+// is when that word starts in the episode, edge is "start" or "end", and at
+// is when the caption should appear or go, also in the episode. A time that
+// is not a number puts the caption back where its words put it.
+//
+// It is kept against the word rather than the caption, because captions
+// break in other places when the face or the size changes, and a word stays
+// what it is.
+func SetCaptionTime(planPath, clipID string, word float64, edge string, at float64) error {
+	if edge != "start" && edge != "end" {
+		return renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
+	}
+	reset := math.IsNaN(at)
+	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
+		return renderErr("a caption cannot be moved to %s", fixed(at, 3))
+	}
+	key := wordKey(word)
+	err := editPlan(planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		// Only a word of this clip. A caption is made of its words and of
+		// nothing else.
+		found := false
+		list, _ := c.values["words"].([]any)
+		for _, item := range list {
+			if triple, ok := item.([]any); ok && len(triple) == 3 && wordKey(number(triple[0])) == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return renderErr("the clip has no word at %s", HMS(word))
+		}
+		times, _ := c.values["caption_times"].(*object)
+		if times == nil {
+			times = newObject()
+		}
+		edges, _ := times.values[key].(*object)
+		if edges == nil {
+			edges = newObject()
+		}
+		if reset {
+			edges.remove(edge)
+		} else {
+			edges.set(edge, roundTo(at, 3))
+		}
+		if len(edges.keys) == 0 {
+			times.remove(key)
+		} else {
+			times.set(key, edges)
+		}
+		if len(times.keys) == 0 {
+			c.remove("caption_times")
+		} else {
+			c.set("caption_times", times)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	dropCaptionFile(planPath, clipID)
+	return nil
 }
 
 // ResetCaptionY puts the captions of a clip back where the caption style
@@ -879,7 +1033,7 @@ func IsPlanFile(path string) bool {
 var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
-// with it the clips it held. The stretch it covered is free to be searched
+// with it the clips it held. The part it covered is free to be searched
 // again afterwards.
 //
 // The caption files of its clips are moved aside rather than deleted,
@@ -936,7 +1090,7 @@ func setCaptionsAside(captionsDir string, clips []Clip) error {
 	return nil
 }
 
-// ClipSpan is the stretch of the episode a clip was cut from, from the
+// ClipSpan is the part of the episode a clip was cut from, from the
 // start of its first piece to the end of its last.
 func ClipSpan(c Clip) (float64, float64) {
 	if len(c.Segments) == 0 {
@@ -945,8 +1099,8 @@ func ClipSpan(c Clip) (float64, float64) {
 	return c.Segments[0].Start, c.Segments[len(c.Segments)-1].End
 }
 
-// RemoveRange gives a stretch of a plan's window back. The clips that lie
-// in the stretch go with it, and the plan notes the stretch as one the
+// RemoveRange gives a part of a plan's window back. The clips that lie
+// in the part go with it, and the plan notes the part as one the
 // model may read again, so the range picker shows it as free. A plan whose
 // whole window is given back goes altogether.
 //
@@ -1024,7 +1178,7 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 	return len(going), nil
 }
 
-// orderedWindows reads stretches out of a plan being edited, where objects
+// orderedWindows reads windows out of a plan being edited, where objects
 // keep their key order. It is readWindows for that tree.
 func orderedWindows(raw any) []Window {
 	list, ok := raw.([]any)
@@ -1047,7 +1201,7 @@ func orderedWindows(raw any) []Window {
 	return MergeWindows(out)
 }
 
-// planWindow is the stretch a plan was made over. A plan without one was
+// planWindow is the window a plan was made over. A plan without one was
 // made over the whole episode.
 func planWindow(plan Plan, duration float64) Window {
 	made := plan.PlannedWith()

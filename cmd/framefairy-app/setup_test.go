@@ -90,13 +90,13 @@ func TestANewCopyOfTheAppKnowsWhatItStillNeeds(t *testing.T) {
 			t.Error("said it was ready to make a short with nothing installed")
 		}
 		if len(state.Speech) == 0 {
-			t.Fatal("offered no speech model, so the window has nothing to show")
+			t.Fatal("offered no speech model, so the interface has nothing to show")
 		}
-		// The window shows these before asking anybody to agree to a
+		// The interface shows these before asking anybody to agree to a
 		// download, so they have to survive the trip.
 		first := state.Speech[0]
 		if first.Title == "" || first.Download <= 0 {
-			t.Errorf("a model the window cannot describe: %+v", first)
+			t.Errorf("a model the interface cannot describe: %+v", first)
 		}
 	})
 
@@ -233,8 +233,8 @@ func TestInstallingTheSpeechModelIsAJobLikeAnyOther(t *testing.T) {
 		}
 	})
 
-	// The window can be asked twice by being opened twice, and two installs
-	// of one model would write over each other's unpacking folder.
+	// The interface can be asked twice by being opened twice, and two
+	// installs of one model would write over each other's unpacking folder.
 	t.Run("two asks at once are one install", func(t *testing.T) {
 		s := emptyMachine(t)
 		var wg sync.WaitGroup
@@ -275,14 +275,14 @@ func TestTheKeyNeverLandsInTheSettingsFile(t *testing.T) {
 	if strings.Contains(string(body), secret) {
 		t.Errorf("the key is in %s", filepath.Join(s.store.dir, "settings.json"))
 	}
-	// And the state the window reads never carries it either.
+	// And the state the interface reads never carries it either.
 	state := s.Setup(context.Background())
 	if strings.Contains(state.Planner, secret) {
 		t.Error("the key came back in the setup state")
 	}
 }
 
-// The window hands the whole settings object back on every save, and it
+// The interface hands the whole settings object back on every save, and it
 // does not know about Chosen. Without care that turns every colour change
 // into another round of the setup screen.
 func TestSavingSettingsKeepsTheAnswer(t *testing.T) {
@@ -290,7 +290,7 @@ func TestSavingSettingsKeepsTheAnswer(t *testing.T) {
 	if err := s.ChoosePlanner("api"); err != nil {
 		t.Fatal(err)
 	}
-	// What a window that has never heard of Chosen would send.
+	// What an interface that has never heard of Chosen would send.
 	set := s.store.Settings()
 	set.Chosen = false
 	set.AppColour = "#112233"
@@ -324,11 +324,11 @@ func TestTheWindowIsToldWhatThisMachineCanHold(t *testing.T) {
 		s := emptyMachine(t)
 		state := s.Setup(context.Background())
 		if len(state.Language) == 0 {
-			t.Fatal("offered no language model, so the window has nothing to show")
+			t.Fatal("offered no language model, so the interface has nothing to show")
 		}
 		for _, m := range state.Language {
 			if m.Title == "" || m.Maker == "" || m.Download <= 0 || m.Needs <= 0 {
-				t.Errorf("a model the window cannot describe: %+v", m)
+				t.Errorf("a model the interface cannot describe: %+v", m)
 			}
 			switch m.Fit {
 			case "fits", "tight", "too big", "unknown":

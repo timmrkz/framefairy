@@ -265,7 +265,7 @@ func captionLayout(words []string, limit int) [][]int {
 }
 
 // WebColour turns an ASS colour, &HAABBGGRR or &HBBGGRR&, into the CSS
-// colour a window can paint with. The alpha runs backwards in ASS, 00 is
+// colour the app can paint with. The alpha runs backwards in ASS, 00 is
 // opaque, so it is turned around here.
 func WebColour(value string) string {
 	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(strip(value), "&H"), "&"))
@@ -287,14 +287,35 @@ func WebColour(value string) string {
 		channel(bgr[0:2]), strconv.FormatFloat(roundTo(alpha, 3), 'f', -1, 64))
 }
 
-const (
-	shown  = `{\alpha&H00&}`
-	hidden = `{\alpha&HFF&}`
-)
+const hidden = `{\alpha&HFF&}`
+
+// shownTag is how a word is shown: as see-through as the text colour is.
+// A word is hidden and shown by its alpha, and a shown word written as
+// fully opaque would throw away the opacity the text colour was given.
+func shownTag(primary string) string {
+	return `{\alpha&H` + alphaOf(primary) + `&}`
+}
+
+// alphaOrSolid is an alpha as a tag takes it, solid when there is none.
+func alphaOrSolid(alpha string) string {
+	if len(alpha) != 2 || !isHex(alpha) {
+		return "00"
+	}
+	return strings.ToUpper(alpha)
+}
+
+// alphaOf is the alpha of an &HAABBGGRR colour, 00 when it has none.
+func alphaOf(colour string) string {
+	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(colour, "&H"), "&"))
+	if len(raw) == 8 && isHex(raw) {
+		return raw[:2]
+	}
+	return "00"
+}
 
 // taggedText is the caption with each word shown or hidden. Hidden words
 // still take their place in the line.
-func taggedText(words []string, lines [][]int, visible func(int) bool) string {
+func taggedText(words []string, lines [][]int, visible func(int) bool, shown string) string {
 	rows := make([]string, len(lines))
 	for r, line := range lines {
 		parts := make([]string, len(line))
@@ -323,6 +344,7 @@ func num(v float64) string { return strconv.FormatFloat(roundTo(v, 2), 'f', -1, 
 // the plain track is written instead.
 func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, path string,
 	width, height int, s Style) (bool, error) {
+	shown := shownTag(s.Primary)
 	scale := float64(height) / 1920.0
 	size := max(12, pyround(s.Size*scale))
 	outline := max(1, pyround(s.Outline*scale))
@@ -350,7 +372,9 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 		layouts[i] = laid{words: words, lines: lines}
 		for k := range words {
 			k := k
-			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }))
+			// Measured opaque, whatever the text colour: a word is found by
+			// its ink, and a see-through one would leave little to find.
+			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
 		}
 	}
 	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
@@ -433,7 +457,7 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 			begins[k] = max(begins[k], begins[k-1])
 		}
 		all := func(int) bool { return true }
-		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all))
+		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
 
 		for k := range L.words {
 			from := begins[k]
@@ -466,16 +490,16 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 			h := float64(lineBottom[r]-lineTop[r]) + 2*pillPadY
 			pill := roundedRect(0, 0, w, h, math.Min(h*0.3, radius+2))
 			add(1, from, to, "Box", fmt.Sprintf(
-				`{\an5\pos(%s,%s)\p1\1c%s\1a&H00&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)\t(%d,%d,\fscx100\fscy100)}%s{\p0}`,
-				num(cx), num(cy), s.HighlightColour, num(pillFrom*100), num(pillFrom*100),
+				`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)\t(%d,%d,\fscx100\fscy100)}%s{\p0}`,
+				num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), num(pillFrom*100), num(pillFrom*100),
 				up, num(pillPeak*100), num(pillPeak*100), up, up+down, pill))
 
 			// The line with the active word hidden, so nothing else moves.
 			add(2, from, to, "Caption", "{"+anchor+"}"+
-				taggedText(L.words, L.lines, func(j int) bool { return j != k }))
+				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown))
 
 			// The active word alone, scaled around its centre.
-			only := taggedText(L.words, L.lines, func(j int) bool { return j == k })
+			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown)
 			place := func(scale float64) (string, string) {
 				return num(ax + (1-scale)*(cx-ax)), num(ay + (1-scale)*(cy-ay))
 			}

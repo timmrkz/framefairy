@@ -1,7 +1,7 @@
 // What the app does by itself, in one place and away from the screen, so
 // it can be tested. Two promises live here: adding a video is enough for
 // it to be transcribed, and the first clips are found as soon as the
-// transcript covers the chosen stretch. Both have broken before, which is
+// transcript covers the window. Both have broken before, which is
 // why they are written as plain rules with tests beside them.
 
 export type TranscribeState = {
@@ -21,7 +21,7 @@ export function shouldTranscribe(s: TranscribeState): boolean {
 }
 
 export type SearchState = {
-  // How far the transcript reaches, in seconds, and the end of the stretch
+  // How far the transcript reaches, in seconds, and the end of the window
   // chosen on the range picker.
   covered: number;
   to: number;
@@ -36,8 +36,8 @@ export type SearchState = {
   looked: boolean;
 };
 
-// The first search follows the transcript: as soon as it covers the chosen
-// stretch, and only for an episode nobody has ever searched. Whether the
+// The first search follows the transcript: as soon as it covers the
+// window, and only for an episode nobody has ever searched. Whether the
 // transcript is finished is not part of it, so an episode that was already
 // transcribed when it was added gets its clips too. An episode that was
 // searched before and emptied since is not searched again, because a search
@@ -50,8 +50,19 @@ export function shouldLook(s: SearchState): boolean {
   return s.covered >= s.to - 0.5;
 }
 
+// The model is loaded for that first search while the transcript is still
+// on its way, so the search starts with the model already in memory
+// rather than spending its first half minute loading it. The same episode,
+// before the same moment.
+export function shouldWarm(s: SearchState): boolean {
+  if (s.looked || s.busy) return false;
+  if (s.plans > 0 || s.clips > 0) return false;
+  if (s.to <= 0) return false;
+  return s.covered < s.to - 0.5;
+}
+
 export type PictureState = {
-  // The window has decoded a frame of the episode at all.
+  // The video preview has decoded a frame of the episode at all.
   ready: boolean;
   // The moment the picture is showing, or -1 while it shows nothing.
   shows: number;
@@ -60,7 +71,7 @@ export type PictureState = {
 };
 
 // The picture has to agree with the playhead. While the machine is busy
-// transcribing or searching, the window often cannot read the episode file,
+// transcribing or searching, the app often cannot read the episode file,
 // so a seek is dropped and the picture stays on a frame that has nothing to
 // do with where the playhead is. Whenever that happens the workspace asks
 // the engine for the frame under the playhead instead.
@@ -97,13 +108,13 @@ export function pictureIsStale(s: PictureState): boolean {
   return Math.abs(s.shows - s.at) > 0.5;
 }
 
-// A stretch of the episode, in seconds. The range picker works in these.
-export type Stretch = { from: number; to: number };
+// A part of the episode, in seconds. The range picker works in these.
+export type Span = { from: number; to: number };
 
 // Where the window goes when it has to choose for itself: the first
-// stretch nobody has looked at, and at most the first half hour of it.
+// part nobody has looked at, and at most the first half hour of it.
 // With the whole episode searched there is no free room left, so it rests
-// on the last stretch that was searched, which is the one whose clips are
+// on the last part that was searched, which is the one whose clips are
 // on screen.
 //
 // A window is never left lying on material that has just been searched. It
@@ -111,25 +122,25 @@ export type Stretch = { from: number; to: number };
 // can offers to throw away the clips that were only just found, which is
 // the opposite of what the search was for.
 export function nextWindow(
-  free: Stretch[],
-  searched: Stretch[],
+  free: Span[],
+  searched: Span[],
   duration: number,
   firstLook: number,
-): Stretch {
+): Span {
   const room = free.find((w) => w.to - w.from > 0.5);
   if (!room) {
     const last = searched[searched.length - 1];
     return { from: last?.from ?? 0, to: last?.to ?? duration };
   }
   const span = room.to - room.from;
-  // A stretch only a little longer than the half hour is taken whole,
+  // A part only a little longer than the half hour is taken whole,
   // rather than leaving a scrap behind that is too short to search.
   return { from: room.from, to: room.from + (span > firstLook * 1.5 ? firstLook : span) };
 }
 
 // A run of asks where only the newest answer counts.
 //
-// The window asks the engine for the frame under the playhead every time
+// The app asks the engine for the frame under the playhead every time
 // the playhead moves, and walking the clip list with the arrow keys moves
 // it as fast as a key repeats. Several asks are then in the air at once,
 // and nothing says they come back in the order they went out: a frame that
@@ -226,6 +237,19 @@ export function inEpisode(pieces: Piece[], at: number): number {
   return last ? last.end : at;
 }
 
+// Where a moment of the episode falls in a clip, the other way from
+// inEpisode. A moment the clip cuts out is the moment it comes back, and
+// one before or after it is its start or its end.
+export function inClip(pieces: Piece[], at: number): number {
+  let sum = 0;
+  for (const p of pieces) {
+    if (at < p.start) return sum;
+    if (at <= p.end) return sum + at - p.start;
+    sum += p.end - p.start;
+  }
+  return sum;
+}
+
 // The word of the episode a caption word came from.
 //
 // A caption word is not always one word of the episode. A correction that
@@ -318,4 +342,36 @@ export function shouldChase(s: ChaseState): boolean {
   if (s.wanted < 0 || s.playing) return false;
   if (s.tries > 2) return false;
   return Math.abs(s.at - s.wanted) >= 0.5;
+}
+
+// A caption edge being dragged, on the clip's clock.
+export interface CaptionDraft {
+  index: number;
+  edge: "start" | "end";
+  at: number;
+}
+
+// The captions with one edge where it is being dragged, the way the engine
+// will put them once it is let go: a caption that appears earlier or later
+// takes the one before it along where the two met, and never lies over it.
+// Anything that shows the captions while an edge is dragged shows these, so
+// the timeline and the video preview move together.
+export function draftCaptions<T extends { start: number; end: number }>(
+  captions: T[],
+  draft: CaptionDraft | null,
+): T[] {
+  if (!draft || !captions[draft.index]) return captions;
+  const out = captions.map((c) => ({ ...c }));
+  const i = draft.index;
+  if (draft.edge === "end") {
+    out[i].end = draft.at;
+    return out;
+  }
+  const was = out[i].start;
+  out[i].start = draft.at;
+  const before = out[i - 1];
+  if (before && (Math.abs(before.end - was) < 0.001 || before.end > draft.at)) {
+    before.end = draft.at;
+  }
+  return out;
 }

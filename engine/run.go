@@ -41,8 +41,11 @@ type Options struct {
 	LLMURL    string
 	Model     string
 	MaxTokens int
-	Budget    float64
-	Prefill   bool
+	// Think is the most a local model may think, in tokens, negative for
+	// no limit.
+	Think   int
+	Budget  float64
+	Prefill bool
 
 	FFmpeg  string
 	FFprobe string
@@ -63,7 +66,7 @@ type Options struct {
 	MarginV         *int
 	RefreshCaptions bool
 	// ExactPlan never falls back to another plan file when the one for this
-	// stretch is missing, it makes the plan instead. The app sets it, the
+	// window is missing, it makes the plan instead. The app sets it, the
 	// command line does not.
 	ExactPlan bool
 	// NoRecord stops training records from being written.
@@ -80,7 +83,7 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{
 		Count: 12, Min: 20, Max: 30, KeepPause: 0.10, Planner: "local",
-		Model: DefaultModel, MaxTokens: 48000, Budget: 2.00,
+		Model: DefaultModel, MaxTokens: 48000, Think: DefaultThink, Budget: 2.00,
 		Width: 1080, Height: 1920, CRF: 18, Preset: "slow", AudioBitrate: "256k",
 	}
 }
@@ -356,49 +359,14 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
 				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord,
+				PlanPath: planPath, CaptionDir: captionDir,
 			})
 		if err != nil {
 			return e.planFailed(ctx, err)
 		}
-		body, err := MarshalPlan(plan)
-		if err == nil {
-			// In one step, and under the lock the window's edits take. The
-			// window is reading this folder about once a second while the
-			// search runs.
-			err = writePlanFile(planPath, body)
-		}
-		if err != nil {
-			log.Error("cannot write the plan: %s", err)
-			return 1
-		}
-		log.OK("plan written to %s", planPath)
-
-		// A new plan means new cut points, so previously derived per-clip
-		// captions are timed to a timeline that no longer exists. They may
-		// still contain hand corrections, so they are moved aside rather
-		// than deleted. Nothing this tool does removes your work.
-		stale, _ := filepath.Glob(filepath.Join(captionDir, "*.srt"))
-		var files []string
-		for _, f := range stale {
-			if isFile(f) {
-				files = append(files, f)
-			}
-		}
-		if len(files) > 0 {
-			attic := filepath.Join(captionDir, "superseded-"+time.Now().Format("20060102-150405"))
-			if err := os.MkdirAll(attic, 0o755); err == nil {
-				for _, old := range files {
-					_ = os.Rename(old, filepath.Join(attic, filepath.Base(old)))
-				}
-				generated, _ := filepath.Glob(filepath.Join(captionDir, "*.ass"))
-				for _, old := range generated {
-					if isFile(old) {
-						_ = os.Remove(old) // regenerated every render, not yours
-					}
-				}
-				log.Info("previous captions moved to %s", attic)
-			}
-		}
+		// Each clip was written to the plan the moment it was framed, so
+		// there is nothing left to write.
+		log.OK("plan written to %s with %d clip(s)", planPath, len(plan.Clips))
 	}
 
 	if !exists(planPath) {
@@ -505,7 +473,11 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			log.Error("--highlight-colour must look like #942192")
 			return 1
 		}
-		style["highlight_colour"] = opts.HighlightColour
+		// A plan given a highlight colour of its own, in the captions
+		// column of the app, keeps it. This is the colour for the rest.
+		if _, own := style["highlight_colour"]; !own {
+			style["highlight_colour"] = opts.HighlightColour
+		}
 	}
 	if opts.NoHighlight {
 		style["highlight"] = 0.0
@@ -615,7 +587,8 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 
 // resolveLocal finds the local model and server before anything slow starts.
 func resolveLocal(opts Options) (*LocalModel, error) {
-	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL}
+	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL,
+		Think: opts.Think}
 	if m.URL != "" {
 		return m, nil
 	}
@@ -739,9 +712,41 @@ func writeProof(path string, clips []Clip, cueMap map[string][]Caption) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
+// setStaleCaptionsAside moves every caption file out of the way of a new
+// plan. A new plan means new cut points, so captions derived from the old one
+// are timed to a timeline that no longer exists. They may still contain
+// hand corrections, so they are moved aside rather than deleted. Nothing
+// this tool does removes your work.
+func setStaleCaptionsAside(log *Log, captionDir string) {
+	stale, _ := filepath.Glob(filepath.Join(captionDir, "*.srt"))
+	var files []string
+	for _, f := range stale {
+		if isFile(f) {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return
+	}
+	attic := filepath.Join(captionDir, "superseded-"+time.Now().Format("20060102-150405"))
+	if err := os.MkdirAll(attic, 0o755); err != nil {
+		return
+	}
+	for _, old := range files {
+		_ = os.Rename(old, filepath.Join(attic, filepath.Base(old)))
+	}
+	generated, _ := filepath.Glob(filepath.Join(captionDir, "*.ass"))
+	for _, old := range generated {
+		if isFile(old) {
+			_ = os.Remove(old) // regenerated every render, not yours
+		}
+	}
+	log.Info("previous captions moved to %s", attic)
+}
+
 // Interrupted is the message shown when a run is stopped with ctrl-c.
 const Interrupted = "interrupted. Anything already finished is kept, whatever was in " +
-	"progress is discarded, and a plan is only saved once it is complete."
+	"progress is discarded, and the clips a search had already found stay in its plan."
 
 func (e *Engine) fail(ctx context.Context, err error) int {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {

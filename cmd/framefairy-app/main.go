@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -89,6 +90,7 @@ func main() {
 		},
 	})
 	svc.app = app
+	app.Menu.Set(appMenu(app))
 
 	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Frame Fairy",
@@ -96,30 +98,30 @@ func main() {
 		Height:    820,
 		MinWidth:  960,
 		MinHeight: 640,
-		// The bar at the top of the window, --ink-1 in app.css. The
-		// window's own colour is only ever seen where the page does not
-		// paint, which on macOS 26 is the sliver between the window's
-		// rounded corner and the webview's. At the top that sliver is
+		// The bar at the top of the app, --ink-1 in app.css. The colour
+		// of the app's window itself is only ever seen where the page does
+		// not paint, which on macOS 26 is the sliver between its rounded
+		// corner and the webview's. At the top that sliver is
 		// inside the bar, so it is the bar's colour or it is a notch.
 		BackgroundColour: application.NewRGB(29, 31, 35),
 		URL:              "/",
 		Mac: application.MacWindow{
-			// How far down a click still drags the window. Read once when
-			// the window is made, so it cannot follow the measured bar,
+			// How far down a click still drags the app. Read once when the
+			// app's window is made, so it cannot follow the measured bar,
 			// and it is set to the standard title bar rather than over it:
 			// any more than that and it eats clicks on the workspace.
 			InvisibleTitleBarHeight: 28,
 			// Hidden, not HiddenInset. The difference is one flag inside
-			// them, UseToolbar, and it is the whole reason this window did
-			// not look like a Mac's.
+			// them, UseToolbar, and it is the whole reason the app did not
+			// look like a Mac's.
 			//
 			// A toolbar makes the title bar taller and macOS then insets
 			// the three buttons further to centre them in it. Measured
 			// against Terminal, VS Code and Chrome in the same screenshot,
 			// all at the same scale: their close button sits 16, 17 and 20
-			// points below the window's top edge and 16, 18 and 20 points
-			// in from its left. Ours sat at 26 and 26. Six to ten points
-			// out in both directions, on every window, which is exactly
+			// points below their top edge and 16, 18 and 20 points in from
+			// their left. Ours sat at 26 and 26. Six to ten points out in
+			// both directions, every time, which is exactly
 			// the amount that reads as wrong without being nameable.
 			//
 			// Without the toolbar macOS lays out an ordinary title bar and
@@ -131,7 +133,11 @@ func main() {
 	})
 	svc.chrome = watchChrome(app, svc.window)
 
-	if err := app.Run(); err != nil {
+	err := app.Run()
+	// A model loaded for a search the app never got to is not left behind
+	// holding the memory.
+	engine.StopModels()
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -164,13 +170,13 @@ func widenPath() {
 }
 
 // mediaMiddleware serves episode files and their outputs under /media/ so
-// the window can show thumbnails and play clips. Only files that belong to
-// an episode in the library are served.
+// the interface can show thumbnails and play clips. Only files that belong
+// to an episode in the library are served.
 func mediaMiddleware(st *store) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/font" {
-				// The window writes the captions in the same face as the
+				// The interface writes the captions in the same face as the
 				// render, which is one of the faces built into the program.
 				data, ok := engine.FontBytes(r.URL.Query().Get("name"))
 				if !ok {
@@ -203,15 +209,15 @@ func mediaMiddleware(st *store) application.Middleware {
 }
 
 // notInLibrary is what a call is told when it names a file that does not
-// belong to an episode in the library. The window only ever names files it
-// was given, so this is the last line rather than the first.
+// belong to an episode in the library. The interface only ever names files
+// it was given, so this is the last line rather than the first.
 const notInLibrary = "this file does not belong to an episode in the library"
 
-// FrameFairy is everything the window can ask for.
+// FrameFairy is everything the interface can ask for.
 type FrameFairy struct {
 	app *application.App
-	// The one window, kept so the bar can ask macOS where it put the
-	// window's own furniture, and the watch that follows it.
+	// The app's only window, kept so the bar can ask macOS where it put
+	// the title bar and its buttons, and the watch that follows them.
 	window *application.WebviewWindow
 	chrome *chromeWatch
 	store  *store
@@ -222,6 +228,8 @@ type FrameFairy struct {
 	// it was read from stay as they were.
 	said   *engine.Transcript
 	saidBy string
+	// histories are the undo and redo of each episode, see history.go.
+	histories map[string]*history
 }
 
 // Version of the engine.
@@ -230,8 +238,8 @@ func (s *FrameFairy) Version() string { return engine.Version }
 // Platform is darwin, windows or linux.
 func (s *FrameFairy) Platform() string { return runtime.GOOS }
 
-// Chrome says where macOS put the window's own furniture, or all zeros
-// where the system draws its own title bar. The window asks once and is
+// Chrome says where macOS put its own furniture, or all zeros where the
+// system draws its own title bar. The interface asks once and is
 // told again on the "chrome" event whenever the answer changes.
 func (s *FrameFairy) Chrome() Chrome {
 	if s.chrome == nil {
@@ -243,8 +251,8 @@ func (s *FrameFairy) Chrome() Chrome {
 // GetSettings returns the saved settings.
 func (s *FrameFairy) GetSettings() Settings { return s.store.Settings() }
 
-// SaveSettings takes the whole settings object back from the window, so
-// anything the window does not know about would be lost on every save.
+// SaveSettings takes the whole settings object back from the interface, so
+// anything the interface does not know about would be lost on every save.
 // Chosen is one of those: it is not a setting anybody edits, it is the
 // record that the one setup question was answered, and losing it would put
 // a customer back in the setup screen every time they changed a colour.
@@ -281,6 +289,23 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		ff.Detail = lookPath(e.FFmpeg)
 	}
 	out = append(out, ff)
+
+	// Which of the system's own video decoders framing can use. It is not
+	// a requirement, the processor decodes where there is none, so it is
+	// never a problem. What a file really went through is in the log of
+	// its search.
+	decoding := Check{Name: "Video decoding", OK: true, Detail: "on the processor"}
+	if ff.OK {
+		var names []string
+		for _, name := range e.SystemDecoders(ctx) {
+			names = append(names, engine.DecoderName(name))
+		}
+		if len(names) > 0 {
+			decoding.Detail = strings.Join(names, ", ") + ", falling back to the processor for a " +
+				"file it does not take. The log of a search says which one it used"
+		}
+	}
+	out = append(out, decoding)
 
 	// Nothing to install: the faces are inside the program and are written
 	// out next to the captions before every render.
@@ -423,6 +448,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 			return err
 		}
 	}
+	s.forget(path)
 	return s.store.RemoveEpisode(path)
 }
 
@@ -521,7 +547,7 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	return out, nil
 }
 
-// WindowView is a stretch of an episode, in seconds. A searched stretch
+// WindowView is a part of an episode, in seconds. A searched part
 // also says which plans cover it and how many clips they hold, so it can be
 // let go of again.
 type WindowView struct {
@@ -539,8 +565,8 @@ type CoverageView struct {
 	Free     []WindowView `json:"free"`
 }
 
-// Coverage gives the stretches of an episode that have been searched for
-// clips and the stretches that are still free, leaving out free stretches
+// Coverage gives the parts of an episode that have been searched for
+// clips and the parts that are still free, leaving out free parts
 // too short to hold a clip of least seconds.
 func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (CoverageView, error) {
 	if !s.store.Known(path) {
@@ -565,9 +591,9 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (
 	return out, nil
 }
 
-// RemoveSearch gives a stretch of an episode back: the clips inside it
-// leave the list and the stretch is free to be searched again. It is a
-// stretch, not a whole search, so a part of what was searched can go while
+// RemoveSearch gives a part of an episode back: the clips inside it
+// leave the list and the part is free to be searched again. It is a
+// part, not a whole search, so a part of what was searched can go while
 // the rest of it stays. A plan with nothing left of its window goes
 // altogether. Caption files are moved aside rather than deleted, and
 // rendered files stay where they are.
@@ -590,23 +616,26 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 	p := engine.NewProject(nil, path, s.store.Settings().options())
 	logs := engine.ResolvePath(p.LogsDir())
 	gone := 0
-	for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
-		// A plan of this episode, named the way plans are named. Nothing
-		// else is touched, whatever the window asks for.
-		if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
-			continue
+	err := s.edit(path, func() error {
+		for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
+			// A plan of this episode, named the way plans are named.
+			// Nothing else is touched, whatever the interface asks for.
+			if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
+				continue
+			}
+			n, err := engine.RemoveRange(plan.Path, p.CaptionsDir(), from, to, duration)
+			if err != nil {
+				return err
+			}
+			gone += n
 		}
-		n, err := engine.RemoveRange(plan.Path, p.CaptionsDir(), from, to, duration)
-		if err != nil {
-			return gone, err
-		}
-		gone += n
-	}
-	return gone, nil
+		return nil
+	})
+	return gone, err
 }
 
 // Captions gives the captions of one clip, on the clip's own clock and in
-// the look the render draws them in, so the window can lay them over the
+// the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.
 func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, error) {
 	if !s.store.Known(planPath) {
@@ -615,10 +644,15 @@ func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, er
 	// The same overrides the render puts on top of the plan, so the picture
 	// shows what the file will hold.
 	set := s.store.Settings()
-	return engine.ClipCaptionsView(planPath, clipID, map[string]any{
-		"highlight_colour": set.HighlightColour,
-		"margin_v":         engine.SnapCaptionY(set.CaptionY),
-	})
+	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
+	// The highlight colour of the settings is for a plan that was not given
+	// one of its own in the captions column, the same as the render has it.
+	if plan, _, err := engine.LoadClips(planPath); err == nil {
+		if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
+			overrides["highlight_colour"] = set.HighlightColour
+		}
+	}
+	return engine.ClipCaptionsView(planPath, clipID, overrides)
 }
 
 // Fonts are the faces the captions can be written in. They travel with the
@@ -658,12 +692,14 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	return t, nil
 }
 
-// Waveform returns the loudest level in each of buckets parts of a stretch.
+// Waveform returns the loudest level in each of buckets pieces of a part
+// of the episode.
 // An episode waiting for its first transcription has no waveform yet, which
 // is an empty answer and not a failure.
 //
-// Peaks never answers with more buckets than it measured, so the window is
-// told how fine the measurement was and can draw that finely and no finer.
+// Peaks never answers with more buckets than it measured, so the interface
+// is told how fine the measurement was and can draw that finely and no
+// finer.
 func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
 	if !s.store.Known(path) {
 		return nil, os.ErrNotExist
@@ -697,8 +733,8 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	})
 }
 
-// Plan queues finding clips in a stretch of an episode. It starts as soon as
-// the transcript reaches the end of the stretch, while the rest of the
+// Plan queues finding clips in a window of an episode. It starts as soon as
+// the transcript reaches the end of the window, while the rest of the
 // episode is still being transcribed.
 func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 	if !s.store.Known(path) {
@@ -711,39 +747,167 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 		log.Printf("could not note the search of %s: %v", path, err)
 	}
 	return s.jobs.add(path, "plan", "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {
-		if err := s.waitForTranscript(ctx, p, req); err != nil {
+		// The model loads while the transcript is still on its way, so
+		// the search has nothing to wait for once it is there.
+		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done && covered < req.To-0.05 {
+			go func() {
+				defer func() { _ = recover() }()
+				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {
+					log.Printf("could not load the model ahead of the search: %v", err)
+				}
+			}()
+		}
+		// The search has the machine to itself. Transcribing the rest of
+		// an episode can wait a few minutes, the clips are what somebody
+		// is waiting for. The wait pauses this episode's transcription the
+		// moment it has heard the window, so whatever it paused carries on
+		// after the search too, and so does whatever is paused here.
+		paused, err := s.waitForTranscript(ctx, p, req)
+		defer func() { s.carryOn(paused) }()
+		if err != nil {
 			return "", err
+		}
+		paused = append(paused, s.pauseTranscriptions()...)
+		if len(paused) > 0 {
+			p.Log().Info("the transcription waits while clips are found and carries on after")
 		}
 		return p.Plan(ctx, req)
 	})
 }
 
-// waitForTranscript blocks until the transcript covers the stretch, and
+// pauseTranscriptions stops every transcription that is running or
+// waiting to run, for the length of a search, and gives the episodes it
+// stopped. Each has saved what it heard and carries on from there. A
+// transcription somebody paused by hand is not running, so it is not
+// among them and stays paused.
+func (s *FrameFairy) pauseTranscriptions() []string {
+	var paused []string
+	for _, j := range s.jobs.list() {
+		if j.Kind == "transcribe" && (j.State == JobRunning || j.State == JobQueued) {
+			s.jobs.cancel(j.ID)
+			paused = append(paused, j.Episode)
+		}
+	}
+	return paused
+}
+
+// carryOn starts again the transcriptions a search paused, for the
+// episodes still in the library. A transcription told to stop takes a
+// moment to save what it heard, and one asked for while the old one is
+// still saving would be taken for it and never start, so each is given
+// that moment first.
+func (s *FrameFairy) carryOn(episodes []string) {
+	for _, path := range episodes {
+		deadline := time.Now().Add(stopWait)
+		for time.Now().Before(deadline) {
+			if j, ok := s.jobs.find(path, "transcribe"); !ok || j.State != JobRunning {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if s.store.Known(path) {
+			s.Transcribe(path)
+		}
+	}
+}
+
+// windowLength is how long the window of a search is, in seconds. A search
+// of the whole episode is taken as an hour, which only sizes the model's
+// memory, and the search starts it again if it needs more.
+func windowLength(req engine.PlanRequest) float64 {
+	if req.To > req.From {
+		return req.To - req.From
+	}
+	return 3600
+}
+
+// WarmModel loads the local model for a search the app is about to start
+// by itself, the first one of a new episode, while the transcript is still
+// on its way to the end of the window. It is not a job: nothing waits for
+// it, and the search it was for finds the model loaded or loads it itself.
+func (s *FrameFairy) WarmModel(path string, from, to float64) {
+	if !s.store.Known(path) {
+		return
+	}
+	req := engine.PlanRequest{From: from, To: to}
+	go func() {
+		defer func() { _ = recover() }()
+		e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+		p := engine.NewProject(e, path, s.store.Settings().options())
+		if err := p.WarmModel(context.Background(), windowLength(req)); err != nil {
+			log.Printf("could not load the model ahead of the search: %v", err)
+		}
+	}()
+}
+
+// waitForTranscript blocks until the transcript covers the window, and
 // starts the transcription if nothing is transcribing this episode.
-func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, req engine.PlanRequest) error {
+//
+// The transcript on disk is saved seconds apart, and the recogniser hears
+// minutes of audio in those seconds, so a search that waited for the file
+// alone started long after the window had been heard, while the range
+// picker showed the transcription running on past the end of it. So the
+// wait also watches how far the audio has been heard, and pauses the
+// transcriptions the moment that passes the end of the window. A paused
+// transcription writes down all it heard, the search starts on that, and
+// the episodes it paused are handed back to be carried on after it.
+func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project,
+	req engine.PlanRequest) ([]string, error) {
 	asrDir := s.store.Settings().ASRModel
 	end := req.To
 	if end <= 0 {
 		info, err := s.probe(ctx, p.Source)
 		if err != nil {
 			if ctx.Err() != nil {
-				return engine.ErrCancelled
+				return nil, engine.ErrCancelled
 			}
-			return err
+			return nil, err
 		}
 		end = info.Duration
 	}
-	label := "waiting for the transcript to reach " + engine.HMS(end)
+	// The words the row in the clip list shows, which adds the window
+	// itself. The log says where the transcript has to get to.
+	label := "Waiting for the transcript"
+	said := false
 	var started *Job
+	// The episodes paused because this one had heard the window, and
+	// whether that has been done. It is done once: a pause whose save did
+	// not reach the window carries on and the wait goes back to the file.
+	var paused []string
+	pausedOnce := false
 	firstAt, firstCovered := time.Time{}, -1.0
 	for {
-		covered, done := engine.Coverage(p.Source, asrDir)
+		covered, done := coverage(p.Source, asrDir)
 		if done || covered >= end-0.05 {
 			p.Log().ClearProgress()
-			return nil
+			return paused, nil
+		}
+		if !said {
+			said = true
+			p.Log().Info("waiting for the transcript to reach %s", engine.HMS(end))
 		}
 		job, ok := s.jobs.find(p.Source, "transcribe")
 		switch {
+		case paused != nil && ok && job.State == JobRunning:
+			// Paused here and still writing down what it heard.
+		case paused != nil:
+			// Stopped. The file was read before the job was, so it is read
+			// again: the save may have landed between the two.
+			if again, _ := coverage(p.Source, asrDir); again >= end-0.05 {
+				continue
+			}
+			// What it wrote down falls short of the window. It carries
+			// on, and the wait goes on by the file.
+			s.carryOn(paused)
+			paused, started = nil, nil
+			continue
+		case !pausedOnce && ok && job.State == JobRunning && job.Progress != nil &&
+			job.Progress.Covered >= end-0.05:
+			pausedOnce = true
+			paused = s.pauseTranscriptions()
+			if len(paused) == 0 {
+				paused = nil
+			}
 		case ok && (job.State == JobQueued || job.State == JobRunning):
 		case ok && job.State == JobCancelled:
 			// Pause means pause. A search waiting for the words does not
@@ -751,7 +915,7 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 			// whoever asked for it.
 			p.Log().ClearProgress()
 			p.Log().Error("the transcription is paused at %s", engine.HMS(covered))
-			return engine.ErrStepFailed
+			return nil, engine.ErrStepFailed
 		case started != nil && ok && job.ID == started.ID:
 			p.Log().ClearProgress()
 			reason := job.Error
@@ -759,7 +923,7 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 				reason = "the transcription stopped at " + engine.HMS(covered)
 			}
 			p.Log().Error("%s", reason)
-			return engine.ErrStepFailed
+			return nil, engine.ErrStepFailed
 		default:
 			queued := s.Transcribe(p.Source)
 			started = &queued
@@ -781,13 +945,39 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project, r
 			share = covered / end
 		}
 		p.Log().ProgressOf(label, share, remaining)
-		select {
-		case <-ctx.Done():
+		// The file is read once a second, because it is the whole
+		// transcript. How far the audio has been heard is a number the
+		// queue already holds, so it is looked at four times as often, and
+		// the pause comes within a quarter of a second of the window's end.
+		if err := s.untilHeard(ctx, p.Source, end, pausedOnce); err != nil {
 			p.Log().ClearProgress()
-			return engine.ErrCancelled
-		case <-time.After(time.Second):
+			return paused, engine.ErrCancelled
 		}
 	}
+}
+
+// coverage is how far the saved transcript reaches. Tests put a stand-in
+// here, because a real transcript needs a real recogniser.
+var coverage = engine.Coverage
+
+// untilHeard waits a second, or less if the audio of the episode has been
+// heard to end before that and the transcription is still to be paused.
+func (s *FrameFairy) untilHeard(ctx context.Context, path string, end float64, pausedOnce bool) error {
+	for range 4 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+		if pausedOnce {
+			continue
+		}
+		if job, ok := s.jobs.find(path, "transcribe"); ok && job.State == JobRunning &&
+			job.Progress != nil && job.Progress.Covered >= end-0.05 {
+			return nil
+		}
+	}
+	return nil
 }
 
 // Still returns a frame of the episode at a moment, as a media path.
@@ -838,14 +1028,15 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 	})
 }
 
-// WordsView is the words of a stretch, with the lead-in and lead-out the
-// renderer leaves around a cut, so the window can snap edges the same way.
+// WordsView is the words of a part, with the lead-in and lead-out the
+// renderer leaves around a cut, so the interface can snap edges the same
+// way.
 type WordsView struct {
 	Words     []engine.WordView `json:"words"`
 	KeepPause float64           `json:"keepPause"`
 }
 
-// Words returns the words spoken in a stretch. Before the first
+// Words returns the words spoken in a part. Before the first
 // transcription there are none, which is an empty answer and not a failure.
 func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
 	if !s.store.Known(path) {
@@ -860,7 +1051,7 @@ func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
 	if err != nil {
 		return WordsView{}, err
 	}
-	// One word either side, so an edge can snap past the stretch.
+	// One word either side, so an edge can snap past the part.
 	words := t.WordsBetween(from-5, to+5)
 	for _, w := range words {
 		out.Words = append(out.Words, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
@@ -879,7 +1070,10 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if _, err := engine.SetWordText(p.LogsDir(), start, text, t); err != nil {
+	if err := s.edit(path, func() error {
+		_, err := engine.SetWordText(p.LogsDir(), start, text, t)
+		return err
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -898,7 +1092,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	o := s.store.Settings().options()
 	cw, _ := engine.CropWindow(info, o.Width, o.Height)
 	left = max(0, min(left, info.Width-cw))
-	if err := engine.SetCrop(plan, clipID, at, left); err != nil {
+	if err := s.edit(path, func() error { return engine.SetCrop(plan, clipID, at, left) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -919,7 +1113,42 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	if size > 0 {
 		values["size"] = size
 	}
-	return engine.SetCaptionStyle(plan, values)
+	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
+}
+
+// SetCaptionColours changes the colour of the caption text, of the box
+// behind it and of the pill behind the word being spoken, each with how
+// opaque it is from 0 to 1, for a whole clip set, beside the face and the
+// size. Colours come as #RRGGBB, and an empty one is left as it is.
+func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text string,
+	textOpacity float64, box string, boxOpacity float64, highlight string,
+	highlightOpacity float64) error {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return os.ErrNotExist
+	}
+	values := map[string]any{}
+	if text != "" {
+		colour, ok := engine.AssColour(text, textOpacity)
+		if !ok {
+			return fmt.Errorf("%s is not a colour", engine.Scrub(text, 20))
+		}
+		values["primary"] = colour
+	}
+	if box != "" {
+		colour, ok := engine.AssColour(box, boxOpacity)
+		if !ok {
+			return fmt.Errorf("%s is not a colour", engine.Scrub(box, 20))
+		}
+		values["back_colour"] = colour
+	}
+	if highlight != "" {
+		colour, ok := engine.AssColour(highlight, highlightOpacity)
+		if !ok {
+			return fmt.Errorf("%s is not a colour", engine.Scrub(highlight, 20))
+		}
+		values["highlight_colour"] = colour
+	}
+	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
 // SetCaptionsHeight puts the captions where the box was dragged to, as the
@@ -933,12 +1162,14 @@ func (s *FrameFairy) SetCaptionsHeight(path string, y float64) error {
 	if !s.store.Known(path) {
 		return os.ErrNotExist
 	}
-	set := s.store.Settings()
-	set.CaptionY = engine.SnapCaptionY(y)
-	if err := s.store.SetSettings(set); err != nil {
-		return err
-	}
-	return s.followTheHeight(path)
+	return s.edit(path, func() error {
+		set := s.store.Settings()
+		set.CaptionY = engine.SnapCaptionY(y)
+		if err := s.store.SetSettings(set); err != nil {
+			return err
+		}
+		return s.followTheHeight(path)
+	})
 }
 
 // ResetCaptionsHeight puts the captions back where the app puts them.
@@ -946,12 +1177,14 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 	if !s.store.Known(path) {
 		return os.ErrNotExist
 	}
-	set := s.store.Settings()
-	set.CaptionY = engine.DefaultCaptionY
-	if err := s.store.SetSettings(set); err != nil {
-		return err
-	}
-	return s.followTheHeight(path)
+	return s.edit(path, func() error {
+		set := s.store.Settings()
+		set.CaptionY = engine.DefaultCaptionY
+		if err := s.store.SetSettings(set); err != nil {
+			return err
+		}
+		return s.followTheHeight(path)
+	})
 }
 
 // SetSearch keeps how many clips a search looks for and how long they may
@@ -971,7 +1204,7 @@ func (s *FrameFairy) SetSearch(count int, min, max float64) error {
 }
 
 // hold keeps a number inside the range the interface offers. What arrives
-// from the window is not to be trusted, here no more than anywhere else.
+// from it is not to be trusted, here no more than anywhere else.
 func hold(n, low, high float64) float64 {
 	if !(n >= low) {
 		return low
@@ -998,11 +1231,29 @@ func (s *FrameFairy) followTheHeight(path string) error {
 	return nil
 }
 
+// SetCaptionTime moves the caption of a clip that begins or ends on a word,
+// to appear or go at a moment of the episode. A moment below nought puts it
+// back where its words put it, because JSON has no way to say not a number.
+func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return ClipEntry{}, os.ErrNotExist
+	}
+	if at < 0 {
+		at = math.NaN()
+	}
+	if err := s.edit(path, func() error {
+		return engine.SetCaptionTime(plan, clipID, word, edge, at)
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
-	if err := engine.ResetCrop(plan, clipID, at); err != nil {
+	if err := s.edit(path, func() error { return engine.ResetCrop(plan, clipID, at) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1031,7 +1282,7 @@ type chosenClip struct {
 // opening the episode again opens on the same one. An empty key forgets it.
 //
 // The key names a clip set and a clip inside it. It arrives from the
-// window, so it is never joined onto a path and never used to reach a
+// interface, so it is never joined onto a path and never used to reach a
 // file: it is written down as it is and only ever compared with the keys
 // the app works out for itself. Anything longer than a key could be, or
 // carrying anything a key never carries, is refused rather than stored.
@@ -1075,10 +1326,10 @@ func (s *FrameFairy) ChooseClip(path, key string) error {
 	return nil
 }
 
-// ChosenClip gives back the clip an episode was last worked on, or an
-// empty string where there is none or where what is written down is not a
-// key. The window checks it against the clips it has either way: a clip
-// set that has been searched again no longer holds it.
+// ChosenClip gives back the clip an episode was last worked on, or an empty
+// string where there is none or where what is written down is not a key.
+// The interface checks it against the clips it has either way: a clip set
+// that has been searched again no longer holds it.
 func (s *FrameFairy) ChosenClip(path string) string {
 	if !s.store.Known(path) {
 		return ""
@@ -1140,7 +1391,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
-	if err := engine.SetRejected(plan, clipID, removed); err != nil {
+	if err := s.edit(path, func() error { return engine.SetRejected(plan, clipID, removed) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1157,7 +1408,9 @@ func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, st
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause); err != nil {
+	if err := s.edit(path, func() error {
+		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause)
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1178,7 +1431,7 @@ func (s *FrameFairy) cutting(path, plan string) (*engine.Transcript, engine.Opti
 	return t, opts, nil
 }
 
-// CutClip takes a stretch out of the middle of a clip and returns it as it
+// CutClip takes a part out of the middle of a clip and returns it as it
 // is now. With toWords the edges land on the words around them, without it
 // they stay exactly where the hand put them.
 func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, from, to float64, toWords bool) (ClipEntry, error) {
@@ -1186,20 +1439,22 @@ func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, fro
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
+	if err := s.edit(path, func() error {
+		return engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords))
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// JoinCut puts back the stretch a clip leaves out at a moment and returns
+// JoinCut puts back the part a clip leaves out at a moment and returns
 // the clip as it is now.
 func (s *FrameFairy) JoinCut(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	t, _, err := s.cutting(path, plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.JoinCut(plan, clipID, at, t); err != nil {
+	if err := s.edit(path, func() error { return engine.JoinCut(plan, clipID, at, t) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -1213,7 +1468,9 @@ func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, ind
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords)); err != nil {
+	if err := s.edit(path, func() error {
+		return engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords))
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

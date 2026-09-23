@@ -25,6 +25,11 @@
      rests at between one pass of the shimmer and the next. */
   --accent-lit: #e07fde;
   --accent-faint: rgba(148, 33, 146, 0.07);
+  /* What a fill inside a control lays over what is done, from its start
+     to its head. Strong enough to be told from what is still to do on a
+     screen with daylight on it: a wash of a fifth was read as no fill. */
+  --accent-fill: rgba(148, 33, 146, 0.3);
+  --accent-fill-hi: rgba(148, 33, 146, 0.5);
   --ok: #5fa37a;
   --warn: #d2a441;
   --err: #e0605a;
@@ -45,14 +50,20 @@
 
   --radius-s: 4px;
   --radius-m: 8px;
+  /* The line and the corners of a frame, the one look of what is chosen
+     on a picture or a track: the crop in the video preview, the window on
+     the range picker and the clip on the clip timeline. See .frame. */
+  --frame-line: 2px;
+  --frame-radius: 3px;
   --control-h: 32px;
-  /* The bar at the top of the window. Where the system draws its own
+  /* The bar at the top of the app. Where the system draws its own
      title bar, which is everywhere but macOS, this is the whole story and
      the bar is an ordinary header. On macOS the bar is the title bar, and
-     macOS decides how tall that is, so the shell sets this from what the
-     window answers and this number is only what the first frame uses. The
-     workspace works out its own height from the window and this either
-     way, so it is a number both sides read rather than one each. */
+     macOS decides how tall that is, so the shell sets this from what
+     macOS answers and this number is only what the first frame uses. The
+     workspace works out its own height from the height of the app and
+     this either way, so it is a number both sides read rather than one
+     each. */
   --bar-h: 44px;
   /* The clip timeline at its smallest, with the range picker always half
      of it. The range picker is the same episode seen from much further
@@ -75,8 +86,8 @@
      the next. A different number needs a reason, and inside a control is
      the usual one. */
   --gap: 12px;
-  /* Between the window and what is in it, which is not a gap between two
-     things and so is its own number. */
+  /* Between the edge of the app and what is in it, which is not a gap
+     between two things and so is its own number. */
   --edge: 24px;
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Ubuntu, sans-serif;
@@ -103,6 +114,8 @@
     --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
     --accent-lit: color-mix(in srgb, var(--accent) 45%, white);
     --accent-faint: color-mix(in srgb, var(--accent) 7%, transparent);
+    --accent-fill: color-mix(in srgb, var(--accent) 30%, transparent);
+    --accent-fill-hi: color-mix(in srgb, var(--accent) 50%, transparent);
   }
 }
 
@@ -244,6 +257,24 @@ input[type="number"] {
 input[type="text"],
 input[type="password"] {
   width: 100%;
+}
+
+/* A frame: the part of a picture or a track that is chosen. The crop in
+   the video preview, the window on the range picker and the clip on the
+   clip timeline are the same thing in three places, so they are drawn by
+   this one rule, in the app's colour, with the same line and the same
+   corners, and lit the same way while the hand is on them. Each place
+   keeps only where it sits and what it takes hold of. Three copies of
+   this were three frames that no longer matched: one with square corners,
+   one with a corner of 4 pixels, one of 3. */
+.frame {
+  box-sizing: border-box;
+  border: var(--frame-line) solid var(--accent);
+  border-radius: var(--frame-radius);
+}
+
+.frame.lit {
+  border-color: var(--accent-hi);
 }
 
 :focus-visible {
@@ -405,8 +436,8 @@ input[type="password"] {
 
 /* Work running somewhere else: the pulse. The dot keeps its size and its
    place, and a ring of the same colour widens out of it and fades, once
-   every couple of seconds, so a job running behind the window is seen
-   from the corner of the eye and nothing on the rail moves for it. */
+   every couple of seconds, so a job running out of sight is seen from
+   the corner of the eye and nothing on the rail moves for it. */
 .dot.busy {
   position: relative;
   background: var(--accent);
@@ -429,6 +460,22 @@ input[type="password"] {
   to {
     transform: scale(2.7);
     opacity: 0;
+  }
+}
+
+/* The pop the pill makes behind the word being spoken in the video
+   preview, a little under its size, a little over and back, the way the
+   render bounces it. The caption block on the clip timeline that stands
+   for the caption shown makes the same one, so it is one animation. */
+@keyframes pop {
+  from {
+    transform: scale(0.88);
+  }
+  55% {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
   }
 }
 
@@ -456,12 +503,15 @@ input[type="password"] {
   overflow: auto;
 }
 
-/* A control with work running in it carries the beam, and the beam is
-   drawn inside the control: over its own background, under its own words.
+/* A control with work running in it carries the beam, and so does the
+   card in the clip list a search is filling next. The beam is drawn
+   inside it: over its own background, under its own words.
    A stacking context of the control's own is what puts it there, and the
    rounded corners clip it. Both belong to the control rather than to the
    beam, because only the control knows them. */
-button:has(> .beam) {
+button:has(> .beam),
+li:has(> .beam),
+.busyhost:has(> .beam) {
   position: relative;
   overflow: hidden;
   isolation: isolate;
@@ -470,14 +520,14 @@ button:has(> .beam) {
      already the app's colour they are white, because the app's colour
      cannot be seen on itself. */
   --lit: var(--accent-lit);
-  --wash-from: var(--accent-faint);
-  --wash-to: var(--accent-wash);
+  --wash-from: var(--accent-fill);
+  --wash-to: var(--accent-fill-hi);
 }
 
 button.primary:has(> .beam) {
   --lit: #fff;
-  --wash-from: rgba(255, 255, 255, 0.08);
-  --wash-to: rgba(255, 255, 255, 0.3);
+  --wash-from: rgba(255, 255, 255, 0.2);
+  --wash-to: rgba(255, 255, 255, 0.38);
 }
 
 /* A control that cannot be pressed while its own work runs still has to be
@@ -521,7 +571,7 @@ button:has(> .beam):disabled {
 }
 
 /* A mark whose bubble is up stays where it is. The bubble hangs from the
-   window rather than from the area, so reaching into it takes the pointer
+   page rather than from the area, so reaching into it takes the pointer
    off the area, and a mark that vanished then would leave its own answer
    pointing at nothing. */
 .ask:has([aria-expanded="true"]) {

@@ -155,9 +155,9 @@ async function media(res, range) {
 // A port of its own per run, so two probes never collide.
 let port = 4300 + Math.floor(Math.random() * 400);
 
-// The window as it opens, with nothing clicked. For anything that is not
-// the episode workspace: the setup on a new machine, the settings, the
-// empty window. workspace() is this with an episode picked.
+// The app as it opens, with nothing clicked. For anything that is not the
+// episode workspace: the setup on a new machine, the settings, the app
+// with no episode open. workspace() is this with an episode picked.
 export async function screen({
   // What the fake Go side should pretend. The modes are in wails-stub.ts.
   query = "",

@@ -61,7 +61,7 @@ describe("a cut lands where the render will cut", () => {
   });
 
   test("with no words there is nothing to snap to", () => {
-    // Before the transcript reaches a stretch there is nothing to line up
+    // Before the transcript reaches a part there is nothing to line up
     // with, so the drag stands as it was drawn.
     expect(round(snapCut([], 12, 13.5, 0.1))).toEqual([12, 13.5]);
   });
@@ -133,7 +133,7 @@ describe("cutAt, asked for a width the zoom worked out", () => {
 
   // Zoomed right out, forty pixels of a four hour episode across a
   // thousand-pixel track is a long time. The cut is that long.
-  test("takes a wide stretch when the zoom says forty pixels are wide", () => {
+  test("takes a wide part when the zoom says forty pixels are wide", () => {
     const [a, b] = cutAt(piece, 20, 8, 0.05, frame)!;
     expect(b - a).toBeCloseTo(8, 6);
   });
