@@ -738,8 +738,52 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 		if err := s.waitForTranscript(ctx, p, req); err != nil {
 			return "", err
 		}
+		// The search has the machine to itself. Transcribing the rest of
+		// an episode can wait a few minutes, the clips are what somebody
+		// is waiting for.
+		paused := s.pauseTranscriptions()
+		if len(paused) > 0 {
+			p.Log().Info("the transcription waits while clips are found and carries on after")
+		}
+		defer s.carryOn(paused)
 		return p.Plan(ctx, req)
 	})
+}
+
+// pauseTranscriptions stops every transcription that is running or
+// waiting to run, for the length of a search, and gives the episodes it
+// stopped. Each has saved what it heard and carries on from there. A
+// transcription somebody paused by hand is not running, so it is not
+// among them and stays paused.
+func (s *FrameFairy) pauseTranscriptions() []string {
+	var paused []string
+	for _, j := range s.jobs.list() {
+		if j.Kind == "transcribe" && (j.State == JobRunning || j.State == JobQueued) {
+			s.jobs.cancel(j.ID)
+			paused = append(paused, j.Episode)
+		}
+	}
+	return paused
+}
+
+// carryOn starts again the transcriptions a search paused, for the
+// episodes still in the library. A transcription told to stop takes a
+// moment to save what it heard, and one asked for while the old one is
+// still saving would be taken for it and never start, so each is given
+// that moment first.
+func (s *FrameFairy) carryOn(episodes []string) {
+	for _, path := range episodes {
+		deadline := time.Now().Add(stopWait)
+		for time.Now().Before(deadline) {
+			if j, ok := s.jobs.find(path, "transcribe"); !ok || j.State != JobRunning {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if s.store.Known(path) {
+			s.Transcribe(path)
+		}
+	}
 }
 
 // windowLength is how long the window of a search is, in seconds. A search

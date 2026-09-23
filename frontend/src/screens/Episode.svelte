@@ -926,22 +926,7 @@
       undoing = false;
     }
   }
-  // Redo also answers to Cmd-Y, and Ctrl-Y on Windows and Linux, where it
-  // is the usual key. The menu can hold one key for it, so this one is
-  // heard here.
-  function redoKey(e: KeyboardEvent) {
-    if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "y") return;
-    e.preventDefault();
-    undo("redo");
-  }
-  onMount(() => {
-    const off = onUndo(undo);
-    window.addEventListener("keydown", redoKey);
-    return () => {
-      off?.();
-      window.removeEventListener("keydown", redoKey);
-    };
-  });
+  onMount(() => onUndo(undo));
 
   // The first clip a search finds, shown as soon as it is in the list.
   function showFirstFound() {

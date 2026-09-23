@@ -509,7 +509,10 @@ place.
       window chosen on the track the first search runs. Until then the
       first row of the clip list says so, and the window can still be
       moved. The local model is loaded in the meantime, so the search
-      starts with it in memory. It
+      starts with it in memory. **While clips are found, the transcription
+      waits**, on this episode and any other, so the model has the
+      machine to itself, and it carries on by itself when the search
+      ends. One paused by hand stays paused. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
@@ -837,7 +840,7 @@ places simply leaves it unused. The engine side is `SetCaptionTime` in
 ### Undo and redo
 
 **Everything done to an episode's clips can be taken back**, with **Undo**
-and **Redo** in the Edit menu, Cmd-Z and Shift-Cmd-Z, and Redo also answers to Cmd-Y. That is a trim, a
+and **Redo** in the Edit menu, Cmd-Z and Cmd-Y, Ctrl-Z and Ctrl-Y on Windows and Linux. That is a trim, a
 cut made, moved or put back, the crop frame, the caption box moved, a word
 corrected, added or removed, the caption face and size, a clip removed and
 a search removed. Each is one step. Taking one back chooses the clip it

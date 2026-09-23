@@ -305,7 +305,10 @@
        reading moves. It waits for the pointer to be on the track, the way
        every other mark here does, so a track nobody is looking at carries
        nothing. -->
-  {#if pending && near && (transcribing || partly) && ontranscription}
+  <!-- While clips are being found the reading waits for the search, which
+       has the machine to itself, and carries on by itself afterwards. So
+       there is nothing to offer then. -->
+  {#if pending && near && (transcribing || (partly && !locked)) && ontranscription}
     <button
       class="reading"
       class:glide={glide && !holding}
@@ -414,7 +417,7 @@
       {#if pending}
         The whole episode. The dark part is not read yet, and the line is how far it has got. The
         mark on the line pauses the reading or carries it on. Clips can be looked for once the line
-        passes the window.
+        passes the window, and while they are found the reading waits and carries on after.
       {:else}
         The whole episode. Drag to draw the window the model will search, or drag the window and
         its edges. Double-click for all of it. A shaded part has been searched, and the marks in it

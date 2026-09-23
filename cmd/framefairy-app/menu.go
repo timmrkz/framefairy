@@ -25,7 +25,9 @@ func appMenu(app *application.App) *application.Menu {
 	edit.Add("Undo").SetAccelerator("CmdOrCtrl+z").OnClick(func(*application.Context) {
 		app.Event.Emit("undo", "undo")
 	})
-	edit.Add("Redo").SetAccelerator("CmdOrCtrl+Shift+z").OnClick(func(*application.Context) {
+	// Redo is Cmd-Y, the key most people know it by, and Ctrl-Y on
+	// Windows and Linux. Shift-Cmd-Z is not bound to anything.
+	edit.Add("Redo").SetAccelerator("CmdOrCtrl+y").OnClick(func(*application.Context) {
 		app.Event.Emit("undo", "redo")
 	})
 	edit.AddSeparator()

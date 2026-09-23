@@ -54,6 +54,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.12 | Framing decodes only the parts of a clip that are kept, through the system's own video decoder where there is one, and on every system | `[x]` |
 | 1.13 | The local model thinks on a budget, 2,048 tokens by default, so the first clip is written in about a minute rather than five | `[x]` |
 | 1.14 | The model loaded while the transcription is still running, so a search that starts finds it in memory `[x]`, and the transcript read into it as it grows `[ ]` | `[~]` |
+| 1.15 | The transcription waits while clips are found and carries on after, so the model has the machine to itself | `[x]` |
 
 ## Phase 2: app shell
 
