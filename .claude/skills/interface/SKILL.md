@@ -256,6 +256,17 @@ there, and it is the kind of thing Tim sees at a glance and nobody else
 notices until he says it. Before adding a size, a colour or a spacing,
 find the thing it is a sibling of and take that one's.
 
+**An animation used in two places is one component, never two that look
+alike.** Work in hand is `Busy.svelte`: the beam, the motes, the fill with
+its head, the glow pushed ahead of it and the light passing over what is
+done. The range picker once drew its own fill, a wash and a line made to
+look like Busy's, and Tim saw at once that it was not the same: no glow
+ahead of the head, no motes, a flat wash. A copy drifts from the original
+the day either is changed. So a place that shows work puts `Busy` in it,
+with `rim={false}` where there is no edge to run round, and a change to
+how work looks is made once, in `Busy.svelte` and `app.css`, and is then
+true everywhere. The same goes for the shimmer and the pulse.
+
 ## When the window itself looks wrong, measure it against a real one
 
 The app is a native window. Every other native window is on the same
@@ -460,6 +471,72 @@ writes, `max-content`, and it measures what it will get. This took three
 rounds of Tim's testing to see, because the harness's own convergence
 hides it: the size change trips a ResizeObserver and the second pass comes
 out right in Chromium, and the first pass is what he was looking at.
+
+**Two things that show the same number must read the same number.** The
+row waiting for the transcript filled by the saved transcript, and the
+range picker's line by what had been heard, which runs seconds ahead. Tim
+saw the line well past the window and the row at 95 percent. When two
+places show one fact, find the one value both read and give it to both.
+
+**One line of text, one reporter.** The search's row showed whatever last
+reported progress, and ffmpeg framing a clip reported twice a second, so
+the row flicked between the search and "finding camera switches". Work
+that owns a line of text holds it (`Log.HoldProgress`) until it is done.
+
+**A person reads slower than the engine reports.** A headline that changes
+every half second is not read at all. Text about work stays long enough to
+be read, two and a half seconds for a new headline, a second for a count
+going up, while the fill and the time left move at once, because those are
+one thing moving. A time left moves in steps of five seconds. A step of
+the machine's that a person does not act on, loading the model, reading,
+thinking, is not a headline.
+
+**A colour the person chose never marks a state of the interface.** The
+caption blocks first wore the caption's text colour and marked the one on
+screen with the app's colour, and a blue or purple caption made the two
+the same. Then the state was marked by dimming the colour, and a dimmed
+colour is another colour. What the person chose is shown as they chose
+it, and a state is told by what cannot clash with any choice: brightness,
+size, a pill in the highlight colour where the short itself uses one. Try
+a state against white, a strong green and a colour close to the app's own
+before calling it done.
+
+**What must stay together moves the same way.** Two things that slide side
+by side, one by `width` and one by `transform`, part by a pixel or two
+while they move, because one is laid out on the main thread every frame
+and the other is carried by the compositor. The fill and the shade ahead
+of it on the range picker both move by transform, with the same glide.
+
+**A moment that goes through two clocks can come back a hair early.** A
+caption's start went from the clip's clock to the episode's and back, and
+landed before the caption, so a click on it lit no word. A seek meant to
+land in something lands a frame into it, `intoWord`, the way the arrow
+keys already did.
+
+**Stale state waits to be shown.** The video preview kept the last frame
+it had read from the file and drew it whenever the picture looked stuck.
+Looping a clip made it look stuck for the length of one seek, and a frame
+from anywhere in the episode flashed up. Anything kept for later is shown
+only for what it was made for, and a jump the app makes by itself holds
+the playhead until the picture has landed. The probe for this passed
+against the broken code until it first loaded a still the way a busy
+machine does: reproduce the state before trusting a probe that says the
+state is gone.
+
+**Contrast is judged with daylight on the screen.** A fill of 7 to 22
+percent of the accent read as no fill at all on Tim's Mac by a window. A
+fill is 30 to 50 percent, and anything that is only told apart by a shade
+of dark grey needs a second look in a bright room.
+
+**The rail is part of the app.** The space between the rail and the
+workspace is the space between two things, `--gap`. Only the side that
+meets the app's own border is an `--edge`. A 24 pixel edge where a 12
+pixel gap belonged cost the settings column the room to show 100 percent.
+
+**A row still to come is already a row.** The placeholders of the clip
+list answer the pointer the way a clip's row does, brighter under it,
+while they go on breathing. The same interface, before and after the
+content arrives.
 
 ## Before saying it is done
 

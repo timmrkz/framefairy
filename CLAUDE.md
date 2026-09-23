@@ -224,7 +224,10 @@ messages, pull request text, code comments and chat replies.
   shimmer over a place waiting to be filled, and the pulse on a dot for work
   running somewhere else. They are in `Busy.svelte` and `app.css`. A new
   kind of loading is not a new animation, it is one of these five in a new
-  place.
+  place. **An animation used in two places is one component, used, never
+  copied**: a copy made to look alike drifts the day either is changed,
+  and then the two do not look the same. A change to how work looks is
+  made once and is true everywhere.
 - **One list to pick from.** Every list a person picks from in the app is
   `Pick.svelte`, and there is no `<select>` anywhere. A `<select>` is drawn
   by the system: on macOS the webview hands the whole list to AppKit, which

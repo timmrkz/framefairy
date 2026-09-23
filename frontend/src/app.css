@@ -471,7 +471,8 @@ input[type="password"] {
    rounded corners clip it. Both belong to the control rather than to the
    beam, because only the control knows them. */
 button:has(> .beam),
-li:has(> .beam) {
+li:has(> .beam),
+.busyhost:has(> .beam) {
   position: relative;
   overflow: hidden;
   isolation: isolate;

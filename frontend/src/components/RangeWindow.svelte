@@ -292,19 +292,19 @@
        it would say there was.
        Nothing new is drawn here: the track says what the rest of the app
        says, in the words the rest of the app uses. -->
-  <!-- What has been read wears the fill, the same fill every piece of work
-       in hand wears in the app, so the track reads the way the rows and
-       the buttons do: filled behind the head, empty ahead of it. It is as
-       wide as the track and slides with the head, by the same transform
-       and the same glide, so the two never part. Only while the reading
-       runs, because a fill says work is in hand. -->
+  <!-- What has been read wears the fill, and the motes rise through the
+       track: the work in hand of Busy.svelte itself, the one every row and
+       button of the app wears, with no rim because the track has no edge to
+       run round. Not a copy of it, which is what this was and what looked
+       different. Its fill slides by the same transform and the same glide
+       as the shade ahead of it, so the two never part. Only while the
+       reading runs, because a fill says work is in hand. -->
   {#if pending && transcribing}
-    <div
-      class="readfill"
+    <span
+      class="busyhost"
       class:glide={glide && !holding}
       class:held={holding}
-      style="transform: translateX(calc({at(covered)}px - 100%))"
-    ></div>
+    ><Busy fraction={duration > 0 ? covered / duration : 0} rim={false} /></span>
   {/if}
   {#if pending}
     <div
@@ -625,20 +625,12 @@
        head of every other fill in the app carries. A hairline of --muted
        said the same thing in a colour that means nothing here, and said it
        so quietly that Tim could not see the reading move. */
-    border-left: 2px solid var(--accent-lit);
-    box-shadow:
-      -7px 0 12px -4px var(--accent-wash),
-      7px 0 14px -6px var(--accent-wash);
-    /* Deepest against the line and easing back to the flat shade, so the
-       edge reads as the front of something moving rather than as the side
-       of a block. The first step carries the app's colour, so the dark
-       ahead of the head belongs to the light behind it. */
-    background: linear-gradient(
-      to right,
-      rgba(0, 0, 0, 0.5),
-      var(--accent-faint) 10px,
-      rgba(0, 0, 0, 0.34) 28px
-    );
+    /* While the reading runs, the head is the fill's own, the bright line
+       with the glow pushed ahead of it that every fill in the app has, so
+       this is only the dark ahead of it. A reading that was paused has no
+       fill, and a quiet line says where it stopped. */
+    border-left: 1px solid var(--line);
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.34) 28px);
     pointer-events: none;
   }
 
@@ -647,6 +639,10 @@
      as a step usually takes turns the steps into the one movement they
      are. The glide is armed a frame after the first edge is drawn, so
      opening a workspace mid-transcription does not sweep the track. */
+  .pending.waiting {
+    border-left-color: transparent;
+  }
+
   .pending.glide {
     transition: transform 1s linear;
   }
@@ -656,25 +652,22 @@
      it was going, which is a second of an edge still sliding after the
      press. Saying none outright ends it, and the edge lands on the second
      the work really reached. */
-  /* The fill behind the head: the app's colour at the strength every fill
-     in a control has, strongest at the head. It lies under the window,
-     the searched parts and the marks, like the track's own shade. */
-  .readfill {
+  /* The host of the work in hand drawn over the track. It lies under the
+     window, the searched parts and the marks, like the track's own shade,
+     and it glides the way the shade's edge does. */
+  .busyhost {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: linear-gradient(to right, var(--accent-fill), var(--accent-fill-hi));
+    inset: 0;
+    border-radius: inherit;
     pointer-events: none;
+    --fill-glide: 0s;
   }
 
-  .readfill.glide {
-    transition: transform 1s linear;
+  .busyhost.glide {
+    --fill-glide: 1s linear;
   }
 
   .pending.held,
-  .readfill.held,
   .reading.held {
     transition: none;
   }

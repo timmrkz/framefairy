@@ -932,9 +932,12 @@ things and no others, and each one means one thing.
 - **The fill.** How far the work has come, when that is known. Inside the
   control it is a wash of the app's colour, 30 percent at the start and 50
   at the head, with a bright line at the front, so what is done can be told
-  from what is left with daylight on the screen. The range picker wears
-  the same fill over what the transcription has read, sliding with the
-  line at its head, and the row of the clip list that waits for the
+  from what is left with daylight on the screen, and a light passes over
+  what is done, the one the bar in Activity carries, so a fill is never a
+  flat wash. The fill slides by a transform rather than growing, so it
+  moves with whatever moves beside it. The range picker draws the reading
+  of the episode with `Busy.svelte` itself, fill, head, glow and motes,
+  without the rim, and the row of the clip list that waits for the
   transcript fills by the same line, so the two never say different
   things. In
   Activity, where a job has no control of its own, the same fill lies in a

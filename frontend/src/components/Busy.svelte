@@ -6,12 +6,17 @@
   //              for as long as the work runs
   //   the motes  specks of that light drifting up through the control,
   //              behind its own words
-  //   the fill   how far the work has come, when that is known
+  //   the fill   how far the work has come, when that is known, with a
+  //              light passing over what is done
   //
   // The control it sits in needs nothing of its own: app.css gives any
   // button holding a beam its rounded clip and a stacking context, so the
   // beam lies over the control's background and under its words.
-  let { fraction = -1 }: { fraction?: number } = $props();
+  //
+  // It is the one way work in hand is drawn, so it is used, never copied.
+  // Where there is no edge to run round, the range picker, rim is off and
+  // the motes and the fill are the same as everywhere else.
+  let { fraction = -1, rim = true }: { fraction?: number; rim?: boolean } = $props();
 
   // Where the motes rise and how long each one takes. Fixed rather than
   // drawn at random, because a random number would be a new one on every
@@ -26,7 +31,7 @@
 </script>
 
 <span class="beam" aria-hidden="true">
-  <span class="ring"></span>
+  {#if rim}<span class="ring"></span>{/if}
   {#each motes as m (m.at)}
     <i
       class="mote"
@@ -34,7 +39,15 @@
     ></i>
   {/each}
   {#if fraction >= 0}
-    <span class="fill"><i style="width: {Math.min(fraction, 1) * 100}%"></i></span>
+    <!-- The fill is as wide as the control and slides in from the left,
+         so it is moved and never laid out again: a width that changes is
+         worked out on the main thread every frame, a transform is carried
+         by the compositor, and what moves beside it, the head of the range
+         picker's shade, moves the same way and stays with it. -->
+    <span class="fill"
+      ><i style="transform: translateX({(Math.min(Math.max(fraction, 0), 1) - 1) * 100}%)"
+      ></i></span
+    >
   {/if}
 </span>
 
@@ -219,7 +232,10 @@
 
   .fill i {
     display: block;
+    position: relative;
+    width: 100%;
     height: 100%;
+    overflow: hidden;
     background: linear-gradient(
       90deg,
       var(--wash-from, var(--accent-fill)) 0%,
@@ -231,7 +247,26 @@
     box-shadow:
       inset -2px 0 var(--lit, var(--accent-lit)),
       10px 0 14px -6px var(--lit, var(--accent-lit));
-    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    /* How it follows the number. A control's work reports in steps, so it
+       eases to each. The range picker's transcription reports about once
+       a second and glides between reports, so it says so. */
+    transition: transform var(--fill-glide, 0.25s cubic-bezier(0.4, 0, 0.2, 1));
+  }
+
+  /* The light passing over what is done, the same light the bar in
+     Activity carries, so what is done is alive to look at rather than a
+     flat wash, and a fill never stands still while the work runs. */
+  .fill i::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.16) 50%,
+      transparent 100%
+    );
+    animation: sheen 2.4s cubic-bezier(0.45, 0, 0.2, 1) infinite;
   }
 
   /* Where the rim cannot be cut out of the square, there is no beam and
@@ -249,6 +284,11 @@
   /* Nothing moves, and the beam is a steady rim of the app's colour, so a
      control with work in it still says so. */
   @media (prefers-reduced-motion: reduce) {
+    .fill i::after {
+      animation: none;
+      opacity: 0;
+    }
+
     .ring::before {
       animation: none;
       background: var(--accent-hi);
