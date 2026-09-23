@@ -147,8 +147,29 @@ if [ -z "$BUILT" ]; then
 fi
 cp "$BUILT" "$OUT/bin/llama-server"
 # The licence travels with the binary. MIT asks for the notice to go with
-# every copy, and a file beside the program is the whole of that.
-cp "$SRC/LICENSE" "$OUT/bin/LICENSE-llama.cpp"
+# every copy, and so do the small libraries llama.cpp builds into the
+# server, so their notices follow its own. Two of them carry theirs at the
+# end of a header rather than in a file. The app shows the same under
+# Licences, from notices/.
+{
+	cat "$SRC/LICENSE"
+	for f in vendor/cpp-httplib/LICENSE licenses/LICENSE-jsonhpp \
+		vendor/hash/xxhash/LICENSE vendor/hash/rotate-bits/LICENSE.md \
+		vendor/hash/sha256/LICENSE vendor/stb/stb_image.h \
+		vendor/miniaudio/miniaudio.h vendor/sheredom/subprocess.h; do
+		echo
+		echo "================================================================"
+		echo "$f, built into llama-server"
+		echo "================================================================"
+		echo
+		case $f in
+		*stb_image.h) sed -n '/This software is available under 2 licenses/,$p' "$SRC/$f" ;;
+		*miniaudio.h) sed -n '/This software is available as a choice of the following licenses/,$p' "$SRC/$f" ;;
+		*subprocess.h) sed -n '1,/\*\//p' "$SRC/$f" ;;
+		*) cat "$SRC/$f" ;;
+		esac
+	done
+} >"$OUT/bin/LICENSE-llama.cpp"
 
 say "what came out"
 LS="$OUT/bin/llama-server"

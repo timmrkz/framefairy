@@ -265,9 +265,35 @@ if [ -n "$borrowed" ]; then
 	exit 1
 fi
 
-# The licence text travels with the binary. LGPL asks for that and it is
-# one file, so there is nothing to weigh up.
-cp "$WORK/ffmpeg-$FFMPEG_VERSION/COPYING.LGPLv2.1" "$OUT/bin/LICENSE-ffmpeg.txt"
+# The licence texts travel with the binary: ffmpeg's, and those of the four
+# libraries built into it, each of which asks for its own notice to go with
+# every copy. FreeType also asks for a line of credit, which opens its part.
+# The app shows the same under Licences, from notices/.
+{
+	echo "ffmpeg $FFMPEG_VERSION, GNU Lesser General Public License 2.1 or later"
+	echo
+	cat "$WORK/ffmpeg-$FFMPEG_VERSION/COPYING.LGPLv2.1"
+	for lib in "freetype-$FREETYPE_VERSION:LICENSE.TXT docs/FTL.TXT" \
+		"fribidi-$FRIBIDI_VERSION:COPYING" \
+		"harfbuzz-$HARFBUZZ_VERSION:COPYING" \
+		"libass-$LIBASS_VERSION:COPYING"; do
+		dir=${lib%%:*}
+		echo
+		echo "================================================================"
+		echo "$dir, built into ffmpeg"
+		echo "================================================================"
+		case $dir in freetype-*)
+			echo
+			echo "Portions of this software are copyright (c) 2024 The FreeType Project"
+			echo "(https://freetype.org). All rights reserved."
+			;;
+		esac
+		for f in ${lib#*:}; do
+			echo
+			cat "$WORK/$dir/$f"
+		done
+	done
+} >"$OUT/bin/LICENSE-ffmpeg.txt"
 
 # What this build is, written down beside the binary, read back off the
 # binary rather than echoed from the variables above.
