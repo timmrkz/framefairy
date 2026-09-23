@@ -92,10 +92,10 @@
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
     captions?: CaptionCue[];
-    // The colours the captions are burned in, the text and the box behind
-    // it, as the video preview draws them. Each block shows its words in
-    // them, so a colour picked for the short is seen here too.
-    captionLook?: { text: string; box: string } | null;
+    // The colour the caption words are burned in, as the video preview
+    // draws it. Each block carries it, so a colour picked for the short is
+    // seen here too.
+    captionLook?: { text: string } | null;
     // A caption edge let go of: the word it begins or ends on and the new
     // moment, both in the episode, or a moment below nought to put it back
     // where its words put it. True when it was saved.
@@ -970,7 +970,6 @@
     return draftCaptions(captions, capDraft).map((c, i) => ({
       i,
       c: captions[i],
-      words: (captions[i].lines ?? []).flatMap((l) => l.words.map((w) => w.text)).join(" "),
       from: inEpisode(segments, c.start),
       to: inEpisode(segments, Math.min(c.end, clipLength)),
     }));
@@ -1144,7 +1143,12 @@
       ></div>
     {/if}
     {#each drawnPieces as p, i (i)}
-      <div class="piece" style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"></div>
+      <div
+        class="piece"
+        class:first={i === 0}
+        class:last={i === drawnPieces.length - 1}
+        style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"
+      ></div>
     {/each}
     <!-- A cut is drawn over the pieces rather than between them, so a cut
          being dragged wider is seen taking the piece rather than waiting
@@ -1209,19 +1213,26 @@
       ></div>
     {/if}
     {#if captionBlocks.length}
-      <!-- The captions along the foot of the track, each a block from where
-           it appears to where it goes. -->
+      <!-- The captions across the middle of the track, each a block from
+           where it appears to where it goes. -->
       <div
         class="captions"
-        style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
-          'transparent'}"
+        style="--cap-text: {captionLook?.text ?? 'var(--text)'}"
       >
         {#each captionBlocks as b (b.i)}
+          <!-- A click puts the playhead where the caption appears, which is
+               how it is heard from its first word. -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class="caption"
             class:showing={time >= b.from && time < b.to}
             style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
-          >{b.words}</div>
+            role="button"
+            tabindex="-1"
+            title="Put the playhead where this caption appears"
+            onpointerdown={(e) => e.stopPropagation()}
+            onclick={() => onseek(b.from)}
+          ><i></i></div>
         {/each}
       </div>
       {#if !locked && oncaptiontime}
@@ -1371,9 +1382,14 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    border-top: 2px solid var(--accent);
-    border-bottom: 2px solid var(--accent);
+    box-sizing: border-box;
+    border: 2px solid var(--accent);
+    /* Just enough that the corners are not points. */
+    border-radius: 3px;
     pointer-events: none;
+    /* Over the time lines, the cuts and the captions, so the clip is one
+       solid frame that nothing on the track crosses. */
+    z-index: 2;
   }
 
   /* What the clip keeps. The wash is the one thing that says which parts
@@ -1384,6 +1400,20 @@
     bottom: 0;
     background: var(--accent-wash);
     pointer-events: none;
+  }
+
+  /* The wash at the clip's two ends takes the frame's corners, so none of
+     it shows outside them. */
+  .piece.first {
+    border-radius: 3px 0 0 3px;
+  }
+
+  .piece.last {
+    border-radius: 0 3px 3px 0;
+  }
+
+  .piece.first.last {
+    border-radius: 3px;
   }
 
   /* A part the clip leaves out. It is the track's own background and
@@ -1452,65 +1482,68 @@
     opacity: 1;
   }
 
-  /* The captions along the foot of the track. The band is 24 pixels, a
-     block of 18 with 3 above and below it, and the edges are as tall as
-     the band so they never reach the trim and cut edges above them. */
+  /* The captions in a band across the middle of the track, where the
+     waveform is at its quietest, with room above and below them. The band
+     is 24 pixels, a block of 16 with 4 above and below it, and it lands on
+     a whole pixel whatever height the track is. */
   .captions {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
+    top: round(down, calc(50% - 12px), 1px);
     height: 24px;
     pointer-events: none;
     z-index: 1;
   }
 
-  /* Each block is the caption as the short shows it: its own words, in
-     the text colour on the box colour, laid over the app's own grey so a
-     box that lets the picture through is still a block. The colours are
-     the short's and change with it. Everything the hand works with is the
-     app's: the frame, the mark on the caption on screen and the edges, so
-     they read the same whatever colours the captions are given.
-
-     A block is drawn a pixel short of its time at each end, so two
-     captions that meet show a gap of two pixels where one goes and the
-     next appears. */
+  /* A block is the app's own dark with a bar in it, in the colour the
+     words are burned in and as tall as a lowercase letter, rounded just
+     enough that the dark shows round it. The colour is the short's and
+     changes with it, and everything around it is the app's, so the block
+     reads whatever colour the captions are given. A block is drawn a pixel
+     short of its time at each end, so two captions that meet show a gap. */
   .caption {
     position: absolute;
-    top: 3px;
-    height: 18px;
+    top: 4px;
+    height: 16px;
     margin-left: 1px;
     box-sizing: border-box;
-    padding: 0 5px;
-    background:
-      linear-gradient(var(--cap-box), var(--cap-box)),
-      var(--ink-2);
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    background: var(--ink-0);
     border-radius: 3px;
     box-shadow: inset 0 0 0 1px var(--line);
-    color: var(--cap-text);
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 18px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    pointer-events: auto;
+    cursor: pointer;
   }
 
-  /* The caption the video preview is showing is ringed in the app's
-     colour, with a dark line outside the ring so it holds against any
-     colour the box is given. */
+  .caption i {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    height: 6px;
+    border-radius: 2px;
+    background: var(--cap-text);
+  }
+
+  /* It answers the pointer the way a row of the clip list does. */
+  .caption:hover {
+    background: var(--ink-2);
+  }
+
+  /* The caption the video preview is showing wears the app's colour
+     round it. */
   .caption.showing {
-    box-shadow:
-      inset 0 0 0 2px var(--accent-hi),
-      0 0 0 1px var(--ink-0);
+    box-shadow: inset 0 0 0 2px var(--accent-hi);
   }
 
   /* An edge is grabbed on its own side of the gap, so where two captions
      meet the left side is the one before going and the right side the one
-     after appearing. */
+     after appearing. It stands in the band, as tall as it. */
   .capedge {
     position: absolute;
-    bottom: 0;
+    top: round(down, calc(50% - 12px), 1px);
     height: 24px;
     width: 8px;
     cursor: ew-resize;
@@ -1526,8 +1559,8 @@
   .capedge::after {
     content: "";
     position: absolute;
-    top: 2px;
-    bottom: 2px;
+    top: 4px;
+    bottom: 4px;
     width: 2px;
     background: var(--text);
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
@@ -1569,6 +1602,8 @@
     z-index: 2;
   }
 
+  /* The frame draws the clip's sides, so the edge only shows itself when
+     it is reached or dragged, wider and brighter. */
   .edge::after {
     content: "";
     position: absolute;
@@ -1576,7 +1611,8 @@
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--accent);
+    background: transparent;
+    border-radius: 2px;
   }
 
   .edge:hover::after,

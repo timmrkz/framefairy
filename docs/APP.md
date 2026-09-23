@@ -709,10 +709,12 @@ place.
       now, where a short will show them, and a magnifier that could only
       read was a second place to look at the same words. So it came out,
       and the track is the waveform and the playhead and nothing else.
-    - **The clip is one thing, holes and all.** Two rules in the accent run
-      above and below it from its first piece to its last, whatever is cut
-      out in between, so a clip with a cut in it reads as one clip and not
-      as two standing in a row. The accent wash inside the rules says
+    - **The clip is one thing, holes and all.** One frame in the accent,
+      with its corners just rounded, runs round it from its first piece to
+      its last, whatever is cut out in between, so a clip with a cut in it
+      reads as one clip and not as two standing in a row. It is drawn over
+      the time lines, the cuts and the captions, so nothing crosses it. An
+      edge of it widens under the pointer and while it is dragged. The accent wash inside the rules says
       which parts are kept. A part the clip leaves out, usually dead
       air the engine found, is the track's own background with an accent
       line at each end, the way an editor marks the place two shots were
@@ -834,9 +836,10 @@ appears, or a moment after its last word when a pause follows. Where the
 timing of the words is a little off from what is heard, a caption can be
 moved by hand, on the clip timeline.
 
-- **The captions are along the foot of the clip timeline**, each a block
-  from where it appears to where it goes, on the same clock as everything
-  else on it.
+- **The captions run across the middle of the clip timeline**, each a
+  block from where it appears to where it goes, on the same clock as
+  everything else on it. A click on a block puts the playhead where that
+  caption appears, and a block brightens under the pointer.
 - **Either edge is dragged.** Where two captions meet, the line between
   them has two sides: the left side is where the one before goes, the
   right side where the one after appears. Dragging the left side leaves a
@@ -846,16 +849,14 @@ moved by hand, on the clip timeline.
   caption at a time. An edge lands on a whole frame.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
-- **Each block is its caption as the short shows it**: its own words in
-  the text colour on the box colour, so a colour picked in the captions
-  column is seen here too, while it is picked. What the hand works with
-  stays in the app's colours, so it reads whatever the captions are
-  given: every block has a thin frame, the one the video preview is
-  showing is ringed in the accent, and the edge under the pointer, or the
-  one being dragged, is a white line with a dark edge that goes again
-  when the hand lets go. Two captions that meet have a gap of two pixels
-  between them. A double-click on an edge moved by hand puts it back
-  where its words put it, and Undo takes back any move.
+- **A block is the app's dark with a bar in it** in the colour the words
+  are burned in, as tall as a lowercase letter, so a colour picked in the
+  captions column is seen here too, while it is picked. Everything around
+  the bar is the app's, so it reads whatever colour the captions are given:
+  the one the video preview is showing is framed in the accent, and the
+  edge under the pointer, or the one being dragged, is a white line with a
+  dark edge that goes again when the hand lets go. Two captions that meet
+  have a gap of two pixels between them.
 - **A click on an edge puts the playhead on it**, the way a clip edge does,
   which is how a caption is heard from where it appears.
 
