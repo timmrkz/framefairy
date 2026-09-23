@@ -610,7 +610,9 @@ place.
       one request and never split behind anybody's back, so it reaches no
       further than the model reads at once, and no shorter than the clips
       asked for need at their shortest. Both are walls: an edge stops
-      exactly there, and the pill says by what, *all the model reads at
+      exactly there, the border of the window flashes twice in the red of
+      a warning the moment it runs in, once for each time and not for as
+      long as the hand keeps pulling, and the pill says by what, *all the model reads at
       once*, *all the budget pays for* or *room for 12 clips of 20 s*. How
       far the model reads is the engine's to say, from the model chosen in
       the settings, and the range picker adds up the lines a window covers

@@ -141,6 +141,17 @@
   // What holds the window back while it is being drawn, so it can say so.
   let held = $state<"" | "least" | "reach">("");
 
+  // The moment an edge runs into a limit, the border flashes twice in the
+  // colour of a warning, so a hand that keeps pulling knows it is the
+  // limit and not the app that stopped. Once for each time it runs in, not
+  // for as long as it is held there. The two names take turns so the same
+  // animation starts over each time, without the element being made again,
+  // which would drop the pointer the drag is holding.
+  let knock = $state<"" | "a" | "b">("");
+  function knocked() {
+    knock = knock === "a" ? "b" : "a";
+  }
+
   // An edge held back by the model stops exactly at the limit. The limit
   // is a wall, and a wall wins over the step, the same as a searched part
   // does: stopping at the step before it would give away room the model
@@ -254,6 +265,7 @@
       if (Math.abs(e.clientX - startClientX) > slack) dragged = true;
       if (!dragged || locked) return;
       showing = true;
+      const was = held;
       held = "";
       const here = timeAt(e.clientX);
       // Edges land on the grid, and the ends of the episode win over it,
@@ -285,6 +297,7 @@
           }
         }
       }
+      if (held && held !== was) knocked();
     };
     const up = (e: PointerEvent) => {
       target.removeEventListener("pointermove", move);
@@ -314,8 +327,11 @@
     else if (event.key === "ArrowRight") delta = step;
     else return;
     event.preventDefault();
+    held = "";
     if (kind === "from") from = startAt(to, clamp(from + delta));
     else to = endAt(from, clamp(to + delta));
+    // A key pressed against the limit is a hand running into it again.
+    if (held) knocked();
     held = "";
     onmoved?.(kind);
   }
@@ -434,6 +450,8 @@
     class:whole
     class:lit={grip}
     class:xray={covering}
+    class:knock-a={knock === "a"}
+    class:knock-b={knock === "b"}
     style="left: {at(from)}px; width: {at(to) - at(from)}px"
     title="Drag it along the range picker"
     onpointerdown={(e) => drag("move", e)}
@@ -845,6 +863,49 @@
   .window.whole {
     background: transparent;
     border-color: transparent;
+  }
+
+  /* Two quick flashes of the border in the warning colour. The red is a
+     border of its own lying exactly over the window's, and only how much
+     of it is seen changes, so no colour is ever mixed half way between
+     the red and the accent, which the accent, being mixed itself, makes
+     unpredictable. Two names for one animation, see knock. */
+  .window::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--frame-line));
+    border: var(--frame-line) solid var(--err);
+    border-radius: var(--frame-radius);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .window.knock-a::after {
+    animation: knock-a 170ms ease-out 2;
+  }
+
+  .window.knock-b::after {
+    animation: knock-b 170ms ease-out 2;
+  }
+
+  @keyframes knock-a {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes knock-b {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
   }
 
   /* A window drawn over material that was searched already is a window
