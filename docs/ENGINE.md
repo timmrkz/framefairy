@@ -14,8 +14,29 @@ model takes, a piece of 15 s takes 0.09 GB more, 60 s 0.4 GB, 4 minutes
 1.9 GB and 6 minutes 4.2 GB, while it hears 10 times faster than real time
 at 15 s and 4 times at 6 minutes. And a cut inside a word makes the model
 hear that word as another word, "Bank" as "Bahn" and "Geruch" as
-"Großmutter": cut exactly every 30 s through a recorded talk, 30 words came
-out wrong at 26 of the cuts. So a piece ends at the quietest moment between 15 and 30 s.
+"Großmutter". So a piece ends at the middle of the quietest 300 ms
+between 15 and 30 s. There is no threshold: some moment is always the
+quietest, so a cut is never impossible.
+
+That rule was measured against the alternatives over a whole recorded talk
+of 18 minutes, 3219 words, scored against the talk's own transcript, clean
+and with something under it the whole time:
+
+| | clean | music | street noise | a second voice |
+|---|---|---|---|---|
+| a cut every 30 s wherever it lands | 123 wrong | 134 | 175 | 723 |
+| the quietest 300 ms, the rule | 123 | 112 | 140 | 696 |
+| every 30 s, keeping only the words that end 2 s before the cut and starting the next piece before the first word left out | 122 | 137 | 160 | 705 |
+
+Speech is louder than what lies under it, so the quietest moment is still
+a gap between words when there is music or traffic, and that is where the
+rule is better than cutting blind. Cutting by the model's own word timings
+and hearing the seams twice did not beat it and costs 8 percent more
+hearing. A second voice talking the whole time costs a fifth of the words
+whatever the cut, because the model writes down both speakers. The width
+of the quiet moment was measured the same way, over clean, music and
+street: 100 ms 393 wrong in all, 200 ms 414, 300 ms 375, 400 ms 375,
+600 ms 415. 300 and 400 are the same within what one talk can tell.
 
 One cut is placed exactly: the end of the window the first search waits
 for. The app gives the transcription that point, `Engine.StopAt`, and the
