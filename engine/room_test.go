@@ -162,3 +162,23 @@ func TestTheWeightOfAWindowIsNeverLessThanWhatItSends(t *testing.T) {
 		t.Error("no words, and still something to weigh")
 	}
 }
+
+// What has not been heard yet is weighed at the episode's own rate once
+// there is enough of it, and never lighter than the starting point.
+func TestTheRateOfWhatIsNotHeardYet(t *testing.T) {
+	if RateOf(nil) != SpokenChars {
+		t.Error("no lines, and a rate of their own")
+	}
+	short := []LineWeight{{0, 3, 900}, {4, 300, 900}}
+	if RateOf(short) != SpokenChars {
+		t.Error("five minutes decide the rate")
+	}
+	dense := []LineWeight{{0, 3, 20000}, {4, 1000, 20000}}
+	if got := RateOf(dense); got != 40 {
+		t.Errorf("a dense episode weighs %v a second, want 40", got)
+	}
+	light := []LineWeight{{0, 3, 100}, {4, 1000, 100}}
+	if RateOf(light) != SpokenChars {
+		t.Error("a light episode weighs less than the starting point")
+	}
+}

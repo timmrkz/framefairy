@@ -1,6 +1,8 @@
 // Typed calls into the Go side. The names match the methods of the FrameFairy
 // service in main.go.
 import { Call, Events } from "@wailsio/runtime";
+import type { RoomView } from "./room";
+export type { RoomView } from "./room";
 
 const call = <T>(method: string, ...args: unknown[]): Promise<T> =>
   Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
@@ -362,6 +364,9 @@ export const api = {
   source: (path: string) => call<SourceView>("Source", path),
   clips: (path: string) => call<ClipEntry[]>("Clips", path),
   coverage: (path: string, least: number) => call<CoverageView>("Coverage", path, least),
+  // How much of the episode one search can read, and the weight of every
+  // line so far, so the range picker knows how far a window may reach.
+  room: (path: string) => call<RoomView>("Room", path),
   // Gives a part of an episode back: the clips in it go and the model
   // may read it again. It answers with how many clips went.
   removeSearch: (path: string, from: number, to: number) =>

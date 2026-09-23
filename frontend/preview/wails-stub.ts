@@ -481,6 +481,16 @@ export const Call = {
           searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
           free: [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
         });
+      case "Room":
+        // A model that reads everything, or with ?small one that reads
+        // about 35 minutes at a time, the way Qwen3 14B does.
+        return Promise.resolve({
+          chars: location.search.includes("small") ? 52000 : 600000,
+          by: "context",
+          lines: [],
+          heard: 0,
+          rate: 25,
+        });
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[1])),

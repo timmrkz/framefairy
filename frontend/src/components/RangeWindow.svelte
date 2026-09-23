@@ -5,6 +5,7 @@
   // preview.
   import { onMount } from "svelte";
   import { clock, type WindowView } from "../lib/api";
+  import type { Reach } from "../lib/room";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
@@ -29,6 +30,10 @@
     holding = false,
     pausing = false,
     ontranscription,
+    least = 0,
+    leastSays = "",
+    reach = null,
+    reachSays = "",
   }: {
     duration: number;
     covered?: number;
@@ -66,6 +71,15 @@
     // Pause it while it runs, carry on while it is stopped. One control,
     // because there is only ever one thing to do.
     ontranscription?: () => void;
+    // What a search can do with the window holds its edges. It is no
+    // shorter than least, the clips asked for one after another at their
+    // shortest, and it reaches no further than the model reads in one
+    // request, which reach works out from where the window starts. The
+    // two sayings are what the window says while an edge is held by one.
+    least?: number;
+    leastSays?: string;
+    reach?: Reach | null;
+    reachSays?: string;
   } = $props();
 
   // The control at the transcript's edge is only there while the pointer is
@@ -112,6 +126,53 @@
     return Math.round(t / grid) * grid;
   }
 
+  // The shortest a window may be, and never longer than the episode.
+  const shortest = $derived(Math.min(Math.max(least, minimum), duration));
+
+  // The furthest an end may go from a start, and the earliest a start may
+  // be for an end, as far as the model reads.
+  function latest(start: number): number {
+    return reach ? reach.longestFrom(start) : duration;
+  }
+  function earliest(end: number): number {
+    return reach ? reach.earliestTo(end) : 0;
+  }
+
+  // What holds the window back while it is being drawn, so it can say so.
+  let held = $state<"" | "least" | "reach">("");
+
+  // An edge held back by the model stops exactly at the limit. The limit
+  // is a wall, and a wall wins over the step, the same as a searched part
+  // does: stopping at the step before it would give away room the model
+  // has.
+  function endAt(start: number, want: number): number {
+    const lo = Math.min(start + shortest, duration);
+    const hi = latest(start);
+    if (want > hi) {
+      held = "reach";
+      return hi;
+    }
+    if (want < lo) {
+      held = "least";
+      return lo;
+    }
+    return want;
+  }
+
+  function startAt(end: number, want: number): number {
+    const lo = earliest(end);
+    const hi = Math.max(end - shortest, 0);
+    if (want < lo) {
+      held = "reach";
+      return lo;
+    }
+    if (want > hi) {
+      held = "least";
+      return hi;
+    }
+    return want;
+  }
+
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
   const pending = $derived(duration > 0 && covered < duration - 0.5);
 
@@ -148,7 +209,7 @@
   function reset() {
     if (locked) return;
     from = 0;
-    to = duration;
+    to = latest(0);
     onmoved?.("from");
   }
 
@@ -193,21 +254,35 @@
       if (Math.abs(e.clientX - startClientX) > slack) dragged = true;
       if (!dragged || locked) return;
       showing = true;
+      held = "";
       const here = timeAt(e.clientX);
-      // Edges land on the grid, and the ends of the episode win over it.
+      // Edges land on the grid, and the ends of the episode win over it,
+      // and what a search can do with the window wins over both.
       const t = clamp(round(here));
-      if (kind === "from") from = Math.max(0, Math.min(t, to - minimum));
-      else if (kind === "to") to = Math.min(duration, Math.max(t, from + minimum));
+      if (kind === "from") from = startAt(to, t);
+      else if (kind === "to") to = endAt(from, t);
       else if (kind === "move") {
+        // The window keeps its length where the model can read it, and
+        // gives up the end where it cannot. Moved back, it has its length
+        // again.
         from = Math.max(0, Math.min(round(here - grab), duration - span));
-        to = from + span;
+        to = endAt(from, from + span);
       } else {
         const a = Math.min(startX, t);
         const b = Math.max(startX, t);
         if (b - a >= minimum) {
-          from = a;
-          to = b;
-          moved = t > startX ? "to" : "from";
+          // Drawn to the right the start stays where the press was, drawn
+          // to the left the end does, and the other edge keeps to the
+          // limits.
+          if (t > startX) {
+            from = Math.min(a, Math.max(duration - shortest, 0));
+            to = endAt(from, b);
+            moved = "to";
+          } else {
+            to = Math.max(b, Math.min(shortest, duration));
+            from = startAt(to, a);
+            moved = "from";
+          }
         }
       }
     };
@@ -216,6 +291,7 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       showing = false;
+      held = "";
       // A press that moved a few pixels without changing the window is a
       // click, not a drag, so the player goes to where it was let go.
       if (from === startFrom && to === startTo) {
@@ -238,8 +314,9 @@
     else if (event.key === "ArrowRight") delta = step;
     else return;
     event.preventDefault();
-    if (kind === "from") from = Math.max(0, Math.min(from + delta, to - minimum));
-    else to = Math.min(duration, Math.max(to + delta, from + minimum));
+    if (kind === "from") from = startAt(to, clamp(from + delta));
+    else to = endAt(from, clamp(to + delta));
+    held = "";
     onmoved?.(kind);
   }
 
@@ -442,7 +519,11 @@
     </Info>
   </span>
   {#if showing}
-    <div class="said"><div class="row num">{clock(from)} to {clock(to)}</div></div>
+    <div class="said">
+      <div class="row num">
+        {clock(from)} to {clock(to)}{#if held === "reach" && reachSays}, {reachSays}{:else if held === "least" && leastSays}, {leastSays}{/if}
+      </div>
+    </div>
   {/if}
   <div
       class="handle"
@@ -726,6 +807,7 @@
   }
 
   .said .row {
+    white-space: nowrap;
     gap: 8px;
     height: 36px;
     padding: 0 6px 0 12px;
