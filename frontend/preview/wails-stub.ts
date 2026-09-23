@@ -453,6 +453,9 @@ export const Call = {
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
       // Every search the interface asks for, so a test can see the first one
       // start by itself.
+      case "HoldTranscription":
+        ((window as any).__holds ??= []).push(args[1]);
+        return Promise.resolve(null);
       case "Plan": {
         const asked = ((window as any).__planned ??= []);
         asked.push({ at: Date.now() - started, wall: Date.now(), req: args[1] });

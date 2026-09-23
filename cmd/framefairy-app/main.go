@@ -237,6 +237,9 @@ type FrameFairy struct {
 	saidBy string
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
+	// holds are where each episode's transcription stops for now: the end
+	// of the window its first search is waiting for, see HoldTranscription.
+	holds map[string]float64
 }
 
 // Version of the engine.
@@ -757,8 +760,61 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	// both looked, both saw nothing and both added, which is two
 	// transcriptions of one episode.
 	return s.jobs.addOnce(path, "transcribe", "Transcription", func(ctx context.Context, p *engine.Project) (string, error) {
+		p.StopAt(func() float64 { return s.holdOf(path) })
 		return "", p.Transcribe(ctx)
 	})
+}
+
+// HoldTranscription tells the transcription of an episode where to stop for
+// now: the end of the window its first search is waiting for. The chunk the
+// speech model hears is cut exactly there, so the transcription stops on the
+// window's edge and the search starts at once, rather than a pause arriving
+// from outside a chunk or two too late. 0 lets go of it, and a transcription
+// that had stopped there carries on.
+func (s *FrameFairy) HoldTranscription(path string, at float64) error {
+	if !s.store.Known(path) {
+		return os.ErrNotExist
+	}
+	if at > 0 {
+		s.mu.Lock()
+		if s.holds == nil {
+			s.holds = map[string]float64{}
+		}
+		s.holds[path] = at
+		s.mu.Unlock()
+		return nil
+	}
+	if s.releaseHold(path) {
+		s.carryOnHeld(path)
+	}
+	return nil
+}
+
+func (s *FrameFairy) holdOf(path string) float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.holds[path]
+}
+
+// releaseHold lets go of an episode's hold and says whether it had one.
+func (s *FrameFairy) releaseHold(path string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, held := s.holds[path]
+	delete(s.holds, path)
+	return held
+}
+
+// carryOnHeld starts the transcription again if it had stopped at its hold
+// and is not finished.
+func (s *FrameFairy) carryOnHeld(path string) {
+	if _, done := coverage(path, s.store.Settings().ASRModel); done {
+		return
+	}
+	if j, ok := s.jobs.find(path, "transcribe"); ok && (j.State == JobRunning || j.State == JobQueued) {
+		return
+	}
+	s.Transcribe(path)
 }
 
 // Plan queues finding clips in a window of an episode. It starts as soon as
@@ -796,6 +852,13 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 			return "", err
 		}
 		paused = append(paused, s.pauseTranscriptions()...)
+		// The transcription stopped at this search's window, if it had a
+		// hold there. It carries on after the search like one paused for it.
+		if s.releaseHold(p.Source) {
+			if _, done := coverage(p.Source, s.store.Settings().ASRModel); !done {
+				paused = append(paused, p.Source)
+			}
+		}
 		if len(paused) > 0 {
 			p.Log().Info("the transcription waits while clips are found and carries on after")
 		}

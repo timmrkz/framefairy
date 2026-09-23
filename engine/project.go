@@ -75,6 +75,12 @@ func (p *Project) run(ctx context.Context, opts Options) error {
 	return ErrStepFailed
 }
 
+// StopAt gives the transcription a place to stop for now, asked on every
+// chunk: the end of the window the first search is waiting for, or 0.
+func (p *Project) StopAt(at func() float64) {
+	p.engine.StopAt = at
+}
+
 // Transcribe makes sure the whole episode has a transcript. It is cached, so
 // calling it again costs nothing.
 func (p *Project) Transcribe(ctx context.Context) error {

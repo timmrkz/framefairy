@@ -33,8 +33,12 @@ type transcriptFile struct {
 	Mean    PyFloat     `json:"mean"`
 	// Partial marks a transcription still in progress, or stopped before
 	// the end. To is then how far it got.
-	Partial bool     `json:"partial,omitempty"`
-	Words   [][3]any `json:"words"`
+	Partial bool `json:"partial,omitempty"`
+	// Resume is where carrying on starts, when that is before To. A
+	// transcription stopped at the end of a window leaves out the word that
+	// ran across it, and hears it whole when it carries on from here.
+	Resume PyFloat  `json:"resume,omitempty"`
+	Words  [][3]any `json:"words"`
 }
 
 func stampOf(path string) (sourceStamp, error) {
@@ -285,6 +289,9 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 		if file, words, frames, ok := readTranscriptFile(path, stamp, model); ok && file.Partial &&
 			float64(file.From) <= 0.001 && float64(file.To) < window.End {
 			covered := float64(file.To)
+			if r := float64(file.Resume); r > 0 && r < covered {
+				covered = r
+			}
 			doneFrames = frames[:min(len(frames), int(math.Round(covered/FrameSeconds)))]
 			todo = Window{float64(len(doneFrames)) * FrameSeconds, window.End}
 			// It carries on where the loudness ends. The words and the
@@ -306,19 +313,22 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		return nil, err
 	}
-	save := func(words []Cue, frames []float32, covered float64, partial bool) error {
+	save := func(words []Cue, frames []float32, covered, resume float64, partial bool) error {
 		allWords := append(append([]Cue(nil), doneWords...), words...)
 		allFrames := append(append([]float32(nil), doneFrames...), frames...)
 		mean := meanOfFrames(allFrames)
 		file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
 			From: PyFloat(window.Start), To: PyFloat(roundTo(covered, 3)),
 			Mean: PyFloat(roundTo(mean, 3)), Partial: partial, Words: storedWords(allWords)}
+		if resume < covered-0.0005 {
+			file.Resume = PyFloat(roundTo(resume, 3))
+		}
 		return writeTranscript(path, file, allFrames)
 	}
 	var progress checkpoint
 	if !windowed {
-		progress = func(words []Cue, frames []float32, covered float64) {
-			if err := save(words, frames, covered, true); err != nil {
+		progress = func(words []Cue, frames []float32, covered, resume float64) {
+			if err := save(words, frames, covered, resume, true); err != nil {
 				e.Log.Detail("could not save the transcript so far: %s", err)
 			}
 		}
@@ -364,7 +374,7 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 		}
 		return t, nil
 	}
-	if err := save(t.RawWords, t.Frames, window.End, false); err != nil {
+	if err := save(t.RawWords, t.Frames, window.End, window.End, false); err != nil {
 		e.Log.Warn("could not save the transcript: %s", err)
 	}
 	if t, ok := readTranscript(path, stamp, model, window, silenceDB); ok {

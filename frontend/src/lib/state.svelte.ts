@@ -119,6 +119,8 @@ class Chosen {
   looked = $state<Record<string, boolean>>({});
   // Whether the model has been loaded ahead of that first search.
   warmed = $state<Record<string, boolean>>({});
+  // Where the transcription was told to stop for that first search.
+  held = $state<Record<string, number>>({});
 
   keep(path: string, from: number, to: number) {
     this.windows[path] = { from, to };
@@ -129,6 +131,7 @@ class Chosen {
     delete this.windows[path];
     delete this.looked[path];
     delete this.warmed[path];
+    delete this.held[path];
   }
 
   of(path: string, duration: number): { from: number; to: number } | null {

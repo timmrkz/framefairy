@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -263,4 +264,66 @@ func TestASlowPauseIsStillCarriedOn(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Error("the transcription was never carried on")
+}
+
+// The hold of an episode's transcription: set from the workspace, read by
+// the transcription on every chunk, let go of by the search or by Cancel.
+// Letting go carries on a transcription that had stopped there.
+func TestTheTranscriptionHold(t *testing.T) {
+	s, path, home := library(t)
+	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
+	if err := s.HoldTranscription(filepath.Join(home, "not-mine.mp4"), 1800); err == nil {
+		t.Error("a hold was set on an episode that is not in the library")
+	}
+	if err := s.HoldTranscription(path, 1800); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.holdOf(path); got != 1800 {
+		t.Errorf("the hold reads %v", got)
+	}
+	// Cancel before the search: the hold goes and the transcription, which
+	// stopped there, carries on.
+	before := transcriptions(s, path)
+	if err := s.HoldTranscription(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	if s.holdOf(path) != 0 {
+		t.Error("the hold is still there after it was let go of")
+	}
+	if transcriptions(s, path) != before+1 {
+		t.Error("the transcription that stopped at the hold did not carry on")
+	}
+	// Removing the episode forgets its hold.
+	_ = s.HoldTranscription(path, 900)
+	s.forget(path)
+	if s.holdOf(path) != 0 {
+		t.Error("a removed episode kept its hold")
+	}
+}
+
+// Holds are set and let go of from the window while transcriptions read
+// them on their own goroutines.
+func TestHoldsFromEverywhereAtOnce(t *testing.T) {
+	s, path, _ := library(t)
+	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 50 {
+				switch (g + i) % 4 {
+				case 0:
+					_ = s.HoldTranscription(path, float64(600+i))
+				case 1:
+					s.holdOf(path)
+				case 2:
+					s.releaseHold(path)
+				default:
+					_ = s.HoldTranscription(path, 0)
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

@@ -118,7 +118,11 @@ what became of it.
     preview harness with a saved transcript that trails like the real one,
     `?growing&lagging`: the search was asked for 6.1 s after the window was
     heard before, and 2 ms after now. In Go, 0.9 s from the transcript on
-    disk to the search before, under 150 ms now.
+    disk to the search before, under 150 ms now. Then to zero: the
+    transcription is told where the window ends and cuts the piece the
+    speech model hears exactly there, so it hears nothing past the edge
+    rather than up to two pieces of 30 s. The window is locked from the
+    start of the transcription until that search has run.
 13. **Smaller ones.** Stopping llama-server read its state while another
     goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
     loading costs one search.

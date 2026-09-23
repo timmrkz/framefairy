@@ -64,6 +64,7 @@ func (s *FrameFairy) forget(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.histories, path)
+	delete(s.holds, path)
 }
 
 // edit runs one edit of an episode and remembers what it changed. An edit

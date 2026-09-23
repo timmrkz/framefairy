@@ -529,20 +529,21 @@ place.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the transcription starts, and the moment it covers the
       window chosen on the track the first search runs. Until then the
-      first row of the clip list says so, and the window can still be
-      moved. The local model is loaded in the meantime, so the search
+      first row of the clip list says so, and the window is locked, from
+      the moment the transcription starts until the search has run,
+      because the window's end is where the transcription stops.
+      **Cancel** in that row lets go of both. The local model is loaded
+      in the meantime, so the search
       starts with it in memory. **While clips are found, the transcription
       waits**, on this episode and any other, so the model has the
       machine to itself, and it carries on by itself when the search
-      ends. One paused by hand stays paused. The first search is asked
-      for the moment the audio has been heard to the end of the window,
-      not the next time the transcript is written down, which is every
-      8 s of work and minutes of audio apart. The search pauses the
-      transcription at once, the pause writes down all it heard, and the
-      search starts the moment that is on disk. The transcription hears in
-      chunks of 15 to 30 s, so its edge stops at most two chunks past the
-      end of the window, about a minute of audio, and carries on from
-      there after the search. It
+      ends. One paused by hand stays paused. **The transcription stops
+      exactly at the end of the window**: the workspace tells it where,
+      and the piece of audio the speech model hears is cut on the
+      window's edge, so it hears nothing past it. It saves what it heard,
+      the search starts at once, and the transcription carries on after
+      the search. A word that runs across the edge is not in the window,
+      and is heard whole when the transcription carries on. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and

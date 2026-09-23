@@ -193,6 +193,11 @@
   // for when it is wanted.
   function skipLook() {
     chosen.looked[path] = true;
+    // The transcription stops at the window only for that search.
+    if (chosen.held[path]) {
+      delete chosen.held[path];
+      api.holdTranscription(path, 0).catch(() => {});
+    }
   }
 
   function stopWork() {
@@ -1201,6 +1206,20 @@
     findClips(false);
   });
 
+  // The transcription stops exactly at the end of that first search's
+  // window, rather than being paused from outside a chunk or two past it:
+  // the chunk the speech model hears is cut on the window's edge. The
+  // window is locked from here until the search has run, so the edge the
+  // transcription stops at is the edge the search reads to.
+  $effect(() => {
+    if (!source || !status || !lookPending || to <= 0) return;
+    if (chosen.held[path] === to) return;
+    chosen.held[path] = to;
+    api.holdTranscription(path, to).catch(() => {
+      // Without the hold the search pauses the transcription itself.
+    });
+  });
+
   // The model for that first search is loaded while the transcript is on
   // its way, once for each episode while the app runs.
   $effect(() => {
@@ -1434,7 +1453,7 @@
     onseek={seekTo}
     searched={coverage.searched}
     onremove={(span) => (removingSearch = span)}
-    locked={finding || starting}
+    locked={finding || starting || lookPending}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
     {partly}

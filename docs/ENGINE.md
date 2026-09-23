@@ -4,6 +4,26 @@ The engine in `engine/` does all the work. The command line and the app are
 two front ends for it and call the same code. This page explains the ideas
 behind it. [CLI.md](CLI.md) and [APP.md](APP.md) explain how to use them.
 
+## Hearing the audio in pieces
+
+The speech model is given the audio in pieces of 15 to 30 s, and the
+engine chooses where to cut them, `engine/audio.go`. The model takes any
+length it is given, so the length is ours to choose, for two measured
+reasons. Its memory grows faster than the length: on top of the 0.9 GB the
+model takes, a piece of 15 s takes 0.09 GB more, 60 s 0.4 GB, 4 minutes
+1.9 GB and 6 minutes 4.2 GB, while it hears 10 times faster than real time
+at 15 s and 4 times at 6 minutes. And a cut inside a word makes the model
+hear that word as another word, "Bank" as "Bahn" and "Geruch" as
+"Großmutter": cut exactly every 30 s through a recorded talk, 30 words came
+out wrong at 26 of the cuts. So a piece ends at the quietest moment between 15 and 30 s.
+
+One cut is placed exactly: the end of the window the first search waits
+for. The app gives the transcription that point, `Engine.StopAt`, and the
+piece that reaches it is cut there, so nothing past the window's edge is
+heard. A word that runs across the edge is left out of what is saved, the
+transcript says to carry on from before it, `resume` in `words.json`, and
+the next pass hears it whole.
+
 ## How words get their timing
 
 The recogniser gives every word a start and a duration, on an 80 ms grid. It

@@ -360,6 +360,10 @@ export const api = {
   // Loads the local model for the first search of an episode while the
   // transcript is still on its way. Nothing comes back and nothing waits.
   warmModel: (path: string, from: number, to: number) => call<void>("WarmModel", path, from, to),
+  // Where the transcription stops for now: the end of the window the first
+  // search is waiting for. The speech model's chunk is cut exactly there.
+  // 0 lets go, and a transcription that had stopped there carries on.
+  holdTranscription: (path: string, at: number) => call<void>("HoldTranscription", path, at),
   removeEpisode: (path: string, deleteWork: boolean) =>
     call<void>("RemoveEpisode", path, deleteWork),
   source: (path: string) => call<SourceView>("Source", path),
