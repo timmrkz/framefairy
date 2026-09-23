@@ -292,6 +292,20 @@
        it would say there was.
        Nothing new is drawn here: the track says what the rest of the app
        says, in the words the rest of the app uses. -->
+  <!-- What has been read wears the fill, the same fill every piece of work
+       in hand wears in the app, so the track reads the way the rows and
+       the buttons do: filled behind the head, empty ahead of it. It is as
+       wide as the track and slides with the head, by the same transform
+       and the same glide, so the two never part. Only while the reading
+       runs, because a fill says work is in hand. -->
+  {#if pending && transcribing}
+    <div
+      class="readfill"
+      class:glide={glide && !holding}
+      class:held={holding}
+      style="transform: translateX(calc({at(covered)}px - 100%))"
+    ></div>
+  {/if}
   {#if pending}
     <div
       class="pending"
@@ -642,7 +656,25 @@
      it was going, which is a second of an edge still sliding after the
      press. Saying none outright ends it, and the edge lands on the second
      the work really reached. */
+  /* The fill behind the head: the app's colour at the strength every fill
+     in a control has, strongest at the head. It lies under the window,
+     the searched parts and the marks, like the track's own shade. */
+  .readfill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to right, var(--accent-fill), var(--accent-fill-hi));
+    pointer-events: none;
+  }
+
+  .readfill.glide {
+    transition: transform 1s linear;
+  }
+
   .pending.held,
+  .readfill.held,
   .reading.held {
     transition: none;
   }

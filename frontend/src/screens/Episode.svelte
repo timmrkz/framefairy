@@ -293,11 +293,15 @@
   // An empty headline means nothing new to say, which is what the moment
   // between two reports of the engine is, and the row keeps what it says.
   const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
+  // How much of the way to the end of the window the transcription has
+  // come, by the same edge the range picker draws, so the row and the line
+  // never disagree: full once the line has passed the end of the window.
+  const heardShare = $derived(to > 0 ? Math.min(Math.max(shownHeard / to, 0), 1) : -1);
   const next = $derived.by(() => {
     if (finding || starting) {
       const p = working?.progress;
       if (p?.text === "Waiting for the transcript") {
-        return { what: p.text, left: windowText, fraction: p.fraction >= 0 ? p.fraction : -1 };
+        return { what: p.text, left: windowText, fraction: heardShare };
       }
       return {
         what: p?.text ?? "",
@@ -308,11 +312,7 @@
       };
     }
     if (!lookPending) return null;
-    return {
-      what: "Waiting for the transcript",
-      left: windowText,
-      fraction: to > 0 ? Math.min(Math.max(covered / to, 0), 1) : -1,
-    };
+    return { what: "Waiting for the transcript", left: windowText, fraction: heardShare };
   });
 
   // What the row says, held long enough to be read. The engine reports
@@ -1873,8 +1873,11 @@
     /* The height left in the app: everything but the bar at the top, the
        space above the workspace and the edge at the foot. */
     --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge) - var(--above));
-    /* And the width: everything but the rail and the two edges. */
-    --stage-w: calc(100dvw - var(--rail) - 2 * var(--edge));
+    /* And the width: everything but the rail, the space after it and the
+       edge on the right. The rail is part of the app, so what parts it
+       from the settings is the space between two things, --gap, and only
+       the side that meets the app's own border is an edge. */
+    --stage-w: calc(100dvw - var(--rail) - var(--gap) - var(--edge));
     /* The columns beside the picture at their smallest, with a space on
        either side of it. */
     --sides: calc(var(--settings-w) + 280px + 2 * var(--gap));
@@ -1893,7 +1896,7 @@
     --pic-h: max(200px, calc(var(--space) - var(--down) - 1.5 * var(--wave-h)));
     --pic-w: calc(var(--pic-h) * var(--ar));
 
-    padding: var(--gap) var(--edge) var(--edge);
+    padding: var(--gap) var(--edge) var(--edge) var(--gap);
     display: flex;
     flex-direction: column;
     gap: var(--gap);
@@ -2107,14 +2110,16 @@
     gap: 4px;
   }
 
+  /* The colour is a square as tall as the row, so the number beside it
+     has room for 100 and its unit. */
   .pair .swatch {
-    width: 48px;
+    width: var(--control-h);
     flex: none;
   }
 
   .pair input.num {
-    width: 64px;
-    flex: none;
+    flex: 1;
+    min-width: 0;
   }
 
   .swatch::-webkit-color-swatch-wrapper {

@@ -257,6 +257,18 @@
     background: var(--ink-2);
   }
 
+  /* A row still to come answers the pointer the way a clip's row does,
+     a step brighter, because it is already a row of the list. The shimmer
+     is the row's own breath and goes on under it, so the two are seen
+     together. */
+  .ghost:hover {
+    background: var(--ink-3);
+  }
+
+  .next:hover {
+    background: var(--ink-2);
+  }
+
   /* The row the next clip will appear in, saying what it is waiting on,
      laid out as a clip's row is, a line of what and a line of how long. */
   .next {

@@ -918,14 +918,20 @@ things and no others, and each one means one thing.
   its own words. They are the beam's, not a thing of their own, and they
   are why a control with nothing to report is still alive to look at.
 - **The fill.** How far the work has come, when that is known. Inside the
-  control it is a wash with a bright head at the front, so where the work
-  has got to is a line rather than the place one shade becomes another. In
+  control it is a wash of the app's colour, 30 percent at the start and 50
+  at the head, with a bright line at the front, so what is done can be told
+  from what is left with daylight on the screen. The range picker wears
+  the same fill over what the transcription has read, sliding with the
+  line at its head, and the row of the clip list that waits for the
+  transcript fills by the same line, so the two never say different
+  things. In
   Activity, where a job has no control of its own, the same fill lies in a
   track of its own, with a light travelling over what is already done. Work that cannot
   say how far it has come shuttles across that track instead of standing at
   a number it does not have.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
-  will have, the part of the clip timeline the transcript has not reached,
+  will have, which are already rows of the list and brighten under the
+  pointer the way a clip's row does while they go on breathing, the part of the clip timeline the transcript has not reached,
   the window on the range picker while clips are being found for it. The
   place itself dims and comes back, two seconds, in and out. It is
   `animate-pulse`, which is what
