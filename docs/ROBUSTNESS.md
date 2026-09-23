@@ -76,7 +76,13 @@ what became of it.
    `cmd/framefairy-app/main.go`, test in `pause_test.go`.
 8. **Clip lists landing out of order in the interface.** An older list that
    arrives after an edit writes over it, so the edit looks undone until the
-   next refresh. `frontend/src/screens/Episode.svelte`. Open, R.6.
+   next refresh. Fixed: every answer that puts the clip list on screen, a
+   read of the list and the answer to an edit alike, takes a ticket, and
+   only the newest is used. The same for the episode's state and what has
+   been searched. The preview harness shows it with a list that is slow to
+   come, `?slowclips`: a clip removed while that list was on its way came
+   back on the old code and stays removed now.
+   `frontend/src/screens/Episode.svelte`.
 9. **Undo taking a clip a search found.** A clip that lands while an edit is
    saved becomes part of that edit, and undoing it removes the clip.
    Fixed: an edit changes clips and never makes them, so a clip or a plan

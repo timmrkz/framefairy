@@ -194,7 +194,7 @@ then makes the code survive it.
 | R.3 | Transcripts: a save that is cut short, read while it is written, a pause that lands mid-save, carrying on from a file that is damaged | `[ ]` |
 | R.4 | The model host: loads that fail, hang or are stopped, holders that let go twice or never, the app quitting while a model loads. One model in memory at a time, quitting stops the jobs and the model even while it loads `[x]`, a server left by an app that crashed `[ ]` | `[~]` |
 | R.5 | Plans written by a search while they are edited, undone and removed. A clip that lands during an edit is not the edit's `[x]` | `[~]` |
-| R.6 | The interface: answers that arrive late, out of order or for an episode no longer shown, events that stop, promises that never settle | `[ ]` |
+| R.6 | The interface: answers that arrive late, out of order or for an episode no longer shown, events that stop, promises that never settle. Job news in any order, clip lists, the episode's state and what was searched keep the newest answer `[x]` | `[~]` |
 | R.7 | What the person sees when something fails: a reason in words, and a way on | `[ ]` |
 
 ---

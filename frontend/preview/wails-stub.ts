@@ -465,6 +465,20 @@ export const Call = {
           );
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve([]);
+        // A list that is slow to come, the way it is while the machine is
+        // busy, and that knows nothing of what was done since it was asked
+        // for. It lands after an edit made in the meantime, and whatever it
+        // says must not undo that edit on screen.
+        if (location.search.includes("slowclips") && (window as any).__listed) {
+          const asked = [
+            clip(1, 57, "Mein Arm ist zersprungen", true),
+            clip(2, 400, "Der Typ vor mir auf einmal", false),
+            clip(3, 902, "Warum ich nie wieder", false),
+            clip(4, 1400, "Ein echtes Thema", false),
+          ];
+          return new Promise((done) => setTimeout(() => done(asked), 1200));
+        }
+        (window as any).__listed = true;
         return Promise.resolve([
           clip(1, 57, "Mein Arm ist zersprungen", true),
           clip(2, 400, "Der Typ vor mir auf einmal", false),

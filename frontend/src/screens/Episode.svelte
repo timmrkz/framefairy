@@ -446,11 +446,18 @@
 
   // The free room changes whenever a search finishes, so it is taken again
   // with the rest of the episode.
+  // The same for the episode's own state and what has been searched: a
+  // read that answers late never puts back what a newer one said.
+  const statusRead = new Newest();
+  const coverageRead = new Newest();
+
   async function refreshCoverage() {
+    const ticket = coverageRead.send();
     try {
-      coverage = await api.coverage(path, min);
+      const now = await api.coverage(path, min);
+      if (coverageRead.keep(ticket)) coverage = now;
     } catch {
-      coverage = { searched: [], free: [] };
+      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [] };
     }
   }
 
@@ -496,9 +503,24 @@
     await select(clip.key);
   }
 
+  // Everything that puts the clip list on screen takes a ticket: a read of
+  // the whole list and the answer to an edit alike. A read asked for before
+  // an edit can answer after it, and it knows nothing of the edit, so a clip
+  // removed a moment ago came back, and a trim looked undone, until the list
+  // was read again. Only the newest answer is used.
+  const listed = new Newest();
+
+  // One clip as an edit left it.
+  function putClip(updated: ClipEntry) {
+    listed.keep(listed.send());
+    clips = clips.map((c) => (c.key === updated.key ? updated : c));
+  }
+
   async function refreshClips() {
+    const ticket = listed.send();
     try {
-      clips = (await api.clips(path)) ?? [];
+      const list = (await api.clips(path)) ?? [];
+      if (listed.keep(ticket)) clips = list;
     } catch (err) {
       problem = errorText(err);
     }
@@ -507,7 +529,10 @@
   async function load() {
     try {
       removed = null;
-      status = await api.episode(path);
+      const ticket = statusRead.send();
+      const now = await api.episode(path);
+      if (statusRead.keep(ticket)) status = now;
+      if (!status) return;
       const first = !source && !status.missing;
       if (first) {
         source = await api.source(path);
@@ -613,7 +638,7 @@
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
       if (selected === updated.key) selected = "";
       removed = updated;
       forgetSoon();
@@ -629,7 +654,7 @@
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
       removed = null;
       select(updated.key);
     } catch (err) {
@@ -641,7 +666,7 @@
     problem = "";
     try {
       const updated = await api.trimClip(path, clip.plan, clip.id, start, end);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -654,7 +679,7 @@
     problem = "";
     try {
       const updated = await api.cutClip(path, clip.plan, clip.id, from, to, toWords);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -664,7 +689,7 @@
     problem = "";
     try {
       const updated = await api.joinCut(path, clip.plan, clip.id, at);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -680,7 +705,7 @@
     problem = "";
     try {
       const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to, toWords);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -701,8 +726,9 @@
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
       // Other clips with the same word changed too.
+      const read = listed.send();
       const list = (await api.clips(path)) ?? [];
-      if (!words.keep(ticket)) return;
+      if (!words.keep(ticket) || !listed.keep(read)) return;
       clips = list.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
       words.keep(ticket);
@@ -715,7 +741,7 @@
     problem = "";
     try {
       const updated = await api.setCrop(path, clip.plan, clip.id, at, left);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -831,7 +857,7 @@
     problem = "";
     try {
       const updated = await api.setCaptionTime(path, clip.plan, clip.id, word, edge, at);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
       return true;
     } catch (err) {
       problem = errorText(err);
@@ -1001,7 +1027,7 @@
     problem = "";
     try {
       const updated = await api.resetCrop(path, clip.plan, clip.id, at);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -1358,9 +1384,12 @@
       if (isTranscribing) {
         // While the transcript grows, how far it has come is read again:
         // the track draws it, and the first search waits for it.
+        const ticket = statusRead.send();
         api
           .episode(path)
-          .then((now) => (status = now))
+          .then((now) => {
+            if (statusRead.keep(ticket)) status = now;
+          })
           .catch(() => {});
       }
       if (isFinding) {
