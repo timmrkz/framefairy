@@ -189,8 +189,8 @@ then makes the code survive it.
 
 | # | Batch | Status |
 |---|---|---|
-| R.1 | An audit of every handoff between engine, app and interface, ranked by what it can break | `[ ]` |
-| R.2 | The job queue under everything the app can do to it at once: add, find, list, cancel, remove an episode, quit, while jobs run, report and panic | `[ ]` |
+| R.1 | An audit of every handoff between engine, app and interface, ranked by what it can break, in [ROBUSTNESS.md](ROBUSTNESS.md) | `[x]` |
+| R.2 | The job queue under everything the app can do to it at once: add, find, list, cancel, remove an episode, quit, while jobs run, report and panic. Removing an episode closes it to new work `[x]` | `[~]` |
 | R.3 | Transcripts: a save that is cut short, read while it is written, a pause that lands mid-save, carrying on from a file that is damaged | `[ ]` |
 | R.4 | The model host: loads that fail, hang or are stopped, holders that let go twice or never, the app quitting while a model loads | `[ ]` |
 | R.5 | Plans written by a search while they are edited, undone and removed | `[ ]` |

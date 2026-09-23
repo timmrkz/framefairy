@@ -418,6 +418,7 @@ func (s *FrameFairy) AddEpisodes() ([]string, error) {
 	added, err := s.store.AddEpisodes(videos)
 	// Transcription starts right away and runs in the background.
 	for _, v := range added {
+		s.jobs.openEpisode(v)
 		if covered, done := engine.Coverage(v, s.store.Settings().ASRModel); !done || covered == 0 {
 			s.Transcribe(v)
 		}
@@ -432,6 +433,19 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	if !s.store.Known(path) {
 		return os.ErrNotExist
 	}
+	// Its work stops, and nothing new starts on it until it is out of the
+	// library, whether its files go or stay. A removed episode that went on
+	// transcribing held the one transcription lane for hours, and every
+	// episode added after it waited without a word.
+	// It stays closed once it is gone, and opens again only if it stays in
+	// the library or when it is added again.
+	reopen := s.jobs.closeEpisode(path)
+	removed := false
+	defer func() {
+		if !removed {
+			reopen()
+		}
+	}()
 	if deleteWork {
 		// Nothing is deleted while something is still writing it. A job
 		// that will not stop leaves the episode where it is, files and
@@ -440,7 +454,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 		// episode the person removed, still there, with half a transcript
 		// in it. Removing it again once the work has stopped does what it
 		// says.
-		if !s.jobs.cancelEpisode(path) {
+		if !s.jobs.waitEpisode(path) {
 			return errors.New("something is still running on this episode and would not stop, " +
 				"so nothing was deleted. Stop it in Activity and remove the episode again")
 		}
@@ -449,7 +463,11 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 		}
 	}
 	s.forget(path)
-	return s.store.RemoveEpisode(path)
+	if err := s.store.RemoveEpisode(path); err != nil {
+		return err
+	}
+	removed = true
+	return nil
 }
 
 // SourceView is what the player needs to know about an episode.

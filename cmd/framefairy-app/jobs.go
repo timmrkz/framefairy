@@ -68,6 +68,13 @@ type queue struct {
 	emit   func(JobUpdate)
 	store  *store
 	notify func(episode string)
+	// closed counts, per episode, the removals under way. While an episode
+	// is being removed nothing new is queued for it. A search that is told
+	// to stop carries on the transcription it paused on its way out, and
+	// the open workspace can ask for a search of its own, so without this
+	// a job started after the removal began ran on for hours on an episode
+	// that was no longer there, and the removal waited for it in vain.
+	closed map[string]int
 }
 
 // newQueue builds the queue and sets its lanes running.
@@ -89,8 +96,9 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // test's own folder is taken away. That is exactly what happened, as
 // "TempDir RemoveAll cleanup: directory not empty".
 func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	return &queue{emit: emit, store: s, notify: notify, wake: map[string]chan struct{}{
-		LaneTranscribe: make(chan struct{}, 1), LaneWork: make(chan struct{}, 1)}}
+	return &queue{emit: emit, store: s, notify: notify, closed: map[string]int{},
+		wake: map[string]chan struct{}{
+			LaneTranscribe: make(chan struct{}, 1), LaneWork: make(chan struct{}, 1)}}
 }
 
 // Which lane a kind of work runs in. Each model install shares the lane of
@@ -129,6 +137,10 @@ func (q *queue) queue(episode, kind, label string, once bool,
 	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
 	lane := laneFor(kind)
 	q.mu.Lock()
+	if q.closed[episode] > 0 {
+		q.mu.Unlock()
+		return q.refuse(episode, kind, label, "the episode is being removed")
+	}
 	if once {
 		for i := len(q.jobs) - 1; i >= 0; i-- {
 			j := q.jobs[i]
@@ -210,16 +222,52 @@ func (q *queue) cancel(id string) {
 // stopping is not instant.
 var stopWait = 15 * time.Second
 
-// cancelEpisode stops every job of an episode and waits until none of them
-// is running any more. It says whether they all stopped, because what the
-// caller does next is delete the episode's files and there is no safe way
-// to do that while something is still writing them.
-func (q *queue) cancelEpisode(episode string) bool {
-	for _, j := range q.list() {
-		if j.Episode == episode && (j.State == JobQueued || j.State == JobRunning) {
-			q.cancel(j.ID)
+// closeEpisode stops every job of an episode and lets nothing new be
+// queued for it until the reopen it hands back is called. Closing and
+// cancelling happen under one lock, so no job slips in between the two.
+func (q *queue) closeEpisode(episode string) (reopen func()) {
+	q.mu.Lock()
+	q.closed[episode]++
+	var queued []Job
+	for _, j := range q.jobs {
+		if j.Episode != episode || (j.State != JobQueued && j.State != JobRunning) {
+			continue
+		}
+		j.cancel()
+		if j.State == JobQueued {
+			j.State = JobCancelled
+			queued = append(queued, *j)
 		}
 	}
+	q.mu.Unlock()
+	for _, j := range queued {
+		q.emit(JobUpdate{Job: j})
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			q.mu.Lock()
+			if q.closed[episode]--; q.closed[episode] <= 0 {
+				delete(q.closed, episode)
+			}
+			q.mu.Unlock()
+		})
+	}
+}
+
+// openEpisode lets work be queued for an episode again. An episode that was
+// removed stays closed until it is added again: the app checks that an
+// episode is in the library and then queues, and a removal that finished
+// between the two let a job in for an episode that was gone.
+func (q *queue) openEpisode(episode string) {
+	q.mu.Lock()
+	delete(q.closed, episode)
+	q.mu.Unlock()
+}
+
+// waitEpisode waits until no job of an episode is running any more, and
+// says whether that happened within stopWait.
+func (q *queue) waitEpisode(episode string) bool {
 	deadline := time.Now().Add(stopWait)
 	for {
 		running := false
@@ -236,6 +284,16 @@ func (q *queue) cancelEpisode(episode string) bool {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// cancelEpisode stops every job of an episode and waits until none of them
+// is running any more. It says whether they all stopped, because what the
+// caller does next is delete the episode's files and there is no safe way
+// to do that while something is still writing them.
+func (q *queue) cancelEpisode(episode string) bool {
+	reopen := q.closeEpisode(episode)
+	defer reopen()
+	return q.waitEpisode(episode)
 }
 
 // clear forgets finished jobs.

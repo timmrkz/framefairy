@@ -125,9 +125,13 @@ in, `<episode>.framefairy` beside the video. Keeping it means adding the episode
 again picks up the transcript, the clip sets and the rendered clips where
 this left off, which is why it is the highlighted answer. Deleting it takes
 the whole folder, so nothing of the episode is left behind. Whatever is
-running on that episode is stopped first and waited for, and if something
-will not stop, nothing is deleted and the episode stays where it is with a
-line saying so. A folder deleted under a running transcription comes back,
+running on that episode is stopped either way, so a removed episode never
+goes on transcribing and holding up the episodes added after it. From the
+moment removing begins, nothing new starts on it until it is added again,
+not even the transcription a stopped search would otherwise carry on.
+Deleting also waits for the work to stop, and if something will not stop,
+nothing is deleted and the episode stays where it is with a line saying
+so. A folder deleted under a running transcription comes back,
 half written, for an episode that is no longer in the library. The video file
 itself always stays, and so do the training records, which live in one
 folder of their own and are thrown away in the settings and nowhere else.
