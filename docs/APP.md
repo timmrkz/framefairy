@@ -362,8 +362,9 @@ place.
   **New clips** holds how many clips to find and how long they may be, and
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
-  episode. **Text** is the colour the words are written in, and **Box** the
-  colour of the box behind them. Beside each is how much of it is seen:
+  episode. **Text** is the colour the words are written in, **Box** the
+  colour of the box behind them and **Highlight** the pill behind the word
+  being spoken. Beside the first two is how much of each is seen:
   100, where the text starts, is solid, and a box at 0 leaves only the
   words. A see-through text keeps its opacity in the short, the word on
   the pill included.
@@ -838,8 +839,8 @@ moved by hand, on the clip timeline.
 
 - **The captions run across the middle of the clip timeline**, each a
   block from where it appears to where it goes, on the same clock as
-  everything else on it. A click on a block puts the playhead where that
-  caption appears, and a block brightens under the pointer.
+  everything else on it. A click on a block puts the playhead on that
+  caption's first word.
 - **Either edge is dragged.** Where two captions meet, the line between
   them has two sides: the left side is where the one before goes, the
   right side where the one after appears. Dragging the left side leaves a
@@ -849,17 +850,20 @@ moved by hand, on the clip timeline.
   caption at a time. An edge lands on a whole frame.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
-- **A block is the app's dark with a thin bar in it** in the colour the
-  words are burned in, so a colour picked in the captions column is seen
-  here too, while it is picked. Its states are told apart by how bright
-  they are and never by a colour, because a colour could be the one the
-  captions were given: at rest the bar is at half strength, under the
-  pointer the block lifts to a lighter grey and the bar comes up, and the
-  caption the video preview is showing is filled with the app's colour,
-  its bar at full strength with a dark line round it. The edge under the
-  pointer, or the one being dragged, is a white line with a dark edge that
-  goes again when the hand lets go. Two captions that meet have a gap of
-  two pixels between them.
+- **A block is its caption in the short's colours**: the box colour over
+  the app's dark, with a bar in the colour of the words, so every colour
+  picked in the captions column is seen here too, while it is picked. The
+  colours never change with the state, because a dimmed colour is another
+  colour. The bar's size does: a hairline at rest, thicker under the
+  pointer, and on the caption the video preview is showing thicker still,
+  with the highlight colour round it, the pill the spoken word wears, and
+  it springs into place the way that word bounces. A click puts the
+  playhead a frame into the caption's first word, so the video preview
+  shows that word lit, the first caption of a clip included, which is on
+  screen from the clip's first frame, before its first word. The edge
+  under the pointer, or the one being dragged, is a white line with a dark
+  edge that goes again when the hand lets go. Two captions that meet have
+  a gap of two pixels between them.
 - **A click on an edge puts the playhead on it**, the way a clip edge does,
   which is how a caption is heard from where it appears.
 
@@ -1028,12 +1032,15 @@ to give it a key. With **On this machine** chosen, the same list of language
 models the first run shows, judged against the same memory.
 
 The rest is paths to ffmpeg, llama-server and the models, and the output
-folder. **Colours** holds two, and they are together because the whole point
-is that they are two: **the app** is what the app picks things out in, the
-chosen clip, the window on the range picker, a button that matters, and **the
-word highlight** is the pill behind the word being spoken, burned into the
-short. A taste in one is not a taste in the other. They start out the same,
-`#942192`, so an app nobody has touched looks of a piece with what it makes.
+folder. **Colours** holds **the app**, what the app picks things out in, the
+chosen clip, the window on the range picker, a button that matters. The
+colours burned into a short, the words, their box and the pill behind the
+word being spoken, are set together in the captions column of the
+workspace, where the video preview and the clip timeline show them as they
+are picked. A taste in one is not a taste in the other. The app and the pill
+start out the same, `#942192`, so an app nobody has touched looks of a piece
+with what it makes. A highlight colour chosen here before is still the one a
+search gets until its own is picked in the captions column.
 The app's colour is the only one the interface has: the lighter shade under
 the pointer and the wash behind a chosen clip are mixed from it, so changing
 it moves all three, and it moves as the colour is picked rather than when it

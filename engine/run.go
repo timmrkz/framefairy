@@ -473,7 +473,11 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			log.Error("--highlight-colour must look like #942192")
 			return 1
 		}
-		style["highlight_colour"] = opts.HighlightColour
+		// A plan given a highlight colour of its own, in the captions
+		// column of the app, keeps it. This is the colour for the rest.
+		if _, own := style["highlight_colour"]; !own {
+			style["highlight_colour"] = opts.HighlightColour
+		}
 	}
 	if opts.NoHighlight {
 		style["highlight"] = 0.0

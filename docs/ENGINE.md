@@ -114,8 +114,9 @@ line. That costs one extra short ffmpeg pass per clip. The active word is
 drawn on its own layer over the line with that word hidden, which is why its
 neighbours never move.
 
-The colour is set with `--highlight-colour` or with `"highlight_colour"` in
-`caption_style` in `clips.json`, as `#RRGGBB`. `--no-highlight`, or
+The colour is set with `"highlight_colour"` in `caption_style` in
+`clips.json`, as `#RRGGBB`, which is where the captions column of the app
+puts it. `--highlight-colour` is the colour for a plan that has none. `--no-highlight`, or
 `"highlight": 0` in `caption_style`, gives plain captions.
 
 Captions sit 300 pixels above the bottom of a 1080x1920 frame, which keeps

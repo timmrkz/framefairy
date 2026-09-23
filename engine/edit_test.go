@@ -192,6 +192,9 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		{"primary": "&H00FFFFFF\nStyle: b"},
 		{"back_colour": "&H80000"},
 		{"back_colour": 5.0},
+		{"highlight_colour": "red"},
+		{"highlight_colour": "#942192\nStyle: b"},
+		{"highlight_colour": "&H922194&"},
 	} {
 		if err := SetCaptionStyle(path, bad); err == nil {
 			t.Errorf("%v was accepted", bad)
@@ -621,6 +624,12 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	}
 	if s := ResolveStyle(plan.CaptionStyle()); s.Primary != text || s.BackColour != box {
 		t.Errorf("the render would draw %s on %s", s.Primary, s.BackColour)
+	}
+	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "#00aa00"}); err != nil {
+		t.Fatal(err)
+	}
+	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
+		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
 	view, err := ClipCaptionsView(path, "01", nil)
 	if err != nil {

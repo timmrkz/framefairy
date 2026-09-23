@@ -286,11 +286,10 @@
       </div>
     </div>
 
-    <!-- The two colours together, because the whole point is that they are
-         two. One is what the app picks things out in, the other is burned
-         into the framefairy, and a taste in one is not a taste in the other.
-         They start out the same, so an app nobody has touched looks of a
-         piece with what it makes. -->
+    <!-- The colour the app picks things out in. The colours burned into a
+         short, the words, their box and the pill behind the word being
+         spoken, are set together in the captions column of the workspace,
+         where the video preview and the clip timeline show them at once. -->
     <div class="panel">
       <h2>Colours</h2>
       <div class="grid">
@@ -303,11 +302,6 @@
             bind:value={settings.appColour}
             aria-label="The app's colour as hex"
           />
-        </div>
-        <label for="colour">The word highlight</label>
-        <div class="row">
-          <input id="colour" type="color" bind:value={settings.highlightColour} />
-          <input type="text" class="hex num" bind:value={settings.highlightColour} aria-label="Highlight colour as hex" />
         </div>
       </div>
     </div>

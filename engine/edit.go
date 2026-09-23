@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -846,6 +847,12 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 			if size, ok := toFloat(value); !ok || size != checked.Size {
 				return renderErr("%s is not a caption size between 8 and 400",
 					Scrub(pyStr(value), 40))
+			}
+		case "highlight_colour":
+			// The pill behind the word being spoken, as #RRGGBB.
+			text, ok := value.(string)
+			if !ok || len(text) != 7 || !strings.HasPrefix(text, "#") || !isHex(text[1:]) {
+				return renderErr("%s is not a highlight colour", Scrub(pyStr(value), 40))
 			}
 		case "primary", "back_colour":
 			// The colour of the text and of the box behind it, written the

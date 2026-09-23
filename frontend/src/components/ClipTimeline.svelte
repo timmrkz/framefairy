@@ -23,6 +23,7 @@
     snapCut,
     snapEnd,
     snapStart,
+    intoWord,
     wordStep,
     type ClipEntry,
     type Word,
@@ -92,10 +93,11 @@
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
     captions?: CaptionCue[];
-    // The colour the caption words are burned in, as the video preview
-    // draws it. Each block carries it, so a colour picked for the short is
-    // seen here too.
-    captionLook?: { text: string } | null;
+    // The colours the captions are burned in, as the video preview draws
+    // them: the words, the box behind them and the pill behind the word
+    // being spoken. A block wears all three, so a colour picked for the
+    // short is seen here too.
+    captionLook?: { text: string; box: string; highlight: string } | null;
     // A caption edge let go of: the word it begins or ends on and the new
     // moment, both in the episode, or a moment below nought to put it back
     // where its words put it. True when it was saved.
@@ -975,6 +977,16 @@
     }));
   });
 
+  // Where a click on a caption puts the playhead: a frame into its first
+  // word, on the clip's own clock and then in the episode, the same step
+  // the arrow keys take into a word. A word is lit from its start, and a
+  // moment read back through the episode can land a hair before it.
+  function firstWordOf(c: CaptionCue): number | null {
+    const word = c.lines?.[0]?.words?.[0];
+    if (!word || !segments.length) return null;
+    return inEpisode(segments, intoWord(word, frame));
+  }
+
   $effect(() => {
     if (capDraft && !capMoving && !capSaving && captions !== capHeld) {
       capDraft = null;
@@ -1217,11 +1229,14 @@
            where it appears to where it goes. -->
       <div
         class="captions"
-        style="--cap-text: {captionLook?.text ?? 'var(--text)'}"
+        style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
+          'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
       >
         {#each captionBlocks as b (b.i)}
-          <!-- A click puts the playhead where the caption appears, which is
-               how it is heard from its first word. -->
+          <!-- A click puts the playhead on the caption's first word, where
+               the video preview shows it spoken. That is where it appears,
+               except for the first caption of a clip, which is on screen
+               from the clip's first frame, before its first word. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class="caption"
@@ -1231,7 +1246,7 @@
             tabindex="-1"
             title="Put the playhead where this caption appears"
             onpointerdown={(e) => e.stopPropagation()}
-            onclick={() => onseek(b.from)}
+            onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
           ><i></i></div>
         {/each}
       </div>
@@ -1496,18 +1511,15 @@
     z-index: 1;
   }
 
-  /* A block is the app's own dark with a bar in it, in the colour the
-     words are burned in, rounded just enough that the dark shows round
-     it. The colour is the short's and changes with it, and everything
-     around it is the app's.
-
-     Its three states are told apart by how bright they are, never by a
-     colour, because a colour could be the one the captions were given.
-     At rest the bar is at half strength. Under the pointer the block
-     lifts to a lighter grey and the bar comes up, the way a row of the
-     clip list lifts. The caption the video preview is showing is filled
-     with the app's colour and its bar is at full strength, with a dark
-     line round it, so it stands off the fill whatever colour it is.
+  /* A block is the caption in the colours the short burns it in: the box
+     colour laid over the app's own dark, and a bar in the colour of the
+     words. The colours are the short's and never change with the state,
+     because a dimmed colour is another colour. The state is the bar's
+     size instead. At rest it is a hairline. Under the pointer it grows.
+     On the caption the video preview is showing it grows further and
+     wears the highlight colour round it, the pill the spoken word wears
+     in the video preview, and it springs into place the way that word
+     bounces.
 
      A block is drawn a pixel short of its time at each end, so two
      captions that meet show a gap. */
@@ -1517,10 +1529,12 @@
     height: 16px;
     margin-left: 1px;
     box-sizing: border-box;
-    padding: 0 5px;
+    padding: 0 6px;
     display: flex;
     align-items: center;
-    background: var(--ink-0);
+    background:
+      linear-gradient(var(--cap-box), var(--cap-box)),
+      var(--ink-0);
     border-radius: 3px;
     pointer-events: auto;
     cursor: pointer;
@@ -1530,31 +1544,29 @@
     display: block;
     flex: 1;
     min-width: 0;
-    height: 4px;
-    border-radius: 2px;
+    height: 2px;
+    border-radius: 1px;
     background: var(--cap-text);
-    opacity: 0.5;
-  }
-
-  .caption:hover {
-    background: var(--ink-3);
+    transition:
+      height 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .caption:hover i {
-    opacity: 0.85;
-  }
-
-  .caption.showing {
-    background: var(--accent);
+    height: 4px;
+    border-radius: 2px;
   }
 
   .caption.showing i {
-    opacity: 1;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+    height: 6px;
+    border-radius: 2px;
+    box-shadow: 0 0 0 3px var(--cap-pill);
   }
 
-  .caption.showing:hover {
-    background: var(--accent-hi);
+  @media (prefers-reduced-motion: reduce) {
+    .caption i {
+      transition: none;
+    }
   }
 
   /* An edge is grabbed on its own side of the gap, so where two captions

@@ -644,10 +644,15 @@ func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, er
 	// The same overrides the render puts on top of the plan, so the picture
 	// shows what the file will hold.
 	set := s.store.Settings()
-	return engine.ClipCaptionsView(planPath, clipID, map[string]any{
-		"highlight_colour": set.HighlightColour,
-		"margin_v":         engine.SnapCaptionY(set.CaptionY),
-	})
+	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
+	// The highlight colour of the settings is for a plan that was not given
+	// one of its own in the captions column, the same as the render has it.
+	if plan, _, err := engine.LoadClips(planPath); err == nil {
+		if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
+			overrides["highlight_colour"] = set.HighlightColour
+		}
+	}
+	return engine.ClipCaptionsView(planPath, clipID, overrides)
 }
 
 // Fonts are the faces the captions can be written in. They travel with the
@@ -1048,11 +1053,11 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 }
 
 // SetCaptionColours changes the colour of the caption text and of the box
-// behind it, each with how opaque it is from 0 to 1, for a whole clip set,
-// beside the face and the size. Colours come as #RRGGBB, and an empty one
-// is left as it is.
+// behind it, each with how opaque it is from 0 to 1, and the colour of the
+// pill behind the word being spoken, for a whole clip set, beside the face
+// and the size. Colours come as #RRGGBB, and an empty one is left as it is.
 func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text string,
-	textOpacity float64, box string, boxOpacity float64) error {
+	textOpacity float64, box string, boxOpacity float64, highlight string) error {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return os.ErrNotExist
 	}
@@ -1070,6 +1075,12 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 			return fmt.Errorf("%s is not a colour", engine.Scrub(box, 20))
 		}
 		values["back_colour"] = colour
+	}
+	if highlight != "" {
+		if !engine.LooksLikeColour(highlight) || !strings.HasPrefix(highlight, "#") || len(highlight) != 7 {
+			return fmt.Errorf("%s is not a colour", engine.Scrub(highlight, 20))
+		}
+		values["highlight_colour"] = strings.ToLower(highlight)
 	}
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }

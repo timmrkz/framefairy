@@ -421,7 +421,8 @@ export const api = {
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>
     call<void>("SetCaptionStyle", path, plan, font, size),
   // The colour of the caption text and of the box behind it, as #rrggbb,
-  // each with how opaque it is from 0 to 1. An empty colour is left alone.
+  // each with how opaque it is from 0 to 1, and the colour of the pill
+  // behind the word being spoken. An empty colour is left alone.
   setCaptionColours: (
     path: string,
     plan: string,
@@ -429,7 +430,9 @@ export const api = {
     textOpacity: number,
     box: string,
     boxOpacity: number,
-  ) => call<void>("SetCaptionColours", path, plan, text, textOpacity, box, boxOpacity),
+    highlight: string,
+  ) =>
+    call<void>("SetCaptionColours", path, plan, text, textOpacity, box, boxOpacity, highlight),
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview saves it, so the next video starts there too.
   setCaptionsHeight: (path: string, y: number) => call<void>("SetCaptionsHeight", path, y),
@@ -573,6 +576,8 @@ export const captionTextDefault = "#ffffff";
 export const captionTextOpacityDefault = 100;
 export const captionBoxDefault = "#000000";
 export const captionOpacityDefault = 50;
+// The pill behind the word being spoken, as the engine's own style has it.
+export const captionHighlightDefault = "#942192";
 export const captionSizeDefault = 96;
 export const captionYDefault = 300;
 export const captionYStep = 40;

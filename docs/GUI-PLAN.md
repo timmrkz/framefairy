@@ -132,7 +132,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.9 | Click a clip edge to put the playhead on it, and loop the clip while it plays | `[x]` |
 | 3.6 | Undo and redo for everything done to a clip: trims, cuts, the crop frame, the caption box, words, the caption look, removing a clip and removing a search. One history per episode while the app is open. Jobs, moving around and app settings are not in it | `[x]` |
 | 3.7 | Crop frame shown per shot, moved by hand per camera angle, reset to automatic | `[x]` |
-| 3.10 | The colour of the caption text and of the box behind it, each with how much of it is seen, beside the face and the size | `[x]` |
+| 3.10 | The colour of the caption text and of the box behind it, each with how much of it is seen, and the highlight colour, beside the face and the size. The caption blocks of the clip timeline wear all three | `[x]` |
 
 ## Phase 4: caption editor
 

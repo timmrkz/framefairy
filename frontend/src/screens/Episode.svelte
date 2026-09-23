@@ -4,6 +4,7 @@
     api,
     captionFontDefault,
     captionBoxDefault,
+    captionHighlightDefault,
     captionOpacityDefault,
     captionTextDefault,
     captionTextOpacityDefault,
@@ -741,7 +742,7 @@
   let captionDraft = $state<CaptionDraft | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
-  let colourDraft = $state<{ primary?: string; box?: string } | null>(null);
+  let colourDraft = $state<{ primary?: string; box?: string; highlight?: string } | null>(null);
   // The captions the draft was made against. The draft is let go of when
   // they come back changed, so the caption box never flashes back to the
   // colour it had while the saved colour is on its way.
@@ -761,6 +762,7 @@
           ...view.style,
           primary: colourDraft.primary ?? view.style.primary,
           box: colourDraft.box ?? view.style.box,
+          highlightColour: colourDraft.highlight ?? view.style.highlightColour,
         },
       };
     }
@@ -773,7 +775,9 @@
   const boxColour = $derived(splitColour(shownCaptions?.style.box ?? "rgba(0, 0, 0, 0.5)"));
   const boxOpacity = $derived(Math.round(boxColour.alpha * 100));
 
-  function drawColour(part: { primary?: string; box?: string }) {
+  const highlightColour = $derived(splitColour(shownCaptions?.style.highlightColour ?? "").hex);
+
+  function drawColour(part: { primary?: string; box?: string; highlight?: string }) {
     if (!colourDraft) colourHeld = captions;
     colourDraft = { ...colourDraft, ...part };
   }
@@ -785,13 +789,22 @@
     textShare: number,
     box: string,
     boxShare: number,
+    highlight = "",
   ) {
     if (!current) return;
     problem = "";
     captionsWere = null;
     colourSaving = true;
     try {
-      await api.setCaptionColours(path, current.plan, text, textShare / 100, box, boxShare / 100);
+      await api.setCaptionColours(
+        path,
+        current.plan,
+        text,
+        textShare / 100,
+        box,
+        boxShare / 100,
+        highlight,
+      );
       await refreshClips();
     } catch (err) {
       problem = errorText(err);
@@ -869,6 +882,7 @@
     textOpacity: number;
     box: string;
     opacity: number;
+    highlight: string;
   } | null>(null);
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
@@ -878,12 +892,14 @@
     y: Math.round(captionY),
     text: splitColour(captions?.style.primary ?? "").hex,
     textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
+    highlight: splitColour(captions?.style.highlightColour ?? "").hex,
     box: splitColour(captions?.style.box ?? "").hex,
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
   const coloursMoved = $derived(
     captionsNow.text !== captionTextDefault ||
       captionsNow.textOpacity !== captionTextOpacityDefault ||
+      captionsNow.highlight !== captionHighlightDefault ||
       captionsNow.box !== captionBoxDefault ||
       captionsNow.opacity !== captionOpacityDefault,
   );
@@ -909,6 +925,7 @@
         captionTextOpacityDefault,
         captionBoxDefault,
         captionOpacityDefault,
+        captionHighlightDefault,
       );
     }
     captionsWere = was;
@@ -927,9 +944,10 @@
       was.text !== captionsNow.text ||
       was.textOpacity !== captionsNow.textOpacity ||
       was.box !== captionsNow.box ||
-      was.opacity !== captionsNow.opacity
+      was.opacity !== captionsNow.opacity ||
+      was.highlight !== captionsNow.highlight
     ) {
-      await setCaptionColours(was.text, was.textOpacity, was.box, was.opacity);
+      await setCaptionColours(was.text, was.textOpacity, was.box, was.opacity, was.highlight);
     }
   }
 
@@ -1500,7 +1518,8 @@
               <h3>Captions</h3>
               <span class="ask">
                 <Info label="What the caption settings do">
-                  The face, the size and the colours for every clip of this episode. A line that will
+                  The face, the size and the colours for every clip of this episode:
+                  the words, the box behind them and the pill behind the word being spoken. A line that will
                   not fit is drawn smaller. The number beside a colour is how much of it is seen: 100 is
                   solid, and a box at 0 leaves only the words. <b>Height</b> is how far above the bottom of the short the captions
                   sit, for every episode: drag the caption box in the video preview, or type it here.
@@ -1646,6 +1665,24 @@
                 /><span class="unit">%</span>
               </span>
             </div>
+            <!-- The pill behind the word being spoken, beside the other two
+                 colours of the captions, so every colour the short and the
+                 clip timeline show is set in one place. -->
+            <div class="setting">
+              <span>Highlight</span>
+              <span class="field pair">
+                <input
+                  class="swatch"
+                  type="color"
+                  title="The colour of the pill behind the word being spoken"
+                  aria-label="Highlight colour"
+                  value={highlightColour}
+                  oninput={(e) => drawColour({ highlight: joinColour(e.currentTarget.value, 1) })}
+                  onchange={(e) =>
+                    setCaptionColours("", textOpacity, "", boxOpacity, e.currentTarget.value)}
+                />
+              </span>
+            </div>
             <label class="setting">
               <span>Height</span>
               <span class="field">
@@ -1769,7 +1806,13 @@
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onwalkclip={walkClip}
         captions={captions?.captions ?? []}
-        captionLook={shownCaptions ? { text: shownCaptions.style.primary } : null}
+        captionLook={shownCaptions
+          ? {
+              text: shownCaptions.style.primary,
+              box: shownCaptions.style.box,
+              highlight: shownCaptions.style.highlightColour,
+            }
+          : null}
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         oncaptiondraft={(draft) => (captionDraft = draft)}

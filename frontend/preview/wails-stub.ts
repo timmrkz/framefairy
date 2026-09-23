@@ -148,6 +148,7 @@ const size = () => (window as any).__size ?? 100;
 // opaque white and the box black and half clear until they are changed.
 const textCss = () => (window as any).__text ?? "rgba(255, 255, 255, 1)";
 const boxCss = () => (window as any).__box ?? "rgba(0, 0, 0, 0.498)";
+const pillCss = () => (window as any).__pill ?? "rgba(148, 33, 146, 1)";
 const hexToCss = (hex: string, alpha: number) =>
   `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, ${Math.round(alpha * 255) / 255})`;
 
@@ -483,7 +484,7 @@ export const Call = {
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[1])),
-          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: true, highlightColour: "#b4236f" },
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: true, highlightColour: pillCss() },
         });
       case "Fonts":
         return Promise.resolve([
@@ -674,6 +675,7 @@ export const Call = {
         ((window as any).__colours ??= []).push(args.slice(2));
         if (args[2]) (window as any).__text = hexToCss(String(args[2]), Number(args[3]));
         if (args[4]) (window as any).__box = hexToCss(String(args[4]), Number(args[5]));
+        if (args[6]) (window as any).__pill = hexToCss(String(args[6]), 1);
         return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();
