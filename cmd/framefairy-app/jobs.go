@@ -75,6 +75,8 @@ type queue struct {
 	// a job started after the removal began ran on for hours on an episode
 	// that was no longer there, and the removal waited for it in vain.
 	closed map[string]int
+	// shut is set when the app quits. Nothing is queued after it.
+	shut bool
 }
 
 // newQueue builds the queue and sets its lanes running.
@@ -140,6 +142,10 @@ func (q *queue) queue(episode, kind, label string, once bool,
 	if q.closed[episode] > 0 {
 		q.mu.Unlock()
 		return q.refuse(episode, kind, label, "the episode is being removed")
+	}
+	if q.shut {
+		q.mu.Unlock()
+		return q.refuse(episode, kind, label, "the app is closing")
 	}
 	if once {
 		for i := len(q.jobs) - 1; i >= 0; i-- {
@@ -283,6 +289,41 @@ func (q *queue) waitEpisode(episode string) bool {
 			return false
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// shutDown stops every job and waits, at most stopWait, for the running
+// ones to end. The app calls it on the way out. A render's ffmpeg and a
+// transcription were left running after the app had gone, and a
+// transcription keeps the file it writes open, so the next start found it
+// half written by a program nobody could see.
+func (q *queue) shutDown() bool {
+	q.mu.Lock()
+	q.shut = true
+	for _, j := range q.jobs {
+		if j.State == JobQueued || j.State == JobRunning {
+			j.cancel()
+			if j.State == JobQueued {
+				j.State = JobCancelled
+			}
+		}
+	}
+	q.mu.Unlock()
+	deadline := time.Now().Add(stopWait)
+	for {
+		running := false
+		for _, j := range q.list() {
+			if j.State == JobRunning {
+				running = true
+			}
+		}
+		if !running {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

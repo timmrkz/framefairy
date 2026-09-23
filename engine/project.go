@@ -157,7 +157,12 @@ func (p *Project) WarmModel(ctx context.Context, seconds float64) error {
 		return err
 	}
 	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
-	_, release, err := p.engine.holdModel(ctx, *local, contextFor(chars, opts.MaxTokens), p.LogsDir())
+	_, release, err := p.engine.warmModel(ctx, *local, contextFor(chars, opts.MaxTokens), p.LogsDir())
+	if errors.Is(err, errModelBusy) {
+		// Another model is in use, a search of another episode. The search
+		// this was for loads the model itself when it gets its turn.
+		return nil
+	}
 	if err != nil {
 		return err
 	}

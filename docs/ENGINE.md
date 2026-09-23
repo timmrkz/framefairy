@@ -283,8 +283,13 @@ that is waiting for the transcript loads it while it waits. A model
 loaded ahead waits five minutes for its search. A search lets go of it
 the moment it is done and it stops, because a model left in memory
 between searches that are days apart is memory taken from everything
-else. One model runs at a time, and the app stops it when it closes. The
-server runs one ask at a time (`-np 1`) with the whole context for it.
+else. One model is in memory at a time, never two, because two do not
+fit: an ask that needs another model, or more room, waits for the one in
+memory to be let go of and then takes its place. A warm-up gives way to a
+model in use instead of waiting, and the search it was for loads the model
+when its turn comes. The app stops the model when it closes, also one
+that is still loading. The server runs one ask at a time (`-np 1`) with
+the whole context for it.
 
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks
 about a half hour window for 12,000 tokens or more before it writes a

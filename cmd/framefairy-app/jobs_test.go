@@ -263,3 +263,52 @@ func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 		}
 	}
 }
+
+// Quitting stops every job, running and queued, and nothing new starts.
+func TestQuittingStopsEveryJob(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	q := newQueue(openStore(), func(JobUpdate) {}, func(string) {})
+	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
+		<-ctx.Done()
+		return "", engine.ErrCancelled
+	}
+	q.add("/eps/a.mp4", "render", "Render", waiting)
+	q.add("/eps/b.mp4", "transcribe", "Transcription", waiting)
+	q.add("/eps/c.mp4", "render", "Render", waiting)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		n := 0
+		for _, j := range q.list() {
+			if j.State == JobRunning {
+				n++
+			}
+		}
+		if n == 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q.add("/eps/d.mp4", "render", "Render", waiting)
+		}()
+	}
+	if !q.shutDown() {
+		t.Error("the jobs did not stop")
+	}
+	wg.Wait()
+	if j := q.add("/eps/e.mp4", "render", "Render", waiting); j.State != JobFailed {
+		t.Errorf("work was queued after the app closed: %s", j.State)
+	}
+	time.Sleep(50 * time.Millisecond)
+	for _, j := range q.list() {
+		if j.State == JobQueued || j.State == JobRunning {
+			t.Errorf("%s %s is %s after the app closed", j.ID, j.Episode, j.State)
+		}
+	}
+}

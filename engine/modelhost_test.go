@@ -15,8 +15,22 @@ import (
 type standIn struct {
 	started, stopped atomic.Int32
 	running          atomic.Int32
-	loading          time.Duration
-	fail             atomic.Bool
+	// peak is the most servers ever running at once, loading included.
+	peak    atomic.Int32
+	up      atomic.Int32
+	loading time.Duration
+	fail    atomic.Bool
+}
+
+// rise counts a server that starts loading, and keeps the peak.
+func (s *standIn) rise() {
+	n := s.up.Add(1)
+	for {
+		p := s.peak.Load()
+		if n <= p || s.peak.CompareAndSwap(p, n) {
+			return
+		}
+	}
 }
 
 func useStandIn(t *testing.T, loading time.Duration) *standIn {
@@ -24,12 +38,16 @@ func useStandIn(t *testing.T, loading time.Duration) *standIn {
 	s := &standIn{loading: loading}
 	was := launch
 	launch = func(_ *Engine, ctx context.Context, m LocalModel, size int, _ string) (string, func(), error) {
+		// A llama-server is in memory from the moment it starts loading.
+		s.rise()
 		select {
 		case <-time.After(s.loading):
 		case <-ctx.Done():
+			s.up.Add(-1)
 			return "", nil, ctx.Err()
 		}
 		if s.fail.Load() {
+			s.up.Add(-1)
 			return "", nil, errors.New("the model would not load")
 		}
 		s.started.Add(1)
@@ -39,6 +57,7 @@ func useStandIn(t *testing.T, loading time.Duration) *standIn {
 			once.Do(func() {
 				s.stopped.Add(1)
 				s.running.Add(-1)
+				s.up.Add(-1)
 			})
 		}, nil
 	}
@@ -159,7 +178,15 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			size := 32768 << (i % 2)
-			_, release, err := e.holdModel(context.Background(), gemma, size, "")
+			m := gemma
+			if i%5 == 0 {
+				m = LocalModel{Model: "qwen"}
+			}
+			hold := e.holdModel
+			if i%4 == 0 {
+				hold = e.warmModel
+			}
+			_, release, err := hold(context.Background(), m, size, "")
 			if err != nil {
 				return
 			}
@@ -181,6 +208,9 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 	if s.running.Load() != 0 {
 		t.Errorf("%d models left running", s.running.Load())
 	}
+	if s.peak.Load() > 1 {
+		t.Errorf("%d models were in memory at once, there is room for one", s.peak.Load())
+	}
 }
 
 func TestStopModelsStopsTheModel(t *testing.T) {
@@ -190,5 +220,96 @@ func TestStopModelsStopsTheModel(t *testing.T) {
 	StopModels()
 	if s.running.Load() != 0 {
 		t.Error("the model outlived the app")
+	}
+}
+
+// A search that needs more room while a warm-up is still loading waits for
+// the warm-up and then takes its place. It used to see the model in use,
+// start a second one beside it, and hold two in memory.
+func TestABiggerSearchDuringAWarmUpNeverLoadsTwo(t *testing.T) {
+	s := useStandIn(t, 50*time.Millisecond)
+	e := quietEngine()
+	warming := make(chan struct{})
+	go func() {
+		defer close(warming)
+		if _, release, err := e.warmModel(context.Background(), gemma, 32768, ""); err == nil {
+			release(warmKeep)
+		}
+	}()
+	time.Sleep(10 * time.Millisecond)
+	url, release, err := e.holdModel(context.Background(), gemma, 131072, "")
+	<-warming
+	if err != nil {
+		t.Fatal(err)
+	}
+	if url != "http://gemma/131072" || s.peak.Load() != 1 {
+		t.Errorf("%s, %d in memory at once", url, s.peak.Load())
+	}
+	release(0)
+}
+
+// A warm-up for one episode while another episode's search holds another
+// model gives up rather than load a second one. The search it was for
+// loads the model when its turn comes.
+func TestAWarmUpGivesWayToAModelInUse(t *testing.T) {
+	s := useStandIn(t, time.Millisecond)
+	e := quietEngine()
+	_, release, err := e.holdModel(context.Background(), gemma, 32768, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	if _, _, err := e.warmModel(context.Background(), gemma, 131072, ""); !errors.Is(err, errModelBusy) {
+		t.Errorf("a warm-up beside a model in use: %v", err)
+	}
+	if time.Since(began) > time.Second || s.started.Load() != 1 {
+		t.Errorf("the warm-up waited %s or started a server, %d started",
+			time.Since(began), s.started.Load())
+	}
+	release(0)
+}
+
+// Stopping the models while one is still loading stops it too, before
+// StopModels returns. It was left to its loader, which never ran again
+// once the app had quit.
+func TestStopModelsStopsAModelStillLoading(t *testing.T) {
+	s := useStandIn(t, time.Hour)
+	e := quietEngine()
+	failed := make(chan error, 1)
+	go func() {
+		_, _, err := e.warmModel(context.Background(), gemma, 32768, "")
+		failed <- err
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for s.up.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	StopModels()
+	if s.up.Load() != 0 {
+		t.Errorf("%d servers still in memory after the app stopped them", s.up.Load())
+	}
+	select {
+	case err := <-failed:
+		if err == nil {
+			t.Error("a load stopped by the app said it loaded")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("the loader never heard it was stopped")
+	}
+}
+
+// A search waiting for the model in use gives up when it is stopped.
+func TestASearchWaitingForAnotherModelCanBeStopped(t *testing.T) {
+	useStandIn(t, time.Millisecond)
+	e := quietEngine()
+	_, release, err := e.holdModel(context.Background(), gemma, 32768, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release(0)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, _, err := e.holdModel(ctx, LocalModel{Model: "qwen"}, 32768, ""); err == nil {
+		t.Error("a search got a second model while the first was in use")
 	}
 }

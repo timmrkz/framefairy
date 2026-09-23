@@ -134,8 +134,10 @@ func main() {
 	svc.chrome = watchChrome(app, svc.window)
 
 	err := app.Run()
-	// A model loaded for a search the app never got to is not left behind
-	// holding the memory.
+	// Nothing the app started outlives it: the jobs are stopped, and with
+	// them any ffmpeg they run, and a model loaded or still loading is not
+	// left behind holding the memory.
+	svc.jobs.shutDown()
 	engine.StopModels()
 	if err != nil {
 		log.Fatal(err)

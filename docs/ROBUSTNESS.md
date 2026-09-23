@@ -28,12 +28,20 @@ what became of it.
    and an ask needs another model or more room, a second server is started
    beside it, about twice the memory. It happens when a warm-up for one
    episode meets a search of another, or when a search asks for more room
-   while a warm-up is still loading. `engine/modelhost.go`. Open, R.4.
+   while a warm-up is still loading. Fixed: one model at a time, never two.
+   An ask that needs another model or more room waits for the one in memory
+   to be let go of and then takes its place, and a warm-up, which is only a
+   head start, gives way to a model in use. The test that holds models from
+   24 goroutines at once had 6 in memory together before. `engine/modelhost.go`.
 3. **Servers left running after quitting.** A model still loading when the
    app quits, a second server from the point above, and a render's ffmpeg are
    not stopped with the app. llama-server holds its memory until it is killed.
-   `engine/local.go`, `engine/modelhost.go`, `cmd/framefairy-app/main.go`.
-   Open, R.4.
+   Fixed: quitting stops every job, and with it any ffmpeg, then stops the
+   model whether it is loaded or still loading, and waits for both, at most
+   15 s. `engine/modelhost.go`, `cmd/framefairy-app/jobs.go`,
+   `cmd/framefairy-app/main.go`. Still open: an app that is killed rather
+   than quit, or that crashes, leaves llama-server running, because nothing
+   is left to stop it.
 4. **A panic outside a job's own goroutine ends the app.** Framing clips and
    the search clock run on goroutines of their own with no recover, so a
    panic in them is not caught by the job. The lanes of the queue die of a
@@ -64,7 +72,8 @@ what became of it.
    `cmd/framefairy-app/history.go`. Open, R.5.
 10. **Two settings changes at once lose one.** Settings are read, changed and
     written back outside the store's lock. Open, R.2.
-11. **Smaller ones.** Stopping llama-server reads its state while another
-    goroutine writes it. A server that crashes after loading costs one search.
+11. **Smaller ones.** Stopping llama-server read its state while another
+    goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
+    loading costs one search.
     A warm-up for a search that failed still loads the model. The job list,
     the probe cache and the plan locks grow while the app is open. Open.

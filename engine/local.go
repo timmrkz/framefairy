@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -214,10 +215,20 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		return "", nil, renderErr("cannot start %s: %s", server, err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
+	// exited is closed once the server has gone, and exitErr says how. Only
+	// the goroutine that waits for it writes them, so stopping it never
+	// reads the process's state while that goroutine writes it.
+	exited := make(chan struct{})
+	var exitErr error
+	go func() {
+		exitErr = cmd.Wait()
+		close(exited)
+	}()
+	var closeLog sync.Once
 	stop := func() {
-		if cmd.ProcessState == nil {
+		select {
+		case <-exited:
+		default:
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
@@ -226,9 +237,11 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 				<-exited
 			}
 		}
-		if logFile != nil {
-			logFile.Close()
-		}
+		closeLog.Do(func() {
+			if logFile != nil {
+				logFile.Close()
+			}
+		})
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
@@ -238,12 +251,10 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		case <-ctx.Done():
 			stop()
 			return "", nil, ctx.Err()
-		case err := <-exited:
-			if logFile != nil {
-				logFile.Close()
-			}
+		case <-exited:
+			stop()
 			return "", nil, renderErr("%s stopped while loading the model (%v). Its output is "+
-				"in %s", server, err, filepath.Join(logDir, "llm-server.log"))
+				"in %s", server, exitErr, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
