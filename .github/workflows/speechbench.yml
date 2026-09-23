@@ -1,0 +1,54 @@
+# Measures the speech model on Apple silicon: which way of running it is
+# fastest on a Mac, and whether that changes the words. It runs when the
+# speech code or the measurement changes, and by hand, never on every pull
+# request: it downloads the model and a recorded talk, about 700 MB.
+#
+# The runner is a virtual Mac. Whether it reaches the graphics chip and the
+# Neural Engine the way a real one does is part of what this finds out, so
+# its numbers are read beside the same run on a real Mac.
+name: Speech benchmark
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/speechbench.yml
+      - scripts/speechbench/**
+      - asr/**
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: The machine
+        run: |
+          sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+          system_profiler SPDisplaysDataType | sed -n '1,20p' || true
+      - name: The speech model
+        run: |
+          mkdir -p "$RUNNER_TEMP/model"
+          curl -sSL https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 \
+            | tar xj -C "$RUNNER_TEMP/model"
+      - name: A recorded talk
+        run: |
+          python3 -m pip install --quiet --break-system-packages pyarrow || python3 -m pip install --quiet pyarrow
+          curl -sSL -o "$RUNNER_TEMP/talks.parquet" \
+            https://huggingface.co/datasets/distil-whisper/tedlium-long-form/resolve/main/data/validation-00000-of-00001-9ed099229d0cbe10.parquet
+          python3 -c "
+          import pyarrow.parquet as pq, os
+          t = pq.read_table(os.environ['RUNNER_TEMP'] + '/talks.parquet')
+          open(os.environ['RUNNER_TEMP'] + '/talk.wav', 'wb').write(t.slice(1, 1).to_pylist()[0]['audio']['bytes'])
+          "
+      - name: Measure
+        run: |
+          go run ./scripts/speechbench \
+            -model "$RUNNER_TEMP/model/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" \
+            -audio "$RUNNER_TEMP/talk.wav" -seconds 180 \
+            -providers cpu,coreml -threads 3,6 -pieces 15,30,60 -batch 1,2 \
+            | tee -a "$GITHUB_STEP_SUMMARY"

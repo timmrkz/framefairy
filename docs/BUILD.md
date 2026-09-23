@@ -253,3 +253,14 @@ go build -ldflags=-extldflags=-mmacosx-version-min=13.0 -o bin/framefairy-app ./
 On Windows, add `.exe` to the output names and copy the speech library next
 to them, as [INSTALL.md](INSTALL.md#7-before-the-first-build) describes.
 `make` does that copy itself when it runs under MSYS2.
+
+## Measuring the speech model
+
+`go run ./scripts/speechbench -audio episode.mp4` hears three minutes of an
+episode every way the speech model can run on the machine, on the
+processor or through Apple's CoreML, with more or fewer threads, in pieces
+of different lengths, one or two pieces at a time, and prints how fast
+each was and how many words came out unlike the processor's. It uses the
+speech model in `~/.framefairy/models`. The workflow
+`.github/workflows/speechbench.yml` runs the same on the macOS runner with a
+recorded talk, when the speech code changes or by hand.
