@@ -224,6 +224,9 @@ export interface Job {
   progress?: EngineEvent;
   queued: string;
   lane: "transcribe" | "work";
+  // Grows with every change to any job. Of two snapshots of a job, the one
+  // with the larger number is the later one.
+  seq?: number;
 }
 
 export interface PlanRequest {

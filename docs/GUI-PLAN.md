@@ -190,7 +190,7 @@ then makes the code survive it.
 | # | Batch | Status |
 |---|---|---|
 | R.1 | An audit of every handoff between engine, app and interface, ranked by what it can break, in [ROBUSTNESS.md](ROBUSTNESS.md) | `[x]` |
-| R.2 | The job queue under everything the app can do to it at once: add, find, list, cancel, remove an episode, quit, while jobs run, report and panic. Removing an episode closes it to new work, a panic around a job ends that job and not the lane `[x]` | `[~]` |
+| R.2 | The job queue under everything the app can do to it at once: add, find, list, cancel, remove an episode, quit, while jobs run, report and panic. Removing an episode closes it to new work, a panic around a job ends that job and not the lane, a job's news can arrive in any order and the newest wins, quitting stops every job `[x]` | `[~]` |
 | R.3 | Transcripts: a save that is cut short, read while it is written, a pause that lands mid-save, carrying on from a file that is damaged | `[ ]` |
 | R.4 | The model host: loads that fail, hang or are stopped, holders that let go twice or never, the app quitting while a model loads. One model in memory at a time, quitting stops the jobs and the model even while it loads `[x]`, a server left by an app that crashed `[ ]` | `[~]` |
 | R.5 | Plans written by a search while they are edited, undone and removed | `[ ]` |

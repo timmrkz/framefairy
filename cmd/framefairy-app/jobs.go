@@ -40,6 +40,13 @@ type Job struct {
 	// Lane is "transcribe" or "work". Each lane runs one job at a time, so a
 	// long transcription never holds up finding or rendering clips.
 	Lane string `json:"lane"`
+	// Seq grows with every change to any job, and is set under the queue's
+	// lock, so of two snapshots of a job the later one has the larger
+	// number. News is sent after the lock is let go, so two changes made
+	// at nearly the same moment can reach the window the other way round:
+	// a job that ran and finished read as queued again, for good. The
+	// window keeps the snapshot with the larger number.
+	Seq uint64 `json:"seq"`
 
 	work   func(ctx context.Context, p *engine.Project) (string, error)
 	cancel context.CancelFunc
@@ -77,6 +84,13 @@ type queue struct {
 	closed map[string]int
 	// shut is set when the app quits. Nothing is queued after it.
 	shut bool
+	seq  uint64
+}
+
+// stampLocked marks a change to a job. q.mu is held.
+func (q *queue) stampLocked(j *Job) {
+	q.seq++
+	j.Seq = q.seq
 }
 
 // newQueue builds the queue and sets its lanes running.
@@ -162,6 +176,7 @@ func (q *queue) queue(episode, kind, label string, once bool,
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
 		State: JobQueued, Queued: time.Now(), Lane: lane, work: work, cancel: cancel, ctx: ctx}
+	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
 	q.mu.Unlock()
@@ -182,6 +197,7 @@ func (q *queue) refuse(episode, kind, label, reason string) Job {
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
 		State: JobFailed, Error: reason, Queued: time.Now(), Lane: lane,
 		cancel: func() {}, ctx: context.Background()}
+	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
 	q.mu.Unlock()
@@ -212,15 +228,16 @@ func (q *queue) cancel(id string) {
 		return
 	}
 	job.cancel()
-	queued := job.State == JobQueued
-	if queued {
+	if job.State == JobQueued {
 		job.State = JobCancelled
 	}
+	// Always said, also for a job that had already ended: the window asked
+	// because it thinks the job is still going, and without an answer it
+	// went on saying Cancelling for good.
+	q.stampLocked(job)
 	snapshot := *job
 	q.mu.Unlock()
-	if queued {
-		q.emit(JobUpdate{Job: snapshot})
-	}
+	q.emit(JobUpdate{Job: snapshot})
 }
 
 // How long a job is given to stop after it is told to. A render has an
@@ -242,6 +259,7 @@ func (q *queue) closeEpisode(episode string) (reopen func()) {
 		j.cancel()
 		if j.State == JobQueued {
 			j.State = JobCancelled
+			q.stampLocked(j)
 			queued = append(queued, *j)
 		}
 	}
@@ -305,6 +323,7 @@ func (q *queue) shutDown() bool {
 			j.cancel()
 			if j.State == JobQueued {
 				j.State = JobCancelled
+				q.stampLocked(j)
 			}
 		}
 	}
@@ -368,6 +387,7 @@ func (q *queue) take(lane string) *Job {
 	for _, j := range q.jobs {
 		if j.State == JobQueued && j.Lane == lane {
 			j.State = JobRunning
+			q.stampLocked(j)
 			return j
 		}
 	}
@@ -478,6 +498,7 @@ func run(job *Job, project *engine.Project) (result string, err error) {
 func (q *queue) update(job *Job, ev *engine.Event, change func(*Job)) {
 	q.mu.Lock()
 	change(job)
+	q.stampLocked(job)
 	snapshot := *job
 	q.mu.Unlock()
 	q.emit(JobUpdate{Job: snapshot, Event: ev})

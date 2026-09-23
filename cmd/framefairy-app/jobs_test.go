@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -309,6 +310,91 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 	for _, j := range q.list() {
 		if j.State == JobQueued || j.State == JobRunning {
 			t.Errorf("%s %s is %s after the app closed", j.ID, j.Episode, j.State)
+		}
+	}
+}
+
+// Whatever order the news reaches the window in, the snapshot of a job
+// with the largest number is the job as it ended. News is sent after the
+// queue's lock is let go, so a job's queued and running could arrive the
+// other way round, and a window that kept the last one it heard showed a
+// finished job as waiting, for good.
+func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	var mu sync.Mutex
+	newest := map[string]Job{}
+	q := newQueue(openStore(), func(u JobUpdate) {
+		mu.Lock()
+		defer mu.Unlock()
+		if u.Job.Seq == 0 {
+			t.Errorf("%s arrived without a number", u.Job.ID)
+		}
+		if have, ok := newest[u.Job.ID]; !ok || u.Job.Seq > have.Seq {
+			newest[u.Job.ID] = u.Job
+		}
+	}, func(string) {})
+
+	quick := func(ctx context.Context, p *engine.Project) (string, error) {
+		p.Log().ProgressOf("working", 0.5, 1)
+		return "", nil
+	}
+	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
+		select {
+		case <-ctx.Done():
+			return "", engine.ErrCancelled
+		case <-time.After(5 * time.Millisecond):
+			return "", nil
+		}
+	}
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 25 {
+				episode := fmt.Sprintf("/eps/%d.mp4", (g+i)%5)
+				var j Job
+				switch i % 4 {
+				case 0:
+					j = q.add(episode, "render", "Render", quick)
+				case 1:
+					j = q.addOnce(episode, "transcribe", "Transcription", waiting)
+				case 2:
+					j = q.add(episode, "plan", "Find clips", waiting)
+				default:
+					j = q.add(episode, "render", "Render", waiting)
+				}
+				if i%3 == 0 {
+					q.cancel(j.ID)
+				}
+				if i%7 == 0 {
+					q.cancel(j.ID)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		busy := false
+		for _, j := range q.list() {
+			if j.State == JobQueued || j.State == JobRunning {
+				busy = true
+			}
+		}
+		if !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, j := range q.list() {
+		heard := newest[j.ID]
+		if heard.State != j.State {
+			t.Errorf("%s ended %s, and the newest news of it says %s", j.ID, j.State, heard.State)
 		}
 	}
 }

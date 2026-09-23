@@ -191,6 +191,25 @@ export class Newest {
 // So the furthest seen is kept, and the edge never falls below it. It
 // starts over only when the mark is about a transcript that no longer
 // exists: another episode, or one being read again from the beginning.
+// A job as the Go side reports it, by its id and the number of its last
+// change. The number grows with every change to any job, and is set where
+// the change is made, so of two snapshots of one job the later one has the
+// larger number. News is sent after the change is made, so two changes at
+// nearly the same moment can arrive the other way round, and a list that
+// kept whatever it heard last showed a finished job as waiting, for good.
+export type Stamped = { id: string; seq?: number };
+
+// The list with got in it, or null when the list already has a later
+// snapshot of that job. A snapshot without a number is taken as it comes.
+export function mergeJob<T extends Stamped>(list: T[], got: T): T[] | null {
+  const i = list.findIndex((j) => j.id === got.id);
+  if (i < 0) return [...list, got];
+  if ((got.seq ?? 0) < (list[i].seq ?? 0)) return null;
+  const out = list.slice();
+  out[i] = got;
+  return out;
+}
+
 export class Heard {
   private at = 0;
   private of = "";

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   Heard,
   Newest,
+  mergeJob,
   nextWindow,
   pictureIsStale,
   pieceAt,
@@ -742,5 +743,40 @@ describe("draftCaptions", () => {
     draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
     expect(three[0].end).toBe(2);
     expect(draftCaptions(three, null)).toBe(three);
+  });
+});
+
+describe("a job's news", () => {
+  const job = (state: string, seq?: number) => ({ id: "job-1", state, seq });
+
+  test("a later snapshot replaces an earlier one", () => {
+    const list = [job("queued", 1)];
+    expect(mergeJob(list, job("running", 4))).toEqual([job("running", 4)]);
+  });
+
+  test("an earlier snapshot arriving late is dropped", () => {
+    // Queued was sent after the lock was let go, and running and done
+    // overtook it. Kept, it showed a finished job as waiting for good.
+    let list = [job("queued", 1)];
+    for (const got of [job("running", 3), job("done", 7), job("queued", 1)]) {
+      list = mergeJob(list, got) ?? list;
+    }
+    expect(list).toEqual([job("done", 7)]);
+  });
+
+  test("a job not heard of before is added", () => {
+    expect(mergeJob([job("done", 2)], { id: "job-2", state: "queued", seq: 3 })).toHaveLength(2);
+  });
+
+  test("a snapshot without a number is taken as it comes", () => {
+    expect(mergeJob([job("running")], job("done"))).toEqual([job("done")]);
+  });
+
+  test("the list read again merges with what was heard, in any order", () => {
+    const heard = [job("running", 5)];
+    const read = [job("queued", 2)];
+    let list = heard;
+    for (const got of read) list = mergeJob(list, got) ?? list;
+    expect(list).toEqual([job("running", 5)]);
   });
 });

@@ -55,8 +55,15 @@ what became of it.
    queued event can arrive after the running one, events sent before the
    interface starts listening are lost, and nothing reads the job list again.
    A job then looks as if it runs for ever and blocks the first search.
-   `cmd/framefairy-app/jobs.go`, `frontend/src/lib/state.svelte.ts`. Open, R.2
-   and R.6.
+   Fixed: every snapshot of a job carries a number that grows with every
+   change and is set under the queue's lock, and the interface keeps the
+   snapshot with the larger number, whatever order they arrive in. It
+   listens before it reads the list, reads the list again every 5 s while
+   anything runs, and a cancel is always answered, also for a job that had
+   already ended. The reordering is read from the code: 25 changes from 8
+   goroutines at once did not make it happen in five runs.
+   `cmd/framefairy-app/jobs.go`, `frontend/src/lib/state.svelte.ts`,
+   `frontend/src/lib/flow.ts`.
 6. **Work waiting behind work.** A search waiting for a transcript holds the
    work lane, and every render of every episode waits behind it. Carrying on
    paused transcriptions holds it up to 15 s more. Slower, not stuck. Open,

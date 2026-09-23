@@ -1042,6 +1042,13 @@ row, parted from the next by a line across the page, and clicking a finished
 row opens its log. Transcription runs in its own lane, so finding and
 rendering clips never wait for it.
 
+The list is kept current by the news the Go side sends about every job.
+Each piece of news carries a number that grows with every change, so a
+piece that arrives late never puts a job back to where it was. While
+anything runs, the list is also read again every five seconds, so a piece
+of news that was lost costs a few seconds and never a job that looks as if
+it runs for ever. Quitting the app stops every job first.
+
 ### Settings
 
 **This machine** tests what the engine needs and says what is missing.
