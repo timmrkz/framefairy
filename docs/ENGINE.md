@@ -288,7 +288,10 @@ fit: an ask that needs another model, or more room, waits for the one in
 memory to be let go of and then takes its place. A warm-up gives way to a
 model in use instead of waiting, and the search it was for loads the model
 when its turn comes. The app stops the model when it closes, also one
-that is still loading. The server runs one ask at a time (`-np 1`) with
+that is still loading. A running server is written down in
+`~/.framefairy/llama-server.json`, so one left behind by an app that
+crashed is stopped the next time the app starts, if that process is still
+exactly that server, with the same port and the same model. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks

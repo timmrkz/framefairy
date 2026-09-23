@@ -133,6 +133,11 @@ func main() {
 	})
 	svc.chrome = watchChrome(app, svc.window)
 
+	// A llama-server the last run left behind, because it crashed or was
+	// killed, is stopped before this run loads a model of its own.
+	if engine.StopLeftoverServer() {
+		log.Printf("stopped a llama-server the last run of the app left behind")
+	}
 	err := app.Run()
 	// Nothing the app started outlives it: the jobs are stopped, and with
 	// them any ffmpeg they run, and a model loaded or still loading is not

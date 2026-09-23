@@ -39,9 +39,12 @@ what became of it.
    Fixed: quitting stops every job, and with it any ffmpeg, then stops the
    model whether it is loaded or still loading, and waits for both, at most
    15 s. `engine/modelhost.go`, `cmd/framefairy-app/jobs.go`,
-   `cmd/framefairy-app/main.go`. Still open: an app that is killed rather
-   than quit, or that crashes, leaves llama-server running, because nothing
-   is left to stop it.
+   `cmd/framefairy-app/main.go`. An app that is killed rather than quit, or
+   that crashes, stops nothing, so a running llama-server is written down,
+   its process, port and model, in `~/.framefairy/llama-server.json`, and
+   the next start stops it if that process is still exactly that server.
+   A process the system has given the same number since is left alone.
+   `engine/leftover.go`.
 4. **A panic outside a job's own goroutine ends the app.** Framing clips and
    the search clock run on goroutines of their own with no recover, so a
    panic in them is not caught by the job. The lanes of the queue die of a

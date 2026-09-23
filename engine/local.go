@@ -215,6 +215,9 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		return "", nil, renderErr("cannot start %s: %s", server, err)
 	}
+	// Written down while it runs, so a server an app that crashed left
+	// behind is found and stopped the next time the app starts.
+	noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
 	// exited is closed once the server has gone, and exitErr says how. Only
 	// the goroutine that waits for it writes them, so stopping it never
 	// reads the process's state while that goroutine writes it.
@@ -238,6 +241,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			}
 		}
 		closeLog.Do(func() {
+			forgetServer(cmd.Process.Pid)
 			if logFile != nil {
 				logFile.Close()
 			}
