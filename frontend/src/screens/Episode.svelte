@@ -31,6 +31,7 @@
     Newest,
     nextWindow,
     shouldLook,
+    shouldWarm,
     shouldTranscribe,
     type CaptionDraft,
   } from "../lib/flow";
@@ -87,13 +88,13 @@
   // The playback buttons stand in the row above the clip timeline, with
   // Render, so the video preview and the range picker have nothing under
   // them but the line that parts them from it.
-  // The workspace measures itself: how much height the window leaves it,
+  // The workspace measures itself: how much height the app leaves it,
   // and how wide it is. From those two the video preview gets the biggest
   // size it can have, and the columns beside it take everything else.
   // What sits above the workspace when anything does: an error line. It is
   // nothing at all most of the time, and it never changes because the
-  // window changed, so reading it costs nothing while the window is being
-  // dragged.
+  // app was resized, so reading it costs nothing while the app is being
+  // resized.
   let aboveH = $state(0);
   let paused = $state(true);
   let looping = $state(false);
@@ -287,20 +288,20 @@
     if (duration > 0 && to > from) chosen.keep(path, from, to);
   });
   // The whole layout is worked out by the browser, in the stylesheet at
-  // the foot of this file, from the size of the window and two numbers
-  // that have nothing to do with the window: the shape of the episode and
-  // how tall anything above the workspace is. Neither changes while the
-  // window is being dragged, so dragging it costs no JavaScript at all and
-  // the workspace keeps up with the edge of the window the way a native
-  // one does. Measuring a height, working out another height from it and
+  // the foot of this file, from the size of the app and two numbers that
+  // have nothing to do with it: the shape of the episode and how tall
+  // anything above the workspace is. Neither changes while the app is
+  // being resized, so resizing it costs no JavaScript at all and the
+  // workspace keeps up with the edge of the app the way a native app
+  // does. Measuring a height, working out another height from it and
   // writing that back is a round trip per frame, and the parts that
   // measure each other never settle in one.
   const shape = $derived(`${source?.width || 16} / ${source?.height || 9}`);
   const ratio = $derived((source?.width || 16) / (source?.height || 9));
 
-  // A window that cannot read the episode file, which is what happens
-  // while the machine is busy, drops a seek and leaves the picture on a
-  // frame that has nothing to do with the playhead. Whenever the video
+  // A video element that cannot read the episode file, which is what
+  // happens while the machine is busy, drops a seek and leaves the picture
+  // on a frame that has nothing to do with the playhead. Whenever the video
   // preview says it cannot show the playhead, the frame under it is read
   // from the file instead. The engine keeps one frame per second of an
   // episode, so going back over a part costs nothing.
@@ -981,6 +982,25 @@
     findClips(false);
   });
 
+  // The model for that first search is loaded while the transcript is on
+  // its way, once for each episode while the app runs.
+  $effect(() => {
+    if (!source || !status || chosen.warmed[path]) return;
+    const warm = shouldWarm({
+      covered,
+      to,
+      plans: status.plans?.length ?? 0,
+      clips: clips.length,
+      busy: busy || waiting.length > 0,
+      looked: status.looked || !!chosen.looked[path],
+    });
+    if (!warm) return;
+    chosen.warmed[path] = true;
+    api.warmModel(path, from, to).catch(() => {
+      // A model that cannot be loaded ahead is loaded by the search.
+    });
+  });
+
   async function render(clip: ClipEntry) {
     problem = "";
     const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
@@ -1207,7 +1227,7 @@
 
 <!-- Two numbers the stylesheet needs and cannot know: the shape of this
      episode, and how tall whatever is above the workspace came out. Both
-     stay put while the window is dragged, so the whole layout below is the
+     stay put while the app is resized, so the whole layout below is the
      browser's own work from there on. -->
 <section
   style="--ar: {ratio}; --above: {aboveH > 0 ? `calc(${Math.ceil(aboveH)}px + var(--gap))` : '0px'}"
@@ -1252,7 +1272,7 @@
   {/if}
 
   <!-- Everything that stands above the workspace, together, so its height
-       is one number the layout can take off the window. It is not there at
+       is one number the layout can take off the app. It is not there at
        all most of the time, and an empty row would still cost a space. -->
   {#if status?.missing || problem}
     <div class="above" bind:clientHeight={aboveH}>
@@ -1606,15 +1626,15 @@
 <style>
   /* The whole workspace, worked out here rather than in JavaScript.
      Everything below is one expression the browser evaluates in the same
-     pass as the resize, so dragging the window edge moves the workspace
-     with it instead of a frame or two behind it.
+     pass as the resize, so dragging the edge of the app moves the
+     workspace with it instead of a frame or two behind it.
 
      Two numbers come from outside: --ar, the shape of the episode, and
      --above, the height of anything standing over the workspace. Neither
-     changes because the window changed. The rest is the window itself and
-     the tokens from app.css. */
+     changes because the app was resized. The rest is the size of the app
+     itself and the tokens from app.css. */
   section {
-    /* The height the window leaves: everything but the bar at the top, the
+    /* The height left in the app: everything but the bar at the top, the
        space above the workspace and the edge at the foot. */
     --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge) - var(--above));
     /* And the width: everything but the rail and the two edges. */
@@ -1631,7 +1651,7 @@
     --widest: calc((var(--stage-w) - var(--sides)) / var(--ar));
     /* The picture takes the height first, until it is that wide. What it
        cannot use goes to the two tracks, the range picker always half the
-       clip timeline, so nothing is left over at the foot of the window. */
+       clip timeline, so nothing is left over at the foot of the app. */
     --wave-h: max(var(--wave-min), calc((var(--space) - var(--down) - var(--widest)) / 1.5));
     --picker-h: calc(var(--wave-h) / 2);
     --pic-h: max(200px, calc(var(--space) - var(--down) - 1.5 * var(--wave-h)));
@@ -1697,12 +1717,12 @@
   /* Three columns: the settings the sidebar lies over when it opens, the
      video preview, and the clips. The middle one is exactly as wide as the
      picture may be, which the workspace works out, and the two beside it
-     share whatever is left. That way a wider window makes the settings and
+     share whatever is left. That way a wider app makes the settings and
      the clip list wider instead of leaving a strip of nothing. */
   .stage {
     display: grid;
     /* The middle column is exactly as wide as the picture may be, and the
-       two beside it share whatever is left, so a wider window makes them
+       two beside it share whatever is left, so a wider app makes them
        wider instead of leaving a strip of nothing beside the picture. */
     grid-template-columns: minmax(var(--settings-w), 1fr) var(--pic-w) minmax(280px, 1fr);
     gap: var(--gap);
@@ -1731,7 +1751,7 @@
   }
 
   /* A name and a small field beside it read worse the further apart they
-     are, so the settings take a little of a wider window and leave the
+     are, so the settings take a little of a wider app and leave the
      rest. The column itself still grows, which is what keeps the video
      preview where it is. */
   .group {

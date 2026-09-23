@@ -102,7 +102,7 @@ var (
 // cleanCaption strips control characters and markup. Caption text ends up in
 // proof.txt and in per-clip srt files, both of which get opened in a
 // terminal. An ESC byte surviving that far means a caption can clear the
-// screen, retitle the window or repaint earlier output.
+// screen, retitle the terminal or repaint earlier output.
 //
 // It leaves the words themselves alone, including anything that looks like
 // an HTML entity. Turning &amp; into & would mean that a caption written and

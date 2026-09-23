@@ -236,7 +236,7 @@ clip to the plan is a few kilobytes. So each clip is framed by one of two
 framers while the model goes on writing, and written to the plan the
 moment it is framed. The first clip makes the plan, in place of whatever
 plan was there for the window, and each after it goes in through
-`editPlan`, so an edit the window makes to a clip that has already landed
+`editPlan`, so an edit the app makes to a clip that has already landed
 is kept. A clip that lands in a part removed while it was on its way is
 left out, and a plan removed altogether takes no more clips. The plan's
 id is decided before the first clip lands, so a decision about a clip made
@@ -263,6 +263,19 @@ its first search says what it is doing without saying how far it is. A
 search against a server that was already running loaded nothing, and
 leaves the loading time as it was. A record from before the thinking was
 timed on its own measured something else, and is replaced.
+
+**The model is loaded before the search needs it.** Loading takes
+llama-server about 24 seconds. The running server belongs to the
+program rather than to one search, in `engine/modelhost.go`: a search
+that finds the model loaded uses it, and one that finds it loading waits
+for it. The app loads it for the first search of a new episode while the
+transcript is still on its way to the end of the window, and a search
+that is waiting for the transcript loads it while it waits. A model
+loaded ahead waits five minutes for its search. A search lets go of it
+the moment it is done and it stops, because a model left in memory
+between searches that are days apart is memory taken from everything
+else. One model runs at a time, and the app stops it when it closes. The
+server runs one ask at a time (`-np 1`) with the whole context for it.
 
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks
 about a half hour window for 12,000 tokens or more before it writes a
@@ -321,7 +334,7 @@ Everything else is in `engine/`:
                 answers for what an event may carry: a share or a time
                 that is not a number becomes Unknown, because JSON
                 cannot say NaN and an event nobody can encode is a job
-                the window stops hearing about altogether
+                the app stops hearing about altogether
   project.go    one episode driven step by step, as the app does it
   episode.go    status, waveform, silences and plan views for the app,
                 and the note that an episode has been searched once

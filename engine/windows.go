@@ -7,7 +7,7 @@ import (
 
 // Where the model has already looked. A search covers the window it was
 // made over, and a window is never put to the model twice by accident, so
-// the window says what it is about to look at again and asks first.
+// the app says what it is about to look at again and asks first.
 // Without that, two passes over the same material would come back with the
 // same moments, and the list would hold each of them twice.
 //

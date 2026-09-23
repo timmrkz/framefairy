@@ -138,6 +138,33 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	return filepath.Join(p.LogsDir(), name), nil
 }
 
+// warmChars is how many characters of prompt a second of window makes,
+// with room to spare: a half hour of German came to about 40,000.
+const warmChars = 25
+
+// WarmModel loads the local model for a search of a window seconds long
+// that has not started yet, so the search finds it loaded. It returns once
+// the model is in memory, and the model waits a few minutes for the
+// search. With the API, or a server that is already running, there is
+// nothing to load.
+func (p *Project) WarmModel(ctx context.Context, seconds float64) error {
+	opts := p.Base
+	if opts.Planner != "local" || opts.LLMURL != "" {
+		return nil
+	}
+	local, err := resolveLocal(opts)
+	if err != nil {
+		return err
+	}
+	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
+	_, release, err := p.engine.holdModel(ctx, *local, contextFor(chars, opts.MaxTokens), p.LogsDir())
+	if err != nil {
+		return err
+	}
+	release(warmKeep)
+	return nil
+}
+
 // PlanName is the plan file for a window, or for the whole episode when
 // window is nil.
 func PlanName(window *Window) string {

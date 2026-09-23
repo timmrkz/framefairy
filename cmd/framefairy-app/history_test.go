@@ -52,7 +52,7 @@ func removed(t *testing.T, plan, id string) bool {
 func TestARemovedClipComesBackWithUndo(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	ctx := context.Background()
-	// The answer describes the clip for the window, which needs the video
+	// The answer describes the clip for the interface, which needs the video
 	// read, and this one is not a video. The edit is made either way.
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", true)
 	if !removed(t, plan, "02") {
@@ -117,7 +117,7 @@ func TestUndoIsOnlyForTheLibrary(t *testing.T) {
 	}
 }
 
-// Everything the window can do to the history at once: edits, undos and
+// Everything the interface can do to the history at once: edits, undos and
 // redos from several goroutines. Each is whole, so the plan always loads,
 // and the history never holds a step twice or loses count.
 func TestEditsAndUndosAtOnce(t *testing.T) {

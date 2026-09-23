@@ -138,8 +138,8 @@ const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
   return clip(n, at, title, rendered);
 };
 
-// The caption look, as far as anything can change it here: the face and
-// the size the window asked for last. Without these the window could ask
+// The caption look, as far as anything can change it here: the face and the
+// size the interface asked for last. Without these the interface could ask
 // for a face all day and always be told Inter Black, so a probe about
 // picking one would pass whatever the picking did.
 const face = () => (window as any).__face ?? "Inter Black";
@@ -155,7 +155,7 @@ const clipOf = (id: string) => {
 // the caption box is where words are corrected and a word in it has to be
 // able to say which word of the episode it is. Made up cues could never
 // answer that, so a probe about correcting a word would pass whatever the
-// window did.
+// interface did.
 //
 // Two things the engine does and this does with it: the words are put on
 // the clip's own clock, with the cuts taken out of it, and a correction
@@ -202,7 +202,7 @@ const captionCues = (id: string) => {
     const eight = drawn.slice(i, i + 8);
     // A cue stays up a little past its last word, and never past the start
     // of the one after it. The engine clamps it the same way, and without
-    // the clamp two cues cover the same moment: the window takes the first
+    // the clamp two cues cover the same moment: the interface takes the first
     // that covers it, so the caption box went on showing the cue before
     // while the playhead stood in a word of the cue after, and that word
     // lit nothing at all.
@@ -351,7 +351,7 @@ export const Call = {
         };
         const planner = (window as any).__planner ?? "";
         const key = !!(window as any).__key;
-        // Two models from two houses, so the choice the window has to put
+        // Two models from two houses, so the choice the interface has to put
         // is a real one, and so the memory below has something to say. The
         // small one fits any machine, the big one fits none of the ones
         // the harness pretends to be.
@@ -403,6 +403,10 @@ export const Call = {
       case "InstallLanguageModel":
         (window as any).__llmAt ??= Date.now();
         return Promise.resolve(llmJob());
+      case "WarmModel":
+        // A probe reads which windows the model was loaded for.
+        ((window as any).__warmed ??= []).push(args.slice(1));
+        return Promise.resolve(null);
       case "ChoosePlanner":
         (window as any).__planner = args[0];
         return Promise.resolve(null);
@@ -433,7 +437,7 @@ export const Call = {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
         }
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
-      // Every search this window asks for, so a test can see the first one
+      // Every search the interface asks for, so a test can see the first one
       // start by itself.
       case "Plan": {
         const asked = ((window as any).__planned ??= []);
@@ -484,7 +488,7 @@ export const Call = {
       // What the app remembers of an episode between runs. The preview
       // starts each time with nothing chosen, so a probe sees what a first
       // opening looks like unless it says otherwise.
-      // Where macOS put the window's own furniture. Zeros stand for the
+      // Where macOS put the title bar and its buttons. Zeros stand for the
       // systems that draw their own title bar, which is what a probe sees
       // unless it asks for ?mac, and those numbers are what a 2026 Mac
       // with the automatic toolbar style answers.
@@ -525,9 +529,10 @@ export const Call = {
         const n = Number(id);
         return Promise.resolve(clip(n, [57, 400, 902, 1400][n - 1] ?? 60, ["Mein Arm ist zersprungen", "Der Typ vor mir auf einmal", "Warum ich nie wieder", "Ein echtes Thema"][n - 1] ?? "Clip", n === 1));
       }
-      // Every undo and redo the window asks for, so a probe can see which
+      // Every undo and redo the interface asks for, so a probe can see which
       // reached the episode and which stayed in a field being typed in. The
-      // clip it names is the third, so a probe can see the window go there.
+      // clip it names is the third, so a probe can see the interface go
+      // there.
       case "Undo":
       case "Redo": {
         ((window as any).__undone ??= []).push(method);
@@ -672,7 +677,7 @@ export const Call = {
         const to = Number(args[2]) || 14423;
         // Never more buckets than there are measurements, the way the Go
         // side answers. Without this the stub hands back five buckets
-        // carrying the same ten milliseconds and the window has no way to
+        // carrying the same ten milliseconds and the interface has no way to
         // know it.
         const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
         // The peaks come from the transcript, so while it is being made
@@ -730,8 +735,8 @@ export const Call = {
 };
 
 export const Events = {
-  // The Go side sends a job event every second while work runs, and a
-  // window that re-subscribes to anything on every one of those events
+  // The Go side sends a job event every second while work runs, and an
+  // interface that re-subscribes to anything on every one of those events
   // never gets anything done. The growing mode sends them, so a test can
   // tell.
   On(name: string, fn: (ev: unknown) => void): () => void {
@@ -745,7 +750,8 @@ export const Events = {
     // A transcription that reports where it got to, well ahead of the saved
     // transcript, and that really stops when it is stopped. The job list is
     // only ever kept current by these events, so without them a cancelled
-    // job stays in the window's hands and the pause cannot be tested at all.
+    // job stays in the interface's hands and the pause cannot be tested at
+    // all.
     if (location.search.includes("transcribing")) {
       const timer = setInterval(() => {
         const gone = !!(window as any).__stopped;
@@ -783,7 +789,7 @@ export const Events = {
     if (location.search.includes("found")) {
       // Reported the way the engine reports a search: what it is doing, how
       // far it is, and how many clips it has written, which is what tells
-      // the window to read the list again.
+      // the interface to read the list again.
       const timer = setInterval(() => {
         const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;
         if (!at) return;

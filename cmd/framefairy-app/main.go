@@ -98,30 +98,30 @@ func main() {
 		Height:    820,
 		MinWidth:  960,
 		MinHeight: 640,
-		// The bar at the top of the window, --ink-1 in app.css. The
-		// window's own colour is only ever seen where the page does not
-		// paint, which on macOS 26 is the sliver between the window's
-		// rounded corner and the webview's. At the top that sliver is
+		// The bar at the top of the app, --ink-1 in app.css. The colour
+		// of the app's window itself is only ever seen where the page does
+		// not paint, which on macOS 26 is the sliver between its rounded
+		// corner and the webview's. At the top that sliver is
 		// inside the bar, so it is the bar's colour or it is a notch.
 		BackgroundColour: application.NewRGB(29, 31, 35),
 		URL:              "/",
 		Mac: application.MacWindow{
-			// How far down a click still drags the window. Read once when
-			// the window is made, so it cannot follow the measured bar,
+			// How far down a click still drags the app. Read once when the
+			// app's window is made, so it cannot follow the measured bar,
 			// and it is set to the standard title bar rather than over it:
 			// any more than that and it eats clicks on the workspace.
 			InvisibleTitleBarHeight: 28,
 			// Hidden, not HiddenInset. The difference is one flag inside
-			// them, UseToolbar, and it is the whole reason this window did
-			// not look like a Mac's.
+			// them, UseToolbar, and it is the whole reason the app did not
+			// look like a Mac's.
 			//
 			// A toolbar makes the title bar taller and macOS then insets
 			// the three buttons further to centre them in it. Measured
 			// against Terminal, VS Code and Chrome in the same screenshot,
 			// all at the same scale: their close button sits 16, 17 and 20
-			// points below the window's top edge and 16, 18 and 20 points
-			// in from its left. Ours sat at 26 and 26. Six to ten points
-			// out in both directions, on every window, which is exactly
+			// points below their top edge and 16, 18 and 20 points in from
+			// their left. Ours sat at 26 and 26. Six to ten points out in
+			// both directions, every time, which is exactly
 			// the amount that reads as wrong without being nameable.
 			//
 			// Without the toolbar macOS lays out an ordinary title bar and
@@ -133,7 +133,11 @@ func main() {
 	})
 	svc.chrome = watchChrome(app, svc.window)
 
-	if err := app.Run(); err != nil {
+	err := app.Run()
+	// A model loaded for a search the app never got to is not left behind
+	// holding the memory.
+	engine.StopModels()
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -166,13 +170,13 @@ func widenPath() {
 }
 
 // mediaMiddleware serves episode files and their outputs under /media/ so
-// the window can show thumbnails and play clips. Only files that belong to
-// an episode in the library are served.
+// the interface can show thumbnails and play clips. Only files that belong
+// to an episode in the library are served.
 func mediaMiddleware(st *store) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/font" {
-				// The window writes the captions in the same face as the
+				// The interface writes the captions in the same face as the
 				// render, which is one of the faces built into the program.
 				data, ok := engine.FontBytes(r.URL.Query().Get("name"))
 				if !ok {
@@ -205,15 +209,15 @@ func mediaMiddleware(st *store) application.Middleware {
 }
 
 // notInLibrary is what a call is told when it names a file that does not
-// belong to an episode in the library. The window only ever names files it
-// was given, so this is the last line rather than the first.
+// belong to an episode in the library. The interface only ever names files
+// it was given, so this is the last line rather than the first.
 const notInLibrary = "this file does not belong to an episode in the library"
 
-// FrameFairy is everything the window can ask for.
+// FrameFairy is everything the interface can ask for.
 type FrameFairy struct {
 	app *application.App
-	// The one window, kept so the bar can ask macOS where it put the
-	// window's own furniture, and the watch that follows it.
+	// The app's only window, kept so the bar can ask macOS where it put
+	// the title bar and its buttons, and the watch that follows them.
 	window *application.WebviewWindow
 	chrome *chromeWatch
 	store  *store
@@ -234,8 +238,8 @@ func (s *FrameFairy) Version() string { return engine.Version }
 // Platform is darwin, windows or linux.
 func (s *FrameFairy) Platform() string { return runtime.GOOS }
 
-// Chrome says where macOS put the window's own furniture, or all zeros
-// where the system draws its own title bar. The window asks once and is
+// Chrome says where macOS put its own furniture, or all zeros where the
+// system draws its own title bar. The interface asks once and is
 // told again on the "chrome" event whenever the answer changes.
 func (s *FrameFairy) Chrome() Chrome {
 	if s.chrome == nil {
@@ -247,8 +251,8 @@ func (s *FrameFairy) Chrome() Chrome {
 // GetSettings returns the saved settings.
 func (s *FrameFairy) GetSettings() Settings { return s.store.Settings() }
 
-// SaveSettings takes the whole settings object back from the window, so
-// anything the window does not know about would be lost on every save.
+// SaveSettings takes the whole settings object back from the interface, so
+// anything the interface does not know about would be lost on every save.
 // Chosen is one of those: it is not a setting anybody edits, it is the
 // record that the one setup question was answered, and losing it would put
 // a customer back in the setup screen every time they changed a colour.
@@ -598,7 +602,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 	err := s.edit(path, func() error {
 		for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
 			// A plan of this episode, named the way plans are named.
-			// Nothing else is touched, whatever the window asks for.
+			// Nothing else is touched, whatever the interface asks for.
 			if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
 				continue
 			}
@@ -614,7 +618,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 }
 
 // Captions gives the captions of one clip, on the clip's own clock and in
-// the look the render draws them in, so the window can lay them over the
+// the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.
 func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, error) {
 	if !s.store.Known(planPath) {
@@ -671,8 +675,9 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 // An episode waiting for its first transcription has no waveform yet, which
 // is an empty answer and not a failure.
 //
-// Peaks never answers with more buckets than it measured, so the window is
-// told how fine the measurement was and can draw that finely and no finer.
+// Peaks never answers with more buckets than it measured, so the interface
+// is told how fine the measurement was and can draw that finely and no
+// finer.
 func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
 	if !s.store.Known(path) {
 		return nil, os.ErrNotExist
@@ -720,11 +725,50 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 		log.Printf("could not note the search of %s: %v", path, err)
 	}
 	return s.jobs.add(path, "plan", "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {
+		// The model loads while the transcript is still on its way, so
+		// the search has nothing to wait for once it is there.
+		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done && covered < req.To-0.05 {
+			go func() {
+				defer func() { _ = recover() }()
+				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {
+					log.Printf("could not load the model ahead of the search: %v", err)
+				}
+			}()
+		}
 		if err := s.waitForTranscript(ctx, p, req); err != nil {
 			return "", err
 		}
 		return p.Plan(ctx, req)
 	})
+}
+
+// windowLength is how long the window of a search is, in seconds. A search
+// of the whole episode is taken as an hour, which only sizes the model's
+// memory, and the search starts it again if it needs more.
+func windowLength(req engine.PlanRequest) float64 {
+	if req.To > req.From {
+		return req.To - req.From
+	}
+	return 3600
+}
+
+// WarmModel loads the local model for a search the app is about to start
+// by itself, the first one of a new episode, while the transcript is still
+// on its way to the end of the window. It is not a job: nothing waits for
+// it, and the search it was for finds the model loaded or loads it itself.
+func (s *FrameFairy) WarmModel(path string, from, to float64) {
+	if !s.store.Known(path) {
+		return
+	}
+	req := engine.PlanRequest{From: from, To: to}
+	go func() {
+		defer func() { _ = recover() }()
+		e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+		p := engine.NewProject(e, path, s.store.Settings().options())
+		if err := p.WarmModel(context.Background(), windowLength(req)); err != nil {
+			log.Printf("could not load the model ahead of the search: %v", err)
+		}
+	}()
 }
 
 // waitForTranscript blocks until the transcript covers the window, and
@@ -848,7 +892,8 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 }
 
 // WordsView is the words of a part, with the lead-in and lead-out the
-// renderer leaves around a cut, so the window can snap edges the same way.
+// renderer leaves around a cut, so the interface can snap edges the same
+// way.
 type WordsView struct {
 	Words     []engine.WordView `json:"words"`
 	KeepPause float64           `json:"keepPause"`
@@ -987,7 +1032,7 @@ func (s *FrameFairy) SetSearch(count int, min, max float64) error {
 }
 
 // hold keeps a number inside the range the interface offers. What arrives
-// from the window is not to be trusted, here no more than anywhere else.
+// from it is not to be trusted, here no more than anywhere else.
 func hold(n, low, high float64) float64 {
 	if !(n >= low) {
 		return low
@@ -1065,7 +1110,7 @@ type chosenClip struct {
 // opening the episode again opens on the same one. An empty key forgets it.
 //
 // The key names a clip set and a clip inside it. It arrives from the
-// window, so it is never joined onto a path and never used to reach a
+// interface, so it is never joined onto a path and never used to reach a
 // file: it is written down as it is and only ever compared with the keys
 // the app works out for itself. Anything longer than a key could be, or
 // carrying anything a key never carries, is refused rather than stored.
@@ -1109,10 +1154,10 @@ func (s *FrameFairy) ChooseClip(path, key string) error {
 	return nil
 }
 
-// ChosenClip gives back the clip an episode was last worked on, or an
-// empty string where there is none or where what is written down is not a
-// key. The window checks it against the clips it has either way: a clip
-// set that has been searched again no longer holds it.
+// ChosenClip gives back the clip an episode was last worked on, or an empty
+// string where there is none or where what is written down is not a key.
+// The interface checks it against the clips it has either way: a clip set
+// that has been searched again no longer holds it.
 func (s *FrameFairy) ChosenClip(path string) string {
 	if !s.store.Known(path) {
 		return ""

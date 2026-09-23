@@ -18,7 +18,7 @@ import (
 // changed.
 //
 // Only what it changed, never the whole file. A search writes its clips into
-// a plan while the window edits the clips already in it, and putting back
+// a plan while the app edits the clips already in it, and putting back
 // the whole plan from before an edit would take away every clip that landed
 // since. So the two copies are compared, and what differs between them, a
 // clip, a field of the plan, a corrected word, is put back one by one. If
@@ -115,7 +115,7 @@ func (c *Change) Undo() (ClipRef, error) { return c.apply(c.after, c.before) }
 func (c *Change) Redo() (ClipRef, error) { return c.apply(c.before, c.after) }
 
 // ClipRef names a clip of a plan: the one an undo or a redo changed, so the
-// window can show it.
+// app can show it.
 type ClipRef struct {
 	Plan string `json:"plan"`
 	ID   string `json:"id"`

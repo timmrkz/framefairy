@@ -188,8 +188,8 @@
     <h2>The pulse</h2>
     <p class="muted">
       Work running somewhere else. The dot keeps its size and its place, and a
-      ring widens out of it and fades, so a job running behind the window is
-      seen from the corner of the eye and nothing moves for it.
+      ring widens out of it and fades, so a job running out of sight is seen
+      from the corner of the eye and nothing moves for it.
     </p>
     <div class="row dots">
       <span class="dot busy"></span>

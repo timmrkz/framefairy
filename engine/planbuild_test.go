@@ -108,7 +108,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	default:
 	}
 
-	// Everything the window can do to that clip, from several places at
+	// Everything the app can do to that clip, from several places at
 	// once, while the rest of the answer arrives. None of it may be lost
 	// to the clip that lands next.
 	var wg sync.WaitGroup

@@ -92,3 +92,18 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestServerStamp(t *testing.T) {
+	got, ok := serverStamp("0.19.335.706 I srv    load_model: loading model '/models/gemma.gguf'")
+	if !ok || got < 19.3357 || got > 19.3358 {
+		t.Errorf("read %v %v", got, ok)
+	}
+	if got, _ := serverStamp("1.02.949.664 I slot print_timing"); got < 62.94 || got > 62.95 {
+		t.Errorf("a minute in read %v", got)
+	}
+	for _, bad := range []string{"", "load_model: loading", "a.b.c.d x", "0.19.335 x"} {
+		if _, ok := serverStamp(bad); ok {
+			t.Errorf("%q read as a time", bad)
+		}
+	}
+}

@@ -204,7 +204,7 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 // searched before, which lands on a file that is already there.
 //
 // It takes the same lock every edit takes, because the file has two
-// writers: the search that makes a plan and the window that edits one.
+// writers: the search that makes a plan and the app that edits one.
 // Without the lock a search can land in the middle of an edit reading the
 // file, changing it and writing it back.
 func writePlanFile(path string, body []byte) error {
@@ -218,7 +218,7 @@ func writePlanFile(path string, body []byte) error {
 // replacePlan puts new contents in a plan file in one step. The caller
 // holds the lock for that plan.
 //
-// Writing over the file itself would be wrong twice. The window reads the
+// Writing over the file itself would be wrong twice. The app reads the
 // clips and the coverage about once a second while a search runs, and it
 // would read a plan that is half there: the clip list empties itself, and
 // the range picker reports a part it has already searched as free and
@@ -256,7 +256,7 @@ func replacePlan(path string, body []byte) error {
 var errNotAdded = errors.New("the part this clip lies in was removed")
 
 // appendClip adds a clip to a plan that a search is still writing. It goes
-// through editPlan, so an edit the window makes at the same moment is kept,
+// through editPlan, so an edit the app makes at the same moment is kept,
 // and so is the plan's shape.
 //
 // Removing part of a search while it runs leaves a hole in the plan, and a

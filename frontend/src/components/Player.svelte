@@ -64,7 +64,7 @@
     still?: string;
     onplayclip?: (clip: ClipEntry) => void;
     // Asks for the frame at a moment of the episode, for as long as the
-    // window cannot show that moment itself.
+    // app cannot show that moment itself.
     onstill?: (at: number) => void;
     // Where the caption box is while it is being dragged, so the setting
     // beside it says what you are doing as you do it. Letting go saves,
@@ -113,7 +113,7 @@
   let video: HTMLVideoElement;
   let failed = $state("");
   // The moment the picture is really showing, and whether it shows
-  // anything at all. While the machine is busy the window often cannot
+  // anything at all. While the machine is busy the app often cannot
   // read the file, and then a seek is dropped and the picture stays where
   // it was. The workspace fills in with a frame read from the file.
   let ready = $state(false);
@@ -234,9 +234,9 @@
   }
 
   // True from the moment playing is asked for until it is stopped again. A
-  // window that has not read the file yet refuses to play, which used to
-  // mean the first press of the space bar did nothing at all and the
-  // second one worked. The press is remembered instead, and the picture
+  // video element that has not read the file yet refuses to play, which
+  // used to mean the first press of the space bar did nothing at all and
+  // the second one worked. The press is remembered instead, and the picture
   // starts the moment it can.
   let wantPlay = false;
 
@@ -704,7 +704,7 @@
         // Saying so is what puts the still in its place. pictureIsStale
         // asks whether the picture is ready and what second it is showing,
         // and ready was set in two places and cleared in none, so after a
-        // reset the window went on believing a black element was showing
+        // reset the app went on believing a black element was showing
         // the right frame. With the seek that failed anywhere within half
         // a second of the playhead, nothing counted as stale, no frame was
         // asked for, and nothing was drawn over the black. That is a video
@@ -786,7 +786,7 @@
                    two is split into two halves of nothing, both starting
                    where it did, and a key that was the moment alone would
                    then be the same key twice, which is not a caption that
-                   looks wrong but a window that stops. -->
+                   looks wrong but an app that stops. -->
               <!-- Each word says which moment it stands for. Nothing on
                    screen reads it: it is there so a probe can, because
                    which word lights up is decided by comparing two clocks
@@ -846,7 +846,7 @@
   }
 
   /* As tall and as wide as the workspace worked out, which it did from the
-     window itself. Nothing here measures anything. */
+     size of the app itself. Nothing here measures anything. */
   .screen {
     position: relative;
     height: var(--pic-h);

@@ -1309,7 +1309,7 @@
 
   .track {
     position: relative;
-    /* As tall as the window allows, set by the workspace. */
+    /* As tall as the height of the app allows, set by the workspace. */
     height: var(--wave-h, 112px);
     background: var(--ink-1);
     border: 1px solid var(--line);

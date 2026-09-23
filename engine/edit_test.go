@@ -275,13 +275,13 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 		t.Errorf("the plan's own look was changed to %v", plan["margin_v"])
 	}
 
-	// What the window draws sits in the same place.
+	// What the app draws sits in the same place.
 	view, err := ClipCaptionsView(editedPlan, "01", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if view.Style.MarginV*1920 != CaptionYMin {
-		t.Errorf("the window draws at %v", view.Style.MarginV*1920)
+		t.Errorf("the app draws at %v", view.Style.MarginV*1920)
 	}
 
 	if err := ResetCaptionY(editedPlan, "01"); err != nil {

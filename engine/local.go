@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -194,7 +195,11 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		return "", nil, err
 	}
 	args := []string{"-m", m.Model, "--host", "127.0.0.1", "--port", itoa(port),
-		"-c", itoa(contextSize), "-ngl", "999"}
+		"-c", itoa(contextSize), "-ngl", "999",
+		// One ask at a time, with the whole context for it. It also keeps
+		// what one ask read for the next, so a search that follows a
+		// warm-up finds the start of its prompt already read.
+		"-np", "1"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	cmd := exec.Command(server, args...)
 	var logFile *os.File
@@ -247,7 +252,18 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		if err == nil {
 			response.Body.Close()
 			if response.StatusCode == http.StatusOK {
-				e.Log.Detail("model loaded in %ss", fixed(time.Since(started).Seconds(), 1))
+				took := time.Since(started).Seconds()
+				if logFile != nil {
+					if before, ok := setupTime(logFile.Name()); ok {
+						// What loading costs is worth knowing in two parts:
+						// llama-server setting itself and the graphics up,
+						// and reading the model into memory.
+						e.Log.Info("model loaded in %ss, %ss of it before llama-server began reading the model",
+							fixed(took, 1), fixed(before, 1))
+						return url, stop, nil
+					}
+				}
+				e.Log.Info("model loaded in %ss", fixed(took, 1))
 				return url, stop, nil
 			}
 		}
@@ -256,6 +272,43 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			return "", nil, renderErr("the language model did not finish loading within 10 minutes")
 		}
 	}
+}
+
+// setupTime reads from llama-server's log how long it took before it began
+// reading the model file. Each line starts with the time since it started,
+// minutes, seconds, milliseconds and microseconds, as in 0.19.335.706.
+func setupTime(logPath string) (float64, bool) {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.Contains(line, "load_model: loading model") {
+			continue
+		}
+		return serverStamp(line)
+	}
+	return 0, false
+}
+
+func serverStamp(line string) (float64, bool) {
+	words := fields(line)
+	if len(words) == 0 {
+		return 0, false
+	}
+	parts := strings.Split(words[0], ".")
+	if len(parts) != 4 {
+		return 0, false
+	}
+	var n [4]int
+	for i, part := range parts {
+		v, err := strconv.Atoi(part)
+		if err != nil || v < 0 {
+			return 0, false
+		}
+		n[i] = v
+	}
+	return float64(n[0])*60 + float64(n[1]) + float64(n[2])/1e3 + float64(n[3])/1e6, true
 }
 
 // chatError is what llama-server says when it refuses a request.
@@ -273,13 +326,18 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	lineCount, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
-		listen.part(partLoading)
-		started, stop, err := e.startServer(ctx, m, contextFor(runeLen(prompt), maxTokens), logDir)
+		// A model loaded while the transcript was still on its way is used
+		// as it is. The search lets go of it when it is done, and it stops.
+		size := contextFor(runeLen(prompt), maxTokens)
+		if !modelReady(m.Model, size) {
+			listen.part(partLoading)
+		}
+		held, release, err := e.holdModel(ctx, m, size, logDir)
 		if err != nil {
 			return nil, err
 		}
-		defer stop()
-		url = started
+		defer release(0)
+		url = held
 	}
 	listen.part(partReading)
 

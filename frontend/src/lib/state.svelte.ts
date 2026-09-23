@@ -58,7 +58,7 @@ class Nav {
 
 export const nav = new Nav();
 
-// How the window itself is arranged. It is a view preference, not anything
+// How the app itself is arranged. It is a view preference, not anything
 // about an episode, so it lives in the webview and not in the settings file.
 class Shell {
   pinned = $state(read());
@@ -92,6 +92,8 @@ class Chosen {
   // Once for each one while the app runs, so coming back to a workspace
   // never starts a second search of its own.
   looked = $state<Record<string, boolean>>({});
+  // Whether the model has been loaded ahead of that first search.
+  warmed = $state<Record<string, boolean>>({});
 
   keep(path: string, from: number, to: number) {
     this.windows[path] = { from, to };
@@ -101,6 +103,7 @@ class Chosen {
   forget(path: string) {
     delete this.windows[path];
     delete this.looked[path];
+    delete this.warmed[path];
   }
 
   of(path: string, duration: number): { from: number; to: number } | null {

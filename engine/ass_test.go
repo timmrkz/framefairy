@@ -74,7 +74,7 @@ func TestResolveStyleValidatesEveryValue(t *testing.T) {
 	}
 }
 
-// The window paints the captions itself while a clip plays, so the colours
+// The app paints the captions itself while a clip plays, so the colours
 // of the render have to come out as colours a browser understands.
 func TestWebColourTurnsAnASSColourAround(t *testing.T) {
 	cases := []struct{ in, want string }{

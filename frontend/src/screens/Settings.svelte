@@ -364,7 +364,7 @@
 <style>
   /* A setting is a name and a control beside it, which only gets harder to
      read the wider it is. So the page keeps its width and stands in the
-     middle of the window rather than against the left of it. */
+     middle of the app rather than against the left of it. */
   section {
     padding: var(--gap) var(--edge) var(--edge);
     display: flex;
@@ -466,7 +466,7 @@
 
   /* Every field in this column is its own width, no wider than what it
      holds, so the column is a column of fields and not a column of boxes
-     stretched across the window. A list keeps room for the longest thing
+     stretched across the app. A list keeps room for the longest thing
      it can say, so it is that wide and stays that wide. */
   .grid :global(button.pick) {
     width: max-content;

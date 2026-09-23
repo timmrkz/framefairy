@@ -14,9 +14,9 @@ import (
 	"framefairy/engine"
 )
 
-// The window may only reach the episodes in the library and what belongs to
-// them. Every call that takes a path is a way in, so every one of them is
-// tried here with a path that is not the library's.
+// The interface may only reach the episodes in the library and what belongs
+// to them. Every call that takes a path is a way in, so every one of them
+// is tried here with a path that is not the library's.
 
 func library(t *testing.T) (*FrameFairy, string, string) {
 	t.Helper()
@@ -98,7 +98,7 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 func TestTheMediaRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	svc, mine, home := library(t)
 	secret := filepath.Join(home, "secret.txt")
-	if err := os.WriteFile(secret, []byte("not for the window"), 0o644); err != nil {
+	if err := os.WriteFile(secret, []byte("not for the interface"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	work := engine.WorkDir(mine)
@@ -181,8 +181,8 @@ func TestTheMediaRouteServesFilesOnly(t *testing.T) {
 }
 
 // A job that goes wrong in a way nobody planned for must not take the app
-// with it. The window, the other lane and whatever is being transcribed all
-// hang on this process staying alive.
+// with it. The interface, the other lane and whatever is being transcribed
+// all hang on this process staying alive.
 func TestAJobThatPanicsOnlyFailsItself(t *testing.T) {
 	svc, mine, _ := library(t)
 	updates := make(chan Job, 100)

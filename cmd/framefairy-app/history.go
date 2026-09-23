@@ -95,7 +95,7 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 }
 
 // Undone is what an undo or a redo did: whether there was anything to do,
-// and the clip it changed, so the window can show it.
+// and the clip it changed, so the interface can show it.
 type Undone struct {
 	Done bool   `json:"done"`
 	Clip string `json:"clip,omitempty"`

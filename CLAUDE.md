@@ -116,9 +116,10 @@ messages, pull request text, code comments and chat replies.
 - **One name per thing.** The area the episode plays in is the **video
   preview**, never the picture or the player. The slim strip under it, the
   whole episode at a glance, is the **range picker**, and the part of the
-  episode chosen on it is the **window**, never a stretch. The app's own
-  window is the app. The waveform below the workspace, the episode up
-  close, is the **clip timeline**. The key is
+  episode chosen on it is the **window**, never a stretch. In the
+  interface and in the code comments, where the app's own window is meant,
+  it is the app. The waveform below the workspace, the episode up close,
+  is the **clip timeline**. The key is
   the **space bar**. Taking something away is **remove**, everywhere, in
   every button and every message. Whatever a thing is called in the
   interface, it is called that in the docs and in the code comments too.

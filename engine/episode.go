@@ -442,7 +442,7 @@ type CaptionView struct {
 }
 
 // CaptionStyleView is the caption look with every measure as a share of the
-// frame height, which is how the render scales it too. A window can then
+// frame height, which is how the render scales it too. The app can then
 // draw the captions over a picture of any size.
 type CaptionStyleView struct {
 	Font string `json:"font"`

@@ -21,11 +21,11 @@ import (
 // a few kilobytes on disk. So the answer is read as it is written, each clip
 // is taken the moment it is whole, framed by one of a few framers while the
 // model goes on writing, and written to the plan as soon as it is framed.
-// The window reads the plan while the search runs and shows each clip as it
+// The app reads the plan while the search runs and shows each clip as it
 // lands.
 //
 // The clips are written in the order they are finished rather than the
-// order they were written in. The window lists clips by where they are in
+// order they were written in. The app lists clips by where they are in
 // the episode, never by where they are in the file, and a clip that has to
 // wait for a longer one before it is written is a clip shown later than it
 // could have been.
@@ -391,7 +391,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 
 // land writes a framed clip to the plan. The first one makes the plan, in
 // place of whatever plan was there for this window, and each after it is
-// added through the same edit the window uses.
+// added through the same edit the app uses.
 func (b *planBuilder) land(clip PlanClip) error {
 	b.writing.Lock()
 	defer b.writing.Unlock()

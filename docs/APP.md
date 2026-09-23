@@ -1,6 +1,6 @@
 # framefairy-app, the desktop app
 
-The app does what the command line does, with a window: it transcribes an
+The app does what the command line does, on screen: it transcribes an
 episode, finds the moments worth clipping, lets you check and adjust them on
 a timeline and renders them as vertical shorts. It runs the same engine as
 `framefairy`, so both give the same results from the same files.
@@ -27,7 +27,7 @@ interface come with the packaging work.
 
 A new copy of the app on a machine with nothing on it needs two things, and
 only one of them is a question. Until both are answered the setup is the
-window: no sidebar, no workspace, nothing to press that would not work.
+whole app: no sidebar, no workspace, nothing to press that would not work.
 
 **Speech** is always local. No speech model ships with the app, so the app
 fetches one. There is one today, which is not a choice, so the app says what
@@ -153,25 +153,25 @@ the default would mean that Enter, or a second Return still held down from
 somewhere else, throws work away, and the whole reason this box exists is
 that a click which throws work away has to be a click you meant.
 
-### The window
+### The bar
 
-A bar runs across the top of the window. It holds the window's own buttons
-on macOS, it is what the window is dragged by, and it says what is on
+A bar runs across the top of the app. It holds the close, minimise and zoom
+buttons on macOS, it is what the app is dragged by, and it says what is on
 screen: the name of the episode, or **Activity** or **Settings**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
 On macOS the bar **is** the title bar. macOS lays that out and centres its
 three buttons in it, and nothing an app can set moves them by a pixel: the
-height the window asks to leave empty only says how far down a drag still
-moves the window. So the app takes the height it was given rather than
+height the app asks macOS to leave empty only says how far down a drag
+still moves the app. So the app takes the height it was given rather than
 asking for one, and then the buttons are on the bar's middle because the
 bar is what they were centred in. Everywhere else the system draws its own
-title bar above the window and this one is an ordinary header.
+title bar above the app and this one is an ordinary header.
 
 The Go side measures and the stylesheet lays out. `FrameFairy.Chrome` answers
 four numbers in whole pixels, the title bar's height and the left edge,
-right edge and middle of the window buttons, and the window is told again
+right edge and middle of those buttons, and the interface is told again
 on the `chrome` event whenever the answer changes: a resize, either way
 through fullscreen, another display, another scale, light or dark, back
 from the Dock. Nothing is ever moved, so there is nothing that can snap
@@ -188,22 +188,22 @@ centred and not the space a line of text reserves around them, and then it
 is padded back out so a name with a tail below the baseline, `YouTube.mp4`,
 keeps it. A name too long for the bar ends in an ellipsis.
 
-The window's own colour is the bar's colour, `--ink-1`. It is only ever
-seen where the page does not paint, which on macOS 26 is the sliver
-between the window's rounded corner and the webview's, and at the top that
+The colour of the app's window itself is the bar's colour, `--ink-1`. It
+is only ever seen where the page does not paint, which on macOS 26 is the
+sliver between its rounded corner and the webview's, and at the top that
 sliver is inside the bar.
 
 ### The workspace
 
 Selecting an episode opens its workspace. It is three columns, the settings
 on the left, the video preview in the middle and the clips on the right, with
-the clip up close under all three. It fits the window without scrolling.
+the clip up close under all three. It fits the app without scrolling.
 
-The picture always agrees with the playhead. Whenever the window cannot show
+The picture always agrees with the playhead. Whenever the app cannot show
 the moment the playhead stands on, which is what happens while the machine is
 busy transcribing or searching and a seek is dropped, the frame under the
 playhead is read from the file by the engine and shown instead. The moment
-the window catches up it takes over by itself. The engine keeps one frame per
+the app catches up it takes over by itself. The engine keeps one frame per
 second of an episode in its work folder, so going back over a part costs
 nothing.
 
@@ -229,19 +229,19 @@ without could not be relied on for either.
 The video preview is as big as the room allows and keeps the shape of the
 episode, so it grows until either the height or the width runs out. The
 middle column is exactly as wide as the picture, and the settings and the
-clip list share everything left over. A wider window makes those two wider
+clip list share everything left over. A wider app makes those two wider
 rather than leaving a strip of nothing beside the picture, and a taller
-window makes the picture bigger. Once the picture is as wide as it may be,
+app makes the picture bigger. Once the picture is as wide as it may be,
 the height left over goes to the two tracks: the clip timeline grows and the
 range picker stays exactly half of it, so nothing is left empty at the foot
-of the window.
+of the app.
 
-All of that is one expression in the stylesheet, worked out from the window
-itself and the tokens in `app.css`. Two things it cannot know come in as
-custom properties, the shape of the episode and the height of an error line
-above the workspace, and neither changes because the window changed. So
-dragging the window edge costs no JavaScript at all and the workspace keeps
-up with the edge instead of arriving a frame behind it. The waveform is the
+All of that is one expression in the stylesheet, worked out from the size
+of the app itself and the tokens in `app.css`. Two things it cannot know
+come in as custom properties, the shape of the episode and the height of an
+error line above the workspace, and neither changes because the app was
+resized. So dragging the edge of the app costs no JavaScript at all and the
+workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
 nothing is laid out from the answer. The window chosen on the range picker stays with the episode
 while the app runs, so leaving the workspace and coming back does not throw
@@ -255,7 +255,7 @@ picker**. The waveform under the whole workspace, the episode up close, is the
 Nothing explains itself in a line of text that is always on screen. Every
 control says what it is for when the pointer rests on it, and the small info
 marks open a bubble that says more, on hover or on a click. A bubble is a few
-sentences, never an essay, and it hangs from the window rather than from the
+sentences, never an essay, and it hangs from the page rather than from the
 area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
@@ -430,7 +430,7 @@ place.
   the width before anything is measured, so the placement measures what it
   will get.
 
-  A name longer than the window has room for is the one case a list cannot
+  A name longer than the app has room for is the one case a list cannot
   grow into, and the whole of a name is in the row's title either way. The row under the pointer and the row the
   keyboard is on are the same row, in `--ink-3`, and what is chosen is in
   the accent with a tick that keeps its place whether or not it is there.
@@ -506,8 +506,10 @@ place.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the transcription starts, and the moment it covers the
-      window chosen on the track the first search runs. Until then the info
-      mark beside the head says so, and the window can still be moved. It
+      window chosen on the track the first search runs. Until then the
+      first row of the clip list says so, and the window can still be
+      moved. The local model is loaded in the meantime, so the search
+      starts with it in memory. It
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
@@ -947,14 +949,14 @@ animation at all at rest.
 and the fill inside a control. The track, the shimmer and the pulse are in
 `frontend/src/app.css`, because they are worn by things that are not
 controls. The track is `.progress` there and not `.bar`, because the bar is
-the one across the top of the window, and while the two shared a name the
+the one across the top of the app, and while the two shared a name the
 bar was picking up the track's rounded corners.
 
-### What the window may ask for
+### What the interface may ask for
 
 Every call that names a file is checked against the library before anything
 is read, written or started, and a path is judged by where it really leads.
-The window only ever names files it was given, so this is the last line
+The interface only ever names files it was given, so this is the last line
 rather than the first, but it is the line that holds when something else
 asks.
 
@@ -1031,7 +1033,7 @@ Homebrew's ffmpeg and llama-server even when it is started from Finder.
 
 | Part | Where | What |
 | --- | --- | --- |
-| Go side | `cmd/framefairy-app/` | the window, the calls the interface makes, the job queue, settings |
+| Go side | `cmd/framefairy-app/` | the app's window, the calls the interface makes, the job queue, settings |
 | Interface | `frontend/` | Svelte 5 and TypeScript, no Go |
 | Built interface | `cmd/framefairy-app/dist/app/` | made by make from `frontend/`, embedded into the program, not in git |
 

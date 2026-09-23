@@ -46,13 +46,14 @@
   --radius-s: 4px;
   --radius-m: 8px;
   --control-h: 32px;
-  /* The bar at the top of the window. Where the system draws its own
+  /* The bar at the top of the app. Where the system draws its own
      title bar, which is everywhere but macOS, this is the whole story and
      the bar is an ordinary header. On macOS the bar is the title bar, and
-     macOS decides how tall that is, so the shell sets this from what the
-     window answers and this number is only what the first frame uses. The
-     workspace works out its own height from the window and this either
-     way, so it is a number both sides read rather than one each. */
+     macOS decides how tall that is, so the shell sets this from what
+     macOS answers and this number is only what the first frame uses. The
+     workspace works out its own height from the height of the app and
+     this either way, so it is a number both sides read rather than one
+     each. */
   --bar-h: 44px;
   /* The clip timeline at its smallest, with the range picker always half
      of it. The range picker is the same episode seen from much further
@@ -75,8 +76,8 @@
      the next. A different number needs a reason, and inside a control is
      the usual one. */
   --gap: 12px;
-  /* Between the window and what is in it, which is not a gap between two
-     things and so is its own number. */
+  /* Between the edge of the app and what is in it, which is not a gap
+     between two things and so is its own number. */
   --edge: 24px;
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Ubuntu, sans-serif;
@@ -405,8 +406,8 @@ input[type="password"] {
 
 /* Work running somewhere else: the pulse. The dot keeps its size and its
    place, and a ring of the same colour widens out of it and fades, once
-   every couple of seconds, so a job running behind the window is seen
-   from the corner of the eye and nothing on the rail moves for it. */
+   every couple of seconds, so a job running out of sight is seen from
+   the corner of the eye and nothing on the rail moves for it. */
 .dot.busy {
   position: relative;
   background: var(--accent);
@@ -523,7 +524,7 @@ button:has(> .beam):disabled {
 }
 
 /* A mark whose bubble is up stays where it is. The bubble hangs from the
-   window rather than from the area, so reaching into it takes the pointer
+   page rather than from the area, so reaching into it takes the pointer
    off the area, and a mark that vanished then would leave its own answer
    pointing at nothing. */
 .ask:has([aria-expanded="true"]) {

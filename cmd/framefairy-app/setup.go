@@ -18,8 +18,8 @@ import (
 //
 // See docs/PACKAGING.md.
 
-// SpeechModelView is one installable model as the window sees it, which is
-// the engine's entry plus whether it is already here.
+// SpeechModelView is one installable model as the interface sees it, which
+// is the engine's entry plus whether it is already here.
 type SpeechModelView struct {
 	engine.SpeechModel
 	Installed bool `json:"installed"`
@@ -42,7 +42,7 @@ type LanguageModelView struct {
 	Recommended bool `json:"recommended"`
 }
 
-// SetupState is what the window needs to decide whether to ask anything.
+// SetupState is what the interface needs to decide whether to ask anything.
 type SetupState struct {
 	// Speech is every model that can be installed, best first.
 	Speech []SpeechModelView `json:"speech"`
@@ -53,7 +53,7 @@ type SetupState struct {
 	// first, each saying whether the machine can hold it.
 	Language []LanguageModelView `json:"language"`
 	// Memory is what this machine has, in bytes, or zero where it would
-	// not say. The window says it out loud beside the models, because a
+	// not say. The interface says it out loud beside the models, because a
 	// model being called too big is only believable next to the number it
 	// was judged against.
 	Memory int64 `json:"memory"`
@@ -65,7 +65,7 @@ type SetupState struct {
 	// HasLocalModel is true when a language model is on the machine.
 	HasLocalModel bool `json:"hasLocalModel"`
 	// HasServer is true when a llama-server can be found and run. A model
-	// without one is fifteen gigabytes that answer nothing, so the window
+	// without one is fifteen gigabytes that answer nothing, so the interface
 	// says so before the download rather than after it.
 	HasServer bool `json:"hasServer"`
 	// Chosen is true once somebody has answered the one question, so the
@@ -73,8 +73,9 @@ type SetupState struct {
 	Chosen bool `json:"chosen"`
 	// Ready is true when nothing more is needed to make a short.
 	Ready bool `json:"ready"`
-	// Installing is the id of a model install in hand, so a window opened
-	// again while one runs picks it up rather than starting a second.
+	// Installing is the id of a model install in hand, so the interface,
+	// opened again while one runs, picks it up rather than starting a
+	// second.
 	Installing string `json:"installing,omitempty"`
 }
 
@@ -154,7 +155,7 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 		return s.jobs.refuse("", "model", model.Title, model.Title+" is already installed")
 	}
 	// One at a time. Two installs would write over each other's unpacking
-	// folder, and the window can ask twice by being opened twice.
+	// folder, and the interface can ask twice by being opened twice.
 	return s.jobs.addOnce("", "model", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
 			return "", engine.InstallSpeechModel(ctx, p.Log(), model, engine.ModelsDir())
@@ -171,7 +172,7 @@ func (s *FrameFairy) InstallSpeechModel(name string) Job {
 //
 // A model the machine cannot hold is still installable. Saying no on
 // somebody's behalf is not this app's job, and a machine's memory can be
-// read wrong: what the window does is say what it thinks before the
+// read wrong: what the interface does is say what it thinks before the
 // download rather than refuse after it.
 func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	model, ok := engine.LanguageModelByName(name)

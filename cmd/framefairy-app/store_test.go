@@ -12,7 +12,7 @@ import (
 )
 
 // The store is the app's whole memory: the settings and the list of
-// episodes, as plain files. It also decides which files the window is
+// episodes, as plain files. It also decides which files the interface is
 // allowed to read, so what it says is known matters beyond convenience.
 
 func configHome(t *testing.T) string {
@@ -102,9 +102,9 @@ func TestKnownOnlyAcceptsFilesOfListedEpisodes(t *testing.T) {
 	}
 }
 
-// FuzzKnownStaysInTheLibrary checks the rule the window relies on from the
-// outside: a file is only served when it is an episode in the list or sits
-// inside that episode's work folder.
+// FuzzKnownStaysInTheLibrary checks the rule the interface relies on from
+// the outside: a file is only served when it is an episode in the list or
+// sits inside that episode's work folder.
 func FuzzKnownStaysInTheLibrary(f *testing.F) {
 	f.Add("ep.mp4", "ep.framefairy/out/01.mp4")
 	f.Add("ep.mp4", "../../etc/passwd")
@@ -188,7 +188,7 @@ func TestCancellingAQueuedJobNeverRunsIt(t *testing.T) {
 	if states[first.ID] != JobDone || states[second.ID] != JobCancelled {
 		t.Errorf("states %v", states)
 	}
-	// The newest job of a kind is the one the window asks about, and
+	// The newest job of a kind is the one the interface asks about, and
 	// clearing keeps nothing that is finished.
 	if job, ok := q.find("a.mp4", "render"); !ok || job.ID != second.ID {
 		t.Errorf("find gave %+v", job)

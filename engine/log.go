@@ -159,8 +159,8 @@ func (l *Log) ProgressOf(label string, fraction, remaining float64) {
 // ProgressTo reports the same and adds the second of the episode the work
 // has reached, which is 0 where that means nothing. A transcription saves
 // what it has every few seconds, so what is on disk lags a long way behind
-// what the machine has already heard, and a window that followed the file
-// alone would step rather than move.
+// what the machine has already heard, and the app, if it followed the file
+// alone, would step rather than move.
 func (l *Log) ProgressTo(label string, fraction, remaining, covered float64) {
 	l.progress(label, fraction, remaining, covered, 0)
 }

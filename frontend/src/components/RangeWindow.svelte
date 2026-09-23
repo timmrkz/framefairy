@@ -469,7 +469,7 @@
   .track {
     position: relative;
     /* Half the clip timeline, set by the workspace so the two grow
-       together and fill the window. */
+       together and fill the height of the app. */
     height: var(--picker-h, 56px);
     flex: none;
     background: var(--ink-1);

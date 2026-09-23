@@ -319,15 +319,15 @@ export interface SetupState {
   // is a default rather than a decision.
   chosen: boolean;
   ready: boolean;
-  // The job of a model install in hand, so a window opened again while one
-  // runs picks it up rather than starting a second.
+  // The job of a model install in hand, so the app, opened again while one
+  // runs, picks it up rather than starting a second.
   installing?: string;
 }
 
 export const api = {
   version: () => call<string>("Version"),
   platform: () => call<string>("Platform"),
-  // Where macOS put the window's own furniture, in whole CSS pixels, or
+  // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
   chrome: () => call<Chrome>("Chrome"),
   // The clip of an episode that was last worked on, so opening it again
@@ -354,6 +354,9 @@ export const api = {
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
   addEpisodes: () => call<string[] | null>("AddEpisodes"),
+  // Loads the local model for the first search of an episode while the
+  // transcript is still on its way. Nothing comes back and nothing waits.
+  warmModel: (path: string, from: number, to: number) => call<void>("WarmModel", path, from, to),
   removeEpisode: (path: string, deleteWork: boolean) =>
     call<void>("RemoveEpisode", path, deleteWork),
   source: (path: string) => call<SourceView>("Source", path),
@@ -441,21 +444,21 @@ export function onJob(fn: (u: JobUpdate) => void): () => void {
   return Events.On("job", (ev) => fn(ev.data as JobUpdate));
 }
 
-// Where macOS put the window's own furniture, in whole CSS pixels. All
+// Where macOS put the title bar and its buttons, in whole CSS pixels. All
 // zeros means the system draws its own title bar, which is every other
 // system, and then the stylesheet keeps its own numbers.
 export interface Chrome {
   // The title bar's height, which is the height of the bar the app draws.
   bar: number;
-  // The left edge of the first window button and the right edge of the
+  // The left edge of the first of those buttons and the right edge of the
   // last, so the name of what is on screen starts after them.
   left: number;
   right: number;
-  // The middle of the window buttons, from the top of the page.
+  // The middle of those buttons, from the top of the page.
   middle: number;
 }
 
-// The window is told again whenever the answer changes: a resize, either
+// The app is told again whenever the answer changes: a resize, either
 // way through fullscreen, another display, another scale, light or dark,
 // or back from the Dock.
 export function onChrome(fn: (c: Chrome) => void): () => void {
@@ -469,7 +472,7 @@ export interface Undone {
 }
 
 // Undo and Redo in the Edit menu. The menu has the keys, so this is how
-// they reach the window.
+// they reach the app.
 export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
   return Events.On("undo", (ev) => fn(ev.data as "undo" | "redo"));
 }

@@ -75,7 +75,7 @@ func TestAnEditIsUndoneAndDoneAgain(t *testing.T) {
 	}
 }
 
-// A search writes clips into the plan while the window edits it. Undoing
+// A search writes clips into the plan while the app edits it. Undoing
 // an edit puts back the clip it changed and nothing else, so what landed
 // since stays.
 func TestUndoLeavesAClipThatLandedSince(t *testing.T) {
@@ -198,7 +198,7 @@ func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
 	}
 }
 
-// Undo and redo from several goroutines at once, as a window firing keys
+// Undo and redo from several goroutines at once, as the app firing keys
 // faster than the disk answers would, never leave a plan that does not
 // load, and end on one of the two states the edit knows.
 func TestUndoAndRedoAtOnceLeaveAPlan(t *testing.T) {

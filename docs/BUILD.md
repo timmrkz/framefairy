@@ -44,7 +44,7 @@ something fails.
 **The models are not make's business.** The app fetches the speech model and
 the language model itself, on first run, which is what a customer does and
 so is what this machine should do too. `make models` is still there for the
-command line, which has no window to ask in.
+command line, which has nowhere to ask.
 
 **A build runner never installs anything.** `CI` in the environment turns
 step 1 and step 2 off, so what CI builds is what its own workflow asked for
@@ -90,7 +90,7 @@ speech model it fetches itself, and it asks once how clips should be found.
 `make test` runs every Go test under the race detector, type checks the
 interface and runs the interface's own tests with vitest,
 `frontend/src/**/*.test.ts`. The app is a queue of jobs on their own
-goroutines and a window asking them things from another, so the tests of
+goroutines and an interface asking them things from another, so the tests of
 anything asynchronous use it from several goroutines at once and let
 `-race` judge. The fuzzing runs without the detector: it is the same code,
 many more times over. Those cover

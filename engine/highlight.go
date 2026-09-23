@@ -265,7 +265,7 @@ func captionLayout(words []string, limit int) [][]int {
 }
 
 // WebColour turns an ASS colour, &HAABBGGRR or &HBBGGRR&, into the CSS
-// colour a window can paint with. The alpha runs backwards in ASS, 00 is
+// colour the app can paint with. The alpha runs backwards in ASS, 00 is
 // opaque, so it is turned around here.
 func WebColour(value string) string {
 	raw := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(strip(value), "&H"), "&"))

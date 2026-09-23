@@ -11,10 +11,10 @@ import (
 	"framefairy/engine"
 )
 
-// The queue runs jobs on goroutines of its own while the window asks it
-// things from another, so here everything it can be asked is asked at
-// once. make test runs this with the race detector, which is the point of
-// it: a queue that only works when nobody is looking is not a queue.
+// The queue runs jobs on goroutines of its own while the interface asks it
+// things from another, so here everything it can be asked is asked at once.
+// make test runs this with the race detector, which is the point of it: a
+// queue that only works when nobody is looking is not a queue.
 func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -24,7 +24,7 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 	var events, broken atomic.Int64
 	q := newQueue(st, func(u JobUpdate) {
 		events.Add(1)
-		// Every snapshot the window receives is a whole job.
+		// Every snapshot the interface receives is a whole job.
 		if u.Job.ID == "" || u.Job.Episode == "" || u.Job.Lane == "" || u.Job.State == "" {
 			broken.Add(1)
 		}
@@ -55,7 +55,7 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 			}
 		}(hand)
 	}
-	// Everything else the window does while jobs are being added and run.
+	// Everything else the interface does while jobs are being added and run.
 	for hand := 0; hand < hands; hand++ {
 		wg.Add(1)
 		go func() {
@@ -97,7 +97,7 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if events.Load() == 0 {
-		t.Error("the window was told nothing")
+		t.Error("the interface was told nothing")
 	}
 	if broken.Load() != 0 {
 		t.Errorf("%d job snapshots came out half written", broken.Load())
@@ -106,7 +106,8 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 
 // Stopping every job of an episode waits for the ones that are running, so
 // the files can be deleted after it. It is asked from several places at
-// once, because the window does not wait for one removal before the next.
+// once, because the interface does not wait for one removal before the
+// next.
 func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -153,9 +154,10 @@ func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
 // Looking for an existing job and then adding one is two locks with a gap
 // between them. Two calls arriving together both look, both see nothing and
 // both add, and the result is two transcriptions of one episode or two
-// downloads writing over each other's unpacking folder. The window can do
-// that by being opened twice, and a customer can do it by pressing a button
-// twice. A test that makes one call at a time proves nothing about it.
+// downloads writing over each other's unpacking folder. The interface can
+// do that by being opened twice, and a customer can do it by pressing a
+// button twice. A test that makes one call at a time proves nothing about
+// it.
 func TestAskingForTheSameWorkTwiceAtOnceQueuesItOnce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

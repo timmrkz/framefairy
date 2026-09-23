@@ -268,7 +268,7 @@ func TextWidth(font, text string, size float64) (float64, bool) {
 }
 
 // FontScale is the em size a caption size comes out as, as a share of that
-// size. A window that draws captions itself needs it, because a font size
+// size. The app draws captions itself and needs it, because a font size
 // in a browser is the em square.
 func FontScale(font string) float64 {
 	f, ok := face(font)

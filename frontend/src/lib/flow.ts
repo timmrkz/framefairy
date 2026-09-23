@@ -50,8 +50,19 @@ export function shouldLook(s: SearchState): boolean {
   return s.covered >= s.to - 0.5;
 }
 
+// The model is loaded for that first search while the transcript is still
+// on its way, so the search starts with the model already in memory
+// rather than spending its first half minute loading it. The same episode,
+// before the same moment.
+export function shouldWarm(s: SearchState): boolean {
+  if (s.looked || s.busy) return false;
+  if (s.plans > 0 || s.clips > 0) return false;
+  if (s.to <= 0) return false;
+  return s.covered < s.to - 0.5;
+}
+
 export type PictureState = {
-  // The window has decoded a frame of the episode at all.
+  // The video preview has decoded a frame of the episode at all.
   ready: boolean;
   // The moment the picture is showing, or -1 while it shows nothing.
   shows: number;
@@ -60,7 +71,7 @@ export type PictureState = {
 };
 
 // The picture has to agree with the playhead. While the machine is busy
-// transcribing or searching, the window often cannot read the episode file,
+// transcribing or searching, the app often cannot read the episode file,
 // so a seek is dropped and the picture stays on a frame that has nothing to
 // do with where the playhead is. Whenever that happens the workspace asks
 // the engine for the frame under the playhead instead.
@@ -129,7 +140,7 @@ export function nextWindow(
 
 // A run of asks where only the newest answer counts.
 //
-// The window asks the engine for the frame under the playhead every time
+// The app asks the engine for the frame under the playhead every time
 // the playhead moves, and walking the clip list with the arrow keys moves
 // it as fast as a key repeats. Several asks are then in the air at once,
 // and nothing says they come back in the order they went out: a frame that

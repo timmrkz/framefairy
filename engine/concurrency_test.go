@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Records are written by jobs on their own goroutines while the window
+// Records are written by jobs on their own goroutines while the app
 // saves settings on another, and the settings say where the records go. So
 // the one folder, the note beside an episode and the record files
 // themselves are all reached from several places at once. make test runs
@@ -45,7 +45,7 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 			}
 		}(hand)
 	}
-	// The window saving its settings while all that goes on.
+	// The app saving its settings while all that goes on.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

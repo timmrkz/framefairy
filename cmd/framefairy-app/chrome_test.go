@@ -6,7 +6,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// A measurement crosses to the window on whole pixels and never as a
+// A measurement crosses to the interface on whole pixels and never as a
 // fraction, because something sitting between two pixels is painted in one
 // place normally and another the moment anything puts it on a surface of
 // its own.
@@ -17,7 +17,7 @@ func TestAMeasurementIsAlwaysAWholePixel(t *testing.T) {
 	}{
 		{0, 0}, {13, 13}, {13.4, 13}, {13.5, 14}, {13.6, 14},
 		{52.499, 52}, {52.5, 53},
-		// Nothing about a window is negative, and a window that has not
+		// Nothing about the app's window is negative, and one that has not
 		// been laid out yet can answer anything at all.
 		{-1, 0}, {-0.4, 0},
 	}
@@ -37,7 +37,7 @@ func TestFullscreenKeepsTheBarAndLosesTheButtons(t *testing.T) {
 
 	got := c.settle(normal)
 	if (got != Chrome{Bar: 52, Left: 20, Right: 92, Middle: 26}) {
-		t.Fatalf("an ordinary window gave %+v", got)
+		t.Fatalf("outside fullscreen gave %+v", got)
 	}
 
 	// The event says so before the animation starts, so no frame of it
@@ -50,7 +50,7 @@ func TestFullscreenKeepsTheBarAndLosesTheButtons(t *testing.T) {
 		t.Errorf("in fullscreen gave %+v, wanted the bar it had and no buttons", got)
 	}
 	// On the way out the flag is still set, so the bar holds until the
-	// window says it is out.
+	// macOS says it is out.
 	if got := c.settle(chromeRaw{bar: 12, left: 20, right: 92, middle: 6}); got != (Chrome{Bar: 52}) {
 		t.Errorf("halfway out gave %+v, wanted the bar it had", got)
 	}
@@ -60,7 +60,7 @@ func TestFullscreenKeepsTheBarAndLosesTheButtons(t *testing.T) {
 		t.Errorf("out again gave %+v", got)
 	}
 
-	// A window that comes back a different size is remembered at the new
+	// A bar that comes back a different size is remembered at the new
 	// one, so the next trip holds the right height.
 	bigger := chromeRaw{bar: 60, left: 24, right: 100, middle: 30}
 	c.settle(bigger)
@@ -70,13 +70,13 @@ func TestFullscreenKeepsTheBarAndLosesTheButtons(t *testing.T) {
 	}
 }
 
-// A measurement that says nothing is not allowed to wipe the bar. A window
+// A measurement that says nothing is not allowed to wipe the bar. The app
 // answers zero before it has been laid out, and the page keeps whatever
 // the stylesheet says rather than collapsing.
 func TestAWindowThatCannotAnswerLeavesTheBarAlone(t *testing.T) {
 	c := &chromeWatch{}
 	if got := c.settle(chromeRaw{}); got != (Chrome{}) {
-		t.Errorf("a window with nothing to say gave %+v", got)
+		t.Errorf("a measurement with nothing to say gave %+v", got)
 	}
 	c.settle(chromeRaw{bar: 52, left: 20, right: 92, middle: 26})
 	c.set(true)
@@ -85,8 +85,8 @@ func TestAWindowThatCannotAnswerLeavesTheBarAlone(t *testing.T) {
 	}
 }
 
-// Dragging a window by its corner raises one of these a frame and almost
-// none of them change anything, so the window is told only what is new.
+// Dragging the app by its corner raises one of these a frame and almost
+// none of them change anything, so the interface is told only what is new.
 func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
 	answer := chromeRaw{bar: 52, left: 20, right: 92, middle: 26}
 	was := measureChrome
@@ -109,11 +109,11 @@ func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
 		tell()
 	}
 	if said != 1 {
-		t.Errorf("twenty measurements of an unmoved window said %d things, wanted 1", said)
+		t.Errorf("twenty measurements of an unmoved app said %d things, wanted 1", said)
 	}
 	answer.bar = 60
 	tell()
 	if said != 2 {
-		t.Errorf("a window that changed said %d things, wanted 2", said)
+		t.Errorf("an app that changed said %d things, wanted 2", said)
 	}
 }

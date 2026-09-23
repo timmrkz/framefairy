@@ -53,13 +53,13 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.11 | Real progress for a search: loading the model, reading the transcript, thinking, writing clip by clip and framing, each measured against how long it took on this machine before, and against a measured stand-in the first time. Shown in the row the next clip will appear in | `[x]` |
 | 1.12 | Framing decodes only the parts of a clip that are kept, through the system's own video decoder where there is one, and on every system | `[x]` |
 | 1.13 | The local model thinks on a budget, 2,048 tokens by default, so the first clip is written in about a minute rather than five | `[x]` |
-| 1.14 | The model loaded and the transcript read while the transcription is still running, so a search that starts has only the thinking left | `[ ]` |
+| 1.14 | The model loaded while the transcription is still running, so a search that starts finds it in memory `[x]`, and the transcript read into it as it grows `[ ]` | `[~]` |
 
 ## Phase 2: app shell
 
 | # | Batch | Status |
 |---|---|---|
-| 2.1 | App module, window, services, job queue with progress and cancel | `[x]` |
+| 2.1 | App module, the app's window, services, job queue with progress and cancel | `[x]` |
 | 2.2 | Layout, navigation, design tokens | `[x]` |
 | 2.3 | Settings with the setup check | `[~]` |
 | 2.4 | Episode list in the sidebar, add and remove | `[~]` |
@@ -79,17 +79,17 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.55 | The remove box reads Cancel, Keep, Delete, in plainer words, with what is destructive marked rather than made the answer Enter gives | `[x]` |
 | 2.54 | The crosshair goes to the playhead, always, and puts it in the middle. Going back to the clip is what clicking the clip does | `[x]` |
 | 2.53 | A ruler is two layers, the line behind and the time in front, so a window over a searched part no longer swallows the minutes it covers, with the shape of it tested rather than only the numbers | `[x]` |
-| 2.52 | Nothing a job reports can be a number JSON cannot carry, so a share worked out from a length nobody could measure never silences the window about that job | `[x]` |
+| 2.52 | Nothing a job reports can be a number JSON cannot carry, so a share worked out from a length nobody could measure never silences the app about that job | `[x]` |
 | 2.51 | A plan is replaced in one step and under the lock the edits take, so the clip list and the coverage never read one half written, and removing an episode refuses rather than deleting under a job that will not stop | `[x]` |
 | 2.50 | The bar is the title bar: macOS is asked how tall it laid it out and where it put its buttons, and is told again whenever it lays it out afresh, so the buttons are centred in the bar by construction rather than by a number | `[x]` |
 | 2.49 | An episode opens on the clip it was last worked on, or on the first one, so a workspace with clips in it is never waiting for a click that says nothing | `[x]` |
 | 2.48 | The ruler under the window rather than over it, so the edge of the window is whole where a minute falls on it, and the list of faces ending where the numbers end | `[x]` |
-| 2.47 | The playhead drawn over the tracks so its head stands above them, and frames that cannot arrive out of order: a file of its own per ask in the engine, a ticket per ask in the window | `[x]` |
+| 2.47 | The playhead drawn over the tracks so its head stands above them, and frames that cannot arrive out of order: a file of its own per ask in the engine, a ticket per ask in the interface | `[x]` |
 | 2.56 | One way of showing work in hand, everywhere: the beam round the control the work came from, the motes it sheds, the fill for how far it has come, the shimmer over a place waiting to be filled, and the pulse on a dot for work running elsewhere | `[x]` |
 | 2.46 | The pane stays about the clips while the transcription carries on behind them, the chosen card kept in view, an editor's playhead in the app's own colour, and progress that fills or travels | `[x]` |
 | 2.45 | The clip list as a stack of cards under a veil with the work in the button, an editor's playhead, the arrows walking the clips, and the bar asking macOS where its buttons are | `[x]` |
 | 2.44 | Two colours in the settings, the app's own and the word highlight, starting out the same, with the lighter shade and the wash mixed from the app's | `[x]` |
-| 2.43 | The layout worked out by the stylesheet from the window, with nothing measured while it is dragged, and a waveform drawn one whole pixel at a time so it keeps its weight at every zoom | `[x]` |
+| 2.43 | The layout worked out by the stylesheet from the size of the app, with nothing measured while it is resized, and a waveform drawn one whole pixel at a time so it keeps its weight at every zoom | `[x]` |
 | 2.42 | Nothing left over at the foot: the two tracks take the height the picture cannot use, the range picker always half the clip timeline. The clip settings only in the workspace, where they save themselves. `#942192` | `[x]` |
 | 2.41 | The transcript edge moves with the work rather than with the saving of it, the window moves off what it just searched, the clip list waits in the shape it will have, and the magnifier is off where there are no words | `[x]` |
 | 2.40 | One folder for the training data, named and cleared in the settings, and removing an episode leaves nothing behind. One mark per area, shown on hover. The transcript read again while it grows, so the first search starts | `[x]` |
@@ -100,13 +100,13 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.35 | One place for the captions, kept for every episode: the drag saves the setting, **Height** stands with the caption settings, and the way back with them | `[x]` |
 | 2.34 | One gap everywhere in the workspace, and Escape taking the lens away | `[x]` |
 | 2.33 | The transcription in the head of the clip list, in the same shape as a search, and places waiting to be filled instead of a pill over the track | `[x]` |
-| 2.32 | A bar across the top of the window with the window buttons and the name of what is on screen, and info bubbles that are short and stay inside the window | `[x]` |
+| 2.32 | A bar across the top of the app with the close, minimise and zoom buttons and the name of what is on screen, and info bubbles that are short and stay inside the app | `[x]` |
 | 2.31 | A rail whose marks do not move: adding an episode, activity and settings at the foot of the sidebar, in the same place open or closed | `[x]` |
 | 2.30 | A window drawn anywhere on the range picker: part of a search can be removed on its own, the trash can rides the window, and looking again at searched material asks first | `[x]` |
 | 2.29 | The playback buttons in the row above the clip timeline, nothing under the range picker, a clip list on a surface of its own, a mark instead of **Fit**, and a clip in the list putting the timeline back on it | `[x]` |
 | 2.28 | The window on the range picker put right: one box with one border and no bars beside it, and a light passing through it while clips are being found instead of stripes that tiled badly | `[x]` |
 | 2.27 | Breaking the app on purpose: every path checked against the library, links not followed out of it, plans that would edit the wrong clip refused, edits of one plan one at a time, and a paused transcription that stays paused | `[x]` |
-| 2.26 | A video preview as big as the window allows, the two timelines named, one word for removing, and windows that land on a round step | `[x]` |
+| 2.26 | A video preview as big as the app allows, the two timelines named, one word for removing, and windows that land on a round step | `[x]` |
 | 2.25 | A swipe that stays put, time labels on the clip timeline, the transcript kept in memory, and a removed clip seen going: its row stays in place in red for ten seconds with **Put it back** | `[x]` |
 | 2.24 | Two fingers on the clip timeline: a swipe along the episode, a pinch to zoom, and **Fit** to put the view back | `[x]` |
 | 2.23 | Removing a search from the range picker, which leaves its part free to be searched again and takes its clips with it | `[x]` |

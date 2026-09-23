@@ -49,7 +49,7 @@ func planOnDisk(t *testing.T, clips int) (string, []byte) {
 	return path, body
 }
 
-// A finished search puts a whole plan where a plan goes, and the window is
+// A finished search puts a whole plan where a plan goes, and the app is
 // reading that folder about once a second while it does. The replacement
 // has to be one step, so a reader sees the plan that was there or the plan
 // that is there and never half of either.
@@ -134,7 +134,7 @@ func TestAFailedWriteLeavesThePlanThatWasThere(t *testing.T) {
 }
 
 // The same file has two writers: the search that makes a plan and the
-// window that edits one. They take the same lock, so an edit always reads
+// app that edits one. They take the same lock, so an edit always reads
 // a whole plan and a search never lands in the middle of one.
 func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 	path, body := planOnDisk(t, 4)
@@ -188,7 +188,7 @@ func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 	}
 }
 
-// What the window really does: read the clips and the coverage while a
+// What the app really does: read the clips and the coverage while a
 // search writes its plan. Timing decides whether a torn read is reached,
 // so this is a second pair of eyes on the test above rather than the
 // guard itself.

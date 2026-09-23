@@ -129,7 +129,7 @@ func highlightColour(value any, fallback string) string {
 	return "&H" + rgb[4:6] + rgb[2:4] + rgb[0:2] + "&"
 }
 
-// LooksLikeColour says whether a value is one the engine and the window can
+// LooksLikeColour says whether a value is one the engine and the app can
 // both use: #RRGGBB, RRGGBB or an ASS colour. The app asks before keeping a
 // colour a person typed or a settings file carried.
 func LooksLikeColour(value string) bool {

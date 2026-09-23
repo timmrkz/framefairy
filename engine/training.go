@@ -90,7 +90,7 @@ func DefaultTrainingDir() string {
 // The one folder, set when a program starts and whenever the app's
 // settings are saved: everything that records reads it, so there is one
 // place and no path travels through the engine. Jobs record from their own
-// goroutines while the window saves settings on another, so it is read and
+// goroutines while the app saves settings on another, so it is read and
 // written behind a lock.
 var (
 	dirMu       sync.RWMutex
@@ -622,7 +622,7 @@ func planIDFor(opts PlanOptions, replyKey string, fresh bool) string {
 // id. A reused answer, or the same answer to the same prompt given again,
 // keeps the id it was first recorded with.
 //
-// A search writes its clips to the plan as they come, and the window may
+// A search writes its clips to the plan as they come, and the app may
 // edit one before the answer is finished, so the id is decided before the
 // first clip lands and passed in here as planned. A decision about a clip
 // is only recorded against a plan with an id, and one made while the search

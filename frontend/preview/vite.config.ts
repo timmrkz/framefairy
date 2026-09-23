@@ -1,6 +1,6 @@
 // Builds the interface against a fake Go side, so it can be opened in a
 // plain browser. The app itself cannot run in a cloud session: there is no
-// screen for its window, so this is the only way to see an interface
+// screen to show it on, so this is the only way to see an interface
 // change before Tim does.
 //
 // It lives beside frontend/ rather than in it so it finds the project's

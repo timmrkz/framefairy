@@ -13,6 +13,7 @@ import {
   inClip,
   draftCaptions,
   shouldLook,
+  shouldWarm,
   shouldTranscribe,
   type SearchState,
 } from "./flow";
@@ -89,6 +90,26 @@ describe("the first clips are found by themselves", () => {
     // The plans and the clips are gone, but the episode remembers that
     // somebody looked, so the machine is not spent on it unasked.
     expect(shouldLook({ ...idle, covered: 1800, plans: 0, clips: 0, looked: true })).toBe(false);
+  });
+});
+
+describe("the model is loaded for the first search before it starts", () => {
+  test("while the transcript is on its way to the end of the window", () => {
+    expect(shouldWarm({ ...idle, covered: 1200 })).toBe(true);
+  });
+
+  test("not once the search itself can start", () => {
+    expect(shouldWarm({ ...idle, covered: 1800 })).toBe(false);
+  });
+
+  test("not for an episode that has been searched, or is being", () => {
+    expect(shouldWarm({ ...idle, covered: 1200, looked: true })).toBe(false);
+    expect(shouldWarm({ ...idle, covered: 1200, plans: 1 })).toBe(false);
+    expect(shouldWarm({ ...idle, covered: 1200, busy: true })).toBe(false);
+  });
+
+  test("not while there is no window yet", () => {
+    expect(shouldWarm({ ...idle, to: 0, covered: 0 })).toBe(false);
   });
 });
 
@@ -512,7 +533,7 @@ describe("saidWord", () => {
 // it came from.
 //
 // So the path is walked here, forwards the way the engine walks it and
-// backwards the way the window does, and every word has to come home. If
+// backwards the way the app does, and every word has to come home. If
 // the engine ever lays them out differently this fails, which is the
 // point of writing it down.
 describe("a caption word finds its way home", () => {
