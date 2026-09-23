@@ -38,6 +38,12 @@ import (
 // the system decoder's and most of the rest is looking for faces, one core
 // each, and the transcription waits while a search runs, so the processor
 // has room for more. A third of the cores, at least two and at most four.
+//
+// The first clip is framed on its own. What a person waits for is the
+// first clip on screen, and every clip framed beside it takes a share of
+// the cores, of the memory and of the one system decoder from it. So the
+// others wait until it has landed, and then as many go at once as there
+// are framers, which is what gets the last one out soonest.
 var framers = min(max(runtime.NumCPU()/3, 2), 4)
 
 type planJob struct {
@@ -64,6 +70,10 @@ type planBuilder struct {
 
 	queue chan planJob
 	done  sync.WaitGroup
+	// firstOut is closed when the first clip has been framed, landed or
+	// not. Until then it is the only one being framed.
+	firstOut  chan struct{}
+	firstOnce sync.Once
 
 	// mu guards what is below it, which the reading of the answer and the
 	// framers both touch.
@@ -89,7 +99,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 	cropW, _ := CropWindow(source, opts.OutW, opts.OutH)
 	b := &planBuilder{e: e, ctx: ctx, cancel: cancel, sourcePath: sourcePath, source: source,
 		lines: lines, opts: opts, cropW: cropW, cache: newCropCache(),
-		seen: map[string]bool{}, planID: planID,
+		seen: map[string]bool{}, planID: planID, firstOut: make(chan struct{}),
 		// Never more clips than were asked for are taken, so the queue
 		// never makes the reading of the answer wait.
 		queue: make(chan planJob, max(opts.Count, 1))}
@@ -249,11 +259,19 @@ func (b *planBuilder) fail(err error) {
 func (b *planBuilder) frameAll() {
 	defer b.done.Done()
 	for job := range b.queue {
+		if job.index > 1 {
+			select {
+			case <-b.firstOut:
+			case <-b.ctx.Done():
+			}
+		}
 		if b.ctx.Err() != nil {
 			// Stopped. The rest of the queue is let go without work.
+			b.firstFramed(job)
 			continue
 		}
 		clip, ok, err := b.frame(job)
+		b.firstFramed(job)
 		if err != nil {
 			b.fail(err)
 			continue
@@ -264,6 +282,13 @@ func (b *planBuilder) frameAll() {
 		if err := b.land(clip); err != nil {
 			b.fail(err)
 		}
+	}
+}
+
+// firstFramed lets the other framers go once the first clip is done with.
+func (b *planBuilder) firstFramed(job planJob) {
+	if job.index == 1 {
+		b.firstOnce.Do(func() { close(b.firstOut) })
 	}
 }
 
