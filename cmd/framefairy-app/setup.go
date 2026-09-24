@@ -189,11 +189,33 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	if model.Installed(engine.ModelsDir()) {
 		return s.jobs.refuse("", "llm", model.Title, model.Title+" is already installed")
 	}
+	// The model in use before this one arrives stays in use. With none
+	// named, one model on the machine is the one in use by being the only
+	// one, and a second arriving would take that away without a word: the
+	// engine will not guess between two, so every search after the
+	// download would fail. Naming the one that was in use keeps things as
+	// they were, and Use is how the new one takes over.
+	before := modelInUse(s.store.Settings())
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			return "", engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir())
+			if err := engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+				return "", err
+			}
+			return "", s.keepInUse(before)
 		})
+}
+
+// keepInUse names the model that was in use before an install, when the
+// settings name none, so the install does not leave two models and no
+// choice between them.
+func (s *FrameFairy) keepInUse(before string) error {
+	settings := s.store.Settings()
+	if settings.LLMModel != "" || before == "" {
+		return nil
+	}
+	settings.LLMModel = filepath.Join(engine.ModelsDir(), before)
+	return s.store.SetSettings(settings)
 }
 
 // SaveAPIKey puts a key in the macOS keychain, which is the only place the

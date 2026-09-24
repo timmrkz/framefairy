@@ -1102,6 +1102,13 @@ chosen row and says **In use**, and every other one that is there offers
 field below, so the next **Save** keeps it. Removing the model in use lets
 go of it in the settings too.
 
+A second model arriving never takes the first one's place by itself. When
+the settings name none, the one model on the machine is in use by being the
+only one, and a download that finishes names it in the settings, so what was
+in use stays in use until **Use** is pressed on the new one. A machine that
+already has two and none named, from before this was so, says so at the top
+of the settings in the app's own words, and **Use** settles it.
+
 The rest is paths to ffmpeg, llama-server and the models, and the output
 folder. **Colours** holds **the app**, what the app picks things out in, the
 chosen clip, the window on the range picker, a button that matters. The

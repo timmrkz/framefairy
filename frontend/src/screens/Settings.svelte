@@ -94,6 +94,9 @@
   async function useModel(name: string) {
     const path = await api.useLanguageModel(name);
     if (settings) settings.llmModel = path;
+    // The check at the top of the page says which model is in use, or
+    // that none is, so it is read again with the choice.
+    await check();
   }
 
   async function readModels() {

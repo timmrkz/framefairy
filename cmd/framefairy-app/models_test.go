@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,5 +108,55 @@ func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 	}
 	if model.Installed(filepath.Join(home, ".framefairy", "models")) {
 		t.Error("still installed")
+	}
+}
+
+// A second model arriving keeps the first in use, so the download does not
+// leave two models and a search that cannot start.
+func TestAnInstallKeepsTheModelInUse(t *testing.T) {
+	svc, _, home := library(t)
+	dir := filepath.Join(home, ".framefairy", "models")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	models := engine.LanguageModels()
+	first, second := models[0], models[len(models)-1]
+	if err := os.WriteFile(filepath.Join(dir, first.Name), []byte("GGUF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// What InstallLanguageModel reads before it starts: the only model
+	// there, in use by being the only one.
+	before := modelInUse(svc.store.Settings())
+	if before != first.Name {
+		t.Fatalf("in use before the install: %q", before)
+	}
+	if err := os.WriteFile(filepath.Join(dir, second.Name), []byte("GGUF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The check at the top of the settings says so in the app's words.
+	checks := svc.CheckSetup(context.Background())
+	for _, c := range checks {
+		if c.Name == "Language model" && (c.OK || !strings.Contains(c.Detail, "none is in use")) {
+			t.Errorf("two and none in use: %+v", c)
+		}
+		if strings.Contains(c.Detail, "--llm-model") {
+			t.Errorf("a flag in the app: %s", c.Detail)
+		}
+	}
+	if err := svc.keepInUse(before); err != nil {
+		t.Fatal(err)
+	}
+	if got := modelInUse(svc.store.Settings()); got != first.Name {
+		t.Errorf("after the install, in use: %q", got)
+	}
+	// A model chosen by hand is never overridden.
+	if _, err := svc.UseLanguageModel(second.Name); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.keepInUse(first.Name); err != nil {
+		t.Fatal(err)
+	}
+	if got := modelInUse(svc.store.Settings()); got != second.Name {
+		t.Errorf("a choice made by hand went: %q", got)
 	}
 }

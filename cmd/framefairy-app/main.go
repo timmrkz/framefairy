@@ -361,12 +361,18 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 
 	lm := Check{Name: "Language model"}
 	model := opts.LLMModel
+	// Said in the app's own words: the engine's are for the command line,
+	// and a flag to pass means nothing to somebody using the app.
 	if model == "" {
-		found, err := engine.DefaultLocalModel()
-		if err != nil {
-			lm.Detail = err.Error()
+		switch found := engine.LocalModelFiles(engine.ModelsDir()); len(found) {
+		case 0:
+			lm.Detail = "None is installed. Install one under Finding clips, or use the Claude API."
+		case 1:
+			model = found[0]
+		default:
+			lm.Detail = fmt.Sprintf("%d are installed and none is in use. Choose the one to find "+
+				"clips with under Finding clips, with Use.", len(found))
 		}
-		model = found
 	}
 	if model != "" {
 		lm.OK = fileExists(model)

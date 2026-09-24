@@ -79,6 +79,26 @@ func DefaultLocalModel() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, ".framefairy", "models")
+	models := LocalModelFiles(dir)
+	switch len(models) {
+	case 1:
+		return models[0], nil
+	case 0:
+		return "", renderErr("no language model found in %s. Download one as docs/INSTALL.md "+
+			"describes, or name the file with --llm-model.", dir)
+	}
+	names := make([]string, len(models))
+	for i, m := range models {
+		names[i] = filepath.Base(m)
+	}
+	return "", renderErr("several language models are in %s (%s). Choose one with --llm-model.",
+		dir, strings.Join(names, ", "))
+}
+
+// LocalModelFiles is every model in a folder, in order: each .gguf, a
+// model split in parts by its first part, and never the image input files
+// some models ship beside them.
+func LocalModelFiles(dir string) []string {
 	found, _ := filepath.Glob(filepath.Join(dir, "*.gguf"))
 	var models []string
 	for _, f := range found {
@@ -95,19 +115,7 @@ func DefaultLocalModel() (string, error) {
 		models = append(models, f)
 	}
 	sort.Strings(models)
-	switch len(models) {
-	case 1:
-		return models[0], nil
-	case 0:
-		return "", renderErr("no language model found in %s. Download one as docs/INSTALL.md "+
-			"describes, or name the file with --llm-model.", dir)
-	}
-	names := make([]string, len(models))
-	for i, m := range models {
-		names[i] = filepath.Base(m)
-	}
-	return "", renderErr("several language models are in %s (%s). Choose one with --llm-model.",
-		dir, strings.Join(names, ", "))
+	return models
 }
 
 // planSchema is the plan contract as a JSON schema. The property order is
