@@ -87,7 +87,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 	finished := make(chan result, 1)
 	go func() {
-		plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2})
+		plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
 		finished <- result{plan, err}
 	}()
 
@@ -172,7 +172,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan error, 1)
 	go func() {
-		_, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 2})
+		_, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
 		finished <- err
 	}()
 	landed(t, path, 1)
@@ -190,7 +190,7 @@ func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
 	p, path := searching(t, letGo)
 	finished := make(chan error, 1)
 	go func() {
-		_, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2})
+		_, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
 		finished <- err
 	}()
 	clips := landed(t, path, 1)

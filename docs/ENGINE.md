@@ -224,12 +224,60 @@ goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
 roughly towards the camera.
 
+## How much one search can read
+
+A search sends the transcript of its window to the model in one request, and
+nothing is ever split into several behind anybody's back. How much one
+request holds is a number of tokens, set by the model, so the longest window
+is worked out from the model that is going to read it, in `engine/room.go`:
+
+- **A local model** holds what its file says, the `context_length` in the
+  GGUF header, and never more than the 262,144 the engine starts
+  llama-server with. The four models on offer hold 262,144, except Qwen3 14B
+  at 40,960. A model file the engine does not know is taken at 32,768. Off
+  that comes the room for the answer, 16,384 tokens at most, with the
+  thinking written inside it, and 2,048 more. A token is taken as two and a
+  half characters of German, the same rate the context is sized by.
+- **A local model also has to fit in the machine's memory**, context and
+  all, by the same rule the models are offered by: a context is fine when
+  the model still leaves 8 GB of headroom, and a model offered as tight,
+  because it only fits without the headroom, gets the 65,536 tokens it was
+  judged at and no more. A machine that does not say how much memory it
+  has gets 65,536 too. llama-server is never started with a larger context
+  than this, whatever the rounding up to a power of two would ask for.
+  On a 32 GB Mac, Gemma 4 26B is held by its own context and Ministral 3
+  8B by memory, at a little over three hours. On a 16 GB Mac, Gemma 4 12B
+  and Ministral 3 8B read about 1.3 hours.
+- **Through the API** a model holds its context window, less twice the
+  answer ceiling, because an answer that thinks through the whole ceiling
+  is asked again with twice as much and that has to fit too. What `--budget`
+  buys can be less: the budget, less what the usual answer costs, pays for
+  so many tokens read. A token is 1.9 characters, or what earlier searches
+  on this episode measured.
+
+What the instructions and the ask take comes off the top, and what is left
+is the room in characters of numbered transcript. The engine weighs every
+line of the transcript in the same characters, counted with the widest line
+number a window could give it, so a window that the app adds up as fitting
+is never one the engine refuses. Past the end of the transcript a second
+weighs 25 characters, or 15 percent more than the episode's own average
+once there are ten minutes of it, whichever is more.
+
+In practice Gemma 4 and Ministral 3 read six hours of German at once, the
+API reads any episode with Sonnet, seven hours with Opus and not quite three
+with Fable at the default budget of $2, and Qwen3 14B reads about 35
+minutes.
+
+The window also has to hold the clips asked for: the count at the shortest
+length, one after another. A run that asks for more is refused before it
+transcribes.
+
 ## Planning on your machine
 
 The tool starts `llama-server` with the model, waits until the model has
 loaded, sends the transcript and stops the server again. The model's context
 is sized to the transcript, about 64,000 tokens for an hour, which keeps
-memory use down. The answer is held to the plan's JSON format while it is
+memory use down, and it is never larger than the model holds. The answer is held to the plan's JSON format while it is
 written, so it always parses.
 
 The answer is read as it is written, from llama-server and from the API

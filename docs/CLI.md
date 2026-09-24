@@ -179,6 +179,13 @@ transcript and plan file, and clip ids start with the window start in seconds
 and `--to` finds a single existing plan on its own, and asks which one to use
 when there are several.
 
+A window is sent to the model in one request, and never split behind your
+back. So a window longer than the model reads at once is refused before
+anything is loaded or paid for, with what the window weighs and what the
+model takes, and so is one too short for `--count` clips of `--min` seconds
+one after another. How much a model reads is in
+[ENGINE.md](ENGINE.md#how-much-one-search-can-read).
+
 ## Not paying twice
 
 Every plan answer, local or from the API, is saved in `logs/` and keyed by a
@@ -186,8 +193,9 @@ hash of the prompt and the model. Re-running with the same transcript reuses
 it without asking the model again. `--replan` asks again.
 
 With `--planner api`, transient failures are retried up to four times with backoff, honouring
-`Retry-After`. Before a request is sent, the tool checks the model's context
-window, its maximum output and `--budget`. A run ends by reporting what it
+`Retry-After`. Before a request is sent, the tool checks that the window fits
+the model's context and `--budget`, and that `--max-tokens` is within the
+model's maximum output. A run ends by reporting what it
 spent.
 
 ## When something goes wrong

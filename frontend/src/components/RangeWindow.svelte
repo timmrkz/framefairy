@@ -29,6 +29,10 @@
     holding = false,
     pausing = false,
     ontranscription,
+    least = 0,
+    leastSays = "",
+    most = Infinity,
+    reachSays = "",
   }: {
     duration: number;
     covered?: number;
@@ -66,6 +70,16 @@
     // Pause it while it runs, carry on while it is stopped. One control,
     // because there is only ever one thing to do.
     ontranscription?: () => void;
+    // What a search can do with the window holds its edges. It is no
+    // shorter than least, the clips asked for one after another at their
+    // shortest, and no longer than most, the length the model reads in one
+    // request wherever the window is. One length, so a window that fits
+    // fits wherever it is moved. The two sayings are what the window says
+    // while an edge is held by one.
+    least?: number;
+    leastSays?: string;
+    most?: number;
+    reachSays?: string;
   } = $props();
 
   // The control at the transcript's edge is only there while the pointer is
@@ -112,6 +126,64 @@
     return Math.round(t / grid) * grid;
   }
 
+  // The shortest a window may be, and never longer than the episode.
+  const shortest = $derived(Math.min(Math.max(least, minimum), duration));
+
+  // The furthest an end may go from a start, and the earliest a start may
+  // be for an end, as far as the model reads.
+  function latest(start: number): number {
+    return Math.min(start + most, duration);
+  }
+  function earliest(end: number): number {
+    return Math.max(end - most, 0);
+  }
+
+  // What holds the window back while it is being drawn, so it can say so.
+  let held = $state<"" | "least" | "reach">("");
+
+  // The moment an edge runs into a limit, the border flashes twice in the
+  // colour of a warning, so a hand that keeps pulling knows it is the
+  // limit and not the app that stopped. Once for each time it runs in, not
+  // for as long as it is held there. The two names take turns so the same
+  // animation starts over each time, without the element being made again,
+  // which would drop the pointer the drag is holding.
+  let knock = $state<"" | "a" | "b">("");
+  function knocked() {
+    knock = knock === "a" ? "b" : "a";
+  }
+
+  // An edge held back by the model stops exactly at the limit. The limit
+  // is a wall, and a wall wins over the step, the same as a searched part
+  // does: stopping at the step before it would give away room the model
+  // has.
+  function endAt(start: number, want: number): number {
+    const lo = Math.min(start + shortest, duration);
+    const hi = latest(start);
+    if (want > hi) {
+      held = "reach";
+      return hi;
+    }
+    if (want < lo) {
+      held = "least";
+      return lo;
+    }
+    return want;
+  }
+
+  function startAt(end: number, want: number): number {
+    const lo = earliest(end);
+    const hi = Math.max(end - shortest, 0);
+    if (want < lo) {
+      held = "reach";
+      return lo;
+    }
+    if (want > hi) {
+      held = "least";
+      return hi;
+    }
+    return want;
+  }
+
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
   const pending = $derived(duration > 0 && covered < duration - 0.5);
 
@@ -148,7 +220,7 @@
   function reset() {
     if (locked) return;
     from = 0;
-    to = duration;
+    to = latest(0);
     onmoved?.("from");
   }
 
@@ -193,29 +265,46 @@
       if (Math.abs(e.clientX - startClientX) > slack) dragged = true;
       if (!dragged || locked) return;
       showing = true;
+      const was = held;
+      held = "";
       const here = timeAt(e.clientX);
-      // Edges land on the grid, and the ends of the episode win over it.
+      // Edges land on the grid, and the ends of the episode win over it,
+      // and what a search can do with the window wins over both.
       const t = clamp(round(here));
-      if (kind === "from") from = Math.max(0, Math.min(t, to - minimum));
-      else if (kind === "to") to = Math.min(duration, Math.max(t, from + minimum));
+      if (kind === "from") from = startAt(to, t);
+      else if (kind === "to") to = endAt(from, t);
       else if (kind === "move") {
+        // The window keeps its length wherever it goes. Its length is
+        // never more than fits anywhere, so moving it is never held back
+        // by the model, only by the ends of the episode.
         from = Math.max(0, Math.min(round(here - grab), duration - span));
-        to = from + span;
+        to = endAt(from, from + span);
       } else {
         const a = Math.min(startX, t);
         const b = Math.max(startX, t);
         if (b - a >= minimum) {
-          from = a;
-          to = b;
-          moved = t > startX ? "to" : "from";
+          // Drawn to the right the start stays where the press was, drawn
+          // to the left the end does, and the other edge keeps to the
+          // limits.
+          if (t > startX) {
+            from = Math.min(a, Math.max(duration - shortest, 0));
+            to = endAt(from, b);
+            moved = "to";
+          } else {
+            to = Math.max(b, Math.min(shortest, duration));
+            from = startAt(to, a);
+            moved = "from";
+          }
         }
       }
+      if (held && held !== was) knocked();
     };
     const up = (e: PointerEvent) => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       showing = false;
+      held = "";
       // A press that moved a few pixels without changing the window is a
       // click, not a drag, so the player goes to where it was let go.
       if (from === startFrom && to === startTo) {
@@ -238,8 +327,12 @@
     else if (event.key === "ArrowRight") delta = step;
     else return;
     event.preventDefault();
-    if (kind === "from") from = Math.max(0, Math.min(from + delta, to - minimum));
-    else to = Math.min(duration, Math.max(to + delta, from + minimum));
+    held = "";
+    if (kind === "from") from = startAt(to, clamp(from + delta));
+    else to = endAt(from, clamp(to + delta));
+    // A key pressed against the limit is a hand running into it again.
+    if (held) knocked();
+    held = "";
     onmoved?.(kind);
   }
 
@@ -357,6 +450,8 @@
     class:whole
     class:lit={grip}
     class:xray={covering}
+    class:knock-a={knock === "a"}
+    class:knock-b={knock === "b"}
     style="left: {at(from)}px; width: {at(to) - at(from)}px"
     title="Drag it along the range picker"
     onpointerdown={(e) => drag("move", e)}
@@ -371,7 +466,8 @@
       class="free quiet danger"
       class:shown={overWindow}
       class:beside={at(to) - at(from) < 40}
-      style="left: {at(to)}px"
+      class:tucked={at(to) - at(from) < 40 ? at(to) > width - 50 : at(to) > width - 26}
+      style="left: {at(to) - at(from) < 40 && at(to) > width - 50 ? at(from) : at(to)}px"
       title="Remove the clips in the window, so the model can read it again"
       aria-label="Remove the clips from {clock(from)} to {clock(to)}"
       aria-haspopup="dialog"
@@ -442,7 +538,11 @@
     </Info>
   </span>
   {#if showing}
-    <div class="said"><div class="row num">{clock(from)} to {clock(to)}</div></div>
+    <div class="said">
+      <div class="row num">
+        {clock(from)} to {clock(to)}{#if held === "reach" && reachSays}, {reachSays}{:else if held === "least" && leastSays}, {leastSays}{/if}
+      </div>
+    </div>
   {/if}
   <div
       class="handle"
@@ -535,6 +635,17 @@
 
   .free.beside {
     margin-left: 4px;
+  }
+
+  /* The info mark has the top right corner of the track, so a window that
+     ends there keeps its trash can clear of it: one place further in, or
+     before the start of a window too narrow to hold it. */
+  .free.tucked {
+    margin-left: -50px;
+  }
+
+  .free.beside.tucked {
+    margin-left: -24px;
   }
 
   .free:hover:not(:disabled),
@@ -722,10 +833,13 @@
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    z-index: 5;
+    /* Over everything on the track, the mark that pauses the reading and
+       the trash can included: it is what the hand is doing right now. */
+    z-index: 8;
   }
 
   .said .row {
+    white-space: nowrap;
     gap: 8px;
     height: 36px;
     padding: 0 6px 0 12px;
@@ -763,6 +877,49 @@
   .window.whole {
     background: transparent;
     border-color: transparent;
+  }
+
+  /* Two quick flashes of the border in the warning colour. The red is a
+     border of its own lying exactly over the window's, and only how much
+     of it is seen changes, so no colour is ever mixed half way between
+     the red and the accent, which the accent, being mixed itself, makes
+     unpredictable. Two names for one animation, see knock. */
+  .window::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--frame-line));
+    border: var(--frame-line) solid var(--err);
+    border-radius: var(--frame-radius);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .window.knock-a::after {
+    animation: knock-a 170ms ease-out 2;
+  }
+
+  .window.knock-b::after {
+    animation: knock-b 170ms ease-out 2;
+  }
+
+  @keyframes knock-a {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes knock-b {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
   }
 
   /* A window drawn over material that was searched already is a window
