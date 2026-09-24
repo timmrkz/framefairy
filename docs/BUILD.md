@@ -69,6 +69,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line. The app does this itself |
+| `make speechbench AUDIO=episode.mp4` | how fast the speech model hears on this machine, on the processor and through CoreML, with 4 and 8 threads, in pieces of 15 and 30 s, one or two at a time, over three minutes of the episode, and how many words each way changes. Takes a few minutes. `ARGS="-seconds 60"` passes more, see [Measuring the speech model](#measuring-the-speech-model) |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
 
@@ -256,11 +257,11 @@ to them, as [INSTALL.md](INSTALL.md#7-before-the-first-build) describes.
 
 ## Measuring the speech model
 
-`go run ./scripts/speechbench -audio episode.mp4` hears three minutes of an
-episode every way the speech model can run on the machine, on the
-processor or through Apple's CoreML, with more or fewer threads, in pieces
-of different lengths, one or two pieces at a time, and prints how fast
-each was and how many words came out unlike the processor's. It uses the
-speech model in `~/.framefairy/models`. The workflow
-`.github/workflows/speechbench.yml` runs the same on the macOS runner with a
-recorded talk, when the speech code changes or by hand.
+`make speechbench AUDIO=episode.mp4` hears three minutes of an episode
+every way the speech model can run on the machine, on the processor or
+through Apple's CoreML, with more or fewer threads, in pieces of different
+lengths, one or two pieces at a time, and prints how fast each was and how
+many words came out unlike the processor's. It uses the speech model in
+`~/.framefairy/models`. The workflow `.github/workflows/speechbench.yml`
+runs the same on the macOS runner with a recorded talk, when the speech
+code changes or by hand.

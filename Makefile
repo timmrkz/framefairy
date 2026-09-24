@@ -27,6 +27,8 @@
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
 #                   window to ask in
+#   make speechbench AUDIO=episode.mp4
+#                   how fast the speech model hears on this machine
 #   make clean      remove what make built and downloaded into the project
 #
 # The programs land in bin/. Details are in docs/BUILD.md.
@@ -85,7 +87,7 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app icon motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app icon motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -117,7 +119,7 @@ tools-beside:
 	fi
 
 help:
-	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -277,6 +279,15 @@ tools:
 
 models:
 	@sh scripts/models.sh
+
+# How fast the speech model hears on this machine, every way it can run,
+# over three minutes of AUDIO, which can be an episode. It prints a table.
+# ARGS passes more to scripts/speechbench, for example ARGS="-seconds 60".
+speechbench: toolchain modules
+	@if [ -z "$(AUDIO)" ]; then \
+		echo "Say what to hear: make speechbench AUDIO=path/to/episode.mp4"; exit 1; \
+	fi
+	@$(GO) run -ldflags '$(LDFLAGS)' ./scripts/speechbench -audio "$(AUDIO)" $(ARGS)
 
 clean:
 	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion
