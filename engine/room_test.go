@@ -111,6 +111,8 @@ func talk(n int) *Transcript {
 }
 
 func TestAWindowTheModelCannotReadIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	// A machine with room for the model, so the model is what refuses.
+	machine(t, 128<<30)
 	lines := BuildLines(talk(4000).Words, nil, nil)
 	opts := PlanOptions{Count: 12, MinLen: 20, MaxLen: 30, MaxTokens: 48000,
 		Local: &LocalModel{Model: "Qwen3-14B-Q4_K_M.gguf"}}
