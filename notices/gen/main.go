@@ -343,10 +343,73 @@ func speech() error {
 	if err != nil {
 		return err
 	}
-	return add(notice{Name: "ONNX Runtime", Version: onnxruntimeVersion, Licence: "MIT",
+	if err := add(notice{Name: "ONNX Runtime", Version: onnxruntimeVersion, Licence: "MIT",
 		URL: "https://github.com/microsoft/onnxruntime", Part: partSpeech,
 		Note: "Runs the speech model. It travels beside the app as a library of its own."},
-		map[string][]byte{"onnxruntime.txt": license, "onnxruntime-third-party.txt": third})
+		map[string][]byte{"onnxruntime.txt": license, "onnxruntime-third-party.txt": third}); err != nil {
+		return err
+	}
+	sherpa, err := sherpaVersion()
+	if err != nil {
+		return err
+	}
+	// The speech library that travels beside the app is sherpa-onnx's
+	// release without speech synthesis, see scripts/speech-libs.sh, and
+	// these are what it is built from besides sherpa-onnx itself, at the
+	// versions its cmake/ pins for this release. They were read off the
+	// library too: each leaves its name in it, and espeak-ng and piper,
+	// which the release with synthesis carries, leave none.
+	type piece struct{ name, version, licence, url, text, note string }
+	gh := "https://raw.githubusercontent.com/"
+	pieces := []piece{
+		{"sherpa-onnx", sherpa, "Apache-2.0", "https://github.com/k2-fsa/sherpa-onnx",
+			gh + "k2-fsa/sherpa-onnx/" + sherpa + "/LICENSE",
+			"Recognises the speech. What travels beside the app is its release built without " +
+				"speech synthesis, so nothing of espeak-ng is in it."},
+		{"kaldi-native-fbank", "1.22.3", "Apache-2.0", "https://github.com/csukuangfj/kaldi-native-fbank",
+			gh + "csukuangfj/kaldi-native-fbank/v1.22.3/LICENSE", "Built into sherpa-onnx."},
+		{"kaldi-decoder", "0.3.0", "Apache-2.0", "https://github.com/k2-fsa/kaldi-decoder",
+			gh + "k2-fsa/kaldi-decoder/v0.3.0/LICENSE", "Built into sherpa-onnx."},
+		{"kaldifst", "1.8.0", "Apache-2.0", "https://github.com/k2-fsa/kaldifst",
+			gh + "k2-fsa/kaldifst/v1.8.0/LICENSE", "Built into sherpa-onnx."},
+		{"OpenFst", "1.8.5", "Apache-2.0", "https://github.com/csukuangfj/openfst",
+			gh + "csukuangfj/openfst/v1.8.5-2026-07-09/COPYING", "Built into sherpa-onnx."},
+		{"simple-sentencepiece", "0.7", "Apache-2.0", "https://github.com/pkufool/simple-sentencepiece",
+			gh + "pkufool/simple-sentencepiece/v0.7/LICENSE", "Built into sherpa-onnx."},
+		{"hclust-cpp", "2026-02-25", "BSD-2-Clause", "https://github.com/csukuangfj/hclust-cpp",
+			gh + "csukuangfj/hclust-cpp/2026-02-25/LICENSE",
+			"Built into sherpa-onnx. It carries fastcluster by Daniel Müllner."},
+		{"JSON for Modern C++", "3.12.0", "MIT", "https://github.com/nlohmann/json",
+			gh + "nlohmann/json/v3.12.0/LICENSE.MIT", "Built into sherpa-onnx."},
+		{"Eigen", "5.0.1", "MPL-2.0", "https://gitlab.com/libeigen/eigen",
+			"https://gitlab.com/libeigen/eigen/-/raw/5.0.1/COPYING.MPL2",
+			"Built into sherpa-onnx, unmodified. Its source is at https://gitlab.com/libeigen/eigen."},
+	}
+	for _, p := range pieces {
+		body, err := fetch(p.text)
+		if err != nil {
+			return err
+		}
+		if err := add(notice{Name: p.name, Version: strings.TrimPrefix(p.version, "v"), Licence: p.licence,
+			URL: p.url, Part: partSpeech, Note: p.note},
+			map[string][]byte{slug("speech-"+p.name) + ".txt": body}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sherpaVersion is the sherpa-onnx release go.mod pins, v and all.
+func sherpaVersion() (string, error) {
+	mod, err := os.ReadFile("go.mod")
+	if err != nil {
+		return "", err
+	}
+	m := regexp.MustCompile(`k2-fsa/sherpa-onnx-go (v\S+)`).FindSubmatch(mod)
+	if m == nil {
+		return "", fmt.Errorf("go.mod does not pin sherpa-onnx")
+	}
+	return string(m[1]), nil
 }
 
 // version reads a pinned version out of a build script, the same way

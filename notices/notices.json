@@ -225,6 +225,17 @@
     ]
   },
   {
+    "name": "Eigen",
+    "version": "5.0.1",
+    "licence": "MPL-2.0",
+    "url": "https://gitlab.com/libeigen/eigen",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx, unmodified. Its source is at https://gitlab.com/libeigen/eigen.",
+    "texts": [
+      "speech-eigen.txt"
+    ]
+  },
+  {
     "name": "github.com/k2-fsa/sherpa-onnx-go",
     "version": "1.13.8",
     "licence": "Apache-2.0",
@@ -265,6 +276,61 @@
     ]
   },
   {
+    "name": "hclust-cpp",
+    "version": "2026-02-25",
+    "licence": "BSD-2-Clause",
+    "url": "https://github.com/csukuangfj/hclust-cpp",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx. It carries fastcluster by Daniel Müllner.",
+    "texts": [
+      "speech-hclust-cpp.txt"
+    ]
+  },
+  {
+    "name": "JSON for Modern C++",
+    "version": "3.12.0",
+    "licence": "MIT",
+    "url": "https://github.com/nlohmann/json",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx.",
+    "texts": [
+      "speech-json-for-modern-c.txt"
+    ]
+  },
+  {
+    "name": "kaldi-decoder",
+    "version": "0.3.0",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/kaldi-decoder",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx.",
+    "texts": [
+      "speech-kaldi-decoder.txt"
+    ]
+  },
+  {
+    "name": "kaldi-native-fbank",
+    "version": "1.22.3",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/csukuangfj/kaldi-native-fbank",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx.",
+    "texts": [
+      "speech-kaldi-native-fbank.txt"
+    ]
+  },
+  {
+    "name": "kaldifst",
+    "version": "1.8.0",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/kaldifst",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx.",
+    "texts": [
+      "speech-kaldifst.txt"
+    ]
+  },
+  {
     "name": "ONNX Runtime",
     "version": "1.28.2",
     "licence": "MIT",
@@ -274,6 +340,39 @@
     "texts": [
       "onnxruntime-third-party.txt",
       "onnxruntime.txt"
+    ]
+  },
+  {
+    "name": "OpenFst",
+    "version": "1.8.5",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/csukuangfj/openfst",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx.",
+    "texts": [
+      "speech-openfst.txt"
+    ]
+  },
+  {
+    "name": "sherpa-onnx",
+    "version": "1.13.8",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/k2-fsa/sherpa-onnx",
+    "part": "Speech recognition",
+    "note": "Recognises the speech. What travels beside the app is its release built without speech synthesis, so nothing of espeak-ng is in it.",
+    "texts": [
+      "speech-sherpa-onnx.txt"
+    ]
+  },
+  {
+    "name": "simple-sentencepiece",
+    "version": "0.7",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/pkufool/simple-sentencepiece",
+    "part": "Speech recognition",
+    "note": "Built into sherpa-onnx.",
+    "texts": [
+      "speech-simple-sentencepiece.txt"
     ]
   },
   {

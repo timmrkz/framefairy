@@ -119,12 +119,32 @@ licences are between the user and their makers. They are credited under
 for: its maker, its licence and what was changed, which is that the
 sherpa-onnx project converted it to ONNX and quantised it to int8.
 
-## Open: espeak-ng inside the speech library
+## The speech library, without speech synthesis
 
-The sherpa-onnx libraries as published, in the `sherpa-onnx-go-macos`,
-`-linux` and `-windows` modules, have espeak-ng compiled into them, for
-speech synthesis. espeak-ng is GPL 3. Frame Fairy never synthesises speech,
-but a licence applies to what is shipped, not to what is used, and a GPL 3
-library shipped inside a closed, paid app is what that licence does not
-allow. sherpa-onnx builds without it when `SHERPA_ONNX_ENABLE_TTS` is off.
-Until the speech library is built that way, it is not fit to ship.
+The sherpa-onnx libraries as published in the Go modules,
+`sherpa-onnx-go-macos`, `-linux` and `-windows`, have espeak-ng compiled
+into them, for speech synthesis. espeak-ng is GPL 3, and a licence applies
+to what is shipped, not to what is called, so a GPL 3 library inside a
+closed, paid app is what that licence does not allow, even though Frame
+Fairy never synthesises speech.
+
+sherpa-onnx publishes every release a second time without speech
+synthesis, the `-no-tts` archives, and that is what travels beside the app.
+`scripts/speech-libs.sh` fetches it, pinned by sha256, and refuses a
+library that still carries espeak-ng, and `scripts/carry-libs.sh` puts it
+into `bin/lib`, from where `make app` takes it into the bundle, which checks
+once more. The program is still built against the module's libraries.
+That works because in the release without synthesis every synthesis
+function is still there and only says "TTS is not enabled": both libraries
+export the same functions, compared one by one, and the Go module calls
+nothing the one we ship lacks. A German and an English recording were
+transcribed through it word for word.
+
+What it is built from besides sherpa-onnx is under **Speech recognition**
+on the Licences page: kaldi-native-fbank, kaldi-decoder, kaldifst, OpenFst,
+simple-sentencepiece, hclust-cpp with fastcluster, JSON for Modern C++ and
+Eigen, which is MPL 2.0 and says where its source is.
+
+Pinned for Apple silicon and for Linux on x86. Windows has no pin yet and
+carries the module's libraries, which is fine for running and not for
+shipping.

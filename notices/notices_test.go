@@ -125,6 +125,16 @@ func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 			t.Errorf("ffmpeg is built with %s %s, and the notice is for %q", name, want, n.Version)
 		}
 	}
+	mod, err := os.ReadFile("../go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := regexp.MustCompile(`k2-fsa/sherpa-onnx-go v(\S+)`).FindSubmatch(mod); m != nil {
+		n, ok := find(list, "sherpa-onnx")
+		if !ok || n.Version != string(m[1]) {
+			t.Errorf("go.mod pins sherpa-onnx %s, and the notice is for %q", m[1], n.Version)
+		}
+	}
 	n, ok := find(list, "llama.cpp")
 	if want := pinned("LLAMA_VERSION", "build-llama.sh"); !ok || n.Version != want {
 		t.Errorf("llama-server is built from %s, and the notice is for %q", want, n.Version)
