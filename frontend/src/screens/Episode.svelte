@@ -913,6 +913,13 @@
     }
   }
 
+  // The pill's colour or how much of it is seen. Choosing either while the
+  // highlight is off says the pill is wanted, so it comes back on with it.
+  async function setHighlightColour(colour: string, share: number) {
+    if (captions?.style.highlight === false) await setCaptionHighlight(true);
+    await setCaptionColours("", textOpacity, "", boxOpacity, colour, share);
+  }
+
   // When a caption appears or goes, moved where the words are a little off
   // from what is heard. It answers whether it was saved, so the timeline
   // knows to keep the edge where it was let go until the captions come back.
@@ -1785,49 +1792,38 @@
                 /><span class="unit">%</span>
               </span>
             </div>
-            <!-- The word being spoken on a pill that bounces, or the box
-                 and the words alone. A row of its own, pressed like the
-                 loop button, so its name is as whole as every other name
-                 and its field ends where every other field ends. -->
-            <div class="setting">
-              <span>Highlight</span>
-              <span class="field">
-                <button
-                  class="toggle"
-                  class:on={highlightOn}
-                  aria-pressed={highlightOn}
-                  title="Light up the word being spoken on a pill that bounces. Off, the captions are the box and the words"
-                  onclick={() => setCaptionHighlight(!highlightOn)}>{highlightOn ? "On" : "Off"}</button
-                >
-              </span>
-            </div>
             <!-- The pill behind the word being spoken, beside the other two
                  colours of the captions and the same pair as they are, so
                  every colour the short and the clip timeline show is set
-                 in one place and in one way. -->
+                 in one place and in one way. Its name is also its switch,
+                 the way an entry in a chart's legend turns its line on and
+                 off: at rest it reads like every other name, under the hand
+                 it lifts like a quiet button, and off it is struck through
+                 and its colour steps back. Nothing moves either way. -->
             <div class="setting">
-              <span>Pill</span>
+              <button
+                class="name"
+                class:off={!highlightOn}
+                aria-pressed={highlightOn}
+                title={highlightOn
+                  ? "The word being spoken sits on a pill that bounces. Click to turn it off, so the captions are the box and the words"
+                  : "Off: the captions are the box and the words. Click to light up the word being spoken again"}
+                onclick={() => setCaptionHighlight(!highlightOn)}>Highlight</button
+              >
               <span class="field pair" class:off={!highlightOn}>
                 <input
                   class="swatch"
                   type="color"
-                  disabled={!highlightOn}
                   title="The colour of the pill behind the word being spoken"
                   aria-label="Highlight colour"
                   value={highlightColour}
                   oninput={(e) =>
                     drawColour({
                       highlight: joinColour(e.currentTarget.value, highlightOpacity / 100),
+                      highlightOn: true,
                     })}
                   onchange={(e) =>
-                    setCaptionColours(
-                      "",
-                      textOpacity,
-                      "",
-                      boxOpacity,
-                      e.currentTarget.value,
-                      highlightOpacity,
-                    )}
+                    setHighlightColour(e.currentTarget.value, highlightOpacity)}
                 />
                 <input
                   class="num"
@@ -1835,21 +1831,16 @@
                   min="0"
                   max="100"
                   step="5"
-                  disabled={!highlightOn}
                   title="How much of the pill behind the word being spoken is seen. 100 is solid, less lets the box and the picture through"
                   aria-label="Highlight opacity"
                   value={highlightOpacity}
                   oninput={(e) => {
                     const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
                     if (Number.isFinite(v))
-                      drawColour({ highlight: joinColour(highlightColour, v / 100) });
+                      drawColour({ highlight: joinColour(highlightColour, v / 100), highlightOn: true });
                   }}
                   onchange={(e) =>
-                    setCaptionColours(
-                      "",
-                      textOpacity,
-                      "",
-                      boxOpacity,
+                    setHighlightColour(
                       highlightColour,
                       Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
                     )}
@@ -2303,13 +2294,35 @@
     flex: none;
   }
 
-  /* On or off, as wide as every other field, the word where the numbers
-     end, so the column reads as one. */
-  .setting button.toggle {
-    display: block;
-    width: 100%;
-    text-align: right;
-    padding-right: 29px;
+  /* A name that is also a switch. At rest it is every other name: the same
+     place, colour and weight, so the column reads as one. Under the hand it
+     lifts like a quiet button, the room for that taken out of the gap
+     before it so the word itself never moves. Off, it is struck through,
+     the way a legend shows a line that is hidden. */
+  .setting > button.name {
+    flex: 1;
+    min-width: 0;
+    height: var(--control-h);
+    /* Six pixels of lift and the button's own border, which is there but
+       unseen, so the word starts where the names above it start. */
+    margin-left: -7px;
+    padding: 0 6px;
+    border-color: transparent;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .setting > button.name:hover {
+    background: var(--lift);
+    color: var(--text);
+  }
+
+  .setting > button.name.off {
+    text-decoration: line-through;
+    color: var(--faint);
   }
 
   /* A colour that has nothing to do while its switch is off. */

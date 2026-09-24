@@ -364,12 +364,16 @@ place.
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
-  colour of the box behind them and **Pill** the pill behind the word
-  being spoken. **Highlight** turns the pill on or off, and with it the
-  bounce of the word being spoken: off, the short shows the box and the
-  words and nothing in it moves, and the pill's colour is greyed out
-  because it has nothing to do. It is kept per clip set, like the colours,
-  and the way back of the captions puts it on again. Beside each colour is
+  colour of the box behind them and **Highlight** the pill behind the word
+  being spoken. The name **Highlight** is also its switch, the way an entry
+  in a chart's legend turns its line on and off: a click turns the pill off,
+  and with it the bounce of the word being spoken, so the short shows the
+  box and the words and nothing in it moves. Off, the name is struck
+  through and the pill's colour steps back. A click on the name turns it on
+  again, and so does choosing a colour or an opacity for the pill, because
+  that says the pill is wanted. The row keeps its size either way. It is
+  kept per clip set, like the colours, and the way back of the captions
+  puts it on again. Beside each colour is
   how much of it is seen:
   100, where the text and the pill start, is solid, and a box at 0
   leaves only the words. A see-through text keeps its opacity in the
