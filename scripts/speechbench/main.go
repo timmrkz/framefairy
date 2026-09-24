@@ -34,7 +34,8 @@ func main() {
 	pieces := flag.String("pieces", "15,30", "piece lengths in seconds")
 	batches := flag.String("batch", "1,2", "pieces heard in one pass")
 	flag.Parse()
-	samples, err := load(*audio)
+	*model = home(*model)
+	samples, err := load(home(*audio))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -103,6 +104,19 @@ func list(s string) []string {
 		}
 	}
 	return out
+}
+
+// home expands a leading ~ to the home folder. zsh, the shell on a Mac,
+// leaves the ~ in make AUDIO=~/episode.mp4 as it is, so the program does it.
+func home(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(dir, path[1:])
 }
 
 // load reads speech as 16 kHz mono samples.

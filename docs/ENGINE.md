@@ -52,9 +52,23 @@ machine has cores make it more than twice as slow, so the app never asks
 for more than the cores it has, and at most 8. Hearing two pieces in one
 pass gains nothing that holds. CoreML is slower on the runner and changes
 a few words: it compiles the model again for every new length of audio,
-and the pieces the app cuts are all of different lengths. Whether a real
-Mac, which the runner is not, reaches the Neural Engine through it with
-pieces of one fixed length is still to be measured on one.
+and the pieces the app cuts are all of different lengths.
+
+On a real Mac, an M2 Max with 12 cores, over three minutes each of three
+parts of one episode, `make speechbench`:
+
+| | pieces of 15 s | 30 s | first piece |
+|---|---|---|---|
+| on the processor, 4 threads | 38 times real time | 37 | 0.9 s |
+| on the processor, 8 threads | 46 | 45 | 0.9 s |
+| through CoreML, 8 threads | 24 | 23 | 5.0 s |
+
+The processor with 8 threads is what the app already does, and it is the
+fastest: an hour of episode is heard in about 80 s. The thread count does
+not change a single word. CoreML is half as fast here too, needs 5 s
+before the first piece and changes up to 20 words in three minutes, so it
+stays out even with pieces of one length. Hearing two pieces in one pass
+gains 3 % at most and changes words, so it stays out as well.
 
 One cut is placed exactly: the end of the window the first search waits
 for. The app gives the transcription that point, `Engine.StopAt`, and the
