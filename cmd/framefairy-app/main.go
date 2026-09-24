@@ -77,6 +77,17 @@ func main() {
 	}
 	svc := &FrameFairy{store: st}
 	svc.jobs = newQueue(st, emit, notify)
+	// Nothing the app started outlives it: a model loaded or still loading
+	// is stopped and no other is loaded, and the jobs are stopped, and with
+	// them any ffmpeg they run. On macOS app.Run never returns: Cmd+Q ends
+	// the process from inside Cocoa once the shutdown hooks have run, so
+	// this has to be one of them. Code after app.Run only runs on the other
+	// systems, and left a llama-server behind on every Mac that quit during
+	// a search.
+	quit := sync.OnceFunc(func() {
+		engine.CloseModels()
+		svc.jobs.shutDown()
+	})
 
 	app = application.New(application.Options{
 		Name:        "Frame Fairy",
@@ -89,6 +100,7 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		OnShutdown: quit,
 	})
 	svc.app = app
 	app.Menu.Set(appMenu(app))
@@ -140,11 +152,7 @@ func main() {
 		log.Printf("stopped a llama-server the last run of the app left behind")
 	}
 	err := app.Run()
-	// Nothing the app started outlives it: the jobs are stopped, and with
-	// them any ffmpeg they run, and a model loaded or still loading is not
-	// left behind holding the memory.
-	svc.jobs.shutDown()
-	engine.StopModels()
+	quit()
 	if err != nil {
 		log.Fatal(err)
 	}

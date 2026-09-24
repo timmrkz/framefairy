@@ -65,6 +65,8 @@ var host struct {
 	// down ends every load under way when the app stops the models.
 	down    context.Context
 	stopAll context.CancelFunc
+	// closed is set when the app quits. No model is loaded after it.
+	closed bool
 }
 
 func init() {
@@ -120,6 +122,9 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 		host.mu.Lock()
 		h := host.model
 		switch {
+		case host.closed:
+			host.mu.Unlock()
+			return "", nil, ErrCancelled
 		case h == nil:
 			return e.load(ctx, m, size, logDir)
 		case h.model == m.Model && h.size >= size:
@@ -275,4 +280,15 @@ func StopModels() {
 	host.mu.Lock()
 	host.down, host.stopAll = context.WithCancel(context.Background())
 	host.mu.Unlock()
+}
+
+// CloseModels is StopModels for good, on the way out of the app. A search
+// that has not yet seen that it was stopped could otherwise ask for the
+// model again after StopModels and load a new llama-server with nobody
+// left to stop it.
+func CloseModels() {
+	host.mu.Lock()
+	host.closed = true
+	host.mu.Unlock()
+	StopModels()
 }

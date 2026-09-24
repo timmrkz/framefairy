@@ -313,3 +313,44 @@ func TestASearchWaitingForAnotherModelCanBeStopped(t *testing.T) {
 		t.Error("a search got a second model while the first was in use")
 	}
 }
+
+// Once the app has closed the models, an ask that was waiting for the model
+// in use loads none of its own. With StopModels alone it woke, found no
+// model and started a llama-server after the app had stopped the last one,
+// and nothing was left to stop it.
+func TestNoModelIsLoadedAfterTheAppClosesThem(t *testing.T) {
+	s := useStandIn(t, time.Millisecond)
+	t.Cleanup(func() {
+		host.mu.Lock()
+		host.closed = false
+		host.mu.Unlock()
+	})
+	e := quietEngine()
+	_, release, err := e.holdModel(context.Background(), gemma, 32768, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release(0)
+	waited := make(chan error, 1)
+	go func() {
+		_, release, err := e.holdModel(context.Background(), LocalModel{Model: "qwen"}, 32768, "")
+		if err == nil {
+			release(0)
+		}
+		waited <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	CloseModels()
+	select {
+	case err := <-waited:
+		if err == nil {
+			t.Error("an ask loaded a model after the app had closed them")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the waiting ask never heard the app closed the models")
+	}
+	if s.started.Load() != 1 || s.running.Load() != 0 {
+		t.Errorf("%d started, %d still running after the app closed them",
+			s.started.Load(), s.running.Load())
+	}
+}

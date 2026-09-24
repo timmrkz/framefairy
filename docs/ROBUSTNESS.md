@@ -36,8 +36,8 @@ what became of it.
 3. **Servers left running after quitting.** A model still loading when the
    app quits, a second server from the point above, and a render's ffmpeg are
    not stopped with the app. llama-server holds its memory until it is killed.
-   Fixed: quitting stops every job, and with it any ffmpeg, then stops the
-   model whether it is loaded or still loading, and waits for both, at most
+   Fixed: quitting stops the model whether it is loaded or still loading,
+   then every job, and with it any ffmpeg, and waits for both, at most
    15 s. `engine/modelhost.go`, `cmd/framefairy-app/jobs.go`,
    `cmd/framefairy-app/main.go`. An app that is killed rather than quit, or
    that crashes, stops nothing, so a running llama-server is written down,
@@ -45,6 +45,13 @@ what became of it.
    the next start stops it if that process is still exactly that server.
    A process the system has given the same number since is left alone.
    `engine/leftover.go`.
+   Found by Tim on a Mac: all of that ran after `app.Run`, which never
+   returns on macOS. Cmd+Q ends the process from inside Cocoa once Wails
+   has run its shutdown hooks, so a llama-server outlived every Mac that
+   quit during a search. It is a shutdown hook now, `OnShutdown`. It
+   stops the model first and then closes the host, so a search that has
+   not yet seen it was stopped cannot load another, `CloseModels`, and
+   only then stops the jobs.
 4. **A panic outside a job's own goroutine ends the app.** Framing clips and
    the search clock run on goroutines of their own with no recover, so a
    panic in them is not caught by the job. The lanes of the queue die of a
