@@ -42,6 +42,14 @@
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
+  import {
+    Reach,
+    fitWindow,
+    leastWindow,
+    longestShortest,
+    mostClips,
+    type RoomView,
+  } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -76,6 +84,13 @@
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
   let coverage = $state<CoverageView>({ searched: [], free: [] });
+  // How much one search can read, from the engine, and what that makes of
+  // the window and the clip settings. The window is no longer than the
+  // model reads in one request and no shorter than the clips asked for
+  // need at their shortest. The clip count and the shortest length are
+  // held to the longest window that can be drawn anywhere on the episode,
+  // so whatever they ask for fits wherever the window is.
+  let roomView = $state<RoomView | null>(null);
   let selected = $state("");
   // What the clip list held and which clip was picked when a search began.
   // A search writes each clip to the plan as it is found, so the first one
@@ -108,6 +123,11 @@
   let offers = $state<PlayerOffers>({ crop: "", savingCrop: false, hint: "" });
 
   const duration = $derived(source?.duration ?? 0);
+  const reach = $derived(new Reach(roomView, duration));
+  const reachAnywhere = $derived(reach.anywhere());
+  const leastLong = $derived(leastWindow(count, min, duration));
+  const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
+  const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
   const transcribing = $derived(jobs.active(path, "transcribe"));
   const working = $derived(jobs.active(path, "work"));
   const finding = $derived(working?.kind === "plan");
@@ -461,6 +481,26 @@
     const next = nextWindow(coverage.free, coverage.searched, duration, firstLook);
     from = next.from;
     to = next.to;
+    keepWindow();
+  }
+
+  // The window put back inside what a search can do with it, whenever
+  // what that is changes: the room, or the clips asked for. Not while clips
+  // are being found for it, because then it is the window being searched.
+  function keepWindow() {
+    if (finding || starting || duration <= 0 || to <= from) return;
+    const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
+    if (Math.abs(kept.from - from) > 0.001) from = kept.from;
+    if (Math.abs(kept.to - to) > 0.001) to = kept.to;
+  }
+
+  async function refreshRoom() {
+    try {
+      roomView = await api.room(path);
+    } catch {
+      roomView = null;
+    }
+    keepWindow();
   }
 
   // The window the workspace opens with: the one this episode had a moment
@@ -470,6 +510,7 @@
     if (kept) {
       from = kept.from;
       to = kept.to;
+      keepWindow();
       return;
     }
     moveWindowOn();
@@ -513,6 +554,7 @@
         source = await api.source(path);
       }
       if (!status.missing) await refreshCoverage();
+      if (!status.missing) await refreshRoom();
       if (first && source) {
         openWindow();
       }
@@ -1011,6 +1053,7 @@
   // typed pushes the other along rather than leaving a search that can find
   // nothing.
   function keepOrder(typed: "min" | "max") {
+    if (typed === "min" && min > shortestAtMost) min = shortestAtMost;
     if ((min > 0) && (max > 0) && min > max) {
       if (typed === "min") max = min;
       else min = max;
@@ -1024,6 +1067,14 @@
   // workspace, and the next episode opens with them.
   function saveSearch() {
     api.setSearch(count, min, max).catch((err) => (problem = errorText(err)));
+    keepWindow();
+  }
+
+  // A number typed past what the window can hold is taken back to the
+  // most it can, the way a field's own arrows stop there.
+  function keepCount() {
+    count = Math.min(Math.max(Math.round(count) || 1, 1), clipsAtMost);
+    saveSearch();
   }
 
   // Clips for a window that already has some are asked for again, which
@@ -1354,7 +1405,9 @@
   // running work is torn down and set up again on every job event, about
   // once a second, so its timer would never fire at all.
   onMount(() => {
+    let ticks = 0;
     const timer = setInterval(() => {
+      ticks++;
       if (isTranscribing) {
         // While the transcript grows, how far it has come is read again:
         // the track draws it, and the first search waits for it.
@@ -1362,6 +1415,10 @@
           .episode(path)
           .then((now) => (status = now))
           .catch(() => {});
+        // What the new lines weigh, less often: the room only needs them
+        // to say how far a window may reach, and the rest of the episode
+        // is weighed at a rate that errs towards less until then.
+        if (ticks % 5 === 0) refreshRoom();
       }
       if (isFinding) {
         // Each clip lands in the plan the moment it is framed, while the
@@ -1402,6 +1459,14 @@
     searched={coverage.searched}
     onremove={(span) => (removingSearch = span)}
     locked={finding || starting}
+    least={leastLong}
+    leastSays="room for {count} clips of {min} s"
+    most={reachAnywhere}
+    reachSays={roomView?.by === "budget"
+      ? "all the budget pays for"
+      : roomView?.by === "memory"
+        ? "all this computer's memory holds"
+        : "all the model reads at once"}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
     {partly}
@@ -1485,7 +1550,9 @@
             <span class="ask">
               <Info label="What finding clips does">
                 The model reads the window chosen on the <b>range picker</b> and answers with the
-                moments worth clipping. A part it has read is marked there.
+                moments worth clipping. A part it has read is marked there. The window is never
+                longer than the model reads at once, and never shorter than the clips need at their
+                shortest.
               </Info>
             </span>
           </div>
@@ -1496,9 +1563,10 @@
                 class="num"
                 type="number"
                 min="1"
-                max="30"
+                max={clipsAtMost}
+                title="At most {clipsAtMost}, as many as fit at {min} s each in the longest window the model can read"
                 bind:value={count}
-                onchange={saveSearch}
+                onchange={keepCount}
               /></span
             >
           </label>
@@ -1509,7 +1577,8 @@
                 class="num"
                 type="number"
                 min="5"
-                max="180"
+                max={shortestAtMost}
+                title="At most {shortestAtMost} s, so {count} clips of it fit in the longest window the model can read"
                 bind:value={min}
                 onchange={() => keepOrder("min")}
               /><span class="unit">s</span></span

@@ -139,8 +139,8 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 }
 
 // warmChars is how many characters of prompt a second of window makes,
-// with room to spare: a half hour of German came to about 40,000.
-const warmChars = 25
+// with room to spare, see SpokenChars.
+const warmChars = SpokenChars
 
 // WarmModel loads the local model for a search of a window seconds long
 // that has not started yet, so the search finds it loaded. It returns once
@@ -157,7 +157,7 @@ func (p *Project) WarmModel(ctx context.Context, seconds float64) error {
 		return err
 	}
 	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
-	_, release, err := p.engine.holdModel(ctx, *local, contextFor(chars, opts.MaxTokens), p.LogsDir())
+	_, release, err := p.engine.holdModel(ctx, *local, localContextFor(local.Model, chars, opts.MaxTokens), p.LogsDir())
 	if err != nil {
 		return err
 	}

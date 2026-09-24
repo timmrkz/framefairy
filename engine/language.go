@@ -44,6 +44,11 @@ type LanguageModel struct {
 	// llama.cpp's own working memory.
 	// Worked out by NeedsAt at judgedContext, never written by hand.
 	Needs int64 `json:"needs"`
+	// Context is the most tokens the model holds at once, read off the
+	// real file, where llama.cpp reads it too: the context_length in the
+	// GGUF header. It is what makes the longest window a search may have,
+	// see room.go.
+	Context int `json:"-"`
 	// Shape is what the model keeps in memory for every token of context.
 	// It decides most of the difference between models, see Shape.
 	Shape Shape `json:"-"`
@@ -165,6 +170,7 @@ func LanguageModels() []LanguageModel {
 		About: "Twenty six billion parameters with four of them used per token, " +
 			"so it runs like a far smaller model. The largest of these.",
 		Download: 14_439_363_584,
+		Context:  262_144,
 		URL:      hf + "google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf",
 		SHA256:   "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
 		// Gemma 4 26B A4B: 30 layers, 5 over the whole context with 2 heads of
@@ -176,6 +182,7 @@ func LanguageModels() []LanguageModel {
 		Maker:    "Alibaba",
 		About:    "Fourteen billion parameters, quantised to four bits.",
 		Download: 9_001_752_960,
+		Context:  40_960,
 		URL:      hf + "Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
 		SHA256:   "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
 		// Qwen3 14B: 40 layers, every one over the whole context, 8 heads of 128.
@@ -187,6 +194,7 @@ func LanguageModels() []LanguageModel {
 		About: "Twelve billion parameters, trained to be quantised to four bits " +
 			"rather than cut down to them afterwards.",
 		Download: 6_975_879_296,
+		Context:  262_144,
 		URL:      hf + "google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf",
 		SHA256:   "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
 		// Gemma 4 12B: 48 layers, 8 over the whole context with 1 head of 512,
@@ -199,6 +207,7 @@ func LanguageModels() []LanguageModel {
 		About: "Eight billion parameters, quantised to four bits. The smallest " +
 			"of these, for a machine with less to spare.",
 		Download: 5_198_911_904,
+		Context:  262_144,
 		URL:      hf + "mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
 		SHA256:   "33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761",
 		// Ministral 3 8B: 34 layers, every one over the whole context, 8 heads
