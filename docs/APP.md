@@ -844,6 +844,34 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Thumbnails
+
+A clip can have any number of thumbnails, or none. A thumbnail is a frame
+of the short exactly as the short shows it, captions included, and
+**Render** writes each one beside the short as `<name>-1.jpg`, `<name>-2.jpg`
+and on. There is no way to render the pictures alone: a change to them is a
+change to the clip, and the next render writes the whole of it again. The
+reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
+
+- **The thumbnail button**, the picture in the row under the clip timeline,
+  makes the frame under the playhead a thumbnail. **T** does the same. It
+  can only be pressed with the playhead inside the clip, because a frame
+  that was cut is not in the short.
+- **Each thumbnail is a mark** along the foot of the clip timeline, a
+  picture in the shape of a short outlined in the app's colour. It is
+  filled while the playhead is on its frame, and then the button is
+  pressed too.
+- **With the playhead on a thumbnail**, the button or **T** removes it.
+  What one click adds, one click takes away.
+- **A click on a mark** puts the playhead on it, so the video preview shows
+  the picture.
+- **A mark is dragged** to another frame. The playhead goes with it, so the
+  video preview shows the frame under the hand, and the mark stays inside
+  the pieces the clip keeps. It is saved when the hand lets go.
+- **Undo** takes back adding, moving and removing one.
+- A trim or a cut that leaves a thumbnail outside the clip hides it. It
+  comes back with the part it was in.
+
 ### Caption timing
 
 A caption appears when its first word is said and goes when the next one

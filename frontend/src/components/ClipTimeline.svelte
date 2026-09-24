@@ -52,6 +52,8 @@
     captionLook = null,
     oncaptiontime,
     oncaptiondraft,
+    thumbnails = [],
+    onthumbnail,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -106,6 +108,12 @@
     // the caption box in the video preview can follow it. Null once the
     // captions have come back with it saved.
     oncaptiondraft?: (draft: CaptionDraft | null) => void;
+    // The clip's thumbnails, the moments of the episode the render takes a
+    // picture of the short at. Each is a mark along the foot of the track.
+    thumbnails?: number[];
+    // A thumbnail dragged to another frame, from where it was to where it
+    // was let go, both in the episode.
+    onthumbnail?: (from: number, to: number) => Promise<void>;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -1084,6 +1092,85 @@
 
   // Where in the episode this is. Without them a swipe leaves you nowhere,
   // and the step is round and wide enough that the labels never crowd.
+  // A thumbnail being dragged. It is drawn where the hand is, the playhead
+  // goes with it so the video preview shows the frame under the hand, and
+  // it stays where it was let go until the clip comes back with it saved.
+  let thumbDrag = $state<null | { from: number; to: number }>(null);
+  const thumbMarks = $derived(
+    thumbnails.map((at) => ({
+      at,
+      shown: thumbDrag && thumbDrag.from === at ? thumbDrag.to : at,
+    })),
+  );
+  // The frame the playhead is in, which is how a mark knows it is the one
+  // on screen. A state, never a distance.
+  const playFrame = $derived(Math.floor(time / frame));
+
+  // The middle of the frame a moment falls in, inside a piece the clip
+  // keeps: a moment that was cut out is not in the short, so a mark held
+  // over a cut stays at the edge of the piece nearest the hand.
+  function thumbFrame(t: number): number {
+    const mid = (u: number) => (Math.floor(u / frame) + 0.5) * frame;
+    let best = mid(t);
+    let gap = Infinity;
+    for (const p of segments) {
+      const least = mid(p.start + frame / 2);
+      const most = mid(p.end - frame / 2);
+      if (most < least) continue;
+      const at = Math.min(Math.max(mid(t), least), most);
+      if (Math.abs(at - t) < gap) {
+        gap = Math.abs(at - t);
+        best = at;
+      }
+    }
+    return best;
+  }
+
+  function grabThumb(at: number, event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    let moved = false;
+    const move = (e: PointerEvent) => {
+      if (locked || !onthumbnail) return;
+      if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
+      if (!moved) return;
+      const to = thumbFrame(timeAt(e.clientX));
+      thumbDrag = { from: at, to };
+      seekSoon(to);
+    };
+    const up = async () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      const d = thumbDrag;
+      // A click puts the playhead on it, so the video preview shows it.
+      if (!moved || !d) {
+        thumbDrag = null;
+        onseek(at);
+        return;
+      }
+      cancelAnimationFrame(queued);
+      queued = 0;
+      onseek(d.to);
+      if (Math.floor(d.to / frame) === Math.floor(d.from / frame)) {
+        thumbDrag = null;
+        return;
+      }
+      try {
+        await onthumbnail?.(d.from, d.to);
+      } finally {
+        thumbDrag = null;
+      }
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
+
   const ticks = $derived.by(() => {
     if (!width || span <= 0) return [];
     const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
@@ -1138,7 +1225,10 @@
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
-        one after appears. A double-click on an edge moved by hand puts it back.
+        one after appears. A double-click on an edge moved by hand puts it back. The small pictures
+        along the bottom are the thumbnails, the frames Render writes beside the short. The
+        thumbnail button under the timeline, or T, makes the frame under the playhead one, and
+        takes it away again. Drag one to another frame.
       </Info>
     </span>
     <!-- Nothing to draw yet, so the track says the words are on their way
@@ -1315,6 +1405,27 @@
           ></div>
         {/each}
       {/if}
+    {/if}
+    {#if clip}
+      <!-- The thumbnails along the foot of the track, each a picture in the
+           shape of a short, over the captions, lit when the playhead is on
+           its frame. -->
+      {#each thumbMarks as m, i (m.at)}
+        <div
+          class="thumb"
+          class:here={Math.floor(m.shown / frame) === playFrame}
+          class:active={thumbDrag?.from === m.at}
+          style="left: {x(m.shown)}%"
+          role="slider"
+          tabindex="-1"
+          aria-label="Thumbnail {i + 1}"
+          aria-valuenow={m.shown}
+          title={locked
+            ? "A thumbnail. Click to see it"
+            : "A thumbnail. Click to see it, drag it to another frame. The thumbnail button or T removes it"}
+          onpointerdown={(e) => grabThumb(m.at, e)}
+        ></div>
+      {/each}
     {/if}
   </div>
     {#if time >= view.from && time <= view.to}
@@ -1647,6 +1758,40 @@
   .capedge:hover::after,
   .capedge.active::after {
     opacity: 1;
+  }
+
+  /* A thumbnail: a picture in the shape of a short standing on the foot of
+     the track, outlined in the app's colour and filled with it while the
+     playhead is on its frame, under the hand or being dragged. Whole
+     pixels throughout, and wider to the hand than to the eye. */
+  .thumb {
+    position: absolute;
+    bottom: 3px;
+    width: 14px;
+    height: 18px;
+    margin-left: -7px;
+    cursor: ew-resize;
+    touch-action: none;
+    z-index: 6;
+  }
+
+  .thumb::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    bottom: 0;
+    width: 10px;
+    height: 16px;
+    box-sizing: border-box;
+    border: 2px solid var(--accent-hi);
+    border-radius: 2px;
+    background: var(--ink-1);
+  }
+
+  .thumb:hover::after,
+  .thumb.here::after,
+  .thumb.active::after {
+    background: var(--accent);
   }
 
   /* The playhead. */

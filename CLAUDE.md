@@ -400,7 +400,6 @@ The batch plan with statuses is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md).
 Next up, roughly in this order:
 
 - Tim's feedback from testing the current workspace
-- clip thumbnails, see [docs/THUMBNAILS.md](docs/THUMBNAILS.md)
 - the playback copy of the episode
 - `framefairy-train import` and `eval`, and loading a trained adapter
 - packaging, macOS first: the speech library carried in the bundle, an LGPL

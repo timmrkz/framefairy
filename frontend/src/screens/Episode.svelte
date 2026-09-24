@@ -686,6 +686,67 @@
     }
   }
 
+  // One frame of the episode, which is what a thumbnail stands on.
+  const frameLen = $derived(source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+  // The thumbnail under the playhead, told by the frame the playhead is in
+  // and never by how far it is from one, because the playhead is never
+  // quite where it was put.
+  const thumbHere = $derived.by(() => {
+    if (!current) return null;
+    const f = Math.floor(time / frameLen);
+    return current.thumbnails?.find((t) => Math.floor(t / frameLen) === f) ?? null;
+  });
+  // Whether the short shows the frame under the playhead, which is where a
+  // thumbnail can be.
+  const inShort = $derived(
+    !!current && current.segments.some((p) => time >= p.start && time < p.end),
+  );
+
+  // A thumbnail added, moved or removed, shown at once and saved straight
+  // after. A from below nought adds, a to below nought removes.
+  async function setThumbnail(clip: ClipEntry, from: number, to: number) {
+    problem = "";
+    const ms = (t: number) => Math.round(t * 1000);
+    const was = clip.thumbnails ?? [];
+    const next = was.filter((t) => from < 0 || ms(t) !== ms(from));
+    if (to >= 0) next.push(Math.round(to * 1000) / 1000);
+    next.sort((a, b) => a - b);
+    clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: next } : c));
+    try {
+      const updated = await api.setThumbnail(path, clip.plan, clip.id, from, to);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+      clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: was } : c));
+    }
+  }
+
+  // The button and T: the frame under the playhead becomes a thumbnail, or
+  // stops being one, so what one click adds one click takes away.
+  function toggleThumbnail() {
+    if (!current || renderingCurrent) return;
+    if (thumbHere !== null) {
+      void setThumbnail(current, thumbHere, -1);
+    } else if (inShort) {
+      // The middle of the frame, so the picture and the playhead agree on
+      // which frame it is whichever way either rounds.
+      void setThumbnail(current, -1, (Math.floor(time / frameLen) + 0.5) * frameLen);
+    }
+  }
+
+  function thumbnailKey(event: KeyboardEvent) {
+    if (event.key !== "t" && event.key !== "T") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    if (!current) return;
+    event.preventDefault();
+    toggleThumbnail();
+  }
+
   // Corrections are made one word after another, and each one is a call
   // and a reading of every clip after it. Two of them are in the air the
   // moment a second word is clicked before the first has landed, which is
@@ -1384,7 +1445,11 @@
 
   onMount(() => {
     window.addEventListener("keydown", walkClips);
-    return () => window.removeEventListener("keydown", walkClips);
+    window.addEventListener("keydown", thumbnailKey);
+    return () => {
+      window.removeEventListener("keydown", walkClips);
+      window.removeEventListener("keydown", thumbnailKey);
+    };
   });
 
   // One timer for as long as the workspace is open, and it decides what to
@@ -1913,6 +1978,8 @@
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onwalkclip={walkClip}
+        thumbnails={current?.thumbnails ?? []}
+        onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
         captions={captions?.captions ?? []}
         captionLook={shownCaptions
           ? {
@@ -1955,6 +2022,25 @@
             title="Play the clip again at its end"
           >
             <Icon name="loop" />
+          </button>
+        {/if}
+        {#if current}
+          <!-- The frame under the playhead as a thumbnail, and pressed while
+               the playhead stands on one, when a click takes it away. -->
+          <button
+            class="glyph"
+            class:on={thumbHere !== null}
+            aria-pressed={thumbHere !== null}
+            aria-label={thumbHere !== null ? "Remove this thumbnail" : "Make this frame a thumbnail"}
+            disabled={renderingCurrent || (thumbHere === null && !inShort)}
+            onclick={toggleThumbnail}
+            title={thumbHere !== null
+              ? "Remove this thumbnail. T does the same"
+              : inShort
+                ? "Make the frame under the playhead a thumbnail. Render writes it beside the short. T does the same"
+                : "Put the playhead in the clip to make a thumbnail of the frame there"}
+          >
+            <Icon name="thumbnail" />
           </button>
         {/if}
         <!-- One job, whatever is chosen: go to the playhead. Going back to

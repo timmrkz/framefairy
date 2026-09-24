@@ -3,7 +3,8 @@
 A thumbnail is a picture that stands for a short, for the upload. A person
 picks any number of them for a clip, none, one, three or sixteen, as marks on
 the clip timeline, and **Render** writes each one as a JPEG beside the short,
-in the same folder. The batches are 1.5 in [GUI-PLAN.md](GUI-PLAN.md).
+in the same folder. The batches are 1.5 in [GUI-PLAN.md](GUI-PLAN.md), and how it is used is
+in [APP.md](APP.md#thumbnails).
 
 ## What a thumbnail is for
 
@@ -45,8 +46,8 @@ it back.
 
 ## In the app
 
-- **The thumbnail button**, in the row under the clip timeline beside play,
-  loop and the crosshair, makes the frame under the playhead a thumbnail.
+- **The thumbnail button**, in the row under the clip timeline between loop and
+  the crosshair, makes the frame under the playhead a thumbnail.
   **T** does the same.
 - **Every thumbnail is a mark on the clip timeline**, at its moment, in the
   app's colour.
