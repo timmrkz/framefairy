@@ -143,7 +143,10 @@ moment removing begins, nothing new starts on it until it is added again,
 not even the transcription a stopped search would otherwise carry on.
 Deleting also waits for the work to stop, and if something will not stop,
 nothing is deleted and the episode stays where it is with a line saying
-so. A folder deleted under a running transcription comes back,
+so. The answer clicked says Removing at once and the box takes no second
+click while the work stops, which is a moment when a search runs. The
+workspace of the episode closes before the list is read again, so it asks
+nothing more of an episode that is gone. A folder deleted under a running transcription comes back,
 half written, for an episode that is no longer in the library. The video file
 itself always stays, and so do the training records, which live in one
 folder of their own and are thrown away in the settings and nowhere else.
@@ -441,8 +444,19 @@ place.
       back to its start, moves the playhead when the picture has landed and
       not before, so the crop frame, the captions and the picture change
       together. A frame read from the file is only drawn over the video
-      preview for the second it was read for. Before, one read for another
-      moment flashed up on every loop while the seek was on its way.
+      preview while the playhead is in the frame it was read for. Before,
+      one read for another moment flashed up on every loop while the seek
+      was on its way.
+    - **The frame read from the file is the frame the video shows.** While
+      the video preview cannot keep up with the playhead, a frame read from
+      the file is laid over it, and it is the frame the playhead is in, the
+      one the video will show once it lands, so nothing changes when it
+      does. It used to be the nearest whole second, so from half past on it
+      was the next second's frame: dragging the playhead showed one frame,
+      letting go showed another, and one spot showed two frames depending
+      on which of the two was on screen. `frameStart` in
+      `frontend/src/lib/flow.ts` and `Still` in `engine/frames.go` work the
+      frame out the same way, and both are tested.
     - While the playhead is inside the clip, its captions are drawn inside
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
@@ -604,6 +618,21 @@ place.
       one shown a little later. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
       search keeps the clips it had found.
+    - **A search starts in sight.** The rows still to come are after the
+      clips there are, so in a long list a search began out of sight and
+      all anyone saw was New turning into Cancel. The row the next clip
+      will appear in is brought to the top of the column the moment it is
+      there, and the column follows it as clips land above it, the way a
+      chat follows its last message. Scrolling the list by hand stops that
+      for the rest of the search. The list stays in the order the clips
+      were spoken, which is the order of the range picker and the clip
+      timeline, so a new clip lands where it belongs in the episode rather
+      than on top.
+    - **An empty list is never empty.** With nothing in the list and no
+      search on its way, the rows New will fill stand there as many as
+      Clips says, following it as it changes, and still, because nothing
+      is filling them yet. An episode whose first search was stopped, by
+      quitting among other things, had a bare column there before.
     - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
@@ -1097,6 +1126,16 @@ anything runs, the list is also read again every five seconds, so a piece
 of news that was lost costs a few seconds and never a job that looks as if
 it runs for ever. Quitting the app stops the model and every job before
 the app goes.
+
+**Quitting.** Cmd+Q dims the app at once and says what happens next.
+While work runs, a search, a render or a transcription, the first press
+only asks, Press ⌘Q again to quit, for three seconds, the way Chrome does,
+because quitting stops that work half way. A click or Escape takes the
+question away. The second press, or the first with nothing running, says
+Quitting while the app stops everything it started, and then it goes.
+Closing the app's window quits without asking. The stopping happens away
+from the main thread, see `cmd/framefairy-app/quit.go`: done on it, it
+froze the app under the spinning wheel for five seconds.
 
 ### Settings
 

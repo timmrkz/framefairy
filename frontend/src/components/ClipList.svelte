@@ -11,6 +11,7 @@
     selected,
     removed = "",
     coming = 0,
+    waiting = true,
     next = null,
     onselect,
     onremove,
@@ -23,6 +24,9 @@
     // many rows wait in place, so the list is already the shape it is
     // about to be, and the info mark at the head says what is going on.
     coming?: number;
+    // Whether anything is on its way to fill those rows. They breathe while
+    // it is and stand still while nothing is, the way paused work does.
+    waiting?: boolean;
     // What the first of those rows is waiting on, while it waits: what is
     // being done, how long is left, and how far it has come, -1 when that
     // is not known. That row wears the work running, because it is where
@@ -45,6 +49,44 @@
   const ghosts = $derived.by(() => {
     const n = Math.max(0, coming - clips.length);
     return Array.from({ length: n }, (_, i) => i);
+  });
+
+  // The rows still to come are after the clips there are, so in a list
+  // longer than its column a search began out of sight: all anyone saw
+  // was New turning into Cancel. The moment the row the next clip will
+  // appear in is there, it is brought to the top of what the column
+  // shows, with the rows still to come under it. Each clip that lands
+  // lands above that row and pushes it down, so the column follows it,
+  // the way a chat follows its last message, and the clips arriving are
+  // seen arriving. Until the hand scrolls the list: from then on it stays
+  // where the hand put it, for the rest of that search.
+  let nextRow = $state<HTMLLIElement>();
+  let hadNext = false;
+  let following = false;
+  $effect(() => {
+    const has = !!next && !!nextRow;
+    if (has && !hadNext) {
+      following = true;
+      nextRow!.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+    hadNext = has;
+  });
+  $effect(() => {
+    void clips.length;
+    if (following && nextRow) nextRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+  $effect(() => {
+    const column = nextRow?.closest(".scroll");
+    if (!column) return;
+    const letGo = () => (following = false);
+    column.addEventListener("wheel", letGo, { passive: true });
+    column.addEventListener("pointerdown", letGo);
+    column.addEventListener("touchstart", letGo, { passive: true });
+    return () => {
+      column.removeEventListener("wheel", letGo);
+      column.removeEventListener("pointerdown", letGo);
+      column.removeEventListener("touchstart", letGo);
+    };
   });
 </script>
 
@@ -94,13 +136,13 @@
        round exactly once. -->
   {#each ghosts as row (row)}
     {#if row === 0 && next}
-      <li class="ghost next" aria-live="polite">
+      <li class="ghost next" aria-live="polite" bind:this={nextRow}>
         <Busy fraction={next.fraction} />
         <span class="title">{next.what}</span>
         <span class="meta muted num">{next.left}</span>
       </li>
     {:else}
-      <li class="ghost waiting" style="--wait-in: {row * 800}ms"></li>
+      <li class="ghost" class:waiting style="--wait-in: {row * 800}ms"></li>
     {/if}
   {/each}
 </ol>
@@ -272,6 +314,8 @@
   /* The row the next clip will appear in, saying what it is waiting on,
      laid out as a clip's row is, a line of what and a line of how long. */
   .next {
+    /* Brought into view clear of the veil over either end of the list. */
+    scroll-margin: var(--veil, 16px) 0;
     display: flex;
     flex-direction: column;
     justify-content: center;

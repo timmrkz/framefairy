@@ -32,6 +32,7 @@
   import { chosen, jobs } from "../lib/state.svelte";
   import {
     draftCaptions,
+    frameStart,
     Heard,
     inEpisode,
     Newest,
@@ -312,9 +313,22 @@
     const known = listedBefore;
     return known ? clips.filter((c) => !known.has(c.key)).length : 0;
   });
+  //
+  // With nothing on its way and nothing in the list, the rows stand there
+  // all the same, as many as Clips says and following it as it changes,
+  // but still: they are what New will fill, and nothing is filling them
+  // yet. An episode whose first search was stopped, by quitting among
+  // other things, had an empty column there instead.
   const coming = $derived(
-    finding || starting ? clips.length + Math.max(0, count - foundSoFar) : lookPending ? count : 0,
+    finding || starting
+      ? clips.length + Math.max(0, count - foundSoFar)
+      : lookPending
+        ? count
+        : !clips.some((c) => !c.rejected)
+          ? count
+          : 0,
   );
+  const comingNow = $derived(finding || starting || lookPending);
   // What the row the next clip will appear in is waiting on. While the
   // transcript has not reached the end of the window, that is the
   // transcript, and how far it has come is how much of the window it
@@ -412,8 +426,10 @@
   // happens while the machine is busy, drops a seek and leaves the picture
   // on a frame that has nothing to do with the playhead. Whenever the video
   // preview says it cannot show the playhead, the frame under it is read
-  // from the file instead. The engine keeps one frame per second of an
-  // episode, so going back over a part costs nothing.
+  // from the file instead: the frame the playhead is in, the one the video
+  // preview will show once it lands, so nothing changes when it does. The
+  // engine keeps every frame it has read, so going back over a part costs
+  // nothing.
   let asking = 0;
   // Which ask the picture is from. Several are in the air whenever the
   // playhead is moved quickly, and an answer that took longer to read
@@ -421,25 +437,25 @@
   // picture on somewhere the playhead has left, for good, because nothing
   // asks again.
   const stills = new Newest();
-  // The second the picture on screen is of, which is not the same as the
-  // second last asked for. Going to one clip, then another, then back to
+  // The frame the picture on screen is of, by where it starts, which is
+  // not the same as the frame last asked for. Going to one clip, then another, then back to
   // the first used to skip the last ask, because it matched what had been
   // asked for, and leave the second clip's frame on screen.
   let showing = $state(-1);
 
   function askStill(at: number) {
     if (!source || status?.missing) return;
-    const second = Math.round(Math.max(at, 0));
-    if (second === showing) return;
+    const frame = frameStart(at, source.fps);
+    if (frame === showing) return;
     clearTimeout(asking);
     asking = window.setTimeout(() => {
       const ticket = stills.send();
       api
-        .still(path, second, 960)
+        .still(path, frame, 960)
         .then((file) => {
           if (!stills.keep(ticket)) return;
           still = mediaURL(file);
-          showing = second;
+          showing = frame;
         })
         .catch(() => {
           // A frame that cannot be read is not worth a message. The
@@ -1946,6 +1962,7 @@
               clips={shown}
               {selected}
               {coming}
+              waiting={comingNow}
               next={shownNext}
               removed={removed?.key ?? ""}
               onselect={select}

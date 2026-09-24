@@ -346,7 +346,10 @@ export const Call = {
     const paused = location.search.includes("paused");
     const carriedOn = () => !!(window as any).__carriedOn;
     const stopped = () => !!(window as any).__stopped;
-    const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
+    // New after the first search has finished is a second search, whose
+    // clips come after the twelve of the first.
+    const askedAt = () => ((window as any).__planned ?? []).at(-1)?.wall ?? 0;
+    const before = () => Math.max(((window as any).__planned ?? []).length - 1, 0) * 12;
     // The search lasts six seconds and its clips land one at a time on the
     // way, the way the engine writes each one the moment it is framed. They
     // land in the order the model wrote them, which is not the order of the
@@ -358,7 +361,8 @@ export const Call = {
     const landed = () => {
       if (!found || !askedAt()) return [] as number[];
       const since = Date.now() - askedAt();
-      return landOrder.filter((_, k) => since >= 700 + k * 350);
+      const earlier = Array.from({ length: before() }, (_, i) => i + 1);
+      return [...earlier, ...landOrder.filter((_, k) => since >= 700 + k * 350).map((n) => n + before())];
     };
     const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Finding clips", fraction: 0.4, remaining: 60 } : undefined });
     switch (method) {
@@ -558,7 +562,7 @@ export const Call = {
         if (found) {
           const there = new Set(landed());
           return Promise.resolve(
-            Array.from({ length: 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
+            Array.from({ length: before() + 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
           );
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve([]);
@@ -864,9 +868,17 @@ export const Call = {
         if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });
         return Promise.resolve({ words: words(Number(args[1]), Number(args[2])), keepPause: 0.1 });
       case "Still":
-        // One file per second, so a test can see the frame follow the
-        // playhead.
-        return Promise.resolve(`/eps/still-${Math.round(Number(args[1]) || 0)}.jpg`);
+        // One file per frame, and the harness episode has a frame a second,
+        // so a test can see the frame follow the playhead. Every ask is
+        // kept, so a probe can see which frame was asked for.
+        ((window as any).__stills ??= []).push(Number(args[1]) || 0);
+        return Promise.resolve(`/eps/still-${Math.floor(Number(args[1]) || 0)}.jpg`);
+      // Removing waits for the episode's work to stop, which takes a
+      // moment while a search runs. Every call is counted, so a probe can
+      // see whether a second click sent a second removal.
+      case "RemoveEpisode":
+        (window as any).__removals = ((window as any).__removals ?? 0) + 1;
+        return new Promise((r) => setTimeout(() => r(null), 1500));
       case "CancelJob":
         (window as any).__stopped = true;
         if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
@@ -891,6 +903,11 @@ export const Events = {
     if (name === "undo") {
       (window as any).__menu = (what: string) => fn({ data: what });
       return () => delete (window as any).__menu;
+    }
+    // Cmd+Q heard, with window.__quit("ask") or window.__quit("going").
+    if (name === "quit") {
+      (window as any).__quit = (what: string) => fn({ data: what });
+      return () => delete (window as any).__quit;
     }
     // And Help, Acknowledgements with window.__help().
     if (name === "acknowledgements") {
@@ -942,7 +959,7 @@ export const Events = {
       // far it is, and how many clips it has written, which is what tells
       // the interface to read the list again.
       const timer = setInterval(() => {
-        const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;
+        const at = ((window as any).__planned ?? []).at(-1)?.wall ?? 0;
         if (!at) return;
         const since = Date.now() - at;
         const state = since < 6000 ? "running" : "done";
