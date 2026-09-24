@@ -69,6 +69,17 @@ to run, and nothing else is promised.
 A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
 app fetched it or not.
 
+**Installing is work in hand, and it looks it.** The button it was started
+from carries it, the way every control that starts work does: the beam
+round it and the fill for how far the download has come, and it reads
+**Cancel** while it runs. What has arrived stays, and **Install** carries on
+from it. The row itself does not light up or move. The line under the name
+that says what the model costs says instead how far it has come, how fast
+and how long is left, *Fetching 1.8 GB of 5.2 GB at 42 MB a second, 0:13
+left*, in the same one line, so the row keeps its height. The numbers are
+counted in thousands, the way the size to fetch is, so a model said to be
+5.2 GB arrives as 5.2 GB of 5.2 GB.
+
 A model is only half of the local way. `llama-server`, from llama.cpp, is
 what runs it, and a model without one is fifteen gigabytes that answer
 nothing. So the app looks for it and says so while it is missing, and it
@@ -1074,6 +1085,22 @@ with the rest of the settings, because it never lands in the settings file.
 An app opened from Finder has no shell environment, so this is the only way
 to give it a key. With **On this machine** chosen, the same list of language
 models the first run shows, judged against the same memory.
+
+In the settings a model that is there can go again, to give its room back.
+Its trash can waits until the pointer is on the row, and it asks first in
+the box over the app, because fetching it again is gigabytes: **Cancel**,
+where the keyboard starts, and **Remove**. Removing the speech model means
+the app asks for one again the next time it starts, because nothing can be
+transcribed without it. A model is not removed while it is being installed
+or while the work that reads it runs, and the refusal says which.
+
+**Several language models, one in use.** Trying a second model leaves two
+on the machine, and the engine will not guess which one was meant, so a
+search would fail until one is named. The one in use wears the colour of a
+chosen row and says **In use**, and every other one that is there offers
+**Use**, which names it in the settings at once and in the **Model file**
+field below, so the next **Save** keeps it. Removing the model in use lets
+go of it in the settings too.
 
 The rest is paths to ffmpeg, llama-server and the models, and the output
 folder. **Colours** holds **the app**, what the app picks things out in, the

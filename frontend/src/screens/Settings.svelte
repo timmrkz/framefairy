@@ -40,9 +40,11 @@
   const speechRows = $derived<ModelRow[]>(
     speech.map((m) => ({
       name: m.name,
+      label: m.title,
       title: m.title,
       about: m.about,
       cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+      room: size(m.unpacked),
       installed: m.installed,
     })),
   );
@@ -52,9 +54,12 @@
       const { note, warn } = fitNote(m.fit, m.recommended);
       return {
         name: m.name,
+        label: m.title,
         title: `${m.title} by ${m.maker}`,
         about: m.about,
         cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
+        room: size(m.download),
+        inUse: m.inUse,
         installed: m.installed,
         note,
         warn,
@@ -82,6 +87,13 @@
     }
     savingKey = false;
     await readModels();
+  }
+
+  // The one clips are found with is saved at once, and the field below
+  // shows it, so the next Save does not put the old one back.
+  async function useModel(name: string) {
+    const path = await api.useLanguageModel(name);
+    if (settings) settings.llmModel = path;
   }
 
   async function readModels() {
@@ -217,6 +229,8 @@
               kind="llm"
               oninstall={api.installLanguageModel}
               onchange={readModels}
+              onremove={api.removeLanguageModel}
+              onuse={useModel}
             />
           </div>
           <label for="llm">Model file</label>
@@ -269,6 +283,8 @@
         kind="model"
         oninstall={api.installSpeechModel}
         onchange={readModels}
+        onremove={api.removeSpeechModel}
+        removeSays="Every episode is transcribed with it, so the app asks for one again the next time it starts."
       />
       <div class="grid">
         <label for="asr">Model folder</label>

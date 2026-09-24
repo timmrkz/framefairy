@@ -294,6 +294,9 @@ export interface LanguageModel {
   // Whether this is the one to offer this machine, which is the largest it
   // can hold. It belongs to the machine and not to the model.
   recommended: boolean;
+  // Whether clips are found with it: the file named in the settings, or
+  // with none named the only one there is.
+  inUse: boolean;
 }
 
 // One row of a list of models, as the list draws it. Speech models and
@@ -301,11 +304,19 @@ export interface LanguageModel {
 // component and each screen says what to put in the row.
 export interface ModelRow {
   name: string;
+  // What the install of it is called, which is the model's own title. What
+  // the row shows may say more, like who made it.
+  label: string;
   title: string;
   about: string;
   // What it costs, as one line.
   cost: string;
   installed: boolean;
+  // Whether it is the one in use, where there is a choice. Left out where
+  // there is none, and then being installed is being in use.
+  inUse?: boolean;
+  // The room it takes on the disk, said when it is removed.
+  room: string;
   // A word about this model on this machine, where there is one.
   note?: string;
   // Whether that word is a warning rather than a fact.
@@ -365,6 +376,13 @@ export const api = {
   setup: () => call<SetupState>("Setup"),
   installSpeechModel: (name: string) => call<Job>("InstallSpeechModel", name),
   installLanguageModel: (name: string) => call<Job>("InstallLanguageModel", name),
+  // Takes a model off the machine to give its room back. It refuses while
+  // one is being installed, or while the work that reads it runs.
+  removeSpeechModel: (name: string) => call<void>("RemoveSpeechModel", name),
+  removeLanguageModel: (name: string) => call<void>("RemoveLanguageModel", name),
+  // Makes an installed model the one clips are found with, and says the
+  // path it is found at.
+  useLanguageModel: (name: string) => call<string>("UseLanguageModel", name),
   saveAPIKey: (key: string) => call<void>("SaveAPIKey", key),
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),

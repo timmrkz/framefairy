@@ -310,10 +310,15 @@ func copyWithProgress(ctx context.Context, log *Log, dst io.Writer, src io.Reade
 			if total > 0 {
 				share := float64(done) / float64(total)
 				left := Unknown
+				// How fast it arrives is said too: a download that has
+				// slowed to a crawl is the one thing a person can do
+				// something about, by moving closer to the router.
+				speed := ""
 				if rate := float64(done-already) / time.Since(began).Seconds(); rate > 0 {
 					left = float64(total-done) / rate
+					speed = fmt.Sprintf(" at %s a second", inMB(int64(rate)))
 				}
-				log.ProgressOf(fmt.Sprintf("%s, %s of %s", what, inMB(done), inMB(total)),
+				log.ProgressOf(fmt.Sprintf("%s %s of %s%s", what, inMB(done), inMB(total), speed),
 					share, left)
 			} else {
 				log.Progress(fmt.Sprintf("%s, %s", what, inMB(done)))
@@ -331,11 +336,18 @@ func copyWithProgress(ctx context.Context, log *Log, dst io.Writer, src io.Reade
 	}
 }
 
+// inMB says how much has been fetched the way the app says how big a
+// download is, in thousands rather than in powers of two, so the numbers
+// in one row agree: a model said to be 5.2 GB to fetch arrives as 5.2 GB
+// of 5.2 GB, and not 4.8.
 func inMB(n int64) string {
-	if n >= 1<<30 {
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	switch {
+	case n >= 1e9:
+		return fmt.Sprintf("%.1f GB", float64(n)/1e9)
+	case n >= 1e6:
+		return fmt.Sprintf("%d MB", n/1e6)
 	}
-	return fmt.Sprintf("%d MB", n/(1<<20))
+	return fmt.Sprintf("%d KB", n/1e3)
 }
 
 // unpackTarBz2 writes an archive into a folder, refusing anything that

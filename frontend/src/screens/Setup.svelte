@@ -47,9 +47,11 @@
   const speechRows = $derived<ModelRow[]>(
     (setup?.speech ?? []).map((m) => ({
       name: m.name,
+      label: m.title,
       title: m.title,
       about: m.about,
       cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+      room: size(m.unpacked),
       installed: m.installed,
     })),
   );
@@ -59,9 +61,11 @@
       const { note, warn } = fitNote(m.fit, m.recommended);
       return {
         name: m.name,
+        label: m.title,
         title: `${m.title} by ${m.maker}`,
         about: m.about,
         cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
+        room: size(m.download),
         installed: m.installed,
         note,
         warn,
