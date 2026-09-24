@@ -2292,6 +2292,13 @@
        and only then. */
     overflow-y: auto;
     scrollbar-width: none;
+    /* A column that scrolls cuts off whatever reaches past its edge, and
+       the lift under the Highlight name reaches seven pixels to the left of
+       the names. The column takes eight pixels of the edge beside it and
+       gives them back as padding, so the names stay where they are and the
+       lift is whole. */
+    margin-left: -8px;
+    padding-left: 8px;
   }
 
   /* A name and a small field beside it read worse the further apart they
