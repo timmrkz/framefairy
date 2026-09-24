@@ -54,8 +54,15 @@ episode.framefairy/
 │   └── ...            prompts, the model's log and token usage
 ├── captions/          per-clip srt and word timings, plus generated ass
 ├── preview/           renders from --preview
-└── out/               the finished clips and nothing else
+└── out/               the finished clips and their thumbnails
 ```
+
+A clip whose plan lists `thumbnails`, moments of the episode in seconds,
+gets a picture of the short at each of them, `<name>-1.jpg`, `<name>-2.jpg`
+and on, beside `<name>.mp4`. Each is a frame of the finished short, captions
+included. Pictures of an earlier render that the plan no longer asks for
+are removed. `--preview` and `--dry-run` write none. See
+[THUMBNAILS.md](THUMBNAILS.md).
 
 `framefairy episode.mp4 --transcribe-only` transcribes and stops. It writes
 `logs/words.srt`, a readable transcript, and makes no API call.

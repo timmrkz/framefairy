@@ -244,3 +244,49 @@ func TestCaptionHighlightIsSwitchedAndUndone(t *testing.T) {
 		t.Error("a plan outside the library was written")
 	}
 }
+
+// A thumbnail is an edit of the clip like any other: saved to the plan the
+// render reads and taken back by Undo, adding, moving and removing alike.
+func TestThumbnailsAreSavedAndUndone(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	thumbs := func() []float64 {
+		t.Helper()
+		_, clips, err := engine.LoadClips(plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return clips[0].Thumbnails
+	}
+	_, clips, err := engine.LoadClips(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside := clips[0].Segments[0].Start + 0.5
+	// The answer describes the clip for the interface, which needs the video
+	// read, and this one is not a video. The edit is made either way.
+	_, _ = svc.SetThumbnail(ctx, mine, plan, "01", -1, inside)
+	if got := thumbs(); len(got) != 1 || got[0] != inside {
+		t.Fatalf("the thumbnail was not added: %v", got)
+	}
+	_, _ = svc.SetThumbnail(ctx, mine, plan, "01", inside, inside+0.25)
+	if got := thumbs(); len(got) != 1 || got[0] != inside+0.25 {
+		t.Fatalf("the thumbnail was not moved: %v", got)
+	}
+	_, _ = svc.SetThumbnail(ctx, mine, plan, "01", inside+0.25, -1)
+	if got := thumbs(); len(got) != 0 {
+		t.Fatalf("the thumbnail was not removed: %v", got)
+	}
+	for _, want := range []int{1, 1, 0} {
+		if _, err := svc.Undo(mine); err != nil {
+			t.Fatal(err)
+		}
+		if got := thumbs(); len(got) != want {
+			t.Fatalf("undo left %v", got)
+		}
+	}
+	if _, err := svc.SetThumbnail(ctx, mine, filepath.Join(filepath.Dir(plan), "..", "..", "x.json"),
+		"01", -1, inside); err == nil {
+		t.Error("a plan outside the library was written")
+	}
+}

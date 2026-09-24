@@ -123,6 +123,9 @@ export interface ClipView {
   // bottom of a 1080x1920 frame, when it was placed by hand.
   captionY: number;
   captionYMoved: boolean;
+  // The moments of the episode the render takes a picture of the short at,
+  // in time order.
+  thumbnails: number[];
 }
 
 // One line of a caption, the way the render lays it out.
@@ -425,6 +428,10 @@ export const api = {
     edge: "start" | "end",
     at: number,
   ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
+  // A thumbnail added, moved or removed. A from below nought adds one at
+  // to, and a to below nought removes the one at from.
+  setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>
+    call<ClipEntry>("SetThumbnail", path, plan, clip, from, to),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),
   removeClip: (path: string, plan: string, clip: string, removed: boolean) =>
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),

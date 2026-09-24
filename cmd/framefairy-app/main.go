@@ -1252,6 +1252,22 @@ func (s *FrameFairy) followTheHeight(path string) error {
 	return nil
 }
 
+// SetThumbnail adds, moves or removes a thumbnail of a clip, a moment of
+// the episode the render takes a picture of the short at, and returns the
+// clip as it is now. A from below nought adds one at to, and a to below
+// nought removes the one at from.
+func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string, from, to float64) (ClipEntry, error) {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return ClipEntry{}, os.ErrNotExist
+	}
+	if err := s.edit(path, func() error {
+		return engine.SetThumbnail(plan, clipID, from, to)
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
 // SetCaptionTime moves the caption of a clip that begins or ends on a word,
 // to appear or go at a moment of the episode. A moment below nought puts it
 // back where its words put it, because JSON has no way to say not a number.

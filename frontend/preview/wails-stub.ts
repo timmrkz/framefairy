@@ -124,6 +124,10 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     rendered: rendered ? "/tmp/out.mp4" : undefined,
     captionY: 300,
     captionYMoved: false,
+    // Only the moments inside a kept piece, the way the engine reads them.
+    thumbnails: (((window as any).__thumbs ??= {})[`0${n}`] ?? [])
+      .filter((t: number) => segments.some((p) => t >= p.start && t < p.end))
+      .sort((a: number, b: number) => a - b),
     key: `clips.json/0${n}`,
     plan: "/eps/ep.framefairy/logs/clips.json",
     cropLefts: segments.map((p) => p.cropX),
@@ -541,6 +545,24 @@ export const Call = {
         return Promise.resolve(null);
       // A caption moved by hand, kept the way the engine keeps it, against
       // the word and the edge. Below nought puts it back.
+      case "SetThumbnail": {
+        const [, , id, from, to] = args as [string, string, string, number, number];
+        const all = ((window as any).__thumbs ??= {}) as Record<string, number[]>;
+        const list = (all[id] ??= []);
+        const ms = (t: number) => Math.round(t * 1000);
+        if (from >= 0) {
+          const at = list.findIndex((t) => ms(t) === ms(from));
+          if (at < 0) return Promise.reject(new Error("the clip has no thumbnail there"));
+          list.splice(at, 1);
+        }
+        if (to >= 0) {
+          if (list.some((t) => ms(t) === ms(to))) {
+            return Promise.reject(new Error("the clip already has a thumbnail there"));
+          }
+          list.push(Math.round(to * 1000) / 1000);
+        }
+        return Promise.resolve(clipOf(id));
+      }
       case "SetCaptionTime": {
         const [, , id, word, edge, at] = args as [string, string, string, number, string, number];
         const moved = ((window as any).__captionTimes ??= {}) as Record<string, number>;

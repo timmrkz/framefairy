@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -207,4 +209,65 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 			clip.Basename(), clip.Duration(), written)
 	}
 	return outPath, nil
+}
+
+// thumbnailName is how the pictures of a short are called, beside it:
+// <name>-1.jpg, <name>-2.jpg and on, in time order.
+func thumbnailName(basename string, n int) string {
+	return fmt.Sprintf("%s-%d.jpg", basename, n)
+}
+
+// WriteThumbnails takes a picture of a short that was just written at each
+// of its clip's thumbnails and puts them beside it, as <name>-1.jpg and on.
+// A picture is a frame of the short itself, so it is exactly what the short
+// shows at that moment, crop and captions included. Pictures of an earlier
+// render that are no longer asked for are removed, so the folder holds what
+// the plan asks for and nothing else.
+func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) error {
+	dir := filepath.Dir(short)
+	pattern := regexp.MustCompile("^" + regexp.QuoteMeta(clip.Basename()) + `-(\d+)\.jpg$`)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if m := pattern.FindStringSubmatch(entry.Name()); m != nil && entry.Type().IsRegular() {
+			if n, _ := strconv.Atoi(m[1]); n > len(clip.Thumbnails) || n < 1 {
+				os.Remove(filepath.Join(dir, entry.Name()))
+			}
+		}
+	}
+	for i, at := range clip.Thumbnails {
+		path, err := SafeChild(dir, thumbnailName(clip.Basename(), i+1))
+		if err != nil {
+			return err
+		}
+		// Where the moment falls in the short, which is a different clock
+		// from the episode's once anything was cut out before it.
+		// A moment on the very last frame is held a little inside, because
+		// a seek to the end of a file finds nothing after it to show.
+		t := math.Max(0, math.Min(ClipTime(clip, at), clip.Duration()-0.05))
+		tmp := path + ".part.jpg"
+		res := run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
+			"-ss", fixed(t, 3), "-i", short, "-frames:v", "1", "-update", "1",
+			"-vf", "scale=out_range=full,format=yuvj420p", "-q:v", "2", tmp)
+		if ctx.Err() != nil {
+			os.Remove(tmp)
+			return ctx.Err()
+		}
+		if res.Code != 0 {
+			os.Remove(tmp)
+			return renderErr("could not take thumbnail %d of %s at %s: %s", i+1,
+				clip.Basename(), HMS(at), tailRunes(strip(res.Stderr), 200))
+		}
+		if info, err := os.Stat(tmp); err != nil || info.Size() == 0 {
+			os.Remove(tmp)
+			return renderErr("thumbnail %d of %s came out empty", i+1, clip.Basename())
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			os.Remove(tmp)
+			return err
+		}
+	}
+	return nil
 }
