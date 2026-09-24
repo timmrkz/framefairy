@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
+  frameStart,
   Heard,
   Newest,
   mergeJob,
@@ -778,5 +779,34 @@ describe("a job's news", () => {
     let list = heard;
     for (const got of read) list = mergeJob(list, got) ?? list;
     expect(list).toEqual([job("running", 5)]);
+  });
+});
+
+// The still read while the video preview catches up is the frame the video
+// will show there: the one the moment falls in. It was the nearest whole
+// second, which from half past on was the next second's frame.
+describe("frameStart", () => {
+  it("is the frame a moment falls in, never the next one", () => {
+    expect(frameStart(12.7, 1)).toBe(12);
+    expect(frameStart(12.2, 1)).toBe(12);
+    expect(frameStart(0.99, 10)).toBeCloseTo(0.9, 9);
+    expect(frameStart(1.0, 25)).toBeCloseTo(1.0, 9);
+  });
+
+  it("puts every moment of a frame on the same start", () => {
+    const fps = 30000 / 1001;
+    for (let n = 0; n < 2000; n += 37) {
+      const start = n / fps;
+      for (const into of [0, 0.25, 0.5, 0.75, 0.999]) {
+        expect(frameStart(start + into / fps, fps)).toBeCloseTo(start, 9);
+      }
+      // And a start asked for again is the same start, which is what the
+      // engine is handed.
+      expect(frameStart(frameStart(start, fps), fps)).toBeCloseTo(start, 9);
+    }
+  });
+
+  it("counts in seconds when the rate is not known", () => {
+    expect(frameStart(3.4, 0)).toBe(3);
   });
 });

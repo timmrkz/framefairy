@@ -3,7 +3,10 @@ package engine
 import (
 	"bytes"
 	"context"
+	"image/jpeg"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -30,7 +33,7 @@ func TestTheSameFrameAskedForFromEveryDirectionAtOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got[i], errs[i] = e.Still(context.Background(), source, at, 320)
+			got[i], errs[i] = e.Still(context.Background(), source, at, 25, 320)
 		}()
 	}
 	wg.Wait()
@@ -61,7 +64,7 @@ func TestTheSameFrameAskedForFromEveryDirectionAtOnce(t *testing.T) {
 	}
 
 	// And nothing half written is left lying about in the folder.
-	dir := got[0][:len(got[0])-len("320-000001.jpg")]
+	dir := filepath.Dir(got[0])
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -74,4 +77,63 @@ func TestTheSameFrameAskedForFromEveryDirectionAtOnce(t *testing.T) {
 			t.Errorf("left behind: %s", entry.Name())
 		}
 	}
+}
+
+// The still is the frame the video preview shows at a moment: the one the
+// moment falls in. It was the frame at the whole second, and the app asked
+// for the nearest second, so a still laid over the video preview while it
+// caught up was up to a second away from the frame that followed it.
+func TestAStillIsTheFrameTheMomentFallsIn(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	// Ten frames a second, each a grey of its own: frame n is 20 times n.
+	source := filepath.Join(t.TempDir(), "frames.mp4")
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "color=c=black:s=64x36:r=10:d=2",
+		"-vf", "geq=lum='20*mod(N,10)+10':cb=128:cr=128",
+		"-c:v", "libx264", "-preset", "ultrafast", "-g", "5", "-pix_fmt", "yuv420p", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("making the episode: %s %s", err, out)
+	}
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	for n := range 10 {
+		for _, into := range []float64{0, 0.3, 0.7, 0.99} {
+			at := 1 + (float64(n)+into)/10
+			path, err := e.Still(context.Background(), source, at, 10, 160)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The still is written in full range, which stretches video
+			// levels, 16 to 235, over 0 to 255.
+			want := (20*n + 10 - 16) * 255 / 219
+			if got := greyOf(t, path); got < want-6 || got > want+6 {
+				t.Errorf("at %.3fs the still is grey %d, frame %d is %d", at, got, n+10, want)
+			}
+		}
+	}
+}
+
+// greyOf is the mean brightness of a jpeg.
+func greyOf(t *testing.T, path string) int {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := jpeg.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := img.Bounds()
+	sum, count := 0, 0
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, _, _, _ := img.At(x, y).RGBA()
+			sum += int(r >> 8)
+			count++
+		}
+	}
+	return sum / count
 }

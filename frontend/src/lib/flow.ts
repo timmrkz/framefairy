@@ -111,6 +111,18 @@ export function pictureIsStale(s: PictureState): boolean {
   return Math.abs(s.shows - s.at) > 0.5;
 }
 
+// Where the frame a moment falls in starts: the frame a video element
+// shows when it is sent there, the last one that starts at or before it.
+// The still read from the file while the video preview catches up has to
+// be that same frame, or the picture changes the moment the video lands.
+// It was the nearest whole second, which from half past on is the next
+// second's frame. The engine works the frame out the same way, Still in
+// engine/frames.go. An episode whose rate is not known counts in seconds.
+export function frameStart(t: number, fps: number): number {
+  const rate = fps > 0 ? fps : 1;
+  return Math.floor(Math.max(t, 0) * rate + 1e-6) / rate;
+}
+
 // A part of the episode, in seconds. The range picker works in these.
 export type Span = { from: number; to: number };
 
