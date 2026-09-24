@@ -580,8 +580,11 @@ place.
       the log. **New** becomes **Cancel** the moment a first search is on
       its way, while it still waits for the transcript, and there it calls
       the search off before it starts. While a search runs, Cancel stops
-      it. A render, which has no row to fill, wears the beam and the fill
-      in the button.
+      it. A render is not a search, so it leaves this head alone:
+      **New** stays New and cannot be pressed until the render is done,
+      because one lane does the work. The render shows in the **Render**
+      button it was started from, which fills from the moment it is
+      pressed and says **Cancel**, and a click on it stops the render.
     - **How far a search is, is measured.** The fill is the share of the
       search that is done, measured against how long the same parts took
       the last time on this machine. Inside a part, what the model counts
@@ -893,14 +896,17 @@ and on. There is no way to render the pictures alone: a change to them is a
 change to the clip, and the next render writes the whole of it again. The
 reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 
-- **The thumbnail button**, the picture in the row under the clip timeline,
-  makes the frame under the playhead a thumbnail. **T** does the same. It
-  can only be pressed with the playhead inside the clip, because a frame
-  that was cut is not in the short.
-- **Each thumbnail is a mark** along the foot of the clip timeline, a
-  picture in the shape of a short outlined in the app's colour. It is
-  filled while the playhead is on its frame, and then the button is
-  pressed too.
+- **The thumbnail button**, in the row under the clip timeline, makes the
+  frame under the playhead a thumbnail. **T** does the same. It is not a
+  mode, so it never looks pressed. Its icon says what a click does: a
+  picture with a plus adds one, and a picture with a minus, shown while
+  the playhead stands on a thumbnail, removes it. It can only be pressed
+  with the playhead inside the clip, because a frame that was cut is not in
+  the short.
+- **Each thumbnail is a mark** along the foot of the clip timeline, the
+  same picture icon in the app's colour, so a click on the button is seen
+  leaving its picture on the timeline. It sits on a chip of the app's
+  colour while the playhead is on its frame.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
   What one click adds, one click takes away.
 - **A click on a mark** puts the playhead on it, so the video preview shows

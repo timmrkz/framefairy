@@ -139,10 +139,14 @@
   // grew, and with it the first search.
   const isTranscribing = $derived(!!transcribing);
   const isFinding = $derived(!!finding);
-  // Anything in the work lane, a search or a render. While it runs, the
-  // head of the clip list carries it: New becomes Cancel and the line under
-  // the head fills up. Nothing is added to the column and nothing moves.
-  const busy = $derived(!!working || starting);
+  // A render is shown by the Render button it was started from, which
+  // fills up and becomes Cancel. The head of the clip list is about
+  // finding clips, so a render is not its business.
+  const rendering = $derived(working?.kind === "render");
+  // A search in the work lane. While it runs, the head of the clip list
+  // carries it: New becomes Cancel and the line under the head fills up.
+  // Nothing is added to the column and nothing moves.
+  const busy = $derived((!!working && !rendering) || starting);
   // What the work is doing right now, in the engine's words: loading the
   // model, reading the transcript, how many clips are found.
   const doing = $derived(working?.progress?.text ?? "");
@@ -175,6 +179,18 @@
         title: `${finding || starting ? "Stop looking for clips" : "Stop the render"}${leftOfWork ? `, ${leftOfWork}` : ""}`,
       };
     }
+    // One lane does the work, so a search waits for the render. New stays
+    // New and says why it cannot be pressed.
+    if (rendering) {
+      return {
+        label: "New",
+        icon: "plus",
+        run: newClips,
+        off: true,
+        primary: true,
+        title: "Clips can be looked for once the render is done",
+      };
+    }
     if (lookPending) {
       return {
         label: "Cancel",
@@ -200,6 +216,12 @@
   });
 
   // How far whatever the head is about has come.
+  // How far the render has come, for the Render button.
+  const renderShare = $derived(
+    rendering && working?.progress && working.progress.fraction >= 0
+      ? working.progress.fraction
+      : -1,
+  );
   const share = $derived(
     lane.job?.progress && lane.job.progress.fraction >= 0 ? lane.job.progress.fraction : -1,
   );
@@ -1347,10 +1369,23 @@
     });
   });
 
+  // The clip a render was asked for, from the click until the job is
+  // there, so the button fills from the moment it is pressed.
+  let renderAsked = $state("");
+  $effect(() => {
+    if (working) renderAsked = "";
+  });
+
   async function render(clip: ClipEntry) {
     problem = "";
-    const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
-    waiting = [...waiting, job.id];
+    renderAsked = clip.key;
+    try {
+      const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
+      waiting = [...waiting, job.id];
+    } catch (err) {
+      renderAsked = "";
+      problem = errorText(err);
+    }
   }
 
   $effect(() => {
@@ -1988,15 +2023,12 @@
               class:primary={action.primary}
               onclick={action.run}
               disabled={action.off}
-              title={`${action.title}${leftOfWork ? `, ${leftOfWork}` : ""}`}
+              title={`${action.title}${busy && leftOfWork ? `, ${leftOfWork}` : ""}`}
               aria-haspopup={action.label === "New" && covering ? "dialog" : undefined}
             >
-              <!-- How a render is going, inside the button it was
-                   started from and behind its own words. A search says
-                   how it is going in the row its next clip will appear
-                   in, where it can say what it is doing as well, so the
-                   button only offers to stop it. -->
-              {#if lane.job && !finding}<Busy fraction={share} />{/if}
+              <!-- A search says how it is going in the row its next clip
+                   will appear in, where it can say what it is doing as
+                   well, so the button only offers to stop it. -->
               <Icon name={action.icon} />
               {action.label}
             </button>
@@ -2085,22 +2117,22 @@
           </button>
         {/if}
         {#if current}
-          <!-- The frame under the playhead as a thumbnail, and pressed while
-               the playhead stands on one, when a click takes it away. -->
+          <!-- The frame under the playhead as a thumbnail. It is not a
+               mode, so it never looks pressed: its picture says what a
+               click does, a plus to add one and a minus when the
+               playhead stands on one. -->
           <button
             class="glyph"
-            class:on={thumbHere !== null}
-            aria-pressed={thumbHere !== null}
             aria-label={thumbHere !== null ? "Remove this thumbnail" : "Make this frame a thumbnail"}
             disabled={renderingCurrent || (thumbHere === null && !inShort)}
             onclick={toggleThumbnail}
             title={thumbHere !== null
-              ? "Remove this thumbnail. T does the same"
+              ? "Remove the thumbnail at the playhead. T does the same"
               : inShort
                 ? "Make the frame under the playhead a thumbnail. Render writes it beside the short. T does the same"
                 : "Put the playhead in the clip to make a thumbnail of the frame there"}
           >
-            <Icon name="thumbnail" />
+            <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
         {/if}
         <!-- One job, whatever is chosen: go to the playhead. Going back to
@@ -2145,10 +2177,22 @@
             <button onclick={() => api.reveal(current.rendered!)}>Show in folder</button>
           {/if}
           <!-- The one act that matters, so it says how it is going in the
-               button it was started from, the same as New does. -->
-          <button class="primary render" onclick={() => render(current)} disabled={!!working}
-            >{#if renderingCurrent}<Busy fraction={share} />{/if}{renderingCurrent
-              ? "Rendering"
+               button it was started from, and becomes the way to stop it,
+               the same as New does for a search. -->
+          {@const inHand = renderingCurrent || renderAsked === current.key}
+          <button
+            class="primary render"
+            onclick={() => (inHand ? stopWork() : render(current))}
+            disabled={inHand ? stopping || !renderingCurrent : !!working}
+            title={inHand
+              ? `Stop the render${leftOfWork ? `, ${leftOfWork}` : ""}`
+              : working
+                ? "Render once the work running now is done"
+                : "Write the short, and its thumbnails beside it"}
+            >{#if inHand}<Busy fraction={renderingCurrent ? renderShare : -1} />{/if}{inHand
+              ? stopping
+                ? "Cancelling"
+                : "Cancel"
               : current.rendered
                 ? "Render again"
                 : "Render"}</button

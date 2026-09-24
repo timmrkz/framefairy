@@ -31,6 +31,7 @@
   } from "../lib/api";
   import { draftCaptions, inClip, inEpisode, insideClip, type CaptionDraft } from "../lib/flow";
   import Info from "./Info.svelte";
+  import Icon from "./Icon.svelte";
 
   let {
     path,
@@ -1424,7 +1425,9 @@
             ? "A thumbnail. Click to see it"
             : "A thumbnail. Click to see it, drag it to another frame. The thumbnail button or T removes it"}
           onpointerdown={(e) => grabThumb(m.at, e)}
-        ></div>
+        >
+          <Icon name="thumbnail" size={14} />
+        </div>
       {/each}
     {/if}
   </div>
@@ -1760,38 +1763,34 @@
     opacity: 1;
   }
 
-  /* A thumbnail: a picture in the shape of a short standing on the foot of
-     the track, outlined in the app's colour and filled with it while the
-     playhead is on its frame, under the hand or being dragged. Whole
-     pixels throughout, and wider to the hand than to the eye. */
+  /* A thumbnail: the picture the thumbnail button wears, standing on the
+     foot of the track in the app's colour. It sits on a chip of the app's
+     colour while the playhead is on its frame, under the hand or being
+     dragged. Whole pixels throughout. */
   .thumb {
     position: absolute;
     bottom: 3px;
-    width: 14px;
+    width: 18px;
     height: 18px;
-    margin-left: -7px;
+    margin-left: -9px;
+    display: grid;
+    place-items: center;
+    border-radius: 4px;
+    color: var(--accent-hi);
     cursor: ew-resize;
     touch-action: none;
     z-index: 6;
   }
 
-  .thumb::after {
-    content: "";
-    position: absolute;
-    left: 2px;
-    bottom: 0;
-    width: 10px;
-    height: 16px;
-    box-sizing: border-box;
-    border: 2px solid var(--accent-hi);
-    border-radius: 2px;
-    background: var(--ink-1);
+  .thumb :global(svg) {
+    pointer-events: none;
   }
 
-  .thumb:hover::after,
-  .thumb.here::after,
-  .thumb.active::after {
+  .thumb:hover,
+  .thumb.here,
+  .thumb.active {
     background: var(--accent);
+    color: #fff;
   }
 
   /* The playhead. */

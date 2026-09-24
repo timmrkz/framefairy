@@ -49,16 +49,18 @@ it back.
 - **The thumbnail button**, in the row under the clip timeline between loop and
   the crosshair, makes the frame under the playhead a thumbnail.
   **T** does the same.
-- **Every thumbnail is a mark on the clip timeline**, at its moment, in the
-  app's colour.
+  Its icon says what a click does, a picture with a plus or with a minus,
+  and it never looks pressed, because it is not a mode.
+- **Every thumbnail is a mark on the clip timeline**, at its moment: the
+  same picture icon, in the app's colour.
 - **A click on a mark** puts the playhead on it, so the video preview shows
   the frame.
 - **A mark is dragged** to another frame, and the playhead goes with it, so
   the video preview shows the frame under the hand. It is saved when the
   hand lets go, it lands on a whole frame and it stays inside the pieces the
   clip keeps.
-- **With the playhead on a thumbnail**, the button is lit and a click on it,
-  or **T**, removes that thumbnail. What one click adds, one click takes
+- **With the playhead on a thumbnail**, the button shows the minus and a
+  click on it, or **T**, removes that thumbnail. What one click adds, one click takes
   away.
 - **Undo** takes back adding, moving and removing, like any other edit of
   the clip.

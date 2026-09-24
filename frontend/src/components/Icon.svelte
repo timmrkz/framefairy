@@ -49,6 +49,17 @@
     <rect x="3.5" y="1.5" width="9" height="13" rx="1.8" />
     <circle cx="6.6" cy="5.4" r="1.1" />
     <path d="M3.8 11.6l2.6-2.7 2 2 1.5-1.5 2.3 2.3" />
+  <!-- The same picture made smaller, with what a click does beside it:
+       a plus to add a thumbnail, a minus to take the one here away. -->
+  {:else if name === "thumbnail-add" || name === "thumbnail-remove"}
+    <rect x="1.5" y="1.5" width="8" height="12" rx="1.6" />
+    <circle cx="4.3" cy="4.9" r="0.9" />
+    <path d="M1.8 10.4l2.2-2.3 1.6 1.6 1.2-1.2 2.4 2.4" />
+    {#if name === "thumbnail-add"}
+      <path d="M12.6 9.1v5M10.1 11.6h5" />
+    {:else}
+      <path d="M10.1 11.6h5" />
+    {/if}
   {:else if name === "locate"}
     <circle cx="8" cy="8" r="3.6" />
     <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" />
