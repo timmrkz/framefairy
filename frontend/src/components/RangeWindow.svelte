@@ -5,7 +5,6 @@
   // preview.
   import { onMount } from "svelte";
   import { clock, type WindowView } from "../lib/api";
-  import type { Reach } from "../lib/room";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
@@ -32,7 +31,7 @@
     ontranscription,
     least = 0,
     leastSays = "",
-    reach = null,
+    most = Infinity,
     reachSays = "",
   }: {
     duration: number;
@@ -73,12 +72,13 @@
     ontranscription?: () => void;
     // What a search can do with the window holds its edges. It is no
     // shorter than least, the clips asked for one after another at their
-    // shortest, and it reaches no further than the model reads in one
-    // request, which reach works out from where the window starts. The
-    // two sayings are what the window says while an edge is held by one.
+    // shortest, and no longer than most, the length the model reads in one
+    // request wherever the window is. One length, so a window that fits
+    // fits wherever it is moved. The two sayings are what the window says
+    // while an edge is held by one.
     least?: number;
     leastSays?: string;
-    reach?: Reach | null;
+    most?: number;
     reachSays?: string;
   } = $props();
 
@@ -132,10 +132,10 @@
   // The furthest an end may go from a start, and the earliest a start may
   // be for an end, as far as the model reads.
   function latest(start: number): number {
-    return reach ? reach.longestFrom(start) : duration;
+    return Math.min(start + most, duration);
   }
   function earliest(end: number): number {
-    return reach ? reach.earliestTo(end) : 0;
+    return Math.max(end - most, 0);
   }
 
   // What holds the window back while it is being drawn, so it can say so.
@@ -274,9 +274,9 @@
       if (kind === "from") from = startAt(to, t);
       else if (kind === "to") to = endAt(from, t);
       else if (kind === "move") {
-        // The window keeps its length where the model can read it, and
-        // gives up the end where it cannot. Moved back, it has its length
-        // again.
+        // The window keeps its length wherever it goes. Its length is
+        // never more than fits anywhere, so moving it is never held back
+        // by the model, only by the ends of the episode.
         from = Math.max(0, Math.min(round(here - grab), duration - span));
         to = endAt(from, from + span);
       } else {
@@ -466,7 +466,8 @@
       class="free quiet danger"
       class:shown={overWindow}
       class:beside={at(to) - at(from) < 40}
-      style="left: {at(to)}px"
+      class:tucked={at(to) - at(from) < 40 ? at(to) > width - 50 : at(to) > width - 26}
+      style="left: {at(to) - at(from) < 40 && at(to) > width - 50 ? at(from) : at(to)}px"
       title="Remove the clips in the window, so the model can read it again"
       aria-label="Remove the clips from {clock(from)} to {clock(to)}"
       aria-haspopup="dialog"
@@ -634,6 +635,17 @@
 
   .free.beside {
     margin-left: 4px;
+  }
+
+  /* The info mark has the top right corner of the track, so a window that
+     ends there keeps its trash can clear of it: one place further in, or
+     before the start of a window too narrow to hold it. */
+  .free.tucked {
+    margin-left: -50px;
+  }
+
+  .free.beside.tucked {
+    margin-left: -24px;
   }
 
   .free:hover:not(:disabled),
@@ -821,7 +833,9 @@
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    z-index: 5;
+    /* Over everything on the track, the mark that pauses the reading and
+       the trash can included: it is what the hand is doing right now. */
+    z-index: 8;
   }
 
   .said .row {

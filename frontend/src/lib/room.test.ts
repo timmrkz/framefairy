@@ -90,20 +90,40 @@ describe("what the clip settings may ask for", () => {
 describe("a window put back inside what it may be", () => {
   test("too long for the model: the end gives way", () => {
     const r = new Reach(room(1000, 400), 400);
-    const w = fitWindow({ from: 100, to: 400 }, r, 20);
+    const w = fitWindow({ from: 100, to: 400 }, r.anywhere(), 20, 400);
     expect(w.from).toBe(100);
     expect(r.fits(w.from, w.to)).toBe(true);
     expect(w.to).toBeGreaterThan(130);
   });
 
   test("too short for its clips: it grows, backwards at the end", () => {
-    const r = new Reach(room(1e9, 400), 400);
-    expect(fitWindow({ from: 100, to: 120 }, r, 60)).toEqual({ from: 100, to: 160 });
-    expect(fitWindow({ from: 380, to: 400 }, r, 60)).toEqual({ from: 340, to: 400 });
+    expect(fitWindow({ from: 100, to: 120 }, 400, 60, 400)).toEqual({ from: 100, to: 160 });
+    expect(fitWindow({ from: 380, to: 400 }, 400, 60, 400)).toEqual({ from: 340, to: 400 });
   });
 
   test("a window that fits stays as it is", () => {
-    const r = new Reach(room(1e9, 400), 400);
-    expect(fitWindow({ from: 10, to: 300 }, r, 60)).toEqual({ from: 10, to: 300 });
+    expect(fitWindow({ from: 10, to: 300 }, 400, 60, 400)).toEqual({ from: 10, to: 300 });
+  });
+});
+
+// What Tim ran into: the whole episode drawn from the start was held back,
+// and the same window moved to the right ran into the limit again, because
+// what is not heard yet is weighed heavier than what is. One length for
+// the whole episode fits wherever the window goes.
+describe("one length wherever the window is", () => {
+  test("a window of the length that fits anywhere fits everywhere", () => {
+    // Heard for an hour at 100 characters every four seconds, 25 a second,
+    // and weighed at 40 a second after that.
+    const r = new Reach(room(80000, 3600, 40), 4 * 3600);
+    const most = r.anywhere();
+    expect(Number.isInteger(most)).toBe(true);
+    for (let from = 0; from + most <= 4 * 3600; from += 7.3) {
+      expect(r.fits(from, from + most)).toBe(true);
+    }
+    // And a window that fits at the start does not fit everywhere, which
+    // is why the window is not held by where it is.
+    const atStart = r.longestFrom(0);
+    expect(atStart).toBeGreaterThan(most);
+    expect(r.fits(4 * 3600 - atStart, 4 * 3600)).toBe(false);
   });
 });

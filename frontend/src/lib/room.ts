@@ -105,8 +105,16 @@ export class Reach {
   }
 
   // The longest window that fits wherever it is drawn: the shortest of the
-  // longest windows from every start. It is what the clip settings are held
-  // to, so the clips they ask for fit in a window drawn anywhere.
+  // longest windows from every start. It is the one length the window on
+  // the range picker may have, and what the clip settings are held to.
+  //
+  // One length for the whole episode, and not the longest that fits where
+  // the window happens to be. Speech is denser in some places than others,
+  // and what is not heard yet is weighed with room to spare, so the longest
+  // window that fits changes as a window is moved along. A window that fits
+  // at the start and not at the end, the same length both times, is a limit
+  // nobody can see a reason for. So the window has the length that fits
+  // anywhere, and keeps it wherever it goes, on a whole second.
   //
   // The densest stretch decides it, and a window is densest when it starts
   // just before a line ends: the line is counted whole for a moment of it.
@@ -123,7 +131,7 @@ export class Reach {
       if (end >= this.duration) continue;
       shortest = Math.min(shortest, end - start);
     }
-    return shortest;
+    return Math.floor(shortest);
   }
 
   // The first index where test turns true, over lines in order, or the
@@ -160,19 +168,19 @@ export function longestShortest(reach: number, count: number, floor: number, cap
   return Math.max(floor, Math.min(cap, Math.floor((reach + 0.01) / Math.max(count, 1))));
 }
 
-// A window put back inside what it may be: no longer than the model reads
-// from where it starts, no shorter than its clips need. It keeps its start
-// when it can, and gives up the end first, because the start is where the
-// window was put.
+// A window put back inside what it may be: no longer than most, the length
+// that fits anywhere, and no shorter than its clips need. It keeps its
+// start when it can, and gives up the end first, because the start is
+// where the window was put.
 export function fitWindow(
   win: { from: number; to: number },
-  reach: Reach,
+  most: number,
   least: number,
+  duration: number,
 ): { from: number; to: number } {
-  const duration = reach.duration;
   let from = Math.min(Math.max(win.from, 0), duration);
   let to = Math.min(Math.max(win.to, from), duration);
-  to = Math.min(to, reach.longestFrom(from));
+  to = Math.min(to, from + most);
   if (to - from < least) {
     to = Math.min(duration, from + least);
     from = Math.max(0, to - least);

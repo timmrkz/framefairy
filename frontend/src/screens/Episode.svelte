@@ -489,7 +489,7 @@
   // are being found for it, because then it is the window being searched.
   function keepWindow() {
     if (finding || starting || duration <= 0 || to <= from) return;
-    const kept = fitWindow({ from, to }, reach, leastLong);
+    const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
     if (Math.abs(kept.from - from) > 0.001) from = kept.from;
     if (Math.abs(kept.to - to) > 0.001) to = kept.to;
   }
@@ -1461,7 +1461,7 @@
     locked={finding || starting}
     least={leastLong}
     leastSays="room for {count} clips of {min} s"
-    {reach}
+    most={reachAnywhere}
     reachSays={roomView?.by === "budget"
       ? "all the budget pays for"
       : roomView?.by === "memory"

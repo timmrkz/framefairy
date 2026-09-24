@@ -630,8 +630,14 @@ place.
       far the model reads is the engine's to say, from the model chosen in
       the settings, and the range picker adds up the lines a window covers
       as it is dragged, see [ENGINE.md](ENGINE.md#how-much-one-search-can-read).
-      Moved somewhere busier, a window gives up its end, and moved back it
-      has its length again. When the clips ask for more than the window
+      The window has one longest length for the whole episode, the length
+      that fits wherever it is drawn, so a window that fits somewhere fits
+      everywhere and is never held back as it is moved. Speech is denser in
+      some places than in others, and what is not transcribed yet is
+      weighed with room to spare, so the longest window that fits changes
+      along the episode, and a window that fitted at the start and not at
+      the end at the same length was a limit nobody could see a reason
+      for. The pill is over everything on the track while it is there. When the clips ask for more than the window
       has, the window grows to hold them, from its end.
     - While clips are being found for it, the window cannot be moved and a
       soft light passes through it every couple of seconds, which is the

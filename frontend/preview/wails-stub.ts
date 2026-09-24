@@ -569,6 +569,15 @@ export const Call = {
           free: [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
         });
       case "Room":
+        // ?uneven is an episode read for its first hour, lighter there than
+        // the rest is weighed, the way a real one is: the longest window
+        // that fits is longer from the start than further on, which is
+        // what Tim ran into moving a window along.
+        if (location.search.includes("uneven")) {
+          const lines = [];
+          for (let at = 0; at + 3 <= 3600; at += 4) lines.push({ start: at, end: at + 3, chars: 80 });
+          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: 3600, rate: 30 });
+        }
         // A model that reads everything, or with ?small one that reads
         // about 35 minutes at a time, the way Qwen3 14B does, and with
         // ?memory a machine whose memory holds about 1.3 hours.
