@@ -497,10 +497,11 @@ export const Call = {
         });
       case "Room":
         // A model that reads everything, or with ?small one that reads
-        // about 35 minutes at a time, the way Qwen3 14B does.
+        // about 35 minutes at a time, the way Qwen3 14B does, and with
+        // ?memory a machine whose memory holds about 1.3 hours.
         return Promise.resolve({
-          chars: location.search.includes("small") ? 52000 : 600000,
-          by: "context",
+          chars: location.search.includes("small") ? 52000 : location.search.includes("memory") ? 117000 : 600000,
+          by: location.search.includes("memory") ? "memory" : "context",
           lines: [],
           heard: 0,
           rate: 25,

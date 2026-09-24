@@ -18,8 +18,9 @@ export interface LineWeight {
 export interface RoomView {
   // The most characters of transcript one request can carry.
   chars: number;
-  // What sets it: "context" for what the model holds at once, "budget" for
-  // what one search may cost.
+  // What sets it: "context" for what the model holds at once, "memory" for
+  // what this machine can hold it with, "budget" for what one search may
+  // cost.
   by: string;
   lines: LineWeight[];
   // How far the transcript reaches, silence at its end included.

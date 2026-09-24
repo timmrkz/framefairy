@@ -1462,7 +1462,11 @@
     least={leastLong}
     leastSays="room for {count} clips of {min} s"
     {reach}
-    reachSays={roomView?.by === "budget" ? "all the budget pays for" : "all the model reads at once"}
+    reachSays={roomView?.by === "budget"
+      ? "all the budget pays for"
+      : roomView?.by === "memory"
+        ? "all this computer's memory holds"
+        : "all the model reads at once"}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
     {partly}

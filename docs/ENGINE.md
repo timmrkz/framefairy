@@ -228,6 +228,16 @@ is worked out from the model that is going to read it, in `engine/room.go`:
   that comes the room for the answer, 16,384 tokens at most, with the
   thinking written inside it, and 2,048 more. A token is taken as two and a
   half characters of German, the same rate the context is sized by.
+- **A local model also has to fit in the machine's memory**, context and
+  all, by the same rule the models are offered by: a context is fine when
+  the model still leaves 8 GB of headroom, and a model offered as tight,
+  because it only fits without the headroom, gets the 65,536 tokens it was
+  judged at and no more. A machine that does not say how much memory it
+  has gets 65,536 too. llama-server is never started with a larger context
+  than this, whatever the rounding up to a power of two would ask for.
+  On a 32 GB Mac, Gemma 4 26B is held by its own context and Ministral 3
+  8B by memory, at a little over three hours. On a 16 GB Mac, Gemma 4 12B
+  and Ministral 3 8B read about 1.3 hours.
 - **Through the API** a model holds its context window, less twice the
   answer ceiling, because an answer that thinks through the whole ceiling
   is asked again with twice as much and that has to fit too. What `--budget`

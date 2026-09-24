@@ -26,6 +26,14 @@ func TestLocalContextIsWhatTheMakerPublishes(t *testing.T) {
 	}
 }
 
+// machine makes the tests a machine with this much memory, and puts the
+// real one back after.
+func machine(t *testing.T, total int64) {
+	was := machineMemory
+	machineMemory = func() int64 { return total }
+	t.Cleanup(func() { machineMemory = was })
+}
+
 func roomOf(opts PlanOptions) Room {
 	if opts.Count == 0 {
 		opts.Count, opts.MinLen, opts.MaxLen = 12, 20, 30
@@ -37,6 +45,7 @@ func roomOf(opts PlanOptions) Room {
 }
 
 func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
+	machine(t, 128<<30)
 	around := runeLen(SystemPrompt) + runeLen(buildPrompt(nil, PlanOptions{Count: 12, MinLen: 20, MaxLen: 30}))
 	for model, tokens := range map[string]int{
 		"gemma-4-26B_q4_0-it.gguf": 262144 - 16384 - 2048,
@@ -180,5 +189,59 @@ func TestTheRateOfWhatIsNotHeardYet(t *testing.T) {
 	light := []LineWeight{{0, 3, 100}, {4, 1000, 100}}
 	if RateOf(light) != SpokenChars {
 		t.Error("a light episode weighs less than the starting point")
+	}
+}
+
+func TestAWindowNeverAsksForMoreMemoryThanTheMachineHas(t *testing.T) {
+	for _, m := range LanguageModels() {
+		for _, total := range []int64{8 << 30, 16 << 30, 24 << 30, 32 << 30, 64 << 30} {
+			got := MemoryContext(m, total)
+			fine := func(ctx int) bool {
+				needs := m.NeedsAt(ctx)
+				return needs+memoryHeadroom <= total || (ctx <= judgedContext && needs <= total)
+			}
+			if got > 0 && !fine(got) {
+				t.Errorf("%s on %d GiB: %d tokens take %d bytes", m.Name, total>>30, got, m.NeedsAt(got))
+			}
+			if got < contextCeiling && fine(got+1) {
+				t.Errorf("%s on %d GiB: %d tokens, and one more would fit", m.Name, total>>30, got)
+			}
+		}
+	}
+	gemma, _ := LanguageModelByName("gemma-4-26B_q4_0-it.gguf")
+	// Tim's machine: all of it, with the headroom left.
+	if got := MemoryContext(gemma, 32<<30); got != contextCeiling {
+		t.Errorf("Gemma 4 26B on 32 GiB holds %d", got)
+	}
+	if got := MemoryContext(gemma, 8<<30); got != 0 {
+		t.Errorf("Gemma 4 26B on 8 GiB holds %d", got)
+	}
+	if got := MemoryContext(gemma, 0); got != judgedContext {
+		t.Errorf("a machine that does not say: %d", got)
+	}
+	// A model offered as tight gets what it was offered for.
+	ministral, _ := LanguageModelByName("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf")
+	if got := MemoryContext(ministral, 16<<30); got != judgedContext {
+		t.Errorf("Ministral 3 8B on 16 GiB holds %d", got)
+	}
+}
+
+func TestTheRoomOnASmallMachineIsItsMemory(t *testing.T) {
+	machine(t, 16<<30)
+	room := roomOf(PlanOptions{Local: &LocalModel{Model: "/m/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"}})
+	if room.By != "memory" || room.Tokens != judgedContext-localAnswerRoom(48000) {
+		t.Errorf("Ministral 3 8B on 16 GiB: %+v", room)
+	}
+	// And the context it is started with is never more than was checked,
+	// however contextFor rounds.
+	if size := localContextFor("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", room.Chars, 48000); size > judgedContext {
+		t.Errorf("started with %d", size)
+	}
+	if size := localContextFor("Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", 1_000_000, 48000); size > judgedContext {
+		t.Errorf("a prompt too long for the room starts it with %d", size)
+	}
+	machine(t, 4<<30)
+	if size := localContextFor("gemma-4-26B_q4_0-it.gguf", 1000, 48000); size != 4096 {
+		t.Errorf("a model with no room at all is started with %d", size)
 	}
 }

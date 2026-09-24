@@ -30,7 +30,8 @@ type Room struct {
 	// Tokens is the same in tokens, which is what the limit is.
 	Tokens int `json:"tokens"`
 	// By is what sets it: "context" for what the model can hold at once,
-	// "budget" for what one search may cost.
+	// "memory" for what this machine can hold it with, "budget" for what
+	// one search may cost.
 	By string `json:"by"`
 }
 
@@ -68,13 +69,73 @@ func LocalContext(model string) int {
 	return unknownContext
 }
 
+// machineMemory is how much memory this machine has. It is a variable so
+// a test can be any machine.
+var machineMemory = MachineMemory
+
+// MemoryContext is the largest context a search with this model can have
+// on a machine with this much memory, by the rule the app offers models
+// by, see FitsIn. A context that leaves the headroom free is always fine.
+// A model that only fits tight was offered for a search of judgedContext,
+// so that much it may have, and no more. A machine that does not say how
+// much it has gets judgedContext too: nothing is promised, and nothing
+// larger than what every model was judged at is asked of it.
+func MemoryContext(m LanguageModel, total int64) int {
+	if total <= 0 {
+		return judgedContext
+	}
+	well := largestContext(func(ctx int) bool { return m.NeedsAt(ctx)+memoryHeadroom <= total })
+	tight := min(largestContext(func(ctx int) bool { return m.NeedsAt(ctx) <= total }), judgedContext)
+	return max(well, tight)
+}
+
+// largestContext is the largest context up to contextCeiling that fits,
+// or zero when none does. What a context takes only grows with it.
+func largestContext(fits func(int) bool) int {
+	if !fits(0) {
+		return 0
+	}
+	lo, hi := 0, contextCeiling
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if fits(mid) {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return lo
+}
+
+// localHeld is the most tokens a search with this local model can have on
+// this machine, and what sets it: "context" for what the model holds,
+// "memory" for what the machine does. A model the engine does not know the
+// shape of is held by its context alone, which for such a model is small.
+func localHeld(model string) (int, string) {
+	held := LocalContext(model)
+	m, known := LanguageModelByName(filepath.Base(model))
+	if !known {
+		return held, "context"
+	}
+	if fits := MemoryContext(m, machineMemory()); fits < held {
+		return fits, "memory"
+	}
+	return held, "context"
+}
+
 // localContextFor is the context a local model is started with for a
 // prompt this long: what contextFor asks for, never more than the model
-// holds. The room keeps every prompt inside what it holds, so this never
-// cuts a prompt short, it only keeps a small model from being started with
-// a context it was not made for.
+// holds or the machine has memory for. The room keeps every prompt inside
+// both, so this never cuts a prompt short. It keeps a model from being
+// started with a context it was not made for, and the rounding up in
+// contextFor from asking the machine for memory the room never checked.
 func localContextFor(model string, promptChars, maxTokens int) int {
-	return min(contextFor(promptChars, maxTokens), LocalContext(model))
+	held, _ := localHeld(model)
+	// Never nothing: llama-server takes a context of 0 to mean the whole
+	// of what the model holds, which is the very memory this keeps it
+	// from asking for. A model that has no room at all is refused before
+	// it is started, and this only catches it being loaded ahead of that.
+	return max(min(contextFor(promptChars, maxTokens), held), 4096)
 }
 
 // SearchRoom is the room a search made with these options has. It is what
@@ -99,12 +160,14 @@ func SearchRoom(opts Options, logDir string) Room {
 func planRoom(opts PlanOptions) Room {
 	around := runeLen(SystemPrompt) + runeLen(buildPrompt(nil, opts))
 	if opts.Local != nil {
-		held := contextCeiling
+		// A server somebody started themselves has the context and the
+		// memory they gave it, which the engine cannot know.
+		held, by := contextCeiling, "context"
 		if opts.Local.URL == "" || opts.Local.Model != "" {
-			held = LocalContext(opts.Local.Model)
+			held, by = localHeld(opts.Local.Model)
 		}
 		tokens := max(held-localAnswerRoom(opts.MaxTokens), 0)
-		return Room{Chars: charsFor(tokens, localCharsPerToken, around), Tokens: tokens, By: "context"}
+		return Room{Chars: charsFor(tokens, localCharsPerToken, around), Tokens: tokens, By: by}
 	}
 
 	// The API. The answer is given room for the retry as well: a model that
