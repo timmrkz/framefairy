@@ -197,13 +197,31 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		"-c", itoa(contextSize), "-ngl", "999",
 		// One ask at a time, with the whole context for it. It also keeps
 		// what one ask read for the next, so a search that follows a
-		// warm-up finds the start of its prompt already read.
-		"-np", "1"}
+		// warm-up finds the start of its prompt already read. Left to
+		// itself the server makes four slots and a sliding window cache
+		// for each, which is memory nothing uses, and the memory a model
+		// is judged by assumes one. See windowSpare in language.go.
+		"-np", "1",
+		// Level 4 is where llama.cpp says what it took from memory: the
+		// cache, the working buffers, and the checkpoints of the window it
+		// keeps in ordinary memory. Level 3, its own default, leaves all
+		// of that out of the log. It adds a few lines an ask, not a line
+		// a token.
+		"-lv", "4"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	cmd := exec.Command(server, args...)
 	var logFile *os.File
 	if logDir != "" {
-		if logFile, err = os.Create(filepath.Join(logDir, "llm-server.log")); err == nil {
+		// The model can be loaded ahead of a search, before anything else
+		// of the episode has made its logs folder. Without the folder the
+		// log was lost, and with it the only record of what the model
+		// took from memory.
+		if err = os.MkdirAll(logDir, 0o755); err == nil {
+			logFile, err = os.Create(filepath.Join(logDir, "llm-server.log"))
+		}
+		if err != nil {
+			e.Log.Warn("llama-server's output is not kept: %s", err)
+		} else {
 			cmd.Stdout, cmd.Stderr = logFile, logFile
 		}
 	}
@@ -213,10 +231,19 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		return "", nil, renderErr("cannot start %s: %s", server, err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
+	// exited is closed once the server has gone, and waitErr says how.
+	// Whether it has gone is asked of the channel and never of
+	// cmd.ProcessState, which Wait writes on its own goroutine.
+	exited := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(exited)
+	}()
 	stop := func() {
-		if cmd.ProcessState == nil {
+		select {
+		case <-exited:
+		default:
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
@@ -237,12 +264,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		case <-ctx.Done():
 			stop()
 			return "", nil, ctx.Err()
-		case err := <-exited:
+		case <-exited:
 			if logFile != nil {
 				logFile.Close()
 			}
 			return "", nil, renderErr("%s stopped while loading the model (%v). Its output is "+
-				"in %s", server, err, filepath.Join(logDir, "llm-server.log"))
+				"in %s", server, waitErr, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long

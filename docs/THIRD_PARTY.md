@@ -1,160 +1,61 @@
 # Third-party notices
 
-`framefairy`, `framefairy-app` and `framefairy-train` are built from the Go standard
-library plus the third-party work listed here. All of it allows commercial use and distribution, on the
-condition that the notices below ship with every copy. Include this file with
-every build you distribute, and show it somewhere in the app's about screen
-once there is one.
+Frame Fairy is made with other people's work: Go and the modules compiled
+into the app, the packages its interface is built from, the speech runtime,
+ffmpeg and llama-server with the libraries inside them, the caption fonts,
+code taken into the engine by hand, and the models the app fetches. Almost
+all of it may be used in a paid product on one condition, that its
+copyright notice and licence text go with every copy. A link is not that:
+the text itself goes.
 
-## Parakeet TDT 0.6B v3 (speech model)
+## Where the notices are
 
-`framefairy` uses NVIDIA's Parakeet TDT 0.6B v3 speech recognition model, in the
-int8 ONNX conversion published by the sherpa-onnx project. The model is
-downloaded separately and is not part of this source code. If a future build
-ships the model, this attribution must ship with it.
+In `notices/`, and nowhere else. `notices/notices.json` lists every piece
+of work with its version, its licence, where it comes from, where it is in
+Frame Fairy and anything the licence asks to be said besides its text, and
+`notices/texts/` holds the texts. The app has them built in and shows them
+under **Help → Acknowledgements**, which is where apps keep them.
 
-- Model: nvidia/parakeet-tdt-0.6b-v3, © NVIDIA, https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
-- Conversion: sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8, https://github.com/k2-fsa/sherpa-onnx
-- Licence: Creative Commons Attribution 4.0 International (CC BY 4.0),
-  https://creativecommons.org/licenses/by/4.0/
-- Changes: the model was converted to ONNX and quantised to int8 by the
-  sherpa-onnx project. `framefairy` uses it unmodified.
+| Part | What |
+| --- | --- |
+| The app | Go, the Go modules compiled into the app, and pigo and pico, whose face detector and face data the engine carries |
+| The app's interface | the npm packages in the interface bundle |
+| Speech recognition | the sherpa-onnx Go bindings and ONNX Runtime with its own third-party notices |
+| ffmpeg | ffmpeg, FreeType, FriBidi, HarfBuzz and libass |
+| llama-server | llama.cpp and the eight small libraries inside the server |
+| Caption fonts | Inter, Anton and Archivo Black, under the SIL Open Font Licence |
+| Fetched by the app from its maker | the speech model, credited as CC BY 4.0 asks, and the language models |
 
-## sherpa-onnx (speech runtime)
+## How they are made, and kept complete
 
-The `asr` package uses the Go bindings of sherpa-onnx by the k2-fsa project,
-which bring prebuilt native libraries for each platform.
+Nothing in `notices/` is written by hand except `notices/kept/`, the two
+notices no module brings: pigo and pico. `make notices` writes the rest
+with `notices/gen`, from what the programs are really built from:
 
-- Source: https://github.com/k2-fsa/sherpa-onnx and
-  https://github.com/k2-fsa/sherpa-onnx-go (version 1.13.8)
-- Licence: Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0
-- The full licence text is in the LICENSE file of each Go module
-  (`github.com/k2-fsa/sherpa-onnx-go-macos`, `-linux`, `-windows`) and must be
-  included with any build that ships those libraries.
+- `go list -deps` of `framefairy-app` and `framefairy`, for macOS, Linux
+  and Windows, and each module's own licence file from the module cache
+- the source maps of an interface build, which name every file of every
+  package that went into the bundle, and each package's licence file
+- the source trees in `.build/` that `make` builds ffmpeg and llama-server
+  from, at the versions their build scripts pin
+- the few texts nothing on disk holds, fetched from their makers: ONNX
+  Runtime's licence and third-party notices at the version the speech
+  library carries, and the texts of CC BY 4.0 and Apache 2.0 from the
+  SPDX licence list
 
-## ONNX Runtime
+It refuses what it cannot place, a package with no licence file or a
+licence it cannot name, rather than write a notice that says less than the
+licence asks.
 
-The sherpa-onnx libraries include Microsoft's ONNX Runtime
-(`onnxruntime.dll`, `libonnxruntime.dylib`, `libonnxruntime.so`).
+Three checks say when it is due:
 
-- Source: https://github.com/microsoft/onnxruntime
-- Licence: MIT License, Copyright (c) Microsoft Corporation
-
-## pigo
-
-The face detector in `engine/faces.go` is adapted from pigo by Endre Simo.
-Only the upright detector, the clustering step and the cascade unpacking were
-taken, and they were rewritten to fit this code base.
-
-Source: https://github.com/esimov/pigo (version 1.4.6)
-
-```
-MIT License
-
-Copyright (c) 2018 Endre Simo
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-## pico
-
-The trained face data in `engine/facefinder` is the `facefinder` cascade from
-pico by Nenad Markus, which pigo redistributes. The method is described in
-N. Markus, M. Frljak, I. S. Pandzic, J. Ahlberg and R. Forchheimer, "Object
-Detection with Pixel Intensity Comparisons Organized in Decision Trees",
-http://arxiv.org/abs/1305.4537
-
-Source: https://github.com/nenadmarkus/pico
-
-```
-MIT License
-
-Copyright (c) 2013, Nenad Markus
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-## Wails (desktop app)
-
-`framefairy-app` is built with Wails v3, which is compiled into the app together
-with its own Go dependencies. The notices of those dependencies are collected
-before the first release, as part of the packaging work.
-
-- Source: https://github.com/wailsapp/wails (v3.0.0-beta.23), and its
-  JavaScript runtime `@wailsio/runtime` from the same project
-- Licence: MIT, © Lea Anthony
-
-## Svelte (app interface)
-
-The app's interface is written with Svelte, which compiles into the built
-interface that ships inside the app.
-
-- Source: https://github.com/sveltejs/svelte
-- Licence: MIT, © Svelte contributors
-
-Vite, TypeScript and the other packages in `frontend/package.json` under
-`devDependencies` are only used to build the interface. Nothing from them
-ships with the app.
-
-## Gemma 4 (language model)
-
-The default local planner is tested with Google's Gemma 4 26B A4B, in the
-official 4-bit version. The model is downloaded separately and is not part of
-this source code.
-
-- Model: google/gemma-4-26B-A4B-it-qat-q4_0-gguf, © Google DeepMind
-- Licence: Apache License 2.0, https://ai.google.dev/gemma/docs/gemma_4_license
-- A future build that ships the model must include that licence and keep its
-  notices.
-
-## Caption fonts, built into the binary
-
-The captions are written in faces that ship inside the programs, so no user
-has to install a font and a short looks the same on every machine. Before a
-render the face in use is written next to the caption file, together with the
-licence text, and libass is pointed at that folder.
-
-All three are under the SIL Open Font Licence 1.1
-(https://openfontlicense.org), which allows bundling and selling the software
-that carries them, as long as the licence travels with the font and the font
-is not sold on its own. The files live in `engine/fonts/`.
-
-- Inter, © 2016 The Inter Project Authors, https://github.com/rsms/inter
-- Anton, © 2020 The Anton Project Authors, https://github.com/googlefonts/AntonFont
-- Archivo Black, © 2017 The Archivo Black Project Authors,
-  https://github.com/Omnibus-Type/ArchivoBlack
+- `TestEveryGoModuleCompiledInHasANotice` fails when a Go module is
+  compiled into the app without a notice, or at another version. CI runs it
+  on Linux and on macOS.
+- `TestTheToolsNoticesAreForTheVersionsBuilt` fails when ffmpeg, one of its
+  four libraries or llama.cpp is pinned to another version than its notice.
+- The interface build fails when it bundles a package without a notice, or
+  at another version, see `frontend/vite.config.ts`.
 
 ## Shipped beside the program: ffmpeg and llama-server
 
@@ -179,7 +80,8 @@ ffmpeg -buildconf  the configure line it was built with
 ```
 
 Shipping an unmodified LGPL binary asks for two things and we do both. The
-licence text travels with it, as `LICENSE-ffmpeg.txt`. And the source it
+licence text travels with it, as `LICENSE-ffmpeg.txt`, together with the
+notices of the four libraries built into it. And the source it
 was built from is published as `framefairy-tools-source.tar.gz` on the same
 release as the binary, holding the upstream archives at the pinned versions
 and the script that configured them.
@@ -192,7 +94,9 @@ ffmpeg's own configure in [PACKAGING.md](PACKAGING.md).
 **llama-server**, MIT, https://github.com/ggml-org/llama.cpp
 
 What runs a language model on the user's own machine. MIT asks for its
-notice to travel with every copy, and it does, as `LICENSE-llama.cpp`. It
+notice to travel with every copy, and it does, as `LICENSE-llama.cpp`,
+together with the notices of the eight small libraries llama.cpp builds
+into the server. It
 is built by `scripts/build-llama.sh` from a pinned tag, without OpenSSL and
 without the web interface, neither of which we use.
 
@@ -210,4 +114,37 @@ gh attestation verify <the archive> --repo timmrkz/framefairy
 
 No speech model and no language model ships. The app fetches them from
 whoever published them, on its first run and with consent, so their
-licences are between the user and their makers.
+licences are between the user and their makers. They are credited under
+**Acknowledgements** all the same, and the speech model with what CC BY 4.0 asks
+for: its maker, its licence and what was changed, which is that the
+sherpa-onnx project converted it to ONNX and quantised it to int8.
+
+## The speech library, without speech synthesis
+
+The sherpa-onnx libraries as published in the Go modules,
+`sherpa-onnx-go-macos`, `-linux` and `-windows`, have espeak-ng compiled
+into them, for speech synthesis. espeak-ng is GPL 3, and a licence applies
+to what is shipped, not to what is called, so a GPL 3 library inside a
+closed, paid app is what that licence does not allow, even though Frame
+Fairy never synthesises speech.
+
+sherpa-onnx publishes every release a second time without speech
+synthesis, the `-no-tts` archives, and that is what travels beside the app.
+`scripts/speech-libs.sh` fetches it, pinned by sha256, and refuses a
+library that still carries espeak-ng, and `scripts/carry-libs.sh` puts it
+into `bin/lib`, from where `make app` takes it into the bundle, which checks
+once more. The program is still built against the module's libraries.
+That works because in the release without synthesis every synthesis
+function is still there and only says "TTS is not enabled": both libraries
+export the same functions, compared one by one, and the Go module calls
+nothing the one we ship lacks. A German and an English recording were
+transcribed through it word for word.
+
+What it is built from besides sherpa-onnx is under **Speech recognition**
+in Acknowledgements: kaldi-native-fbank, kaldi-decoder, kaldifst, OpenFst,
+simple-sentencepiece, hclust-cpp with fastcluster, JSON for Modern C++ and
+Eigen, which is MPL 2.0 and says where its source is.
+
+Pinned for Apple silicon and for Linux on x86. Windows has no pin yet and
+carries the module's libraries, which is fine for running and not for
+shipping.

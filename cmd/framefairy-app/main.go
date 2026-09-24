@@ -26,6 +26,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"framefairy/engine"
+	"framefairy/notices"
 )
 
 // dist/app/ holds the interface that make builds from frontend/. It is not
@@ -238,6 +239,14 @@ func (s *FrameFairy) Version() string { return engine.Version }
 // Platform is darwin, windows or linux.
 func (s *FrameFairy) Platform() string { return runtime.GOOS }
 
+// Licences is the notice of every piece of other people's work the app is
+// made of or brings with it, for Acknowledgements in the Help menu.
+func (s *FrameFairy) Licences() ([]notices.Notice, error) { return notices.All() }
+
+// LicenceText is one of the texts a notice names. Only the texts built
+// into the app can be read this way, whatever name is asked for.
+func (s *FrameFairy) LicenceText(name string) (string, error) { return notices.Text(name) }
+
 // Chrome says where macOS put its own furniture, or all zeros where the
 // system draws its own title bar. The interface asks once and is
 // told again on the "chrome" event whenever the answer changes.
@@ -281,7 +290,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 			e.FFprobe = guess
 		}
 	}
-	ff := Check{Name: "ffmpeg with libass and libx264"}
+	ff := Check{Name: "ffmpeg"}
 	if err := e.Preflight(ctx); err != nil {
 		ff.Detail = err.Error()
 	} else {

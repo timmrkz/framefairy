@@ -157,8 +157,17 @@ if [ ! -d "$FROM" ]; then
 	exit 1
 fi
 
+# What goes beside the program is not the module's libraries, which carry
+# espeak-ng, but the same release built without speech synthesis. The
+# program is linked against the module's as ever, and finds these instead,
+# because they are what is under its rpath. speech-libs.sh says why. Where
+# none is pinned yet, the module's still let the program run on this
+# machine, and speech-libs.sh has said they are not fit to ship.
+SHIP=$(sh "$(dirname "$0")/speech-libs.sh") || SHIP="$FROM"
+
 mkdir -p "$LIBDIR"
-cp "$FROM"/* "$LIBDIR"/
+rm -f "$LIBDIR"/libsherpa-onnx-* "$LIBDIR"/libonnxruntime*
+cp "$SHIP"/* "$LIBDIR"/
 chmod u+w "$LIBDIR"/*
 
 case "$SYSTEM" in

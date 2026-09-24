@@ -6,8 +6,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// appMenu is the menu Wails gives every app, with one change: Undo and
-// Redo in Edit belong to the app.
+// appMenu is the menu Wails gives every app, with two changes: Undo and
+// Redo in Edit belong to the app, and so does Help.
 //
 // The stock ones hand the keys to the web view, whose undo only knows about
 // text being typed. On macOS the menu takes Cmd-Z before the page ever sees
@@ -41,6 +41,13 @@ func appMenu(app *application.App) *application.Menu {
 	edit.AddRole(application.SelectAll)
 	menu.AddRole(application.ViewMenu)
 	menu.AddRole(application.WindowMenu)
-	menu.AddRole(application.HelpMenu)
+	// Help holds what apps keep out of the way and within reach, the
+	// notices of the work Frame Fairy is made with. The stock Help menu
+	// held one item, Learn More, which opened wails.io in the app's own
+	// window.
+	help := menu.AddSubmenu("Help")
+	help.Add("Acknowledgements").OnClick(func(*application.Context) {
+		app.Event.Emit("acknowledgements", nil)
+	})
 	return menu
 }
