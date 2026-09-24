@@ -276,8 +276,13 @@ place.
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
-  found for it. On the clip timeline the edge is taken from the waveform
-  itself, so the light never lies over a waveform that is already drawn. The
+  found for it. On the clip timeline the part not heard yet wears the
+  grey of a clip card still to come, the whole track before the first
+  waveform arrives, and it breathes while the transcription runs. With
+  nothing running it keeps its grey and stands still, the way paused work
+  does, so a part nobody has heard never reads as silence, which is a flat
+  line. The edge is taken from the waveform itself, so the grey never lies
+  over a waveform that is already drawn. The
   range picker carries the reading of the episode in the app's own words:
   what is not transcribed is darker and breathes while the reading runs,
   because it is a place waiting to be filled, and the line where the
@@ -1054,7 +1059,8 @@ Each piece of news carries a number that grows with every change, so a
 piece that arrives late never puts a job back to where it was. While
 anything runs, the list is also read again every five seconds, so a piece
 of news that was lost costs a few seconds and never a job that looks as if
-it runs for ever. Quitting the app stops every job first.
+it runs for ever. Quitting the app stops the model and every job before
+the app goes.
 
 ### Settings
 

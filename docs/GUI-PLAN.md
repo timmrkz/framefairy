@@ -56,7 +56,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.14 | The model loaded while the transcription is still running, so a search that starts finds it in memory `[x]`, and the transcript read into it as it grows `[ ]` | `[~]` |
 | 1.15 | The transcription waits while clips are found and carries on after, so the model has the machine to itself | `[x]` |
 | 1.16 | A search's row says Waiting for the transcript with its window, then Finding clips, then how many are found, each held long enough to read, with Cancel from the moment the first search is on its way. A fill that can be told from what is left in daylight. Up to four clips framed at once | `[x]` |
-| 1.17 | A search starts the moment the window has been heard: the transcription stops exactly at the window's edge, told where by the workspace, and carries on after the search. The window is locked from the start of the transcription until the first search has run. Paused work keeps its fill and stops moving | `[x]` |
+| 1.17 | A search starts the moment the window has been heard: the transcription stops exactly at the window's edge, told where by the workspace, and carries on after the search. The window is locked from the start of the transcription until the first search has run. Paused work keeps its fill and stops moving. The part of the clip timeline not heard yet is grey like a clip card still to come, breathing while the transcription runs and still when it does not | `[x]` |
 
 ## Phase 2: app shell
 

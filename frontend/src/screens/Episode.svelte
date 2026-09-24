@@ -1895,6 +1895,7 @@
         clip={current}
         {duration}
         {covered}
+        heardTo={status && !status.transcribed ? covered : null}
         {time}
         working={!!transcribing}
         locked={renderingCurrent}
