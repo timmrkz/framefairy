@@ -176,21 +176,12 @@
     <li class:on={chosen}>
       <div class="row head">
         <span class="title grow">{model.title}</span>
-        {#if model.installed && onremove}
-          <button
-            class="quiet danger glyph gone"
-            title="Remove it from this machine, to give its room back"
-            aria-label="Remove {model.title}"
-            aria-haspopup="dialog"
-            disabled={!!running}
-            onclick={() => (removing = model)}
-          >
-            <Icon name="trash" size={14} />
-          </button>
-        {/if}
         {#if model.installed}
           {#if chosen}
-            <span class="done row act"><Icon name="check" />{model.inUse === undefined ? "Installed" : "In use"}</span>
+            <!-- A state and not a control, so it does nothing when clicked,
+                 but it keeps the frame of the button it stands in for, so
+                 the row reads the same whatever the model is. -->
+            <span class="act state"><Icon name="check" />{model.inUse === undefined ? "Installed" : "In use"}</span>
           {:else}
             <button
               class="act"
@@ -219,6 +210,25 @@
             {#if asked === model.name}<Busy />{/if}
             {asked === model.name ? "Starting" : "Install"}
           </button>
+        {/if}
+        <!-- Last in the row, and always there. Every row of a list whose
+             models can be removed keeps its place, so the buttons beside
+             it stand in one column whether a model is there or not. -->
+        {#if onremove}
+          {#if model.installed}
+            <button
+              class="bin"
+              title="Remove it from this machine, to give its room back"
+              aria-label="Remove {model.title}"
+              aria-haspopup="dialog"
+              disabled={!!running}
+              onclick={() => (removing = model)}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          {:else}
+            <span class="bin" aria-hidden="true"></span>
+          {/if}
         {/if}
       </div>
       <p class="muted about">{model.about}</p>
@@ -302,11 +312,6 @@
     font-size: var(--size-s);
   }
 
-  .done {
-    color: var(--ok);
-    gap: 6px;
-  }
-
   .warn {
     color: var(--warn);
   }
@@ -320,14 +325,43 @@
     justify-content: center;
   }
 
-  /* What can be taken away waits until the pointer is on the row, the way
-     the trash can on a clip does, and keeps its place meanwhile. */
-  .gone {
-    visibility: hidden;
+  /* What a model is once it is there, in the frame of the button it
+     stands in for: the same size, the same line, in the colour of what is
+     done. */
+  .state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--control-h);
+    box-sizing: border-box;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    color: var(--ok);
+    white-space: nowrap;
   }
 
-  li:hover .gone,
-  .gone:focus-visible {
-    visibility: visible;
+  /* The trash can: a button of the row, square at the height of every
+     control, quiet until it is reached and then the colour of what it
+     does, the way the trash can on a clip is. */
+  .bin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--control-h);
+    height: var(--control-h);
+    box-sizing: border-box;
+    padding: 0;
+    flex: none;
+    color: var(--muted);
+  }
+
+  button.bin:hover:not(:disabled) {
+    background: var(--lift-err);
+    color: var(--err);
+  }
+
+  span.bin {
+    visibility: hidden;
   }
 </style>

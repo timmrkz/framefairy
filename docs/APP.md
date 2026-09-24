@@ -1087,9 +1087,13 @@ to give it a key. With **On this machine** chosen, the same list of language
 models the first run shows, judged against the same memory.
 
 In the settings a model that is there can go again, to give its room back.
-Its trash can waits until the pointer is on the row, and it asks first in
-the box over the app, because fetching it again is gigabytes: **Cancel**,
-where the keyboard starts, and **Remove**. Removing the speech model means
+Its trash can is always there, the last button of the row, and every row of
+the list keeps its place, so the buttons stand in one column whether a model
+is there or not. It asks first in the box over the app, because fetching it
+again is gigabytes: **Cancel**, where the keyboard starts, and **Remove**.
+While a model is being installed the trash cans wait, dimmed.
+**In use** and **Installed** keep the frame of the button they stand in for,
+in green, so a row reads the same whatever its model is. Removing the speech model means
 the app asks for one again the next time it starts, because nothing can be
 transcribed without it. A model is not removed while it is being installed
 or while the work that reads it runs, and the refusal says which.
