@@ -240,7 +240,7 @@ func (s *FrameFairy) Version() string { return engine.Version }
 func (s *FrameFairy) Platform() string { return runtime.GOOS }
 
 // Licences is the notice of every piece of other people's work the app is
-// made of or brings with it, for the Licences page.
+// made of or brings with it, for Acknowledgements in the Help menu.
 func (s *FrameFairy) Licences() ([]notices.Notice, error) { return notices.All() }
 
 // LicenceText is one of the texts a notice names. Only the texts built

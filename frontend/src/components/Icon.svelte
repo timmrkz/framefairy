@@ -65,9 +65,6 @@
        else something has arrived. -->
   {:else if name === "check"}
     <path d="M3.2 8.4 6.5 11.7 12.8 4.9" />
-  {:else if name === "licence"}
-    <path d="M4.3 2.5h5l2.4 2.4v8.1a.5.5 0 0 1-.5.5H4.3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
-    <path d="M6 7.5h4M6 10h4" />
   {:else if name === "sliders"}
     <path d="M2 4.5h12M2 11.5h12" />
     <circle cx="5.5" cy="4.5" r="1.9" fill="var(--ink-1)" />

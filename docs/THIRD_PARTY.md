@@ -14,7 +14,7 @@ In `notices/`, and nowhere else. `notices/notices.json` lists every piece
 of work with its version, its licence, where it comes from, where it is in
 Frame Fairy and anything the licence asks to be said besides its text, and
 `notices/texts/` holds the texts. The app has them built in and shows them
-under **Licences** on the rail, below **Settings**.
+under **Help → Acknowledgements**, which is where apps keep them.
 
 | Part | What |
 | --- | --- |
@@ -115,7 +115,7 @@ gh attestation verify <the archive> --repo timmrkz/framefairy
 No speech model and no language model ships. The app fetches them from
 whoever published them, on its first run and with consent, so their
 licences are between the user and their makers. They are credited under
-**Licences** all the same, and the speech model with what CC BY 4.0 asks
+**Acknowledgements** all the same, and the speech model with what CC BY 4.0 asks
 for: its maker, its licence and what was changed, which is that the
 sherpa-onnx project converted it to ONNX and quantised it to int8.
 
@@ -141,7 +141,7 @@ nothing the one we ship lacks. A German and an English recording were
 transcribed through it word for word.
 
 What it is built from besides sherpa-onnx is under **Speech recognition**
-on the Licences page: kaldi-native-fbank, kaldi-decoder, kaldifst, OpenFst,
+in Acknowledgements: kaldi-native-fbank, kaldi-decoder, kaldifst, OpenFst,
 simple-sentencepiece, hclust-cpp with fastcluster, JSON for Modern C++ and
 Eigen, which is MPL 2.0 and says where its source is.
 

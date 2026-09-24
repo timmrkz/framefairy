@@ -2,9 +2,10 @@
   import { onMount } from "svelte";
   import { api, type Notice } from "../lib/api";
 
-  // Every piece of other people's work Frame Fairy is made of or brings
-  // with it, grouped by where it is, each opening to its licence. The list
-  // is built into the app from notices/, see docs/THIRD_PARTY.md.
+  // Acknowledgements, from the Help menu: every piece of other people's
+  // work Frame Fairy is made of or brings with it, grouped by where it is,
+  // each opening to its licence. The list is built into the app from
+  // notices/, see docs/THIRD_PARTY.md.
   let notices = $state<Notice[]>([]);
   let problem = $state("");
   let open = $state<string | null>(null);

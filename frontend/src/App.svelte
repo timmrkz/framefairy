@@ -5,6 +5,7 @@
     clock,
     onChrome,
     onEpisodeChanged,
+    onAcknowledgements,
     type Chrome,
     type EpisodeStatus,
     errorText,
@@ -17,7 +18,7 @@
   import Episode from "./screens/Episode.svelte";
   import Jobs from "./screens/Jobs.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
-  import Licences from "./screens/Licences.svelte";
+  import Acknowledgements from "./screens/Acknowledgements.svelte";
   import Setup from "./screens/Setup.svelte";
 
   // The sidebar is a rail until the pointer reaches it, and stays open when
@@ -44,7 +45,7 @@
     }
     if (nav.view.name === "jobs") return "Activity";
     if (nav.view.name === "settings") return "Settings";
-    if (nav.view.name === "licences") return "Licences";
+    if (nav.view.name === "acknowledgements") return "Acknowledgements";
     return "Frame Fairy";
   });
 
@@ -191,10 +192,12 @@
       .catch(() => (settingUp = false));
     refresh();
     const off = onEpisodeChanged(() => refresh());
+    const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
     window.addEventListener("pointerdown", handOverFocus);
     return () => {
       window.removeEventListener("pointerdown", handOverFocus);
       noChrome();
+      noAcknowledgements();
       off();
     };
   });
@@ -331,15 +334,6 @@
         <Icon name="sliders" />
         <span class="label">Settings</span>
       </button>
-      <button
-        class="quiet nav"
-        class:current={nav.view.name === "licences"}
-        onclick={() => nav.go({ name: "licences" })}
-        title="Licences of the work Frame Fairy is made with"
-      >
-        <Icon name="licence" />
-        <span class="label">Licences</span>
-      </button>
       <span class="muted small version num">Engine {version}</span>
     </div>
   </aside>
@@ -356,8 +350,8 @@
       <Jobs />
     {:else if nav.view.name === "settings"}
       <SettingsScreen />
-    {:else if nav.view.name === "licences"}
-      <Licences />
+    {:else if nav.view.name === "acknowledgements"}
+      <Acknowledgements />
     {:else}
       <div class="welcome">
         <h1>Pick an episode</h1>

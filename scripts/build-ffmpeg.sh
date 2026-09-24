@@ -268,7 +268,7 @@ fi
 # The licence texts travel with the binary: ffmpeg's, and those of the four
 # libraries built into it, each of which asks for its own notice to go with
 # every copy. FreeType also asks for a line of credit, which opens its part.
-# The app shows the same under Licences, from notices/.
+# The app shows the same under Help, Acknowledgements, from notices/.
 {
 	echo "ffmpeg $FFMPEG_VERSION, GNU Lesser General Public License 2.1 or later"
 	echo

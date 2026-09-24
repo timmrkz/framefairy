@@ -149,8 +149,8 @@ cp "$BUILT" "$OUT/bin/llama-server"
 # The licence travels with the binary. MIT asks for the notice to go with
 # every copy, and so do the small libraries llama.cpp builds into the
 # server, so their notices follow its own. Two of them carry theirs at the
-# end of a header rather than in a file. The app shows the same under
-# Licences, from notices/.
+# end of a header rather than in a file. The app shows the same in
+# Help, Acknowledgements, from notices/.
 {
 	cat "$SRC/LICENSE"
 	for f in vendor/cpp-httplib/LICENSE licenses/LICENSE-jsonhpp \

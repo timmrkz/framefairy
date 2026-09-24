@@ -515,6 +515,12 @@ export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
   return Events.On("undo", (ev) => fn(ev.data as "undo" | "redo"));
 }
 
+// Acknowledgements in the Help menu, which is where apps keep the notices
+// of the work they are made with.
+export function onAcknowledgements(fn: () => void): () => void {
+  return Events.On("acknowledgements", () => fn());
+}
+
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
 }

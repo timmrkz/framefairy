@@ -348,7 +348,7 @@ inside the `.app` like any other file.
 | The app, 19.5 MB, interface embedded | us, at build time | yes | `Contents/MacOS/` |
 | sherpa-onnx and onnxruntime, 31 MB | k2-fsa, their release without speech synthesis, because the one in the Go module carries espeak-ng, which is GPL 3. We copy and sign again, see [THIRD_PARTY.md](THIRD_PARTY.md#the-speech-library-without-speech-synthesis) | yes | `Contents/Frameworks/` |
 | ffmpeg and ffprobe, about 40 MB | us, once, in advance, static, no libx264 | yes | `Contents/MacOS/` |
-| Licence notices | us, from `notices/`, see [THIRD_PARTY.md](THIRD_PARTY.md) | yes | built into the app and shown under **Licences**, and beside ffmpeg and llama-server |
+| Licence notices | us, from `notices/`, see [THIRD_PARTY.md](THIRD_PARTY.md) | yes | built into the app and shown under **Help → Acknowledgements**, and beside ffmpeg and llama-server |
 | The speech model, 490 MB | NVIDIA, we never touch it | no | `~/.framefairy/models/`, first run |
 | A language model, 14.4 GB | Google, we never touch it | no | the same place, only if they choose local |
 | `llama-server`, 15 MB | us, from llama.cpp, MIT | yes | `Contents/MacOS/`, beside ffmpeg |

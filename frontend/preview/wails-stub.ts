@@ -774,6 +774,11 @@ export const Events = {
       (window as any).__menu = (what: string) => fn({ data: what });
       return () => delete (window as any).__menu;
     }
+    // And Help, Acknowledgements with window.__help().
+    if (name === "acknowledgements") {
+      (window as any).__help = () => fn({ data: null });
+      return () => delete (window as any).__help;
+    }
     if (name !== "job") return () => {};
     // A transcription that reports where it got to, well ahead of the saved
     // transcript, and that really stops when it is stopped. The job list is
