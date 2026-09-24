@@ -39,10 +39,14 @@ type LanguageModel struct {
 	// rather than guessed. It is said before anything starts, because a
 	// download nobody agreed to is a download nobody wanted.
 	Download int64 `json:"download"`
-	// Needs is the memory it takes to run, with the context the engine
-	// asks for, in bytes. More than the file: the weights are in memory
-	// and the context is on top of them.
+	// Needs is the memory it takes to run a search, in bytes: the weights,
+	// the cache the context lives in, the checkpoints of the window, and
+	// llama.cpp's own working memory.
+	// Worked out by NeedsAt at judgedContext, never written by hand.
 	Needs int64 `json:"needs"`
+	// Shape is what the model keeps in memory for every token of context.
+	// It decides most of the difference between models, see Shape.
+	Shape Shape `json:"-"`
 	// URL is where it comes from, whoever published it rather than us. Nothing
 	// is redistributed, so its licence is between the user and whoever
 	// published it.
@@ -53,23 +57,96 @@ type LanguageModel struct {
 	SHA256 string `json:"-"`
 }
 
-// needs is what a model takes to run, worked out from what it takes on
-// disk. The weights are the file, and the context and the runtime sit on
-// top of them: a quarter more, which is where the eighteen gigabytes this
-// project has always quoted for the fourteen gigabyte Gemma comes from.
+// What a model needs in memory is its weights, plus the cache its context
+// lives in, plus llama.cpp's working memory. The first is the file. The
+// third is small, and so are the checkpoints below. The second is what differs, and by more than anything
+// else about these models.
 //
-// It is a rule rather than a measurement, and it is a rule because a
-// measurement would have to be taken on every machine for every model. It
-// is used to say whether a machine can hold a model, and for that being
-// roughly right and never optimistic is what matters.
-func needs(file int64) int64 { return file + file/4 }
+// It used to be a quarter of the file, taken from the eighteen gigabytes
+// always quoted for Gemma 4 26B. That fit Gemma by the luck of its design
+// and nothing else, and applied to the models added after it, it was wrong
+// by more than half: it told a 16 GB Mac to install Ministral 3 8B and a
+// 24 GB Mac to install Qwen3 14B, each as the best for that machine, and
+// neither fits the machine it was offered to.
+//
+// The reason is how each model attends. Every layer that looks back over
+// the whole context keeps a key and a value for every token in it, so its
+// cache grows with the length of the search. Gemma 4 lets most of its
+// layers look back over only the last 1024 tokens, so a longer search
+// costs it almost nothing. Qwen3 and Ministral have no such layers, and
+// every token of transcript costs them in every layer. Same file size,
+// very different memory.
+
+// Shape is what a model keeps in memory per token of context, read off
+// the model's own config.json on Hugging Face rather than remembered.
+type Shape struct {
+	// Layers that look back over the whole context, and how many key and
+	// value heads each has, how wide.
+	FullLayers, FullKVHeads, FullHeadDim int
+	// Layers that look back over only the last Window tokens.
+	WindowLayers, WindowKVHeads, WindowHeadDim, Window int
+}
+
+// judgedContext is the context a model is judged at when a machine is
+// asked whether it can hold it. 65536 tokens is what contextFor gives a
+// search of up to about an hour and a half of episode, which covers the
+// first search, the first half hour taken whole up to 45 minutes, with a
+// lot to spare. A search longer than that asks for more.
+const judgedContext = 65536
+
+// windowSpare is how many cells llama.cpp keeps beyond the window in a
+// sliding window cache: one batch, 512 by default. With one slot the cache
+// is the window plus this. See llama-kv-cache-iswa.cpp in llama.cpp.
+const windowSpare = 512
+
+// workingAllowance is llama.cpp's own working memory on top of the weights
+// and the cache: the buffers a batch is computed in, and the output.
+// Measured on an M2 Max with Gemma 4 26B A4B at 65536 tokens, it is 415 MiB
+// on the graphics side, 77 to 153 MiB on the processor and 1 MiB of
+// output, a little over half a gigabyte. The other models have not been
+// measured, and a wider model or a larger vocabulary takes more, so the
+// allowance is a whole gigabyte.
+const workingAllowance = 1 << 30
+
+// checkpoints is how many copies of the window llama-server keeps while it
+// reads a prompt, in ordinary memory, so a following ask that shares the
+// start of the prompt does not read it all again. It makes one where a
+// user message starts and two near the end of the prompt, and a search
+// sends one user message, so it is three however long the episode. The
+// measured three were 144, 200 and 200 MiB for Gemma 4 26B A4B. A model
+// with no window keeps none, because its cache can be cut back instead.
+const checkpoints = 3
+
+func perToken(layers, heads, dim int) int64 { return int64(2 * layers * heads * dim * 2) }
+
+// cacheBytes is the key and value cache for a context of ctx tokens, at
+// two bytes a number, which is llama.cpp's default. Every layer keeps a key
+// and a value for each of its heads. For Gemma 4 26B A4B at 65536 tokens
+// this says 1280 MiB for the layers that see everything and 300 MiB for
+// the window, and llama-server said the same to the MiB.
+func (s Shape) cacheBytes(ctx int) int64 {
+	cells := min(ctx, s.Window+windowSpare)
+	return perToken(s.FullLayers, s.FullKVHeads, s.FullHeadDim)*int64(ctx) +
+		perToken(s.WindowLayers, s.WindowKVHeads, s.WindowHeadDim)*int64(cells)
+}
+
+// checkpointBytes is what the checkpoints of the window take, each the
+// window's cache for Window tokens.
+func (s Shape) checkpointBytes() int64 {
+	return checkpoints * perToken(s.WindowLayers, s.WindowKVHeads, s.WindowHeadDim) * int64(s.Window)
+}
+
+// NeedsAt is the memory a search with a context of ctx tokens takes with
+// this model loaded.
+func (m LanguageModel) NeedsAt(ctx int) int64 {
+	return m.Download + m.Shape.cacheBytes(ctx) + m.Shape.checkpointBytes() + workingAllowance
+}
 
 // LanguageModels is every model that can be installed, largest first.
 //
-// Four models from three houses, across the range of machines somebody
-// might have: the largest wants a machine with plenty and the smallest
-// runs on one with sixteen gigabytes. Which of them a given machine is
-// offered is RecommendedFor below.
+// Four models from three houses. Which of them a given machine is offered
+// is RecommendedFor below, and the smallest machine that is offered one at
+// all has sixteen gigabytes.
 //
 // Every one is published by whoever made the model rather than quantised
 // by somebody else afterwards, so what is fetched is what its maker meant
@@ -81,25 +158,28 @@ func needs(file int64) int64 { return file + file/4 }
 // was a gigabyte out.
 func LanguageModels() []LanguageModel {
 	const hf = "https://huggingface.co/"
-	return []LanguageModel{{
+	models := []LanguageModel{{
 		Name:  "gemma-4-26B_q4_0-it.gguf",
 		Title: "Gemma 4 26B A4B",
 		Maker: "Google",
 		About: "Twenty six billion parameters with four of them used per token, " +
 			"so it runs like a far smaller model. The largest of these.",
 		Download: 14_439_363_584,
-		Needs:    needs(14_439_363_584),
 		URL:      hf + "google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf",
 		SHA256:   "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+		// Gemma 4 26B A4B: 30 layers, 5 over the whole context with 2 heads of
+		// 512, and 25 over the last 1024 tokens with 8 heads of 256.
+		Shape: Shape{FullLayers: 5, FullKVHeads: 2, FullHeadDim: 512, WindowLayers: 25, WindowKVHeads: 8, WindowHeadDim: 256, Window: 1024},
 	}, {
 		Name:     "Qwen3-14B-Q4_K_M.gguf",
 		Title:    "Qwen3 14B",
 		Maker:    "Alibaba",
 		About:    "Fourteen billion parameters, quantised to four bits.",
 		Download: 9_001_752_960,
-		Needs:    needs(9_001_752_960),
 		URL:      hf + "Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
 		SHA256:   "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+		// Qwen3 14B: 40 layers, every one over the whole context, 8 heads of 128.
+		Shape: Shape{FullLayers: 40, FullKVHeads: 8, FullHeadDim: 128},
 	}, {
 		Name:  "gemma-4-12b-it-qat-q4_0.gguf",
 		Title: "Gemma 4 12B",
@@ -107,9 +187,11 @@ func LanguageModels() []LanguageModel {
 		About: "Twelve billion parameters, trained to be quantised to four bits " +
 			"rather than cut down to them afterwards.",
 		Download: 6_975_879_296,
-		Needs:    needs(6_975_879_296),
 		URL:      hf + "google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf",
 		SHA256:   "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+		// Gemma 4 12B: 48 layers, 8 over the whole context with 1 head of 512,
+		// and 40 over the last 1024 tokens with 8 heads of 256.
+		Shape: Shape{FullLayers: 8, FullKVHeads: 1, FullHeadDim: 512, WindowLayers: 40, WindowKVHeads: 8, WindowHeadDim: 256, Window: 1024},
 	}, {
 		Name:  "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
 		Title: "Ministral 3 8B",
@@ -117,15 +199,26 @@ func LanguageModels() []LanguageModel {
 		About: "Eight billion parameters, quantised to four bits. The smallest " +
 			"of these, for a machine with less to spare.",
 		Download: 5_198_911_904,
-		Needs:    needs(5_198_911_904),
 		URL:      hf + "mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
 		SHA256:   "33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761",
+		// Ministral 3 8B: 34 layers, every one over the whole context, 8 heads
+		// of 128.
+		Shape: Shape{FullLayers: 34, FullKVHeads: 8, FullHeadDim: 128},
 	}}
+	for i := range models {
+		models[i].Needs = models[i].NeedsAt(judgedContext)
+	}
+	return models
 }
 
 // RecommendedFor is the model to offer a machine with this much memory:
 // the largest it can hold comfortably, or, where none of them is
 // comfortable, the largest it can hold at all.
+//
+// Largest means the largest model, by its file, not the one that takes the
+// most memory. Those used to be the same thing, because memory was worked
+// out from the file. They are not: Ministral 3 8B takes more memory than
+// Gemma 4 12B for a search of any length, and is the smaller model.
 //
 // A machine that will not say how much memory it has is offered the
 // smallest, because the smallest is the one most likely to run, and a
@@ -142,7 +235,7 @@ func RecommendedFor(total int64) (LanguageModel, bool) {
 	if total <= 0 {
 		smallest := models[0]
 		for _, m := range models {
-			if m.Needs < smallest.Needs {
+			if m.Download < smallest.Download {
 				smallest = m
 			}
 		}
@@ -155,7 +248,7 @@ func RecommendedFor(total int64) (LanguageModel, bool) {
 			if m.FitsIn(total) != want {
 				continue
 			}
-			if !found || m.Needs > best.Needs {
+			if !found || m.Download > best.Download {
 				best, found = m, true
 			}
 		}

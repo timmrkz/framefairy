@@ -280,7 +280,7 @@
       <h2>Rendering</h2>
       <div class="grid">
         <label for="ffmpeg">ffmpeg</label>
-        <input id="ffmpeg" type="text" bind:value={settings.ffmpeg} placeholder="Found on the search path" />
+        <input id="ffmpeg" type="text" bind:value={settings.ffmpeg} placeholder="Found beside the app, then on the search path" />
         <label for="out">Output folder</label>
         <input id="out" type="text" bind:value={settings.outputDir} placeholder="Next to each episode, in its .framefairy folder" />
       </div>

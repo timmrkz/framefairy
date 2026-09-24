@@ -6,8 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPlanSchemaIsValidJSON(t *testing.T) {
@@ -105,5 +109,54 @@ func TestServerStamp(t *testing.T) {
 		if _, ok := serverStamp(bad); ok {
 			t.Errorf("%q read as a time", bad)
 		}
+	}
+}
+
+// The model is loaded ahead of the first search of a new episode, while
+// nothing has made the episode's logs folder yet. The server's output is
+// the only record of what the model took from memory, so it is kept even
+// then.
+func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in for llama-server is a shell script")
+	}
+	dir := t.TempDir()
+	server := filepath.Join(dir, "llama-server")
+	script := "#!/bin/sh\necho \"buffer size stand-in $*\"\nexec sleep 30\n"
+	if err := os.WriteFile(server, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	model := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(model, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logDir := filepath.Join(dir, "episode.framefairy", "logs")
+	logFile := filepath.Join(logDir, "llm-server.log")
+
+	// The stand-in never answers, so the start is given up once its
+	// output has been seen, or after ten seconds.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e := NewEngine(NewLog(io.Discard, false, false))
+		_, _, _ = e.startServer(ctx, LocalModel{Server: server, Model: model}, 16384, logDir)
+	}()
+	var body []byte
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		if body, _ = os.ReadFile(logFile); strings.Contains(string(body), "buffer size") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if !strings.Contains(string(body), "buffer size") {
+		t.Fatalf("no server output in %s, got %q", logFile, body)
+	}
+	// What the model took from memory is only in the log from level 4.
+	if !strings.Contains(string(body), "-lv 4") {
+		t.Errorf("llama-server was not asked to say what it took from memory: %q", body)
 	}
 }

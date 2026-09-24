@@ -19,6 +19,8 @@
 #   make llama      build the llama-server we ship again, from scratch
 #   make tools-archive
 #                   pack both of them, with a manifest, for a release
+#   make notices    write the licence notices again, from what the programs
+#                   are built from
 #   make test       all tests: unit, fuzz and interface
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
@@ -87,7 +89,7 @@ UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app icon motion ffmpeg llama tools-archive deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app icon motion ffmpeg llama tools-archive notices deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -228,6 +230,16 @@ llama:
 # is .github/workflows/tools.yml.
 tools-archive:
 	@sh scripts/pack-tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/dist
+
+# The licence of everything the programs are made of or bring with them,
+# and the text each asks to travel with every copy, into notices/, which
+# the app shows under Licences. It reads the source trees ffmpeg and
+# llama-server are built from and the interface's packages, so it builds
+# everything first. The tests and the interface build say when it is due:
+# a module, a package or a pinned version that changed without it.
+notices: all
+	@$(GO) run ./notices/gen
+	@printf 'ok  \tnotices\n'
 
 # Every way the app says work is in hand, on one page, in a browser. It is
 # preview material and never goes into the app.

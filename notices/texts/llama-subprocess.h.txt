@@ -1,0 +1,2 @@
+The latest version of this library is available on GitHub;
+   https://github.com/sheredom/subprocess.h
