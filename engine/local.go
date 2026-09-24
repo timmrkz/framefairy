@@ -184,6 +184,10 @@ var localClient = &http.Client{
 	},
 }
 
+// stopGrace is how long llama-server has to go by itself once it is asked
+// to. Idle, it goes well inside it.
+var stopGrace = 500 * time.Millisecond
+
 // startServer runs llama-server and waits until the model is loaded.
 func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	logDir string) (string, func(), error) {
@@ -260,7 +264,14 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
-			case <-time.After(5 * time.Second):
+			case <-time.After(stopGrace):
+				// llama-server can hang on the way out after an interrupt:
+				// it joins the threads of its HTTP server, and one still
+				// waiting on an answer it will never give keeps it there.
+				// Its own source says so beside its signal handler, and
+				// offers a second Ctrl+C to end it. It has nothing to save,
+				// so it is killed. Waiting five seconds for it was the app
+				// frozen on Cmd+Q and on removing an episode mid-search.
 				_ = cmd.Process.Kill()
 				<-exited
 			}

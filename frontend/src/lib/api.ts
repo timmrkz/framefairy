@@ -547,6 +547,12 @@ export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
 
 // Acknowledgements in the Help menu, which is where apps keep the notices
 // of the work they are made with.
+// Cmd+Q heard by the Go side: "ask" while work runs and the key has to be
+// pressed again, "going" once the app is on its way out.
+export function onQuit(fn: (what: "ask" | "going") => void): () => void {
+  return Events.On("quit", (ev) => fn(ev.data as "ask" | "going"));
+}
+
 export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
 }

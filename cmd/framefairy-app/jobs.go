@@ -205,6 +205,18 @@ func (q *queue) refuse(episode, kind, label, reason string) Job {
 	return snapshot
 }
 
+// busy says whether any job runs or waits to.
+func (q *queue) busy() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, j := range q.jobs {
+		if j.State == JobQueued || j.State == JobRunning {
+			return true
+		}
+	}
+	return false
+}
+
 func (q *queue) list() []Job {
 	q.mu.Lock()
 	defer q.mu.Unlock()

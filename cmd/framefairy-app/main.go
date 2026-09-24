@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"framefairy/engine"
 	"framefairy/notices"
@@ -88,6 +89,18 @@ func main() {
 		engine.CloseModels()
 		svc.jobs.shutDown()
 	})
+	// What Cmd+Q does, see quit.go. The hook above stays for whatever
+	// ends the app without asking, a signal from the terminal among them.
+	leave := &leaving{
+		busy: svc.jobs.busy,
+		say: func(what string) {
+			if app != nil {
+				app.Event.Emit("quit", what)
+			}
+		},
+		stop: quit,
+		quit: func() { app.Quit() },
+	}
 
 	app = application.New(application.Options{
 		Name:        "Frame Fairy",
@@ -101,6 +114,7 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		OnShutdown: quit,
+		ShouldQuit: leave.shouldQuit,
 	})
 	svc.app = app
 	app.Menu.Set(appMenu(app))
@@ -145,6 +159,9 @@ func main() {
 		},
 	})
 	svc.chrome = watchChrome(app, svc.window)
+	svc.window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		leave.closing()
+	})
 
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.
@@ -1137,11 +1154,17 @@ func (s *FrameFairy) Still(ctx context.Context, path string, at float64, width i
 	if !s.store.Known(path) {
 		return "", os.ErrNotExist
 	}
+	// The frame rate says which frame the moment falls in, the one the
+	// video preview shows there. It is read once per episode and kept.
+	fps := 0.0
+	if info, err := s.probe(ctx, path); err == nil && info.FPSDen > 0 {
+		fps = info.FPS()
+	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
 	if ff := s.store.Settings().FFmpeg; ff != "" {
 		e.FFmpeg = ff
 	}
-	return e.Still(ctx, path, at, width)
+	return e.Still(ctx, path, at, fps, width)
 }
 
 // Render queues rendering clips of a plan.

@@ -130,7 +130,23 @@ what became of it.
     speech model hears exactly there, so it hears nothing past the edge
     rather than up to two pieces of 30 s. The window is locked from the
     start of the transcription until that search has run.
-13. **Smaller ones.** Stopping llama-server read its state while another
+13. **Cmd+Q and removing an episode froze the app for five seconds.**
+    Found by Tim. Both stop llama-server, which is asked to go and was given
+    five seconds before it was killed, and it used them all: on the way
+    out it joins the threads of its HTTP server, and one still waiting on
+    an answer holds it there. Its own source says so beside its signal
+    handler. Quitting did that on the main thread, so the app froze under
+    the spinning wheel, and removing did it while nothing on screen said
+    the click had been heard, so Tim clicked again and again. Fixed:
+    llama-server has half a second and is then killed, it has nothing to
+    save. `TestAServerThatWillNotStopIsKilledAtOnce` runs the test binary
+    as a server that ignores the interrupt, and fails with the five
+    seconds back. Cmd+Q answers at once and stops everything away from the
+    main thread, `cmd/framefairy-app/quit.go`, and the answer to Remove
+    says Removing at once and takes no second click. The three lines of
+    "file does not exist" in the log were the workspace reading the
+    episode after it had left the library. It now closes first.
+14. **Smaller ones.** Stopping llama-server read its state while another
     goroutine wrote it, fixed in `engine/local.go`. A server that crashes after
     loading costs one search.
     A warm-up for a search that failed still loads the model. The job list,
