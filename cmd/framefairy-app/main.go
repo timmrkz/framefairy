@@ -1018,7 +1018,7 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 	if !s.store.Known(path) || (req.Plan != "" && !s.store.Known(req.Plan)) {
 		return s.jobs.refuse(path, "render", label, notInLibrary)
 	}
-	return s.jobs.add(path, "render", label, func(ctx context.Context, p *engine.Project) (string, error) {
+	return s.jobs.addFor(path, "render", label, req.Plan, req.Clips, func(ctx context.Context, p *engine.Project) (string, error) {
 		if err := p.Render(ctx, req); err != nil {
 			return req.Plan, err
 		}

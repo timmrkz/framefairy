@@ -290,3 +290,20 @@ func TestThumbnailsAreSavedAndUndone(t *testing.T) {
 		t.Error("a plan outside the library was written")
 	}
 }
+
+// A render says which clip it is of from the moment it is queued, so the
+// Render button of that clip can show it running. Result only says so
+// once the job is over, which is how the button never saw its own render.
+func TestARenderSaysWhatItIsOfFromTheStart(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	job := svc.Render(mine, engine.RenderRequest{Plan: plan, Clips: []string{"01"}})
+	defer svc.CancelJob(job.ID)
+	if job.Plan != plan || len(job.Clips) != 1 || job.Clips[0] != "01" {
+		t.Fatalf("the render is of %q %v", job.Plan, job.Clips)
+	}
+	for _, j := range svc.Jobs() {
+		if j.ID == job.ID && (j.Plan != plan || len(j.Clips) != 1) {
+			t.Errorf("the job list has the render of %q %v", j.Plan, j.Clips)
+		}
+	}
+}

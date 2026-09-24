@@ -130,6 +130,11 @@ func TestEachEncoderIsAskedInItsOwnLanguage(t *testing.T) {
 		if bad >= good {
 			t.Errorf("crf 30 gave q %d and crf 18 gave q %d, which is upside down", bad, good)
 		}
+		// The default is generous, because the first renders at 73 showed
+		// blocks in the shadows.
+		if def, _ := e.VideoArgs(ctx, RenderSettings{CRF: DefaultOptions().CRF}); quality(t, def) != 85 {
+			t.Errorf("the default crf asks Apple's encoder for q %d, not 85", quality(t, def))
+		}
 	})
 
 	t.Run("q:v stays inside the range whatever the crf", func(t *testing.T) {

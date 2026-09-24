@@ -756,7 +756,7 @@ export const Call = {
         // work of its own to show.
         if (q.includes("rendering")) {
           return Promise.resolve([
-            { id: "r1", episode: "/eps/ep.mp4", kind: "render", label: "Render", state: "running", result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: { stage: "render", text: "Burning in the captions", fraction: 0.58, remaining: 42 } },
+            { id: "r1", episode: "/eps/ep.mp4", kind: "render", label: "Render", state: "running", plan: "/eps/ep.framefairy/logs/clips.json", clips: ["01"], queued: "", lane: "work", progress: { stage: "render", text: "Burning in the captions", fraction: 0.58, remaining: 42 } },
           ]);
         }
         // Progress with no number to it comes with the busy job, so

@@ -46,12 +46,14 @@ var x264 = Encoder{
 // is better, which is the other way round from CRF. The mapping below is
 // deliberately generous, because a short is twenty to thirty seconds and
 // the product rule is that the picture stays as close to the original as
-// possible. It is a starting point to be looked at on a real render rather
-// than a measured equivalence, and docs/PACKAGING.md says so.
+// possible. It started at 73 for the default CRF 18. The first real renders
+// on Tim's Mac showed blocks in the shadows, where an encoder saves first,
+// so the default is 85 now: each step of CRF is five sixths of a step of
+// q, and CRF 0 is still 100.
 var videoToolbox = Encoder{
 	Name: "h264_videotoolbox",
 	Quality: func(rs RenderSettings) []string {
-		q := 100 - 3*rs.CRF/2
+		q := 100 - (5*rs.CRF+3)/6
 		if q < 1 {
 			q = 1
 		}

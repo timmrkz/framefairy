@@ -237,6 +237,10 @@ export interface Job {
   state: JobState;
   error?: string;
   result?: string;
+  // What a render is of, from the moment it is queued. No clips means the
+  // whole plan.
+  plan?: string;
+  clips?: string[];
   last?: EngineEvent;
   progress?: EngineEvent;
   queued: string;

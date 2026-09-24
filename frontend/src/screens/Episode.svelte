@@ -482,8 +482,15 @@
       .filter((c) => c.key !== removed?.key)
       .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered })),
   );
+  // Whether the render running is of this clip. The job says what it is
+  // of from the moment it is queued: its result only says so once it is
+  // over, which is how the button never saw its own render running.
   const renderingCurrent = $derived(
-    !!working && working.kind === "render" && !!current && working.result === current.plan,
+    !!working &&
+      working.kind === "render" &&
+      !!current &&
+      working.plan === current.plan &&
+      (!working.clips?.length || working.clips.includes(current.id)),
   );
 
   // The free room changes whenever a search finishes, so it is taken again

@@ -32,6 +32,12 @@ type Job struct {
 	State  string `json:"state"`
 	Error  string `json:"error,omitempty"`
 	Result string `json:"result,omitempty"`
+	// Plan and Clips say what a render is of, from the moment it is
+	// queued, so the Render button of that clip can show it running.
+	// Result only says it once the job is over. No clips means the whole
+	// plan.
+	Plan  string   `json:"plan,omitempty"`
+	Clips []string `json:"clips,omitempty"`
 	// Last is the most recent event, so a screen opened later still shows
 	// where the job is.
 	Last     *engine.Event `json:"last,omitempty"`
@@ -125,7 +131,19 @@ func (q *queue) add(episode, kind, label string,
 	return q.queue(episode, kind, label, false, work)
 }
 
+// addFor queues work that is about some clips of a plan, and says so on
+// the job from the start.
+func (q *queue) addFor(episode, kind, label, plan string, clips []string,
+	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
+	return q.queueFor(episode, kind, label, plan, clips, false, work)
+}
+
 func (q *queue) queue(episode, kind, label string, once bool,
+	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
+	return q.queueFor(episode, kind, label, "", nil, once, work)
+}
+
+func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once bool,
 	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
 	lane := laneFor(kind)
 	q.mu.Lock()
@@ -143,7 +161,8 @@ func (q *queue) queue(episode, kind, label string, once bool,
 	q.next++
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
-		State: JobQueued, Queued: time.Now(), Lane: lane, work: work, cancel: cancel, ctx: ctx}
+		State: JobQueued, Queued: time.Now(), Lane: lane, work: work, cancel: cancel, ctx: ctx,
+		Plan: plan, Clips: append([]string(nil), clips...)}
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
 	q.mu.Unlock()
