@@ -1426,7 +1426,7 @@
             : "A thumbnail. Click to see it, drag it to another frame. The thumbnail button or T removes it"}
           onpointerdown={(e) => grabThumb(m.at, e)}
         >
-          <Icon name="thumbnail" size={14} />
+          <Icon name="thumbnail" size={18} />
         </div>
       {/each}
     {/if}
@@ -1689,6 +1689,13 @@
     background:
       linear-gradient(var(--cap-pill), var(--cap-pill)),
       var(--cap-box);
+    /* The pop the word makes in the video preview, as tall as the band the
+       block stands in at its peak, 16 pixels grown to 24, and hardly wider,
+       so it never runs into the caption beside it. */
+    --pop-from-x: 0.97;
+    --pop-from-y: 0.7;
+    --pop-peak-x: 1.03;
+    --pop-peak-y: 1.5;
     animation: pop 0.22s ease-out;
   }
 
@@ -1770,9 +1777,9 @@
   .thumb {
     position: absolute;
     bottom: 3px;
-    width: 18px;
-    height: 18px;
-    margin-left: -9px;
+    width: 22px;
+    height: 22px;
+    margin-left: -11px;
     display: grid;
     place-items: center;
     border-radius: 4px;

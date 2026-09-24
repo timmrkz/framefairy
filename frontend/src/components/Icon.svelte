@@ -52,13 +52,13 @@
   <!-- The same picture made smaller, with what a click does beside it:
        a plus to add a thumbnail, a minus to take the one here away. -->
   {:else if name === "thumbnail-add" || name === "thumbnail-remove"}
-    <rect x="1.5" y="1.5" width="8" height="12" rx="1.6" />
-    <circle cx="4.3" cy="4.9" r="0.9" />
-    <path d="M1.8 10.4l2.2-2.3 1.6 1.6 1.2-1.2 2.4 2.4" />
+    <rect x="1" y="0.8" width="9.2" height="14.2" rx="1.8" />
+    <circle cx="4.2" cy="4.6" r="1.1" />
+    <path d="M1.3 11.4l2.5-2.6 1.9 1.9 1.4-1.4 2.8 2.8" />
     {#if name === "thumbnail-add"}
-      <path d="M12.6 9.1v5M10.1 11.6h5" />
+      <path d="M13 8.6v5M10.5 11.1h5" />
     {:else}
-      <path d="M10.1 11.6h5" />
+      <path d="M10.5 11.1h5" />
     {/if}
   {:else if name === "locate"}
     <circle cx="8" cy="8" r="3.6" />
