@@ -74,6 +74,60 @@ too big. It never refuses: a machine's memory can be read wrong and it is
 not the app's place to decide, so it says what it thinks before the
 download rather than after it.
 
+**What a model needs is worked out from how it attends, not from its
+file.** It used to be the file and a quarter more, taken from the
+eighteen gigabytes always quoted for Gemma 4 26B. That fit Gemma by the
+luck of its design and nothing else. Applied to the models added later it
+told a 16 GB Mac to install Ministral 3 8B and a 24 GB Mac to install
+Qwen3 14B, each as the best for it, and neither fits.
+
+The reason is the cache the context lives in. A layer that looks back
+over the whole context keeps a key and a value for every token of it, so
+its cache grows with the search. Most of Gemma 4's layers look back over
+only the last 1024 tokens, so a longer search costs it almost nothing.
+Qwen3 and Ministral have no such layers and pay for every token in every
+layer. And every local search asks for at least 32 768 tokens of context,
+because the room kept for the answer alone is more than the smallest
+context, so this is never a small effect.
+
+So each model in `engine/language.go` carries its shape, read off its
+maker's `config.json`, and what it needs is the weights, plus the cache at
+the context the first search asks for, plus the checkpoints llama-server
+keeps of a window, plus llama.cpp's own working memory. llama-server runs
+at log level 4, because its own default leaves the memory out, and from
+there it writes into `llm-server.log` what each of these took.
+
+Measured on an M2 Max with Gemma 4 26B A4B and a search of the first half
+hour, at 65 536 tokens of context:
+
+| Part | Took | Worked out |
+| --- | --- | --- |
+| weights | the file, 13.4 GiB | the file |
+| cache | 1 280 + 300 MiB | the same, to the MiB |
+| checkpoints of the window | 144 + 200 + 200 MiB | 3 × 200 MiB |
+| working memory | 415 + 153 + 1 MiB | 1 GiB, for models not measured |
+| **together** | **16.1 GiB** | **16.6 GiB** |
+
+The checkpoints are copies of the window in ordinary memory, so a
+following ask that shares the start of the prompt does not read it all
+again. llama-server makes one where a user message starts and two near the
+end of the prompt, and a search sends one user message, so there are three
+however long the episode. A model with no window keeps none.
+
+macOS let the graphics side of that Mac use 25 559 MiB of its 32 768, and
+the model took 15 750 of them. The first search is judged rather than the
+longest, and a search of more than about an hour and a half asks for more
+than that.
+
+What every Mac is offered, pinned by a test:
+
+| Mac | Offered |
+| --- | --- |
+| 8 GB | nothing, the API is the way through |
+| 16 GB | Gemma 4 12B, tight |
+| 18 and 24 GB | Gemma 4 12B |
+| 32 GB and up | Gemma 4 26B A4B |
+
 **Every model is pinned and every model comes from its own maker.** The
 sizes and the checksums are read off the real files through the Hugging
 Face API rather than guessed, which matters: the first one was guessed once
@@ -292,9 +346,9 @@ inside the `.app` like any other file.
 | Piece | Who builds it | In the download | Ends up |
 | --- | --- | --- | --- |
 | The app, 19.5 MB, interface embedded | us, at build time | yes | `Contents/MacOS/` |
-| sherpa-onnx and onnxruntime, 32 MB | k2-fsa, we copy and sign again | yes | `Contents/Frameworks/` |
+| sherpa-onnx and onnxruntime, 31 MB | k2-fsa, their release without speech synthesis, because the one in the Go module carries espeak-ng, which is GPL 3. We copy and sign again, see [THIRD_PARTY.md](THIRD_PARTY.md#the-speech-library-without-speech-synthesis) | yes | `Contents/Frameworks/` |
 | ffmpeg and ffprobe, about 40 MB | us, once, in advance, static, no libx264 | yes | `Contents/MacOS/` |
-| Licence notices | us | yes | [THIRD_PARTY.md](THIRD_PARTY.md), shown in the app |
+| Licence notices | us, from `notices/`, see [THIRD_PARTY.md](THIRD_PARTY.md) | yes | built into the app and shown under **Help → Acknowledgements**, and beside ffmpeg and llama-server |
 | The speech model, 490 MB | NVIDIA, we never touch it | no | `~/.framefairy/models/`, first run |
 | A language model, 14.4 GB | Google, we never touch it | no | the same place, only if they choose local |
 | `llama-server`, 15 MB | us, from llama.cpp, MIT | yes | `Contents/MacOS/`, beside ffmpeg |

@@ -30,7 +30,10 @@ the folder, copy the new files in and run `make` again.
 6. Builds the interface into `cmd/framefairy-app/dist/app/`, when it is missing
    or something in `frontend/` changed. This needs Node.js. The built
    interface is not in the repository.
-7. Builds the three programs.
+7. Builds the three programs, and puts the speech library beside them in
+   `bin/lib`: sherpa-onnx's release without speech synthesis, fetched once,
+   8 to 9 MB, because the one in the Go module carries espeak-ng, which is
+   GPL 3. See [THIRD_PARTY.md](THIRD_PARTY.md#the-speech-library-without-speech-synthesis).
 8. Lists anything this machine still needs to run them.
 
 Steps 1 and 2 cost nothing when there is nothing to do: each one is a
@@ -62,6 +65,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make ffmpeg` | builds the ffmpeg framefairy ships again, from scratch, throwing away the one that is there. `make` builds it once by itself, so this is for when `scripts/build-ffmpeg.sh` changed or the last one went wrong |
 | `make llama` | the same for the llama-server framefairy ships, which is what runs a local model |
 | `make tools-archive` | packs both of them into one archive with a manifest, for a release. See [PACKAGING.md](PACKAGING.md#the-tools-we-ship) |
+| `make notices` | writes the licence notices in `notices/` again, from the Go modules, the interface's packages and the source trees ffmpeg and llama-server are built from. Run it when a test or the interface build says a notice is missing or out of date. See [THIRD_PARTY.md](THIRD_PARTY.md) |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |

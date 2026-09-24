@@ -28,22 +28,26 @@ and needs no rewriting.
 | Windows | `winget install GoLang.Go` and `winget install MSYS2.MSYS2`, then in the MSYS2 UCRT64 shell `pacman -S mingw-w64-ucrt-x86_64-gcc` and add `C:\msys64\ucrt64\bin` to PATH |
 | Debian, Ubuntu | `sudo apt install build-essential patchelf`, and Go 1.27 from go.dev, since the distribution's Go is older |
 
-## 2. ffmpeg, with libass and libx264
+## 2. ffmpeg, with libass and an H.264 encoder
 
 `framefairy` checks both at startup, before anything is spent.
 
-**macOS.** Homebrew's default `ffmpeg` is a slim build without libass. The
-ffmpeg tap includes it:
+`make` builds one for you on macOS, from source, and puts it in `bin/`
+beside the programs, where they look before the search path. It is built
+without libx264, which would make it GPL, and encodes through the system's
+own encoder instead, VideoToolbox. That is the one a customer gets, so it
+is the one worth running. `make ffmpeg` builds it again from scratch. Why it
+is built this way is in [PACKAGING.md](PACKAGING.md).
 
-```
-brew tap homebrew-ffmpeg/ffmpeg
-brew unlink ffmpeg
-brew install homebrew-ffmpeg/ffmpeg/ffmpeg
-```
+Any other ffmpeg works too, as long as it has libass and one of the H.264
+encoders `h264_videotoolbox`, `libx264`, `h264_vaapi` or `libopenh264`. Put
+it on the search path and remove `bin/ffmpeg`, or name it with
+`--ffmpeg PATH`. An ffmpeg with libx264 is fine to run on your own machine,
+it is only not one we may ship.
 
-Skip `brew unlink ffmpeg` if the slim one was never installed. Homebrew's
-`ffmpeg-full` also works. It installs beside the slim one, so point `framefairy`
-at it with `--ffmpeg /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`.
+**macOS.** Homebrew's default `ffmpeg` is a slim build without libass.
+`ffmpeg-full` has it and installs beside the slim one:
+`--ffmpeg /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`.
 
 **Windows.** `winget install Gyan.FFmpeg`
 

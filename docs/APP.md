@@ -56,8 +56,9 @@ model that swaps takes minutes to answer rather than seconds. The app reads
 how much memory the machine has and says, beside each model, **Best for
 this machine**, **Fits this machine**, **Tight on this machine** or **Too
 big for this machine**, with the machine's own figure above the list so the
-judgement can be checked. The best one is simply the largest the machine
-can hold comfortably.
+judgement can be checked. The best one is the largest model the machine
+can hold comfortably, largest by the model and not by the memory it
+takes, because the two are not the same thing: see PACKAGING.md.
 
 Nothing is hidden and nothing is refused: a model the app thinks is too big
 can still be installed, because a machine's memory can be read wrong and it
@@ -157,7 +158,7 @@ that a click which throws work away has to be a click you meant.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Activity** or **Settings**. No screen
+screen: the name of the episode, or **Activity**, **Settings** or **Acknowledgements**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -1081,6 +1082,19 @@ there is kept for the next episode. Empty paths use the same defaults as the
 command line. **Check again** tests the
 setup and says what is missing, and lists the caption faces the app carries
 inside itself.
+
+### Acknowledgements
+
+In the Help menu, which is where apps keep them, rather than on the rail
+beside the things making shorts needs. Every piece of other people's work
+the app is made of or brings with it,
+grouped by where it is: the app, its interface, speech recognition, ffmpeg,
+llama-server, the caption fonts, and the models the app fetches from their
+makers. A row is the name, the version and the licence, and it opens to what
+the licence asks to be said and to the licence's own text, the way a finished
+job opens to its log in **Activity**. The list is built into the app from
+`notices/`, and how it is made and kept complete is in
+[THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Where things are kept
 

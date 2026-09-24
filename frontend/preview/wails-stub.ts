@@ -1,5 +1,13 @@
 // Stands in for the Wails runtime so the interface can be looked at in a
 // plain browser. Only for taking a picture of the layout.
+import noticeList from "../../notices/notices.json";
+
+const noticeTexts = import.meta.glob("../../notices/texts/*.txt", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
 // The words of the whole episode, on one clock, made once.
 //
 // They used to be made from wherever a call asked to start, so a call
@@ -339,6 +347,12 @@ export const Call = {
         return Promise.resolve("0.1.0");
       case "Platform":
         return Promise.resolve(location.search.includes("linux") ? "linux" : "darwin");
+      // The real notices, the ones the app builds in, so the page is looked
+      // at with what it will really show.
+      case "Licences":
+        return Promise.resolve(noticeList);
+      case "LicenceText":
+        return Promise.resolve(noticeTexts[`../../notices/texts/${String(args[0])}`] ?? "");
       // The first run. Nothing installed, nothing chosen, and an install
       // that really runs and really finishes, so the whole walkthrough can
       // be reached. Every other mode is a machine that is already set up,
@@ -759,6 +773,11 @@ export const Events = {
     if (name === "undo") {
       (window as any).__menu = (what: string) => fn({ data: what });
       return () => delete (window as any).__menu;
+    }
+    // And Help, Acknowledgements with window.__help().
+    if (name === "acknowledgements") {
+      (window as any).__help = () => fn({ data: null });
+      return () => delete (window as any).__help;
     }
     if (name !== "job") return () => {};
     // A transcription that reports where it got to, well ahead of the saved

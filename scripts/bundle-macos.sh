@@ -68,6 +68,15 @@ done
 if [ -d "$BINDIR/lib" ]; then
 	cp "$BINDIR"/lib/*.dylib "$APP/Contents/Frameworks/" 2>/dev/null || true
 fi
+# And never one with espeak-ng in it, which is GPL 3. carry-libs.sh puts
+# sherpa-onnx's release without speech synthesis there, see
+# scripts/speech-libs.sh, and this is the last place that can say no.
+if grep -alq 'espeak-ng' "$APP/Contents/Frameworks/"*.dylib 2>/dev/null; then
+	echo "bundle-macos.sh: a speech library in the bundle carries espeak-ng:" >&2
+	grep -al 'espeak-ng' "$APP/Contents/Frameworks/"*.dylib | sed 's/^/  /' >&2
+	echo "  See docs/THIRD_PARTY.md." >&2
+	exit 1
+fi
 
 # The icon, built from build/icon.png by sips and iconutil. See
 # scripts/make-icon.sh, which also explains why that PNG is inset rather
