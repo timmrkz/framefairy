@@ -1160,6 +1160,18 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
+// SetCaptionHighlight turns the pill behind the word being spoken, and the
+// bounce it makes, on or off for a whole clip set. Off, the captions are
+// the box and the words, and nothing in them moves.
+func (s *FrameFairy) SetCaptionHighlight(ctx context.Context, path, plan string, on bool) error {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return os.ErrNotExist
+	}
+	return s.edit(path, func() error {
+		return engine.SetCaptionStyle(plan, map[string]any{"highlight": on})
+	})
+}
+
 // SetCaptionsHeight puts the captions where the box was dragged to, as the
 // distance from the bottom of a 1080x1920 frame. There is one place for
 // every clip of every episode, because a place that suits one video suits

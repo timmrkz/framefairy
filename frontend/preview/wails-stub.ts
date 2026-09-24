@@ -498,7 +498,7 @@ export const Call = {
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[1])),
-          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: true, highlightColour: pillCss() },
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss() },
         });
       case "Fonts":
         return Promise.resolve([
@@ -690,6 +690,9 @@ export const Call = {
         if (args[2]) (window as any).__text = hexToCss(String(args[2]), Number(args[3]));
         if (args[4]) (window as any).__box = hexToCss(String(args[4]), Number(args[5]));
         if (args[6]) (window as any).__pill = hexToCss(String(args[6]), Number(args[7] ?? 1));
+        return Promise.resolve(null);
+      case "SetCaptionHighlight":
+        (window as any).__highlight = Boolean(args[2]);
         return Promise.resolve(null);
       case "SetWord": {
         const text = String(args[4]).trim();

@@ -743,7 +743,12 @@
   let captionDraft = $state<CaptionDraft | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
-  let colourDraft = $state<{ primary?: string; box?: string; highlight?: string } | null>(null);
+  let colourDraft = $state<{
+    primary?: string;
+    box?: string;
+    highlight?: string;
+    highlightOn?: boolean;
+  } | null>(null);
   // The captions the draft was made against. The draft is let go of when
   // they come back changed, so the caption box never flashes back to the
   // colour it had while the saved colour is on its way.
@@ -764,6 +769,7 @@
           primary: colourDraft.primary ?? view.style.primary,
           box: colourDraft.box ?? view.style.box,
           highlightColour: colourDraft.highlight ?? view.style.highlightColour,
+          highlight: colourDraft.highlightOn ?? view.style.highlight,
         },
       };
     }
@@ -780,7 +786,16 @@
   const highlightColour = $derived(highlightSplit.hex);
   const highlightOpacity = $derived(Math.round(highlightSplit.alpha * 100));
 
-  function drawColour(part: { primary?: string; box?: string; highlight?: string }) {
+  // Whether the word being spoken sits on its pill and bounces. Off, the
+  // captions are the box and the words.
+  const highlightOn = $derived(shownCaptions?.style.highlight ?? true);
+
+  function drawColour(part: {
+    primary?: string;
+    box?: string;
+    highlight?: string;
+    highlightOn?: boolean;
+  }) {
     if (!colourDraft) colourHeld = captions;
     colourDraft = { ...colourDraft, ...part };
   }
@@ -810,6 +825,24 @@
         highlight,
         highlightShare / 100,
       );
+      await refreshClips();
+    } catch (err) {
+      problem = errorText(err);
+      colourDraft = null;
+    } finally {
+      colourSaving = false;
+    }
+  }
+
+  // The highlight on or off, shown at once and saved straight after.
+  async function setCaptionHighlight(on: boolean) {
+    if (!current) return;
+    problem = "";
+    captionsWere = null;
+    drawColour({ highlightOn: on });
+    colourSaving = true;
+    try {
+      await api.setCaptionHighlight(path, current.plan, on);
       await refreshClips();
     } catch (err) {
       problem = errorText(err);
@@ -889,6 +922,7 @@
     opacity: number;
     highlight: string;
     highlightOpacity: number;
+    highlightOn: boolean;
   } | null>(null);
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
@@ -900,6 +934,7 @@
     textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
     highlight: splitColour(captions?.style.highlightColour ?? "").hex,
     highlightOpacity: Math.round(splitColour(captions?.style.highlightColour ?? "").alpha * 100),
+    highlightOn: captions?.style.highlight ?? true,
     box: splitColour(captions?.style.box ?? "").hex,
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
@@ -915,6 +950,7 @@
     captionsNow.font !== captionFontDefault ||
       captionsNow.size !== captionSizeDefault ||
       captionsNow.y !== captionYDefault ||
+      !captionsNow.highlightOn ||
       coloursMoved,
   );
 
@@ -927,6 +963,7 @@
       await setCaptionStyle(captionFontDefault, captionSizeDefault);
     }
     if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
+    if (!captionsNow.highlightOn) await setCaptionHighlight(true);
     if (coloursMoved) {
       await setCaptionColours(
         captionTextDefault,
@@ -949,6 +986,7 @@
       await setCaptionStyle(was.font, was.size);
     }
     if (was.y !== captionsNow.y) await setCaptionsHeight(was.y);
+    if (was.highlightOn !== captionsNow.highlightOn) await setCaptionHighlight(was.highlightOn);
     if (
       was.text !== captionsNow.text ||
       was.textOpacity !== captionsNow.textOpacity ||
@@ -1682,16 +1720,33 @@
                 /><span class="unit">%</span>
               </span>
             </div>
+            <!-- The word being spoken on a pill that bounces, or the box
+                 and the words alone. A row of its own, pressed like the
+                 loop button, so its name is as whole as every other name
+                 and its field ends where every other field ends. -->
+            <div class="setting">
+              <span>Highlight</span>
+              <span class="field">
+                <button
+                  class="toggle"
+                  class:on={highlightOn}
+                  aria-pressed={highlightOn}
+                  title="Light up the word being spoken on a pill that bounces. Off, the captions are the box and the words"
+                  onclick={() => setCaptionHighlight(!highlightOn)}>{highlightOn ? "On" : "Off"}</button
+                >
+              </span>
+            </div>
             <!-- The pill behind the word being spoken, beside the other two
                  colours of the captions and the same pair as they are, so
                  every colour the short and the clip timeline show is set
                  in one place and in one way. -->
             <div class="setting">
-              <span>Highlight</span>
-              <span class="field pair">
+              <span>Pill</span>
+              <span class="field pair" class:off={!highlightOn}>
                 <input
                   class="swatch"
                   type="color"
+                  disabled={!highlightOn}
                   title="The colour of the pill behind the word being spoken"
                   aria-label="Highlight colour"
                   value={highlightColour}
@@ -1715,6 +1770,7 @@
                   min="0"
                   max="100"
                   step="5"
+                  disabled={!highlightOn}
                   title="How much of the pill behind the word being spoken is seen. 100 is solid, less lets the box and the picture through"
                   aria-label="Highlight opacity"
                   value={highlightOpacity}
@@ -1862,7 +1918,9 @@
           ? {
               text: shownCaptions.style.primary,
               box: shownCaptions.style.box,
-              highlight: shownCaptions.style.highlightColour,
+              highlight: shownCaptions.style.highlight
+                ? shownCaptions.style.highlightColour
+                : "transparent",
             }
           : null}
         oncaptiontime={(word, edge, at) =>
@@ -2157,6 +2215,24 @@
   .field {
     position: relative;
     flex: none;
+  }
+
+  /* On or off, as wide as every other field, the word where the numbers
+     end, so the column reads as one. */
+  .setting button.toggle {
+    display: block;
+    width: 100%;
+    text-align: right;
+    padding-right: 29px;
+  }
+
+  /* A colour that has nothing to do while its switch is off. */
+  .field.off {
+    opacity: 0.45;
+  }
+
+  .field.off input {
+    cursor: default;
   }
 
   .field,

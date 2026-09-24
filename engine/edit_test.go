@@ -681,3 +681,24 @@ func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
 		t.Errorf("line %s", line)
 	}
 }
+
+// The highlight is on or off and nothing else, because the render reads a
+// number and a string would quietly count as on.
+func TestCaptionHighlightTakesOnlyOnOrOff(t *testing.T) {
+	path := editablePlanPath(t)
+	for _, bad := range []any{"off", 0.0, nil} {
+		if err := SetCaptionStyle(path, map[string]any{"highlight": bad}); err == nil {
+			t.Errorf("%v was taken for on or off", bad)
+		}
+	}
+	if err := SetCaptionStyle(path, map[string]any{"highlight": false}); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ResolveStyle(plan.CaptionStyle()).Highlight {
+		t.Error("the highlight is still on")
+	}
+}

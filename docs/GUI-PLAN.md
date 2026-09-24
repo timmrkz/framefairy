@@ -147,6 +147,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 4.4 | A caption shown earlier or later, and for longer or shorter, where the timing of the words is a little off from what is heard | `[x]` |
 | 4.4b | Drag the caption box up and down on a grid, per clip, with one click back and one click to undo that | `[x]` |
 | 4.5 | The caption face and size next to the clip `[x]`, the highlight colour in settings `[x]`, the rest | `[~]` |
+| 4.5b | The word highlight turned on or off per clip set, with its bounce, in the short, the video preview and the clip timeline | `[x]` |
 | 4.6 | The caption fonts built into the binary, so nothing has to be installed | `[x]` |
 | 4.7 | Lines broken by measured width, and the size brought down when a word will not fit | `[x]` |
 

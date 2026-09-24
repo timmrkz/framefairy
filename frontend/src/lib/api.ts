@@ -458,6 +458,10 @@ export const api = {
       highlight,
       highlightOpacity,
     ),
+  // The pill behind the word being spoken, and its bounce, on or off for a
+  // whole clip set.
+  setCaptionHighlight: (path: string, plan: string, on: boolean) =>
+    call<void>("SetCaptionHighlight", path, plan, on),
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview saves it, so the next video starts there too.
   setCaptionsHeight: (path: string, y: number) => call<void>("SetCaptionsHeight", path, y),
