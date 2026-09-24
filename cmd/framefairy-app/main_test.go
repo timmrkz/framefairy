@@ -44,7 +44,7 @@ func TestPlanWaitsAndReportsAFailedTranscription(t *testing.T) {
 
 	// Finding clips queues the transcription itself, and fails with its
 	// reason when the transcription fails.
-	job := svc.Plan(source, engine.PlanRequest{To: 2, Count: 1})
+	job := svc.Plan(source, engine.PlanRequest{To: 2, Count: 1, Min: 1, Max: 2})
 	if job.Lane != LaneWork {
 		t.Errorf("plan lane %s", job.Lane)
 	}
@@ -163,5 +163,9 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	}
 	if words.KeepPause <= 0 {
 		t.Errorf("keepPause %v", words.KeepPause)
+	}
+	room, err := svc.Room(source)
+	if err != nil || len(room.Lines) != 0 || room.Chars <= 0 || room.Rate != engine.SpokenChars {
+		t.Errorf("room %+v, %v", room, err)
 	}
 }

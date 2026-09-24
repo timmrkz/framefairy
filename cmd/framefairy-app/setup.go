@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"framefairy/engine"
 )
@@ -40,6 +42,9 @@ type LanguageModelView struct {
 	// which is why it is worked out here rather than written into the
 	// catalogue.
 	Recommended bool `json:"recommended"`
+	// InUse marks the one a search runs on: the model file named in the
+	// settings, or with none named the only one there is.
+	InUse bool `json:"inUse"`
 }
 
 // SetupState is what the interface needs to decide whether to ask anything.
@@ -94,10 +99,12 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	}
 	state.Memory = engine.MachineMemory()
 	best, hasBest := engine.RecommendedFor(state.Memory)
+	using := modelInUse(settings)
 	for _, m := range engine.LanguageModels() {
 		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir),
 			Fit:         string(m.FitsIn(state.Memory)),
 			Recommended: hasBest && m.Name == best.Name}
+		view.InUse = view.Installed && using == m.Name
 		if view.Installed {
 			state.HasLocalModel = true
 		}
@@ -182,11 +189,33 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 	if model.Installed(engine.ModelsDir()) {
 		return s.jobs.refuse("", "llm", model.Title, model.Title+" is already installed")
 	}
+	// The model in use before this one arrives stays in use. With none
+	// named, one model on the machine is the one in use by being the only
+	// one, and a second arriving would take that away without a word: the
+	// engine will not guess between two, so every search after the
+	// download would fail. Naming the one that was in use keeps things as
+	// they were, and Use is how the new one takes over.
+	before := modelInUse(s.store.Settings())
 	// One at a time, however often it is asked for.
 	return s.jobs.addOnce("", "llm", model.Title,
 		func(ctx context.Context, p *engine.Project) (string, error) {
-			return "", engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir())
+			if err := engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
+				return "", err
+			}
+			return "", s.keepInUse(before)
 		})
+}
+
+// keepInUse names the model that was in use before an install, when the
+// settings name none, so the install does not leave two models and no
+// choice between them.
+func (s *FrameFairy) keepInUse(before string) error {
+	settings := s.store.Settings()
+	if settings.LLMModel != "" || before == "" {
+		return nil
+	}
+	settings.LLMModel = filepath.Join(engine.ModelsDir(), before)
+	return s.store.SetSettings(settings)
 }
 
 // SaveAPIKey puts a key in the macOS keychain, which is the only place the
@@ -210,4 +239,102 @@ func (s *FrameFairy) ChoosePlanner(planner string) error {
 		set.Planner = planner
 		set.Chosen = true
 	})
+}
+
+// modelInUse is the file name of the model a search runs on: the one named
+// in the settings, or with none named the only one there is. Empty when
+// there is none, or several and none named, which is a search that fails
+// until one is chosen.
+func modelInUse(settings Settings) string {
+	if settings.LLMModel != "" {
+		return filepath.Base(settings.LLMModel)
+	}
+	found, err := engine.DefaultLocalModel()
+	if err != nil || found == "" {
+		return ""
+	}
+	return filepath.Base(found)
+}
+
+// UseLanguageModel makes an installed model the one clips are found with,
+// and says the path it is found at, so the settings on screen can show it
+// without being read again over whatever else was being typed there.
+//
+// Two models on the machine and none named is a search that cannot start,
+// because the engine will not guess which one was meant. Installing a
+// second model to try it is exactly how that happens, so choosing between
+// them is one click on the model rather than a path typed into a field.
+func (s *FrameFairy) UseLanguageModel(name string) (string, error) {
+	model, ok := engine.LanguageModelByName(name)
+	if !ok {
+		return "", fmt.Errorf("there is no language model called %s", name)
+	}
+	dir := engine.ModelsDir()
+	if !model.Installed(dir) {
+		return "", fmt.Errorf("%s is not installed", model.Title)
+	}
+	path := filepath.Join(dir, model.Name)
+	settings := s.store.Settings()
+	settings.LLMModel = path
+	return path, s.store.SetSettings(settings)
+}
+
+// busyWith says whether a job of one of these kinds is waiting or running.
+func (s *FrameFairy) busyWith(kinds ...string) bool {
+	for _, job := range s.jobs.list() {
+		if job.State != JobQueued && job.State != JobRunning {
+			continue
+		}
+		for _, kind := range kinds {
+			if job.Kind == kind {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// RemoveLanguageModel takes a model off the machine, to give its room back.
+// Not while one is being installed or clips are being found, because
+// either may be reading the very file. If it was the one named in the
+// settings, the settings no longer name it: a model that is not there is
+// nothing to point at.
+func (s *FrameFairy) RemoveLanguageModel(name string) error {
+	model, ok := engine.LanguageModelByName(name)
+	if !ok {
+		return fmt.Errorf("there is no language model called %s", name)
+	}
+	if s.busyWith("llm") {
+		return fmt.Errorf("a model is being installed. Remove %s once that is done", model.Title)
+	}
+	if s.busyWith("plan") {
+		return fmt.Errorf("clips are being found. Remove %s once that is done", model.Title)
+	}
+	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
+		return err
+	}
+	settings := s.store.Settings()
+	if settings.LLMModel != "" && filepath.Base(settings.LLMModel) == model.Name {
+		settings.LLMModel = ""
+		return s.store.SetSettings(settings)
+	}
+	return nil
+}
+
+// RemoveSpeechModel takes a speech model off the machine. Not while one is
+// being installed or an episode is being transcribed. Without one, the app
+// asks for it again the next time it starts, because nothing can be made
+// without it.
+func (s *FrameFairy) RemoveSpeechModel(name string) error {
+	model, ok := engine.SpeechModelByName(name)
+	if !ok {
+		return fmt.Errorf("there is no speech model called %s", name)
+	}
+	if s.busyWith("model") {
+		return fmt.Errorf("a model is being installed. Remove %s once that is done", model.Title)
+	}
+	if s.busyWith("transcribe") {
+		return fmt.Errorf("an episode is being transcribed. Remove %s once that is done", model.Title)
+	}
+	return engine.RemoveSpeechModel(model, engine.ModelsDir())
 }

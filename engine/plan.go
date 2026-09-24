@@ -123,7 +123,7 @@ func MarshalPlan(plan any) ([]byte, error) {
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
-func (e *Engine) buildPrompt(lines []Line, opts PlanOptions) string {
+func buildPrompt(lines []Line, opts PlanOptions) string {
 	ask := []string{
 		fmt.Sprintf("Choose exactly %d clip(s).", opts.Count),
 		fmt.Sprintf("Each clip must total between %s and %s seconds once condensed.",
@@ -152,7 +152,7 @@ type savedReply struct {
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
 	lines []Line, opts PlanOptions) (*PlanFile, error) {
-	prompt := e.buildPrompt(lines, opts)
+	prompt := buildPrompt(lines, opts)
 
 	// A reply that has been paid for is reused rather than bought again. If a
 	// later stage crashes, or you simply re-run with the same transcript, the
@@ -187,6 +187,15 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 					e.Log.OK("reusing the saved reply for this transcript, no API call")
 				}
 			}
+		}
+	}
+
+	// A window longer than the model can read in one request is refused
+	// before anything is loaded or paid for. The app never draws one, and
+	// the command line hears why, see room.go.
+	if !haveReply {
+		if err := windowFits(lines, opts); err != nil {
+			return nil, err
 		}
 	}
 
@@ -260,13 +269,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 				"which is billed as output")
 		}
 
-		// Three limits, for three different reasons. The model's context
-		// window, its maximum output, and your wallet.
-		if estimate+opts.MaxTokens > facts.Context {
-			return nil, renderErr("the prompt is roughly %s tokens and the reply may be up to "+
-				"%s, which together do not fit in %s's %s token context window.",
-				commas(estimate), commas(opts.MaxTokens), opts.Model, commas(facts.Context))
-		}
+		// Two more limits, for two more reasons. The model's context was
+		// checked with the window, and here are its maximum output and your
+		// wallet.
 		if opts.MaxTokens > facts.MaxOutput {
 			return nil, renderErr("--max-tokens %s is above %s's limit of %s output tokens.",
 				commas(opts.MaxTokens), opts.Model, commas(facts.MaxOutput))
@@ -403,4 +408,25 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 		body, _ = MarshalPlan(map[string]string{"text": reply})
 	}
 	_ = os.WriteFile(cachePath, body, 0o644)
+}
+
+// windowFits says whether the transcript of a window fits in one request to
+// the model that is going to read it.
+func windowFits(lines []Line, opts PlanOptions) error {
+	room := planRoom(opts)
+	have := runeLen(AnnotateLines(lines))
+	if have <= room.Chars {
+		return nil
+	}
+	if room.By == "budget" {
+		return renderErr("the transcript of this window is %s characters, and a search within "+
+			"the $%s budget reads at most %s. Choose a shorter window, or raise the budget with --budget.",
+			commas(have), fixed(opts.Budget, 2), commas(room.Chars))
+	}
+	name := opts.Model
+	if opts.Local != nil && opts.Local.Model != "" {
+		name = filepath.Base(opts.Local.Model)
+	}
+	return renderErr("the transcript of this window is %s characters, and %s reads at most %s "+
+		"at once. Choose a shorter window.", commas(have), name, commas(room.Chars))
 }

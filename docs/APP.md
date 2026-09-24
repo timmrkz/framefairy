@@ -69,6 +69,17 @@ to run, and nothing else is promised.
 A `.gguf` already in `~/.framefairy/models` is used as it is, whether the
 app fetched it or not.
 
+**Installing is work in hand, and it looks it.** The button it was started
+from carries it, the way every control that starts work does: the beam
+round it and the fill for how far the download has come, and it reads
+**Cancel** while it runs. What has arrived stays, and **Install** carries on
+from it. The row itself does not light up or move. The line under the name
+that says what the model costs says instead how far it has come, how fast
+and how long is left, *Fetching 1.8 GB of 5.2 GB at 42 MB a second, 0:13
+left*, in the same one line, so the row keeps its height. The numbers are
+counted in thousands, the way the size to fetch is, so a model said to be
+5.2 GB arrives as 5.2 GB of 5.2 GB.
+
 A model is only half of the local way. `llama-server`, from llama.cpp, is
 what runs it, and a model without one is fifteen gigabytes that answer
 nothing. So the app looks for it and says so while it is missing, and it
@@ -372,6 +383,10 @@ place.
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
+  never more than a window can hold: **Clips** and **Shortest** go no
+  higher than fits, one clip after another at the shortest length, in the
+  longest window that can be drawn anywhere on the episode. A number typed
+  past that is taken back to it, and its `title` says what the most is.
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
@@ -616,6 +631,27 @@ place.
       four hour one. A wall wins over the step, so a window that runs into
       a searched one ends exactly at it. While a window is drawn or moved
       it says what it is, in a pill over the track.
+    - **A window is what one search can do.** It is sent to the model in
+      one request and never split behind anybody's back, so it reaches no
+      further than the model reads at once, and no shorter than the clips
+      asked for need at their shortest. Both are walls: an edge stops
+      exactly there, the border of the window flashes twice in the red of
+      a warning the moment it runs in, once for each time and not for as
+      long as the hand keeps pulling, and the pill says by what, *all the model reads at
+      once*, *all this computer's memory holds*, *all the budget pays for* or
+      *room for 12 clips of 20 s*. How
+      far the model reads is the engine's to say, from the model chosen in
+      the settings, and the range picker adds up the lines a window covers
+      as it is dragged, see [ENGINE.md](ENGINE.md#how-much-one-search-can-read).
+      The window has one longest length for the whole episode, the length
+      that fits wherever it is drawn, so a window that fits somewhere fits
+      everywhere and is never held back as it is moved. Speech is denser in
+      some places than in others, and what is not transcribed yet is
+      weighed with room to spare, so the longest window that fits changes
+      along the episode, and a window that fitted at the start and not at
+      the end at the same length was a limit nobody could see a reason
+      for. The pill is over everything on the track while it is there. When the clips ask for more than the window
+      has, the window grows to hold them, from its end.
     - While clips are being found for it, the window cannot be moved and a
       soft light passes through it every couple of seconds, which is the
       track saying work is in hand. How far the search has come is on the
@@ -1078,6 +1114,33 @@ with the rest of the settings, because it never lands in the settings file.
 An app opened from Finder has no shell environment, so this is the only way
 to give it a key. With **On this machine** chosen, the same list of language
 models the first run shows, judged against the same memory.
+
+In the settings a model that is there can go again, to give its room back.
+Its trash can is always there, the last button of the row, and every row of
+the list keeps its place, so the buttons stand in one column whether a model
+is there or not. It asks first in the box over the app, because fetching it
+again is gigabytes: **Cancel**, where the keyboard starts, and **Remove**.
+While a model is being installed the trash cans wait, dimmed.
+**In use** and **Installed** keep the frame of the button they stand in for,
+in green, so a row reads the same whatever its model is. Removing the speech model means
+the app asks for one again the next time it starts, because nothing can be
+transcribed without it. A model is not removed while it is being installed
+or while the work that reads it runs, and the refusal says which.
+
+**Several language models, one in use.** Trying a second model leaves two
+on the machine, and the engine will not guess which one was meant, so a
+search would fail until one is named. The one in use wears the colour of a
+chosen row and says **In use**, and every other one that is there offers
+**Use**, which names it in the settings at once and in the **Model file**
+field below, so the next **Save** keeps it. Removing the model in use lets
+go of it in the settings too.
+
+A second model arriving never takes the first one's place by itself. When
+the settings name none, the one model on the machine is in use by being the
+only one, and a download that finishes names it in the settings, so what was
+in use stays in use until **Use** is pressed on the new one. A machine that
+already has two and none named, from before this was so, says so at the top
+of the settings in the app's own words, and **Use** settles it.
 
 The rest is paths to ffmpeg, llama-server and the models, and the output
 folder. **Colours** holds **the app**, what the app picks things out in, the

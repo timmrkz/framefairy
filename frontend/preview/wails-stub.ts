@@ -291,27 +291,39 @@ const modelJob = () => ({
 });
 
 // The same for a model that finds clips, on its own lane and its own
-// clock, so a probe can have one running while the other is not.
+// clock, so a probe can have one running while the other is not. In the
+// settings mode it takes twenty seconds, long enough to watch and to
+// cancel. The job is named the way the Go side names it, by the model's
+// own title and without its maker, which is not what the row shows: a
+// stub that named it the way the row does could never show the row
+// failing to find its own install, which it did.
 const llmAt = () => (window as any).__llmAt ?? 0;
-const llmRunning = () => llmAt() > 0 && Date.now() - llmAt() < 4000;
-const llmDone = () => llmAt() > 0 && Date.now() - llmAt() >= 4000;
-const llmJob = () => ({
-  id: "l1",
-  episode: "",
-  kind: "llm",
-  label: "Gemma 4 26B A4B by Google",
-  state: llmDone() ? "done" : "running",
-  queued: "",
-  lane: "work",
-  progress: llmDone()
-    ? undefined
-    : {
-        stage: "language model",
-        text: "fetching",
-        fraction: Math.min((Date.now() - llmAt()) / 4000, 1),
-        remaining: Math.max(0, Math.round(4 - (Date.now() - llmAt()) / 1000)),
-      },
-});
+const llmFor = () => (location.search.includes("models") ? 20000 : 4000);
+const llmCancelled = () => (window as any).__llmCancelled ?? 0;
+const llmRunning = () => llmAt() > 0 && !llmCancelled() && Date.now() - llmAt() < llmFor();
+const llmDone = () => llmAt() > 0 && !llmCancelled() && Date.now() - llmAt() >= llmFor();
+const llmJob = () => {
+  const share = Math.min((Date.now() - llmAt()) / llmFor(), 1);
+  const total = (window as any).__llmSize ?? 15.5;
+  return {
+    id: "l1",
+    episode: "",
+    kind: "llm",
+    label: (window as any).__llmTitle ?? "Gemma 4 26B A4B",
+    state: llmCancelled() ? "cancelled" : llmDone() ? "done" : "running",
+    queued: "",
+    lane: "work",
+    progress:
+      llmDone() || llmCancelled()
+        ? undefined
+        : {
+            stage: "language model",
+            text: `fetching ${(total * share).toFixed(1)} GB of ${total.toFixed(1)} GB at 42 MB a second`,
+            fraction: share,
+            remaining: Math.max(0, Math.round((llmFor() - (Date.now() - llmAt())) / 1000)),
+          },
+  };
+};
 
 export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
@@ -375,7 +387,7 @@ export const Call = {
           unpacked: 671239000,
           url: "https://example.invalid/parakeet.tar.bz2",
           recommended: true,
-          installed: !fresh || modelDone(),
+          installed: (!fresh || modelDone()) && !((window as any).__removed ?? []).includes("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"),
         };
         const planner = (window as any).__planner ?? "";
         const key = !!(window as any).__key;
@@ -383,7 +395,51 @@ export const Call = {
         // is a real one, and so the memory below has something to say. The
         // small one fits any machine, the big one fits none of the ones
         // the harness pretends to be.
-        const language = [
+        // ?models is the settings of a machine that has tried a second
+        // model: two installed, one of them in use, and a third to fetch.
+        const trying = location.search.includes("models");
+        const removed: string[] = (window as any).__removed ?? [];
+        const used: string = (window as any).__used ?? "gemma-4-26B_q4_0-it.gguf";
+        const language = trying
+          ? [
+              {
+                name: "gemma-4-26B_q4_0-it.gguf",
+                title: "Gemma 4 26B A4B",
+                maker: "Google",
+                about: "Quantised to four bits, and only four billion of its twenty six are used per token.",
+                download: 14439363584,
+                needs: 21474836480,
+                url: "https://example.invalid/gemma.gguf",
+                fit: "fits",
+                recommended: true,
+              },
+              {
+                name: "gemma-4-12b-it-qat-q4_0.gguf",
+                title: "Gemma 4 12B",
+                maker: "Google",
+                about: "Twelve billion parameters, trained to be quantised to four bits.",
+                download: 6975879296,
+                needs: 10737418240,
+                url: "https://example.invalid/gemma12.gguf",
+                fit: "fits",
+                recommended: false,
+              },
+              {
+                name: "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+                title: "Ministral 3 8B",
+                maker: "Mistral",
+                about: "Eight billion parameters, quantised to four bits. The smallest of these.",
+                download: 5198911904,
+                needs: 15032385536,
+                url: "https://example.invalid/ministral.gguf",
+                fit: "fits",
+                recommended: false,
+              },
+            ].map((m, i) => {
+              const installed = !removed.includes(m.name) && (i < 2 || llmDone());
+              return { ...m, installed, inUse: installed && used === m.name };
+            })
+          : [
           {
             name: "gemma-4-26B_q4_0-it.gguf",
             title: "Gemma 4 26B A4B",
@@ -408,7 +464,7 @@ export const Call = {
             fit: "too big",
             recommended: false,
           },
-        ];
+        ].map((m) => ({ ...m, inUse: m.installed }));
         return Promise.resolve({
           speech: [model],
           hasSpeech: model.installed,
@@ -428,9 +484,26 @@ export const Call = {
       case "InstallSpeechModel":
         (window as any).__installAt ??= Date.now();
         return Promise.resolve(modelJob());
-      case "InstallLanguageModel":
-        (window as any).__llmAt ??= Date.now();
+      case "InstallLanguageModel": {
+        const titles: Record<string, [string, number]> = {
+          "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf": ["Ministral 3 8B", 5.2],
+          "gemma-4-12b-it-qat-q4_0.gguf": ["Gemma 4 12B", 7.0],
+        };
+        const [title, total] = titles[String(args[0])] ?? ["Gemma 4 26B A4B", 15.5];
+        (window as any).__llmTitle = title;
+        (window as any).__llmSize = total;
+        (window as any).__llmCancelled = 0;
+        (window as any).__llmAt = Date.now();
         return Promise.resolve(llmJob());
+      }
+      case "RemoveLanguageModel":
+      case "RemoveSpeechModel":
+        ((window as any).__removed ??= []).push(String(args[0]));
+        if ((window as any).__used === args[0]) (window as any).__used = "";
+        return Promise.resolve(null);
+      case "UseLanguageModel":
+        (window as any).__used = String(args[0]);
+        return Promise.resolve(`/Users/tim/.framefairy/models/${String(args[0])}`);
       case "WarmModel":
         // A probe reads which windows the model was loaded for.
         ((window as any).__warmed ??= []).push(args.slice(1));
@@ -518,6 +591,26 @@ export const Call = {
         return Promise.resolve({
           searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
           free: [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
+        });
+      case "Room":
+        // ?uneven is an episode read for its first hour, lighter there than
+        // the rest is weighed, the way a real one is: the longest window
+        // that fits is longer from the start than further on, which is
+        // what Tim ran into moving a window along.
+        if (location.search.includes("uneven")) {
+          const lines = [];
+          for (let at = 0; at + 3 <= 3600; at += 4) lines.push({ start: at, end: at + 3, chars: 80 });
+          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: 3600, rate: 30 });
+        }
+        // A model that reads everything, or with ?small one that reads
+        // about 35 minutes at a time, the way Qwen3 14B does, and with
+        // ?memory a machine whose memory holds about 1.3 hours.
+        return Promise.resolve({
+          chars: location.search.includes("small") ? 52000 : location.search.includes("memory") ? 117000 : 600000,
+          by: location.search.includes("memory") ? "memory" : "context",
+          lines: [],
+          heard: 0,
+          rate: 25,
         });
       case "Captions":
         return Promise.resolve({
@@ -776,6 +869,7 @@ export const Call = {
         return Promise.resolve(`/eps/still-${Math.round(Number(args[1]) || 0)}.jpg`);
       case "CancelJob":
         (window as any).__stopped = true;
+        if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
         return Promise.resolve(null);
       case "Transcribe":
         (window as any).__carriedOn = true;
@@ -832,7 +926,7 @@ export const Events = {
       }, 400);
       return () => clearInterval(timer);
     }
-    if (location.search.includes("setup")) {
+    if (location.search.includes("setup") || location.search.includes("models")) {
       const timer = setInterval(() => {
         if (installAt()) {
           fn({ data: { job: modelJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
