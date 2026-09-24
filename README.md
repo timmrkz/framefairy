@@ -80,6 +80,7 @@ docs/
   TRAINING.md         training records and the training tool
   GUI-PLAN.md         the app's build plan, batch by batch
   PACKAGING.md        what ships, what the user installs, which ffmpeg
+  THUMBNAILS.md       the thumbnail of a short: spec, not built yet
   THIRD_PARTY.md      licences of everything included
 ```
 

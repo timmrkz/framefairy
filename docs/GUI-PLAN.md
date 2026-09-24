@@ -44,7 +44,8 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.2 | `Project` with separate steps on top of `Run`, windows cut from the whole transcript | `[x]` |
 | 1.3 | Episode status from the files on disk | `[x]` |
 | 1.4 | Waveform peaks, silences, words in a window, plan views | `[x]` |
-| 1.5 | Thumbnails per clip and the playback copy of the episode | `[ ]` |
+| 1.5 | A thumbnail per clip: three proposed by the engine, one shown in the clip card, chosen with a mark on the clip timeline, written beside the short on render. Spec in [THUMBNAILS.md](THUMBNAILS.md) | `[ ]` |
+| 1.5b | The playback copy of the episode, for a file the app cannot play or plays badly | `[ ]` |
 | 1.6 | Plan edits: keep or reject `[x]`, trim edges `[x]`, change the cuts inside a clip with snapping `[x]` | `[x]` |
 | 1.7 | Caption edits in the plan, with SRT export and import | `[ ]` |
 | 1.8 | A clip's captions on request, in the lines and the look the render uses, for the caption preview | `[x]` |
@@ -142,7 +143,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 |---|---|---|
 | 4.1 | Captions drawn in the video preview with the render's font, place and highlight `[x]`, compared against a rendered frame `[ ]` | `[~]` |
 | 4.2 | Live ASS for the clip being edited | `[ ]` |
-| 4.3 | Correct words in the caption box in the video preview `[x]`, a correction that holds several words `[x]`, split and merge captions `[ ]` | `[~]` |
+| 4.3 | Correct words in the caption box in the video preview `[x]`, a correction that holds several words `[x]`. Split and merge captions dropped: the edges of a caption and the words in it are enough | `[x]` |
 | 4.4 | A caption shown earlier or later, and for longer or shorter, where the timing of the words is a little off from what is heard | `[x]` |
 | 4.4b | Drag the caption box up and down on a grid, per clip, with one click back and one click to undo that | `[x]` |
 | 4.5 | The caption face and size next to the clip `[x]`, the highlight colour in settings `[x]`, the rest | `[~]` |
