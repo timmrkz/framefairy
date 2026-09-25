@@ -353,11 +353,11 @@ place.
   there. The transcription is the first step of the search as far as
   anyone can see: the moment New is pressed the list opens as many rows as
   the search will look for, the first wearing the beam and the fill, the
-  rest breathing, and the first is brought into view. The fill runs from
-  where the transcript stood when New was pressed to the end of the
-  window, so it moves as fast as the edge on the range picker crosses the
-  window. It was measured from the start of the episode, and a window two
-  hours in began nearly full. **Cancel** calls the search off and stops the
+  rest breathing, and the first is brought into view. The fill is how much
+  of the window has been transcribed, a view of the window on the range
+  picker: empty at its start, half full when the edge is half way across
+  it, full at its end. It was measured from the start of the episode, and
+  a window two hours in began nearly full. **Cancel** calls the search off and stops the
   transcription with it. New used to be off until the window was transcribed, and a
   transcription that had been paused had to be carried on first with a
   mark at the edge of the range picker, which nobody could be expected to
@@ -635,7 +635,9 @@ place.
       comes back with a third of the row after it showing, so it is plain
       there is more to come, and the clip that just landed stays in view
       above it. Only when a clip lands: following every report would fight
-      a hand that is scrolling. The list stays in the order the clips were
+      a hand that is scrolling. The last clip a search finds leaves no row
+      after it, so that clip itself is brought into view, to the foot of
+      the list when it lands below. The list stays in the order the clips were
       spoken, which is the order of the range picker and the clip
       timeline, so a new clip lands where it belongs in the episode rather
       than on top.
