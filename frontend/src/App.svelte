@@ -6,6 +6,7 @@
     onChrome,
     onEpisodeChanged,
     onAcknowledgements,
+    onQuit,
     type Chrome,
     type EpisodeStatus,
     errorText,
@@ -13,6 +14,7 @@
   import { chosen, jobs, nav, shell } from "./lib/state.svelte";
   import Icon from "./components/Icon.svelte";
   import Confirm from "./components/Confirm.svelte";
+  import Busy from "./components/Busy.svelte";
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
@@ -82,22 +84,39 @@
     }
   }
 
+  // Cmd+Q heard: the app dims at once and says what happens next. See
+  // quit.go for why the first press only asks while work runs.
+  let leaving = $state<"ask" | "going" | null>(null);
+  const quitKey = /Mac/.test(navigator.userAgent) ? "⌘Q" : "Ctrl+Q";
+
   // Removing an episode belongs to the episode in the list, not to the
   // workspace, which is about the clips.
   let removing = $state<EpisodeStatus | null>(null);
 
+  // Which answer is being carried out. Removing waits for the episode's
+  // work to stop, which takes a moment while a search runs, so the button
+  // says so at once and the box takes no second click.
+  let removingHow = $state<"keep" | "delete" | null>(null);
+
   async function remove(ep: EpisodeStatus, deleteWork: boolean) {
+    if (removingHow) return;
+    removingHow = deleteWork ? "delete" : "keep";
     try {
       await api.removeEpisode(ep.source, deleteWork);
-      removing = null;
-      await refresh();
+      // The workspace goes first. Left open, it went on reading the
+      // episode it showed, which was no longer in the library, and every
+      // read came back as "file does not exist".
       if (nav.view.name === "episode" && nav.view.path === ep.source) nav.go({ name: "empty" });
       // An episode added again is a new one: its window starts from the
       // beginning and it looks for its first clips by itself.
       chosen.forget(ep.source);
+      removing = null;
+      await refresh();
     } catch (err) {
       removing = null;
       problem = errorText(err);
+    } finally {
+      removingHow = null;
     }
   }
 
@@ -193,8 +212,23 @@
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
+    // The question lasts as long as the Go side waits for the second
+    // press, quitAgain in quit.go.
+    let asked: ReturnType<typeof setTimeout> | undefined;
+    const dismiss = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && leaving === "ask") leaving = null;
+    };
+    window.addEventListener("keydown", dismiss);
+    const noQuit = onQuit((what) => {
+      clearTimeout(asked);
+      leaving = what;
+      if (what === "ask") asked = setTimeout(() => (leaving = null), 3000);
+    });
     window.addEventListener("pointerdown", handOverFocus);
     return () => {
+      clearTimeout(asked);
+      window.removeEventListener("keydown", dismiss);
+      noQuit();
       window.removeEventListener("pointerdown", handOverFocus);
       noChrome();
       noAcknowledgements();
@@ -365,9 +399,22 @@
   {/if}
   </div>
 
+  {#if leaving}
+    <!-- Over everything, the moment the key is heard. A click or Escape
+         takes the question away, the same as waiting does. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="leaving"
+      role="status"
+      onpointerdown={() => leaving === "ask" && (leaving = null)}
+    >
+      <p>{leaving === "ask" ? `Press ${quitKey} again to quit` : "Quitting"}</p>
+    </div>
+  {/if}
+
   {#if removing}
     {@const ep = removing}
-    <Confirm title="Remove {ep.name}?" oncancel={() => (removing = null)}>
+    <Confirm title="Remove {ep.name}?" oncancel={() => !removingHow && (removing = null)}>
       {#if ep.work}
         <p>
           The transcript, the clip sets and the rendered clips are in
@@ -391,19 +438,57 @@
            only the one that cannot be taken back is marked. The other
            boxes have two answers and no highlight either. -->
       {#snippet actions()}
-        <button onclick={() => (removing = null)}>Cancel</button>
+        <button onclick={() => (removing = null)} disabled={!!removingHow}>Cancel</button>
         {#if ep.work}
-          <button onclick={() => remove(ep, false)}>Keep</button>
-          <button class="danger" onclick={() => remove(ep, true)}>Remove</button>
-        {:else}
-          <button class="danger" onclick={() => remove(ep, true)}>Remove</button>
+          <button class="answer" onclick={() => remove(ep, false)} disabled={!!removingHow}
+            >{#if removingHow === "keep"}<Busy />{/if}{removingHow === "keep"
+              ? "Removing"
+              : "Keep"}</button
+          >
         {/if}
+        <button class="answer danger" onclick={() => remove(ep, true)} disabled={!!removingHow}
+          >{#if removingHow === "delete"}<Busy />{/if}{removingHow === "delete"
+            ? "Removing"
+            : "Remove"}</button
+        >
       {/snippet}
     </Confirm>
   {/if}
 </div>
 
 <style>
+  /* Cmd+Q heard. The dim is the one a box over the workspace brings,
+     Confirm.svelte, so the app looks the same whenever it is waiting on
+     an answer. The words are the size of a box's title. */
+  .leaving {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  /* The words on a dark ground of their own, the way macOS shows the
+     volume, because the dim alone leaves them over the captions in the
+     video preview. No line round it and nothing to press: a box over the
+     workspace is Confirm.svelte, and it only asks about what cannot be
+     taken back. */
+  .leaving p {
+    margin: 0;
+    padding: 12px 20px;
+    border-radius: var(--radius-m);
+    background: var(--ink-0);
+    font-size: var(--size-l);
+    font-weight: 600;
+  }
+
+  /* Room for Removing, so the row of answers does not move when one is
+     clicked. */
+  .answer {
+    min-width: 96px;
+  }
+
   /* The rail keeps its own column, so nothing of the workspace ever hides
      under it. The sidebar grows over the workspace from there. */
   .shell {

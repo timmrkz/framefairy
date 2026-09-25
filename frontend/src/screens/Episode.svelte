@@ -32,6 +32,8 @@
   import { chosen, jobs } from "../lib/state.svelte";
   import {
     draftCaptions,
+    frameStart,
+    waitShare,
     Heard,
     inEpisode,
     Newest,
@@ -182,17 +184,17 @@
         run: skipLook,
         off: false,
         primary: false,
-        title: "Do not look for clips by itself when the transcript reaches the end of the window",
+        title: "Call the search off. The transcription it waits for stops with it",
       };
     }
     return {
       label: "New",
       icon: "plus",
       run: newClips,
-      off: !readyToLook,
+      off: duration <= 0 || to <= 0,
       primary: true,
       title: !readyToLook
-        ? `The transcript reaches ${clock(covered)}. Clips can be looked for once it reaches ${clock(to)}`
+        ? `Look for clips in the window. The episode is transcribed up to ${clock(to)} first, it is at ${clock(heard)}`
         : covering
           ? "Look at the window again, removing the clips it has"
           : "Look for clips in the window",
@@ -208,11 +210,19 @@
     if (!working) stopping = false;
   });
 
-  // The first search called off before it started. The episode counts as
-  // looked at, so it does not start by itself either, and New is there
-  // for when it is wanted.
+  // A search called off while it waits for the transcript. The episode
+  // counts as looked at, so it does not start by itself again, and New is
+  // there for when it is wanted.
   function skipLook() {
     chosen.looked[path] = true;
+    delete chosen.asked[path];
+    // The transcription runs for the search, so it stops with it.
+    stopTranscribing();
+    // The transcription stops at the window only for that search.
+    if (chosen.held[path]) {
+      delete chosen.held[path];
+      api.holdTranscription(path, 0).catch(() => {});
+    }
   }
 
   function stopWork() {
@@ -222,13 +232,6 @@
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
 
-  // A transcription that was stopped part way through. The episode still
-  // wants words, some of them are already read, and nothing is reading the
-  // rest. It is the state pausing leaves behind, and until it had a name
-  // there was no way back out of it: the mark that stops the transcription
-  // was only there while it ran, and once a clip existed the head never
-  // went back to being about words, so nothing ever offered to carry on.
-  const partly = $derived(needsWords && covered > 0 && !transcribing && !starting);
   // How far the audio has been heard, which is not the same as how far the
   // saved transcript reaches. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
@@ -257,12 +260,16 @@
   let stoppedAt = $state<number | null>(null);
   const shownHeard = $derived(stoppedAt ?? heard);
 
-  // A search reads the transcript off disk, so it can only run where the
-  // saved transcript reaches. It goes by covered and not by heard for that
-  // reason: heard runs ahead of what has been written down, and a search
-  // started on it would read a transcript that stops short of the window
-  // it was asked for. shouldLook keeps to covered for the same reason.
-  const readyToLook = $derived(duration > 0 && to > 0 && covered >= to - 0.5);
+  // A search can be asked for the moment the window has been heard. It
+  // reads the transcript off disk, and the Go side makes sure that is
+  // there: the search pauses the transcription, the pause writes down all
+  // it heard, and then it reads. This used to go by what was saved, which
+  // is written every 8 s of work, minutes of audio apart, and read here
+  // every 2 s: the first search was asked for up to 10 s after the window
+  // had been heard, and the transcription ran on minutes past its end.
+  // Everything that decides about a search goes by heard for that reason,
+  // shouldLook and shouldWarm too.
+  const readyToLook = $derived(duration > 0 && to > 0 && heard >= to - 0.5);
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -277,7 +284,7 @@
   // window. The list waits with a row of placeholders and the info
   // mark beside the head says why, the same mark that tells what the list
   // is once there are clips in it.
-  const stillWaiting = $derived(!busy && waitingOnWords && covered < to - 0.5);
+  const stillWaiting = $derived(!busy && waitingOnWords && heard < to - 0.5);
   // A new episode's first search is on its way: nobody has searched it,
   // and it starts by itself the moment the transcript covers the window.
   // From then on it is work in hand, with the row that says so and a
@@ -288,7 +295,7 @@
       (status.plans?.length ?? 0) === 0 &&
       clips.length === 0,
   );
-  const lookPending = $derived(stillWaiting && autoLook);
+  const lookPending = $derived(stillWaiting && (autoLook || !!chosen.asked[path]));
   // How many rows the clip list holds open. Nothing is known about the
   // clips before the search answers, but their number is: it is the one
   // asked for. So the list stands in the shape it is about to take, with
@@ -303,9 +310,13 @@
     const known = listedBefore;
     return known ? clips.filter((c) => !known.has(c.key)).length : 0;
   });
-  const coming = $derived(
-    finding || starting ? clips.length + Math.max(0, count - foundSoFar) : lookPending ? count : 0,
-  );
+  //
+  // With nothing on its way and nothing in the list, the rows stand there
+  // all the same, as many as Clips says and following it as it changes,
+  // but still: they are what New will fill, and nothing is filling them
+  // yet. An episode whose first search was stopped, by quitting among
+  // other things, had an empty column there instead.
+  const comingNow = $derived(finding || starting || lookPending);
   // What the row the next clip will appear in is waiting on. While the
   // transcript has not reached the end of the window, that is the
   // transcript, and how far it has come is how much of the window it
@@ -315,10 +326,12 @@
   // An empty headline means nothing new to say, which is what the moment
   // between two reports of the engine is, and the row keeps what it says.
   const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
-  // How much of the way to the end of the window the transcription has
-  // come, by the same edge the range picker draws, so the row and the line
-  // never disagree: full once the line has passed the end of the window.
-  const heardShare = $derived(to > 0 ? Math.min(Math.max(shownHeard / to, 0), 1) : -1);
+  // How much of the window has been transcribed, by the same edge the range
+  // picker draws, so the row is a view of the window on the range picker:
+  // empty at its start, half full when half of it is transcribed, full at
+  // its end. It used to be measured from the start of the episode, so a
+  // window two hours in began nearly full.
+  const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
   const next = $derived.by(() => {
     if (finding || starting) {
       const p = working?.progress;
@@ -403,8 +416,10 @@
   // happens while the machine is busy, drops a seek and leaves the picture
   // on a frame that has nothing to do with the playhead. Whenever the video
   // preview says it cannot show the playhead, the frame under it is read
-  // from the file instead. The engine keeps one frame per second of an
-  // episode, so going back over a part costs nothing.
+  // from the file instead: the frame the playhead is in, the one the video
+  // preview will show once it lands, so nothing changes when it does. The
+  // engine keeps every frame it has read, so going back over a part costs
+  // nothing.
   let asking = 0;
   // Which ask the picture is from. Several are in the air whenever the
   // playhead is moved quickly, and an answer that took longer to read
@@ -412,25 +427,25 @@
   // picture on somewhere the playhead has left, for good, because nothing
   // asks again.
   const stills = new Newest();
-  // The second the picture on screen is of, which is not the same as the
-  // second last asked for. Going to one clip, then another, then back to
+  // The frame the picture on screen is of, by where it starts, which is
+  // not the same as the frame last asked for. Going to one clip, then another, then back to
   // the first used to skip the last ask, because it matched what had been
   // asked for, and leave the second clip's frame on screen.
   let showing = $state(-1);
 
   function askStill(at: number) {
     if (!source || status?.missing) return;
-    const second = Math.round(Math.max(at, 0));
-    if (second === showing) return;
+    const frame = frameStart(at, source.fps);
+    if (frame === showing) return;
     clearTimeout(asking);
     asking = window.setTimeout(() => {
       const ticket = stills.send();
       api
-        .still(path, second, 960)
+        .still(path, frame, 960)
         .then((file) => {
           if (!stills.keep(ticket)) return;
           still = mediaURL(file);
-          showing = second;
+          showing = frame;
         })
         .catch(() => {
           // A frame that cannot be read is not worth a message. The
@@ -446,6 +461,22 @@
   // The clip just removed keeps its place in the list for a moment, so the
   // rows do not jump and there is somewhere to put it back from.
   const shown = $derived(clips.filter((c) => !c.rejected || c.key === removed?.key));
+  // The rows the list holds, counted from the clips it shows. A search
+  // waiting for the transcript opens as many more as it will look for, the
+  // same as one that runs. It used to open that many in all, so a list that
+  // already held as many clips had no row left for the one that says what
+  // is going on, and New looked as if it had done nothing until the
+  // transcript was there. Counting the clips of the plan rather than the
+  // clips shown also opened a row for every clip removed.
+  const coming = $derived(
+    finding || starting
+      ? shown.length + Math.max(0, count - foundSoFar)
+      : lookPending
+        ? shown.length + count
+        : shown.length === 0
+          ? count
+          : 0,
+  );
   // What the window lies over. A window may be drawn anywhere, so looking
   // again at material that was searched is allowed, it only asks first and
   // takes the clips it finds there with it.
@@ -466,11 +497,18 @@
 
   // The free room changes whenever a search finishes, so it is taken again
   // with the rest of the episode.
+  // The same for the episode's own state and what has been searched: a
+  // read that answers late never puts back what a newer one said.
+  const statusRead = new Newest();
+  const coverageRead = new Newest();
+
   async function refreshCoverage() {
+    const ticket = coverageRead.send();
     try {
-      coverage = await api.coverage(path, min);
+      const now = await api.coverage(path, min);
+      if (coverageRead.keep(ticket)) coverage = now;
     } catch {
-      coverage = { searched: [], free: [] };
+      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [] };
     }
   }
 
@@ -537,9 +575,24 @@
     await select(clip.key);
   }
 
+  // Everything that puts the clip list on screen takes a ticket: a read of
+  // the whole list and the answer to an edit alike. A read asked for before
+  // an edit can answer after it, and it knows nothing of the edit, so a clip
+  // removed a moment ago came back, and a trim looked undone, until the list
+  // was read again. Only the newest answer is used.
+  const listed = new Newest();
+
+  // One clip as an edit left it.
+  function putClip(updated: ClipEntry) {
+    listed.keep(listed.send());
+    clips = clips.map((c) => (c.key === updated.key ? updated : c));
+  }
+
   async function refreshClips() {
+    const ticket = listed.send();
     try {
-      clips = (await api.clips(path)) ?? [];
+      const list = (await api.clips(path)) ?? [];
+      if (listed.keep(ticket)) clips = list;
     } catch (err) {
       problem = errorText(err);
     }
@@ -548,7 +601,10 @@
   async function load() {
     try {
       removed = null;
-      status = await api.episode(path);
+      const ticket = statusRead.send();
+      const now = await api.episode(path);
+      if (statusRead.keep(ticket)) status = now;
+      if (!status) return;
       const first = !source && !status.missing;
       if (first) {
         source = await api.source(path);
@@ -613,31 +669,16 @@
     timeline?.fit();
   }
 
-  // Pausing takes a moment to reach the work itself, so the button says so
-  // at once rather than looking like nothing happened.
-  let pausing = $state(false);
-
-  function pauseTranscribing() {
+  // Stops the transcription, which runs for a search and stops with it.
+  function stopTranscribing() {
     if (!transcribing) return;
     // The edge stops where it is, on the click. The recogniser is part way
     // through a chunk and keeps reporting until it hears the stop, so
     // without this the edge carries on for a second or two after the press
     // and the click looks like it missed.
     stoppedAt = heard;
-    pausing = true;
     api.cancelJob(transcribing.id);
   }
-
-  // Carrying on lets the edge go again. Asking for it here rather than
-  // through the action keeps the two halves of the one control together.
-  function carryOnTranscribing() {
-    stoppedAt = null;
-    api.transcribe(path).catch((err) => (problem = errorText(err)));
-  }
-
-  $effect(() => {
-    if (!transcribing) pausing = false;
-  });
 
   // Removing a clip is one click, so putting it back is one click too, for
   // as long as the list is on screen.
@@ -655,7 +696,7 @@
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
       if (selected === updated.key) selected = "";
       removed = updated;
       forgetSoon();
@@ -671,7 +712,7 @@
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
       removed = null;
       select(updated.key);
     } catch (err) {
@@ -683,7 +724,7 @@
     problem = "";
     try {
       const updated = await api.trimClip(path, clip.plan, clip.id, start, end);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -696,7 +737,7 @@
     problem = "";
     try {
       const updated = await api.cutClip(path, clip.plan, clip.id, from, to, toWords);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -706,7 +747,7 @@
     problem = "";
     try {
       const updated = await api.joinCut(path, clip.plan, clip.id, at);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -722,7 +763,7 @@
     problem = "";
     try {
       const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to, toWords);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -743,8 +784,9 @@
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
       // Other clips with the same word changed too.
+      const read = listed.send();
       const list = (await api.clips(path)) ?? [];
-      if (!words.keep(ticket)) return;
+      if (!words.keep(ticket) || !listed.keep(read)) return;
       clips = list.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
       words.keep(ticket);
@@ -757,7 +799,7 @@
     problem = "";
     try {
       const updated = await api.setCrop(path, clip.plan, clip.id, at, left);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -873,7 +915,7 @@
     problem = "";
     try {
       const updated = await api.setCaptionTime(path, clip.plan, clip.id, word, edge, at);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
       return true;
     } catch (err) {
       problem = errorText(err);
@@ -1043,7 +1085,7 @@
     problem = "";
     try {
       const updated = await api.resetCrop(path, clip.plan, clip.id, at);
-      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+      putClip(updated);
     } catch (err) {
       problem = errorText(err);
     }
@@ -1115,6 +1157,19 @@
 
   async function findClips(replan: boolean) {
     problem = "";
+    // The window is not transcribed yet. The search waits for it the way
+    // the first search of an episode does, with the same row, the same
+    // Cancel and the transcription stopping exactly at the window's edge,
+    // and it starts the transcription itself when nothing is transcribing.
+    // There used to be no way to ask for clips until the transcript was
+    // there, and a transcription that was paused had to be carried on
+    // first with a button at the edge of the range picker, which nobody
+    // could be expected to know about.
+    if (!readyToLook) {
+      chosen.asked[path] = { replan };
+      fedFor = -1;
+      return;
+    }
     starting = true;
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
@@ -1208,7 +1263,7 @@
   $effect(() => {
     if (!source || !status) return;
     const look = shouldLook({
-      covered,
+      covered: heard,
       to,
       plans: status.plans?.length ?? 0,
       clips: clips.length,
@@ -1222,12 +1277,50 @@
     findClips(false);
   });
 
+  // New pressed before the window was transcribed: the search starts the
+  // moment it is, the same as the first search does.
+  $effect(() => {
+    const asked = chosen.asked[path];
+    if (!asked || !readyToLook || busy || waiting.length > 0) return;
+    delete chosen.asked[path];
+    chosen.looked[path] = true;
+    findClips(asked.replan);
+  });
+
+  // The transcription stops exactly at the end of that first search's
+  // window, rather than being paused from outside a chunk or two past it:
+  // the chunk the speech model hears is cut on the window's edge. The
+  // window is locked from here until the search has run, so the edge the
+  // transcription stops at is the edge the search reads to.
+  $effect(() => {
+    if (!source || !status || !lookPending || to <= 0) return;
+    if (chosen.held[path] === to) return;
+    chosen.held[path] = to;
+    api.holdTranscription(path, to).catch(() => {
+      // Without the hold the search pauses the transcription itself.
+    });
+  });
+
+  // A search waiting for words that nothing is transcribing starts the
+  // transcription, held at its window by the effect above: the first
+  // search of an episode whose transcription stopped, and New pressed
+  // before the window was transcribed. Once for each window, so a
+  // transcription that fails is not started again and again.
+  let fedFor = -1;
+  $effect(() => {
+    if (!source || !status || !lookPending || transcribing || to <= 0) return;
+    if (fedFor === to) return;
+    fedFor = to;
+    stoppedAt = null;
+    api.transcribe(path).catch((err) => (problem = errorText(err)));
+  });
+
   // The model for that first search is loaded while the transcript is on
   // its way, once for each episode while the app runs.
   $effect(() => {
     if (!source || !status || chosen.warmed[path]) return;
     const warm = shouldWarm({
-      covered,
+      covered: heard,
       to,
       plans: status.plans?.length ?? 0,
       clips: clips.length,
@@ -1411,9 +1504,12 @@
       if (isTranscribing) {
         // While the transcript grows, how far it has come is read again:
         // the track draws it, and the first search waits for it.
+        const ticket = statusRead.send();
         api
           .episode(path)
-          .then((now) => (status = now))
+          .then((now) => {
+            if (statusRead.keep(ticket)) status = now;
+          })
           .catch(() => {});
         // What the new lines weigh, less often: the room only needs them
         // to say how far a window may reach, and the rest of the episode
@@ -1458,7 +1554,7 @@
     onseek={seekTo}
     searched={coverage.searched}
     onremove={(span) => (removingSearch = span)}
-    locked={finding || starting}
+    locked={finding || starting || lookPending}
     least={leastLong}
     leastSays="room for {count} clips of {min} s"
     most={reachAnywhere}
@@ -1469,11 +1565,7 @@
         : "all the model reads at once"}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
-    {partly}
-    {leftToGo}
     holding={stoppedAt !== null}
-    {pausing}
-    ontranscription={() => (transcribing ? pauseTranscribing() : carryOnTranscribing())}
   />
 {/snippet}
 
@@ -1564,7 +1656,10 @@
                 type="number"
                 min="1"
                 max={clipsAtMost}
-                title="At most {clipsAtMost}, as many as fit at {min} s each in the longest window the model can read"
+                title={comingNow
+                  ? "The search on its way asks for this many. Change it for the next one"
+                  : `At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                disabled={comingNow}
                 bind:value={count}
                 onchange={keepCount}
               /></span
@@ -1578,7 +1673,10 @@
                 type="number"
                 min="5"
                 max={shortestAtMost}
-                title="At most {shortestAtMost} s, so {count} clips of it fit in the longest window the model can read"
+                title={comingNow
+                  ? "The search on its way asks for clips this long. Change it for the next one"
+                  : `At most ${shortestAtMost} s, so ${count} clips of it fit in the longest window the model can read`}
+                disabled={comingNow}
                 bind:value={min}
                 onchange={() => keepOrder("min")}
               /><span class="unit">s</span></span
@@ -1592,6 +1690,8 @@
                 type="number"
                 min="5"
                 max="180"
+                title={comingNow ? "The search on its way asks for clips this long. Change it for the next one" : undefined}
+                disabled={comingNow}
                 bind:value={max}
                 onchange={() => keepOrder("max")}
               /><span class="unit">s</span></span
@@ -1894,6 +1994,7 @@
               clips={shown}
               {selected}
               {coming}
+              waiting={comingNow}
               next={shownNext}
               removed={removed?.key ?? ""}
               onselect={select}
@@ -1912,6 +2013,7 @@
         clip={current}
         {duration}
         {covered}
+        heardTo={status && !status.transcribed ? covered : null}
         {time}
         working={!!transcribing}
         locked={renderingCurrent}
@@ -2235,6 +2337,19 @@
 
   .setting input {
     color: var(--text);
+  }
+
+  /* What a search on its way was asked for is held while it runs: the
+     number went to the model with the prompt, so changing it changes
+     nothing the model does. Dimmed the way a button that cannot be pressed
+     is, in app.css, the field and its unit together. The input alone left
+     the unit bright beside a dimmed number. */
+  .setting .field:has(input:disabled) {
+    opacity: 0.45;
+  }
+
+  .setting input:disabled {
+    cursor: default;
   }
 
   /* The stepper the system draws inside a number field would stand between

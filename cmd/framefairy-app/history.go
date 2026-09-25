@@ -64,6 +64,7 @@ func (s *FrameFairy) forget(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.histories, path)
+	delete(s.holds, path)
 }
 
 // edit runs one edit of an episode and remembers what it changed. An edit
@@ -78,7 +79,8 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 	before := engine.TakeSnapshot(logs)
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
-	change := engine.Compare(before, engine.TakeSnapshot(logs))
+	// A search can land a clip while the edit runs. It is not the edit's.
+	change := engine.Compare(before, engine.TakeSnapshot(logs)).LeaveOutNewClips()
 	heightNow := s.store.Settings().CaptionY
 	st := step{change: change}
 	if heightWas != heightNow {
@@ -161,12 +163,11 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 		}
 	}
 	if st.captionY != nil {
-		set := s.store.Settings()
-		set.CaptionY = st.captionY[0]
+		y := st.captionY[0]
 		if !back {
-			set.CaptionY = st.captionY[1]
+			y = st.captionY[1]
 		}
-		if err := s.store.SetSettings(set); err != nil {
+		if err := s.store.UpdateSettings(func(set *Settings) { set.CaptionY = y }); err != nil {
 			return Undone{}, err
 		}
 	}

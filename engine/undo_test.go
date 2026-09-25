@@ -99,6 +99,53 @@ func TestUndoLeavesAClipThatLandedSince(t *testing.T) {
 	}
 }
 
+// A clip that lands while an edit is being made, between the two pictures
+// the history takes of the files, is not the edit's. Undoing the edit used
+// to take it away.
+func TestUndoLeavesAClipThatLandedDuringTheEdit(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	landing := PlanClip{ID: "03", Slug: "drei", Words: [][3]any{},
+		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
+	change := edited(t, logs, func() error {
+		if err := SetRejected(path, "01", true); err != nil {
+			return err
+		}
+		return appendClip(path, landing)
+	}).LeaveOutNewClips()
+	if change == nil {
+		t.Fatal("the edit itself was lost with the clip that landed")
+	}
+	if _, err := change.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	clips := clipsOf(t, path)
+	if clips["01"].Rejected {
+		t.Error("the clip was not put back")
+	}
+	if _, ok := clips["03"]; !ok {
+		t.Error("the undo took away a clip that landed during the edit")
+	}
+	if _, err := change.Redo(); err != nil {
+		t.Fatal(err)
+	}
+	if clips := clipsOf(t, path); !clips["01"].Rejected || clips["03"].ID != "03" {
+		t.Errorf("redo: %+v", clips)
+	}
+}
+
+// A clip landing is all that changed: that is no edit at all.
+func TestAClipLandingAloneIsNoEdit(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	landing := PlanClip{ID: "03", Slug: "drei", Words: [][3]any{},
+		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
+	change := edited(t, logs, func() error { return appendClip(path, landing) }).LeaveOutNewClips()
+	if change != nil {
+		t.Errorf("a clip landing became an edit of %v", change.Files())
+	}
+}
+
 // Undoing an edit whose clip has been changed again since, by something
 // the history does not know about, would throw that away. It says so and
 // touches nothing.

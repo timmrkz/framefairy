@@ -11,6 +11,7 @@
     selected,
     removed = "",
     coming = 0,
+    waiting = true,
     next = null,
     onselect,
     onremove,
@@ -23,6 +24,9 @@
     // many rows wait in place, so the list is already the shape it is
     // about to be, and the info mark at the head says what is going on.
     coming?: number;
+    // Whether anything is on its way to fill those rows. They breathe while
+    // it is and stand still while nothing is, the way paused work does.
+    waiting?: boolean;
     // What the first of those rows is waiting on, while it waits: what is
     // being done, how long is left, and how far it has come, -1 when that
     // is not known. That row wears the work running, because it is where
@@ -46,11 +50,62 @@
     const n = Math.max(0, coming - clips.length);
     return Array.from({ length: n }, (_, i) => i);
   });
+
+  // The rows still to come are after the clips there are, so in a list
+  // longer than its column a search began out of sight: all anyone saw
+  // was New turning into Cancel. The row the next clip will appear in, the
+  // one wearing the work, is what is being done, so it is kept in view:
+  // brought to the top of the column when the search starts, with the rows
+  // still to come under it, and brought back every time a clip lands,
+  // wherever the list has been scrolled to in the meantime. It comes back
+  // with part of the row after it showing, so it is plain there is more to
+  // come, and the clip that just landed is right above it. Only when a clip
+  // lands: following every report would fight a hand that is scrolling.
+  let nextRow = $state<HTMLLIElement>();
+  let hadNext = false;
+  $effect(() => {
+    const has = !!next && !!nextRow;
+    if (has && !hadNext) nextRow!.scrollIntoView({ block: "start", behavior: "smooth" });
+    hadNext = has;
+  });
+  //
+  // The last clip a search finds leaves no row to come after it, so there
+  // is nothing to follow: that clip itself is brought into view, to the
+  // foot of the list when it lands below. The search may already have
+  // reported that it is done by the time its last clip is in the list, so
+  // a landing a few seconds after the search is still one of its own.
+  let list = $state<HTMLOListElement>();
+  let known: Set<string> | null = null;
+  let searchedUntil = 0;
+  $effect(() => {
+    if (next) searchedUntil = Infinity;
+    else if (searchedUntil === Infinity) searchedUntil = Date.now() + 5000;
+  });
+  $effect(() => {
+    const keys = clips.map((c) => c.key);
+    const before = known;
+    known = new Set(keys);
+    if (!before || !list || Date.now() > searchedUntil) return;
+    const landed = keys.filter((k) => !before.has(k));
+    if (!landed.length) return;
+    const row = nextRow;
+    const own = list;
+    // After whatever else the landing moves. The first clip found is
+    // chosen, and the workspace brings the chosen card into view at once,
+    // which stops a smooth scroll that began before it.
+    setTimeout(() => {
+      const target =
+        row?.isConnected
+          ? row
+          : own.querySelector<HTMLElement>(`li[data-key="${CSS.escape(landed[landed.length - 1])}"]`);
+      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  });
 </script>
 
-<ol>
+<ol bind:this={list}>
   {#each clips as clip (clip.key)}
-    <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }}>
+    <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }} data-key={clip.key}>
       {#if clip.key === removed}
         <div class="gone">
           <Icon name="trash" />
@@ -94,13 +149,13 @@
        round exactly once. -->
   {#each ghosts as row (row)}
     {#if row === 0 && next}
-      <li class="ghost next" aria-live="polite">
+      <li class="ghost next" aria-live="polite" bind:this={nextRow}>
         <Busy fraction={next.fraction} />
         <span class="title">{next.what}</span>
         <span class="meta muted num">{next.left}</span>
       </li>
     {:else}
-      <li class="ghost waiting" style="--wait-in: {row * 800}ms"></li>
+      <li class="ghost" class:waiting style="--wait-in: {row * 800}ms"></li>
     {/if}
   {/each}
 </ol>
@@ -128,6 +183,8 @@
      content is a whole number of pixels wide whatever the column does. */
   li {
     position: relative;
+    /* Brought into view clear of the veil over either end of the list. */
+    scroll-margin: var(--veil, 16px) 0;
     border-radius: var(--radius-m);
     background: var(--ink-1);
     box-shadow: inset 0 0 0 1px var(--ink-3);
@@ -272,6 +329,12 @@
   /* The row the next clip will appear in, saying what it is waiting on,
      laid out as a clip's row is, a line of what and a line of how long. */
   .next {
+    /* Part of the row after it shows below it when it is brought into
+       view: a third of a row, past the veil over the foot of the list. */
+    scroll-margin-bottom: calc(var(--veil, 16px) + var(--gap) + 20px);
+    /* And the clip that landed just above it, which is the one that was
+       chosen, stays in view with it. */
+    scroll-margin-top: calc(var(--veil, 16px) + var(--gap) + 56px);
     display: flex;
     flex-direction: column;
     justify-content: center;

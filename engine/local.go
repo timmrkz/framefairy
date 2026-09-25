@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -183,6 +184,10 @@ var localClient = &http.Client{
 	},
 }
 
+// stopGrace is how long llama-server has to go by itself once it is asked
+// to. Idle, it goes well inside it.
+var stopGrace = 500 * time.Millisecond
+
 // startServer runs llama-server and waits until the model is loaded.
 func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	logDir string) (string, func(), error) {
@@ -239,15 +244,19 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		return "", nil, renderErr("cannot start %s: %s", server, err)
 	}
-	// exited is closed once the server has gone, and waitErr says how.
-	// Whether it has gone is asked of the channel and never of
-	// cmd.ProcessState, which Wait writes on its own goroutine.
+	// Written down while it runs, so a server an app that crashed left
+	// behind is found and stopped the next time the app starts.
+	noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
+	// exited is closed once the server has gone, and exitErr says how. Only
+	// the goroutine that waits for it writes them, so stopping it never
+	// reads the process's state while that goroutine writes it.
 	exited := make(chan struct{})
-	var waitErr error
+	var exitErr error
 	go func() {
-		waitErr = cmd.Wait()
+		exitErr = cmd.Wait()
 		close(exited)
 	}()
+	var closeLog sync.Once
 	stop := func() {
 		select {
 		case <-exited:
@@ -255,14 +264,24 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case <-exited:
-			case <-time.After(5 * time.Second):
+			case <-time.After(stopGrace):
+				// llama-server can hang on the way out after an interrupt:
+				// it joins the threads of its HTTP server, and one still
+				// waiting on an answer it will never give keeps it there.
+				// Its own source says so beside its signal handler, and
+				// offers a second Ctrl+C to end it. It has nothing to save,
+				// so it is killed. Waiting five seconds for it was the app
+				// frozen on Cmd+Q and on removing an episode mid-search.
 				_ = cmd.Process.Kill()
 				<-exited
 			}
 		}
-		if logFile != nil {
-			logFile.Close()
-		}
+		closeLog.Do(func() {
+			forgetServer(cmd.Process.Pid)
+			if logFile != nil {
+				logFile.Close()
+			}
+		})
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
@@ -273,11 +292,9 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			stop()
 			return "", nil, ctx.Err()
 		case <-exited:
-			if logFile != nil {
-				logFile.Close()
-			}
+			stop()
 			return "", nil, renderErr("%s stopped while loading the model (%v). Its output is "+
-				"in %s", server, waitErr, filepath.Join(logDir, "llm-server.log"))
+				"in %s", server, exitErr, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long

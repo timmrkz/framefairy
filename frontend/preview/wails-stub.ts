@@ -333,25 +333,39 @@ export const Call = {
     const started = ((window as any).__started ??= Date.now());
     const growing = location.search.includes("growing");
     const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
+    // What is written down of it. The real transcription saves every 8 s of
+    // work, minutes of audio apart, while every chunk it hears is reported
+    // at once. With ?lagging the saved transcript trails the same way, which
+    // is what the first search used to wait for.
+    const saved = location.search.includes("lagging")
+      ? Math.min(600 + Math.floor((Date.now() - started) / 8000) * 8 * 600, 14423)
+      : grown;
     // A search that really runs and really finishes, for testing what the
     // workspace does the moment the first clips arrive.
     const found = location.search.includes("found");
     const paused = location.search.includes("paused");
     const carriedOn = () => !!(window as any).__carriedOn;
     const stopped = () => !!(window as any).__stopped;
-    const askedAt = () => ((window as any).__planned ?? [])[0]?.wall ?? 0;
+    // New after the first search has finished is a second search, whose
+    // clips come after the twelve of the first.
+    const askedAt = () => ((window as any).__planned ?? []).at(-1)?.wall ?? 0;
+    const before = () => Math.max(((window as any).__planned ?? []).length - 1, 0) * 12;
     // The search lasts six seconds and its clips land one at a time on the
     // way, the way the engine writes each one the moment it is framed. They
     // land in the order the model wrote them, which is not the order of the
     // episode, so what is new in the list is not always at its end.
-    const searchFor = 6000;
+    // With ?slow a clip lands every two seconds, which is nearer what a
+    // real search does, so what happens between two landings can be seen.
+    const landEvery = location.search.includes("slow") ? 2000 : 350;
+    const searchFor = 700 + 12 * landEvery + 1000;
     const landOrder = [3, 1, 7, 2, 12, 5, 4, 9, 6, 11, 8, 10];
     const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < searchFor;
     const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= searchFor;
     const landed = () => {
       if (!found || !askedAt()) return [] as number[];
       const since = Date.now() - askedAt();
-      return landOrder.filter((_, k) => since >= 700 + k * 350);
+      const earlier = Array.from({ length: before() }, (_, i) => i + 1);
+      return [...earlier, ...landOrder.filter((_, k) => since >= 700 + k * landEvery).map((n) => n + before())];
     };
     const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Finding clips", fraction: 0.4, remaining: 60 } : undefined });
     switch (method) {
@@ -519,20 +533,25 @@ export const Call = {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: landed().length ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
         }
         if (growing) {
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: grown, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: false });
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: saved, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: false });
         }
         if (location.search.includes("transcribing")) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 1200, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true });
         }
         // What pausing leaves behind: clips already found, the episode read
-        // only part way, and nothing reading the rest. Until the mark in the
+        // only part way, and nothing reading the rest. With ?short it is
+        // read to 2500, short of the window the workspace picks next, so
+        // New has to carry the transcription on before it can look. Until the mark in the
         // clip list head stayed for it, this state had no way out.
         if (paused) {
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: location.search.includes("short") ? 2500 : 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
         }
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
       // Every search the interface asks for, so a test can see the first one
       // start by itself.
+      case "HoldTranscription":
+        ((window as any).__holds ??= []).push(args[1]);
+        return Promise.resolve(null);
       case "Plan": {
         const asked = ((window as any).__planned ??= []);
         asked.push({ at: Date.now() - started, wall: Date.now(), req: args[1] });
@@ -548,10 +567,24 @@ export const Call = {
         if (found) {
           const there = new Set(landed());
           return Promise.resolve(
-            Array.from({ length: 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
+            Array.from({ length: before() + 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
           );
         }
         if (growing || location.search.includes("transcribing")) return Promise.resolve([]);
+        // A list that is slow to come, the way it is while the machine is
+        // busy, and that knows nothing of what was done since it was asked
+        // for. It lands after an edit made in the meantime, and whatever it
+        // says must not undo that edit on screen.
+        if (location.search.includes("slowclips") && (window as any).__listed) {
+          const asked = [
+            clip(1, 57, "Mein Arm ist zersprungen", true),
+            clip(2, 400, "Der Typ vor mir auf einmal", false),
+            clip(3, 902, "Warum ich nie wieder", false),
+            clip(4, 1400, "Ein echtes Thema", false),
+          ];
+          return new Promise((done) => setTimeout(() => done(asked), 1200));
+        }
+        (window as any).__listed = true;
         return Promise.resolve([
           clip(1, 57, "Mein Arm ist zersprungen", true),
           clip(2, 400, "Der Typ vor mir auf einmal", false),
@@ -840,11 +873,20 @@ export const Call = {
         if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });
         return Promise.resolve({ words: words(Number(args[1]), Number(args[2])), keepPause: 0.1 });
       case "Still":
-        // One file per second, so a test can see the frame follow the
-        // playhead.
-        return Promise.resolve(`/eps/still-${Math.round(Number(args[1]) || 0)}.jpg`);
+        // One file per frame, and the harness episode has a frame a second,
+        // so a test can see the frame follow the playhead. Every ask is
+        // kept, so a probe can see which frame was asked for.
+        ((window as any).__stills ??= []).push(Number(args[1]) || 0);
+        return Promise.resolve(`/eps/still-${Math.floor(Number(args[1]) || 0)}.jpg`);
+      // Removing waits for the episode's work to stop, which takes a
+      // moment while a search runs. Every call is counted, so a probe can
+      // see whether a second click sent a second removal.
+      case "RemoveEpisode":
+        (window as any).__removals = ((window as any).__removals ?? 0) + 1;
+        return new Promise((r) => setTimeout(() => r(null), 1500));
       case "CancelJob":
         (window as any).__stopped = true;
+        ((window as any).__cancels ??= []).push(args[0]);
         if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
         return Promise.resolve(null);
       case "Transcribe":
@@ -867,6 +909,11 @@ export const Events = {
     if (name === "undo") {
       (window as any).__menu = (what: string) => fn({ data: what });
       return () => delete (window as any).__menu;
+    }
+    // Cmd+Q heard, with window.__quit("ask") or window.__quit("going").
+    if (name === "quit") {
+      (window as any).__quit = (what: string) => fn({ data: what });
+      return () => delete (window as any).__quit;
     }
     // And Help, Acknowledgements with window.__help().
     if (name === "acknowledgements") {
@@ -913,18 +960,35 @@ export const Events = {
       }, 300);
       return () => clearInterval(timer);
     }
+    if (location.search.includes("paused")) {
+      // Carried on, the transcription says so the way the real one does,
+      // and stops when it is stopped, so a probe can see Cancel reach it.
+      const timer = setInterval(() => {
+        if (!(window as any).__carriedOn) return;
+        const gone = !!(window as any).__stopped;
+        fn({
+          data: {
+            job: { id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: gone ? "cancelled" : "running", queued: "", lane: "transcribe", progress: gone ? undefined : { stage: "asr", text: "Listening", fraction: 0.3, remaining: 420, covered: 2600 } },
+            event: { kind: "progress", text: "Listening", elapsed: 1 },
+          },
+        });
+      }, 500);
+      return () => clearInterval(timer);
+    }
     if (location.search.includes("found")) {
       // Reported the way the engine reports a search: what it is doing, how
       // far it is, and how many clips it has written, which is what tells
       // the interface to read the list again.
       const timer = setInterval(() => {
-        const at = ((window as any).__planned ?? [])[0]?.wall ?? 0;
+        const at = ((window as any).__planned ?? []).at(-1)?.wall ?? 0;
         if (!at) return;
         const since = Date.now() - at;
-        const state = since < 6000 ? "running" : "done";
-        const found = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((k) => since >= 700 + k * 350).length;
+        const every = location.search.includes("slow") ? 2000 : 350;
+        const lasts = 700 + 12 * every + 1000;
+        const state = since < lasts ? "running" : "done";
+        const found = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((k) => since >= 700 + k * every).length;
         const text = found ? `${found} of 12 found` : "Finding clips";
-        const progress = { kind: "progress", stage: "plan", text, fraction: Math.min(since / 6000, 0.99), remaining: Math.max((6000 - since) / 1000, 0), found, elapsed: since / 1000, time: "" };
+        const progress = { kind: "progress", stage: "plan", text, fraction: Math.min(since / lasts, 0.99), remaining: Math.max((lasts - since) / 1000, 0), found, elapsed: since / 1000, time: "" };
         fn({ data: { job: { id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? progress : undefined }, event: progress } });
       }, 250);
       return () => clearInterval(timer);
@@ -934,6 +998,9 @@ export const Events = {
     const timer = setInterval(() => {
       const gone = !!(window as any).__stopped;
       const grown = Math.min(600 + ((Date.now() - started) / 1000) * 600, 14423);
+      // When each edge was sent, so a probe can tell how long the
+      // interface took to act on one from how long the stub took to say it.
+      ((window as any).__heardSent ??= []).push({ at: Date.now() - started, covered: grown });
       fn({
         data: {
           job: {

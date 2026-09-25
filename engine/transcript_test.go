@@ -3,6 +3,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -484,5 +486,243 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	covered, done := Coverage(source, base.ASRModel)
 	if done || want <= 20 || covered < want-0.001 {
 		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
+	}
+}
+
+// A transcript whose loudness file falls short of what its words say they
+// cover carries on from where the loudness ends, and keeps no word past
+// that point, so nothing is heard twice. The two files are written one
+// after the other, so a machine that stops in between, or a copy made by
+// hand, can leave them out of step.
+func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
+	source := testEpisode(t, "70")
+	saved := checkpointEvery
+	checkpointEvery = 0
+	defer func() { checkpointEvery = saved }()
+	var calls int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Transcribe(context.Background()); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	full, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p.LogsDir(), "words.json")
+	stamp, _ := stampOf(source)
+	file, words, frames, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
+	if !ok {
+		t.Fatal("cannot read the transcript")
+	}
+	// The words say 40 s, the loudness only 20 s.
+	var early []Cue
+	for _, w := range words {
+		if w.End <= 40 {
+			early = append(early, w)
+		}
+	}
+	file.Partial, file.To, file.Words = true, PyFloat(40), storedWords(early)
+	if err := writeTranscript(path, file, frames[:2000]); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Transcribe(context.Background()); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	again, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, m := len(again.Words), len(full.Words); n < m-3 || n > m+3 {
+		t.Errorf("%d words after carrying on, %d in one go: words were heard twice", n, m)
+	}
+	for i := 1; i < len(again.Words); i++ {
+		if again.Words[i].Start < again.Words[i-1].Start-0.001 {
+			t.Errorf("words out of order at %d: %v after %v", i, again.Words[i], again.Words[i-1])
+			break
+		}
+	}
+}
+
+// A transcript that cannot be read, cut short or damaged, is started again
+// rather than failing the episode.
+func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
+	source := testEpisode(t, "40")
+	var calls int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Transcribe(context.Background()); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	path := filepath.Join(p.LogsDir(), "words.json")
+	whole, _ := os.ReadFile(path)
+	for name, damage := range map[string]func() error{
+		"cut short":      func() error { return os.WriteFile(path, whole[:len(whole)/2], 0o644) },
+		"not json":       func() error { return os.WriteFile(path, []byte("\x00\x01garbage"), 0o644) },
+		"frames missing": func() error { return os.Remove(framesPath(path)) },
+		"frames odd":     func() error { return os.WriteFile(framesPath(path), []byte{1, 2, 3}, 0o644) },
+	} {
+		if err := damage(); err != nil {
+			t.Fatal(err)
+		}
+		if covered, _ := Coverage(source, base.ASRModel); covered != 0 {
+			t.Errorf("%s: a damaged transcript reads as covering %v", name, covered)
+		}
+		if err := p.Transcribe(context.Background()); err != nil {
+			t.Errorf("%s: %v %s", name, err, p.LastError())
+		}
+		if covered, done := Coverage(source, base.ASRModel); !done || covered < 39.9 {
+			t.Errorf("%s: after starting again, %v %v", name, covered, done)
+		}
+		whole, _ = os.ReadFile(path)
+	}
+}
+
+// The app reads how far the transcript reaches from other goroutines while
+// the transcription writes it, a search waiting for it and the workspace
+// drawing it. A reader never sees a file half written: what it reads only
+// ever grows, and a read is never taken for the end of the transcription.
+func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
+	source := testEpisode(t, "70")
+	saved := checkpointEvery
+	checkpointEvery = 0
+	defer func() { checkpointEvery = saved }()
+	var calls int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var problems []string
+	for range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			last := 0.0
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				covered, done := Coverage(source, base.ASRModel)
+				st := Status(source, base.ASRModel)
+				mu.Lock()
+				if covered < last-0.001 {
+					problems = append(problems, fmt.Sprintf("coverage went back from %v to %v", last, covered))
+				}
+				if done && covered < 69.9 {
+					problems = append(problems, fmt.Sprintf("done at %v of 70 s", covered))
+				}
+				if st.Transcribed && st.Covered < 69.9 {
+					problems = append(problems, fmt.Sprintf("status transcribed at %v", st.Covered))
+				}
+				mu.Unlock()
+				last = max(last, covered)
+			}
+		}()
+	}
+	err := p.Transcribe(context.Background())
+	close(stop)
+	wg.Wait()
+	if err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if len(problems) > 0 {
+		t.Errorf("%d bad reads, the first: %s", len(problems), problems[0])
+	}
+}
+
+// straddlingRecognizer hears a word every 0.6 s to the very end of what it
+// is given, so the last one can run past the end, the way a real model
+// hears half a word as a word when the audio is cut inside it.
+type straddlingRecognizer struct{ seconds *float64 }
+
+func (s straddlingRecognizer) Recognize(samples []float32, rate int) []Token {
+	length := float64(len(samples)) / float64(rate)
+	*s.seconds += length
+	var tokens []Token
+	for at := 0.1; at < length; at += 0.6 {
+		tokens = append(tokens, Token{Text: " wort", Start: at, Duration: 0.3})
+	}
+	return tokens
+}
+
+func (straddlingRecognizer) Close() {}
+
+// A transcription with a place to stop hears the audio exactly up to it and
+// no further, saves exactly up to it, and leaves out a word that ran across
+// it. Carrying on starts before that word and hears it whole, once.
+func TestTheTranscriptionStopsExactlyAtItsHold(t *testing.T) {
+	source := testEpisode(t, "70")
+	heard := 0.0
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return straddlingRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	// Where each pass starts: the start, then where the last one said to
+	// carry on from, which is before a word that ran across its stop.
+	from := 0.0
+	for _, stop := range []float64{33.25, 51.37} {
+		heard = 0
+		was := from
+		p.StopAt(func() float64 { return stop })
+		if err := p.Transcribe(context.Background()); err != nil {
+			t.Fatalf("a transcription that stopped where it was asked to failed: %v %s", err, p.LastError())
+		}
+		covered, done := Coverage(source, base.ASRModel)
+		if done || math.Abs(covered-stop) > 0.001 {
+			t.Fatalf("stopped at %v, done %v, asked to stop at %v", covered, done, stop)
+		}
+		// Nothing past the stop was heard: zero overshoot, not a chunk.
+		if over := was + heard - stop; over > 0.02 {
+			t.Errorf("heard %.2f s past the stop", over)
+		}
+		path := filepath.Join(p.LogsDir(), "words.json")
+		stamp, _ := stampOf(source)
+		file, words, _, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
+		if !ok {
+			t.Fatal("cannot read the transcript")
+		}
+		for _, w := range words {
+			if w.End > stop+0.001 {
+				t.Errorf("a word that runs across the stop was kept: %v", w)
+			}
+		}
+		from = stop
+		if file.Resume > 0 && float64(file.Resume) < stop {
+			from = float64(file.Resume)
+			t.Logf("a word ran across %v, carrying on from %v", stop, from)
+		}
+	}
+
+	// Carried on to the end: every word once, in order, none overlapping.
+	p.StopAt(func() float64 { return 0 })
+	if err := p.Transcribe(context.Background()); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if _, done := Coverage(source, base.ASRModel); !done {
+		t.Fatal("not finished after carrying on")
+	}
+	whole, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < len(whole.RawWords); i++ {
+		a, b := whole.RawWords[i-1], whole.RawWords[i]
+		if b.Start < a.End-0.001 && (math.Abs(b.Start-33.25) < 2 || math.Abs(b.Start-51.37) < 2) {
+			t.Errorf("two words overlap at a stop, a word was heard twice: %v and %v", a, b)
+		}
 	}
 }

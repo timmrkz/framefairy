@@ -1,21 +1,46 @@
 // Shared state: the job list, kept current from the Go side's events.
 import { api, onJob, type Job, type EngineEvent } from "./api";
+import { mergeJob } from "./flow";
+
+// How often the list is read again while anything runs. The events keep it
+// current, and this is what puts it right when one of them was lost: a job
+// that looks as if it runs for ever holds up the first search and says
+// Cancelling for good, and only a restart cleared it.
+const recheck = 5000;
 
 class JobStore {
   list = $state<Job[]>([]);
   log = $state<Record<string, EngineEvent[]>>({});
 
+  // A snapshot of a job, kept unless the list already has a later one.
+  apply(job: Job) {
+    const next = mergeJob(this.list, job);
+    if (next) this.list = next;
+  }
+
   async start() {
-    this.list = (await api.jobs()) ?? [];
+    // Listening starts before the list is read, so nothing that happens
+    // while it is read is missed. What was heard in the meantime and what
+    // the list says are merged by their numbers.
     onJob(({ job, event }) => {
-      const i = this.list.findIndex((j) => j.id === job.id);
-      if (i >= 0) this.list[i] = job;
-      else this.list = [...this.list, job];
+      this.apply(job);
       if (event && event.kind !== "progress" && event.kind !== "idle") {
         const lines = this.log[job.id] ?? [];
         this.log[job.id] = [...lines.slice(-199), event];
       }
     });
+    await this.resync();
+    setInterval(() => {
+      if (this.busy > 0) void this.resync();
+    }, recheck);
+  }
+
+  async resync() {
+    try {
+      for (const job of (await api.jobs()) ?? []) this.apply(job);
+    } catch {
+      // The Go side will answer next time. Nothing here is worth an error.
+    }
   }
 
   forEpisode(path: string): Job[] {
@@ -95,6 +120,12 @@ class Chosen {
   looked = $state<Record<string, boolean>>({});
   // Whether the model has been loaded ahead of that first search.
   warmed = $state<Record<string, boolean>>({});
+  // Where the transcription was told to stop for that first search.
+  held = $state<Record<string, number>>({});
+  // New pressed before the window was transcribed. The search waits for the
+  // transcript the way the first search does, and starts when it is there.
+  // replan is whether it looks at the window again.
+  asked = $state<Record<string, { replan: boolean }>>({});
 
   keep(path: string, from: number, to: number) {
     this.windows[path] = { from, to };
@@ -105,6 +136,8 @@ class Chosen {
     delete this.windows[path];
     delete this.looked[path];
     delete this.warmed[path];
+    delete this.held[path];
+    delete this.asked[path];
   }
 
   of(path: string, duration: number): { from: number; to: number } | null {
