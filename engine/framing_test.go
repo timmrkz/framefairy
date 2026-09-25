@@ -24,7 +24,7 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 		"-f", "lavfi", "-i", "smptebars=s=640x360:r=25:d=10",
 		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d=10",
 		"-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0",
-		"-c:v", "libx264", "-preset", "ultrafast", "-g", "25", path).CombinedOutput()
+		"-c:v", "mpeg4", "-q:v", "5", "-g", "25", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("making the episode: %s %s", err, out)
 	}

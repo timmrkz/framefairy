@@ -156,7 +156,7 @@ needs any of the rest:
 | `build` | Linux | `make`. The programs and the interface, which is what proves they still link |
 | `linux` | Linux | `make unit` |
 | `fuzz` | Linux | `make fuzz` |
-| `macos` | macOS | `make` with no warnings allowed, then `make unit` |
+| `macos` | macOS | the ffmpeg we ship, built by `scripts/build-ffmpeg.sh` and kept until that script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
 | `macos-fuzz` | macOS | `make fuzz` |
 
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
@@ -202,6 +202,13 @@ to do is back in seconds.
 A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never
 cancelled: every commit's result there is worth having on its own.
+
+**A test that needs ffmpeg skips itself where there is none, and in CI
+that would read as a pass.** The macOS job once ran without ffmpeg, so
+nothing that renders, frames or listens was tested on the system that ships
+first, and the only sign was that its tests took five seconds where Linux
+took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
+ffmpeg on the path.
 
 ## No build warnings on macOS
 
