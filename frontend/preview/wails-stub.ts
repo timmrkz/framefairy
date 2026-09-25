@@ -536,10 +536,12 @@ export const Call = {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 1200, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true });
         }
         // What pausing leaves behind: clips already found, the episode read
-        // only part way, and nothing reading the rest. Until the mark in the
+        // only part way, and nothing reading the rest. With ?short it is
+        // read to 2500, short of the window the workspace picks next, so
+        // New has to carry the transcription on before it can look. Until the mark in the
         // clip list head stayed for it, this state had no way out.
         if (paused) {
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: false, covered: location.search.includes("short") ? 2500 : 4000, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 0, previews: 0, work: true, looked: true });
         }
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true });
       // Every search the interface asks for, so a test can see the first one
@@ -881,6 +883,7 @@ export const Call = {
         return new Promise((r) => setTimeout(() => r(null), 1500));
       case "CancelJob":
         (window as any).__stopped = true;
+        ((window as any).__cancels ??= []).push(args[0]);
         if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
         return Promise.resolve(null);
       case "Transcribe":
@@ -952,6 +955,21 @@ export const Events = {
           fn({ data: { job: llmJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
         }
       }, 300);
+      return () => clearInterval(timer);
+    }
+    if (location.search.includes("paused")) {
+      // Carried on, the transcription says so the way the real one does,
+      // and stops when it is stopped, so a probe can see Cancel reach it.
+      const timer = setInterval(() => {
+        if (!(window as any).__carriedOn) return;
+        const gone = !!(window as any).__stopped;
+        fn({
+          data: {
+            job: { id: "t1", episode: "/eps/ep.mp4", kind: "transcribe", label: "Transcribe", state: gone ? "cancelled" : "running", queued: "", lane: "transcribe", progress: gone ? undefined : { stage: "asr", text: "Listening", fraction: 0.3, remaining: 420, covered: 2600 } },
+            event: { kind: "progress", text: "Listening", elapsed: 1 },
+          },
+        });
+      }, 500);
       return () => clearInterval(timer);
     }
     if (location.search.includes("found")) {

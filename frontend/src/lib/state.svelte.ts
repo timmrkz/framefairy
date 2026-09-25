@@ -122,6 +122,10 @@ class Chosen {
   warmed = $state<Record<string, boolean>>({});
   // Where the transcription was told to stop for that first search.
   held = $state<Record<string, number>>({});
+  // New pressed before the window was transcribed. The search waits for the
+  // transcript the way the first search does, and starts when it is there.
+  // replan is whether it looks at the window again.
+  asked = $state<Record<string, { replan: boolean }>>({});
 
   keep(path: string, from: number, to: number) {
     this.windows[path] = { from, to };
@@ -133,6 +137,7 @@ class Chosen {
     delete this.looked[path];
     delete this.warmed[path];
     delete this.held[path];
+    delete this.asked[path];
   }
 
   of(path: string, duration: number): { from: number; to: number } | null {

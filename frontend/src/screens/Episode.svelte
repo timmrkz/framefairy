@@ -183,17 +183,17 @@
         run: skipLook,
         off: false,
         primary: false,
-        title: "Do not look for clips by itself when the transcript reaches the end of the window",
+        title: "Call the search off. The transcription it waits for stops with it",
       };
     }
     return {
       label: "New",
       icon: "plus",
       run: newClips,
-      off: !readyToLook,
+      off: duration <= 0 || to <= 0,
       primary: true,
       title: !readyToLook
-        ? `The episode is heard up to ${clock(heard)}. Clips can be looked for once it reaches ${clock(to)}`
+        ? `Look for clips in the window. The episode is transcribed up to ${clock(to)} first, it is at ${clock(heard)}`
         : covering
           ? "Look at the window again, removing the clips it has"
           : "Look for clips in the window",
@@ -209,11 +209,14 @@
     if (!working) stopping = false;
   });
 
-  // The first search called off before it started. The episode counts as
-  // looked at, so it does not start by itself either, and New is there
-  // for when it is wanted.
+  // A search called off while it waits for the transcript. The episode
+  // counts as looked at, so it does not start by itself again, and New is
+  // there for when it is wanted.
   function skipLook() {
     chosen.looked[path] = true;
+    delete chosen.asked[path];
+    // The transcription runs for the search, so it stops with it.
+    stopTranscribing();
     // The transcription stops at the window only for that search.
     if (chosen.held[path]) {
       delete chosen.held[path];
@@ -228,13 +231,6 @@
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
 
-  // A transcription that was stopped part way through. The episode still
-  // wants words, some of them are already read, and nothing is reading the
-  // rest. It is the state pausing leaves behind, and until it had a name
-  // there was no way back out of it: the mark that stops the transcription
-  // was only there while it ran, and once a clip existed the head never
-  // went back to being about words, so nothing ever offered to carry on.
-  const partly = $derived(needsWords && covered > 0 && !transcribing && !starting);
   // How far the audio has been heard, which is not the same as how far the
   // saved transcript reaches. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
@@ -298,7 +294,7 @@
       (status.plans?.length ?? 0) === 0 &&
       clips.length === 0,
   );
-  const lookPending = $derived(stillWaiting && autoLook);
+  const lookPending = $derived(stillWaiting && (autoLook || !!chosen.asked[path]));
   // How many rows the clip list holds open. Nothing is known about the
   // clips before the search answers, but their number is: it is the one
   // asked for. So the list stands in the shape it is about to take, with
@@ -663,31 +659,16 @@
     timeline?.fit();
   }
 
-  // Pausing takes a moment to reach the work itself, so the button says so
-  // at once rather than looking like nothing happened.
-  let pausing = $state(false);
-
-  function pauseTranscribing() {
+  // Stops the transcription, which runs for a search and stops with it.
+  function stopTranscribing() {
     if (!transcribing) return;
     // The edge stops where it is, on the click. The recogniser is part way
     // through a chunk and keeps reporting until it hears the stop, so
     // without this the edge carries on for a second or two after the press
     // and the click looks like it missed.
     stoppedAt = heard;
-    pausing = true;
     api.cancelJob(transcribing.id);
   }
-
-  // Carrying on lets the edge go again. Asking for it here rather than
-  // through the action keeps the two halves of the one control together.
-  function carryOnTranscribing() {
-    stoppedAt = null;
-    api.transcribe(path).catch((err) => (problem = errorText(err)));
-  }
-
-  $effect(() => {
-    if (!transcribing) pausing = false;
-  });
 
   // Removing a clip is one click, so putting it back is one click too, for
   // as long as the list is on screen.
@@ -1166,6 +1147,19 @@
 
   async function findClips(replan: boolean) {
     problem = "";
+    // The window is not transcribed yet. The search waits for it the way
+    // the first search of an episode does, with the same row, the same
+    // Cancel and the transcription stopping exactly at the window's edge,
+    // and it starts the transcription itself when nothing is transcribing.
+    // There used to be no way to ask for clips until the transcript was
+    // there, and a transcription that was paused had to be carried on
+    // first with a button at the edge of the range picker, which nobody
+    // could be expected to know about.
+    if (!readyToLook) {
+      chosen.asked[path] = { replan };
+      fedFor = -1;
+      return;
+    }
     starting = true;
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
@@ -1273,6 +1267,16 @@
     findClips(false);
   });
 
+  // New pressed before the window was transcribed: the search starts the
+  // moment it is, the same as the first search does.
+  $effect(() => {
+    const asked = chosen.asked[path];
+    if (!asked || !readyToLook || busy || waiting.length > 0) return;
+    delete chosen.asked[path];
+    chosen.looked[path] = true;
+    findClips(asked.replan);
+  });
+
   // The transcription stops exactly at the end of that first search's
   // window, rather than being paused from outside a chunk or two past it:
   // the chunk the speech model hears is cut on the window's edge. The
@@ -1285,6 +1289,20 @@
     api.holdTranscription(path, to).catch(() => {
       // Without the hold the search pauses the transcription itself.
     });
+  });
+
+  // A search waiting for words that nothing is transcribing starts the
+  // transcription, held at its window by the effect above: the first
+  // search of an episode whose transcription stopped, and New pressed
+  // before the window was transcribed. Once for each window, so a
+  // transcription that fails is not started again and again.
+  let fedFor = -1;
+  $effect(() => {
+    if (!source || !status || !lookPending || transcribing || to <= 0) return;
+    if (fedFor === to) return;
+    fedFor = to;
+    stoppedAt = null;
+    api.transcribe(path).catch((err) => (problem = errorText(err)));
   });
 
   // The model for that first search is loaded while the transcript is on
@@ -1537,11 +1555,7 @@
         : "all the model reads at once"}
     onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
-    {partly}
-    {leftToGo}
     holding={stoppedAt !== null}
-    {pausing}
-    ontranscription={() => (transcribing ? pauseTranscribing() : carryOnTranscribing())}
   />
 {/snippet}
 

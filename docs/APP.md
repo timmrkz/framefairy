@@ -279,13 +279,13 @@ area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
 
-- **The transcription is the head of the clip list**, in the shape
-  everything else in that pane has: the head says **Transcribing**, the one
-  button says **Pause**, and that button fills up as it goes. Paused,
-  the head says so and the button says **Continue**, which picks up where it
-  stopped, also after a restart. The info mark beside the head says what is
-  happening and how long it has to go, and goes back to saying what the clip
-  list is once there are clips to list.
+- **The transcription runs for a search, and for nothing else.** It goes
+  as far as the window the search is for and stops exactly on its edge. A
+  new episode's first search starts it by itself, held at the first half
+  hour, and every search after that starts it again when its window is not
+  transcribed yet. Nothing carries it on through the rest of the episode
+  afterwards. So there is nothing to control about it but the search:
+  **New** starts both and **Cancel** stops both.
 - **What is not there yet says so by waiting.** The part of the clip
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
@@ -344,21 +344,21 @@ place.
   it at any point: it has a place of its own, on the range picker, at the
   edge it moves. The two run in lanes of their own, and a head that carried
   both is how it came to say **Transcribing** over a list of clips.
-- **New waits until a search could run.** **New** is off until the
-  episode has been heard to the end of the chosen window, and says how far
-  it has got and how far it needs to go. It goes by what has been heard,
-  the edge the range picker draws, not by what has been written down. A
-  search reads the transcript off disk, so the search pauses the
-  transcription, the pause writes down all it heard, and the search reads
-  that. Going by what was written down made every search wait for the next
-  save, which comes every 8 s of work, minutes of audio apart.
-- **The transcription is worked from the edge it moves.** On the range
-  picker, at the transcript's edge, a mark appears while the pointer is on
-  the track and does the one thing there is to do: pause it while it reads,
-  carry on while it is stopped part way. It travels with the edge and glides
-  with it, so the two read as one thing: both are carried by a transform, so
-  the distance between them never changes. It is not there when the episode
-  is read to the end, because then there is nothing to do.
+- **New works whether the window is transcribed or not.** Pressed before
+  the episode has been heard to the end of the chosen window, the search
+  waits for it the way the first search does: the first row of the clip
+  list says Waiting for the transcript with the window, the window is
+  locked, the transcription starts if nothing is transcribing and stops
+  exactly on the window's edge, and the search starts the moment it gets
+  there. **Cancel** calls the search off and stops the transcription with
+  it. New used to be off until the window was transcribed, and a
+  transcription that had been paused had to be carried on first with a
+  mark at the edge of the range picker, which nobody could be expected to
+  know about. That mark is gone, and so is pausing: the transcription
+  runs for a search, so the search is what is started and stopped. It
+  goes by what has been heard, the edge the range picker draws, not by
+  what has been written down, which comes every 8 s of work, minutes of
+  audio apart.
 - **What is running shows in the button it was started from.** Work that
   knows how far along it is fills the button, with a line of the app's
   colour at the front of the fill. Work that cannot say sends a band of that
@@ -571,14 +571,15 @@ place.
       in the meantime, so the search
       starts with it in memory. **While clips are found, the transcription
       waits**, on this episode and any other, so the model has the
-      machine to itself, and it carries on by itself when the search
-      ends. One paused by hand stays paused. **The transcription stops
-      exactly at the end of the window**: the workspace tells it where,
-      and the piece of audio the speech model hears is cut on the
-      window's edge, so it hears nothing past it. It saves what it heard,
-      the search starts at once, and the transcription carries on after
-      the search. A word that runs across the edge is not in the window,
-      and is heard whole when the transcription carries on. It
+      machine to itself. Another episode's carries on by itself when the
+      search ends, because it runs for a search of its own. **The
+      transcription stops exactly at the end of the window**: the
+      workspace tells it where, and the piece of audio the speech model
+      hears is cut on the window's edge, so it hears nothing past it. It
+      saves what it heard, the search starts at once, and the
+      transcription stays stopped there until a search needs more. A word
+      that runs across the edge is not in the window, and is heard whole
+      by the next search that needs it. The first search
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
@@ -721,8 +722,6 @@ place.
     - The part not yet transcribed is darker, with a line at the edge where
       the transcript has got to, and a light passing over it while the
       transcription runs.
-    - On the edge, while the pointer is on the track, the mark that pauses
-      the transcription or carries it on.
     - The window is locked while clips are being found.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
@@ -1039,9 +1038,8 @@ things and no others, and each one means one thing.
   fill stays where it is, and everything that says the work is running
   stops: no beam, no motes, no light over the fill, and the head keeps its
   line without the glow ahead of it. Running and paused are told apart by
-  movement. The range picker shows a transcription paused by hand, or
-  waiting while a search has the machine, this way, with the mark that
-  carries it on at the head of the fill. In
+  movement. The range picker shows a transcription stopped at a window,
+  or waiting while a search has the machine, this way. In
   Activity, where a job has no control of its own, the same fill lies in a
   track of its own, with a light travelling over what is already done. Work that cannot
   say how far it has come shuttles across that track instead of standing at

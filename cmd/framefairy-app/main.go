@@ -469,15 +469,34 @@ func (s *FrameFairy) AddEpisodes() ([]string, error) {
 	// One file that cannot be added is not a reason to drop the others, so
 	// what was added is started either way and the reason travels with it.
 	added, err := s.store.AddEpisodes(videos)
-	// Transcription starts right away and runs in the background.
+	// A new episode's first search starts by itself, so its transcription
+	// starts right away, in the background, and goes as far as that
+	// search's window and no further. The window is the first half hour,
+	// or the whole of a shorter episode, which the workspace holds it to
+	// once it is open. firstLook is a part of every first window, so the
+	// transcription never runs past the one it is for. An episode that
+	// has been searched before transcribes when a search needs it.
 	for _, v := range added {
 		s.jobs.openEpisode(v)
-		if covered, done := engine.Coverage(v, s.store.Settings().ASRModel); !done || covered == 0 {
-			s.Transcribe(v)
-		}
+		s.transcribeForFirstSearch(v)
 	}
 	return added, err
 }
+
+// transcribeForFirstSearch starts the transcription of an episode that has
+// never been searched, held at the start of its first window.
+func (s *FrameFairy) transcribeForFirstSearch(path string) {
+	covered, done := engine.Coverage(path, s.store.Settings().ASRModel)
+	if done || engine.Looked(path) || covered >= firstLook {
+		return
+	}
+	_ = s.HoldTranscription(path, firstLook)
+	s.Transcribe(path)
+}
+
+// firstLook is the start of every episode's first window, in seconds. The
+// workspace's own is firstLook in Episode.svelte.
+const firstLook = 30 * 60
 
 // RemoveEpisode takes an episode out of the library. With deleteWork, it
 // also deletes everything made for it, so adding it again starts from
@@ -824,9 +843,10 @@ func (s *FrameFairy) HoldTranscription(path string, at float64) error {
 		s.mu.Unlock()
 		return nil
 	}
-	if s.releaseHold(path) {
-		s.carryOnHeld(path)
-	}
+	// Letting go only lets go. The transcription runs for a search and for
+	// nothing else, so one that stopped at its hold stays stopped until a
+	// search needs more of the episode.
+	s.releaseHold(path)
 	return nil
 }
 
@@ -843,18 +863,6 @@ func (s *FrameFairy) releaseHold(path string) bool {
 	_, held := s.holds[path]
 	delete(s.holds, path)
 	return held
-}
-
-// carryOnHeld starts the transcription again if it had stopped at its hold
-// and is not finished.
-func (s *FrameFairy) carryOnHeld(path string) {
-	if _, done := coverage(path, s.store.Settings().ASRModel); done {
-		return
-	}
-	if j, ok := s.jobs.find(path, "transcribe"); ok && (j.State == JobRunning || j.State == JobQueued) {
-		return
-	}
-	s.Transcribe(path)
 }
 
 // Plan queues finding clips in a window of an episode. It starts as soon as
@@ -881,29 +889,53 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 				}
 			}()
 		}
-		// The search has the machine to itself. Transcribing the rest of
-		// an episode can wait a few minutes, the clips are what somebody
-		// is waiting for. The wait pauses this episode's transcription the
-		// moment it has heard the window, so whatever it paused carries on
-		// after the search too, and so does whatever is paused here.
+		// The transcription of an episode runs for its searches and for
+		// nothing else, so it goes as far as this window and stops there,
+		// exactly on its edge. A hold the workspace set already says so.
+		if req.To > 0 && s.holdOf(p.Source) == 0 {
+			_ = s.HoldTranscription(p.Source, req.To)
+		}
+		// The search has the machine to itself. Another episode's
+		// transcription is paused and carries on after, because it runs for
+		// a search of its own. This episode's own does not: it ran for this
+		// search, and it has done what it was for.
 		paused, err := s.waitForTranscript(ctx, p, req)
 		defer func() { s.carryOn(paused) }()
+		paused = without(paused, p.Source)
 		if err != nil {
+			if errors.Is(err, engine.ErrCancelled) {
+				// Called off while it waited. The transcription it waited
+				// for stops with it.
+				s.stopTranscription(p.Source)
+			}
+			s.releaseHold(p.Source)
 			return "", err
 		}
-		paused = append(paused, s.pauseTranscriptions()...)
-		// The transcription stopped at this search's window, if it had a
-		// hold there. It carries on after the search like one paused for it.
-		if s.releaseHold(p.Source) {
-			if _, done := coverage(p.Source, s.store.Settings().ASRModel); !done {
-				paused = append(paused, p.Source)
-			}
-		}
+		paused = without(append(paused, s.pauseTranscriptions()...), p.Source)
+		s.releaseHold(p.Source)
 		if len(paused) > 0 {
-			p.Log().Info("the transcription waits while clips are found and carries on after")
+			p.Log().Info("other transcriptions wait while clips are found and carry on after")
 		}
 		return p.Plan(ctx, req)
 	})
+}
+
+// without is paths less one of them.
+func without(paths []string, path string) []string {
+	out := paths[:0:0]
+	for _, p := range paths {
+		if p != path {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// stopTranscription stops an episode's transcription, if it runs or waits.
+func (s *FrameFairy) stopTranscription(path string) {
+	if j, ok := s.jobs.find(path, "transcribe"); ok && (j.State == JobRunning || j.State == JobQueued) {
+		s.jobs.cancel(j.ID)
+	}
 }
 
 // pauseTranscriptions stops every transcription that is running or
@@ -1069,13 +1101,6 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project,
 				paused = nil
 			}
 		case ok && (job.State == JobQueued || job.State == JobRunning):
-		case ok && job.State == JobCancelled:
-			// Pause means pause. A search waiting for the words does not
-			// get to start the transcription again behind the user's back,
-			// whoever asked for it.
-			p.Log().ClearProgress()
-			p.Log().Error("the transcription is paused at %s", engine.HMS(covered))
-			return nil, engine.ErrStepFailed
 		case started != nil && ok && job.ID == started.ID:
 			p.Log().ClearProgress()
 			reason := job.Error
