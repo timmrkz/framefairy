@@ -152,8 +152,15 @@ is only who wrote the code that does it.
 
 ## Licences and updates
 
-What a customer paid for decides which updates they get. The common
-models for a paid Mac app:
+**Decided: a licence is bought once and gets every update, for ever.** No
+yearly renewal, no paid major versions. If there is a reason to update the
+app, everyone who bought it gets the update. The worst that can happen to
+a customer is that updates stop. So the licence plays no part in the
+update check: the feed is public, every copy of the app reads it, and the
+licence key only decides whether the app runs.
+
+What was weighed. What a customer paid for decides which updates they
+get, and the common models for a paid Mac app are these:
 
 - **Every update, for ever.** Simplest. No income from people who already
   bought.
@@ -273,7 +280,7 @@ How it would work:
   whatever a pull request contains, so nothing from outside may get in.
 - **Its own key.** The development builds are signed with an update key of
   their own, a different one from the customer key. A leak of it reaches
-  development builds and nothing else.
+  development builds and nothing else. See the keys below.
 
 What it can start with and what it cannot:
 
@@ -286,19 +293,100 @@ What it can start with and what it cannot:
   commit, so an update is ready a few minutes after Claude pushes, not at
   once. The pull request can say when it is ready.
 - **The app lives in one place.** It is installed once, to
-  `~/Applications`, and updates itself there. `make run` still works, for
-  a change Tim wants to build himself.
+  `/Applications`, and updates itself there. An administrator can write
+  there without a password prompt, and Tim's account is one. `make run`
+  still works, for a change Tim wants to build himself.
 - **Every build shares one set of settings and episodes.** A pull request
   that changes a file format can leave a file another build cannot read.
   That is rare, it is the same rule a release lives by, and it is the risk
   of switching back and forth between pull requests that are not yet
   merged. Nothing is lost that the newer build does not read again.
 
+### The keys
+
+An update key is a pair of numbers made together, the way an SSH key is:
+a private half that signs and a public half that checks. Ed25519, the
+same kind Sparkle and Wails' updater use. They are not bought and not
+issued by anybody: they are made once, on Tim's Mac, with one command.
+
+| Key | Signs | Private half lives | Public half lives |
+| --- | --- | --- | --- |
+| The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for Tim's approval, and a backup in Tim's password manager | in the repository, built into every customer build |
+| The development key | the builds of `main` and of pull requests | a GitHub secret the build workflow can read, and the password manager | in the repository, built into every development build |
+
+- **The private half never leaves those two places.** It is not in the
+  repository, not in a chat, not on a cloud session's disk. Tim makes the
+  pair, pastes the private half into the repository's secrets on GitHub's
+  settings page, and keeps a copy in his password manager.
+- **The public half is not a secret.** It sits in the repository and is
+  built into the app, which is what lets the app check a download without
+  asking anybody.
+- **A workflow started by a pull request from a fork gets no secrets**,
+  which is GitHub's rule, and ours on top: fork pull requests are not
+  built at all.
+- **A development build does not trust a release, and a customer build
+  does not trust a development build.** Each carries one public half. A
+  customer can never be handed a pull request's build, even by mistake.
+- **Losing the release key** means no update can reach the copies already
+  sold. Losing the development key costs nothing but a new pair and one
+  install by hand. That is why only the release key needs the approval
+  step.
+
+### How the app knows the pull requests
+
+It does not ask GitHub, and it knows nothing about GitHub. It knows one
+address, and at that address one small file, the channel list, which the
+build workflow writes:
+
+```json
+{
+  "channels": [
+    { "id": "main", "name": "main", "feed": "…/dev-main/appcast.xml" },
+    { "id": "pr-18", "name": "#18 How the app updates itself", "feed": "…/dev-pr-18/appcast.xml" }
+  ]
+}
+```
+
+- **The workflow keeps it true.** A push to a pull request builds it and
+  adds or refreshes its entry. A pull request that is merged or closed is
+  taken out, and its builds with it. GitHub is where the workflow runs and
+  where the files are kept, and that is the only place it appears.
+- **Each channel has its own feed**, the same appcast a release has, so
+  the app reads a pull request exactly the way it reads a release.
+- **A customer build has no channel list.** It knows the stable feed and
+  nothing else.
+- Asking GitHub from the app was the other way. It would put GitHub's API
+  into the app, with its limit of 60 requests an hour for anyone who does
+  not sign in, and it would tie the app to where the code happens to
+  live.
+
+### End to end
+
+1. **Once.** `make install`, a target this batch adds, builds the app on
+   Tim's Mac and copies it to
+   `/Applications`. Built on the Mac, it carries no quarantine mark, so
+   macOS opens it. From then on it is started like any other app, not
+   from the terminal.
+2. **Claude pushes to pull request 18.** A few minutes later the workflow
+   has built `0.3.0-pr18.7`, signed it with the development key, put it
+   beside the feed of `pr-18`, and made sure the channel list has #18. The
+   pull request says the build is ready.
+3. **Tim picks #18** in the app, where a development build shows the
+   channel it follows. The app reads #18's feed, downloads the build,
+   checks it against the development key's public half, and says it is
+   ready. Tim clicks **Restart**, and the app comes back as pull request
+   18. The About box says so, with the commit.
+4. **Claude pushes again.** The app sees a newer build on #18, quietly.
+   One click, one restart.
+5. **Tim picks #20**, or main. The app installs that channel's newest
+   build, sideways, and restarts into it.
+6. **#18 is merged.** Its channel goes from the list, and an app still on
+   it is offered main the next time it looks.
+
 ## Decisions to make
 
-1. **The update policy**: every update for ever, a year of updates, or
-   paid major versions. It decides whether the licence is part of the
-   check at all.
+1. **The update policy**: decided. A licence gets every update for ever,
+   and the licence plays no part in the update check.
 2. **The mechanism**: Wails' updater, in Go, drawn by our own interface,
    or Sparkle, the standard, with its own window and a bridge to reach it.
    The recommendation is Wails' updater with a Sparkle-format appcast as
@@ -309,8 +397,8 @@ What it can start with and what it cannot:
    notarised bundle swapped, an app in a folder the person cannot write,
    and one never moved out of the disk image.
 3. **Where releases live**: GitHub Releases on this repository, free and
-   public, or Keygen, paid and gated by the licence. It follows from the
-   first decision and from the licence key.
+   public. With updates for ever there is nothing to gate, so Keygen's
+   gated downloads are not needed for updates.
 4. **The channels**: stable and beta, or stable alone at first.
 5. **Updates for pull requests first.** The recommendation is to build
    them before anything a customer sees, as the first batch of 5.9: the

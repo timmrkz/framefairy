@@ -172,7 +172,7 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 | 5.6 | Windows and Linux builds in CI | `[ ]` |
 | 5.7 | Whether customer builds record training data, and a setting for it | `[ ]` |
 | 5.8 | Licence key check and storage | `[ ]` |
-| 5.9 | How the app updates itself. Researched in [UPDATES.md](UPDATES.md): what an update replaces and what it never touches, the ways it is done, how a licence decides who gets which, what the person sees, and the release workflow. Four decisions are open there `[x]`, and nothing is built `[ ]` | `[~]` |
+| 5.9 | How the app updates itself. Researched in [UPDATES.md](UPDATES.md): what an update replaces and what it never touches, the ways it is done, how a licence decides who gets which, what the person sees, and the release workflow. Decided: a licence gets every update for ever, and releases live on GitHub Releases. Updates for pull requests come first, for Tim to use every day `[x]`. Nothing is built `[ ]` | `[~]` |
 | 5.10 | A skill for shipping, once a build has actually been through signing and notarisation. Not before: a skill written from reasoning rather than from a round of it would teach the guesses | `[ ]` |
 
 ---
