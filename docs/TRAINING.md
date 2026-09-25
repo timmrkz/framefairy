@@ -52,6 +52,12 @@ carries the key of the episode it came from, so one folder holds them all
 without mixing them up. The app's settings screen says where the folder is,
 how many records are in it, and throws them away when asked.
 
+Only answers to the app's own way of asking are recorded, the `lines`
+recipe. A search with another recipe, or any search of a comparison, is an
+experiment and leaves no record, because a record of an answer to another
+question would teach the model to answer a question it is never asked. See
+[CLI.md](CLI.md#trying-other-ways-of-asking).
+
 ### `plans.jsonl`
 
 One record per model answer. Next to the fields from the original plan:

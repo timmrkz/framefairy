@@ -33,6 +33,17 @@ type Options struct {
 	KeepPause float64
 	SilenceDB *float64
 	Context   string
+	// Recipe is how the model is asked for clips, by name. Empty is
+	// DefaultRecipe. See recipe.go.
+	Recipe string
+	// Compare names recipes to search the same window with, one after the
+	// other, and to write a report on. It is the command line's to act
+	// on, see Engine.Compare. Run itself leaves it alone.
+	Compare []string
+	// Experiment keeps a search apart even with the default recipe: its
+	// plan in a folder of its own, nothing rendered and nothing recorded.
+	// A comparison asks for it. Any other recipe is always an experiment.
+	Experiment bool
 
 	// Planner is "local", the default, or "api".
 	Planner   string
@@ -244,7 +255,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 	planPath := opts.ClipsPath
 	if planPath == "" {
-		planPath = filepath.Join(logsDir, planName)
+		planPath = PlanFor(work, opts.Recipe, opts.Experiment, planName)
 	}
 
 	// Plans written by an early version sat in the work directory itself.
@@ -274,8 +285,9 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	// later run without those flags would not find it and would quietly buy
 	// another one. Planning costs money, so an existing plan is looked for
 	// before that happens rather than after.
+	experiment := opts.Experiment || IsExperiment(opts.Recipe)
 	if opts.ClipsPath == "" && !exists(planPath) && !opts.Replan && !opts.TranscribeOnly &&
-		!opts.ExactPlan {
+		!opts.ExactPlan && !experiment {
 		matches, _ := filepath.Glob(filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
@@ -367,14 +379,21 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			return 1
 		}
 		e.SummariseLines(transcript, lines, span)
+		// An experiment writes its own plan and leaves the episode's
+		// captions where they are.
+		planCaptions := captionDir
+		if experiment {
+			planCaptions = ""
+		}
 		plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
 			PlanOptions{
 				Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
 				Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
 				MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
-				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord,
-				PlanPath: planPath, CaptionDir: captionDir,
+				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
+				Recipe:   opts.Recipe,
+				PlanPath: planPath, CaptionDir: planCaptions,
 			})
 		if err != nil {
 			return e.planFailed(ctx, err)
@@ -433,6 +452,13 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 
 	if opts.PlanOnly {
 		log.Info("plan only, nothing rendered. Edit %s and run again.", planPath)
+		return 0
+	}
+	// An experiment is there to be compared, not published. Rendering it
+	// would put its shorts beside the episode's own.
+	if experiment {
+		log.Info("an experiment with the %s recipe, nothing rendered. The plan is %s.",
+			opts.Recipe, planPath)
 		return 0
 	}
 

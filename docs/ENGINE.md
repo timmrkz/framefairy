@@ -109,6 +109,29 @@ wrong by that much. Counting samples is exact everywhere, and audio decodes
 at a few hundred times real time, so winding forward through an hour costs
 about ten seconds.
 
+## Recipes
+
+A recipe is one way of asking the model for clips, in `engine/recipe.go`:
+what it is told, how the transcript is written out for it, what shape its
+answer takes, and how that answer is read back. A recipe may number what
+it likes, lines or sentences or paragraphs, as long as each thing it
+numbers is a run of whole lines. Its answer is turned into runs of lines,
+and everything after that is the same for every recipe: the words and
+their times, the cuts, the framing and the captions. So the precision of
+the captions never depends on what the model was shown, and the model can
+be asked in terms of the story while the engine keeps the milliseconds.
+
+| Recipe | What the model reads | What it answers |
+| --- | --- | --- |
+| `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
+| `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more | up to N clips, the strongest first, as runs of sentences |
+
+`lines` is what the app uses. The others are tried with `--recipe` and
+compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
+A sentence in `stories` ends where a line ends one, before a pause of
+1.2 s, or once it has run 20 s. A paragraph ends before a pause of 1.5 s or
+once it has run 45 s.
+
 ## Lines, cuts and captions
 
 The model reads the transcript as numbered lines. A line ends at a pause of
@@ -457,6 +480,9 @@ Everything else is in `engine/`:
   transcript.go the transcript cache and the speech model location
   lines.go      lines, cuts and captions, all built from words
   highlight.go  word timings for captions and the bouncing highlight
+  recipe.go     ways of asking for clips, and reading the answer back
+                into lines. recipe_stories.go is the stories recipe
+  compare.go    one window searched with several recipes, and the report
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken

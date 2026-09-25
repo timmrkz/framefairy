@@ -1,0 +1,147 @@
+package engine
+
+import (
+	"fmt"
+	"strings"
+)
+
+// storiesRecipe asks for stories rather than for lines. The model is told
+// what makes a moment work as a short, for any video, and reads the
+// transcript the way a person would: sentences in paragraphs, a time at the
+// start of each paragraph and three dots for a long pause. It answers in
+// sentence numbers. Everything measured in milliseconds, which pause is
+// cut, where a word begins, is the engine's.
+var storiesRecipe = Recipe{
+	Name:    "stories",
+	About:   "a brief for any video, the transcript as sentences in paragraphs, the strongest first",
+	Version: 1,
+	System:  storiesSystem,
+	Units:   sentenceUnits,
+	Request: storiesRequest,
+	Schema:  planSchema,
+}
+
+func init() { recipes[storiesRecipe.Name] = storiesRecipe }
+
+const storiesSystem = `You find the moments in a long video that work as short vertical videos on ` +
+	`their own, for YouTube Shorts, Instagram Reels and TikTok. You know the video ` +
+	`only from what is said in it, as a transcript.
+
+A moment works when it is a small, complete story in the speaker's own words. It ` +
+	`opens on something that makes a stranger stay, it turns, and it lands on a ` +
+	`payoff: what happened, what it meant, the line that stays with you. Someone who ` +
+	`has seen nothing else of the video understands it.
+
+Strong moments come in different kinds: something human or moving, a surprise, ` +
+	`something funny, tension, a vivid scene, a line worth quoting, an insight put ` +
+	`plainly. Look for all of them and prefer a mix. Something specific the speaker ` +
+	`saw, did or felt beats something general.
+
+A clip must reach its payoff. Stopping before it is the worst outcome, worse ` +
+	`than running long. When the payoff comes long after the setup, keep the setup ` +
+	`and the payoff and leave out sentences between them. Never reorder anything, ` +
+	`and never join two parts so that they say something the speaker did not.
+
+Fewer strong clips beat padding. Return at most the number asked for, the ` +
+	`strongest first.
+
+OUTPUT CONTRACT
+
+Your reply is parsed by a program. Return exactly one JSON object and nothing ` +
+	`else. No prose, no markdown fences.
+
+{"clips": [{"slug": "...", "title": "...", "reason": "...", "keep": [[12, 14], [17, 18]]}]}
+
+- "slug": lowercase ASCII letters, digits and hyphens, at most 64 characters, ` +
+	`different for every clip.
+- "title": a hook line in the language of the transcript, at most 200 characters.
+- "reason": one sentence on why it works, at most 300 characters.
+- "keep": runs of sentences to keep, as [first, last] sentence numbers from the ` +
+	`transcript, in order and not overlapping. A clip is its runs played one after ` +
+	`the other.
+`
+
+// A sentence ends where its last word ends one, at a long pause, or when it
+// has run long enough that a clip needs to be able to cut inside it.
+const (
+	sentencePause   = 1.2
+	sentenceSeconds = 20.0
+	// A paragraph ends at a pause this long, or once it has run this long,
+	// and the next one opens with its time.
+	paragraphPause   = 1.5
+	paragraphSeconds = 45.0
+	// A pause this long before a sentence is written as three dots.
+	dotsPause = 1.0
+)
+
+// sentenceUnits groups the lines into sentences. Lines already end at every
+// sentence end once they have some length, so a sentence is one line or a
+// few.
+func sentenceUnits(lines []Line) [][2]int {
+	var units [][2]int
+	start := 0
+	for i := range lines {
+		last := i == len(lines)-1
+		ends := endsSentence(strings.TrimSpace(lines[i].Text())) ||
+			(!last && lines[i+1].GapBefore >= sentencePause) ||
+			lines[i].End()-lines[start].Start() >= sentenceSeconds
+		if ends || last {
+			units = append(units, [2]int{start, i})
+			start = i + 1
+		}
+	}
+	return units
+}
+
+func storiesRequest(lines []Line, units [][2]int, opts PlanOptions) string {
+	ask := []string{
+		fmt.Sprintf("Find up to %d clips in the transcript below, the strongest first.", opts.Count),
+		fmt.Sprintf("Each clip runs %s to %s seconds once the sentences you leave out are gone. "+
+			"Reaching the payoff matters more than being brief.",
+			fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0)),
+		fmt.Sprintf("The transcript has %d sentences, each with its number in brackets. "+
+			"Each paragraph opens with the time it starts at, so you can tell how long "+
+			"a stretch runs. Three dots mark a long pause.", len(units)),
+	}
+	if opts.Context != "" {
+		ask = append(ask, "About the video: "+opts.Context)
+	}
+	ask = append(ask, "", "Transcript:", "", writeSentences(lines, units), "",
+		"Reply with the JSON object and nothing else.")
+	return strings.Join(ask, "\n")
+}
+
+// writeSentences writes the transcript as paragraphs of numbered
+// sentences. A paragraph opens with its time.
+func writeSentences(lines []Line, units [][2]int) string {
+	var out strings.Builder
+	paragraphStart := -1.0
+	for n, unit := range units {
+		first := lines[unit[0]]
+		opens := n == 0 || first.GapBefore >= paragraphPause ||
+			first.Start()-paragraphStart >= paragraphSeconds
+		if opens {
+			if n > 0 {
+				out.WriteString("\n")
+			}
+			paragraphStart = first.Start()
+			fmt.Fprintf(&out, "(%s)", clockTime(first.Start()))
+		} else if first.GapBefore >= dotsPause {
+			out.WriteString(" …")
+		}
+		fmt.Fprintf(&out, " [%d]", n+1)
+		for _, line := range lines[unit[0] : unit[1]+1] {
+			out.WriteString(" " + line.Text())
+		}
+	}
+	return out.String()
+}
+
+// clockTime writes seconds as m:ss, or h:mm:ss past the hour.
+func clockTime(seconds float64) string {
+	s := int(seconds)
+	if s >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", s/3600, s/60%60, s%60)
+	}
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}

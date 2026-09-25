@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -76,6 +77,26 @@ func RecipeNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// IsExperiment is true for a recipe other than the default. A search with
+// one keeps its plan apart, renders nothing and records nothing for
+// training.
+func IsExperiment(recipe string) bool { return recipe != "" && recipe != DefaultRecipe }
+
+// PlanFor is where the plan of that name goes: in the logs folder for a
+// search, and for an experiment in a folder of its recipe's own, so an
+// experiment never takes the place of the plan the app reads. A search
+// with any recipe but the default is an experiment, and a comparison makes
+// one of the default recipe's too.
+func PlanFor(work, recipe string, experiment bool, name string) string {
+	if experiment || IsExperiment(recipe) {
+		if recipe == "" {
+			recipe = DefaultRecipe
+		}
+		return filepath.Join(work, "experiments", recipe, name)
+	}
+	return filepath.Join(work, "logs", name)
 }
 
 // recipe is the recipe these options ask for. Options that name none, or
