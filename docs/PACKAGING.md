@@ -655,7 +655,8 @@ it.
 ## Still open
 
 - **Updates.** A paid desktop app needs a way to update itself, and that
-  touches signing on every platform. Nothing is decided.
+  touches signing on every platform. The research, and the decisions it
+  leaves open, are in [UPDATES.md](UPDATES.md). Nothing is decided.
 - **Signing costs.** Apple's Developer Program is 99 dollars a year. Windows
   code signing needs a certificate whose key lives on hardware or in a cloud
   signing service, so it is a subscription rather than a one-off.
