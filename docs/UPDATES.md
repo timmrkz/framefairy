@@ -334,9 +334,23 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 ### How the app knows the pull requests
 
-It does not ask GitHub, and it knows nothing about GitHub. It knows one
-address, and at that address one small file, the channel list, which the
-build workflow writes:
+The channel list is a small public file at one fixed web address. The
+address is built into a development build. What is in the file is not:
+the build workflow writes it again on every push, so a build made today
+finds a pull request opened tomorrow. The address is on GitHub, in the
+repository that holds the releases, as a file of a release that never
+changes its name:
+
+```
+https://github.com/timmrkz/framefairy-releases/releases/download/dev/channels.json
+```
+
+That is the address if the code goes private, see below. If it stays
+public, the same file sits in this repository's releases instead.
+
+The app fetches it the way it fetches any file. It does not call GitHub's
+API and has no idea what a pull request is. It knows a list of channels,
+each with a name and a feed:
 
 ```json
 {
@@ -355,10 +369,10 @@ build workflow writes:
   the app reads a pull request exactly the way it reads a release.
 - **A customer build has no channel list.** It knows the stable feed and
   nothing else.
-- Asking GitHub from the app was the other way. It would put GitHub's API
-  into the app, with its limit of 60 requests an hour for anyone who does
-  not sign in, and it would tie the app to where the code happens to
-  live.
+- Asking GitHub's API from the app was the other way. It would put the
+  API into the app, with its limit of 60 requests an hour for anyone who
+  does not sign in, and it would need the code's repository to be public.
+  A plain file can move to any other host by changing one address.
 
 ### End to end
 
@@ -383,6 +397,57 @@ build workflow writes:
 6. **#18 is merged.** Its channel goes from the list, and an app still on
    it is offered main the next time it looks.
 
+## Open or closed source, and where releases live
+
+A licence has to be worth paying for. If the code is open, anyone can
+build the app, and the check that asks for a licence is a line anyone can
+delete. Language models make that deletion easier every year. So the
+question of where releases live is really the question of whether the
+code is public.
+
+**What is true today.** The repository is public and has no licence file.
+With no licence, the code is all rights reserved: anyone may read it, and
+nobody may use, change or pass it on. That stops a business. It does not
+stop a person with a compiler. It has no forks.
+
+**What no choice changes.** A check can be removed from any app. Closed
+code only raises the bar from deleting a line to patching a binary, and
+language models lower that bar too. What makes people pay is that paying
+is easier than not: a signed, notarised app that updates itself, against
+a toolchain, a half hour building ffmpeg, and an app macOS warns about.
+The licence key gates what matters most and costs least to leave open
+elsewhere: a render without a watermark. That is batch 5.8.
+
+The two ways, side by side:
+
+| | Code public, source available | Code private, releases public |
+| --- | --- | --- |
+| Where the code is | this repository, public, with a licence that allows reading and building for yourself and nothing else, the way Aseprite does it | this repository, made private |
+| Where releases are | this repository's releases | a second, public repository, `framefairy-releases`, holding only builds, feeds, the channel list and the source of the ffmpeg we ship, which its licence asks us to publish |
+| Removing the licence check | delete a line and build | patch a binary |
+| CI | free, as it is today, macOS included | 2000 minutes a month free, and a minute of macOS counts as ten. Past that, 0.062 dollars a macOS minute |
+| Claude's cloud sessions | as today | as today. They work in private repositories |
+
+**What private costs in CI.** A push that touches Go runs 10 to 15
+minutes on macOS today, tests and fuzzing, and a build per push for the
+pull request channel adds about 5 more. At twenty such pushes a day that
+is around 400 macOS minutes, 25 dollars a day, 500 to 700 a month. Three
+ways to bring it down, which can be combined:
+
+- **A runner on Tim's Mac.** GitHub runs the macOS jobs on a machine of
+  our own, the M2 Max, faster than GitHub's and without the minutes. It
+  works while the Mac is awake, and it only ever runs this private
+  repository's own jobs.
+- **Fewer macOS jobs.** Tests and fuzzing on Linux for every push, macOS
+  only for what only macOS can show: the warning-free build and the app.
+- **Builds on request.** A pull request is built for its channel when it
+  is marked for testing, not on every push.
+
+**Pull request builds are public in both ways**, because the releases
+repository is. So every build, development or release, asks for the
+licence key before it renders without a watermark. Tim has a key like any
+customer. A build is only ever as free as a release.
+
 ## Decisions to make
 
 1. **The update policy**: decided. A licence gets every update for ever,
@@ -396,9 +461,12 @@ build workflow writes:
    releases. Before it is final it has to prove itself on a Mac: a signed,
    notarised bundle swapped, an app in a folder the person cannot write,
    and one never moved out of the disk image.
-3. **Where releases live**: GitHub Releases on this repository, free and
-   public. With updates for ever there is nothing to gate, so Keygen's
-   gated downloads are not needed for updates.
+3. **Open or closed source**: the code public with a licence that allows
+   reading and nothing more, or private with a public releases repository
+   beside it. See above. The recommendation is private, with the macOS
+   jobs on a runner on Tim's Mac. Either way releases are on GitHub
+   Releases in a public repository, free, and with updates for ever there
+   is nothing to gate, so Keygen's gated downloads are not needed.
 4. **The channels**: stable and beta, or stable alone at first.
 5. **Updates for pull requests first.** The recommendation is to build
    them before anything a customer sees, as the first batch of 5.9: the
