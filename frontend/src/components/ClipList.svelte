@@ -68,22 +68,42 @@
     if (has && !hadNext) nextRow!.scrollIntoView({ block: "start", behavior: "smooth" });
     hadNext = has;
   });
+  //
+  // The last clip a search finds leaves no row to come after it, so there
+  // is nothing to follow: that clip itself is brought into view, to the
+  // foot of the list when it lands below. The search may already have
+  // reported that it is done by the time its last clip is in the list, so
+  // a landing a few seconds after the search is still one of its own.
+  let list = $state<HTMLOListElement>();
   let known: Set<string> | null = null;
+  let searchedUntil = 0;
+  $effect(() => {
+    if (next) searchedUntil = Infinity;
+    else if (searchedUntil === Infinity) searchedUntil = Date.now() + 5000;
+  });
   $effect(() => {
     const keys = clips.map((c) => c.key);
     const before = known;
     known = new Set(keys);
-    if (!next || !before || !nextRow) return;
-    if (!keys.some((k) => !before.has(k))) return;
+    if (!before || !list || Date.now() > searchedUntil) return;
+    const landed = keys.filter((k) => !before.has(k));
+    if (!landed.length) return;
+    const row = nextRow;
+    const own = list;
     // After whatever else the landing moves. The first clip found is
     // chosen, and the workspace brings the chosen card into view at once,
     // which stops a smooth scroll that began before it.
-    const row = nextRow;
-    setTimeout(() => row.isConnected && row.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    setTimeout(() => {
+      const target =
+        row?.isConnected
+          ? row
+          : own.querySelector<HTMLElement>(`li[data-key="${CSS.escape(landed[landed.length - 1])}"]`);
+      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   });
 </script>
 
-<ol>
+<ol bind:this={list}>
   {#each clips as clip (clip.key)}
     <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }} data-key={clip.key}>
       {#if clip.key === removed}

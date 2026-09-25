@@ -326,23 +326,12 @@
   // An empty headline means nothing new to say, which is what the moment
   // between two reports of the engine is, and the row keeps what it says.
   const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
-  // How much of the way to the end of the window the transcription has
-  // come since the search began to wait for it, by the same edge the range
-  // picker draws: empty where the transcript stood when New was pressed,
-  // full at the end of the window. It used to be measured from the start of
-  // the episode, so a window two hours in began nearly full and crept, while
-  // the range picker's edge crossed the window quickly. Held from the
-  // moment the wait begins to the moment it ends, and only then, because a
-  // job event replaces the job about once a second.
-  let waitFrom = $state<number | null>(null);
-  const waitingForWords = $derived(
-    lookPending || ((finding || starting) && working?.progress?.text === "Waiting for the transcript"),
-  );
-  $effect(() => {
-    if (!waitingForWords) waitFrom = null;
-    else if (waitFrom === null) waitFrom = shownHeard;
-  });
-  const heardShare = $derived(to > 0 ? waitShare(waitFrom ?? shownHeard, shownHeard, to) : -1);
+  // How much of the window has been transcribed, by the same edge the range
+  // picker draws, so the row is a view of the window on the range picker:
+  // empty at its start, half full when half of it is transcribed, full at
+  // its end. It used to be measured from the start of the episode, so a
+  // window two hours in began nearly full.
+  const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
   const next = $derived.by(() => {
     if (finding || starting) {
       const p = working?.progress;

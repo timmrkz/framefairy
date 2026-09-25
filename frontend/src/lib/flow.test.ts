@@ -812,23 +812,22 @@ describe("frameStart", () => {
   });
 });
 
-// The row of a search waiting for the transcript fills from where the
-// transcript stood when the search began to wait, to the end of the
-// window. Measured from the start of the episode, a window two hours in
-// began nearly full.
+// The row of a search waiting for the transcript is a view of the window on
+// the range picker: how much of the window is transcribed. Measured from the
+// start of the episode, a window two hours in began nearly full.
 describe("waitShare", () => {
-  it("starts empty wherever the transcript stood", () => {
-    expect(waitShare(7000, 7000, 9000)).toBe(0);
-    expect(waitShare(2500, 2600, 3600)).toBeCloseTo(100 / 1100, 9);
+  it("is empty until the transcript reaches the window", () => {
+    expect(waitShare(7200, 0, 9000)).toBe(0);
+    expect(waitShare(7200, 7200, 9000)).toBe(0);
+  });
+
+  it("is how much of the window is transcribed", () => {
+    expect(waitShare(7200, 8100, 9000)).toBe(0.5);
+    expect(waitShare(1800, 2500, 3600)).toBeCloseTo(700 / 1800, 9);
   });
 
   it("is full at the end of the window and never past it", () => {
-    expect(waitShare(2500, 3600, 3600)).toBe(1);
-    expect(waitShare(2500, 4000, 3600)).toBe(1);
-  });
-
-  it("is full when there is nothing left to hear", () => {
-    expect(waitShare(3600, 3600, 3600)).toBe(1);
-    expect(waitShare(5000, 5000, 3600)).toBe(1);
+    expect(waitShare(1800, 3600, 3600)).toBe(1);
+    expect(waitShare(1800, 4000, 3600)).toBe(1);
   });
 });

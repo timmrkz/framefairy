@@ -123,14 +123,13 @@ export function frameStart(t: number, fps: number): number {
   return Math.floor(Math.max(t, 0) * rate + 1e-6) / rate;
 }
 
-// How far a search that waits for the transcript has come: from where the
-// transcript stood when the wait began to the end of the window, by what
-// has been heard. It was measured from the start of the episode, so a
-// window two hours in began nearly full while the range picker's edge
-// crossed the window quickly.
-export function waitShare(start: number, heard: number, to: number): number {
-  const from = Math.min(start, to);
-  if (to - from < 0.5) return 1;
+// How much of a window has been transcribed, by what has been heard: the
+// row of a search waiting for the transcript is a view of the window on the
+// range picker. Empty while the transcript has not reached the window's
+// start, full at its end. It was measured from the start of the episode, so
+// a window two hours in began nearly full.
+export function waitShare(from: number, heard: number, to: number): number {
+  if (to - from < 0.5) return heard >= to ? 1 : 0;
   return Math.min(Math.max((heard - from) / (to - from), 0), 1);
 }
 
