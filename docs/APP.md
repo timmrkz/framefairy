@@ -623,12 +623,18 @@ place.
       clips there are, so in a long list a search began out of sight and
       all anyone saw was New turning into Cancel. The row the next clip
       will appear in is brought to the top of the column the moment it is
-      there, and the column follows it as clips land above it, the way a
-      chat follows its last message. Scrolling the list by hand stops that
-      for the rest of the search. The list stays in the order the clips
-      were spoken, which is the order of the range picker and the clip
-      timeline, so a new clip lands where it belongs in the episode rather
-      than on top.
+      there, and every clip the search finds is brought into view as it
+      lands, wherever it lands and wherever the list was. The list stays in
+      the order the clips were spoken, which is the order of the range
+      picker and the clip timeline, so a new clip lands where it belongs in
+      the episode rather than on top. Following the row of the next clip
+      instead lost clips that landed above it, and stopped once the list
+      had moved for any other reason.
+    - **What a search was asked for is held while it runs.** Clips,
+      Shortest and Longest go to the model with the prompt, so they are
+      locked from New until the search has run, and dimmed. Changing Clips
+      used to change the rows still to come while the model looked for the
+      number it had been given.
     - **An empty list is never empty.** With nothing in the list and no
       search on its way, the rows New will fill stand there as many as
       Clips says, following it as it changes, and still, because nothing

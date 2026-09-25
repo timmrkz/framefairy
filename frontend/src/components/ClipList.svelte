@@ -55,44 +55,38 @@
   // longer than its column a search began out of sight: all anyone saw
   // was New turning into Cancel. The moment the row the next clip will
   // appear in is there, it is brought to the top of what the column
-  // shows, with the rows still to come under it. Each clip that lands
-  // lands above that row and pushes it down, so the column follows it,
-  // the way a chat follows its last message, and the clips arriving are
-  // seen arriving. Until the hand scrolls the list: from then on it stays
-  // where the hand put it, for the rest of that search.
+  // shows, with the rows still to come under it.
+  //
+  // Then every clip the search finds is brought into view as it lands,
+  // wherever in the list it lands: the list is in the order the clips were
+  // spoken, so a clip from early in the episode lands above the others.
+  // Following the row of the next clip instead lost them, and once the
+  // list had moved for any other reason it did not find them again.
+  let list = $state<HTMLOListElement>();
   let nextRow = $state<HTMLLIElement>();
   let hadNext = false;
-  let following = false;
   $effect(() => {
     const has = !!next && !!nextRow;
-    if (has && !hadNext) {
-      following = true;
-      nextRow!.scrollIntoView({ block: "start", behavior: "smooth" });
-    }
+    if (has && !hadNext) nextRow!.scrollIntoView({ block: "start", behavior: "smooth" });
     hadNext = has;
   });
+  let known: Set<string> | null = null;
   $effect(() => {
-    void clips.length;
-    if (following && nextRow) nextRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  });
-  $effect(() => {
-    const column = nextRow?.closest(".scroll");
-    if (!column) return;
-    const letGo = () => (following = false);
-    column.addEventListener("wheel", letGo, { passive: true });
-    column.addEventListener("pointerdown", letGo);
-    column.addEventListener("touchstart", letGo, { passive: true });
-    return () => {
-      column.removeEventListener("wheel", letGo);
-      column.removeEventListener("pointerdown", letGo);
-      column.removeEventListener("touchstart", letGo);
-    };
+    const keys = clips.map((c) => c.key);
+    const searching = !!next;
+    const before = known;
+    known = new Set(keys);
+    if (!searching || !before || !list) return;
+    const landed = keys.filter((k) => !before.has(k));
+    if (!landed.length) return;
+    const row = list.querySelector<HTMLElement>(`li[data-key="${CSS.escape(landed[landed.length - 1])}"]`);
+    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
 </script>
 
-<ol>
+<ol bind:this={list}>
   {#each clips as clip (clip.key)}
-    <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }}>
+    <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }} data-key={clip.key}>
       {#if clip.key === removed}
         <div class="gone">
           <Icon name="trash" />
@@ -170,6 +164,8 @@
      content is a whole number of pixels wide whatever the column does. */
   li {
     position: relative;
+    /* Brought into view clear of the veil over either end of the list. */
+    scroll-margin: var(--veil, 16px) 0;
     border-radius: var(--radius-m);
     background: var(--ink-1);
     box-shadow: inset 0 0 0 1px var(--ink-3);
@@ -314,8 +310,6 @@
   /* The row the next clip will appear in, saying what it is waiting on,
      laid out as a clip's row is, a line of what and a line of how long. */
   .next {
-    /* Brought into view clear of the veil over either end of the list. */
-    scroll-margin: var(--veil, 16px) 0;
     display: flex;
     flex-direction: column;
     justify-content: center;

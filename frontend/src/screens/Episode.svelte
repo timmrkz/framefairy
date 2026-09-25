@@ -1646,7 +1646,10 @@
                 type="number"
                 min="1"
                 max={clipsAtMost}
-                title="At most {clipsAtMost}, as many as fit at {min} s each in the longest window the model can read"
+                title={comingNow
+                  ? "The search on its way asks for this many. Change it for the next one"
+                  : `At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                disabled={comingNow}
                 bind:value={count}
                 onchange={keepCount}
               /></span
@@ -1660,7 +1663,10 @@
                 type="number"
                 min="5"
                 max={shortestAtMost}
-                title="At most {shortestAtMost} s, so {count} clips of it fit in the longest window the model can read"
+                title={comingNow
+                  ? "The search on its way asks for clips this long. Change it for the next one"
+                  : `At most ${shortestAtMost} s, so ${count} clips of it fit in the longest window the model can read`}
+                disabled={comingNow}
                 bind:value={min}
                 onchange={() => keepOrder("min")}
               /><span class="unit">s</span></span
@@ -1674,6 +1680,8 @@
                 type="number"
                 min="5"
                 max="180"
+                title={comingNow ? "The search on its way asks for clips this long. Change it for the next one" : undefined}
+                disabled={comingNow}
                 bind:value={max}
                 onchange={() => keepOrder("max")}
               /><span class="unit">s</span></span
@@ -2319,6 +2327,15 @@
 
   .setting input {
     color: var(--text);
+  }
+
+  /* What a search on its way was asked for is held while it runs: the
+     number went to the model with the prompt, so changing it changes
+     nothing the model does. Dimmed the way a button that cannot be pressed
+     is, in app.css. */
+  .setting input:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 
   /* The stepper the system draws inside a number field would stand between
