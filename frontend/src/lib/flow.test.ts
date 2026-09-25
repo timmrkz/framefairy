@@ -1,6 +1,7 @@
 import { describe, expect, it, test } from "vitest";
 import {
   frameStart,
+  waitShare,
   Heard,
   Newest,
   mergeJob,
@@ -808,5 +809,26 @@ describe("frameStart", () => {
 
   it("counts in seconds when the rate is not known", () => {
     expect(frameStart(3.4, 0)).toBe(3);
+  });
+});
+
+// The row of a search waiting for the transcript fills from where the
+// transcript stood when the search began to wait, to the end of the
+// window. Measured from the start of the episode, a window two hours in
+// began nearly full.
+describe("waitShare", () => {
+  it("starts empty wherever the transcript stood", () => {
+    expect(waitShare(7000, 7000, 9000)).toBe(0);
+    expect(waitShare(2500, 2600, 3600)).toBeCloseTo(100 / 1100, 9);
+  });
+
+  it("is full at the end of the window and never past it", () => {
+    expect(waitShare(2500, 3600, 3600)).toBe(1);
+    expect(waitShare(2500, 4000, 3600)).toBe(1);
+  });
+
+  it("is full when there is nothing left to hear", () => {
+    expect(waitShare(3600, 3600, 3600)).toBe(1);
+    expect(waitShare(5000, 5000, 3600)).toBe(1);
   });
 });

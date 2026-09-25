@@ -352,9 +352,12 @@ place.
   exactly on the window's edge, and the search starts the moment it gets
   there. The transcription is the first step of the search as far as
   anyone can see: the moment New is pressed the list opens as many rows as
-  the search will look for, the first wearing the beam and the fill of how
-  much of the window has been heard, the rest breathing, and the first is
-  brought into view. **Cancel** calls the search off and stops the
+  the search will look for, the first wearing the beam and the fill, the
+  rest breathing, and the first is brought into view. The fill runs from
+  where the transcript stood when New was pressed to the end of the
+  window, so it moves as fast as the edge on the range picker crosses the
+  window. It was measured from the start of the episode, and a window two
+  hours in began nearly full. **Cancel** calls the search off and stops the
   transcription with it. New used to be off until the window was transcribed, and a
   transcription that had been paused had to be carried on first with a
   mark at the edge of the range picker, which nobody could be expected to
@@ -626,14 +629,16 @@ place.
     - **A search starts in sight.** The rows still to come are after the
       clips there are, so in a long list a search began out of sight and
       all anyone saw was New turning into Cancel. The row the next clip
-      will appear in is brought to the top of the column the moment it is
-      there, and every clip the search finds is brought into view as it
-      lands, wherever it lands and wherever the list was. The list stays in
-      the order the clips were spoken, which is the order of the range
-      picker and the clip timeline, so a new clip lands where it belongs in
-      the episode rather than on top. Following the row of the next clip
-      instead lost clips that landed above it, and stopped once the list
-      had moved for any other reason.
+      will appear in, the one wearing the work, is brought to the top of
+      the column the moment it is there, and back into view every time a
+      clip lands, wherever the list has been scrolled to in between. It
+      comes back with a third of the row after it showing, so it is plain
+      there is more to come, and the clip that just landed stays in view
+      above it. Only when a clip lands: following every report would fight
+      a hand that is scrolling. The list stays in the order the clips were
+      spoken, which is the order of the range picker and the clip
+      timeline, so a new clip lands where it belongs in the episode rather
+      than on top.
     - **What a search was asked for is held while it runs.** Clips,
       Shortest and Longest go to the model with the prompt, so they are
       locked from New until the search has run, and dimmed. Changing Clips

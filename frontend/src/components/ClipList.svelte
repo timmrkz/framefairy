@@ -53,16 +53,14 @@
 
   // The rows still to come are after the clips there are, so in a list
   // longer than its column a search began out of sight: all anyone saw
-  // was New turning into Cancel. The moment the row the next clip will
-  // appear in is there, it is brought to the top of what the column
-  // shows, with the rows still to come under it.
-  //
-  // Then every clip the search finds is brought into view as it lands,
-  // wherever in the list it lands: the list is in the order the clips were
-  // spoken, so a clip from early in the episode lands above the others.
-  // Following the row of the next clip instead lost them, and once the
-  // list had moved for any other reason it did not find them again.
-  let list = $state<HTMLOListElement>();
+  // was New turning into Cancel. The row the next clip will appear in, the
+  // one wearing the work, is what is being done, so it is kept in view:
+  // brought to the top of the column when the search starts, with the rows
+  // still to come under it, and brought back every time a clip lands,
+  // wherever the list has been scrolled to in the meantime. It comes back
+  // with part of the row after it showing, so it is plain there is more to
+  // come, and the clip that just landed is right above it. Only when a clip
+  // lands: following every report would fight a hand that is scrolling.
   let nextRow = $state<HTMLLIElement>();
   let hadNext = false;
   $effect(() => {
@@ -73,18 +71,19 @@
   let known: Set<string> | null = null;
   $effect(() => {
     const keys = clips.map((c) => c.key);
-    const searching = !!next;
     const before = known;
     known = new Set(keys);
-    if (!searching || !before || !list) return;
-    const landed = keys.filter((k) => !before.has(k));
-    if (!landed.length) return;
-    const row = list.querySelector<HTMLElement>(`li[data-key="${CSS.escape(landed[landed.length - 1])}"]`);
-    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!next || !before || !nextRow) return;
+    if (!keys.some((k) => !before.has(k))) return;
+    // After whatever else the landing moves. The first clip found is
+    // chosen, and the workspace brings the chosen card into view at once,
+    // which stops a smooth scroll that began before it.
+    const row = nextRow;
+    setTimeout(() => row.isConnected && row.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   });
 </script>
 
-<ol bind:this={list}>
+<ol>
   {#each clips as clip (clip.key)}
     <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }} data-key={clip.key}>
       {#if clip.key === removed}
@@ -310,6 +309,12 @@
   /* The row the next clip will appear in, saying what it is waiting on,
      laid out as a clip's row is, a line of what and a line of how long. */
   .next {
+    /* Part of the row after it shows below it when it is brought into
+       view: a third of a row, past the veil over the foot of the list. */
+    scroll-margin-bottom: calc(var(--veil, 16px) + var(--gap) + 20px);
+    /* And the clip that landed just above it, which is the one that was
+       chosen, stays in view with it. */
+    scroll-margin-top: calc(var(--veil, 16px) + var(--gap) + 56px);
     display: flex;
     flex-direction: column;
     justify-content: center;

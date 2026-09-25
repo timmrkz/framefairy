@@ -354,7 +354,10 @@ export const Call = {
     // way, the way the engine writes each one the moment it is framed. They
     // land in the order the model wrote them, which is not the order of the
     // episode, so what is new in the list is not always at its end.
-    const searchFor = 6000;
+    // With ?slow a clip lands every two seconds, which is nearer what a
+    // real search does, so what happens between two landings can be seen.
+    const landEvery = location.search.includes("slow") ? 2000 : 350;
+    const searchFor = 700 + 12 * landEvery + 1000;
     const landOrder = [3, 1, 7, 2, 12, 5, 4, 9, 6, 11, 8, 10];
     const searching = () => found && askedAt() > 0 && Date.now() - askedAt() < searchFor;
     const done = () => found && askedAt() > 0 && Date.now() - askedAt() >= searchFor;
@@ -362,7 +365,7 @@ export const Call = {
       if (!found || !askedAt()) return [] as number[];
       const since = Date.now() - askedAt();
       const earlier = Array.from({ length: before() }, (_, i) => i + 1);
-      return [...earlier, ...landOrder.filter((_, k) => since >= 700 + k * 350).map((n) => n + before())];
+      return [...earlier, ...landOrder.filter((_, k) => since >= 700 + k * landEvery).map((n) => n + before())];
     };
     const planJob = (state: string) => ({ id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? { stage: "plan", text: "Finding clips", fraction: 0.4, remaining: 60 } : undefined });
     switch (method) {
@@ -980,10 +983,12 @@ export const Events = {
         const at = ((window as any).__planned ?? []).at(-1)?.wall ?? 0;
         if (!at) return;
         const since = Date.now() - at;
-        const state = since < 6000 ? "running" : "done";
-        const found = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((k) => since >= 700 + k * 350).length;
+        const every = location.search.includes("slow") ? 2000 : 350;
+        const lasts = 700 + 12 * every + 1000;
+        const state = since < lasts ? "running" : "done";
+        const found = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((k) => since >= 700 + k * every).length;
         const text = found ? `${found} of 12 found` : "Finding clips";
-        const progress = { kind: "progress", stage: "plan", text, fraction: Math.min(since / 6000, 0.99), remaining: Math.max((6000 - since) / 1000, 0), found, elapsed: since / 1000, time: "" };
+        const progress = { kind: "progress", stage: "plan", text, fraction: Math.min(since / lasts, 0.99), remaining: Math.max((lasts - since) / 1000, 0), found, elapsed: since / 1000, time: "" };
         fn({ data: { job: { id: "p1", episode: "/eps/ep.mp4", kind: "plan", label: "Find clips", state, result: "/eps/ep.framefairy/logs/clips.json", queued: "", lane: "work", progress: state === "running" ? progress : undefined }, event: progress } });
       }, 250);
       return () => clearInterval(timer);
