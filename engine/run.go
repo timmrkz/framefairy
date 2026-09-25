@@ -562,6 +562,21 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			failures++
 			continue
 		}
+		// The pictures belong to the short, so they are taken from it and
+		// only from one that is meant to be kept.
+		if !opts.DryRun && !opts.Preview {
+			if err := e.WriteThumbnails(ctx, clip, path); err != nil {
+				if ctx.Err() != nil {
+					return e.fail(ctx, ctx.Err())
+				}
+				log.Error("%s: %s", clip.Basename(), err)
+				failures++
+				continue
+			}
+			if n := len(clip.Thumbnails); n > 0 {
+				log.Info("%s: %d thumbnail(s)", clip.Basename(), n)
+			}
+		}
 		if !opts.DryRun {
 			size := 0.0
 			if info, err := os.Stat(path); err == nil {

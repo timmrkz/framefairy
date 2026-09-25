@@ -146,7 +146,17 @@ on a word goes, in `caption_times` keyed by the millisecond that word
 starts in the episode. `moveCaptions` in `engine/lines.go` puts them there
 when captions are built, never over the caption beside them and never
 shorter than a tenth of a second, and a timing kept against a word that no
-longer begins or ends a caption is left unused. A caption is a run of up to 38
+longer begins or ends a caption is left unused.
+
+Thumbnails are kept per clip in `thumbnails`, the moments of the episode a
+picture of the short is taken at. `readThumbnails` in `engine/clips.go`
+keeps only numbers inside a kept piece, each once, in time order, at most
+50, and `SetThumbnail` in `engine/edit.go` adds, moves and removes one.
+`WriteThumbnails` in `engine/render.go` takes each picture from the short
+that was just rendered, on the short's own clock through `ClipTime`. See
+[THUMBNAILS.md](THUMBNAILS.md).
+
+A caption is a run of up to 38
 characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next
 caption appears, or until shortly after its last word when a pause follows.

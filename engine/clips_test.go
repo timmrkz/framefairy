@@ -239,6 +239,8 @@ func FuzzLoadClips(f *testing.F) {
 	f.Add(`{"clips": [{"id": "../../x", "segments": [{"start": "00:01:00", "end": "1e3"}]}]}`)
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1, "crop_x": -5}],` +
 		`"words": [[0, 1, "eins"]]}]}`)
+	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
+		` "thumbnails": [0.5, "0.2", 7, -1, 1e308, 0.5, null, [1]]}]}`)
 	f.Add(`{"clips": [{"segments": [{"start": 1, "end": 0}]}]}`)
 	f.Add(`{"clips": []}`)
 	f.Fuzz(func(t *testing.T, body string) {
@@ -265,6 +267,14 @@ func FuzzLoadClips(f *testing.F) {
 			for _, seg := range clip.Segments {
 				if !isFinite(seg.Start) || !isFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
 					t.Fatalf("segment %v-%v", seg.Start, seg.End)
+				}
+			}
+			if len(clip.Thumbnails) > MaxThumbnails {
+				t.Fatalf("%d thumbnails", len(clip.Thumbnails))
+			}
+			for k, th := range clip.Thumbnails {
+				if !insidePieces(clip.Segments, th) || (k > 0 && th <= clip.Thumbnails[k-1]) {
+					t.Fatalf("thumbnail %v in %v", th, clip.Thumbnails)
 				}
 			}
 			for _, word := range clip.Words {

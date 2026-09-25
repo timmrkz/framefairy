@@ -43,6 +43,23 @@
     <path d="M2 7.33V6a2.67 2.67 0 0 1 2.67-2.67H14" />
     <path d="M4.67 15.33 2 12.67l2.67-2.67" />
     <path d="M14 8.67V10a2.67 2.67 0 0 1-2.67 2.67H2" />
+  <!-- A thumbnail: a picture in the shape of a short, a sun and a hill in
+       it, the way a photo is drawn anywhere. -->
+  {:else if name === "thumbnail"}
+    <rect x="3.5" y="1.5" width="9" height="13" rx="1.8" />
+    <circle cx="6.6" cy="5.4" r="1.1" />
+    <path d="M3.8 11.6l2.6-2.7 2 2 1.5-1.5 2.3 2.3" />
+  <!-- The same picture made smaller, with what a click does beside it:
+       a plus to add a thumbnail, a minus to take the one here away. -->
+  {:else if name === "thumbnail-add" || name === "thumbnail-remove"}
+    <rect x="1" y="0.8" width="9.2" height="14.2" rx="1.8" />
+    <circle cx="4.2" cy="4.6" r="1.1" />
+    <path d="M1.3 11.4l2.5-2.6 1.9 1.9 1.4-1.4 2.8 2.8" />
+    {#if name === "thumbnail-add"}
+      <path d="M13 8.6v5M10.5 11.1h5" />
+    {:else}
+      <path d="M10.5 11.1h5" />
+    {/if}
   {:else if name === "locate"}
     <circle cx="8" cy="8" r="3.6" />
     <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" />

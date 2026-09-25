@@ -318,6 +318,9 @@ func FuzzPlanEdits(f *testing.F) {
 	// Cut the same clip over and over, which is how a clip runs out of
 	// pieces and out of length.
 	f.Add([]byte{6, 100, 105, 6, 106, 110, 6, 112, 118, 6, 120, 130})
+	// Thumbnails added, moved and removed while the clip is cut and
+	// trimmed under them.
+	f.Add([]byte{9, 104, 0, 9, 104, 120, 6, 110, 125, 9, 120, 0, 0, 100, 112})
 	f.Fuzz(func(t *testing.T, script []byte) {
 		path := editablePlanPath(t)
 		tr := editableTranscript()
@@ -330,7 +333,17 @@ func FuzzPlanEdits(f *testing.F) {
 			if script[i+1]%2 == 1 {
 				clip = "02"
 			}
-			switch script[i] % 9 {
+			switch script[i] % 10 {
+			case 9:
+				// Add at one moment, or move or remove the thumbnail at
+				// another, with nought standing for none.
+				from, to := at(script[i+1]), at(script[i+2])
+				if script[i+2] == 0 {
+					from, to = -1, from
+				} else if script[i+1]%3 == 0 {
+					to = -1
+				}
+				_ = SetThumbnail(path, clip, from, to)
 			case 6:
 				// A cut takes a part out of the middle, so this is the
 				// one edit that makes pieces rather than only moving them.
@@ -374,6 +387,14 @@ func FuzzPlanEdits(f *testing.F) {
 				t.Fatalf("step %d emptied the plan", i/3)
 			}
 			for _, c := range clips {
+				if len(c.Thumbnails) > MaxThumbnails {
+					t.Fatalf("clip %s asks for %d pictures", c.ID, len(c.Thumbnails))
+				}
+				for k, th := range c.Thumbnails {
+					if !insidePieces(c.Segments, th) || (k > 0 && th <= c.Thumbnails[k-1]) {
+						t.Fatalf("clip %s: thumbnail %v is outside the clip or out of order", c.ID, th)
+					}
+				}
 				var previous float64
 				for k, seg := range c.Segments {
 					if seg.Start < previous {
@@ -679,5 +700,125 @@ func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
 		shownTag("&H40FFFFFF"))
 	if line != `{\alpha&H40&}eins {\alpha&HFF&}zwei` {
 		t.Errorf("line %s", line)
+	}
+}
+
+// The highlight is on or off and nothing else, because the render reads a
+// number and a string would quietly count as on.
+func TestCaptionHighlightTakesOnlyOnOrOff(t *testing.T) {
+	path := editablePlanPath(t)
+	for _, bad := range []any{"off", 0.0, nil} {
+		if err := SetCaptionStyle(path, map[string]any{"highlight": bad}); err == nil {
+			t.Errorf("%v was taken for on or off", bad)
+		}
+	}
+	if err := SetCaptionStyle(path, map[string]any{"highlight": false}); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ResolveStyle(plan.CaptionStyle()).Highlight {
+		t.Error("the highlight is still on")
+	}
+}
+
+// A thumbnail is a moment inside the clip. It is added, moved and removed
+// by the moment it stands at, refused where the short has nothing to show,
+// and a trim that leaves it outside hides it without losing it.
+func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
+	path := editablePlanPath(t)
+	tr := editableTranscript()
+	thumbs := func() []float64 {
+		t.Helper()
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return clips[0].Thumbnails
+	}
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(SetThumbnail(path, "01", -1, 12.5))
+	must(SetThumbnail(path, "01", -1, 10.25))
+	if got := thumbs(); len(got) != 2 || got[0] != 10.25 || got[1] != 12.5 {
+		t.Fatalf("the thumbnails are %v", got)
+	}
+	// Nothing where the short has no picture: in the cut between the two
+	// pieces, before the clip and after it. Nor twice in one place.
+	before, _ := os.ReadFile(path)
+	for _, at := range []float64{11.5, 9, 13.5} {
+		if err := SetThumbnail(path, "01", -1, at); err == nil {
+			t.Errorf("a thumbnail was put at %v, which is not in the clip", at)
+		}
+	}
+	if err := SetThumbnail(path, "01", -1, 12.5); err == nil {
+		t.Error("a second thumbnail was put on the same moment")
+	}
+	if err := SetThumbnail(path, "01", 10.7, -1); err == nil {
+		t.Error("a thumbnail that is not there was removed")
+	}
+	if err := SetThumbnail(path, "01", math.NaN(), 12); err == nil {
+		t.Error("a thumbnail was moved from nowhere")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a refused thumbnail changed the plan")
+	}
+	must(SetThumbnail(path, "01", 12.5, 10.75))
+	if got := thumbs(); len(got) != 2 || got[0] != 10.25 || got[1] != 10.75 {
+		t.Fatalf("after the move the thumbnails are %v", got)
+	}
+	// A trim that leaves one outside hides it, and it comes back with the
+	// piece it was in.
+	must(TrimClip(path, "01", 10.5, 13.1, tr, 0.1))
+	if got := thumbs(); len(got) != 1 || got[0] != 10.75 {
+		t.Fatalf("after the trim the thumbnails are %v", got)
+	}
+	must(TrimClip(path, "01", 10.0, 13.1, tr, 0.1))
+	if got := thumbs(); len(got) != 2 {
+		t.Fatalf("after the trim back the thumbnails are %v", got)
+	}
+	must(SetThumbnail(path, "01", 10.25, -1))
+	must(SetThumbnail(path, "01", 10.75, -1))
+	if got := thumbs(); len(got) != 0 {
+		t.Fatalf("after removing both the thumbnails are %v", got)
+	}
+	if strings.Contains(string(mustRead(t, path)), "thumbnails") {
+		t.Error("an empty list was left in the plan")
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// What a plan file says about thumbnails is not trusted: only numbers
+// inside the clip, each once, in order, and no more than the limit.
+func TestThumbnailsInAPlanAreChecked(t *testing.T) {
+	var list []any
+	list = append(list, "12", 12.0, 12.0004, 11.5, -3.0, math.Inf(1), nil, 10.0)
+	for i := 0; i < 80; i++ {
+		list = append(list, 12.0+float64(i)/100)
+	}
+	pieces := []Segment{{Start: 10, End: 11.1}, {Start: 11.9, End: 13.1}}
+	got := readThumbnails(list, pieces)
+	if len(got) != MaxThumbnails || got[0] != 10 || got[1] != 12 {
+		t.Fatalf("read %d thumbnails starting %v", len(got), got[:3])
+	}
+	for k := 1; k < len(got); k++ {
+		if got[k] <= got[k-1] {
+			t.Fatalf("thumbnail %d is not after the one before: %v", k, got)
+		}
 	}
 }

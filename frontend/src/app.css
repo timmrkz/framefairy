@@ -466,13 +466,17 @@ input[type="password"] {
 /* The pop the pill makes behind the word being spoken in the video
    preview, a little under its size, a little over and back, the way the
    render bounces it. The caption block on the clip timeline that stands
-   for the caption shown makes the same one, so it is one animation. */
+   for the caption shown makes the same one, so it is one animation. A
+   block is long and low, so the same share of its size is two pixels of
+   height and reads as nothing. It asks for more of the pop in height and
+   less in width through these four numbers, and it is still this one
+   animation. */
 @keyframes pop {
   from {
-    transform: scale(0.88);
+    transform: scale(var(--pop-from-x, 0.88), var(--pop-from-y, 0.88));
   }
   55% {
-    transform: scale(1.12);
+    transform: scale(var(--pop-peak-x, 1.12), var(--pop-peak-y, 1.12));
   }
   to {
     transform: scale(1);
