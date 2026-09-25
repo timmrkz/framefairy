@@ -75,6 +75,12 @@ func (p *Project) run(ctx context.Context, opts Options) error {
 	return ErrStepFailed
 }
 
+// StopAt gives the transcription a place to stop for now, asked on every
+// chunk: the end of the window the first search is waiting for, or 0.
+func (p *Project) StopAt(at func() float64) {
+	p.engine.StopAt = at
+}
+
 // Transcribe makes sure the whole episode has a transcript. It is cached, so
 // calling it again costs nothing.
 func (p *Project) Transcribe(ctx context.Context) error {
@@ -157,7 +163,12 @@ func (p *Project) WarmModel(ctx context.Context, seconds float64) error {
 		return err
 	}
 	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
-	_, release, err := p.engine.holdModel(ctx, *local, localContextFor(local.Model, chars, opts.MaxTokens), p.LogsDir())
+	_, release, err := p.engine.warmModel(ctx, *local, localContextFor(local.Model, chars, opts.MaxTokens), p.LogsDir())
+	if errors.Is(err, errModelBusy) {
+		// Another model is in use, a search of another episode. The search
+		// this was for loads the model itself when it gets its turn.
+		return nil
+	}
 	if err != nil {
 		return err
 	}

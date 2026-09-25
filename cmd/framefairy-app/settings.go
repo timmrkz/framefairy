@@ -171,9 +171,20 @@ func (s Settings) apply() {
 }
 
 func (s *store) SetSettings(v Settings) error {
-	v.tidy()
+	return s.UpdateSettings(func(set *Settings) { *set = v })
+}
+
+// UpdateSettings changes the settings in one step: read, change, write,
+// all under the store's lock. Reading, changing and writing back as three
+// calls lost a change whenever two were made at once, the number of clips
+// set in the workspace while the captions were being dragged, say: both
+// read the same settings and the second write undid the first.
+func (s *store) UpdateSettings(change func(*Settings)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	v := s.settings
+	change(&v)
+	v.tidy()
 	s.settings = v
 	v.apply()
 	return s.save("settings.json", v)

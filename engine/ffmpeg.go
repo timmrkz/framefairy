@@ -55,6 +55,13 @@ type Engine struct {
 	// it, which keeps the native speech library out of this package.
 	OpenRecognizer func(modelDir string) (Recognizer, error)
 
+	// StopAt says where a whole-episode transcription is to stop for now:
+	// the end of the window the first search is waiting for, or 0 for
+	// nowhere. It is asked on every chunk, because the window is chosen
+	// after the transcription has started. The app sets it, the command
+	// line does not.
+	StopAt func() float64
+
 	// WantEncoder names the video encoder instead of picking one, for a
 	// machine whose ffmpeg is unusual and for comparing two on one clip.
 	WantEncoder string
@@ -508,4 +515,12 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	}
 	return SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
 		Duration: duration, Colour: colour}, nil
+}
+
+// stopAt is where the transcription is to stop for now, 0 for nowhere.
+func (e *Engine) stopAt() float64 {
+	if e.StopAt == nil {
+		return 0
+	}
+	return e.StopAt()
 }

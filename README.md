@@ -79,6 +79,7 @@ docs/
   ENGINE.md           how the engine works
   TRAINING.md         training records and the training tool
   GUI-PLAN.md         the app's build plan, batch by batch
+  ROBUSTNESS.md       what can go wrong between the parts, and what was done
   PACKAGING.md        what ships, what the user installs, which ffmpeg
   THUMBNAILS.md       the thumbnail of a short: spec, not built yet
   THIRD_PARTY.md      licences of everything included

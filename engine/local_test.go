@@ -160,3 +160,28 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 		t.Errorf("llama-server was not asked to say what it took from memory: %q", body)
 	}
 }
+
+// A llama-server that will not go when asked is killed a moment later.
+// The app waited five seconds for one, frozen, on Cmd+Q and on removing an
+// episode while a search ran.
+func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
+	was := serverNoteFile
+	note := filepath.Join(t.TempDir(), "llama-server.json")
+	serverNoteFile = func() string { return note }
+	t.Cleanup(func() { serverNoteFile = was })
+	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
+	model := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(model, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := NewEngine(NewLog(io.Discard, false, false))
+	_, stop, err := e.startServer(context.Background(), LocalModel{Server: os.Args[0], Model: model}, 4096, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	stop()
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("stopping a server that ignores the interrupt took %s", took)
+	}
+}

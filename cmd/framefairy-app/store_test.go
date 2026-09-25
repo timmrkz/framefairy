@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -229,5 +230,36 @@ func TestAFailedJobKeepsItsReason(t *testing.T) {
 	}
 	if seen["b.mp4"].State != JobCancelled || seen["b.mp4"].Error != "" {
 		t.Errorf("cancelled job %+v", seen["b.mp4"])
+	}
+}
+
+// Two settings changed at once both stay. Each used to read the settings,
+// change its own and write the whole of them back, so the one written
+// second put the other back to what it had read: the number of clips set
+// in the workspace while the captions were being dragged was lost.
+func TestTwoSettingsChangedAtOnceBothStay(t *testing.T) {
+	for round := range 20 {
+		s, path, _ := library(t)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for i := range 30 {
+				_ = s.SetSearch(i%20+1, 20, 30)
+			}
+			_ = s.SetSearch(7, 20, 30)
+		}()
+		go func() {
+			defer wg.Done()
+			for i := range 30 {
+				_ = s.SetCaptionsHeight(path, float64(120+40*(i%10)))
+			}
+			_ = s.SetCaptionsHeight(path, 600)
+		}()
+		wg.Wait()
+		if set := s.store.Settings(); set.Count != 7 || set.CaptionY != 600 {
+			t.Fatalf("round %d: %d clips at %v, both were set last to 7 at 600",
+				round, set.Count, set.CaptionY)
+		}
 	}
 }

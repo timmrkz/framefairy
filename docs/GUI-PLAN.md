@@ -57,7 +57,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 1.14 | The model loaded while the transcription is still running, so a search that starts finds it in memory `[x]`, and the transcript read into it as it grows `[ ]` | `[~]` |
 | 1.15 | The transcription waits while clips are found and carries on after, so the model has the machine to itself | `[x]` |
 | 1.16 | A search's row says Waiting for the transcript with its window, then Finding clips, then how many are found, each held long enough to read, with Cancel from the moment the first search is on its way. A fill that can be told from what is left in daylight. Up to four clips framed at once | `[x]` |
-| 1.17 | A search starts the moment the window has been heard: the transcription is paused there and writes down all it heard, so its edge on the range picker stops just past the window and carries on from where it stopped. Paused work keeps its fill and stops moving | `[x]` |
+| 1.17 | A search starts the moment the window has been heard: the transcription stops exactly at the window's edge, told where by the workspace, and stays there: it runs for searches and for nothing else. New works before the window is transcribed, waits for it the way the first search does, and starts the transcription itself. Cancel stops both, and the pause mark at the transcript's edge is gone. The window is locked from the start of the transcription until the search has run. Paused work keeps its fill and stops moving. The part of the clip timeline not heard yet is grey like a clip card still to come, breathing while the transcription runs and still when it does not | `[x]` |
 
 ## Phase 2: app shell
 
@@ -174,6 +174,33 @@ behind all of it is in [PACKAGING.md](PACKAGING.md).
 | 5.8 | Licence key check and storage | `[ ]` |
 | 5.9 | How the app updates itself | `[ ]` |
 | 5.10 | A skill for shipping, once a build has actually been through signing and notarisation. Not before: a skill written from reasoning rather than from a round of it would teach the guesses | `[ ]` |
+
+---
+
+## Robustness track: the glue never breaks
+
+The engine, the app's Go side and the interface hand work to each other
+all the time: a transcription saves while a search reads, a job reports
+while the window listens, a model is held by one job and let go by
+another, a plan is written by a search while a person edits it. Each of
+these handoffs is an assumption about order and timing. The rule for
+this track: **a slower or poorer moment is fine, a frozen, broken or
+stuck app is not.** Whatever goes wrong ends one piece of work with its
+reason and leaves the app able to go on.
+
+Every batch finds a handoff, writes the test that makes its failure
+happen, under `go test -race` and from several goroutines at once, and
+then makes the code survive it.
+
+| # | Batch | Status |
+|---|---|---|
+| R.1 | An audit of every handoff between engine, app and interface, ranked by what it can break, in [ROBUSTNESS.md](ROBUSTNESS.md) | `[x]` |
+| R.2 | The job queue under everything the app can do to it at once: add, find, list, cancel, remove an episode, quit, while jobs run, report and panic. Removing an episode closes it to new work, a panic around a job ends that job and not the lane, a job's news can arrive in any order and the newest wins, quitting stops every job `[x]` | `[~]` |
+| R.3 | Transcripts: a save that is cut short, read while it is written, a pause that lands mid-save, carrying on from a file that is damaged | `[x]` |
+| R.4 | The model host: loads that fail, hang or are stopped, holders that let go twice or never, the app quitting while a model loads. One model in memory at a time, quitting stops the jobs and the model even while it loads, a server left by an app that crashed is stopped at the next start, and Cmd+Q on a Mac, where app.Run never returns, stops the model from a shutdown hook. llama-server is killed half a second after it is asked to go, so Cmd+Q and removing an episode no longer freeze the app, and Cmd+Q answers at once, asks first while work runs and stops everything away from the main thread | `[x]` |
+| R.5 | Plans written by a search while they are edited, undone and removed. A clip that lands during an edit is not the edit's `[x]` | `[~]` |
+| R.6 | The interface: answers that arrive late, out of order or for an episode no longer shown, events that stop, promises that never settle. Job news in any order, clip lists, the episode's state and what was searched keep the newest answer `[x]`. The frame read from the file while the video preview catches up is the frame the video shows there, not the nearest second | `[~]` |
+| R.7 | What the person sees when something fails: a reason in words, and a way on | `[ ]` |
 
 ---
 

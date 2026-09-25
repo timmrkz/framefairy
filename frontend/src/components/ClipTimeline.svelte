@@ -39,6 +39,7 @@
     working = false,
     duration,
     covered = duration,
+    heardTo = null,
     time,
     locked = false,
     frame = 1 / 30,
@@ -67,6 +68,10 @@
     // How far the transcript has come. The words and the waveform arrive
     // with it, so the view is taken again as it grows.
     covered?: number;
+    // Where the part nobody has heard yet begins, while no transcription
+    // runs. null when all of it has been heard, or before the workspace
+    // knows.
+    heardTo?: number | null;
     time: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
@@ -811,6 +816,19 @@
     return data.from + ((last + 1) * (data.to - data.from)) / peaks.length;
   });
 
+  // Where the part that has not been heard begins, so it can wait there.
+  // While the transcription runs, it is where the waveform ends, and the
+  // whole track before the first readings arrive. With nothing running it
+  // is where the transcript stopped, never over a waveform already drawn.
+  // null when there is nothing waiting in view.
+  const waitsFrom = $derived.by((): number | null => {
+    let from: number;
+    if (working) from = peaks.length ? soundEdge : view.from;
+    else if (heardTo === null) return null;
+    else from = peaks.length ? Math.max(heardTo, soundEdge) : heardTo;
+    return from < view.to ? from : null;
+  });
+
   // The waveform, drawn the way an editor draws one: one column of the
   // screen per column of the picture, each a whole pixel wide and a whole
   // pixel tall. Zoomed out a column is the loudest reading that falls in
@@ -1226,21 +1244,25 @@
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
-        one after appears. A double-click on an edge moved by hand puts it back. The small pictures
-        along the bottom are the thumbnails, the frames Render writes beside the short. The
-        thumbnail button under the timeline, or T, makes the frame under the playhead one, and
-        takes it away again. Drag one to another frame.
+        one after appears. A double-click on an edge moved by hand puts it back. A grey part is
+        one the transcription has not reached yet. It breathes while the transcription runs. The
+        small pictures along the bottom are the thumbnails, the frames Render writes beside the
+        short. The thumbnail button under the timeline, or T, makes the frame under the playhead
+        one, and takes it away again. Drag one to another frame.
       </Info>
     </span>
-    <!-- Nothing to draw yet, so the track says the words are on their way
-         rather than looking broken. -->
-    {#if working && !peaks.length}
-      <div class="asleep waiting"></div>
-    {:else if working && soundEdge < view.to}
-      <!-- What the transcript has not reached yet is the part that waits,
-           the same as on the range picker. It starts where the waveform
-           ends, so the two never lie over each other. -->
-      <div class="asleep waiting" style="left: {Math.max(x(soundEdge), 0)}%; right: 0"></div>
+    <!-- What the transcript has not reached yet is a place waiting to be
+         filled, the same as a clip card still to come: the same grey,
+         breathing while the transcription runs. With nothing running it
+         keeps its grey and stands still, the way paused work does, so a
+         part nobody has heard never reads as silence. It starts where the
+         waveform ends, so the two never lie over each other. -->
+    {#if waitsFrom !== null}
+      <div
+        class="asleep"
+        class:waiting={working}
+        style="left: {Math.max(x(waitsFrom), 0)}%; right: 0"
+      ></div>
     {/if}
     <!-- The ruler in two layers, the same as on the range picker: the line
          under what is drawn on the track, the time over it. A time written
@@ -1476,7 +1498,10 @@
     right: 0;
     bottom: 0;
     left: 0;
-    background: rgba(255, 255, 255, 0.03);
+    /* The grey of a clip card that is not there yet, .ghost in
+       ClipList.svelte. A white wash of 3 % was here, and breathing it moved
+       the track by five levels out of 255, which nobody could see. */
+    background: var(--ink-2);
     pointer-events: none;
     z-index: 1;
   }

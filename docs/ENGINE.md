@@ -4,6 +4,79 @@ The engine in `engine/` does all the work. The command line and the app are
 two front ends for it and call the same code. This page explains the ideas
 behind it. [CLI.md](CLI.md) and [APP.md](APP.md) explain how to use them.
 
+## Hearing the audio in pieces
+
+The speech model is given the audio in pieces of 15 to 30 s, and the
+engine chooses where to cut them, `engine/audio.go`. The model takes any
+length it is given, so the length is ours to choose, for two measured
+reasons. Its memory grows faster than the length: on top of the 0.9 GB the
+model takes, a piece of 15 s takes 0.09 GB more, 60 s 0.4 GB, 4 minutes
+1.9 GB and 6 minutes 4.2 GB, while it hears 10 times faster than real time
+at 15 s and 4 times at 6 minutes. And a cut inside a word makes the model
+hear that word as another word, "Bank" as "Bahn" and "Geruch" as
+"Großmutter". So a piece ends at the middle of the quietest 300 ms
+between 15 and 30 s. There is no threshold: some moment is always the
+quietest, so a cut is never impossible.
+
+That rule was measured against the alternatives over a whole recorded talk
+of 18 minutes, 3219 words, scored against the talk's own transcript, clean
+and with something under it the whole time:
+
+| | clean | music | street noise | a second voice |
+|---|---|---|---|---|
+| a cut every 30 s wherever it lands | 123 wrong | 134 | 175 | 723 |
+| the quietest 300 ms, the rule | 123 | 112 | 140 | 696 |
+| every 30 s, keeping only the words that end 2 s before the cut and starting the next piece before the first word left out | 122 | 137 | 160 | 705 |
+
+Speech is louder than what lies under it, so the quietest moment is still
+a gap between words when there is music or traffic, and that is where the
+rule is better than cutting blind. Cutting by the model's own word timings
+and hearing the seams twice did not beat it and costs 8 percent more
+hearing. A second voice talking the whole time costs a fifth of the words
+whatever the cut, because the model writes down both speakers. The width
+of the quiet moment was measured the same way, over clean, music and
+street: 100 ms 393 wrong in all, 200 ms 414, 300 ms 375, 400 ms 375,
+600 ms 415. 300 and 400 are the same within what one talk can tell.
+
+How fast it hears was measured on the macOS runner, an Apple M1 with 3
+cores, over three minutes of a recorded talk, `scripts/speechbench`:
+
+| | pieces of 15 s | 30 s | 60 s |
+|---|---|---|---|
+| on the processor, 3 threads | 13.5 times real time | 15.0 | 9.2 |
+| on the processor, 6 threads | 5.6 | 6.5 | 6.5 |
+| through CoreML, 3 threads | 7.1 | 0.4 | 0.3 |
+
+Pieces of 15 to 30 s are where it is fastest. More threads than the
+machine has cores make it more than twice as slow, so the app never asks
+for more than the cores it has, and at most 8. Hearing two pieces in one
+pass gains nothing that holds. CoreML is slower on the runner and changes
+a few words: it compiles the model again for every new length of audio,
+and the pieces the app cuts are all of different lengths.
+
+On a real Mac, an M2 Max with 12 cores, over three minutes each of three
+parts of one episode, `make speechbench`:
+
+| | pieces of 15 s | 30 s | first piece |
+|---|---|---|---|
+| on the processor, 4 threads | 38 times real time | 37 | 0.9 s |
+| on the processor, 8 threads | 46 | 45 | 0.9 s |
+| through CoreML, 8 threads | 24 | 23 | 5.0 s |
+
+The processor with 8 threads is what the app already does, and it is the
+fastest: an hour of episode is heard in about 80 s. The thread count does
+not change a single word. CoreML is half as fast here too, needs 5 s
+before the first piece and changes up to 20 words in three minutes, so it
+stays out even with pieces of one length. Hearing two pieces in one pass
+gains 3 % at most and changes words, so it stays out as well.
+
+One cut is placed exactly: the end of the window the first search waits
+for. The app gives the transcription that point, `Engine.StopAt`, and the
+piece that reaches it is cut there, so nothing past the window's edge is
+heard. A word that runs across the edge is left out of what is saved, the
+transcript says to carry on from before it, `resume` in `words.json`, and
+the next pass hears it whole.
+
 ## How words get their timing
 
 The recogniser gives every word a start and a duration, on an 80 ms grid. It
@@ -341,8 +414,16 @@ that is waiting for the transcript loads it while it waits. A model
 loaded ahead waits five minutes for its search. A search lets go of it
 the moment it is done and it stops, because a model left in memory
 between searches that are days apart is memory taken from everything
-else. One model runs at a time, and the app stops it when it closes. The
-server runs one ask at a time (`-np 1`) with the whole context for it.
+else. One model is in memory at a time, never two, because two do not
+fit: an ask that needs another model, or more room, waits for the one in
+memory to be let go of and then takes its place. A warm-up gives way to a
+model in use instead of waiting, and the search it was for loads the model
+when its turn comes. The app stops the model when it closes, also one
+that is still loading. A running server is written down in
+`~/.framefairy/llama-server.json`, so one left behind by an app that
+crashed is stopped the next time the app starts, if that process is still
+exactly that server, with the same port and the same model. The server runs one ask at a time (`-np 1`) with
+the whole context for it.
 
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks
 about a half hour window for 12,000 tokens or more before it writes a

@@ -24,11 +24,7 @@
     onremove,
     locked = false,
     transcribing = false,
-    partly = false,
-    leftToGo = "",
     holding = false,
-    pausing = false,
-    ontranscription,
     least = 0,
     leastSays = "",
     most = Infinity,
@@ -52,24 +48,14 @@
     // leaves that part free to be searched again. The caller asks first.
     onremove?: (span: { from: number; to: number }) => void;
     locked?: boolean;
-    // How the reading of the episode stands. The transcript's edge is drawn
-    // here already, so the one thing to do about it belongs here too rather
-    // than in the head of a list about clips.
+    // Whether the episode is being read. Nothing is done about it here:
+    // the reading runs for a search, and is started and called off with
+    // New and Cancel in the head of the clip list.
     transcribing?: boolean;
-    // Stopped part way: some of it read, nothing reading the rest.
-    partly?: boolean;
-    leftToGo?: string;
-    // The edge is being held where it is, because pause was pressed. It
+    // The edge is being held where it is, because Cancel was pressed. It
     // stops moving at once rather than sliding on to where the work had
     // got to, which is a second or two of an interface ignoring a click.
     holding?: boolean;
-    // The stop has been asked for and has not reached the work yet. The
-    // control it was asked from wears the beam while that lasts, the way
-    // every control in the app says the work it started is in hand.
-    pausing?: boolean;
-    // Pause it while it runs, carry on while it is stopped. One control,
-    // because there is only ever one thing to do.
-    ontranscription?: () => void;
     // What a search can do with the window holds its edges. It is no
     // shorter than least, the clips asked for one after another at their
     // shortest, and no longer than most, the length the model reads in one
@@ -81,12 +67,6 @@
     most?: number;
     reachSays?: string;
   } = $props();
-
-  // The control at the transcript's edge is only there while the pointer is
-  // on the track, the same as the info marks: what a thing is for is shown
-  // when it is being looked at, and a track with nothing happening on it
-  // carries nothing.
-  let near = $state(false);
 
   let track: HTMLDivElement;
   let width = $state(0);
@@ -357,12 +337,7 @@
      that has to reach past them: its head stands above the track the way
      an editor's does, and at the very start or the very end it would
      otherwise be cut off by the corner. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="over"
-  onpointerenter={() => (near = true)}
-  onpointerleave={() => (near = false)}
->
+<div class="over">
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -409,32 +384,6 @@
       class:held={holding}
       style="transform: translateX({at(covered)}px)"
     ></div>
-  {/if}
-  <!-- The one thing to do about the reading of the episode, at the edge the
-       reading moves. It waits for the pointer to be on the track, the way
-       every other mark here does, so a track nobody is looking at carries
-       nothing. -->
-  <!-- While clips are being found the reading waits for the search, which
-       has the machine to itself, and carries on by itself afterwards. So
-       there is nothing to offer then. -->
-  {#if pending && near && (transcribing || (partly && !locked)) && ontranscription}
-    <button
-      class="reading"
-      class:glide={glide && !holding}
-      class:held={holding}
-      style="transform: translateX({at(covered)}px)"
-      onpointerdown={(e) => e.stopPropagation()}
-      ondblclick={(e) => e.stopPropagation()}
-      onclick={ontranscription}
-      disabled={pausing}
-      aria-label={transcribing ? "Pause the transcription" : "Carry on transcribing"}
-      title={transcribing
-        ? `Reading the episode${leftToGo ? `, ${leftToGo}` : ""}. Pause it, and it carries on where it stopped`
-        : `The episode is read as far as ${clock(covered)}. Carry on from there`}
-    >
-      {#if pausing}<Busy />{/if}
-      <Icon name={transcribing ? "pause" : "play"} size={12} />
-    </button>
   {/if}
   {#each searched as w, i (i)}
     <div
@@ -780,48 +729,8 @@
     --fill-glide: 1s linear;
   }
 
-  .pending.held,
-  .reading.held {
+  .pending.held {
     transition: none;
-  }
-
-  /* At the transcript's edge, on the dark side of it, so it never covers
-     the waveform or a clip mark. It sits on the line rather than beside it,
-     because what it is about is the line.
-     It travels with the edge, so it takes the same glide: a control that
-     jumped while the line it belongs to slid would read as two things. */
-  /* It travels by transform rather than by left. A left that is animated
-     lands on a fraction of a pixel on most frames, the button is laid out
-     afresh at every one of them, and the two bars of the pause mark inside
-     it are drawn a little differently each time: the mark wobbles while it
-     slides. A transform moves what has already been drawn, so the mark is
-     rasterised once and carried, and it holds still. */
-  .reading {
-    position: absolute;
-    top: 50%;
-    left: 3px;
-    margin-top: -10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    background: var(--ink-2);
-    color: var(--text);
-    cursor: pointer;
-    z-index: 7;
-  }
-
-  .reading:hover {
-    background: var(--ink-3);
-    border-color: var(--muted);
-  }
-
-  .reading.glide {
-    transition: transform 1s linear;
   }
 
   /* In the middle of the track, over everything, and only what is inside it

@@ -18,6 +18,7 @@
   // crop the way the render will burn them in.
   import { onMount, type Snippet } from "svelte";
   import {
+    frameStart,
     insideClip,
     pictureIsStale,
     shouldChase,
@@ -63,8 +64,9 @@
     captions?: CaptionsView | null;
     time?: number;
     still?: string;
-    // The second the still was read for. It is only shown for that second,
-    // never for wherever the playhead happens to be when it goes stale.
+    // Where the frame the still was read for starts. It is only shown while
+    // the playhead is in that frame, never wherever the playhead happens
+    // to be when the picture goes stale.
     stillAt?: number;
     onplayclip?: (clip: ClipEntry) => void;
     // Asks for the frame at a moment of the episode, for as long as the
@@ -686,7 +688,10 @@
         caption box to correct it: Enter saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
-    {#if still && stale && Math.abs(stillAt - time) <= 0.6}
+    <!-- Only the still of the frame the playhead is in. A still of a
+         frame near it was allowed, which was a second picture for one
+         spot, and a different one again once the video landed. -->
+    {#if still && stale && Math.abs(stillAt - frameStart(time, source.fps)) < 1e-6}
       <img src={still} alt="" />
     {/if}
     <!-- svelte-ignore a11y_media_has_caption -->

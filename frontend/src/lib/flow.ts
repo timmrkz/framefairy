@@ -21,8 +21,11 @@ export function shouldTranscribe(s: TranscribeState): boolean {
 }
 
 export type SearchState = {
-  // How far the transcript reaches, in seconds, and the end of the window
-  // chosen on the range picker.
+  // How far the episode has been heard, in seconds, and the end of the
+  // window chosen on the range picker. Heard, not saved: the transcript is
+  // written seconds of work apart, and a search waited for that while the
+  // transcription ran minutes past the window. The Go side waits for the
+  // words to be on disk before the search reads them.
   covered: number;
   to: number;
   // What the episode already has.
@@ -108,6 +111,28 @@ export function pictureIsStale(s: PictureState): boolean {
   return Math.abs(s.shows - s.at) > 0.5;
 }
 
+// Where the frame a moment falls in starts: the frame a video element
+// shows when it is sent there, the last one that starts at or before it.
+// The still read from the file while the video preview catches up has to
+// be that same frame, or the picture changes the moment the video lands.
+// It was the nearest whole second, which from half past on is the next
+// second's frame. The engine works the frame out the same way, Still in
+// engine/frames.go. An episode whose rate is not known counts in seconds.
+export function frameStart(t: number, fps: number): number {
+  const rate = fps > 0 ? fps : 1;
+  return Math.floor(Math.max(t, 0) * rate + 1e-6) / rate;
+}
+
+// How much of a window has been transcribed, by what has been heard: the
+// row of a search waiting for the transcript is a view of the window on the
+// range picker. Empty while the transcript has not reached the window's
+// start, full at its end. It was measured from the start of the episode, so
+// a window two hours in began nearly full.
+export function waitShare(from: number, heard: number, to: number): number {
+  if (to - from < 0.5) return heard >= to ? 1 : 0;
+  return Math.min(Math.max((heard - from) / (to - from), 0), 1);
+}
+
 // A part of the episode, in seconds. The range picker works in these.
 export type Span = { from: number; to: number };
 
@@ -191,6 +216,25 @@ export class Newest {
 // So the furthest seen is kept, and the edge never falls below it. It
 // starts over only when the mark is about a transcript that no longer
 // exists: another episode, or one being read again from the beginning.
+// A job as the Go side reports it, by its id and the number of its last
+// change. The number grows with every change to any job, and is set where
+// the change is made, so of two snapshots of one job the later one has the
+// larger number. News is sent after the change is made, so two changes at
+// nearly the same moment can arrive the other way round, and a list that
+// kept whatever it heard last showed a finished job as waiting, for good.
+export type Stamped = { id: string; seq?: number };
+
+// The list with got in it, or null when the list already has a later
+// snapshot of that job. A snapshot without a number is taken as it comes.
+export function mergeJob<T extends Stamped>(list: T[], got: T): T[] | null {
+  const i = list.findIndex((j) => j.id === got.id);
+  if (i < 0) return [...list, got];
+  if ((got.seq ?? 0) < (list[i].seq ?? 0)) return null;
+  const out = list.slice();
+  out[i] = got;
+  return out;
+}
+
 export class Heard {
   private at = 0;
   private of = "";

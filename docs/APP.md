@@ -137,9 +137,16 @@ in, `<episode>.framefairy` beside the video. Keeping it means adding the episode
 again picks up the transcript, the clip sets and the rendered clips where
 this left off, which is why it is the highlighted answer. Deleting it takes
 the whole folder, so nothing of the episode is left behind. Whatever is
-running on that episode is stopped first and waited for, and if something
-will not stop, nothing is deleted and the episode stays where it is with a
-line saying so. A folder deleted under a running transcription comes back,
+running on that episode is stopped either way, so a removed episode never
+goes on transcribing and holding up the episodes added after it. From the
+moment removing begins, nothing new starts on it until it is added again,
+not even the transcription a stopped search would otherwise carry on.
+Deleting also waits for the work to stop, and if something will not stop,
+nothing is deleted and the episode stays where it is with a line saying
+so. The answer clicked says Removing at once and the box takes no second
+click while the work stops, which is a moment when a search runs. The
+workspace of the episode closes before the list is read again, so it asks
+nothing more of an episode that is gone. A folder deleted under a running transcription comes back,
 half written, for an episode that is no longer in the library. The video file
 itself always stays, and so do the training records, which live in one
 folder of their own and are thrown away in the settings and nowhere else.
@@ -272,19 +279,24 @@ area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
 
-- **The transcription is the head of the clip list**, in the shape
-  everything else in that pane has: the head says **Transcribing**, the one
-  button says **Pause**, and that button fills up as it goes. Paused,
-  the head says so and the button says **Continue**, which picks up where it
-  stopped, also after a restart. The info mark beside the head says what is
-  happening and how long it has to go, and goes back to saying what the clip
-  list is once there are clips to list.
+- **The transcription runs for a search, and for nothing else.** It goes
+  as far as the window the search is for and stops exactly on its edge. A
+  new episode's first search starts it by itself, held at the first half
+  hour, and every search after that starts it again when its window is not
+  transcribed yet. Nothing carries it on through the rest of the episode
+  afterwards. So there is nothing to control about it but the search:
+  **New** starts both and **Cancel** stops both.
 - **What is not there yet says so by waiting.** The part of the clip
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
-  found for it. On the clip timeline the edge is taken from the waveform
-  itself, so the light never lies over a waveform that is already drawn. The
+  found for it. On the clip timeline the part not heard yet wears the
+  grey of a clip card still to come, the whole track before the first
+  waveform arrives, and it breathes while the transcription runs. With
+  nothing running it keeps its grey and stands still, the way paused work
+  does, so a part nobody has heard never reads as silence, which is a flat
+  line. The edge is taken from the waveform itself, so the grey never lies
+  over a waveform that is already drawn. The
   range picker carries the reading of the episode in the app's own words:
   what is not transcribed is darker and breathes while the reading runs,
   because it is a place waiting to be filled, and the line where the
@@ -332,19 +344,28 @@ place.
   it at any point: it has a place of its own, on the range picker, at the
   edge it moves. The two run in lanes of their own, and a head that carried
   both is how it came to say **Transcribing** over a list of clips.
-- **New waits until a search could run.** A search reads the transcript off
-  disk, so **New** is off until the saved transcript reaches the end of the
-  chosen window, and says how far it has got and how far it needs to go.
-  It goes by what is written down rather than by what has been heard,
-  because a search started on the second one would read a transcript that
-  stops short of the window it was asked for.
-- **The transcription is worked from the edge it moves.** On the range
-  picker, at the transcript's edge, a mark appears while the pointer is on
-  the track and does the one thing there is to do: pause it while it reads,
-  carry on while it is stopped part way. It travels with the edge and glides
-  with it, so the two read as one thing: both are carried by a transform, so
-  the distance between them never changes. It is not there when the episode
-  is read to the end, because then there is nothing to do.
+- **New works whether the window is transcribed or not.** Pressed before
+  the episode has been heard to the end of the chosen window, the search
+  waits for it the way the first search does: the first row of the clip
+  list says Waiting for the transcript with the window, the window is
+  locked, the transcription starts if nothing is transcribing and stops
+  exactly on the window's edge, and the search starts the moment it gets
+  there. The transcription is the first step of the search as far as
+  anyone can see: the moment New is pressed the list opens as many rows as
+  the search will look for, the first wearing the beam and the fill, the
+  rest breathing, and the first is brought into view. The fill is how much
+  of the window has been transcribed, a view of the window on the range
+  picker: empty at its start, half full when the edge is half way across
+  it, full at its end. It was measured from the start of the episode, and
+  a window two hours in began nearly full. **Cancel** calls the search off and stops the
+  transcription with it. New used to be off until the window was transcribed, and a
+  transcription that had been paused had to be carried on first with a
+  mark at the edge of the range picker, which nobody could be expected to
+  know about. That mark is gone, and so is pausing: the transcription
+  runs for a search, so the search is what is started and stopped. It
+  goes by what has been heard, the edge the range picker draws, not by
+  what has been written down, which comes every 8 s of work, minutes of
+  audio apart.
 - **What is running shows in the button it was started from.** Work that
   knows how far along it is fills the button, with a line of the app's
   colour at the front of the fill. Work that cannot say sends a band of that
@@ -439,8 +460,19 @@ place.
       back to its start, moves the playhead when the picture has landed and
       not before, so the crop frame, the captions and the picture change
       together. A frame read from the file is only drawn over the video
-      preview for the second it was read for. Before, one read for another
-      moment flashed up on every loop while the seek was on its way.
+      preview while the playhead is in the frame it was read for. Before,
+      one read for another moment flashed up on every loop while the seek
+      was on its way.
+    - **The frame read from the file is the frame the video shows.** While
+      the video preview cannot keep up with the playhead, a frame read from
+      the file is laid over it, and it is the frame the playhead is in, the
+      one the video will show once it lands, so nothing changes when it
+      does. It used to be the nearest whole second, so from half past on it
+      was the next second's frame: dragging the playhead showed one frame,
+      letting go showed another, and one spot showed two frames depending
+      on which of the two was on screen. `frameStart` in
+      `frontend/src/lib/flow.ts` and `Still` in `engine/frames.go` work the
+      frame out the same way, and both are tested.
     - While the playhead is inside the clip, its captions are drawn inside
       the crop, in the font, size, place and colours the render burns in,
       with the spoken word on its pill. The engine hands over the lines and
@@ -548,19 +580,22 @@ place.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the transcription starts, and the moment it covers the
       window chosen on the track the first search runs. Until then the
-      first row of the clip list says so, and the window can still be
-      moved. The local model is loaded in the meantime, so the search
+      first row of the clip list says so, and the window is locked, from
+      the moment the transcription starts until the search has run,
+      because the window's end is where the transcription stops.
+      **Cancel** in that row lets go of both. The local model is loaded
+      in the meantime, so the search
       starts with it in memory. **While clips are found, the transcription
       waits**, on this episode and any other, so the model has the
-      machine to itself, and it carries on by itself when the search
-      ends. One paused by hand stays paused. The search waits for the
-      audio to be heard to the end of the window, not for the next time
-      the transcript is written down, which is seconds apart and minutes
-      of audio. The moment it is heard, the transcription is paused, the
-      pause writes down all it heard, and the search starts on that. So
-      the range picker's edge stops a little past the end of the window
-      rather than running on across the track while the first row sits
-      full, and it carries on from where it stopped. It
+      machine to itself. Another episode's carries on by itself when the
+      search ends, because it runs for a search of its own. **The
+      transcription stops exactly at the end of the window**: the
+      workspace tells it where, and the piece of audio the speech model
+      hears is cut on the window's edge, so it hears nothing past it. It
+      saves what it heard, the search starts at once, and the
+      transcription stays stopped there until a search needs more. A word
+      that runs across the edge is not in the window, and is heard whole
+      by the next search that needs it. The first search
       happens only for an episode nobody has ever searched. The episode
       remembers that somebody looked, so removing every clip again does not
       bring a search of its own back: a search is the machine's time, and
@@ -603,6 +638,35 @@ place.
       one shown a little later. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
       search keeps the clips it had found.
+    - **A search starts in sight.** The rows still to come are after the
+      clips there are, so in a long list a search began out of sight and
+      all anyone saw was New turning into Cancel. The row the next clip
+      will appear in, the one wearing the work, is brought to the top of
+      the column the moment it is there, and back into view every time a
+      clip lands, wherever the list has been scrolled to in between. It
+      comes back with a third of the row after it showing, so it is plain
+      there is more to come, and the clip that just landed stays in view
+      above it. Only when a clip lands: following every report would fight
+      a hand that is scrolling. The last clip a search finds leaves no row
+      after it, so that clip itself is brought into view, to the foot of
+      the list when it lands below. The model writes its clips in an order
+      of its own, and the list is in the order they were spoken, so the
+      last clip found is not always the last in the list: it is the one
+      that comes into view, wherever it lands, and the rows still to come
+      stay after the last of them. The list stays in the order the clips were
+      spoken, which is the order of the range picker and the clip
+      timeline, so a new clip lands where it belongs in the episode rather
+      than on top.
+    - **What a search was asked for is held while it runs.** Clips,
+      Shortest and Longest go to the model with the prompt, so they are
+      locked from New until the search has run, and dimmed. Changing Clips
+      used to change the rows still to come while the model looked for the
+      number it had been given.
+    - **An empty list is never empty.** With nothing in the list and no
+      search on its way, the rows New will fill stand there as many as
+      Clips says, following it as it changes, and still, because nothing
+      is filling them yet. An episode whose first search was stopped, by
+      quitting among other things, had a bare column there before.
     - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
@@ -691,8 +755,6 @@ place.
     - The part not yet transcribed is darker, with a line at the edge where
       the transcript has got to, and a light passing over it while the
       transcription runs.
-    - On the edge, while the pointer is on the track, the mark that pauses
-      the transcription or carries it on.
     - The window is locked while clips are being found.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
@@ -992,7 +1054,9 @@ editor.
   come back to. It goes 200 steps back.
 - **What landed since stays.** A search writes clips into a plan while its
   earlier clips are edited, so an undo puts back only what the edit
-  changed, clip by clip, and never the whole plan. A clip that has been
+  changed, clip by clip, and never the whole plan. A clip that lands at
+  the very moment an edit is saved is not part of that edit either, since
+  an edit never makes a clip. A clip that has been
   changed again since by something the history does not know about, a
   search over the same part above all, is not written over: the undo
   says it cannot be taken back, and the history of the episode starts
@@ -1038,9 +1102,8 @@ things and no others, and each one means one thing.
   fill stays where it is, and everything that says the work is running
   stops: no beam, no motes, no light over the fill, and the head keeps its
   line without the glow ahead of it. Running and paused are told apart by
-  movement. The range picker shows a transcription paused by hand, or
-  waiting while a search has the machine, this way, with the mark that
-  carries it on at the head of the fill. In
+  movement. The range picker shows a transcription stopped at a window,
+  or waiting while a search has the machine, this way. In
   Activity, where a job has no control of its own, the same fill lies in a
   track of its own, with a light travelling over what is already done. Work that cannot
   say how far it has come shuttles across that track instead of standing at
@@ -1117,6 +1180,24 @@ seen at once. One job is one
 row, parted from the next by a line across the page, and clicking a finished
 row opens its log. Transcription runs in its own lane, so finding and
 rendering clips never wait for it.
+
+The list is kept current by the news the Go side sends about every job.
+Each piece of news carries a number that grows with every change, so a
+piece that arrives late never puts a job back to where it was. While
+anything runs, the list is also read again every five seconds, so a piece
+of news that was lost costs a few seconds and never a job that looks as if
+it runs for ever. Quitting the app stops the model and every job before
+the app goes.
+
+**Quitting.** Cmd+Q dims the app at once and says what happens next.
+While work runs, a search, a render or a transcription, the first press
+only asks, Press ⌘Q again to quit, for three seconds, the way Chrome does,
+because quitting stops that work half way. A click or Escape takes the
+question away. The second press, or the first with nothing running, says
+Quitting while the app stops everything it started, and then it goes.
+Closing the app's window quits without asking. The stopping happens away
+from the main thread, see `cmd/framefairy-app/quit.go`: done on it, it
+froze the app under the spinning wheel for five seconds.
 
 ### Settings
 

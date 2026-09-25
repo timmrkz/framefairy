@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // ---------------------------------------------------------------------------
@@ -103,6 +104,94 @@ func Compare(before, after *Snapshot) *Change {
 	}
 	sort.Strings(c.paths)
 	return c
+}
+
+// LeaveOutNewClips takes out of the change every clip that was not there
+// before it, and every plan that was not there before it. An edit changes
+// clips, it never makes them, so a clip that appears between the two
+// snapshots of an edit is a search landing it at that moment. Kept in the
+// change, it was the edit's, and undoing the edit took away a clip the
+// person had never touched. What is left is nil when the edit itself
+// changed nothing.
+func (c *Change) LeaveOutNewClips() *Change {
+	if c == nil {
+		return nil
+	}
+	var kept []string
+	for _, path := range c.paths {
+		if path == correctionsPath(c.logsDir) {
+			kept = append(kept, path)
+			continue
+		}
+		was, now := c.before[path], c.after[path]
+		if !was.there {
+			// A plan that appeared: a search wrote its first clip.
+			delete(c.before, path)
+			delete(c.after, path)
+			continue
+		}
+		if now.there {
+			if trimmed, ok := withoutNewClips(was, now); ok {
+				now = trimmed
+				c.after[path] = now
+			}
+			if sameState(was, now) {
+				delete(c.before, path)
+				delete(c.after, path)
+				continue
+			}
+		}
+		kept = append(kept, path)
+	}
+	c.paths = kept
+	if len(kept) == 0 {
+		return nil
+	}
+	return c
+}
+
+// withoutNewClips is the plan now with only the clips it had before.
+func withoutNewClips(was, now fileState) (fileState, bool) {
+	before, err := splitPlan(was)
+	if err != nil || before == nil {
+		return now, false
+	}
+	after, err := splitPlan(now)
+	if err != nil || after == nil {
+		return now, false
+	}
+	var list []any
+	dropped := false
+	for _, id := range after.ids {
+		if before.clips[id] == nil {
+			dropped = true
+			continue
+		}
+		list = append(list, after.clips[id])
+	}
+	if !dropped {
+		return now, false
+	}
+	if list == nil {
+		list = []any{}
+	}
+	after.top.values["clips"] = list
+	body, err := marshalNoEscape(after.top)
+	if err != nil {
+		return now, false
+	}
+	return fileState{there: true, body: body}, true
+}
+
+// sameState says whether two states of a plan hold the same fields and the
+// same clips, the count of edits aside.
+func sameState(a, b fileState) bool {
+	x, errA := splitPlan(a)
+	y, errB := splitPlan(b)
+	if errA != nil || errB != nil || x == nil || y == nil {
+		return false
+	}
+	return samePlan(x, y) && strings.Join(x.ids, "\n") == strings.Join(y.ids, "\n")
 }
 
 // Files are the files the edit changed.

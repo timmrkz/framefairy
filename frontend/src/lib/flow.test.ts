@@ -1,7 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
+  frameStart,
+  waitShare,
   Heard,
   Newest,
+  mergeJob,
   nextWindow,
   pictureIsStale,
   pieceAt,
@@ -742,5 +745,89 @@ describe("draftCaptions", () => {
     draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
     expect(three[0].end).toBe(2);
     expect(draftCaptions(three, null)).toBe(three);
+  });
+});
+
+describe("a job's news", () => {
+  const job = (state: string, seq?: number) => ({ id: "job-1", state, seq });
+
+  test("a later snapshot replaces an earlier one", () => {
+    const list = [job("queued", 1)];
+    expect(mergeJob(list, job("running", 4))).toEqual([job("running", 4)]);
+  });
+
+  test("an earlier snapshot arriving late is dropped", () => {
+    // Queued was sent after the lock was let go, and running and done
+    // overtook it. Kept, it showed a finished job as waiting for good.
+    let list = [job("queued", 1)];
+    for (const got of [job("running", 3), job("done", 7), job("queued", 1)]) {
+      list = mergeJob(list, got) ?? list;
+    }
+    expect(list).toEqual([job("done", 7)]);
+  });
+
+  test("a job not heard of before is added", () => {
+    expect(mergeJob([job("done", 2)], { id: "job-2", state: "queued", seq: 3 })).toHaveLength(2);
+  });
+
+  test("a snapshot without a number is taken as it comes", () => {
+    expect(mergeJob([job("running")], job("done"))).toEqual([job("done")]);
+  });
+
+  test("the list read again merges with what was heard, in any order", () => {
+    const heard = [job("running", 5)];
+    const read = [job("queued", 2)];
+    let list = heard;
+    for (const got of read) list = mergeJob(list, got) ?? list;
+    expect(list).toEqual([job("running", 5)]);
+  });
+});
+
+// The still read while the video preview catches up is the frame the video
+// will show there: the one the moment falls in. It was the nearest whole
+// second, which from half past on was the next second's frame.
+describe("frameStart", () => {
+  it("is the frame a moment falls in, never the next one", () => {
+    expect(frameStart(12.7, 1)).toBe(12);
+    expect(frameStart(12.2, 1)).toBe(12);
+    expect(frameStart(0.99, 10)).toBeCloseTo(0.9, 9);
+    expect(frameStart(1.0, 25)).toBeCloseTo(1.0, 9);
+  });
+
+  it("puts every moment of a frame on the same start", () => {
+    const fps = 30000 / 1001;
+    for (let n = 0; n < 2000; n += 37) {
+      const start = n / fps;
+      for (const into of [0, 0.25, 0.5, 0.75, 0.999]) {
+        expect(frameStart(start + into / fps, fps)).toBeCloseTo(start, 9);
+      }
+      // And a start asked for again is the same start, which is what the
+      // engine is handed.
+      expect(frameStart(frameStart(start, fps), fps)).toBeCloseTo(start, 9);
+    }
+  });
+
+  it("counts in seconds when the rate is not known", () => {
+    expect(frameStart(3.4, 0)).toBe(3);
+  });
+});
+
+// The row of a search waiting for the transcript is a view of the window on
+// the range picker: how much of the window is transcribed. Measured from the
+// start of the episode, a window two hours in began nearly full.
+describe("waitShare", () => {
+  it("is empty until the transcript reaches the window", () => {
+    expect(waitShare(7200, 0, 9000)).toBe(0);
+    expect(waitShare(7200, 7200, 9000)).toBe(0);
+  });
+
+  it("is how much of the window is transcribed", () => {
+    expect(waitShare(7200, 8100, 9000)).toBe(0.5);
+    expect(waitShare(1800, 2500, 3600)).toBeCloseTo(700 / 1800, 9);
+  });
+
+  it("is full at the end of the window and never past it", () => {
+    expect(waitShare(1800, 3600, 3600)).toBe(1);
+    expect(waitShare(1800, 4000, 3600)).toBe(1);
   });
 });

@@ -369,9 +369,26 @@ func (c *searchClock) run() {
 		case <-c.stopped:
 			return
 		case <-ticker.C:
-			c.report()
+			if !c.reportSafely() {
+				return
+			}
 		}
 	}
+}
+
+// reportSafely reports, and says false if reporting panicked. The clock is
+// a goroutine of its own, out of reach of the recover that guards the
+// job, and a panic in it ended the whole app. A clock that cannot report
+// stops, and the search goes on without a fill.
+func (c *searchClock) reportSafely() (alive bool) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			c.log.Detail("the search stopped reporting its progress: %v", caught)
+			alive = false
+		}
+	}()
+	c.report()
+	return true
 }
 
 func (c *searchClock) stop() {
