@@ -2332,9 +2332,13 @@
   /* What a search on its way was asked for is held while it runs: the
      number went to the model with the prompt, so changing it changes
      nothing the model does. Dimmed the way a button that cannot be pressed
-     is, in app.css. */
-  .setting input:disabled {
+     is, in app.css, the field and its unit together. The input alone left
+     the unit bright beside a dimmed number. */
+  .setting .field:has(input:disabled) {
     opacity: 0.45;
+  }
+
+  .setting input:disabled {
     cursor: default;
   }
 
