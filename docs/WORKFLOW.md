@@ -116,6 +116,29 @@ request and every push to `main`:
 - **macOS:** runs `make` and fails if the build prints any warning, then runs
   `make test`.
 
+### When main moves
+
+A Claude session watches its own pull request: comments, reviews and CI on
+its commits reach it. A merge into `main` is none of those, so a pull
+request can fall behind `main`, or stop merging, with nobody told.
+
+[`.github/workflows/main-moved.yml`](../.github/workflows/main-moved.yml)
+closes that gap. On every push to `main` it runs
+[`scripts/main-moved.sh`](../scripts/main-moved.sh), which tries merging
+`main` into the branch of every open pull request and leaves one comment on
+each one `main` is not already in:
+
+- **conflicts:** which files, and that `main` has to be merged in and
+  resolved
+- **merges cleanly:** that `main` should be merged in, so the pull request is
+  tested against what it will land on
+
+The comment is what wakes the session. It merges `main` in, resolves what
+conflicts, runs `make test` and `make`, and pushes. The workflow itself never
+pushes, because a merge made there would reach the branch untested. It
+comments once per pull request for each move of `main`, and leaves pull
+requests from forks alone.
+
 ## What stays on your Mac
 
 - Trying the app, since a cloud machine has no screen.
