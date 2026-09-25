@@ -1,0 +1,34 @@
+# Runs on every push to main and tells each open pull request, with a
+# comment, whether main still merges into it and which files do not. The
+# comment is what wakes the Claude session watching the pull request, which
+# then merges main in, resolves any conflicts, runs the checks and pushes.
+# The work is in scripts/main-moved.sh.
+name: Main moved
+
+on:
+  push:
+    branches: [main]
+
+# Two pushes close together are told in turn, never at once, so no pull
+# request is told twice about the same move.
+concurrency:
+  group: main-moved
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  tell:
+    runs-on: ubuntu-latest
+    steps:
+      # The whole history, because merging needs the common ancestor.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Tell the open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/main-moved.sh

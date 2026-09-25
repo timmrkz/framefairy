@@ -104,6 +104,10 @@ Start with [README.md](README.md). In short:
   a failing CI run is still your work, so is a review comment. But never set
   up a recurring check, never poll, and never write a message that says
   nothing happened. Tim comes back when he is ready.
+- **When main moves, merge it in.** A comment from the Main moved workflow
+  on your pull request means main has landed something. Merge main into
+  the branch, resolve what conflicts, run the checks the change needs and
+  push, without being asked. See [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Writing rules
 
