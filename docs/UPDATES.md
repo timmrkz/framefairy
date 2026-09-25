@@ -233,6 +233,67 @@ steps up to the disk image. Updates add three:
   and notarisation. An update cannot be tested end to end without an app
   macOS will open.
 
+## Updates for pull requests
+
+Tim's idea: run the app once, and whenever a pull request gets a new
+commit, update the running app to it from inside the app, the way a
+customer will update to a release. No terminal, no checking out a branch,
+no `make run` again.
+
+It is worth doing, and doing first, for two reasons. It uses the update
+path every day, long before any customer does, so whatever is wrong with
+it shows up on Tim's Mac and not on theirs. And it is most of the release
+workflow already: build, assemble, pack, sign the update, write the feed,
+publish. Only Apple's signing and notarisation, the stable channel and the
+licence come later.
+
+How it would work:
+
+- **Every push to a pull request builds the app**, in CI, on a macOS
+  runner, the same workflow a release will use. It takes ffmpeg and
+  llama-server from the tools archive rather than building them. The
+  repository is public, so the runner costs nothing.
+- **Each pull request is a channel.** The build is published as a
+  pre-release of its own with a feed beside it, `pr-18`, and main has one
+  too. A version reads like `0.3.0-pr18.7`, the seventh build of pull
+  request 18, so a newer commit is a newer version.
+- **Only a development build sees them.** A build made for Tim shows, next
+  to Check for Updates, which channel it follows: main or one of the open
+  pull requests, by number and title. A customer's build is made without
+  that list and only ever reads the stable feed.
+- **Switching is allowed to go sideways.** Moving from pull request 18 to
+  pull request 20 is not an upgrade by version number, so a development
+  build installs whatever the chosen channel's newest build is, whether its
+  number is higher or not. Wails' updater can be given a small source of
+  our own that does exactly that.
+- **The running build says which it is**, pull request and commit, in the
+  About box, so a report from testing always names what was tested.
+- **Pull requests from forks are never built for it.** Only branches of this
+  repository, which only Tim and Claude push to. A development build runs
+  whatever a pull request contains, so nothing from outside may get in.
+- **Its own key.** The development builds are signed with an update key of
+  their own, a different one from the customer key. A leak of it reaches
+  development builds and nothing else.
+
+What it can start with and what it cannot:
+
+- **It needs no Apple certificate.** Until batch 5.5 the builds are signed
+  the way `make app` signs them today, ad hoc. A file the app downloads
+  itself carries no quarantine mark, so macOS runs it without asking, the
+  same as a build made by `make`. This has to be confirmed on Tim's Mac, and
+  it is the first thing the batch that builds this tries.
+- **It takes a few minutes per push.** The build runs in CI after each
+  commit, so an update is ready a few minutes after Claude pushes, not at
+  once. The pull request can say when it is ready.
+- **The app lives in one place.** It is installed once, to
+  `~/Applications`, and updates itself there. `make run` still works, for
+  a change Tim wants to build himself.
+- **Every build shares one set of settings and episodes.** A pull request
+  that changes a file format can leave a file another build cannot read.
+  That is rare, it is the same rule a release lives by, and it is the risk
+  of switching back and forth between pull requests that are not yet
+  merged. Nothing is lost that the newer build does not read again.
+
 ## Decisions to make
 
 1. **The update policy**: every update for ever, a year of updates, or
@@ -251,3 +312,7 @@ steps up to the disk image. Updates add three:
    public, or Keygen, paid and gated by the licence. It follows from the
    first decision and from the licence key.
 4. **The channels**: stable and beta, or stable alone at first.
+5. **Updates for pull requests first.** The recommendation is to build
+   them before anything a customer sees, as the first batch of 5.9: the
+   workflow, the channels, the source that allows going sideways, and a
+   Check for Updates that works, all without Apple's signing.
