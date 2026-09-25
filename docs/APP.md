@@ -401,8 +401,17 @@ place.
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
   colour of the box behind them and **Highlight** the pill behind the word
-  being spoken. Beside each is how much of it is seen:
-  100, where the text and the highlight start, is solid, and a box at 0
+  being spoken. The name **Highlight** is also its switch, the way an entry
+  in a chart's legend turns its line on and off: a click turns the pill off,
+  and with it the bounce of the word being spoken, so the short shows the
+  box and the words and nothing in it moves. Off, the name is struck
+  through and the pill's colour steps back. A click on the name turns it on
+  again, and so does choosing a colour or an opacity for the pill, because
+  that says the pill is wanted. The row keeps its size either way. It is
+  kept per clip set, like the colours, and the way back of the captions
+  puts it on again. Beside each colour is
+  how much of it is seen:
+  100, where the text and the pill start, is solid, and a box at 0
   leaves only the words. A see-through text keeps its opacity in the
   short, the word on the pill included, and a see-through pill lets the
   box and the picture through, in the short as in the video preview.
@@ -606,8 +615,11 @@ place.
       the log. **New** becomes **Cancel** the moment a first search is on
       its way, while it still waits for the transcript, and there it calls
       the search off before it starts. While a search runs, Cancel stops
-      it. A render, which has no row to fill, wears the beam and the fill
-      in the button.
+      it. A render is not a search, so it leaves this head alone:
+      **New** stays New and cannot be pressed until the render is done,
+      because one lane does the work. The render shows in the **Render**
+      button it was started from, which fills from the moment it is
+      pressed and says **Cancel**, and a click on it stops the render.
     - **How far a search is, is measured.** The fill is the share of the
       search that is done, measured against how long the same parts took
       the last time on this machine. Inside a part, what the model counts
@@ -936,6 +948,37 @@ Everything about an episode lives in a folder named after it without its
 extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
+
+### Thumbnails
+
+A clip can have any number of thumbnails, or none. A thumbnail is a frame
+of the short exactly as the short shows it, captions included, and
+**Render** writes each one beside the short as `<name>-1.jpg`, `<name>-2.jpg`
+and on. There is no way to render the pictures alone: a change to them is a
+change to the clip, and the next render writes the whole of it again. The
+reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
+
+- **The thumbnail button**, in the row under the clip timeline, makes the
+  frame under the playhead a thumbnail. **T** does the same. It is not a
+  mode, so it never looks pressed. Its icon says what a click does: a
+  picture with a plus adds one, and a picture with a minus, shown while
+  the playhead stands on a thumbnail, removes it. It can only be pressed
+  with the playhead inside the clip, because a frame that was cut is not in
+  the short.
+- **Each thumbnail is a mark** along the foot of the clip timeline, the
+  same picture icon in the app's colour, so a click on the button is seen
+  leaving its picture on the timeline. It sits on a chip of the app's
+  colour while the playhead is on its frame.
+- **With the playhead on a thumbnail**, the button or **T** removes it.
+  What one click adds, one click takes away.
+- **A click on a mark** puts the playhead on it, so the video preview shows
+  the picture.
+- **A mark is dragged** to another frame. The playhead goes with it, so the
+  video preview shows the frame under the hand, and the mark stays inside
+  the pieces the clip keeps. It is saved when the hand lets go.
+- **Undo** takes back adding, moving and removing one.
+- A trim or a cut that leaves a thumbnail outside the clip hides it. It
+  comes back with the part it was in.
 
 ### Caption timing
 

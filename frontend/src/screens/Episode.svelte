@@ -141,10 +141,14 @@
   // grew, and with it the first search.
   const isTranscribing = $derived(!!transcribing);
   const isFinding = $derived(!!finding);
-  // Anything in the work lane, a search or a render. While it runs, the
-  // head of the clip list carries it: New becomes Cancel and the line under
-  // the head fills up. Nothing is added to the column and nothing moves.
-  const busy = $derived(!!working || starting);
+  // A render is shown by the Render button it was started from, which
+  // fills up and becomes Cancel. The head of the clip list is about
+  // finding clips, so a render is not its business.
+  const rendering = $derived(working?.kind === "render");
+  // A search in the work lane. While it runs, the head of the clip list
+  // carries it: New becomes Cancel and the line under the head fills up.
+  // Nothing is added to the column and nothing moves.
+  const busy = $derived((!!working && !rendering) || starting);
   // What the work is doing right now, in the engine's words: loading the
   // model, reading the transcript, how many clips are found.
   const doing = $derived(working?.progress?.text ?? "");
@@ -177,6 +181,18 @@
         title: `${finding || starting ? "Stop looking for clips" : "Stop the render"}${leftOfWork ? `, ${leftOfWork}` : ""}`,
       };
     }
+    // One lane does the work, so a search waits for the render. New stays
+    // New and says why it cannot be pressed.
+    if (rendering) {
+      return {
+        label: "New",
+        icon: "plus",
+        run: newClips,
+        off: true,
+        primary: true,
+        title: "Clips can be looked for once the render is done",
+      };
+    }
     if (lookPending) {
       return {
         label: "Cancel",
@@ -202,6 +218,12 @@
   });
 
   // How far whatever the head is about has come.
+  // How far the render has come, for the Render button.
+  const renderShare = $derived(
+    rendering && working?.progress && working.progress.fraction >= 0
+      ? working.progress.fraction
+      : -1,
+  );
   const share = $derived(
     lane.job?.progress && lane.job.progress.fraction >= 0 ? lane.job.progress.fraction : -1,
   );
@@ -491,8 +513,15 @@
       .filter((c) => c.key !== removed?.key)
       .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered })),
   );
+  // Whether the render running is of this clip. The job says what it is
+  // of from the moment it is queued: its result only says so once it is
+  // over, which is how the button never saw its own render running.
   const renderingCurrent = $derived(
-    !!working && working.kind === "render" && !!current && working.result === current.plan,
+    !!working &&
+      working.kind === "render" &&
+      !!current &&
+      working.plan === current.plan &&
+      (!working.clips?.length || working.clips.includes(current.id)),
   );
 
   // The free room changes whenever a search finishes, so it is taken again
@@ -769,6 +798,67 @@
     }
   }
 
+  // One frame of the episode, which is what a thumbnail stands on.
+  const frameLen = $derived(source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+  // The thumbnail under the playhead, told by the frame the playhead is in
+  // and never by how far it is from one, because the playhead is never
+  // quite where it was put.
+  const thumbHere = $derived.by(() => {
+    if (!current) return null;
+    const f = Math.floor(time / frameLen);
+    return current.thumbnails?.find((t) => Math.floor(t / frameLen) === f) ?? null;
+  });
+  // Whether the short shows the frame under the playhead, which is where a
+  // thumbnail can be.
+  const inShort = $derived(
+    !!current && current.segments.some((p) => time >= p.start && time < p.end),
+  );
+
+  // A thumbnail added, moved or removed, shown at once and saved straight
+  // after. A from below nought adds, a to below nought removes.
+  async function setThumbnail(clip: ClipEntry, from: number, to: number) {
+    problem = "";
+    const ms = (t: number) => Math.round(t * 1000);
+    const was = clip.thumbnails ?? [];
+    const next = was.filter((t) => from < 0 || ms(t) !== ms(from));
+    if (to >= 0) next.push(Math.round(to * 1000) / 1000);
+    next.sort((a, b) => a - b);
+    clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: next } : c));
+    try {
+      const updated = await api.setThumbnail(path, clip.plan, clip.id, from, to);
+      clips = clips.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      problem = errorText(err);
+      clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: was } : c));
+    }
+  }
+
+  // The button and T: the frame under the playhead becomes a thumbnail, or
+  // stops being one, so what one click adds one click takes away.
+  function toggleThumbnail() {
+    if (!current || renderingCurrent) return;
+    if (thumbHere !== null) {
+      void setThumbnail(current, thumbHere, -1);
+    } else if (inShort) {
+      // The middle of the frame, so the picture and the playhead agree on
+      // which frame it is whichever way either rounds.
+      void setThumbnail(current, -1, (Math.floor(time / frameLen) + 0.5) * frameLen);
+    }
+  }
+
+  function thumbnailKey(event: KeyboardEvent) {
+    if (event.key !== "t" && event.key !== "T") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    if (!current) return;
+    event.preventDefault();
+    toggleThumbnail();
+  }
+
   // Corrections are made one word after another, and each one is a call
   // and a reading of every clip after it. Two of them are in the air the
   // moment a second word is clicked before the first has landed, which is
@@ -827,7 +917,12 @@
   let captionDraft = $state<CaptionDraft | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
-  let colourDraft = $state<{ primary?: string; box?: string; highlight?: string } | null>(null);
+  let colourDraft = $state<{
+    primary?: string;
+    box?: string;
+    highlight?: string;
+    highlightOn?: boolean;
+  } | null>(null);
   // The captions the draft was made against. The draft is let go of when
   // they come back changed, so the caption box never flashes back to the
   // colour it had while the saved colour is on its way.
@@ -848,6 +943,7 @@
           primary: colourDraft.primary ?? view.style.primary,
           box: colourDraft.box ?? view.style.box,
           highlightColour: colourDraft.highlight ?? view.style.highlightColour,
+          highlight: colourDraft.highlightOn ?? view.style.highlight,
         },
       };
     }
@@ -864,7 +960,16 @@
   const highlightColour = $derived(highlightSplit.hex);
   const highlightOpacity = $derived(Math.round(highlightSplit.alpha * 100));
 
-  function drawColour(part: { primary?: string; box?: string; highlight?: string }) {
+  // Whether the word being spoken sits on its pill and bounces. Off, the
+  // captions are the box and the words.
+  const highlightOn = $derived(shownCaptions?.style.highlight ?? true);
+
+  function drawColour(part: {
+    primary?: string;
+    box?: string;
+    highlight?: string;
+    highlightOn?: boolean;
+  }) {
     if (!colourDraft) colourHeld = captions;
     colourDraft = { ...colourDraft, ...part };
   }
@@ -901,6 +1006,31 @@
     } finally {
       colourSaving = false;
     }
+  }
+
+  // The highlight on or off, shown at once and saved straight after.
+  async function setCaptionHighlight(on: boolean) {
+    if (!current) return;
+    problem = "";
+    captionsWere = null;
+    drawColour({ highlightOn: on });
+    colourSaving = true;
+    try {
+      await api.setCaptionHighlight(path, current.plan, on);
+      await refreshClips();
+    } catch (err) {
+      problem = errorText(err);
+      colourDraft = null;
+    } finally {
+      colourSaving = false;
+    }
+  }
+
+  // The pill's colour or how much of it is seen. Choosing either while the
+  // highlight is off says the pill is wanted, so it comes back on with it.
+  async function setHighlightColour(colour: string, share: number) {
+    if (captions?.style.highlight === false) await setCaptionHighlight(true);
+    await setCaptionColours("", textOpacity, "", boxOpacity, colour, share);
   }
 
   // When a caption appears or goes, moved where the words are a little off
@@ -973,6 +1103,7 @@
     opacity: number;
     highlight: string;
     highlightOpacity: number;
+    highlightOn: boolean;
   } | null>(null);
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
@@ -984,6 +1115,7 @@
     textOpacity: Math.round(splitColour(captions?.style.primary ?? "").alpha * 100),
     highlight: splitColour(captions?.style.highlightColour ?? "").hex,
     highlightOpacity: Math.round(splitColour(captions?.style.highlightColour ?? "").alpha * 100),
+    highlightOn: captions?.style.highlight ?? true,
     box: splitColour(captions?.style.box ?? "").hex,
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
@@ -999,6 +1131,7 @@
     captionsNow.font !== captionFontDefault ||
       captionsNow.size !== captionSizeDefault ||
       captionsNow.y !== captionYDefault ||
+      !captionsNow.highlightOn ||
       coloursMoved,
   );
 
@@ -1011,6 +1144,7 @@
       await setCaptionStyle(captionFontDefault, captionSizeDefault);
     }
     if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
+    if (!captionsNow.highlightOn) await setCaptionHighlight(true);
     if (coloursMoved) {
       await setCaptionColours(
         captionTextDefault,
@@ -1033,6 +1167,7 @@
       await setCaptionStyle(was.font, was.size);
     }
     if (was.y !== captionsNow.y) await setCaptionsHeight(was.y);
+    if (was.highlightOn !== captionsNow.highlightOn) await setCaptionHighlight(was.highlightOn);
     if (
       was.text !== captionsNow.text ||
       was.textOpacity !== captionsNow.textOpacity ||
@@ -1334,10 +1469,23 @@
     });
   });
 
+  // The clip a render was asked for, from the click until the job is
+  // there, so the button fills from the moment it is pressed.
+  let renderAsked = $state("");
+  $effect(() => {
+    if (working) renderAsked = "";
+  });
+
   async function render(clip: ClipEntry) {
     problem = "";
-    const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
-    waiting = [...waiting, job.id];
+    renderAsked = clip.key;
+    try {
+      const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
+      waiting = [...waiting, job.id];
+    } catch (err) {
+      renderAsked = "";
+      problem = errorText(err);
+    }
   }
 
   $effect(() => {
@@ -1490,7 +1638,11 @@
 
   onMount(() => {
     window.addEventListener("keydown", walkClips);
-    return () => window.removeEventListener("keydown", walkClips);
+    window.addEventListener("keydown", thumbnailKey);
+    return () => {
+      window.removeEventListener("keydown", walkClips);
+      window.removeEventListener("keydown", thumbnailKey);
+    };
   });
 
   // One timer for as long as the workspace is open, and it decides what to
@@ -1854,10 +2006,22 @@
             <!-- The pill behind the word being spoken, beside the other two
                  colours of the captions and the same pair as they are, so
                  every colour the short and the clip timeline show is set
-                 in one place and in one way. -->
+                 in one place and in one way. Its name is also its switch,
+                 the way an entry in a chart's legend turns its line on and
+                 off: at rest it reads like every other name, under the hand
+                 it lifts like a quiet button, and off it is struck through
+                 and its colour steps back. Nothing moves either way. -->
             <div class="setting">
-              <span>Highlight</span>
-              <span class="field pair">
+              <button
+                class="name"
+                class:off={!highlightOn}
+                aria-pressed={highlightOn}
+                title={highlightOn
+                  ? "The word being spoken sits on a pill that bounces. Click to turn it off, so the captions are the box and the words"
+                  : "Off: the captions are the box and the words. Click to light up the word being spoken again"}
+                onclick={() => setCaptionHighlight(!highlightOn)}>Highlight</button
+              >
+              <span class="field pair" class:off={!highlightOn}>
                 <input
                   class="swatch"
                   type="color"
@@ -1867,16 +2031,10 @@
                   oninput={(e) =>
                     drawColour({
                       highlight: joinColour(e.currentTarget.value, highlightOpacity / 100),
+                      highlightOn: true,
                     })}
                   onchange={(e) =>
-                    setCaptionColours(
-                      "",
-                      textOpacity,
-                      "",
-                      boxOpacity,
-                      e.currentTarget.value,
-                      highlightOpacity,
-                    )}
+                    setHighlightColour(e.currentTarget.value, highlightOpacity)}
                 />
                 <input
                   class="num"
@@ -1890,14 +2048,10 @@
                   oninput={(e) => {
                     const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
                     if (Number.isFinite(v))
-                      drawColour({ highlight: joinColour(highlightColour, v / 100) });
+                      drawColour({ highlight: joinColour(highlightColour, v / 100), highlightOn: true });
                   }}
                   onchange={(e) =>
-                    setCaptionColours(
-                      "",
-                      textOpacity,
-                      "",
-                      boxOpacity,
+                    setHighlightColour(
                       highlightColour,
                       Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
                     )}
@@ -1976,15 +2130,12 @@
               class:primary={action.primary}
               onclick={action.run}
               disabled={action.off}
-              title={`${action.title}${leftOfWork ? `, ${leftOfWork}` : ""}`}
+              title={`${action.title}${busy && leftOfWork ? `, ${leftOfWork}` : ""}`}
               aria-haspopup={action.label === "New" && covering ? "dialog" : undefined}
             >
-              <!-- How a render is going, inside the button it was
-                   started from and behind its own words. A search says
-                   how it is going in the row its next clip will appear
-                   in, where it can say what it is doing as well, so the
-                   button only offers to stop it. -->
-              {#if lane.job && !finding}<Busy fraction={share} />{/if}
+              <!-- A search says how it is going in the row its next clip
+                   will appear in, where it can say what it is doing as
+                   well, so the button only offers to stop it. -->
               <Icon name={action.icon} />
               {action.label}
             </button>
@@ -2028,12 +2179,16 @@
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onwalkclip={walkClip}
+        thumbnails={current?.thumbnails ?? []}
+        onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
         captions={captions?.captions ?? []}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,
               box: shownCaptions.style.box,
-              highlight: shownCaptions.style.highlightColour,
+              highlight: shownCaptions.style.highlight
+                ? shownCaptions.style.highlightColour
+                : "transparent",
             }
           : null}
         oncaptiontime={(word, edge, at) =>
@@ -2068,6 +2223,25 @@
             title="Play the clip again at its end"
           >
             <Icon name="loop" />
+          </button>
+        {/if}
+        {#if current}
+          <!-- The frame under the playhead as a thumbnail. It is not a
+               mode, so it never looks pressed: its picture says what a
+               click does, a plus to add one and a minus when the
+               playhead stands on one. -->
+          <button
+            class="glyph"
+            aria-label={thumbHere !== null ? "Remove this thumbnail" : "Make this frame a thumbnail"}
+            disabled={renderingCurrent || (thumbHere === null && !inShort)}
+            onclick={toggleThumbnail}
+            title={thumbHere !== null
+              ? "Remove the thumbnail at the playhead. T does the same"
+              : inShort
+                ? "Make the frame under the playhead a thumbnail. Render writes it beside the short. T does the same"
+                : "Put the playhead in the clip to make a thumbnail of the frame there"}
+          >
+            <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
         {/if}
         <!-- One job, whatever is chosen: go to the playhead. Going back to
@@ -2112,10 +2286,22 @@
             <button onclick={() => api.reveal(current.rendered!)}>Show in folder</button>
           {/if}
           <!-- The one act that matters, so it says how it is going in the
-               button it was started from, the same as New does. -->
-          <button class="primary render" onclick={() => render(current)} disabled={!!working}
-            >{#if renderingCurrent}<Busy fraction={share} />{/if}{renderingCurrent
-              ? "Rendering"
+               button it was started from, and becomes the way to stop it,
+               the same as New does for a search. -->
+          {@const inHand = renderingCurrent || renderAsked === current.key}
+          <button
+            class="primary render"
+            onclick={() => (inHand ? stopWork() : render(current))}
+            disabled={inHand ? stopping || !renderingCurrent : !!working}
+            title={inHand
+              ? `Stop the render${leftOfWork ? `, ${leftOfWork}` : ""}`
+              : working
+                ? "Render once the work running now is done"
+                : "Write the short, and its thumbnails beside it"}
+            >{#if inHand}<Busy fraction={renderingCurrent ? renderShare : -1} />{/if}{inHand
+              ? stopping
+                ? "Cancelling"
+                : "Cancel"
               : current.rendered
                 ? "Render again"
                 : "Render"}</button
@@ -2259,6 +2445,13 @@
        and only then. */
     overflow-y: auto;
     scrollbar-width: none;
+    /* A column that scrolls cuts off whatever reaches past its edge, and
+       the lift under the Highlight name reaches seven pixels to the left of
+       the names. The column takes eight pixels of the edge beside it and
+       gives them back as padding, so the names stay where they are and the
+       lift is whole. */
+    margin-left: -8px;
+    padding-left: 8px;
   }
 
   /* A name and a small field beside it read worse the further apart they
@@ -2328,6 +2521,46 @@
   .field {
     position: relative;
     flex: none;
+  }
+
+  /* A name that is also a switch. At rest it is every other name: the same
+     place, colour and weight, so the column reads as one. Under the hand it
+     lifts like a quiet button, the room for that taken out of the gap
+     before it so the word itself never moves. Off, it is struck through,
+     the way a legend shows a line that is hidden. */
+  .setting > button.name {
+    flex: 1;
+    min-width: 0;
+    height: var(--control-h);
+    /* Six pixels of lift and the button's own border, which is there but
+       unseen, so the word starts where the names above it start. */
+    margin-left: -7px;
+    padding: 0 6px;
+    border-color: transparent;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .setting > button.name:hover {
+    background: var(--lift);
+    color: var(--text);
+  }
+
+  .setting > button.name.off {
+    text-decoration: line-through;
+    color: var(--faint);
+  }
+
+  /* A colour that has nothing to do while its switch is off. */
+  .field.off {
+    opacity: 0.45;
+  }
+
+  .field.off input {
+    cursor: default;
   }
 
   .field,

@@ -1203,7 +1203,7 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 	if !s.store.Known(path) || (req.Plan != "" && !s.store.Known(req.Plan)) {
 		return s.jobs.refuse(path, "render", label, notInLibrary)
 	}
-	return s.jobs.add(path, "render", label, func(ctx context.Context, p *engine.Project) (string, error) {
+	return s.jobs.addFor(path, "render", label, req.Plan, req.Clips, func(ctx context.Context, p *engine.Project) (string, error) {
 		if err := p.Render(ctx, req); err != nil {
 			return req.Plan, err
 		}
@@ -1351,6 +1351,18 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
+// SetCaptionHighlight turns the pill behind the word being spoken, and the
+// bounce it makes, on or off for a whole clip set. Off, the captions are
+// the box and the words, and nothing in them moves.
+func (s *FrameFairy) SetCaptionHighlight(ctx context.Context, path, plan string, on bool) error {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return os.ErrNotExist
+	}
+	return s.edit(path, func() error {
+		return engine.SetCaptionStyle(plan, map[string]any{"highlight": on})
+	})
+}
+
 // SetCaptionsHeight puts the captions where the box was dragged to, as the
 // distance from the bottom of a 1080x1920 frame. There is one place for
 // every clip of every episode, because a place that suits one video suits
@@ -1425,6 +1437,22 @@ func (s *FrameFairy) followTheHeight(path string) error {
 		}
 	}
 	return nil
+}
+
+// SetThumbnail adds, moves or removes a thumbnail of a clip, a moment of
+// the episode the render takes a picture of the short at, and returns the
+// clip as it is now. A from below nought adds one at to, and a to below
+// nought removes the one at from.
+func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string, from, to float64) (ClipEntry, error) {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return ClipEntry{}, os.ErrNotExist
+	}
+	if err := s.edit(path, func() error {
+		return engine.SetThumbnail(plan, clipID, from, to)
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
 }
 
 // SetCaptionTime moves the caption of a clip that begins or ends on a word,

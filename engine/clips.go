@@ -3,9 +3,11 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -46,7 +48,15 @@ type Clip struct {
 	// in the episode, so it survives the clip's pieces moving and the
 	// captions breaking in other places.
 	CaptionTimes map[string]CaptionTime
+	// Thumbnails are the moments of the episode the render takes a picture
+	// of the short at, in time order. Only moments inside a kept piece are
+	// here: one a trim or a cut left outside stays in the plan and comes
+	// back when the piece does.
+	Thumbnails []float64
 }
+
+// MaxThumbnails is how many pictures one clip may ask for.
+const MaxThumbnails = 50
 
 // CaptionTime is when a caption that begins on a word is shown, and when a
 // caption that ends on a word goes, in seconds of the episode. Either may
@@ -381,6 +391,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			Rejected:     rejected,
 			CaptionY:     captionY,
 			CaptionTimes: readCaptionTimes(entry["caption_times"]),
+			Thumbnails:   readThumbnails(entry["thumbnails"], segments),
 			ID:           SanitiseName(idText, fallback),
 			Slug:         SanitiseName(slugText, ""),
 			Title:        Scrub(titleText, 200),
@@ -484,4 +495,48 @@ func readCaptionTimes(raw any) map[string]CaptionTime {
 		return nil
 	}
 	return out
+}
+
+// readThumbnails takes the moments a clip's pictures are taken at out of a
+// plan, which is untrusted like the rest of it. A moment is kept only if it
+// is a number inside a piece the clip keeps, each once to the millisecond,
+// in time order and no more than MaxThumbnails of them. Anything else is
+// left out, and the render takes no picture for it.
+func readThumbnails(raw any, segments []Segment) []float64 {
+	list, ok := raw.([]any)
+	if !ok || len(list) == 0 {
+		return nil
+	}
+	seen := map[int64]bool{}
+	var out []float64
+	for i, item := range list {
+		if i >= 4*MaxThumbnails {
+			break
+		}
+		at, ok := toFloat(item)
+		if !ok || !isFinite(at) || !insidePieces(segments, at) {
+			continue
+		}
+		key := int64(math.Round(at * 1000))
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, roundTo(at, 3))
+	}
+	sort.Float64s(out)
+	if len(out) > MaxThumbnails {
+		out = out[:MaxThumbnails]
+	}
+	return out
+}
+
+// insidePieces says whether a moment of the episode is in the short.
+func insidePieces(segments []Segment, at float64) bool {
+	for _, s := range segments {
+		if at >= s.Start && at < s.End {
+			return true
+		}
+	}
+	return false
 }

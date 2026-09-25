@@ -272,7 +272,8 @@ So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than
 `libx264 -crf`. The product rule is that the picture stays as close to the
 original as possible, so this gets looked at on a real render rather than
-assumed. A short is twenty to thirty seconds, so the bitrate can afford to
+assumed. The first real renders on Tim's Mac, at `-q:v 73` for the default
+`--crf 18`, showed blocks in the shadows, so the default asks for 85 now. A short is twenty to thirty seconds, so the bitrate can afford to
 be generous. `ffmpeg -L` on the finished build stays the final word on the
 licence.
 

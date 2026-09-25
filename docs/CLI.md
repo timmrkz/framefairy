@@ -54,8 +54,15 @@ episode.framefairy/
 │   └── ...            prompts, the model's log and token usage
 ├── captions/          per-clip srt and word timings, plus generated ass
 ├── preview/           renders from --preview
-└── out/               the finished clips and nothing else
+└── out/               the finished clips and their thumbnails
 ```
+
+A clip whose plan lists `thumbnails`, moments of the episode in seconds,
+gets a picture of the short at each of them, `<name>-1.jpg`, `<name>-2.jpg`
+and on, beside `<name>.mp4`. Each is a frame of the finished short, captions
+included. Pictures of an earlier render that the plan no longer asks for
+are removed. `--preview` and `--dry-run` write none. See
+[THUMBNAILS.md](THUMBNAILS.md).
 
 `framefairy episode.mp4 --transcribe-only` transcribes and stops. It writes
 `logs/words.srt`, a readable transcript, and makes no API call.
@@ -107,7 +114,7 @@ fits.
 | --- | --- | --- |
 | `--clip 01` | all clips | render only this clip id, repeatable |
 | `--preview` | off | half size, fast preset, into `preview/` |
-| `--crf 18` | 18 | quality, lower is better. Every encoder is asked in its own language, so this becomes `-q:v` on Apple's encoder, where higher is better |
+| `--crf 18` | 18 | quality, lower is better. Every encoder is asked in its own language, so this becomes `-q:v` on Apple's encoder, where higher is better: 18 is 85 there |
 | `--preset slow` | slow | x264 speed against compression. Only libx264 has presets, and any other encoder ignores it |
 | `--encoder` | the best this ffmpeg has | the video encoder to use. macOS reaches for `h264_videotoolbox` first and falls back to `libx264`, everywhere else it is `libx264` for now |
 | `--audio-bitrate 256k` | 256k | aac bitrate |

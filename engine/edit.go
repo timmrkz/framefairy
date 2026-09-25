@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -856,6 +857,17 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 			if !hex && (!ok || !isAssColour(text)) {
 				return renderErr("%s is not a highlight colour", Scrub(pyStr(value), 40))
 			}
+		case "highlight":
+			// The word being spoken on its pill, or the words alone. The
+			// render reads a number, so that is what is written.
+			on, ok := value.(bool)
+			if !ok {
+				return renderErr("%s is neither on nor off", Scrub(pyStr(value), 40))
+			}
+			values[key] = 0.0
+			if on {
+				values[key] = 1.0
+			}
 		case "primary", "back_colour":
 			// The colour of the text and of the box behind it, written the
 			// way the render takes them, &HAABBGGRR.
@@ -964,6 +976,75 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 	}
 	dropCaptionFile(planPath, clipID)
 	return nil
+}
+
+// SetThumbnail adds, moves or removes a thumbnail of a clip: a moment of
+// the episode the render takes a picture of the short at. from is the
+// thumbnail as it is and to where it goes, both in seconds of the episode.
+// A from below nought adds one at to, and a to below nought removes the one
+// at from. A moment has to be inside a piece the clip keeps, because a
+// moment that was cut is not in the short.
+func SetThumbnail(planPath, clipID string, from, to float64) error {
+	adding, removing := from < 0, to < 0
+	if adding && removing {
+		return renderErr("a thumbnail has to be somewhere")
+	}
+	for _, at := range []float64{from, to} {
+		if math.IsNaN(at) || math.IsInf(at, 0) || at > MaxEpisodeSeconds {
+			return renderErr("a thumbnail cannot be at %s", fixed(at, 3))
+		}
+	}
+	ms := func(at float64) int64 { return int64(math.Round(at * 1000)) }
+	return editPlan(planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		list, _ := c.values["thumbnails"].([]any)
+		var kept []any
+		found := false
+		for _, item := range list {
+			if !found && !adding && ms(number(item)) == ms(from) {
+				found = true
+				continue
+			}
+			kept = append(kept, item)
+		}
+		if !adding && !found {
+			return renderErr("the clip has no thumbnail at %s", HMS(from))
+		}
+		if !removing {
+			var pieces []Segment
+			for _, seg := range segmentObjects(c) {
+				// A piece can be written as a timecode, the way LoadClips
+				// reads it.
+				start, err1 := ParseTime(seg.values["start"])
+				end, err2 := ParseTime(seg.values["end"])
+				if err1 == nil && err2 == nil {
+					pieces = append(pieces, Segment{Start: start, End: end})
+				}
+			}
+			if !insidePieces(pieces, to) {
+				return renderErr("%s is not in the clip", HMS(to))
+			}
+			for _, item := range kept {
+				if ms(number(item)) == ms(to) {
+					return renderErr("the clip already has a thumbnail at %s", HMS(to))
+				}
+			}
+			if len(readThumbnails(kept, pieces)) >= MaxThumbnails {
+				return renderErr("a clip can have %d thumbnails", MaxThumbnails)
+			}
+			kept = append(kept, roundTo(to, 3))
+		}
+		sort.SliceStable(kept, func(a, b int) bool { return number(kept[a]) < number(kept[b]) })
+		if len(kept) == 0 {
+			c.remove("thumbnails")
+		} else {
+			c.set("thumbnails", kept)
+		}
+		return nil
+	})
 }
 
 // ResetCaptionY puts the captions of a clip back where the caption style

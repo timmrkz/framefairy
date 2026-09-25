@@ -335,6 +335,9 @@ type ClipView struct {
 	CaptionY float64 `json:"captionY"`
 	// CaptionYMoved means the caption line was placed by hand.
 	CaptionYMoved bool `json:"captionYMoved"`
+	// Thumbnails are the moments of the episode the render takes a picture
+	// of the short at, in time order.
+	Thumbnails []float64 `json:"thumbnails"`
 }
 
 // SegmentView is one kept part of the source.
@@ -393,7 +396,10 @@ func ReadPlan(path string) (*PlanView, error) {
 		v := ClipView{ID: c.ID, Slug: c.Slug, Basename: c.Basename(), Title: c.Title,
 			Duration: roundTo(c.Duration(), 3), Start: c.Segments[0].Start,
 			End: c.Segments[len(c.Segments)-1].End, Rejected: c.Rejected,
-			CaptionYMoved: c.CaptionY != nil}
+			CaptionYMoved: c.CaptionY != nil, Thumbnails: c.Thumbnails}
+		if v.Thumbnails == nil {
+			v.Thumbnails = []float64{}
+		}
 		if c.CaptionY != nil {
 			v.CaptionY = *c.CaptionY
 		}
