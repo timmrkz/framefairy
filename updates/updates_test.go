@@ -35,8 +35,12 @@ func appZip(t *testing.T, says string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
+	// With Unix modes, the way ditto writes them. A folder with no mode
+	// of its own unpacks as one nobody but root can enter.
 	for _, dir := range []string{"Frame Fairy.app/", "Frame Fairy.app/Contents/", "Frame Fairy.app/Contents/MacOS/"} {
-		if _, err := w.Create(dir); err != nil {
+		h := &zip.FileHeader{Name: dir}
+		h.SetMode(os.ModeDir | 0o755)
+		if _, err := w.CreateHeader(h); err != nil {
 			t.Fatal(err)
 		}
 	}
