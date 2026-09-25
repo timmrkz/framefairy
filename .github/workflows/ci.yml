@@ -175,7 +175,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - id: ffmpeg
         if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}

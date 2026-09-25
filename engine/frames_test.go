@@ -92,7 +92,7 @@ func TestAStillIsTheFrameTheMomentFallsIn(t *testing.T) {
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "color=c=black:s=64x36:r=10:d=2",
 		"-vf", "geq=lum='20*mod(N,10)+10':cb=128:cr=128",
-		"-c:v", "libx264", "-preset", "ultrafast", "-g", "5", "-pix_fmt", "yuv420p", source).CombinedOutput()
+		"-c:v", "mpeg4", "-q:v", "5", "-g", "5", "-pix_fmt", "yuv420p", source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("making the episode: %s %s", err, out)
 	}

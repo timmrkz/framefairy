@@ -293,7 +293,7 @@ func beatEpisode(t *testing.T, seconds string) string {
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc=s=320x180:r=25:d="+seconds,
 		"-f", "lavfi", "-i", "aevalsrc='sin(2*PI*440*t)*lt(mod(t,0.4),0.2)':s=44100:d="+seconds,
-		"-shortest", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", path).CombinedOutput()
+		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}

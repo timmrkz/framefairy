@@ -46,10 +46,13 @@ func testEpisode(t *testing.T, seconds string) string {
 		t.Skip("ffmpeg is not installed")
 	}
 	path := filepath.Join(t.TempDir(), "episode.mp4")
+	// mpeg4 and aac are in every ffmpeg, the one we ship included, which
+	// has no libx264. Test episodes made with libx264 could not be made on
+	// the macOS runner once it tested against our ffmpeg.
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d="+seconds,
 		"-f", "lavfi", "-i", "sine=f=220:d="+seconds,
-		"-shortest", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", path).CombinedOutput()
+		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}
