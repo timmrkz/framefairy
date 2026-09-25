@@ -314,6 +314,22 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	}, problems, true
 }
 
+// readEntry checks one clip of an answer in the units the recipe numbered,
+// and turns its runs into runs of lines, which is what everything after
+// the answer works in.
+func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, bool) {
+	entry, problems, ok := validateEntry(clipAny, index, len(units))
+	if !ok {
+		return entry, problems, false
+	}
+	keep, err := toLines(entry.Keep, units)
+	if err != nil {
+		return PlanEntry{}, append(problems, fmt.Sprintf("clip %d: %s", index, err)), false
+	}
+	entry.Keep = keep
+	return entry, problems, true
+}
+
 // uniqueSlug gives a clip a slug no clip before it has, the position-th
 // usable one. It says what it changed, if anything.
 func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
@@ -329,7 +345,7 @@ func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
 // ValidatePlan checks the plan is shaped the way we asked, and says precisely
 // what is not. With line numbers there is nothing to interpret, a number
 // either names a line or it does not.
-func ValidatePlan(data map[string]any, lineCount int) ([]PlanEntry, []string, error) {
+func ValidatePlan(data map[string]any, units [][2]int) ([]PlanEntry, []string, error) {
 	// The checks are made one clip at a time, so an answer read as it is
 	// written goes through exactly the same ones as an answer read whole.
 	var problems []string
@@ -344,7 +360,7 @@ func ValidatePlan(data map[string]any, lineCount int) ([]PlanEntry, []string, er
 
 	var good []PlanEntry
 	for i, clipAny := range clips {
-		entry, found, ok := validateEntry(clipAny, i+1, lineCount)
+		entry, found, ok := readEntry(clipAny, i+1, units)
 		problems = append(problems, found...)
 		if ok {
 			good = append(good, entry)

@@ -373,8 +373,8 @@ type chatError struct {
 // as it is written, and listen hears it arrive. What comes back is the
 // answer with how the model got to it: how long it read and thought and
 // wrote.
-func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
-	lineCount, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
+func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt string,
+	units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
 		// A model loaded while the transcript was still on its way is used
@@ -392,11 +392,11 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	}
 	listen.part(partReading)
 
-	schema := json.RawMessage(planSchema(lineCount, count))
+	schema := json.RawMessage(r.Schema(units, count))
 	body, err := json.Marshal(map[string]any{
 		"model": filepath.Base(m.Model),
 		"messages": []map[string]string{
-			{"role": "system", "content": SystemPrompt},
+			{"role": "system", "content": r.System},
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": maxTokens,
@@ -421,7 +421,7 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, prompt string,
 	}
 	if logDir != "" {
 		_ = os.WriteFile(filepath.Join(logDir, "plan-prompt.txt"),
-			[]byte("=== system ===\n"+SystemPrompt+"\n\n=== user ===\n"+prompt), 0o644)
+			[]byte("=== system ===\n"+r.System+"\n\n=== user ===\n"+prompt), 0o644)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,

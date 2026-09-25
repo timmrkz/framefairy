@@ -57,6 +57,8 @@ type PlanOptions struct {
 	MaxPause   *float64
 	KeepPause  float64
 	Fresh      bool
+	// Recipe is how the model is asked, by name. Empty is DefaultRecipe.
+	Recipe string
 	// Record appends new model answers to the episode's training records.
 	Record bool
 	// Local plans on this machine instead of through the API.
@@ -152,12 +154,21 @@ type savedReply struct {
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
 	lines []Line, opts PlanOptions) (*PlanFile, error) {
-	prompt := buildPrompt(lines, opts)
+	recipe := opts.recipe()
+	units := recipe.units(lines)
+	prompt := recipe.Request(lines, units, opts)
 
 	// A reply that has been paid for is reused rather than bought again. If a
 	// later stage crashes, or you simply re-run with the same transcript, the
-	// API is not called a second time.
-	sum := sha256.Sum256([]byte(opts.Model + "\x00" + prompt))
+	// API is not called a second time. Another recipe asks something else,
+	// so it is another reply, and what it tells the model is part of the
+	// question. The default recipe keeps the fingerprint it always had, so
+	// the replies saved before recipes existed are still found.
+	asked := opts.Model + "\x00" + prompt
+	if recipe.Name != DefaultRecipe {
+		asked = opts.Model + "\x00" + recipe.Name + "\x00" + recipe.System + "\x00" + prompt
+	}
+	sum := sha256.Sum256([]byte(asked))
 	fingerprint := hex.EncodeToString(sum[:])[:16]
 	cachePath := ""
 	if opts.LogDir != "" {
@@ -202,7 +213,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// Clips are taken from the answer as it is written. Each is checked,
 	// framed and written to the plan while the model writes the next, so
 	// the first clip is there long before the last.
-	build := e.newPlanBuilder(ctx, sourcePath, source, lines, opts,
+	build := e.newPlanBuilder(ctx, sourcePath, source, lines, units, opts,
 		planIDFor(opts, fingerprint, !haveReply))
 	defer build.stop()
 	var scanner clipScanner
@@ -229,7 +240,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 	if !haveReply && opts.Local != nil {
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
-			answer, err := e.CallLocal(ctx, *opts.Local, prompt, len(lines), opts.Count,
+			answer, err := e.CallLocal(ctx, *opts.Local, recipe, prompt, len(units), opts.Count,
 				opts.MaxTokens, opts.LogDir, listen)
 			if err == nil {
 				reply, how = answer.Content, answer
@@ -284,7 +295,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		err := e.Log.Step("choosing and condensing", func() error {
 			var err error
 			reply, err = e.CallClaudeWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
-				opts.LogDir, "plan", listen)
+				opts.LogDir, "plan", recipe.System, listen)
 			return err
 		})
 		if err != nil {
@@ -335,7 +346,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		e.Log.Warn("the reply needed salvaging: %s", note)
 	}
 	if data != nil {
-		raw, problems, err := ValidatePlan(data, len(lines))
+		raw, problems, err := ValidatePlan(data, units)
 		if err != nil && build.count() == 0 {
 			return nil, build.failed(err)
 		}
@@ -414,7 +425,8 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 // the model that is going to read it.
 func windowFits(lines []Line, opts PlanOptions) error {
 	room := planRoom(opts)
-	have := runeLen(AnnotateLines(lines))
+	recipe := opts.recipe()
+	have := runeLen(recipe.Request(lines, recipe.units(lines), opts)) - runeLen(recipe.Request(nil, nil, opts))
 	if have <= room.Chars {
 		return nil
 	}

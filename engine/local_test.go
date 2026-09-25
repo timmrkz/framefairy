@@ -59,7 +59,7 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 
 	e := NewEngine(NewLog(io.Discard, false, false))
 	var heard strings.Builder
-	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, "Transcript:", 40, 12, 1000, "",
+	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, linesRecipe, "Transcript:", 40, 12, 1000, "",
 		&Listener{Text: func(p string) { heard.WriteString(p) }})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	e := NewEngine(NewLog(io.Discard, false, false))
-	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "x", 1, 1, 10, "", nil)
+	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
 	}

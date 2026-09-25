@@ -60,12 +60,15 @@ type planBuilder struct {
 	sourcePath string
 	source     SourceInfo
 	lines      []Line
-	opts       PlanOptions
-	cropW      int
-	cache      *cropCache
-	offset     int
-	stamp      PlannedWith
-	planID     string
+	// units are what the recipe numbered, each a run of lines. An answer
+	// is checked in them and turned into lines before anything else.
+	units  []([2]int)
+	opts   PlanOptions
+	cropW  int
+	cache  *cropCache
+	offset int
+	stamp  PlannedWith
+	planID string
 	// clock hears every clip taken and landed. Nil when no model was asked.
 	clock *searchClock
 
@@ -95,11 +98,11 @@ type planBuilder struct {
 }
 
 func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source SourceInfo,
-	lines []Line, opts PlanOptions, planID string) *planBuilder {
+	lines []Line, units [][2]int, opts PlanOptions, planID string) *planBuilder {
 	ctx, cancel := context.WithCancel(ctx)
 	cropW, _ := CropWindow(source, opts.OutW, opts.OutH)
 	b := &planBuilder{e: e, ctx: ctx, cancel: cancel, sourcePath: sourcePath, source: source,
-		lines: lines, opts: opts, cropW: cropW, cache: newCropCache(),
+		lines: lines, units: units, opts: opts, cropW: cropW, cache: newCropCache(),
 		seen: map[string]bool{}, planID: planID, firstOut: make(chan struct{}),
 		// Never more clips than were asked for are taken, so the queue
 		// never makes the reading of the answer wait.
@@ -137,7 +140,7 @@ func (b *planBuilder) take(raw string) {
 		return
 	}
 	b.objects++
-	entry, _, ok := validateEntry(value, b.objects, len(b.lines))
+	entry, _, ok := readEntry(value, b.objects, b.units)
 	if !ok {
 		b.mu.Unlock()
 		return

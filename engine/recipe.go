@@ -1,0 +1,135 @@
+package engine
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// ---------------------------------------------------------------------------
+// Recipes
+//
+// A recipe is one way of asking a model for clips: what it is told, how the
+// transcript is written out for it, what shape its answer takes, and how
+// that answer is read back. Everything after the answer is the same for
+// every recipe. The answer is turned into runs of the transcript's own
+// lines, and from there the words, their times, the cuts, the framing and
+// the captions are the engine's, to the millisecond, whatever the model
+// was shown.
+//
+// So a recipe may number what it likes, sentences or paragraphs rather than
+// lines, as long as each thing it numbers is a run of whole lines. That is
+// what lets two ways of asking be run side by side on the same window and
+// compared, without either of them touching the timing.
+// ---------------------------------------------------------------------------
+
+// Recipe is one way of choosing clips.
+type Recipe struct {
+	// Name is how it is asked for, with --recipe.
+	Name string
+	// About says in a line what it tries.
+	About string
+	// Version is the version of its answer format. See PromptVersion.
+	Version int
+	// System is what the model is told before the request.
+	System string
+	// Units groups the lines into the things the model numbers, each a run
+	// of whole lines, first and last, counted from zero. Nil numbers every
+	// line on its own.
+	Units func(lines []Line) [][2]int
+	// Request is the request: what is asked for, and the transcript written
+	// out with the units numbered from 1.
+	Request func(lines []Line, units [][2]int, opts PlanOptions) string
+	// Schema is the answer's shape as JSON schema, which a local model is
+	// held to while it writes. It has units numbers in it and asks for at
+	// most count clips.
+	Schema func(units, count int) string
+}
+
+// DefaultRecipe is the recipe a search uses unless told otherwise.
+const DefaultRecipe = "lines"
+
+// recipes is every recipe there is, by name.
+var recipes = map[string]Recipe{
+	linesRecipe.Name: linesRecipe,
+}
+
+// RecipeNamed gives the recipe of that name, the default one for an empty
+// name.
+func RecipeNamed(name string) (Recipe, error) {
+	if name == "" {
+		name = DefaultRecipe
+	}
+	r, ok := recipes[name]
+	if !ok {
+		return Recipe{}, renderErr("there is no recipe called %s. There are: %s.",
+			pyRepr(name), strings.Join(RecipeNames(), ", "))
+	}
+	return r, nil
+}
+
+// RecipeNames lists the recipes, in order.
+func RecipeNames() []string {
+	names := make([]string, 0, len(recipes))
+	for name := range recipes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// recipe is the recipe these options ask for. Options that name none, or
+// one that does not exist, get the default: a name is checked where it is
+// given, see Options.
+func (opts PlanOptions) recipe() Recipe {
+	r, err := RecipeNamed(opts.Recipe)
+	if err != nil {
+		r, _ = RecipeNamed("")
+	}
+	return r
+}
+
+// units groups the lines the way the recipe numbers them.
+func (r Recipe) units(lines []Line) [][2]int {
+	if r.Units != nil {
+		return r.Units(lines)
+	}
+	return lineUnits(len(lines))
+}
+
+// lineUnits numbers each of n lines on its own.
+func lineUnits(n int) [][2]int {
+	units := make([][2]int, max(n, 0))
+	for i := range units {
+		units[i] = [2]int{i, i}
+	}
+	return units
+}
+
+// toLines turns an answer's runs of units, numbered from 1, into runs of
+// lines, numbered from 1, which is what everything after the answer works
+// in. Two runs that meet once they are lines stay two runs: the pause
+// between them is cut, exactly as the model said.
+func toLines(keep [][2]int, units [][2]int) ([][2]int, error) {
+	out := make([][2]int, 0, len(keep))
+	for _, run := range keep {
+		first, last := run[0], run[1]
+		if first < 1 || last > len(units) || first > last {
+			return nil, fmt.Errorf("units %d-%d are outside 1-%d", first, last, len(units))
+		}
+		out = append(out, [2]int{units[first-1][0] + 1, units[last-1][1] + 1})
+	}
+	return out, nil
+}
+
+// linesRecipe is how clips have been chosen from the start: every line of
+// speech numbered, with its length and any pause and change of level before
+// it, and the answer runs of lines. Its prompt and answer are PromptVersion.
+var linesRecipe = Recipe{
+	Name:    "lines",
+	About:   "every line of speech numbered, with its length, pauses and level",
+	Version: PromptVersion,
+	System:  SystemPrompt,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string { return buildPrompt(lines, opts) },
+	Schema:  planSchema,
+}
