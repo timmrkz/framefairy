@@ -637,7 +637,11 @@ place.
       above it. Only when a clip lands: following every report would fight
       a hand that is scrolling. The last clip a search finds leaves no row
       after it, so that clip itself is brought into view, to the foot of
-      the list when it lands below. The list stays in the order the clips were
+      the list when it lands below. The model writes its clips in an order
+      of its own, and the list is in the order they were spoken, so the
+      last clip found is not always the last in the list: it is the one
+      that comes into view, wherever it lands, and the rows still to come
+      stay after the last of them. The list stays in the order the clips were
       spoken, which is the order of the range picker and the clip
       timeline, so a new clip lands where it belongs in the episode rather
       than on top.
