@@ -350,8 +350,12 @@ place.
   list says Waiting for the transcript with the window, the window is
   locked, the transcription starts if nothing is transcribing and stops
   exactly on the window's edge, and the search starts the moment it gets
-  there. **Cancel** calls the search off and stops the transcription with
-  it. New used to be off until the window was transcribed, and a
+  there. The transcription is the first step of the search as far as
+  anyone can see: the moment New is pressed the list opens as many rows as
+  the search will look for, the first wearing the beam and the fill of how
+  much of the window has been heard, the rest breathing, and the first is
+  brought into view. **Cancel** calls the search off and stops the
+  transcription with it. New used to be off until the window was transcribed, and a
   transcription that had been paused had to be carried on first with a
   mark at the edge of the range picker, which nobody could be expected to
   know about. That mark is gone, and so is pausing: the transcription

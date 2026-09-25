@@ -315,15 +315,6 @@
   // but still: they are what New will fill, and nothing is filling them
   // yet. An episode whose first search was stopped, by quitting among
   // other things, had an empty column there instead.
-  const coming = $derived(
-    finding || starting
-      ? clips.length + Math.max(0, count - foundSoFar)
-      : lookPending
-        ? count
-        : !clips.some((c) => !c.rejected)
-          ? count
-          : 0,
-  );
   const comingNow = $derived(finding || starting || lookPending);
   // What the row the next clip will appear in is waiting on. While the
   // transcript has not reached the end of the window, that is the
@@ -467,6 +458,22 @@
   // The clip just removed keeps its place in the list for a moment, so the
   // rows do not jump and there is somewhere to put it back from.
   const shown = $derived(clips.filter((c) => !c.rejected || c.key === removed?.key));
+  // The rows the list holds, counted from the clips it shows. A search
+  // waiting for the transcript opens as many more as it will look for, the
+  // same as one that runs. It used to open that many in all, so a list that
+  // already held as many clips had no row left for the one that says what
+  // is going on, and New looked as if it had done nothing until the
+  // transcript was there. Counting the clips of the plan rather than the
+  // clips shown also opened a row for every clip removed.
+  const coming = $derived(
+    finding || starting
+      ? shown.length + Math.max(0, count - foundSoFar)
+      : lookPending
+        ? shown.length + count
+        : shown.length === 0
+          ? count
+          : 0,
+  );
   // What the window lies over. A window may be drawn anywhere, so looking
   // again at material that was searched is allowed, it only asks first and
   // takes the clips it finds there with it.
