@@ -24,7 +24,7 @@ func TestPlanWaitsAndReportsAFailedTranscription(t *testing.T) {
 	source := filepath.Join(home, "episode.mp4")
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i",
 		"testsrc=s=320x180:r=25:d=4", "-f", "lavfi", "-i", "sine=d=4", "-shortest",
-		"-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", source).CombinedOutput()
+		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s", err, out)
 	}
