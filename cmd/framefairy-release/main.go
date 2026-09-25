@@ -146,8 +146,13 @@ func sign(args []string) error {
 	if err != nil {
 		return err
 	}
+	// A pull request's title can be long, and the app shows it in a list.
+	shown := []rune(strings.TrimSpace(*name))
+	if len(shown) > 100 {
+		shown = append(shown[:99], '…')
+	}
 	b := updates.Build{
-		Channel: *channel, Name: *name, Version: *version, Commit: *commit, URL: *where,
+		Channel: *channel, Name: string(shown), Version: *version, Commit: *commit, URL: *where,
 		Size: size, SHA256: hex.EncodeToString(digest), Signature: updates.Sign(private, digest),
 		Published: time.Now().UTC().Truncate(time.Second),
 	}

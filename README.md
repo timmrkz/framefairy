@@ -65,9 +65,11 @@ cmd/
   framefairy-app/         the desktop app, Go side
     dist/             the built interface, made by make, not in git
   framefairy-train/       the training tool
+  framefairy-release/     makes the update key, signs builds to update to
 engine/               transcription, planning, framing, captions, rendering
 asr/                  the speech recogniser, the only native code
 train/                the dataset export for framefairy-train
+updates/              the channel list the app updates itself from
 frontend/             the app's interface, Svelte and TypeScript
 bin/                  the built programs, made by make
 docs/
@@ -81,12 +83,13 @@ docs/
   GUI-PLAN.md         the app's build plan, batch by batch
   ROBUSTNESS.md       what can go wrong between the parts, and what was done
   PACKAGING.md        what ships, what the user installs, which ffmpeg
-  UPDATES.md          how a paying customer gets the next version
+  UPDATES.md          how the app updates itself, to the next release and,
+                      while it is being made, to any pull request
   THUMBNAILS.md       the thumbnail of a short: spec, not built yet
   THIRD_PARTY.md      licences of everything included
 ```
 
-Go code lives in `cmd/`, `engine/`, `asr/` and `train/`. JavaScript and
+Go code lives in `cmd/`, `engine/`, `asr/`, `train/` and `updates/`. JavaScript and
 TypeScript live only in `frontend/`. The one meeting point is
 `cmd/framefairy-app/dist/app/`, which make builds from `frontend/` and the app
 embeds, because Go can only embed files from its own folder. Build output,

@@ -15,9 +15,24 @@ import (
 // These send the interface an event, and the interface decides: the text of
 // a field being typed in when there is one, the episode's last edit
 // otherwise.
-func appMenu(app *application.App) *application.Menu {
+func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	menu := application.NewMenu()
-	if runtime.GOOS != "windows" {
+	// The app menu, the stock one with Check for Updates in it, where every
+	// Mac app keeps it. The first menu is the app menu whatever it is
+	// called.
+	if runtime.GOOS == "darwin" {
+		own := menu.AddSubmenu("Frame Fairy")
+		own.AddRole(application.About)
+		own.Add("Check for Updates…").OnClick(func(*application.Context) { checkForUpdates() })
+		own.AddSeparator()
+		own.AddRole(application.ServicesMenu)
+		own.AddSeparator()
+		own.AddRole(application.Hide)
+		own.AddRole(application.HideOthers)
+		own.AddRole(application.UnHide)
+		own.AddSeparator()
+		own.AddRole(application.Quit)
+	} else if runtime.GOOS != "windows" {
 		menu.AddRole(application.AppMenu)
 	}
 	menu.AddRole(application.FileMenu)

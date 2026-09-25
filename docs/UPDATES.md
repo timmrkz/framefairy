@@ -260,10 +260,10 @@ How it would work:
   runner, the same workflow a release will use. It takes ffmpeg and
   llama-server from the tools archive rather than building them. The
   repository is public, so the runner costs nothing.
-- **Each pull request is a channel.** The build is published as a
-  pre-release of its own with a feed beside it, `pr-18`, and main has one
-  too. A version reads like `0.3.0-pr18.7`, the seventh build of pull
-  request 18, so a newer commit is a newer version.
+- **Each pull request is a channel**, `pr-18`, and main is one too. All
+  their builds are files of one pre-release, `dev`. A version reads like
+  `0.3.0-pr18.7`, where 7 is the workflow's run number, so a newer commit
+  is a newer version.
 - **Only a development build sees them.** A build made for Tim shows, next
   to Check for Updates, which channel it follows: main or one of the open
   pull requests, by number and title. A customer's build is made without
@@ -291,7 +291,8 @@ What it can start with and what it cannot:
   it is the first thing the batch that builds this tries.
 - **It takes a few minutes per push.** The build runs in CI after each
   commit, so an update is ready a few minutes after Claude pushes, not at
-  once. The pull request can say when it is ready.
+  once. The pull request says when it is ready: the check called list, of
+  Builds to update to, turns green.
 - **The app lives in one place.** It is installed once, to
   `/Applications`, and updates itself there. An administrator can write
   there without a password prompt, and Tim's account is one. `make run`
@@ -312,7 +313,7 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 | Key | Signs | Private half lives | Public half lives |
 | --- | --- | --- | --- |
 | The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for Tim's approval, and a backup in Tim's password manager | in the repository, built into every customer build |
-| The development key | the builds of `main` and of pull requests | a GitHub secret the build workflow can read, and the password manager | in the repository, built into every development build |
+| The development key | the builds of `main` and of pull requests | a GitHub secret the build workflow can read, `FRAMEFAIRY_UPDATE_KEY`, and the password manager | in the repository, built into every development build |
 
 - **The private half never leaves those two places.** It is not in the
   repository, not in a chat, not on a cloud session's disk. Tim makes the
@@ -334,70 +335,117 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 ### How the app knows the pull requests
 
-The channel list is a small public file at one fixed web address. The
-address is built into a development build. What is in the file is not:
-the build workflow writes it again on every push, so a build made today
-finds a pull request opened tomorrow. The address is on GitHub, in the
-repository that holds the releases, as a file of a release that never
-changes its name:
+The channel list is one small public file at one fixed web address, a
+file of the release called `dev` in this repository:
 
 ```
-https://github.com/timmrkz/framefairy-releases/releases/download/dev/channels.json
+https://github.com/timmrkz/framefairy/releases/download/dev/channels.json
 ```
 
-That is the address if the code goes private, see below. If it stays
-public, the same file sits in this repository's releases instead.
+The address is built into the app. What is in the file is not: the build
+workflow writes it again whenever a channel gets a new build, so a build
+made today finds a pull request opened tomorrow.
 
 The app fetches it the way it fetches any file. It does not call GitHub's
-API and has no idea what a pull request is. It knows a list of channels,
-each with a name and a feed:
+API and has no idea what a pull request is. The file lists every channel
+with its newest build, so one fetch is the whole check:
 
 ```json
 {
   "channels": [
-    { "id": "main", "name": "main", "feed": "…/dev-main/appcast.xml" },
-    { "id": "pr-18", "name": "#18 How the app updates itself", "feed": "…/dev-pr-18/appcast.xml" }
+    {
+      "channel": "pr-18",
+      "name": "#18 How the app updates itself",
+      "version": "0.3.0-pr18.51",
+      "commit": "a1b2c3d4e5f6",
+      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-18-0.3.0-pr18.51.zip",
+      "size": 187000000,
+      "sha256": "…",
+      "signature": "…",
+      "published": "2026-09-25T20:54:46Z"
+    }
   ]
 }
 ```
 
 - **The workflow keeps it true.** A push to a pull request builds it and
-  adds or refreshes its entry. A pull request that is merged or closed is
-  taken out, and its builds with it. GitHub is where the workflow runs and
-  where the files are kept, and that is the only place it appears.
-- **Each channel has its own feed**, the same appcast a release has, so
-  the app reads a pull request exactly the way it reads a release.
-- **A customer build has no channel list.** It knows the stable feed and
-  nothing else.
+  refreshes its entry. A pull request that is merged or closed has its
+  entry taken away, and its builds go an hour later.
+- **Nothing in it is trusted.** Anybody on the way could change the file.
+  What makes a build safe is the signature over the zip's checksum, made
+  with the development key and checked against the public half built
+  into the app, before anything is unpacked. A list that points somewhere
+  else can only point at a file that fails.
+- **A customer build will have no channel list.** It will know the stable
+  feed and nothing else.
 - Asking GitHub's API from the app was the other way. It would put the
   API into the app, with its limit of 60 requests an hour for anyone who
-  does not sign in, and it would need the code's repository to be public.
-  A plain file can move to any other host by changing one address.
+  does not sign in. A plain file can move to any other host by changing
+  one address.
 
 ### End to end
 
-1. **Once.** `make install`, a target this batch adds, builds the app on
-   Tim's Mac and copies it to
-   `/Applications`. Built on the Mac, it carries no quarantine mark, so
-   macOS opens it. From then on it is started like any other app, not
+1. **Once, the key.** Tim runs `make update-key` on his Mac. It puts the
+   public half in `cmd/framefairy-app/update-key.txt` and the private half
+   on the clipboard, never in a file. He pastes the private half into the
+   repository's secrets on GitHub as `FRAMEFAIRY_UPDATE_KEY` and into his
+   password manager, and the public half into the pull request, where
+   Claude commits it. Until then nothing is built to update to, and the
+   app says it has no key.
+2. **Once, the app.** `make install` builds the app on Tim's Mac and copies
+   it to `/Applications`. Built on the Mac, it carries no quarantine mark,
+   so macOS opens it. From then on it is started like any other app, not
    from the terminal.
-2. **Claude pushes to pull request 18.** A few minutes later the workflow
-   has built `0.3.0-pr18.7`, signed it with the development key, put it
-   beside the feed of `pr-18`, and made sure the channel list has #18. The
-   pull request says the build is ready.
-3. **Tim picks #18** in the app, where a development build shows the
-   channel it follows. The app reads #18's feed, downloads the build,
-   checks it against the development key's public half, and says it is
-   ready. Tim clicks **Restart**, and the app comes back as pull request
-   18. The About box says so, with the commit.
-4. **Claude pushes again.** The app sees a newer build on #18, quietly.
-   One click, one restart.
-5. **Tim picks #20**, or main. The app installs that channel's newest
-   build, sideways, and restarts into it.
+3. **Tim picks #18** under Settings, Updates, Follows. The app reads the
+   channel list, downloads #18's build with the fill on the Check button,
+   checks it against the key, and says it is ready. Settings on the rail
+   gets a dot. Tim clicks **Restart**, and the app comes back as pull
+   request 18. Settings, Updates says which build it is, with the commit.
+4. **Claude pushes to pull request 18.** A few minutes later the workflow
+   has built `0.3.0-pr18.52`, signed it, and put it in the channel list.
+   The app looks by itself every ten minutes, downloads it quietly and
+   puts the dot on Settings. One click, one restart. Check looks at once.
+5. **Tim picks #20**, or main. The app downloads that channel's newest
+   build, sideways, and says it is ready.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
-   it is offered main the next time it looks.
+   it follows main, and says so.
+
+A build made by `make`, and `make run` is one, follows nothing until a
+channel is picked, and looks only when it is picked or Check is clicked.
+Otherwise every `make run` would fetch a build to replace itself with.
+
+## What is built
+
+| Part | Where | What it does |
+| --- | --- | --- |
+| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. Falls back to main when a pull request has gone |
+| The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check every ten minutes for a build from a channel, the picked channel in `updates.json` beside the settings, Restart that waits for work in hand |
+| The interface | Settings, Updates, and the dot on Settings in the rail | the build running, Follows, Check with the beam and the fill, Restart. Check for Updates is in the app menu too |
+| The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
+| The workflow | `.github/workflows/builds.yml` | builds main and every pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list. A push that only changes docs gets no build |
+| The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
+
+The signature is Ed25519 over the SHA-256 of the zip, which is what Wails'
+updater checks. Sparkle signs the file itself, so a Sparkle appcast and
+this list could never have shared a signature, and the list is a small
+JSON file of our own rather than an appcast.
+
+Still to come, in the order they are needed:
+
+- **Tried on the Mac.** That a downloaded build that is signed ad hoc
+  runs, that the swap works in `/Applications`, and what the helper's
+  log says, in `$TMPDIR/wails-update-<pid>.log`, when it does not.
+- **Installing when the app quits.** Today a build that is ready waits for
+  Restart. Quitting throws it away, and the next start downloads it again.
+- **Customers.** The stable channel, Apple's signing and notarisation, the
+  release key, and a release build that knows no channel list.
 
 ## Open or closed source, and where releases live
+
+**Decided for now: the code stays public, and the builds live in this
+repository's releases.** What follows is why the question came up, and
+what going private would take, for the day it is asked again.
 
 A licence has to be worth paying for. If the code is open, anyone can
 build the app, and the check that asks for a licence is a line anyone can
@@ -448,27 +496,19 @@ repository is. So every build, development or release, asks for the
 licence key before it renders without a watermark. Tim has a key like any
 customer. A build is only ever as free as a release.
 
-## Decisions to make
+## Decisions
 
 1. **The update policy**: decided. A licence gets every update for ever,
    and the licence plays no part in the update check.
-2. **The mechanism**: Wails' updater, in Go, drawn by our own interface,
-   or Sparkle, the standard, with its own window and a bridge to reach it.
-   The recommendation is Wails' updater with a Sparkle-format appcast as
-   the feed. It is the one that fits a Go app that has to run on three
-   platforms and draws its own interface, and because the feed is
-   Sparkle's, moving to Sparkle later means changing the app and not the
-   releases. Before it is final it has to prove itself on a Mac: a signed,
-   notarised bundle swapped, an app in a folder the person cannot write,
-   and one never moved out of the disk image.
-3. **Open or closed source**: the code public with a licence that allows
-   reading and nothing more, or private with a public releases repository
-   beside it. See above. The recommendation is private, with the macOS
-   jobs on a runner on Tim's Mac. Either way releases are on GitHub
-   Releases in a public repository, free, and with updates for ever there
-   is nothing to gate, so Keygen's gated downloads are not needed.
-4. **The channels**: stable and beta, or stable alone at first.
-5. **Updates for pull requests first.** The recommendation is to build
-   them before anything a customer sees, as the first batch of 5.9: the
-   workflow, the channels, the source that allows going sideways, and a
-   Check for Updates that works, all without Apple's signing.
+2. **The mechanism**: decided. Wails' updater, drawn by our own interface,
+   with a channel list of our own. It fits a Go app that runs on three
+   platforms and draws its own interface. Before it is final for
+   customers it has to prove itself on a Mac: a signed, notarised bundle
+   swapped, an app in a folder the person cannot write, and one never
+   moved out of the disk image.
+3. **Open or closed source**: decided for now. Public, with the builds in
+   this repository's releases.
+4. **The channels**: open. Stable and beta for customers, or stable alone
+   at first.
+5. **Updates for pull requests first**: decided and built, see
+   [What is built](#what-is-built).

@@ -516,6 +516,12 @@ export const api = {
   clearJobs: () => call<void>("ClearJobs"),
   readPlan: (path: string) => call<PlanView>("ReadPlan", path),
   reveal: (path: string) => call<void>("Reveal", path),
+  // Updates, see docs/UPDATES.md. Following a channel looks at once, and a
+  // newer build downloads by itself and waits for a restart.
+  updates: () => call<UpdateState>("Updates"),
+  followChannel: (channel: string) => call<void>("FollowChannel", channel),
+  checkForUpdates: () => call<void>("CheckForUpdates"),
+  restartToUpdate: () => call<void>("RestartToUpdate"),
 };
 
 export interface JobUpdate {
@@ -845,3 +851,39 @@ export function wordStep(words: Word[], at: number, back: boolean, frame: number
   return word ? intoWord(word, frame) : null;
 }
 
+
+// Which build of the app is running, which channel it follows and how far a
+// newer build has come. See docs/UPDATES.md.
+export interface UpdateChannel {
+  id: string;
+  name: string;
+  version: string;
+}
+
+export interface UpdateState {
+  version: string;
+  commit: string;
+  // Where the running build came from, empty for one made by make.
+  channel: string;
+  // Why this build does not update itself, empty when it does.
+  off: string;
+  channels: UpdateChannel[] | null;
+  picked: string;
+  follows: string;
+  phase: "" | "checking" | "current" | "downloading" | "ready" | "failed";
+  next: string;
+  nextName: string;
+  written: number;
+  total: number;
+  problem: string;
+}
+
+export function onUpdates(fn: (u: UpdateState) => void): () => void {
+  return Events.On("updates", (ev) => fn(ev.data as UpdateState));
+}
+
+// Check for Updates in the app menu, which opens the settings where the
+// answer is shown.
+export function onShowUpdates(fn: () => void): () => void {
+  return Events.On("show-updates", () => fn());
+}

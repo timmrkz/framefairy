@@ -264,9 +264,14 @@ func TestAnUpdateArrivesUnpacked(t *testing.T) {
 	if filepath.Base(staged) != "Frame Fairy.app" {
 		t.Fatalf("staged %s", staged)
 	}
-	got, err := os.ReadFile(filepath.Join(staged, "Contents", "MacOS", "framefairy-app"))
+	program := filepath.Join(staged, "Contents", "MacOS", "framefairy-app")
+	got, err := os.ReadFile(program)
 	if err != nil || string(got) != "pull request 20" {
 		t.Errorf("the app in it says %q, %v", got, err)
+	}
+	// A program that lost its mode on the way would not start.
+	if info, err := os.Stat(program); err != nil || info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("the program unpacked as %v, %v", info.Mode(), err)
 	}
 }
 

@@ -80,6 +80,9 @@ var (
 	sha256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+// ValidChannel says whether a name is one a channel can have.
+func ValidChannel(channel string) bool { return channelPattern.MatchString(channel) }
+
 // Check says what is wrong with a build as the list describes it, or nil.
 // It says nothing about whether the zip is really ours: that is the
 // signature's job, and it is checked against the file, not the list.

@@ -6,6 +6,9 @@
     onChrome,
     onEpisodeChanged,
     onAcknowledgements,
+    onShowUpdates,
+    onUpdates,
+    type UpdateState,
     onQuit,
     type Chrome,
     type EpisodeStatus,
@@ -52,6 +55,10 @@
   });
 
   let version = $state("");
+  // Whether a newer build of the app is ready, which the rail marks on
+  // Settings, where the restart is. See docs/UPDATES.md.
+  let update = $state<UpdateState | null>(null);
+  const updateReady = $derived(update?.phase === "ready");
   let problem = $state("");
 
   // The first run. A new copy of the app cannot transcribe without a
@@ -212,6 +219,13 @@
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
+    api
+      .updates()
+      .then((u) => (update = u))
+      .catch(() => {});
+    const noUpdates = onUpdates((u) => (update = u));
+    // Check for Updates in the app menu shows the answer where it is kept.
+    const noShowUpdates = onShowUpdates(() => nav.go({ name: "settings" }));
     // The question lasts as long as the Go side waits for the second
     // press, quitAgain in quit.go.
     let asked: ReturnType<typeof setTimeout> | undefined;
@@ -232,6 +246,8 @@
       window.removeEventListener("pointerdown", handOverFocus);
       noChrome();
       noAcknowledgements();
+      noUpdates();
+      noShowUpdates();
       off();
     };
   });
@@ -363,9 +379,15 @@
         class="quiet nav"
         class:current={nav.view.name === "settings"}
         onclick={() => nav.go({ name: "settings" })}
-        title="Settings"
+        title={updateReady ? "Settings. A new build is ready, restart there to use it" : "Settings"}
       >
-        <Icon name="sliders" />
+        <span class="mark">
+          <Icon name="sliders" />
+          <!-- A new build ready is a dot that stands still, in the same
+               place as the dot for work in hand. It is not work running,
+               so it does not pulse. -->
+          {#if updateReady}<span class="dot ready"></span>{/if}
+        </span>
         <span class="label">Settings</span>
       </button>
       <span class="muted small version num">Engine {version}</span>
@@ -858,7 +880,8 @@
     flex: none;
   }
 
-  .mark .busy {
+  .mark .busy,
+  .mark .ready {
     position: absolute;
     top: -2px;
     right: -3px;

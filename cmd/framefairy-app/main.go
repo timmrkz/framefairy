@@ -117,7 +117,13 @@ func main() {
 		ShouldQuit: leave.shouldQuit,
 	})
 	svc.app = app
-	app.Menu.Set(appMenu(app))
+	svc.updates = newUpdating(app.Updater, st, svc.jobs.busy, func(u UpdateState) {
+		app.Event.Emit("updates", u)
+	})
+	app.Menu.Set(appMenu(app, func() {
+		go svc.updates.check()
+		app.Event.Emit("show-updates", nil)
+	}))
 
 	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Frame Fairy",
@@ -168,6 +174,7 @@ func main() {
 	if engine.StopLeftoverServer() {
 		log.Printf("stopped a llama-server the last run of the app left behind")
 	}
+	svc.updates.start()
 	err := app.Run()
 	quit()
 	if err != nil {
@@ -255,8 +262,10 @@ type FrameFairy struct {
 	chrome *chromeWatch
 	store  *store
 	jobs   *queue
-	mu     sync.Mutex
-	probed map[string]engine.SourceInfo
+	// Finding and installing a newer build of the app, see updates.go.
+	updates *updating
+	mu      sync.Mutex
+	probed  map[string]engine.SourceInfo
 	// The transcript of the episode being worked on, kept while the files
 	// it was read from stay as they were.
 	said   *engine.Transcript
@@ -270,6 +279,25 @@ type FrameFairy struct {
 
 // Version of the engine.
 func (s *FrameFairy) Version() string { return engine.Version }
+
+// Updates says which build is running, which channel it follows and how far
+// a newer build has come. See docs/UPDATES.md.
+// Asking also reads the channel list, at most once a minute, so the
+// settings can offer the channels before the app has looked by itself.
+func (s *FrameFairy) Updates() UpdateState {
+	go s.updates.refreshList()
+	return s.updates.State()
+}
+
+// FollowChannel picks the channel to update from, main or a pull request,
+// and looks at once. Empty goes back to the channel the build came from.
+func (s *FrameFairy) FollowChannel(channel string) error { return s.updates.Follow(channel) }
+
+// CheckForUpdates looks for a newer build now, and downloads it.
+func (s *FrameFairy) CheckForUpdates() { go s.updates.check() }
+
+// RestartToUpdate quits into the build that is ready.
+func (s *FrameFairy) RestartToUpdate() error { return s.updates.Restart() }
 
 // Platform is darwin, windows or linux.
 func (s *FrameFairy) Platform() string { return runtime.GOOS }
