@@ -144,6 +144,14 @@ jobs:
 
   # Tim's platform, so the build has to be clean and the tests have to pass
   # here too. A warning from clang or the linker fails it.
+  #
+  # The tests run against the ffmpeg we ship, built by the same script a
+  # release uses, so what renders here is what renders on a customer's
+  # Mac: LGPL, without libx264, encoding through VideoToolbox. It used to
+  # run with no ffmpeg at all, and every test that renders, frames or
+  # listens skipped itself, which is why this job took one minute and
+  # Linux took five. The build takes a while once and is kept until
+  # scripts/build-ffmpeg.sh changes.
   macos:
     runs-on: macos-latest
     steps:
@@ -165,6 +173,22 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - id: ffmpeg
+        if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: The ffmpeg we ship
+        if: (steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true') && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          brew install meson ninja pkg-config nasm cmake
+          sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: ffmpeg on the path, for the tests
+        if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
+        run: |
+          .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
+          echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
       - name: Build without warnings
         if: steps.needs.outputs.run == 'true'
         run: |
