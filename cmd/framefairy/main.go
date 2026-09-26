@@ -161,6 +161,12 @@ func specs() []flagSpec {
 		{[]string{"--think"}, kInt, "TOKENS", "how long the local model may think before it " +
 			"answers, in tokens. -1 is no limit, 0 is no thinking (default 2048)",
 			intValue("--think", func(o *engine.Options, v int) { o.Think = v })},
+		{[]string{"--seed"}, kInt, "N", "makes the local model answer the same prompt the same way " +
+			"every time. 0 leaves it to chance (default 0, and 1 in a comparison)",
+			intValue("--seed", func(o *engine.Options, v int) { o.Seed = v })},
+		{[]string{"--temperature"}, kFloat, "T", "how freely the local model picks its words, " +
+			"0 always the likeliest (default llama-server's own, 0.8)",
+			floatValue("--temperature", func(o *engine.Options, v float64) { o.Temperature = &v })},
 		{[]string{"--ffmpeg"}, kString, "FFMPEG", "path to an ffmpeg built with libass, if the one on " +
 			"PATH is not",
 			func(o *engine.Options, v string) error { o.FFmpeg = v; return nil }},

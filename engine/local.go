@@ -42,6 +42,9 @@ type LocalModel struct {
 	// an ask that follows at once and shares the start of this one. Zero
 	// lets it go the moment the answer is in.
 	Keep time.Duration
+	// Seed and Temperature, see Options.
+	Seed        int
+	Temperature *float64
 }
 
 // DefaultThink is how much the local model may think before it answers.
@@ -440,7 +443,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	listen.part(partReading)
 
 	schema := json.RawMessage(r.Schema(units, count))
-	body, err := json.Marshal(map[string]any{
+	ask := map[string]any{
 		"model":      filepath.Base(m.Model),
 		"messages":   messages,
 		"max_tokens": maxTokens,
@@ -459,7 +462,14 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 				"name": "plan", "strict": true, "schema": schema,
 			},
 		},
-	})
+	}
+	if m.Seed != 0 {
+		ask["seed"] = m.Seed
+	}
+	if m.Temperature != nil {
+		ask["temperature"] = *m.Temperature
+	}
+	body, err := json.Marshal(ask)
 	if err != nil {
 		return nil, err
 	}

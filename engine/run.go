@@ -57,9 +57,15 @@ type Options struct {
 	MaxTokens int
 	// Think is the most a local model may think, in tokens, negative for
 	// no limit.
-	Think   int
-	Budget  float64
-	Prefill bool
+	Think int
+	// Seed makes a local model's answer the same every time it is given
+	// the same prompt. 0 leaves it to chance, as llama-server does.
+	Seed int
+	// Temperature is how freely a local model picks its words, nil for
+	// llama-server's own, 0.8.
+	Temperature *float64
+	Budget      float64
+	Prefill     bool
 
 	FFmpeg  string
 	FFprobe string
@@ -647,7 +653,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 // resolveLocal finds the local model and server before anything slow starts.
 func resolveLocal(opts Options) (*LocalModel, error) {
 	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL,
-		Think: opts.Think}
+		Think: opts.Think, Seed: opts.Seed, Temperature: opts.Temperature}
 	if m.URL != "" {
 		return m, nil
 	}

@@ -142,6 +142,8 @@ fits.
 | `--budget 2.00` | $2.00 | with `--planner api`, refuse a request estimated to cost more than this |
 | `--max-tokens 48000` | 48000 | ceiling on the reply length |
 | `--think 2048` | 2048 | with `--planner local`, how many tokens the model may think before it answers. `-1` is no limit, `0` is no thinking |
+| `--seed N` | 0, and 1 in a comparison | with `--planner local`, makes the model answer the same prompt the same way every time. 0 leaves it to chance |
+| `--temperature T` | llama-server's own, 0.8 | with `--planner local`, how freely the model picks its words, 0 always the likeliest |
 | `--prefill` | off | with `--planner api`, start the reply with an opening brace |
 
 **Tools and output**
@@ -214,6 +216,14 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories@1024
 ```
 
 Each side has its own folder in `experiments/`, named as it was written.
+After a `~` goes the temperature, so `stories@1024~0.3` thinks 1024 tokens
+at a temperature of 0.3.
+
+Every side of a comparison draws with the same seed, 1 unless `--seed`
+says otherwise. Without it, two runs of the very same prompt came back
+with different clips, so a difference between two sides could be luck.
+With it, the same prompt gives the same answer, and what differs between
+two sides is what was changed.
 
 ```
 framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories

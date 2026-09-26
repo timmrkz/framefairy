@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -59,19 +60,33 @@ type Variant struct {
 	Recipe string
 	// Think is the thinking budget in tokens, nil for the search's own.
 	Think *int
+	// Temperature is how freely the model picks its words, nil for the
+	// search's own.
+	Temperature *float64
 }
 
-// ParseVariant reads a side of a comparison: a recipe name, and after an
-// @ the tokens it may think, -1 for no limit.
+// ParseVariant reads a side of a comparison: a recipe name, after an @ the
+// tokens it may think, -1 for no limit, and after a ~ its temperature, as
+// in stories@1024~0.3.
 func ParseVariant(name string) (Variant, error) {
-	recipe, think, hasThink := strings.Cut(strings.TrimSpace(name), "@")
+	rest, temperature, hasTemperature := strings.Cut(strings.TrimSpace(name), "~")
+	var t *float64
+	if hasTemperature {
+		f, err := strconv.ParseFloat(temperature, 64)
+		if err != nil || f < 0 || f > 2 || math.IsNaN(f) {
+			return Variant{}, renderErr("%s: after the ~ goes the temperature, from 0 to 2, "+
+				"for instance stories~0.3", pyRepr(name))
+		}
+		t = &f
+	}
+	recipe, think, hasThink := strings.Cut(rest, "@")
 	if _, err := RecipeNamed(recipe); err != nil || recipe == "" {
 		if err == nil {
 			err = renderErr("a side of a comparison needs a recipe, as in stories@1024")
 		}
 		return Variant{}, err
 	}
-	v := Variant{Recipe: recipe}
+	v := Variant{Recipe: recipe, Temperature: t}
 	if hasThink {
 		n, err := strconv.Atoi(think)
 		if err != nil || n < -1 {
@@ -82,6 +97,9 @@ func ParseVariant(name string) (Variant, error) {
 	}
 	return v, nil
 }
+
+// compareSeed is the seed of a comparison that is given none.
+const compareSeed = 1
 
 // Compare searches the window of opts once with each recipe and writes a
 // report beside the plans. It gives the runs and the report's path.
@@ -109,6 +127,14 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		o.Recipe, o.Variant, o.Experiment, o.PlanOnly = variants[i].Recipe, name, true, true
 		if variants[i].Think != nil {
 			o.Think = *variants[i].Think
+		}
+		if variants[i].Temperature != nil {
+			o.Temperature = variants[i].Temperature
+		}
+		// Every side draws the same way, so what differs between two is
+		// what was changed, not the luck of the draw.
+		if o.Seed == 0 {
+			o.Seed = compareSeed
 		}
 		began := time.Now()
 		// The hook can be called from the goroutines that frame the clips.
@@ -270,8 +296,18 @@ func compareReport(opts Options, runs []RecipeRun) string {
 	if opts.From != "" || opts.To != "" {
 		window = fmt.Sprintf("from %s to %s", orDash(opts.From), orDash(opts.To))
 	}
-	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %d clips of %s to %s seconds asked for.\n\n",
-		filepath.Base(opts.Source), window, opts.Count, fixed(opts.Min, 0), fixed(opts.Max, 0))
+	seed := opts.Seed
+	if seed == 0 {
+		seed = compareSeed
+	}
+	temperature := "llama-server's own, 0.8"
+	if opts.Temperature != nil {
+		temperature = trimFloat(*opts.Temperature)
+	}
+	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %d clips of %s to %s seconds asked for. "+
+		"Seed %d, temperature %s unless a side says otherwise.\n\n",
+		filepath.Base(opts.Source), window, opts.Count, fixed(opts.Min, 0), fixed(opts.Max, 0),
+		seed, temperature)
 	b.WriteString("| Recipe | Clips | Seconds | Request, characters | Read, tokens | Written, tokens | Thought, characters |\n")
 	b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, r := range runs {
@@ -286,6 +322,9 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			b.WriteString(recipe.About)
 			if v.Think != nil {
 				fmt.Fprintf(&b, ", thinking at most %s tokens", commas(*v.Think))
+			}
+			if v.Temperature != nil {
+				fmt.Fprintf(&b, ", at a temperature of %s", trimFloat(*v.Temperature))
 			}
 			b.WriteString(".\n\n")
 		}

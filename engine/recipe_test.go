@@ -284,7 +284,14 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	if v, err := ParseVariant("lines"); err != nil || v.Think != nil {
 		t.Errorf("lines read as %+v %v", v, err)
 	}
-	for _, bad := range []string{"stories@", "stories@viel", "stories@-2", "@1024", "nonsense@1024"} {
+	if v, err := ParseVariant("stories@1024~0.3"); err != nil || *v.Think != 1024 || v.Temperature == nil || *v.Temperature != 0.3 {
+		t.Errorf("stories@1024~0.3 read as %+v %v", v, err)
+	}
+	if v, err := ParseVariant("lines~0"); err != nil || v.Think != nil || v.Temperature == nil || *v.Temperature != 0 {
+		t.Errorf("lines~0 read as %+v %v", v, err)
+	}
+	for _, bad := range []string{"stories@", "stories@viel", "stories@-2", "@1024", "nonsense@1024",
+		"stories~", "stories~warm", "stories~3", "stories~-1", "stories~NaN"} {
 		if _, err := ParseVariant(bad); err == nil {
 			t.Errorf("%q was taken", bad)
 		}
@@ -293,13 +300,17 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	source := testEpisode(t, "20")
 	SetTrainingDir(t.TempDir())
 	var mu sync.Mutex
-	var budgets []float64
+	var budgets, seeds []float64
+	var temperatures []any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&request)
 		if messages, _ := request["messages"].([]any); len(messages) <= 2 {
 			mu.Lock()
 			budgets = append(budgets, request["reasoning_budget_tokens"].(float64))
+			seed, _ := request["seed"].(float64)
+			seeds = append(seeds, seed)
+			temperatures = append(temperatures, request["temperature"])
 			mu.Unlock()
 		}
 		writeLocalStream(w, `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`, 7)
@@ -314,12 +325,17 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	opts.ASRModel = t.TempDir()
 	opts.Count = 1
 	opts.Replan = true
-	runs, report, err := e.Compare(context.Background(), opts, []string{"stories", "stories@1024"})
+	runs, report, err := e.Compare(context.Background(), opts, []string{"stories", "stories@1024~0.3"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fmt.Sprint(budgets) != fmt.Sprintf("[%d 1024]", DefaultThink) {
 		t.Errorf("the model was told to think %v", budgets)
+	}
+	// Both sides draw with the same seed, and only the second is told a
+	// temperature.
+	if fmt.Sprint(seeds) != "[1 1]" || fmt.Sprint(temperatures) != "[<nil> 0.3]" {
+		t.Errorf("seeds %v, temperatures %v", seeds, temperatures)
 	}
 	for _, run := range runs {
 		if want := filepath.Join(WorkDir(source), "experiments", run.Recipe); filepath.Dir(run.Plan) != want {
@@ -327,7 +343,8 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 		}
 	}
 	body, _ := os.ReadFile(report)
-	for _, want := range []string{"## stories\n", "## stories@1024", "thinking at most 1,024 tokens"} {
+	for _, want := range []string{"## stories\n", "## stories@1024~0.3", "thinking at most 1,024 tokens",
+		"at a temperature of 0.3", "Seed 1, temperature llama-server's own"} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("the report has no %q:\n%s", want, body)
 		}
