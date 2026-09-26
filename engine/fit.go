@@ -126,7 +126,7 @@ func (b *planBuilder) readFit(reply string) ([]PlanEntry, error) {
 	}
 	again, _, err := ValidatePlan(data, b.units)
 	for i := range again {
-		again[i] = b.joined(again[i])
+		again[i] = b.shaped(again[i])
 	}
 	return again, err
 }

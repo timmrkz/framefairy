@@ -90,7 +90,7 @@ func speech(start, gap float64, words ...string) Line {
 }
 
 // Sentences are runs of whole lines, one after the other, with none left
-// out, ending where a line ends a sentence or before a long pause.
+// out, ending where a line ends a sentence and never at a pause alone.
 func TestStoriesNumbersSentences(t *testing.T) {
 	lines := []Line{
 		speech(0, 0, "Als", "ich", "klein", "war,"),
@@ -101,12 +101,14 @@ func TestStoriesNumbersSentences(t *testing.T) {
 	for i := range lines {
 		lines[i].Index = i + 1
 	}
+	// "Sie hatte einen Korb" and, after a pause, "und ich wusste es." are
+	// one sentence. The pause shows inside it.
 	units := sentenceUnits(lines)
-	if got := fmt.Sprint(units); got != "[[0 1] [2 2] [3 3]]" {
+	if got := fmt.Sprint(units); got != "[[0 1] [2 3]]" {
 		t.Fatalf("sentences %s", got)
 	}
 	written := writeSentences(lines, units)
-	want := "(0:00) [1] Als ich klein war, stand meine Oma in der Tür. [2] Sie hatte einen Korb … [3] und ich wusste es."
+	want := "(0:00) [1] Als ich klein war, stand meine Oma in der Tür. [2] Sie hatte einen Korb … und ich wusste es."
 	if written != want {
 		t.Errorf("written as\n%s\nnot\n%s", written, want)
 	}

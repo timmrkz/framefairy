@@ -155,7 +155,7 @@ func (b *planBuilder) take(raw string) {
 		b.mu.Unlock()
 		return
 	}
-	entry = b.joined(entry)
+	entry = b.shaped(entry)
 	if earlier, repeated := sameMomentAs(b.order, entry); repeated {
 		b.repeats++
 		b.mu.Unlock()
@@ -166,9 +166,11 @@ func (b *planBuilder) take(raw string) {
 	b.mu.Unlock()
 }
 
-// joined is a clip as its recipe means it: runs that follow each other are
-// one run when the recipe leaves the pauses to the engine.
-func (b *planBuilder) joined(entry PlanEntry) PlanEntry {
+// shaped is a clip as it is cut: every edge on a sentence, see edges.go,
+// and runs that follow each other one run when the recipe leaves the
+// pauses to the engine.
+func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
+	entry.Keep = wholeSentences(b.lines, entry.Keep)
 	if b.opts.recipe().Joins {
 		entry.Keep = joinRuns(entry.Keep)
 	}
@@ -310,7 +312,7 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	// The clips taken as the answer arrived were checked for repeats in
 	// the same order, so the first of the repeats were already said.
 	for i := range whole {
-		whole[i] = b.joined(whole[i])
+		whole[i] = b.shaped(whole[i])
 	}
 	whole, repeats := distinctMoments(whole)
 	for _, r := range repeats[min(b.repeats, len(repeats)):] {

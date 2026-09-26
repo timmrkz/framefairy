@@ -128,8 +128,10 @@ be asked in terms of the story while the engine keeps the milliseconds.
 
 `lines` is what the app uses. The others are tried with `--recipe` and
 compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
-A sentence in `stories` ends where a line ends one, before a pause of
-1.2 s, or once it has run 20 s. A paragraph ends before a pause of 1.5 s or
+A sentence in `stories` ends where a line ends one, or once it has run
+30 s, and never at a pause alone, since a sentence cut at a pause was a
+place for a clip to end mid-sentence. A pause of a second or more inside
+a sentence shows as three dots. A paragraph ends before a pause of 1.5 s or
 once it has run 45 s. Sentence numbers say nothing of time, and the first
 version of `stories`, which gave only the paragraph times, ran 8 of 10
 clips far past 30 s. The second says the length in words too, from the
@@ -141,6 +143,17 @@ engine, so since the third version runs that follow each other are one
 run, `Recipe.Joins`, and the brief says a new run starts only where
 something is left out. In `lines` two runs that meet still cut the pause
 between them, because there the pauses are the model's.
+
+**Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
+searches cut the same story with three different first words and four
+different last ones, most of them mid-sentence: the line the model
+stopped on ended on a comma and the sentence went on over three more. So
+the start, the end and every cut inside a clip move to the nearer place a
+sentence begins or ends, when that is at most 8 s away, `sentenceReach`.
+Further than that the model's edge stands, since a transcript can go a
+while without a full stop. Runs that overlap once they are whole
+sentences are one. This is done before a clip is measured, so the length
+check sees the clip as it will be cut.
 
 Whatever the recipe, the model sometimes gives one moment twice, a line
 apart. A clip that shares more than half the lines of the shorter of the
@@ -160,7 +173,9 @@ out what lies between the opening and the payoff, or lengthened with what
 belongs to the moment. The model stays loaded for 30 s after its answer,
 `fitKeep`, so the second ask shares the first one's start and llama-server
 reads only the answer and the new question. The log says how many tokens
-of the prompt were new. The model may think 1024 tokens about it.
+of the prompt were new. It answers without thinking: with a thousand
+tokens of thought the second ask took 20 to 26 s, most of it thought, for
+a question the numbers in it already answer.
 
 Whichever of the two is nearer the length becomes the clip, so a clip is
 never lost, and one that ran into another clip keeps its first form. The

@@ -17,7 +17,7 @@ var storiesRecipe = Recipe{
 	About:   "a brief for any video, the transcript as sentences in paragraphs, the strongest first",
 	Unit:    "sentence",
 	Joins:   true,
-	Version: 3,
+	Version: 4,
 	System:  storiesSystem,
 	Units:   sentenceUnits,
 	Request: storiesRequest,
@@ -67,11 +67,12 @@ Your reply is parsed by a program. Return exactly one JSON object and nothing ` 
 	`[[12, 14], [17, 18]] leaves out 15 and 16. Pauses are not yours to cut.
 `
 
-// A sentence ends where its last word ends one, at a long pause, or when it
-// has run long enough that a clip needs to be able to cut inside it.
+// A sentence ends where its last word ends one, or when it has run long
+// enough that a clip needs to be able to cut inside it. Not at a pause: a
+// sentence cut at a pause is a place to end a clip in mid-sentence, and
+// that is where clips ended, on "aber davor".
 const (
-	sentencePause   = 1.2
-	sentenceSeconds = 20.0
+	sentenceSeconds = 30.0
 	// A paragraph ends at a pause this long, or once it has run this long,
 	// and the next one opens with its time.
 	paragraphPause   = 1.5
@@ -89,7 +90,6 @@ func sentenceUnits(lines []Line) [][2]int {
 	for i := range lines {
 		last := i == len(lines)-1
 		ends := endsSentence(strings.TrimSpace(lines[i].Text())) ||
-			(!last && lines[i+1].GapBefore >= sentencePause) ||
 			lines[i].End()-lines[start].Start() >= sentenceSeconds
 		if ends || last {
 			units = append(units, [2]int{start, i})
@@ -160,7 +160,10 @@ func writeSentences(lines []Line, units [][2]int) string {
 			out.WriteString(" …")
 		}
 		fmt.Fprintf(&out, " [%d]", n+1)
-		for _, line := range lines[unit[0] : unit[1]+1] {
+		for k, line := range lines[unit[0] : unit[1]+1] {
+			if k > 0 && line.GapBefore >= dotsPause {
+				out.WriteString(" …")
+			}
 			out.WriteString(" " + line.Text())
 		}
 	}

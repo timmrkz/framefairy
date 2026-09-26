@@ -157,11 +157,8 @@ type savedReply struct {
 
 // fitKeep is how long the model stays loaded after the answer, for the
 // clips that do not fit the length to be asked for again while it still
-// holds the transcript. fitThink is how long it may think about them.
-const (
-	fitKeep  = 30 * time.Second
-	fitThink = 1024
-)
+// holds the transcript.
+const fitKeep = 30 * time.Second
 
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
@@ -388,13 +385,14 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			ask = func(request string, count int) (string, error) {
 				var answer *localAnswer
 				err := e.Log.Step(fmt.Sprintf("fitting %d clip(s) to the length", count), func() error {
+					// It answers without thinking. With it, the thought was
+					// most of the 20 seconds this took, for a question the
+					// numbers in it already answer.
 					local := *opts.Local
-					if local.Think < 0 || local.Think > fitThink {
-						local.Think = fitThink
-					}
+					local.Think = 0
 					var err error
 					answer, err = e.CallLocalAgain(ctx, local, recipe, prompt, reply, request,
-						len(units), count, fitThink+1024+512*count, opts.LogDir, nil)
+						len(units), count, 1024+256*count, opts.LogDir, nil)
 					return err
 				})
 				if err != nil {
