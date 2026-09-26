@@ -351,12 +351,15 @@ messages, pull request text, code comments and chat replies.
   by then it is their bug.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
-  without ffmpeg. Run `make test` before every push **that touches Go**. A
-  change only to `frontend/` or `docs/` runs `make interface`, which is that
-  type check and the interface's own tests, and builds the preview, and
-  nothing else: the Go tests fuzz for ten thousand executions a target and
-  take minutes, and no line of CSS can move them. CI runs everything
-  anyway, on both systems.
+  without ffmpeg. **Run `make changed` before every push.** It checks what
+  the branch changed against main and only that: the Go tests of the
+  packages that changed and every package that imports them, the fuzz
+  targets that go through a changed file, `make interface` for `frontend/`, the build for the Makefile and
+  the scripts, the rules tests for the rules, nothing for docs. A change
+  to one package is checked in seconds rather than the ten minutes of
+  everything, and a change that reaches everything, `go.mod` or the
+  engine, still runs what it reaches. `make test` runs all of it, for a
+  deep run by hand. CI runs everything anyway, on both systems.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has
@@ -398,10 +401,9 @@ compile. There are no models in the cloud, which the tests do not need.
 
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
-- Run `make test` and `make` before pushing anything that touches Go. Both
-  must pass. A change only to `frontend/` or `docs/` does not run them, see
-  the tests rule above: waiting minutes on a fuzz run that no line of CSS
-  can move is Tim waiting.
+- Run `make changed` before every push, and it must pass, see the tests
+  rule above. Waiting minutes on tests that nothing in the change can move
+  is Tim waiting. When it is not sure what a file reaches, it builds.
 - The app cannot be started there, so there is no way to look at the
   window. Interface work goes through the skill in
   `.claude/skills/interface/`, which has the preview harness in
@@ -412,9 +414,10 @@ compile. There are no models in the cloud, which the tests do not need.
   fuzzes on both. It is six jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
-  to do. A push to main narrows nothing. `make test` runs the lot locally,
-  and `make unit`, `make fuzz` and `make interface` are the three parts of
-  it, see [docs/BUILD.md](docs/BUILD.md).
+  to do. A push to main narrows nothing. `make changed` runs what a branch
+  reaches, `make test` runs the lot, and `make unit`, `make fuzz` and
+  `make interface` are the three parts of it, see
+  [docs/BUILD.md](docs/BUILD.md).
 
 ## Open work
 
