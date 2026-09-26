@@ -102,6 +102,8 @@ fits.
 | `--keep-pause 0.10` | 0.10 s | air left on each side of a cut |
 | `--silence-db -42` | measured | what counts as silence. Taken from the audio when not given |
 | `--context ""` | empty | guest name, company, vocabulary. Helps the choice of moments and the spelling of names |
+| `--recipe lines` | `lines` | how the model is asked for clips, see [Trying other ways of asking](#trying-other-ways-of-asking) |
+| `--compare lines,stories` | off | search the window once with each recipe and write a report, see below. `stories@1024` is `stories` thinking 1024 tokens |
 | `--replan` | off | discard the saved plan and choose again |
 | `--plan-only` | off | write `clips.json` and stop |
 | `--transcribe-only` | off | transcribe, write `logs/words.srt` and stop |
@@ -133,7 +135,7 @@ fits.
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--planner local` | local | `local` plans on this machine, `api` uses the Claude API |
-| `--llm-model FILE` | the only `.gguf` in `~/.framefairy/models` | the local model file |
+| `--llm-model FILE` | the only `.gguf` in `~/.framefairy/models` | the local model file. A bare file name is also looked for in `~/.framefairy/models` |
 | `--llm-server PATH` | `llama-server` on PATH | the llama.cpp server program |
 | `--llm-url URL` | none | use a llama-server you already started, which saves loading the model on every run |
 | `--model claude-sonnet-5` | claude-sonnet-5 | the Claude model, with `--planner api` |
@@ -185,6 +187,54 @@ anything is loaded or paid for, with what the window weighs and what the
 model takes, and so is one too short for `--count` clips of `--min` seconds
 one after another. How much a model reads is in
 [ENGINE.md](ENGINE.md#how-much-one-search-can-read).
+
+## Trying other ways of asking
+
+How the model is asked for clips is a recipe: what it is told, how the
+transcript is written out for it, and what its answer looks like. `lines`
+is how clips have always been chosen, and the app uses it. `stories` is
+the first other one: a brief that fits any video, the transcript as
+sentences in paragraphs with a time at the start of each, and "up to 12,
+the strongest first" rather than exactly 12. `stories-edit` is `stories`
+asked twice, the second time only about where every clip starts and ends,
+with the thinking split between the two. What each recipe does is in
+[ENGINE.md](ENGINE.md#recipes).
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories-edit
+```
+
+shows whether the second ask makes better edges, and what it costs.
+
+A recipe with `@` and a number thinks that many tokens, whatever
+`--think` says, so one recipe can be compared with itself:
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories@1024
+```
+
+Each side has its own folder in `experiments/`, named as it was written.
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories
+```
+
+searches the same window once with each recipe and writes
+`<episode>.framefairy/experiments/compare-<date>.md`: a table of what each
+search cost, the time, the size of the request and what the local model
+read and wrote, and then every clip each found, with its title and the
+words that stay, to read side by side. Each recipe's plan is in
+`experiments/<recipe>/`, beside `prompt.txt`, what it asked, and
+`reply.json`, what came back. So `experiments/` holds everything a
+comparison made. When every search failed, there is nothing to
+compare: the comparison fails with the reason and writes no report.
+
+A search with any recipe but `lines`, and every search of a comparison, is
+an experiment. Its plan goes in `experiments/`, the episode's own plan and
+captions are left alone, nothing is rendered, and nothing is recorded for
+training, because the training records are answers to one way of asking.
+A comparison asks the model afresh each time, since a saved answer costs
+nothing and would make the comparison of cost meaningless.
 
 ## Not paying twice
 

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -59,7 +60,7 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 
 	e := NewEngine(NewLog(io.Discard, false, false))
 	var heard strings.Builder
-	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, "Transcript:", 40, 12, 1000, "",
+	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, linesRecipe, "Transcript:", 40, 12, 1000, "",
 		&Listener{Text: func(p string) { heard.WriteString(p) }})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +92,7 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	e := NewEngine(NewLog(io.Discard, false, false))
-	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, "x", 1, 1, 10, "", nil)
+	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
 	}
@@ -183,5 +184,53 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	stop()
 	if took := time.Since(began); took > 2*time.Second {
 		t.Errorf("stopping a server that ignores the interrupt took %s", took)
+	}
+}
+
+// The name of a model is enough on the command line. A bare file name that
+// is not in the working folder is found in the models folder, and anything
+// else is left as it was given, to be refused with its own name.
+func TestAModelIsFoundByItsName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(ModelsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(ModelsDir(), "gemma.gguf")
+	if err := os.WriteFile(installed, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LocalModelPath("gemma.gguf"); got != installed {
+		t.Errorf("gemma.gguf is %s", got)
+	}
+	// One in the working folder is the one named.
+	if err := os.WriteFile("gemma.gguf", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LocalModelPath("gemma.gguf"); got != "gemma.gguf" {
+		t.Errorf("gemma.gguf beside us is %s", got)
+	}
+	for _, named := range []string{"", "missing.gguf", "sub/gemma.gguf"} {
+		if got := LocalModelPath(named); got != named {
+			t.Errorf("%q became %s", named, got)
+		}
+	}
+}
+
+// llama.cpp answers "Compute error." when the graphics memory runs out
+// partway, which says nothing to somebody who only asked for clips. The
+// error says what it most likely means and what to do.
+func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"code":500,"message":"Compute error.","type":"server_error"}}`)
+	}))
+	defer server.Close()
+	e := NewEngine(NewLog(io.Discard, false, false))
+	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "Transcript:",
+		40, 12, 1000, "", nil)
+	if err == nil || !strings.Contains(err.Error(), "ran out of memory") ||
+		!strings.Contains(err.Error(), "another language model") {
+		t.Errorf("got %v", err)
 	}
 }

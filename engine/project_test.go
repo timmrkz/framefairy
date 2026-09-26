@@ -31,10 +31,16 @@ func (f fakeRecognizer) Recognize(samples []float32, rate int) []Token {
 func (fakeRecognizer) Close() {}
 
 // fakeModel answers like llama-server with one clip made of the first line,
-// streamed a few characters at a time the way the real one sends it.
+// streamed a few characters at a time the way the real one sends it. asked
+// counts the searches: a clip that does not fit the length is asked for
+// again in the same conversation, and that is not another search.
 func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(asked, 1)
+		var request struct{ Messages []chatMessage }
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if len(request.Messages) <= 2 {
+			atomic.AddInt32(asked, 1)
+		}
 		plan := `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`
 		writeLocalStream(w, plan, 7)
 	}))

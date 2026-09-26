@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Window is the part of the episode a run works on, in seconds.
@@ -57,6 +58,8 @@ type PlanOptions struct {
 	MaxPause   *float64
 	KeepPause  float64
 	Fresh      bool
+	// Recipe is how the model is asked, by name. Empty is DefaultRecipe.
+	Recipe string
 	// Record appends new model answers to the episode's training records.
 	Record bool
 	// Local plans on this machine instead of through the API.
@@ -147,17 +150,34 @@ func buildPrompt(lines []Line, opts PlanOptions) string {
 type savedReply struct {
 	Parsed json.RawMessage `json:"parsed"`
 	Text   *string         `json:"text"`
+	// Fit is the answer to the clips that did not fit the length, asked
+	// for again, so a reused reply is fitted the same way.
+	Fit *string `json:"fit"`
 }
+
+// fitKeep is how long the model stays loaded after the answer, for the
+// clips that do not fit the length to be asked for again while it still
+// holds the transcript.
+const fitKeep = 30 * time.Second
 
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
 	lines []Line, opts PlanOptions) (*PlanFile, error) {
-	prompt := buildPrompt(lines, opts)
+	recipe := opts.recipe()
+	units := recipe.units(lines)
+	prompt := recipe.Request(lines, units, opts)
 
 	// A reply that has been paid for is reused rather than bought again. If a
 	// later stage crashes, or you simply re-run with the same transcript, the
-	// API is not called a second time.
-	sum := sha256.Sum256([]byte(opts.Model + "\x00" + prompt))
+	// API is not called a second time. Another recipe asks something else,
+	// so it is another reply, and what it tells the model is part of the
+	// question. The default recipe keeps the fingerprint it always had, so
+	// the replies saved before recipes existed are still found.
+	asked := opts.Model + "\x00" + prompt
+	if recipe.Name != DefaultRecipe {
+		asked = opts.Model + "\x00" + recipe.Name + "\x00" + recipe.System + "\x00" + prompt
+	}
+	sum := sha256.Sum256([]byte(asked))
 	fingerprint := hex.EncodeToString(sum[:])[:16]
 	cachePath := ""
 	if opts.LogDir != "" {
@@ -167,7 +187,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		cachePath = filepath.Join(opts.LogDir, "reply-"+fingerprint+".json")
 	}
 
-	reply, haveReply, fresh := "", false, false
+	reply, haveReply, fresh, savedFit := "", false, false, ""
 	var how *localAnswer
 	if cachePath != "" {
 		if _, err := os.Stat(cachePath); err == nil {
@@ -181,6 +201,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 						reply, haveReply = string(saved.Parsed), true
 					} else if saved.Text != nil {
 						reply, haveReply = *saved.Text, true
+					}
+					if saved.Fit != nil {
+						savedFit = *saved.Fit
 					}
 				}
 				if haveReply {
@@ -202,9 +225,12 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// Clips are taken from the answer as it is written. Each is checked,
 	// framed and written to the plan while the model writes the next, so
 	// the first clip is there long before the last.
-	build := e.newPlanBuilder(ctx, sourcePath, source, lines, opts,
+	build := e.newPlanBuilder(ctx, sourcePath, source, lines, units, opts,
 		planIDFor(opts, fingerprint, !haveReply))
 	defer build.stop()
+	// A local model can be asked again about the clips that do not fit the
+	// length, and a reused reply brings the answer it had to that.
+	build.fits = opts.Local != nil && (!haveReply || savedFit != "")
 	var scanner clipScanner
 	listen := &Listener{Text: func(piece string) {
 		for _, raw := range scanner.feed(piece) {
@@ -229,7 +255,14 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 	if !haveReply && opts.Local != nil {
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
-			answer, err := e.CallLocal(ctx, *opts.Local, prompt, len(lines), opts.Count,
+			local := *opts.Local
+			local.Keep = fitKeep
+			// A recipe that edits in a second ask thinks half as long in
+			// each, so it thinks no longer in all.
+			if recipe.Edit && local.Think > 0 {
+				local.Think /= 2
+			}
+			answer, err := e.CallLocal(ctx, local, recipe, prompt, len(units), opts.Count,
 				opts.MaxTokens, opts.LogDir, listen)
 			if err == nil {
 				reply, how = answer.Content, answer
@@ -284,7 +317,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		err := e.Log.Step("choosing and condensing", func() error {
 			var err error
 			reply, err = e.CallClaudeWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
-				opts.LogDir, "plan", listen)
+				opts.LogDir, "plan", recipe.System, listen)
 			return err
 		})
 		if err != nil {
@@ -335,7 +368,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		e.Log.Warn("the reply needed salvaging: %s", note)
 	}
 	if data != nil {
-		raw, problems, err := ValidatePlan(data, len(lines))
+		raw, problems, err := ValidatePlan(data, units)
 		if err != nil && build.count() == 0 {
 			return nil, build.failed(err)
 		}
@@ -346,6 +379,44 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			e.Log.Warn("in the model's answer: %s", problem)
 		}
 		build.rest(raw)
+	}
+
+	if held := build.holding(); len(held) > 0 {
+		var ask func(string, int) (string, error)
+		switch {
+		case savedFit != "":
+			ask = func(string, int) (string, error) { return savedFit, nil }
+		case fresh && opts.Local != nil:
+			ask = func(request string, count int) (string, error) {
+				var answer *localAnswer
+				step := fmt.Sprintf("fitting %d clip(s) to the length", count)
+				// A fit answers without thinking. With it, the thought was
+				// most of the 20 seconds it took, for a question the numbers
+				// in it already answer. An edit is a judgement, and gets the
+				// other half of the thinking.
+				local := *opts.Local
+				local.Think = 0
+				if recipe.Edit {
+					step = fmt.Sprintf("editing %d clip(s)", count)
+					local.Think = opts.Local.Think / 2
+					if opts.Local.Think < 0 {
+						local.Think = DefaultThink / 2
+					}
+				}
+				err := e.Log.Step(step, func() error {
+					var err error
+					answer, err = e.CallLocalAgain(ctx, local, recipe, prompt, reply, request,
+						len(units), count, max(local.Think, 0)+1024+256*count, opts.LogDir, nil)
+					return err
+				})
+				if err != nil {
+					return "", err
+				}
+				saveFit(cachePath, answer.Content)
+				return answer.Content, nil
+			}
+		}
+		build.fit(ask)
 	}
 
 	clips, entries, ids, err := build.finish()
@@ -410,11 +481,33 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 	_ = os.WriteFile(cachePath, body, 0o644)
 }
 
+// saveFit adds the answer about the clips that did not fit to the saved
+// reply, where a search that reuses the reply finds it.
+func saveFit(cachePath, fit string) {
+	if cachePath == "" {
+		return
+	}
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return
+	}
+	var saved map[string]json.RawMessage
+	if json.Unmarshal(data, &saved) != nil {
+		return
+	}
+	value, _ := json.Marshal(fit)
+	saved["fit"] = value
+	if body, err := json.MarshalIndent(saved, "", "  "); err == nil {
+		_ = os.WriteFile(cachePath, body, 0o644)
+	}
+}
+
 // windowFits says whether the transcript of a window fits in one request to
 // the model that is going to read it.
 func windowFits(lines []Line, opts PlanOptions) error {
 	room := planRoom(opts)
-	have := runeLen(AnnotateLines(lines))
+	recipe := opts.recipe()
+	have := runeLen(recipe.Request(lines, recipe.units(lines), opts)) - runeLen(recipe.Request(nil, nil, opts))
 	if have <= room.Chars {
 		return nil
 	}

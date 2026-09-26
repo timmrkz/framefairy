@@ -9,6 +9,14 @@ import (
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
+func cueTexts(cues []Cue) string {
+	texts := make([]string, len(cues))
+	for i, c := range cues {
+		texts[i] = c.Text
+	}
+	return strings.Join(texts, " ")
+}
+
 func TestTokensToWords(t *testing.T) {
 	tokens := []Token{
 		{" Al", 0.00, 0.24}, {"les", 0.24, 0.16}, {" hat", 0.40, 0.24},
@@ -26,6 +34,18 @@ func TestTokensToWords(t *testing.T) {
 			!near(words[i].End, want[i].End) {
 			t.Errorf("word %d = %+v, want %+v", i, words[i], want[i])
 		}
+	}
+	// A number comes as a lone space and then its digits, and the space
+	// is what keeps it apart from the word before it.
+	numbers := []Token{{" dass", 0, 0.2}, {" ", 0.2, 0.08}, {"5", 0.28, 0.08},
+		{"0", 0.36, 0.08}, {"0", 0.44, 0.08}, {" Euro", 0.52, 0.2}, {".", 0.72, 0.04},
+		{" ", 0.8, 0.08}, {"1", 0.88, 0.08}, {"4", 0.96, 0.08}}
+	got := TokensToWords(numbers, 0)
+	if texts := cueTexts(got); texts != "dass 500 Euro. 14" {
+		t.Errorf("got %q", texts)
+	}
+	if !near(got[1].Start, 0.28) || !near(got[1].End, 0.52) {
+		t.Errorf("500 is timed %+v", got[1])
 	}
 	// A chunk that starts without a leading space still starts a word.
 	if got := TokensToWords([]Token{{"Hallo", 0, 0.2}}, 0); len(got) != 1 || got[0].Text != "Hallo" {

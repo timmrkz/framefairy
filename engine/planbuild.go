@@ -60,12 +60,15 @@ type planBuilder struct {
 	sourcePath string
 	source     SourceInfo
 	lines      []Line
-	opts       PlanOptions
-	cropW      int
-	cache      *cropCache
-	offset     int
-	stamp      PlannedWith
-	planID     string
+	// units are what the recipe numbered, each a run of lines. An answer
+	// is checked in them and turned into lines before anything else.
+	units  []([2]int)
+	opts   PlanOptions
+	cropW  int
+	cache  *cropCache
+	offset int
+	stamp  PlannedWith
+	planID string
 	// clock hears every clip taken and landed. Nil when no model was asked.
 	clock *searchClock
 
@@ -80,6 +83,16 @@ type planBuilder struct {
 	// framers both touch.
 	mu      sync.Mutex
 	objects int
+	// repeats counts the clips left out as they arrived for keeping a
+	// moment an earlier clip keeps, so the whole answer says only the rest.
+	repeats int
+	// order is every clip of the answer taken so far, the held ones too,
+	// in the order the answer gave them.
+	order []PlanEntry
+	// fits is whether a clip that does not fit the length may be held back
+	// and asked for again once the answer is in. held is those clips.
+	fits    bool
+	held    []PlanEntry
 	seen    map[string]bool
 	entries []PlanEntry
 	ids     []string
@@ -95,11 +108,11 @@ type planBuilder struct {
 }
 
 func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source SourceInfo,
-	lines []Line, opts PlanOptions, planID string) *planBuilder {
+	lines []Line, units [][2]int, opts PlanOptions, planID string) *planBuilder {
 	ctx, cancel := context.WithCancel(ctx)
 	cropW, _ := CropWindow(source, opts.OutW, opts.OutH)
 	b := &planBuilder{e: e, ctx: ctx, cancel: cancel, sourcePath: sourcePath, source: source,
-		lines: lines, opts: opts, cropW: cropW, cache: newCropCache(),
+		lines: lines, units: units, opts: opts, cropW: cropW, cache: newCropCache(),
 		seen: map[string]bool{}, planID: planID, firstOut: make(chan struct{}),
 		// Never more clips than were asked for are taken, so the queue
 		// never makes the reading of the answer wait.
@@ -132,18 +145,150 @@ func (b *planBuilder) take(raw string) {
 		return
 	}
 	b.mu.Lock()
-	if b.closed || len(b.entries) >= b.opts.Count {
+	if b.closed || len(b.order) >= b.opts.Count {
 		b.mu.Unlock()
 		return
 	}
 	b.objects++
-	entry, _, ok := validateEntry(value, b.objects, len(b.lines))
+	entry, _, ok := readEntry(value, b.objects, b.units)
 	if !ok {
 		b.mu.Unlock()
 		return
 	}
-	b.queueLocked(entry)
+	entry = b.shaped(entry)
+	if earlier, repeated := sameMomentAs(b.order, entry); repeated {
+		b.repeats++
+		b.mu.Unlock()
+		b.e.Log.Warn("%s", repeatNote(entry, earlier))
+		return
+	}
+	b.acceptLocked(entry)
 	b.mu.Unlock()
+}
+
+// shaped is a clip as it is cut: every edge on a sentence, see edges.go,
+// and runs that follow each other one run when the recipe leaves the
+// pauses to the engine.
+func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
+	entry.Keep = wholeSentences(b.lines, entry.Keep)
+	if b.opts.recipe().Joins {
+		entry.Keep = joinRuns(entry.Keep)
+	}
+	return entry
+}
+
+// acceptLocked takes a clip of the answer. One that does not fit the length
+// is held back, when it can be asked for again, and every other one goes to
+// the framers.
+func (b *planBuilder) acceptLocked(entry PlanEntry) {
+	b.order = append(b.order, entry)
+	if b.fits && (b.opts.recipe().Edit || b.outside(b.seconds(entry.Keep))) {
+		b.held = append(b.held, entry)
+		return
+	}
+	b.queueLocked(b.capped(entry))
+}
+
+// capped is a clip that runs well past the length shortened from its start,
+// see fromTheStart. Asked again, a model does not always shorten a clip,
+// and a short of fifty seconds is not a short.
+func (b *planBuilder) capped(entry PlanEntry) PlanEntry {
+	most := b.opts.MaxLen * 1.2
+	was := b.seconds(entry.Keep)
+	if was <= most {
+		return entry
+	}
+	keep := fromTheStart(b.lines, entry.Keep, most, b.seconds)
+	if now := b.seconds(keep); now < was {
+		b.e.Log.Info("%s shortened from its start, %ss rather than %ss", entry.Slug,
+			fixed(now, 1), fixed(was, 1))
+		entry.Keep = keep
+	}
+	return entry
+}
+
+// seconds is how long a clip that keeps these lines runs, the way it is
+// framed: filler at its edges dropped and long pauses inside it cut.
+func (b *planBuilder) seconds(keep [][2]int) float64 {
+	total := 0.0
+	for _, s := range SegmentsFromRanges(trimFiller(b.lines, keep), b.lines, b.opts.KeepPause, b.opts.MaxPause) {
+		total += s.Duration()
+	}
+	return total
+}
+
+// outside says whether a clip is well off the length asked for. Both
+// bounds are targets, not walls: a clip a little over is a clip, and a
+// warning about a tenth of a second teaches you to ignore the warning.
+func (b *planBuilder) outside(seconds float64) bool {
+	return seconds < b.opts.MinLen*0.9 || seconds > b.opts.MaxLen*1.2
+}
+
+// trimFiller drops a leading or trailing line that carries nothing. Whole
+// lines, never part of one.
+func trimFiller(lines []Line, keep [][2]int) [][2]int {
+	ranges := append([][2]int(nil), keep...)
+	for len(ranges) > 0 && IsFiller(lines[ranges[0][0]-1].Text()) {
+		if ranges[0][0] < ranges[0][1] {
+			ranges[0][0]++
+		} else {
+			ranges = ranges[1:]
+		}
+	}
+	for len(ranges) > 0 && IsFiller(lines[ranges[len(ranges)-1][1]-1].Text()) {
+		last := len(ranges) - 1
+		if ranges[last][0] < ranges[last][1] {
+			ranges[last][1]--
+		} else {
+			ranges = ranges[:last]
+		}
+	}
+	return ranges
+}
+
+// sameMomentAs finds a clip among these that keeps the same moment as
+// entry: more than half the lines of the shorter of the two are in both.
+// The model sometimes gives one moment twice, a line apart, and two clips
+// of one moment are one clip and a slot gone.
+func sameMomentAs(entries []PlanEntry, entry PlanEntry) (PlanEntry, bool) {
+	for _, e := range entries {
+		shared := 0
+		for _, a := range e.Keep {
+			for _, b := range entry.Keep {
+				shared += max(0, min(a[1], b[1])-max(a[0], b[0])+1)
+			}
+		}
+		if 2*shared > min(keptLines(e), keptLines(entry)) {
+			return e, true
+		}
+	}
+	return PlanEntry{}, false
+}
+
+func keptLines(entry PlanEntry) int {
+	n := 0
+	for _, run := range entry.Keep {
+		n += run[1] - run[0] + 1
+	}
+	return n
+}
+
+// distinctMoments is the entries without those that keep a moment one
+// before them keeps, and the ones left out, each beside the one it repeats.
+func distinctMoments(entries []PlanEntry) (kept []PlanEntry, repeats [][2]PlanEntry) {
+	for _, entry := range entries {
+		if earlier, repeated := sameMomentAs(kept, entry); repeated {
+			repeats = append(repeats, [2]PlanEntry{entry, earlier})
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept, repeats
+}
+
+func repeatNote(entry, earlier PlanEntry) string {
+	return fmt.Sprintf("the model gave the moment of %q twice. %q is left out.",
+		earlier.Title, entry.Title)
 }
 
 // queueLocked gives an entry its id and hands it to the framers. The id is
@@ -182,29 +327,39 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	if b.closed {
 		return
 	}
-	taken := len(b.entries)
+	// The clips taken as the answer arrived were checked for repeats in
+	// the same order, so the first of the repeats were already said.
+	for i := range whole {
+		whole[i] = b.shaped(whole[i])
+	}
+	whole, repeats := distinctMoments(whole)
+	for _, r := range repeats[min(b.repeats, len(repeats)):] {
+		b.e.Log.Warn("%s", repeatNote(r[0], r[1]))
+	}
+	b.repeats = max(b.repeats, len(repeats))
+	taken := len(b.order)
 	if len(whole) < taken {
 		return
 	}
 	for i := range taken {
-		if fmt.Sprint(whole[i].Keep) != fmt.Sprint(b.entries[i].Keep) {
+		if fmt.Sprint(whole[i].Keep) != fmt.Sprint(b.order[i].Keep) {
 			b.e.Log.Warn("the whole answer reads differently from the clips taken as it " +
 				"arrived. Those are kept.")
 			return
 		}
 	}
 	for _, entry := range whole[taken:] {
-		if len(b.entries) >= b.opts.Count {
+		if len(b.order) >= b.opts.Count {
 			return
 		}
-		b.queueLocked(entry)
+		b.acceptLocked(entry)
 	}
 }
 
 func (b *planBuilder) count() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return len(b.entries)
+	return len(b.order)
 }
 
 // finish waits for every clip taken to be framed and written. It gives the
@@ -320,22 +475,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	e, lines, opts, index := b.e, b.lines, b.opts, job.index
 	// Drop a leading or trailing line that carries nothing. Whole lines,
 	// never part of one.
-	ranges := append([][2]int(nil), job.entry.Keep...)
-	for len(ranges) > 0 && IsFiller(lines[ranges[0][0]-1].Text()) {
-		if ranges[0][0] < ranges[0][1] {
-			ranges[0][0]++
-		} else {
-			ranges = ranges[1:]
-		}
-	}
-	for len(ranges) > 0 && IsFiller(lines[ranges[len(ranges)-1][1]-1].Text()) {
-		last := len(ranges) - 1
-		if ranges[last][0] < ranges[last][1] {
-			ranges[last][1]--
-		} else {
-			ranges = ranges[:last]
-		}
-	}
+	ranges := trimFiller(lines, job.entry.Keep)
 	if len(ranges) == 0 {
 		e.Log.Warn("   %02d: every line in it was filler, skipped", index)
 		return PlanClip{}, false, nil
@@ -416,20 +556,22 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	}
 
 	total := pysum(lengths)
-	// Both bounds are targets, not walls. Warning about a tenth of a
-	// second teaches you to ignore the warning.
 	flag, advice := "", ""
-	if total < opts.MinLen*0.9 {
+	switch {
+	case !b.outside(total):
+	case total < opts.MinLen:
 		flag = fmt.Sprintf("  (well under the %ss minimum)", fixed(opts.MinLen, 0))
 		advice = "it may be missing context. Widen it in clips.json, or re-run with --replan"
-	} else if total > opts.MaxLen*1.2 {
+	default:
 		flag = fmt.Sprintf("  (well over the %ss target)", fixed(opts.MaxLen, 0))
 		advice = "trim it in clips.json and re-render just that clip, or re-run with --replan"
 	}
 	removed := loose - total
 	cutNote := ""
 	if removed > 0.3 {
-		cutNote = fmt.Sprintf(", %ss of dead air cut", fixed(removed, 1))
+		// Pauses, and with more than one run what lies between them, which
+		// is the model leaving something out and no dead air at all.
+		cutNote = fmt.Sprintf(", %ss cut", fixed(removed, 1))
 	}
 	e.Log.OK("%s %-26s %5ss  %d segment(s)%s%s", clip.ID, clip.Slug,
 		fixed(total, 1), len(segments), cutNote, flag)

@@ -116,12 +116,37 @@ func specs() []flagSpec {
 		{[]string{"--context"}, kString, "CONTEXT", "guest name, company, vocabulary. Improves both " +
 			"the choice of moments and proper nouns",
 			func(o *engine.Options, v string) error { o.Context = v; return nil }},
+		{[]string{"--recipe"}, kString, "RECIPE", "how the model is asked for clips: " +
+			strings.Join(engine.RecipeNames(), ", ") + " (default " + engine.DefaultRecipe + "). " +
+			"Answers to another recipe are kept apart and never recorded for training",
+			func(o *engine.Options, v string) error {
+				if _, err := engine.RecipeNamed(v); err != nil {
+					return err
+				}
+				o.Recipe = v
+				return nil
+			}},
+		{[]string{"--compare"}, kString, "RECIPES", "search the window once with each recipe, as " +
+			"experiments, and write a report of what each cost and found beside the plans in " +
+			"<episode>.framefairy/experiments, for instance --compare lines,stories. A recipe with " +
+			"@ and a number thinks that many tokens, so --compare stories,stories@1024 compares " +
+			"thinking budgets. Nothing is rendered and the episode's own plan is left alone",
+			func(o *engine.Options, v string) error {
+				for _, name := range strings.Split(v, ",") {
+					name = strings.TrimSpace(name)
+					if _, err := engine.ParseVariant(name); err != nil {
+						return err
+					}
+					o.Compare = append(o.Compare, name)
+				}
+				return nil
+			}},
 		{[]string{"--planner"}, kString, "PLANNER", "local plans on this machine with llama.cpp, api uses " +
 			"the Claude API (default local)",
 			func(o *engine.Options, v string) error { o.Planner = v; return nil }},
 		{[]string{"--llm-model"}, kString, "FILE", "the GGUF model file for local planning (default: " +
-			"the only .gguf file in ~/.framefairy/models)",
-			func(o *engine.Options, v string) error { o.LLMModel = v; return nil }},
+			"the only .gguf file in ~/.framefairy/models). A bare file name is looked for there too",
+			func(o *engine.Options, v string) error { o.LLMModel = engine.LocalModelPath(v); return nil }},
 		{[]string{"--llm-server"}, kString, "PATH", "the llama-server binary (default llama-server on PATH)",
 			func(o *engine.Options, v string) error { o.LLMServer = v; return nil }},
 		{[]string{"--llm-url"}, kString, "URL", "use an already running llama-server, for instance " +
@@ -408,7 +433,21 @@ func main() {
 		}
 		log.SetSink(engine.JSONLines(events))
 	}
-	code := e.Run(ctx, p.opts)
+	var code int
+	if len(p.opts.Compare) > 0 {
+		// A comparison asks afresh, because what a search costs is half
+		// of what is compared, and a saved answer costs nothing.
+		p.opts.Replan = true
+		_, report, err := e.Compare(ctx, p.opts, p.opts.Compare)
+		if err != nil {
+			log.Error("%s", err)
+			code = 1
+		} else {
+			log.OK("the comparison is in %s", report)
+		}
+	} else {
+		code = e.Run(ctx, p.opts)
+	}
 	stop()
 	if events != nil {
 		// os.Exit skips deferred calls, so the file is closed here.

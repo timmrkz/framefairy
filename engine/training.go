@@ -633,6 +633,13 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	if opts.LogDir == "" || !opts.Record {
 		return ""
 	}
+	// Training records are answers to one way of asking, the one whose
+	// format PromptVersion names. An answer to another recipe is an
+	// experiment, and a record of it would teach the model to answer a
+	// question it is never asked.
+	if IsExperiment(opts.recipe().Name) {
+		return ""
+	}
 	dir := TrainingDir()
 	if !fresh {
 		if rec, ok := findPlanRecord(dir, replyKey); ok {

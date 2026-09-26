@@ -101,14 +101,14 @@ func TestValidatePlanRefusesRangesThatAreNotLines(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, _, err := ValidatePlan(planWith(c.keep), 10); err == nil {
+			if _, _, err := ValidatePlan(planWith(c.keep), lineUnits(10)); err == nil {
 				t.Errorf("accepted %s", c.keep)
 			}
 		})
 	}
 	// A clip with one bad range among good ones keeps the good ones and says
 	// what was wrong, rather than throwing the whole answer away.
-	good, problems, err := ValidatePlan(planWith("[[1, 2], [99, 100], [4, 5]]"), 10)
+	good, problems, err := ValidatePlan(planWith("[[1, 2], [99, 100], [4, 5]]"), lineUnits(10))
 	if err != nil || len(good) != 1 || len(good[0].Keep) != 2 || len(problems) != 1 {
 		t.Fatalf("clips %v, problems %v, err %v", good, problems, err)
 	}
@@ -116,14 +116,14 @@ func TestValidatePlanRefusesRangesThatAreNotLines(t *testing.T) {
 		t.Errorf("kept %v", good[0].Keep)
 	}
 	// Two runs may touch, which is how the model cuts the pause between them.
-	if _, _, err := ValidatePlan(planWith("[[1, 2], [3, 4]]"), 10); err != nil {
+	if _, _, err := ValidatePlan(planWith("[[1, 2], [3, 4]]"), lineUnits(10)); err != nil {
 		t.Errorf("touching runs: %v", err)
 	}
 	// A range that overlaps the one before it, or goes backwards in the
 	// transcript, is dropped and what is left still runs forwards. Keeping
 	// both would play a part twice.
 	for _, keep := range []string{"[[1, 4], [3, 6]]", "[[5, 6], [1, 2]]"} {
-		good, problems, err := ValidatePlan(planWith(keep), 10)
+		good, problems, err := ValidatePlan(planWith(keep), lineUnits(10))
 		if err != nil || len(good) != 1 || len(problems) != 1 {
 			t.Fatalf("%s: clips %v, problems %v, err %v", keep, good, problems, err)
 		}
@@ -141,7 +141,7 @@ func TestValidatePlanTamesTheTextItIsGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	good, problems, err := ValidatePlan(data, 10)
+	good, problems, err := ValidatePlan(data, lineUnits(10))
 	if err != nil || len(good) != 2 {
 		t.Fatalf("clips %v, err %v", good, err)
 	}
@@ -206,7 +206,7 @@ func FuzzValidatePlan(f *testing.F) {
 		if err != nil {
 			return
 		}
-		good, _, err := ValidatePlan(data, lineCount)
+		good, _, err := ValidatePlan(data, lineUnits(lineCount))
 		if err != nil {
 			return
 		}

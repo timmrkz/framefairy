@@ -109,6 +109,95 @@ wrong by that much. Counting samples is exact everywhere, and audio decodes
 at a few hundred times real time, so winding forward through an hour costs
 about ten seconds.
 
+## Recipes
+
+A recipe is one way of asking the model for clips, in `engine/recipe.go`:
+what it is told, how the transcript is written out for it, what shape its
+answer takes, and how that answer is read back. A recipe may number what
+it likes, lines or sentences or paragraphs, as long as each thing it
+numbers is a run of whole lines. Its answer is turned into runs of lines,
+and everything after that is the same for every recipe: the words and
+their times, the cuts, the framing and the captions. So the precision of
+the captions never depends on what the model was shown, and the model can
+be asked in terms of the story while the engine keeps the milliseconds.
+
+| Recipe | What the model reads | What it answers |
+| --- | --- | --- |
+| `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
+| `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
+| `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
+
+`lines` is what the app uses. The others are tried with `--recipe` and
+compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
+A sentence in `stories` ends where a line ends one, or once it has run
+30 s, and never at a pause alone, since a sentence cut at a pause was a
+place for a clip to end mid-sentence. A pause of a second or more inside
+a sentence shows as three dots. A paragraph ends before a pause of 1.5 s or
+once it has run 45 s. Sentence numbers say nothing of time, and the first
+version of `stories`, which gave only the paragraph times, ran 8 of 10
+clips far past 30 s. The second says the length in words too, from the
+words and seconds of the window: at 2.2 words a second, 20 to 30 s is
+about 43 to 65 words. It left sentences out for the first time, and gave
+every sentence a run of its own, so every pause between two sentences was
+cut and 8 of 12 clips came out short. `stories` leaves the pauses to the
+engine, so since the third version runs that follow each other are one
+run, `Recipe.Joins`, and the brief says a new run starts only where
+something is left out. In `lines` two runs that meet still cut the pause
+between them, because there the pauses are the model's.
+
+**Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
+searches cut the same story with three different first words and four
+different last ones, most of them mid-sentence: the line the model
+stopped on ended on a comma and the sentence went on over three more. So
+the start, the end and every cut inside a clip move to the nearer place a
+sentence begins or ends, when that is at most 8 s away, `sentenceReach`.
+Further than that the model's edge stands, since a transcript can go a
+while without a full stop. Runs that overlap once they are whole
+sentences are one. This is done before a clip is measured, so the length
+check sees the clip as it will be cut.
+
+Whatever the recipe, the model sometimes gives one moment twice, a line
+apart. A clip that shares more than half the lines of the shorter of the
+two with a clip before it is left out and said in the log, and the clips
+after it move up, so a slot is never spent on the same moment.
+
+**Clips are fitted to the length by measuring them.** Three runs of the
+same prompt gave clips of 10 s on one and of 60 s on another. A model
+cannot tell time from line or sentence numbers, and the engine knows it
+to the millisecond. So with a local model, a clip under 90 % of the
+minimum or over 120 % of the maximum is held back as the answer arrives,
+the bounds the log has always flagged. Once the answer is in, the model is
+asked once more, in the same conversation, `engine/fit.go`: how long each
+held clip runs, how far off it is, and how long each line or sentence six
+either side of it lasts. It gives those clips again, shortened by leaving
+out what lies between the opening and the payoff, or lengthened with what
+belongs to the moment. The model stays loaded for 30 s after its answer,
+`fitKeep`, so the second ask shares the first one's start and llama-server
+reads only the answer and the new question. The log says how many tokens
+of the prompt were new. It answers without thinking: with a thousand
+tokens of thought the second ask took 20 to 26 s, most of it thought, for
+a question the numbers in it already answer.
+
+Whichever of the two is nearer the length becomes the clip, so a clip is
+never lost, and one that ran into another clip keeps its first form.
+Answering without thinking, the model sometimes gives a clip back
+unchanged, and a short of fifty seconds is not a short. So a clip still
+over 120 % of the maximum after all that loses whole sentences from its
+start until it fits, `fromTheStart` in `edges.go`. The end stays, because
+that is where the payoff is. A clip that is one sentence too long for
+that is left as it is.
+
+A recipe with `Edit`, `stories-edit`, holds back every clip, not only
+those off the length, and the second ask is about the edit: where each
+clip opens and where it lands, what it leaves out, and its length. The
+first ask thinks half the budget and the second the other half, so it
+thinks no longer in all. An edit is taken unless it runs further off the
+length. The clips appear once the second answer is in, not one by one. The
+answer to the second ask is saved in the reply file as `fit`, so a search
+that reuses the reply is fitted the same way without asking. The second
+ask is not recorded for training. What the user does with the fitted clip
+is.
+
 ## Lines, cuts and captions
 
 The model reads the transcript as numbered lines. A line ends at a pause of
@@ -457,6 +546,10 @@ Everything else is in `engine/`:
   transcript.go the transcript cache and the speech model location
   lines.go      lines, cuts and captions, all built from words
   highlight.go  word timings for captions and the bouncing highlight
+  recipe.go     ways of asking for clips, and reading the answer back
+                into lines. recipe_stories.go is the stories recipe
+  compare.go    one window searched with several recipes, and the report
+  fit.go        clips well off the length asked for again, measured
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken
