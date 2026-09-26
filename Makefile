@@ -14,6 +14,9 @@
 #
 #   make motion     the five ways the app shows work in hand, in a browser
 #   make app        the macOS bundle, Frame Fairy.app, which make run starts
+#   make install    the same, into /Applications, where it updates itself
+#   make update-key make the key updates are signed with, once, see
+#                   docs/UPDATES.md
 #   make icon       the .icns, from build/icon.png. make app does it for you
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make llama      build the llama-server we ship again, from scratch
@@ -87,9 +90,18 @@ UI_SOURCES := $(shell find frontend/src -type f 2>/dev/null) frontend/index.html
 	frontend/package.json frontend/vite.config.ts frontend/svelte.config.js frontend/tsconfig.json
 UI_BUILT := cmd/framefairy-app/dist/app/index.html
 
+# What the build workflow says about a build of the app: its version, the
+# channel it came from and the commit. A build made here leaves them empty,
+# and follows no channel until one is picked in the app. See
+# docs/UPDATES.md.
+BUILD_VERSION ?=
+BUILD_CHANNEL ?=
+BUILD_COMMIT ?=
+APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
+
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app icon motion ffmpeg llama tools-archive notices deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app install update-key icon motion ffmpeg llama tools-archive notices deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -121,7 +133,7 @@ tools-beside:
 	fi
 
 help:
-	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,36p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -176,7 +188,7 @@ $(BIN)/framefairy$(EXE): modules
 
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
 	@echo "Building $@"
-	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy-app
+	@$(GO) build -trimpath -ldflags '$(APP_LDFLAGS)' -o $@ ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
@@ -193,6 +205,25 @@ app: all
 ifeq ($(UNAME),Darwin)
 	@sh scripts/bundle-macos.sh $(BIN) $(BIN)
 endif
+
+# The app where apps live, which is where it updates itself: from then on
+# it is started like any other app and follows the channel picked in its
+# settings. Built here, it carries no quarantine mark, so macOS opens it
+# without asking. See docs/UPDATES.md.
+install: app
+ifeq ($(UNAME),Darwin)
+	@rm -rf "/Applications/Frame Fairy.app"
+	@ditto "$(BIN)/Frame Fairy.app" "/Applications/Frame Fairy.app"
+	@echo "Installed /Applications/Frame Fairy.app"
+else
+	@echo "make install puts the Mac app in /Applications, and this is not a Mac."
+endif
+
+# The update key, made once, on Tim's Mac. The public half goes into
+# cmd/framefairy-app/update-key.txt and the private half to the clipboard,
+# never to a file. See docs/UPDATES.md.
+update-key: toolchain modules
+	@$(GO) run ./cmd/framefairy-release key
 
 # The icon on its own, for when build/icon.png changed and you want to see
 # it without building everything. make app does this by itself.
