@@ -257,6 +257,11 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
 			local := *opts.Local
 			local.Keep = fitKeep
+			// A recipe that edits in a second ask thinks half as long in
+			// each, so it thinks no longer in all.
+			if recipe.Edit && local.Think > 0 {
+				local.Think /= 2
+			}
 			answer, err := e.CallLocal(ctx, local, recipe, prompt, len(units), opts.Count,
 				opts.MaxTokens, opts.LogDir, listen)
 			if err == nil {
@@ -384,15 +389,24 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		case fresh && opts.Local != nil:
 			ask = func(request string, count int) (string, error) {
 				var answer *localAnswer
-				err := e.Log.Step(fmt.Sprintf("fitting %d clip(s) to the length", count), func() error {
-					// It answers without thinking. With it, the thought was
-					// most of the 20 seconds this took, for a question the
-					// numbers in it already answer.
-					local := *opts.Local
-					local.Think = 0
+				step := fmt.Sprintf("fitting %d clip(s) to the length", count)
+				// A fit answers without thinking. With it, the thought was
+				// most of the 20 seconds it took, for a question the numbers
+				// in it already answer. An edit is a judgement, and gets the
+				// other half of the thinking.
+				local := *opts.Local
+				local.Think = 0
+				if recipe.Edit {
+					step = fmt.Sprintf("editing %d clip(s)", count)
+					local.Think = opts.Local.Think / 2
+					if opts.Local.Think < 0 {
+						local.Think = DefaultThink / 2
+					}
+				}
+				err := e.Log.Step(step, func() error {
 					var err error
 					answer, err = e.CallLocalAgain(ctx, local, recipe, prompt, reply, request,
-						len(units), count, 1024+256*count, opts.LogDir, nil)
+						len(units), count, max(local.Think, 0)+1024+256*count, opts.LogDir, nil)
 					return err
 				})
 				if err != nil {

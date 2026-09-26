@@ -45,18 +45,24 @@ func (b *planBuilder) fitRequest(held []PlanEntry) string {
 	}
 	lo, hi := fixed(b.opts.MinLen, 0), fixed(b.opts.MaxLen, 0)
 	var out strings.Builder
-	fmt.Fprintf(&out, "These clips are well off %s to %s seconds. Measured, once what you left "+
-		"out is gone:\n\n", lo, hi)
+	if recipe.Edit {
+		fmt.Fprintf(&out, "Now the edit. These are your clips as they are cut, measured once what "+
+			"you left out is gone:\n\n")
+	} else {
+		fmt.Fprintf(&out, "These clips are well off %s to %s seconds. Measured, once what you left "+
+			"out is gone:\n\n", lo, hi)
+	}
 	for _, entry := range held {
 		seconds := b.seconds(entry.Keep)
 		off := ""
-		if seconds > b.opts.MaxLen {
-			off = fmt.Sprintf("%s over the %s second maximum", fixed(seconds-b.opts.MaxLen, 0), hi)
-		} else {
-			off = fmt.Sprintf("%s under the %s second minimum", fixed(b.opts.MinLen-seconds, 0), lo)
+		switch {
+		case seconds > b.opts.MaxLen:
+			off = fmt.Sprintf(", %s over the %s second maximum", fixed(seconds-b.opts.MaxLen, 0), hi)
+		case seconds < b.opts.MinLen:
+			off = fmt.Sprintf(", %s under the %s second minimum", fixed(b.opts.MinLen-seconds, 0), lo)
 		}
 		keep := toUnits(entry.Keep, b.units)
-		fmt.Fprintf(&out, "- %q runs %s seconds, %s. It keeps %s.\n", entry.Slug,
+		fmt.Fprintf(&out, "- %q runs %s seconds%s. It keeps %s.\n", entry.Slug,
 			fixed(seconds, 0), off, jsonRuns(keep))
 		first, last := keep[0][0], keep[len(keep)-1][1]
 		var around []string
@@ -66,6 +72,16 @@ func (b *planBuilder) fitRequest(held []PlanEntry) string {
 				fixed(b.seconds([][2]int{{u[0] + 1, u[1] + 1}}), 1)))
 		}
 		fmt.Fprintf(&out, "  Seconds of each %s around it: %s\n", unit, strings.Join(around, " "))
+	}
+	if recipe.Edit {
+		fmt.Fprintf(&out, "\nFor each clip, read where it starts and where it ends. It must open on the "+
+			"%s that lets a stranger follow what is coming, a question or a setup when there is one, "+
+			"not in the middle of the story. It must end on the %s that lands it, the payoff, and "+
+			"nothing after that does not add to it. Inside, leave out what the story holds without: "+
+			"asides, restarts, a second example. Each must end up %s to %s seconds. Move what is "+
+			"not right and keep what is. Give every clip again, in this order and with the same "+
+			"slugs. Reply with the JSON object and nothing else.", unit, unit, lo, hi)
+		return out.String()
 	}
 	fmt.Fprintf(&out, "\nGive these clips again, only these, in this order and with the same slugs. "+
 		"Shorten one that is too long by leaving out %ss between its opening and its payoff: "+
@@ -103,18 +119,29 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 			was, now := b.seconds(entry.Keep), b.seconds(found.Keep)
 			// Taking in its neighbours may run a clip into another one.
 			_, repeats := sameMomentAs(b.entries, found)
-			if !repeats && b.distance(now) < b.distance(was) {
-				chosen.Keep = found.Keep
-				b.e.Log.Info("%s fitted, %ss rather than %ss", entry.Slug, fixed(now, 1), fixed(was, 1))
-			} else {
+			// An edit is taken unless it runs further off the length. A fit
+			// is taken only when it comes nearer.
+			better, done := b.distance(now) < b.distance(was), "fitted"
+			if b.opts.recipe().Edit {
+				better, done = b.distance(now) <= b.distance(was), "edited"
+			}
+			switch {
+			case repeats || !better:
 				b.e.Log.Detail("%s kept as it was: asked again, it came back at %ss",
 					entry.Slug, fixed(now, 1))
+			case fmt.Sprint(found.Keep) == fmt.Sprint(entry.Keep):
+				b.e.Log.Detail("%s kept as it was", entry.Slug)
+			default:
+				chosen.Keep = found.Keep
+				b.e.Log.Info("%s %s, %s rather than %s, %ss rather than %ss", entry.Slug, done,
+					jsonRuns(toUnits(found.Keep, b.units)), jsonRuns(toUnits(entry.Keep, b.units)),
+					fixed(now, 1), fixed(was, 1))
 			}
 		}
 		if b.closed {
 			return
 		}
-		b.queueLocked(chosen)
+		b.queueLocked(b.capped(chosen))
 	}
 }
 

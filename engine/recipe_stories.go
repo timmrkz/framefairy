@@ -24,7 +24,21 @@ var storiesRecipe = Recipe{
 	Schema:  planSchema,
 }
 
-func init() { recipes[storiesRecipe.Name] = storiesRecipe }
+// storiesEditRecipe is stories asked twice: the first ask finds the
+// stories and the second, with the transcript still read, looks only at
+// where each one starts and ends. Half the thinking goes to each.
+var storiesEditRecipe = func() Recipe {
+	r := storiesRecipe
+	r.Name = "stories-edit"
+	r.About = "stories, then a second ask about where every clip starts and ends, the thinking split between the two"
+	r.Edit = true
+	return r
+}()
+
+func init() {
+	recipes[storiesRecipe.Name] = storiesRecipe
+	recipes[storiesEditRecipe.Name] = storiesEditRecipe
+}
 
 const storiesSystem = `You find the moments in a long video that work as short vertical videos on ` +
 	`their own, for YouTube Shorts, Instagram Reels and TikTok. You know the video ` +

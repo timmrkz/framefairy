@@ -124,6 +124,7 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
+| `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 
 `lines` is what the app uses. The others are tried with `--recipe` and
@@ -178,7 +179,20 @@ tokens of thought the second ask took 20 to 26 s, most of it thought, for
 a question the numbers in it already answer.
 
 Whichever of the two is nearer the length becomes the clip, so a clip is
-never lost, and one that ran into another clip keeps its first form. The
+never lost, and one that ran into another clip keeps its first form.
+Answering without thinking, the model sometimes gives a clip back
+unchanged, and a short of fifty seconds is not a short. So a clip still
+over 120 % of the maximum after all that loses whole sentences from its
+start until it fits, `fromTheStart` in `edges.go`. The end stays, because
+that is where the payoff is. A clip that is one sentence too long for
+that is left as it is.
+
+A recipe with `Edit`, `stories-edit`, holds back every clip, not only
+those off the length, and the second ask is about the edit: where each
+clip opens and where it lands, what it leaves out, and its length. The
+first ask thinks half the budget and the second the other half, so it
+thinks no longer in all. An edit is taken unless it runs further off the
+length. The clips appear once the second answer is in, not one by one. The
 answer to the second ask is saved in the reply file as `fit`, so a search
 that reuses the reply is fitted the same way without asking. The second
 ask is not recorded for training. What the user does with the fitted clip

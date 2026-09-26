@@ -37,6 +37,11 @@ type Recipe struct {
 	// a run is cut or kept by the engine's rule, as in any run. Without it,
 	// as in lines, two runs that meet say the pause between them is cut.
 	Joins bool
+	// Edit is true for a recipe that asks a second time, in the same
+	// conversation, about where every clip starts and ends. The thinking
+	// is split between the two asks, so it thinks no longer in all than a
+	// recipe that asks once. See fit.go.
+	Edit bool
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.

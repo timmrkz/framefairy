@@ -92,3 +92,70 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 		t.Errorf("the reused reply was not fitted: %+v", clips)
 	}
 }
+
+// A recipe that edits asks about every clip a second time, not only the
+// ones off the length, splits the thinking between the two asks, and takes
+// the edit as long as it runs no further off the length.
+func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
+	edit := linesRecipe
+	edit.Name, edit.Edit = "lines-edit", true
+	recipes[edit.Name] = edit
+	defer delete(recipes, edit.Name)
+
+	source := testEpisode(t, "40")
+	SetTrainingDir(t.TempDir())
+	var mu sync.Mutex
+	var asks []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		mu.Lock()
+		asks = append(asks, request)
+		mu.Unlock()
+		// Two lines of the test episode fit 20 to 30 seconds either way.
+		keep := "[[1, 2]]"
+		if len(request["messages"].([]any)) > 2 {
+			keep = "[[2, 3]]"
+		}
+		writeLocalStream(w, `{"clips": [{"slug": "ganz", "title": "Ganz", "reason": "r", "keep": `+keep+`}]}`, 11)
+	}))
+	defer server.Close()
+	var heard int32
+	var said bytes.Buffer
+	e := NewEngine(NewLog(&said, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.LLMURL = server.URL
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Recipe = edit.Name
+	p := NewProject(e, source, base)
+
+	path, err := p.Plan(context.Background(), PlanRequest{Count: 1})
+	if err != nil {
+		t.Fatalf("plan: %v %s", err, p.LastError())
+	}
+	if len(asks) != 2 {
+		t.Fatalf("the model was asked %d times", len(asks))
+	}
+	for i, ask := range asks {
+		if got := ask["reasoning_budget_tokens"]; got != float64(DefaultThink/2) {
+			t.Errorf("ask %d may think %v tokens", i+1, got)
+		}
+	}
+	messages := asks[1]["messages"].([]any)
+	last := messages[len(messages)-1].(map[string]any)["content"].(string)
+	if !strings.Contains(last, "Now the edit") || !strings.Contains(last, `"ganz" runs`) {
+		t.Errorf("the second ask is not the edit:\n%s", last)
+	}
+	plan, clips, err := LoadClips(path)
+	if err != nil || len(clips) != 1 {
+		t.Fatalf("clips %v %v", clips, err)
+	}
+	if list := plan.Raw["clips"].([]any); len(list) != 1 {
+		t.Fatalf("%d clips", len(list))
+	}
+	if !strings.Contains(said.String(), "ganz edited, [[2, 3]] rather than [[1, 2]]") {
+		t.Errorf("the edit was not taken:\n%s", said.String())
+	}
+}

@@ -195,8 +195,16 @@ transcript is written out for it, and what its answer looks like. `lines`
 is how clips have always been chosen, and the app uses it. `stories` is
 the first other one: a brief that fits any video, the transcript as
 sentences in paragraphs with a time at the start of each, and "up to 12,
-the strongest first" rather than exactly 12. What each recipe does is in
+the strongest first" rather than exactly 12. `stories-edit` is `stories`
+asked twice, the second time only about where every clip starts and ends,
+with the thinking split between the two. What each recipe does is in
 [ENGINE.md](ENGINE.md#recipes).
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories-edit
+```
+
+shows whether the second ask makes better edges, and what it costs.
 
 ```
 framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories

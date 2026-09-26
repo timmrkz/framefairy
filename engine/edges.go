@@ -89,3 +89,29 @@ func nearer(at, back, forward int, time func(int) float64) int {
 	}
 	return forward
 }
+
+// fromTheStart shortens a clip that runs past most seconds by leaving out
+// whole sentences from its start, the end kept, where the payoff is. A
+// clip that is one sentence too long for that is left as it is.
+func fromTheStart(lines []Line, keep [][2]int, most float64, seconds func([][2]int) float64) [][2]int {
+	if seconds(keep) <= most {
+		return keep
+	}
+	ends := func(n int) bool { return endsSentence(strings.TrimSpace(lines[n-1].Text())) }
+	for r, run := range keep {
+		for first := run[0] + 1; first <= run[1]; first++ {
+			if !ends(first - 1) {
+				continue
+			}
+			shorter := append([][2]int{{first, run[1]}}, keep[r+1:]...)
+			if seconds(shorter) <= most {
+				return shorter
+			}
+		}
+		// The whole of this run goes, and the next one starts on a sentence.
+		if r+1 < len(keep) && seconds(keep[r+1:]) <= most {
+			return keep[r+1:]
+		}
+	}
+	return keep
+}
