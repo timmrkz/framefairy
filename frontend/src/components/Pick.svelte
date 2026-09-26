@@ -48,7 +48,11 @@
     // trigger naming a face the engine had never taken, and it would have
     // gone on naming it until the face really changed.
     value?: string;
-    options: { value: string; label: string }[];
+    // face is what the trigger says for an option, when the name in the
+    // list is longer than the trigger has any reason to be: a pull request
+    // is #18 on the trigger and #18 and its title in the list. Without one
+    // the trigger says the label.
+    options: { value: string; label: string; face?: string }[];
     // What to do with a pick. A caller that keeps the value itself sets it
     // here, and a caller that sends it to the engine draws whatever comes
     // back. Either way the trigger only ever says what came back.
@@ -64,15 +68,21 @@
   // What the trigger says. A value that is not in the list yet, which is
   // what the moment between opening an episode and its fonts arriving looks
   // like, still reads as itself rather than as nothing.
-  const shown = $derived(options.find((o) => o.value === value)?.label ?? value);
+  const shown = $derived.by(() => {
+    const o = options.find((o) => o.value === value);
+    return o ? (o.face ?? o.label) : value;
+  });
 
-  // The longest thing the list can ever say. The trigger keeps room for it
+  // The longest thing the trigger can ever say. The trigger keeps room for it
   // whatever is picked, so the row does not change width as it is used,
   // exactly as a button that says Play and Pause keeps room for the longer
   // of the two. Measuring text is the stylesheet's work, so the longest
   // label is drawn and hidden rather than measured in JavaScript.
   const longest = $derived(
-    options.reduce((most, o) => (o.label.length > most.length ? o.label : most), ""),
+    options.reduce((most, o) => {
+      const said = o.face ?? o.label;
+      return said.length > most.length ? said : most;
+    }, ""),
   );
 
   // Which row the list itself thinks is ticked. It is not the same thing

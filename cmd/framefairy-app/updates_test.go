@@ -193,7 +193,7 @@ func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
-	if s.Next != "0.3.0-pr20.9" || s.Follows != "pr-20" || s.Picked != "pr-20" || len(s.Channels) != 2 {
+	if s.Next != "0.3.0-pr20.9" || s.NextCommit != "abc1234" || s.Follows != "pr-20" || s.Picked != "pr-20" || len(s.Channels) != 2 {
 		t.Errorf("ready as %+v", s)
 	}
 	if s.Written != s.Total || s.Total == 0 {
@@ -233,7 +233,7 @@ func TestTheRunningBuildIsCurrent(t *testing.T) {
 	cs.publish(t, [3]string{"main", runningVersion(), "main"})
 	c, _ := newTestUpdating(t, cs, false)
 	c.check()
-	if s := c.State(); s.Phase != "current" || s.Next != "" {
+	if s := c.State(); s.Phase != "current" || s.Next != "" || s.Checked.IsZero() {
 		t.Errorf("%+v", s)
 	}
 	if err := c.Restart(); err == nil {
@@ -248,7 +248,7 @@ func TestAFailedCheckSaysWhy(t *testing.T) {
 	c, _ := newTestUpdating(t, cs, false)
 	c.check()
 	s := c.State()
-	if s.Phase != "failed" || !strings.HasPrefix(s.Problem, "The check did not get through. The channel list is not readable") {
+	if s.Phase != "failed" || !strings.HasPrefix(s.Problem, "The channel list is not readable") || s.Checked.IsZero() {
 		t.Errorf("%+v", s)
 	}
 	if strings.Contains(s.Problem, "updater:") {

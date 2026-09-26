@@ -205,7 +205,7 @@ What the common apps do, bent to [the interface rules](../CLAUDE.md#interface-ru
 - **Clicking it says what is new**, from the release notes, with **Update**
   and **Later**. Update downloads with the fill every download in the app
   already wears, in the control it was started from.
-- **It installs when the app quits**, or at once with **Restart** if the
+- **It installs when the app quits**, or at once with **Update** if the
   person asks. Never while a search, a render or a transcription runs.
 - **Check for Updates** in the app menu, where every Mac app has it.
 - **A setting** to turn the daily check off, for someone who wants to be
@@ -400,7 +400,7 @@ with its newest build, so one fetch is the whole check:
    the sidebar, and it says which build is running. The app reads the
    channel list, downloads #18's build with the fill on the Check button,
    checks it against the key, and says it is ready. Updates on the rail
-   gets a dot. Tim clicks **Restart**, and the app comes back as pull
+   gets a dot. Tim clicks **Update**, and the app comes back as pull
    request 18. The sidebar says `0.3.0-pr18.3`, and the page adds the
    commit.
 4. **Claude pushes to pull request 18.** A few minutes later the workflow
@@ -422,8 +422,8 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | --- | --- | --- |
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. Falls back to main when a pull request has gone |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
-| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check every ten minutes for a build from a channel, the picked channel in `updates.json` beside the settings, Restart that waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page has the build and its commit, Follows, Check with the beam and the fill, and Restart. Check for Updates in the app menu opens it |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check every ten minutes for a build from a channel, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, and Follows, which says main or #18 and lists the titles when opened. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Update, which restarts into the new build. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The workflow | `.github/workflows/builds.yml` | builds main and every pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list. A push that only changes docs gets no build |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
@@ -446,7 +446,7 @@ Still to come, in the order they are needed:
   once for good. Developer ID, batch 5.5, ends it. Until then a new build
   asks once. Tim accepted that for now.
 - **Installing when the app quits.** Today a build that is ready waits for
-  Restart. Quitting throws it away, and the next start downloads it again.
+  Update. Quitting throws it away, and the next start downloads it again.
 - **Customers.** The stable channel, Apple's signing and notarisation, the
   release key, and a release build that knows no channel list.
 

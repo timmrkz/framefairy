@@ -62,12 +62,16 @@ type UpdateState struct {
 	Picked  string `json:"picked"`
 	Follows string `json:"follows"`
 	// Phase is "", checking, current, downloading, ready or failed.
-	Phase    string `json:"phase"`
-	Next     string `json:"next"`
-	NextName string `json:"nextName"`
-	Written  int64  `json:"written"`
-	Total    int64  `json:"total"`
-	Problem  string `json:"problem"`
+	Phase      string `json:"phase"`
+	Next       string `json:"next"`
+	NextName   string `json:"nextName"`
+	NextCommit string `json:"nextCommit"`
+	// Checked is when the last check ended, whatever it found, so the
+	// interface can say a check really happened.
+	Checked time.Time `json:"checked"`
+	Written int64     `json:"written"`
+	Total   int64     `json:"total"`
+	Problem string    `json:"problem"`
 }
 
 // UpdateChannel is a channel as the interface lists it.
@@ -315,13 +319,15 @@ func (c *updating) checkOnce() {
 			if s.Phase != "ready" {
 				s.Phase = "failed"
 			}
-			s.Problem = "The check did not get through. " + plainUpdateError(err)
+			s.Problem = plainUpdateError(err)
+			s.Checked = time.Now()
 		})
 		return
 	}
 	if rel == nil {
 		c.change(func(s *UpdateState) {
-			s.Phase, s.Next, s.NextName, s.Written, s.Total = "current", "", "", 0, 0
+			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
+			s.Checked = time.Now()
 		})
 		return
 	}
@@ -329,17 +335,20 @@ func (c *updating) checkOnce() {
 	have := c.state.Phase == "ready" && c.state.Next == rel.Version
 	c.mu.Unlock()
 	if have {
+		c.change(func(s *UpdateState) { s.Checked = time.Now() })
 		return
 	}
+	commit, _ := rel.Metadata["commit"].(string)
 	c.change(func(s *UpdateState) {
-		s.Phase, s.Next, s.NextName = "downloading", rel.Version, rel.Name
+		s.Phase, s.Next, s.NextName, s.NextCommit = "downloading", rel.Version, rel.Name, commit
 		s.Written, s.Total = 0, rel.Artifact.Size
+		s.Checked = time.Now()
 	})
 	if err := c.u.DownloadAndInstall(ctx); err != nil {
 		log.Printf("update download: %v", err)
 		c.change(func(s *UpdateState) {
 			s.Phase = "failed"
-			s.Problem = "The build did not arrive whole. " + plainUpdateError(err)
+			s.Problem = "The download did not arrive whole. " + plainUpdateError(err)
 		})
 		return
 	}

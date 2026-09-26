@@ -964,6 +964,8 @@ const updNow = () => {
     phase: local ? "" : "current",
     next: "",
     nextName: "",
+    nextCommit: "",
+    checked: local ? "0001-01-01T00:00:00Z" : new Date(Date.now() - 7 * 60_000).toISOString(),
     written: 0,
     total: 0,
     problem: "",
@@ -974,19 +976,30 @@ const updSend = () => updListeners.forEach((fn) => fn({ data: { ...upd } }));
 const updFetch = (channel: string) => {
   const ch = updChannels.find((c) => c.id === channel) ?? updChannels[0];
   upd.follows = ch.id;
-  if (ch.version === upd.version) {
-    upd.phase = "current";
-    upd.next = "";
-    updSend();
-    return;
-  }
+  // A check that finds nothing is over at once, the way the real one is
+  // when the list is cached, which is what the page has to hold on to.
   upd.phase = "checking";
   updSend();
+  if (ch.version === upd.version) {
+    setTimeout(() => {
+      Object.assign(upd, { phase: "current", next: "", checked: new Date().toISOString() });
+      updSend();
+    }, 80);
+    return;
+  }
   setTimeout(() => {
-    Object.assign(upd, { phase: "downloading", next: ch.version, nextName: ch.name, total: 180e6, written: 0 });
+    Object.assign(upd, {
+      phase: "downloading",
+      next: ch.version,
+      nextName: ch.name,
+      nextCommit: "9f8e7d6c5b4a",
+      total: 46e6,
+      written: 0,
+      checked: new Date().toISOString(),
+    });
     updSend();
     const t = setInterval(() => {
-      upd.written = Math.min(upd.total, upd.written + 18e6);
+      upd.written = Math.min(upd.total, upd.written + 4.6e6);
       if (upd.written >= upd.total) {
         clearInterval(t);
         upd.phase = "ready";

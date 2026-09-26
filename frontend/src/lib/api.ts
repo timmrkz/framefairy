@@ -872,6 +872,10 @@ export interface UpdateState {
   phase: "" | "checking" | "current" | "downloading" | "ready" | "failed";
   next: string;
   nextName: string;
+  nextCommit: string;
+  // When the last check ended, whatever it found. Go's zero time before
+  // the first.
+  checked: string;
   written: number;
   total: number;
   problem: string;
