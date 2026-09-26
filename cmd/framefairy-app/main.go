@@ -903,7 +903,23 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 	if err := engine.MarkLooked(path); err != nil {
 		log.Printf("could not note the search of %s: %v", path, err)
 	}
-	return s.jobs.add(path, "plan", "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {
+	// Noted from the moment it is asked for, so a search the app is closed
+	// on while it still waits for the transcript is one the episode says
+	// was cut off, rather than one it forgot. See engine/searchnote.go.
+	if err := engine.NoteSearchAsked(path, req.From, req.To); err != nil {
+		log.Printf("could not note the search of %s: %v", path, err)
+	}
+	return s.jobs.add(path, "plan", "Find clips", func(ctx context.Context, p *engine.Project) (result string, err error) {
+		// Until the engine's own search has begun, how this ends is the
+		// app's to note: a failure while it waited for the transcript is a
+		// failure with a reason like any other. Being called off is not,
+		// see CancelJob.
+		searching := false
+		defer func() {
+			if err != nil && !searching && !errors.Is(err, engine.ErrCancelled) {
+				_ = engine.NoteSearchFailed(p.Source, req.From, req.To, err.Error())
+			}
+		}()
 		// The model loads while the transcript is still on its way, so
 		// the search has nothing to wait for once it is there.
 		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done && covered < req.To-0.05 {
@@ -941,6 +957,7 @@ func (s *FrameFairy) Plan(path string, req engine.PlanRequest) Job {
 		if len(paused) > 0 {
 			p.Log().Info("other transcriptions wait while clips are found and carry on after")
 		}
+		searching = true
 		return p.Plan(ctx, req)
 	})
 }
@@ -1729,7 +1746,21 @@ func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, ind
 func (s *FrameFairy) Jobs() []Job { return s.jobs.list() }
 
 // CancelJob stops a job, or takes it out of the queue.
-func (s *FrameFairy) CancelJob(id string) { s.jobs.cancel(id) }
+func (s *FrameFairy) CancelJob(id string) {
+	// A search called off by hand has nothing to report: whoever called it
+	// off knows why. The app closing cancels every search too, and that
+	// one leaves its note, so the episode says it was cut off when it is
+	// opened again. So the note is taken away here, where the hand is, and
+	// not where the search stops.
+	for _, job := range s.jobs.list() {
+		if job.ID == id && job.Kind == "plan" && (job.State == JobQueued || job.State == JobRunning) {
+			if err := engine.ClearSearchNote(job.Episode); err != nil {
+				log.Printf("could not clear the note of %s: %v", job.Episode, err)
+			}
+		}
+	}
+	s.jobs.cancel(id)
+}
 
 // ClearJobs forgets finished jobs.
 func (s *FrameFairy) ClearJobs() { s.jobs.clear() }

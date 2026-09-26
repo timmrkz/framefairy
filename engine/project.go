@@ -138,7 +138,9 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 			name = PlanName(&Window{from, to})
 		}
 	}
-	if err := p.run(ctx, opts); err != nil {
+	// The window as it was asked for, so the note says the same window
+	// the range picker showed.
+	if err := p.noted(req.From, req.To, func() error { return p.run(ctx, opts) }); err != nil {
 		return "", err
 	}
 	return filepath.Join(p.LogsDir(), name), nil

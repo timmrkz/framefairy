@@ -92,6 +92,21 @@ export interface EpisodeStatus {
   // Whether anyone has ever searched this episode for clips. It stays true
   // when the clips are removed again.
   looked: boolean;
+  // How the last search ended when it did not end with clips: still
+  // running, which with nothing running means it was cut off, or failed
+  // with its reason. Left out when there is nothing to say.
+  lastSearch?: SearchNote;
+}
+
+export interface SearchNote {
+  state: "running" | "failed";
+  // The window it was asked about. To is 0 for the end of the episode.
+  from: number;
+  to: number;
+  error?: string;
+  // True while it waited for the transcript to reach the end of its window,
+  // before anything was sent to the model.
+  waiting?: boolean;
 }
 
 export interface Word {

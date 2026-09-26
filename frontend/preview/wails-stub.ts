@@ -347,6 +347,7 @@ export const Call = {
     // A search that really runs and really finishes, for testing what the
     // workspace does the moment the first clips arrive.
     const found = location.search.includes("found");
+    const stoppedMode = location.search.includes("interrupted") || location.search.includes("failed");
     const paused = location.search.includes("paused");
     const carriedOn = () => !!(window as any).__carriedOn;
     const stopped = () => !!(window as any).__stopped;
@@ -546,6 +547,22 @@ export const Call = {
           { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true },
         ]);
       case "Episode":
+        // ?interrupted is an episode whose first search the app was closed
+        // in the middle of, and ?failed one whose search failed with a
+        // reason: nothing found, nothing running, and the note the engine
+        // keeps in the work folder. New asked for takes the note away, the
+        // way a search that starts does.
+        if (stoppedMode) {
+          const note = (window as any).__planned?.length
+            ? undefined
+            : location.search.includes("failed")
+              ? { state: "failed", from: 0, to: 1800, error: "the language model could not be loaded: not enough memory" }
+              : { state: "running", from: 0, to: 1800, waiting: location.search.includes("waiting") };
+          // ?interrupted&waiting was closed while the search still waited
+          // for the transcript, which had come as far as 15 minutes.
+          const partWay = location.search.includes("waiting");
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: !partWay, covered: partWay ? 900 : 14423, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true, lastSearch: note });
+        }
         if (found) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: landed().length ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });
         }
@@ -587,7 +604,7 @@ export const Call = {
             Array.from({ length: before() + 12 }, (_, i) => clip(i + 1, 40 + i * 140, "Ein Moment " + (i + 1), false)).filter((_, i) => there.has(i + 1)),
           );
         }
-        if (growing || location.search.includes("transcribing")) return Promise.resolve([]);
+        if (growing || stoppedMode || location.search.includes("transcribing")) return Promise.resolve([]);
         // A list that is slow to come, the way it is while the machine is
         // busy, and that knows nothing of what was done since it was asked
         // for. It lands after an edit made in the meantime, and whatever it
@@ -613,7 +630,7 @@ export const Call = {
           if (!landed().length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
           return Promise.resolve({ searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 12 }], free: [{ from: 1800, to: 14423 }] });
         }
-        if (growing || location.search.includes("transcribing")) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
+        if (growing || stoppedMode || location.search.includes("transcribing")) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
         return Promise.resolve({
           searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
           free: [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
