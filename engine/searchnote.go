@@ -19,9 +19,16 @@ import (
 // for it was open, and gone after that, and a search the app was closed in
 // the middle of left nothing at all. So a search writes down that it is
 // running when it starts, and what became of it when it ends. It takes the
-// note away again when it finds its clips or is called off by hand, because
-// then there is nothing to say. A note that still says running when the
-// episode is opened again is a search the app was closed or fell over in.
+// note away again when it finds its clips, because then there is nothing to
+// say. A search called off by hand has nothing to say either, but the
+// engine cannot tell a hand from the app closing, which cancels every
+// search on its way out, so taking the note away then is the app's to do,
+// where the hand is. A note that still says running when the episode is
+// opened again is a search the app was closed or fell over in.
+//
+// The app writes the note the moment a search is asked for, marked as
+// waiting, because a search waits for the transcript before it starts,
+// and closing the app in that wait is a search cut off like any other.
 
 // SearchNote is what the work folder remembers about the last search.
 type SearchNote struct {
@@ -30,10 +37,13 @@ type SearchNote struct {
 	State string `json:"state"`
 	// From and To are the window it was asked about, in seconds. To is 0
 	// for the end of the episode.
-	From  float64   `json:"from"`
-	To    float64   `json:"to"`
-	Error string    `json:"error,omitempty"`
-	At    time.Time `json:"at"`
+	From  float64 `json:"from"`
+	To    float64 `json:"to"`
+	Error string  `json:"error,omitempty"`
+	// Waiting is true while the search waits for the transcript to reach
+	// the end of its window, before anything has been sent to the model.
+	Waiting bool      `json:"waiting,omitempty"`
+	At      time.Time `json:"at"`
 }
 
 const searchNoteName = "search.json"
@@ -55,6 +65,20 @@ func writeSearchNote(source string, note SearchNote) error {
 		return err
 	}
 	return writeAtomic(searchNotePath(source), body)
+}
+
+// NoteSearchAsked notes a search that has been asked for and is waiting
+// for the transcript. To is 0 for the end of the episode.
+func NoteSearchAsked(source string, from, to float64) error {
+	return writeSearchNote(source, SearchNote{State: "running", From: from, To: to,
+		Waiting: true, At: time.Now()})
+}
+
+// NoteSearchFailed notes a search that failed before it reached the
+// model, with its reason.
+func NoteSearchFailed(source string, from, to float64, reason string) error {
+	return writeSearchNote(source, SearchNote{State: "failed", From: from, To: to,
+		Error: reason, At: time.Now()})
 }
 
 // ClearSearchNote forgets how the last search ended.
@@ -107,8 +131,12 @@ func (p *Project) noted(from, to float64, search func() error) (err error) {
 			panic(r)
 		}
 		switch {
-		case err == nil, errors.Is(err, ErrCancelled):
+		case err == nil:
 			_ = ClearSearchNote(p.Source)
+		case errors.Is(err, ErrCancelled):
+			// Stopped from outside, by a hand or by the app closing. The
+			// note says running, which is true of the app closing, and the
+			// app takes it away when it was a hand.
 		default:
 			note.State = "failed"
 			note.Error = p.LastError()

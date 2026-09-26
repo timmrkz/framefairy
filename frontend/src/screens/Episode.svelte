@@ -506,6 +506,18 @@
       const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
       return { what: "Failed. New looks again", left: why, full: `${window}. ${why}` };
     }
+    // Cut off while it waited for the transcript, which is the first half
+    // of every search on an episode read only part way: New transcribes
+    // on from where it stopped and then looks.
+    if (note.waiting) {
+      const end = note.to > 0 ? note.to : duration;
+      const reached = Math.min(status?.covered ?? 0, end);
+      return {
+        what: "Stopped. New carries on",
+        left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
+        full: `${window}. The app was closed while the episode was transcribed for it. New transcribes on from ${clock(reached)} and then finds the clips`,
+      };
+    }
     return {
       what: "Stopped. New looks again",
       left: window,

@@ -674,14 +674,20 @@ place.
       next clip would have appeared in, in the colour of a warning:
       *Stopped. New looks again*, with the window it was about, when the
       app was closed or fell over while it ran, and *Failed. New looks
-      again*, with its reason, when it failed. The whole of it is in the
-      row's title. Nothing starts by itself. It stays until a search starts,
-      after a restart too, because the engine keeps how the last search
-      ended in `search.json` in the episode's work folder: running when it
-      starts, the reason when it fails, and nothing once it has found its
-      clips or was called off by hand, because then there is nothing to
-      say. A note that still says running when the episode is opened is a
-      search that was cut off. Clips it wrote before that stay, with the
+      again*, with its reason, when it failed. A search cut off while it
+      still waited for the transcript, which is the first half of every
+      search on an episode read only part way, says *Stopped. New carries
+      on* and how far the transcript came, and **New** transcribes on from
+      there and then looks. The whole of it is in the row's title. Nothing
+      starts by itself. It stays until a search starts, after a restart
+      too, because the episode keeps how its last search ended in
+      `search.json` in its work folder: running from the moment the search
+      is asked for, marked as waiting until the transcript is there, the
+      reason when it fails, and nothing once it has found its clips.
+      **Cancel** takes it away too, because whoever pressed it knows why.
+      Closing the app stops every search as well, and that leaves the note
+      as it is, so a note that still says running when the episode is
+      opened is a search that was cut off. Clips it wrote before that stay, with the
       row after them. A failure that never reached the search itself still
       goes to the line over the workspace.
     - **New**, above the list, finds clips in the window chosen on the

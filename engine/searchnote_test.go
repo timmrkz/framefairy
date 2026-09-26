@@ -57,9 +57,10 @@ func TestASearchThatFailsLeavesItsReason(t *testing.T) {
 	}
 }
 
-// A search called off by hand has nothing to say: whoever called it off
-// knows why.
-func TestASearchCalledOffLeavesNoNote(t *testing.T) {
+// A search stopped from outside keeps its note saying running. The engine
+// cannot tell a hand from the app closing, and the app closing is what the
+// note is there for. Taking it away for a hand is the app's, see CancelJob.
+func TestASearchStoppedFromOutsideKeepsItsNote(t *testing.T) {
 	letGo := make(chan struct{})
 	defer close(letGo)
 	p, path := searching(t, letGo)
@@ -74,13 +75,13 @@ func TestASearchCalledOffLeavesNoNote(t *testing.T) {
 	select {
 	case err := <-done:
 		if !errors.Is(err, ErrCancelled) {
-			t.Fatalf("called off: %v", err)
+			t.Fatalf("stopped: %v", err)
 		}
 	case <-time.After(60 * time.Second):
 		t.Fatal("the search never stopped")
 	}
-	if note := ReadSearchNote(p.Source); note != nil {
-		t.Errorf("after it was called off: %+v", note)
+	if note := ReadSearchNote(p.Source); note == nil || note.State != "running" {
+		t.Errorf("after it was stopped: %+v", note)
 	}
 }
 

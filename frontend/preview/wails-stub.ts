@@ -557,8 +557,11 @@ export const Call = {
             ? undefined
             : location.search.includes("failed")
               ? { state: "failed", from: 0, to: 1800, error: "the language model could not be loaded: not enough memory" }
-              : { state: "running", from: 0, to: 1800 };
-          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true, lastSearch: note });
+              : { state: "running", from: 0, to: 1800, waiting: location.search.includes("waiting") };
+          // ?interrupted&waiting was closed while the search still waited
+          // for the transcript, which had come as far as 15 minutes.
+          const partWay = location.search.includes("waiting");
+          return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: !partWay, covered: partWay ? 900 : 14423, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true, lastSearch: note });
         }
         if (found) {
           return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: landed().length ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [], rendered: 0, previews: 0, work: true, looked: askedAt() > 0 });

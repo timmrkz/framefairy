@@ -104,6 +104,9 @@ export interface SearchNote {
   from: number;
   to: number;
   error?: string;
+  // True while it waited for the transcript to reach the end of its window,
+  // before anything was sent to the model.
+  waiting?: boolean;
 }
 
 export interface Word {
