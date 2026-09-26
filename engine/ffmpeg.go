@@ -54,6 +54,9 @@ type Engine struct {
 	// OpenRecognizer loads the speech model. The command-line front end sets
 	// it, which keeps the native speech library out of this package.
 	OpenRecognizer func(modelDir string) (Recognizer, error)
+	// OpenDiarizer loads the voice models from their folder, for a recipe
+	// that tells voices apart. Nil in a program that cannot.
+	OpenDiarizer func(dir string) (Diarizer, error)
 
 	// StopAt says where a whole-episode transcription is to stop for now:
 	// the end of the window the first search is waiting for, or 0 for

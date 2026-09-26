@@ -124,6 +124,7 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
+| `dialogue` | `stories`, with who speaks: a paragraph for every turn, opened with the speaker's letter, and the brief told that a story often starts with the question that brings it on | the same as `stories` |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 
@@ -144,6 +145,27 @@ engine, so since the third version runs that follow each other are one
 run, `Recipe.Joins`, and the brief says a new run starts only where
 something is left out. In `lines` two runs that meet still cut the pause
 between them, because there the pauses are the model's.
+
+**Who speaks when**, `engine/voices.go`, for the `dialogue` recipe. In an
+interview the plainest boundary between two thoughts is the other person
+speaking. Two small models, through the speech library we already ship,
+tell the voices apart: pyannote's segmentation 3.0, which finds where
+somebody speaks (MIT, 7 MB), and WeSpeaker's ResNet34 trained on VoxCeleb,
+which tells one voice from another (Apache 2.0, 26.5 MB). `make models`
+fetches them into `~/.framefairy/models/voices`, checked by checksum. The
+window is heard once and what was found is kept as
+`logs/voices-<from>-<to>.json`. Speakers are lettered in the order they
+first speak, so in an interview the host is usually A. Each line goes to
+whoever speaks most of it, a sentence also ends where the speaker
+changes, and a paragraph opens there with the speaker's letter.
+
+The windows the segmentation looks through step on by half a window
+rather than a tenth: on sherpa-onnx's four-speaker sample that was five
+times faster, 55 rather than 11 times real time on four cloud cores, and
+found the same turns to the tenth of a second. Two voices count as one
+when they are at least 0.4 alike. That sample has four speakers and the
+models heard two, so how well they do on a two-voice interview is what the
+first comparison on a real episode shows.
 
 **Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
 searches cut the same story with three different first words and four
@@ -550,6 +572,8 @@ Everything else is in `engine/`:
                 into lines. recipe_stories.go is the stories recipe
   compare.go    one window searched with several recipes, and the report
   fit.go        clips well off the length asked for again, measured
+  edges.go      every clip edge on a sentence, and the hard ceiling
+  voices.go     who speaks when, for the dialogue recipe
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken

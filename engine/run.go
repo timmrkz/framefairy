@@ -382,6 +382,18 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			return 1
 		}
 		e.SummariseLines(transcript, lines, span)
+		// A recipe that says who speaks has the voices told apart first.
+		if (PlanOptions{Recipe: opts.Recipe}).recipe().Voices {
+			turns, err := e.Voices(ctx, opts.Source, span, logsDir)
+			if err != nil {
+				if ctx.Err() != nil {
+					return e.fail(ctx, err)
+				}
+				log.Error("telling the voices apart failed: %s", err)
+				return 1
+			}
+			GiveSpeakers(lines, turns)
+		}
 		// An experiment writes its own plan and leaves the episode's
 		// captions where they are.
 		planCaptions := captionDir

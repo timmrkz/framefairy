@@ -424,6 +424,7 @@ func main() {
 	log := engine.NewLog(os.Stdout, !p.plain, p.verbose)
 	e := engine.NewEngine(log)
 	e.OpenRecognizer = asr.Open
+	e.OpenDiarizer = asr.OpenVoices
 	var events *os.File
 	if p.events != "" {
 		events, err = os.Create(p.events)

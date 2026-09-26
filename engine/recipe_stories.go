@@ -35,9 +35,29 @@ var storiesEditRecipe = func() Recipe {
 	return r
 }()
 
+// dialogueRecipe is stories with who speaks: a paragraph for every turn,
+// opened with the speaker's letter, so the model sees a question and its
+// answer as the thoughts they are, and a clip can open on the question.
+var dialogueRecipe = func() Recipe {
+	r := storiesRecipe
+	r.Name = "dialogue"
+	r.About = "stories, with who speaks: a paragraph for every turn, opened with the speaker's letter"
+	r.Version = 1
+	r.Voices = true
+	r.System = strings.Replace(storiesSystem, "\n\nA moment works", "\n\n"+voicesBrief+"\n\nA moment works", 1)
+	return r
+}()
+
+// voicesBrief is what the dialogue recipe adds to the stories brief.
+const voicesBrief = `The transcript says who speaks, A, B and so on, with a new paragraph ` +
+	`each time the speaker changes. In a conversation one of them usually asks and ` +
+	`the other tells. A story often starts with the question that brings it on, and ` +
+	`it ends where the one telling it has landed it, before the next question.`
+
 func init() {
 	recipes[storiesRecipe.Name] = storiesRecipe
 	recipes[storiesEditRecipe.Name] = storiesEditRecipe
+	recipes[dialogueRecipe.Name] = dialogueRecipe
 }
 
 const storiesSystem = `You find the moments in a long video that work as short vertical videos on ` +
@@ -104,7 +124,8 @@ func sentenceUnits(lines []Line) [][2]int {
 	for i := range lines {
 		last := i == len(lines)-1
 		ends := endsSentence(strings.TrimSpace(lines[i].Text())) ||
-			lines[i].End()-lines[start].Start() >= sentenceSeconds
+			lines[i].End()-lines[start].Start() >= sentenceSeconds ||
+			(!last && speakerChanges(lines[i], lines[i+1]))
 		if ends || last {
 			units = append(units, [2]int{start, i})
 			start = i + 1
@@ -121,6 +142,9 @@ func storiesRequest(lines []Line, units [][2]int, opts PlanOptions) string {
 		fmt.Sprintf("The transcript has %d sentences, each with its number in brackets. "+
 			"Each paragraph opens with the time it starts at, so you can tell how long "+
 			"a stretch runs. Three dots mark a long pause.", len(units)),
+	}
+	if saysWho(lines) {
+		ask[len(ask)-1] += " After the time comes who speaks, A, B and so on."
 	}
 	// Sentence numbers say nothing of time, and a model does not add up
 	// the times of paragraphs well. Words it can count, so the length is
@@ -163,13 +187,17 @@ func writeSentences(lines []Line, units [][2]int) string {
 	for n, unit := range units {
 		first := lines[unit[0]]
 		opens := n == 0 || first.GapBefore >= paragraphPause ||
-			first.Start()-paragraphStart >= paragraphSeconds
+			first.Start()-paragraphStart >= paragraphSeconds ||
+			speakerChanges(lines[unit[0]-1], first)
 		if opens {
 			if n > 0 {
 				out.WriteString("\n")
 			}
 			paragraphStart = first.Start()
 			fmt.Fprintf(&out, "(%s)", clockTime(first.Start()))
+			if first.Speaker > 0 {
+				fmt.Fprintf(&out, " %s:", speakerLetter(first.Speaker))
+			}
 		} else if first.GapBefore >= dotsPause {
 			out.WriteString(" …")
 		}
@@ -191,4 +219,30 @@ func clockTime(seconds float64) string {
 		return fmt.Sprintf("%d:%02d:%02d", s/3600, s/60%60, s%60)
 	}
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
+// speakerChanges is true when two lines are known to be said by different
+// people.
+func speakerChanges(before, after Line) bool {
+	return before.Speaker > 0 && after.Speaker > 0 && before.Speaker != after.Speaker
+}
+
+// saysWho is true when the voices of these lines were told apart.
+func saysWho(lines []Line) bool {
+	for _, l := range lines {
+		if l.Speaker > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// speakerLetter is A for the first speaker, B for the second, and on past Z
+// as A2, B2.
+func speakerLetter(n int) string {
+	letter := string(rune('A' + (n-1)%26))
+	if n > 26 {
+		letter += itoa((n-1)/26 + 1)
+	}
+	return letter
 }
