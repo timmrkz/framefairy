@@ -124,6 +124,8 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
+| `lines2` | the transcript exactly as `lines` writes it, with a brief for any video: the heart of a story and its payoff are never cut, the clip starts on the least a stranger needs and ends on the payoff, the length comes after that, at most N clips, and the task said again after the transcript | at most N clips, as runs of lines |
+| `stories2` | the `lines2` brief with the transcript as `stories` writes it | at most N clips, as runs of sentences |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 

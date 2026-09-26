@@ -350,3 +350,39 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 		}
 	}
 }
+
+// lines2 asks what lines asks with the brief put right: nothing about one
+// kind of show, no "exactly" against "fewer is better", what must never be
+// cut, and the task again after the transcript. The transcript itself is
+// written exactly as lines writes it.
+func TestLines2IsLinesWithTheBriefPutRight(t *testing.T) {
+	lines := []Line{speech(0, 0, "Was", "ist", "das?"), speech(2, 0.4, "Ein", "Schirm.")}
+	for i := range lines {
+		lines[i].Index = i + 1
+	}
+	opts := PlanOptions{Count: 3, MinLen: 20, MaxLen: 30}
+	for _, name := range []string{"lines2", "stories2"} {
+		r, err := RecipeNamed(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := r.Request(lines, r.units(lines), opts)
+		all := strings.ToLower(r.System + request)
+		for _, gone := range []string{"founder", "guest", "exactly the number", "exactly 3", "matters more than being brief"} {
+			if strings.Contains(all, gone) {
+				t.Errorf("%s still says %q", name, gone)
+			}
+		}
+		if !strings.Contains(r.System, "It is never cut") {
+			t.Errorf("%s does not say what is never cut", name)
+		}
+		after := request[strings.Index(request, "Transcript:"):]
+		if !strings.Contains(after, "That is the whole transcript. Find up to 3 clips") {
+			t.Errorf("%s does not say the task after the transcript:\n%s", name, request)
+		}
+	}
+	l2, _ := RecipeNamed("lines2")
+	if !strings.Contains(l2.Request(lines, l2.units(lines), opts), AnnotateLines(lines)) {
+		t.Error("lines2 writes the transcript differently from lines")
+	}
+}

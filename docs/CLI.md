@@ -221,9 +221,10 @@ at a temperature of 0.3.
 
 Every side of a comparison draws with the same seed, 1 unless `--seed`
 says otherwise. Without it, two runs of the very same prompt came back
-with different clips, so a difference between two sides could be luck.
-With it, the same prompt gives the same answer, and what differs between
-two sides is what was changed.
+with different clips. With it, the same side run again gives the same
+answer, so a run can be repeated. Two different sides are still two
+different draws, so one window cannot tell a small difference from luck:
+it takes the same comparison over many windows, or with several seeds.
 
 ```
 framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories
