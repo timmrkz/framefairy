@@ -360,7 +360,6 @@ export interface SetupState {
 }
 
 export const api = {
-  version: () => call<string>("Version"),
   platform: () => call<string>("Platform"),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),

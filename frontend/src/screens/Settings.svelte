@@ -13,8 +13,6 @@
     type Settings,
     type SpeechModel,
     type TrainingStatus,
-    type UpdateState,
-    onUpdates,
   } from "../lib/api";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
@@ -38,73 +36,6 @@
   let language = $state<LanguageModel[]>([]);
   // What this machine has, in bytes, or zero where it would not say.
   let memory = $state(0);
-
-  // Which build is running and where the next one comes from. See
-  // docs/UPDATES.md. The Go side sends the whole of it whenever any of it
-  // changes, a few times a second while a build downloads.
-  let update = $state<UpdateState | null>(null);
-  let restarting = $state(false);
-  const updating = $derived(update?.phase === "checking" || update?.phase === "downloading");
-  const channelOptions = $derived.by(() => {
-    const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: c.name }));
-    // A pull request that was picked and has since gone stays in the list
-    // for as long as it is picked, so the trigger never names nothing.
-    const picked = update?.picked ?? "";
-    if (picked && !listed.some((o) => o.value === picked)) {
-      listed.push({ value: picked, label: `${picked}, gone` });
-    }
-    // A build made by make follows nothing until a channel is picked.
-    if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
-    return listed;
-  });
-  const updateLine = $derived.by(() => {
-    const u = update;
-    if (!u) return "";
-    if (u.off) return u.off;
-    switch (u.phase) {
-      case "checking":
-        return "Looking for a newer build.";
-      case "downloading":
-        return `Downloading ${u.nextName || u.next}.`;
-      case "ready":
-        return `${u.nextName || u.next} is ready. Restart to use it.`;
-      case "failed":
-        return u.problem;
-      case "current":
-        return u.picked && u.follows !== u.picked
-          ? `${u.picked} is gone, so this follows main, and has its newest build.`
-          : "This is the newest build of the channel.";
-    }
-    return u.channel
-      ? "Looks by itself every ten minutes."
-      : "Built by make, so it looks only when a channel is picked or Check is clicked.";
-  });
-
-  async function follow(channel: string) {
-    try {
-      await api.followChannel(channel);
-    } catch (e) {
-      problem = errorText(e);
-    }
-  }
-
-  async function checkForUpdates() {
-    try {
-      await api.checkForUpdates();
-    } catch (e) {
-      problem = errorText(e);
-    }
-  }
-
-  async function restart() {
-    restarting = true;
-    try {
-      await api.restartToUpdate();
-    } catch (e) {
-      restarting = false;
-      problem = errorText(e);
-    }
-  }
 
   const speechRows = $derived<ModelRow[]>(
     speech.map((m) => ({
@@ -230,13 +161,7 @@
   }
 
   onMount(() => {
-    const noUpdates = onUpdates((u) => (update = u));
-    api
-      .updates()
-      .then((u) => (update = u))
-      .catch(() => {});
     load();
-    return noUpdates;
   });
 
   async function load() {
@@ -273,61 +198,6 @@
       {/each}
     </ul>
   </div>
-
-  <!-- Which build this is and where the next one comes from. A newer build
-       downloads by itself, and the one thing left to do is the restart,
-       which is the button, so it is never more than a click away. -->
-  {#if update}
-    <div class="panel" id="updates">
-      <div class="row">
-        <h2>Updates</h2>
-        <span class="grow"></span>
-        {#if update.phase === "ready"}
-          <button
-            class="check primary"
-            onclick={restart}
-            disabled={restarting}
-            title="Quit and come back as the new build. Waits while work runs"
-            >{#if restarting}<Busy />{/if}{restarting ? "Restarting" : "Restart"}</button
-          >
-        {:else}
-          <button
-            class="check"
-            onclick={checkForUpdates}
-            disabled={!!update.off || updating}
-            title="Look for a newer build of the channel now"
-          >
-            {#if update.phase === "downloading"}
-              <Busy fraction={update.total > 0 ? update.written / update.total : -1} />
-            {:else if update.phase === "checking"}
-              <Busy />
-            {/if}
-            {update.phase === "downloading" ? "Downloading" : update.phase === "checking" ? "Checking" : "Check"}
-          </button>
-        {/if}
-      </div>
-      <div class="grid">
-        <span>This build</span>
-        <span class="num selectable"
-          >{update.version}{#if update.commit}<span class="muted">, commit {update.commit}</span>{/if}</span
-        >
-        {#if !update.off}
-          <label for="channel">Follows</label>
-          <Pick
-            value={update.channel ? update.picked || update.follows : update.picked}
-            options={channelOptions}
-            onpick={follow}
-            id="channel"
-            label="Channel"
-            title="Where the next build comes from: main, or one pull request"
-            disabled={channelOptions.length === 0}
-          />
-        {/if}
-        <span></span>
-        <span class="muted small selectable" class:error={update.phase === "failed"}>{updateLine}</span>
-      </div>
-    </div>
-  {/if}
 
   {#if settings}
     <div class="panel">

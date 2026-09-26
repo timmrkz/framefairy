@@ -277,9 +277,6 @@ type FrameFairy struct {
 	holds map[string]float64
 }
 
-// Version of the engine.
-func (s *FrameFairy) Version() string { return engine.Version }
-
 // Updates says which build is running, which channel it follows and how far
 // a newer build has come. See docs/UPDATES.md.
 // Asking also reads the channel list, at most once a minute, so the

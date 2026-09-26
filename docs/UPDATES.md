@@ -396,15 +396,17 @@ with its newest build, so one fetch is the whole check:
    it to `/Applications`. Built on the Mac, it carries no quarantine mark,
    so macOS opens it. From then on it is started like any other app, not
    from the terminal.
-3. **Tim picks #18** under Settings, Updates, Follows. The app reads the
+3. **Tim picks #18** under Updates, Follows. Updates is the last row of
+   the sidebar, and it says which build is running. The app reads the
    channel list, downloads #18's build with the fill on the Check button,
-   checks it against the key, and says it is ready. Settings on the rail
+   checks it against the key, and says it is ready. Updates on the rail
    gets a dot. Tim clicks **Restart**, and the app comes back as pull
-   request 18. Settings, Updates says which build it is, with the commit.
+   request 18. The sidebar says `0.3.0-pr18.3`, and the page adds the
+   commit.
 4. **Claude pushes to pull request 18.** A few minutes later the workflow
    has built `0.3.0-pr18.52`, signed it, and put it in the channel list.
    The app looks by itself every ten minutes, downloads it quietly and
-   puts the dot on Settings. One click, one restart. Check looks at once.
+   puts the dot on Updates. One click, one restart. Check looks at once.
 5. **Tim picks #20**, or main. The app downloads that channel's newest
    build, sideways, and says it is ready.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
@@ -421,7 +423,7 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. Falls back to main when a pull request has gone |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check every ten minutes for a build from a channel, the picked channel in `updates.json` beside the settings, Restart that waits for work in hand |
-| The interface | Settings, Updates, and the dot on Settings in the rail | the build running, Follows, Check with the beam and the fill, Restart. Check for Updates is in the app menu too |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page has the build and its commit, Follows, Check with the beam and the fill, and Restart. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The workflow | `.github/workflows/builds.yml` | builds main and every pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list. A push that only changes docs gets no build |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
@@ -436,6 +438,13 @@ Still to come, in the order they are needed:
 - **Tried on the Mac.** That a downloaded build that is signed ad hoc
   runs, that the swap works in `/Applications`, and what the helper's
   log says, in `$TMPDIR/wails-update-<pid>.log`, when it does not.
+- **macOS asks for Documents again after every update.** It remembers a
+  folder it let an app into by the app's signature, and a build signed ad
+  hoc is known only by the hash of its own program, so every new build
+  is an app it has never seen. Signed with a real certificate, macOS
+  knows the app by its bundle identifier and the certificate, and asks
+  once for good. Developer ID, batch 5.5, ends it. Until then a new build
+  asks once. Tim accepted that for now.
 - **Installing when the app quits.** Today a build that is ready waits for
   Restart. Quitting throws it away, and the next start downloads it again.
 - **Customers.** The stable channel, Apple's signing and notarisation, the
