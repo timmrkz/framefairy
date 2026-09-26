@@ -551,7 +551,9 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	removed := loose - total
 	cutNote := ""
 	if removed > 0.3 {
-		cutNote = fmt.Sprintf(", %ss of dead air cut", fixed(removed, 1))
+		// Pauses, and with more than one run what lies between them, which
+		// is the model leaving something out and no dead air at all.
+		cutNote = fmt.Sprintf(", %ss cut", fixed(removed, 1))
 	}
 	e.Log.OK("%s %-26s %5ss  %d segment(s)%s%s", clip.ID, clip.Slug,
 		fixed(total, 1), len(segments), cutNote, flag)
