@@ -75,7 +75,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
-| `make models` | downloads the speech model, the language model and the two small voice models into `~/.framefairy/models`, for the command line. The app does this itself, and does not use the voices yet |
+| `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line. The app does this itself |
 | `make speechbench AUDIO=episode.mp4` | how fast the speech model hears on this machine, on the processor and through CoreML, with 4 and 8 threads, in pieces of 15 and 30 s, one or two at a time, over three minutes of the episode, and how many words each way changes. Takes a few minutes. `ARGS="-seconds 60"` passes more, see [Measuring the speech model](#measuring-the-speech-model) |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |

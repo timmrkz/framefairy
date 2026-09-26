@@ -24,9 +24,6 @@ type Line struct {
 	GapBefore float64
 	// Level is dB relative to the speaker's usual level.
 	Level float64
-	// Speaker is who speaks most of the line, numbered from 1, and 0 when
-	// the voices were not told apart. See voices.go.
-	Speaker int
 }
 
 // Start of the line in seconds.

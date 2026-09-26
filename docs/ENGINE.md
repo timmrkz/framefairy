@@ -124,7 +124,6 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
-| `dialogue` | `stories`, with who speaks: a paragraph for every turn, opened with the speaker's letter, and the brief told that a story often starts with the question that brings it on | the same as `stories` |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 
@@ -146,28 +145,14 @@ run, `Recipe.Joins`, and the brief says a new run starts only where
 something is left out. In `lines` two runs that meet still cut the pause
 between them, because there the pauses are the model's.
 
-**Who speaks when**, `engine/voices.go`, for the `dialogue` recipe. In an
-interview the plainest boundary between two thoughts is the other person
-speaking. Two small models, through the speech library we already ship,
-tell the voices apart: pyannote's segmentation 3.0, which finds where
-somebody speaks (MIT, 7 MB), and NVIDIA's TitaNet small, which tells one
-voice from another (CC BY 4.0, 40 MB). `make models`
-fetches them into `~/.framefairy/models/voices`, checked by checksum. The
-window is heard once and what was found is kept as
-`logs/voices-<from>-<to>.json`. Speakers are lettered in the order they
-first speak, so in an interview the host is usually A. Each line goes to
-whoever speaks most of it, a sentence also ends where the speaker
-changes, and a paragraph opens there with the speaker's letter.
-
-The settings were measured on sherpa-onnx's four-speaker sample against
-its known answer: four voice models, four thresholds, two steps. TitaNet
-small at a threshold of 0.7 was the only one to find all four speakers and
-give every stretch to the right one at both steps. The windows the
-segmentation looks through step on by half a window rather than a tenth,
-four times faster, 52 rather than 14 times real time on four cloud cores,
-with the same answer. WeSpeaker, the first choice, heard at most three of
-the four at any threshold, and on Tim's episode heard the host and the
-guest as one voice.
+**Tried and taken out: who speaks.** A `dialogue` recipe once told the
+voices apart with two small models through the speech library, pyannote's
+segmentation and NVIDIA's TitaNet, and showed the model a paragraph for
+every turn with the speaker's letter. On Tim's episode, at the same
+thinking, it cost 22 s more per 30 minutes (75 against 53) and not one
+clip opened differently: the model began the stories where the guest
+began telling them either way, and never on the question, though told a
+story often starts there. It is in the history of pull request 19.
 
 **Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
 searches cut the same story with three different first words and four
@@ -579,7 +564,6 @@ Everything else is in `engine/`:
   compare.go    one window searched with several recipes, and the report
   fit.go        clips well off the length asked for again, measured
   edges.go      every clip edge on a sentence, and the hard ceiling
-  voices.go     who speaks when, for the dialogue recipe
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken

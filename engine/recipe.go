@@ -42,9 +42,6 @@ type Recipe struct {
 	// is split between the two asks, so it thinks no longer in all than a
 	// recipe that asks once. See fit.go.
 	Edit bool
-	// Voices is true for a recipe that says who speaks. The window's voices
-	// are told apart before it is asked, see voices.go.
-	Voices bool
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.
