@@ -30,6 +30,8 @@ type Recipe struct {
 	Name string
 	// About says in a line what it tries.
 	About string
+	// Unit is what it numbers, in a word: line, sentence.
+	Unit string
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.
@@ -149,6 +151,7 @@ func toLines(keep [][2]int, units [][2]int) ([][2]int, error) {
 var linesRecipe = Recipe{
 	Name:    "lines",
 	About:   "every line of speech numbered, with its length, pauses and level",
+	Unit:    "line",
 	Version: PromptVersion,
 	System:  SystemPrompt,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string { return buildPrompt(lines, opts) },

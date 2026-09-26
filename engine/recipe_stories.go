@@ -15,6 +15,7 @@ import (
 var storiesRecipe = Recipe{
 	Name:    "stories",
 	About:   "a brief for any video, the transcript as sentences in paragraphs, the strongest first",
+	Unit:    "sentence",
 	Version: 2,
 	System:  storiesSystem,
 	Units:   sentenceUnits,

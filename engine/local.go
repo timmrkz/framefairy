@@ -38,6 +38,10 @@ type LocalModel struct {
 	// Think is the most the model may think before it answers, in tokens.
 	// Negative is no limit and 0 is no thinking at all.
 	Think int
+	// Keep is how long a model this ask loaded stays loaded after it, for
+	// an ask that follows at once and shares the start of this one. Zero
+	// lets it go the moment the answer is in.
+	Keep time.Duration
 }
 
 // DefaultThink is how much the local model may think before it answers.
@@ -392,11 +396,37 @@ type chatError struct {
 // wrote.
 func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt string,
 	units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
+	return e.askLocal(ctx, m, r, []chatMessage{{"system", r.System}, {"user", prompt}},
+		units, count, maxTokens, logDir, "plan-prompt.txt", listen)
+}
+
+// CallLocalAgain asks once more in the same conversation: the request, the
+// answer the model gave to it, and what is asked now. The start is the ask
+// before word for word, so llama-server, still holding it, reads only the
+// answer and the new question.
+func (e *Engine) CallLocalAgain(ctx context.Context, m LocalModel, r Recipe, prompt, answer,
+	again string, units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
+	return e.askLocal(ctx, m, r, []chatMessage{{"system", r.System}, {"user", prompt},
+		{"assistant", answer}, {"user", again}}, units, count, maxTokens, logDir, "fit-prompt.txt", listen)
+}
+
+// chatMessage is one turn of a conversation.
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages []chatMessage,
+	units, count, maxTokens int, logDir, promptFile string, listen *Listener) (*localAnswer, error) {
 	url := strings.TrimRight(m.URL, "/")
 	if url == "" {
 		// A model loaded while the transcript was still on its way is used
 		// as it is. The search lets go of it when it is done, and it stops.
-		size := localContextFor(m.Model, runeLen(prompt), maxTokens)
+		chars := 0
+		for _, message := range messages[1:] {
+			chars += runeLen(message.Content)
+		}
+		size := localContextFor(m.Model, chars, maxTokens)
 		if !modelReady(m.Model, size) {
 			listen.part(partLoading)
 		}
@@ -404,18 +434,15 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt s
 		if err != nil {
 			return nil, err
 		}
-		defer release(0)
+		defer release(m.Keep)
 		url = held
 	}
 	listen.part(partReading)
 
 	schema := json.RawMessage(r.Schema(units, count))
 	body, err := json.Marshal(map[string]any{
-		"model": filepath.Base(m.Model),
-		"messages": []map[string]string{
-			{"role": "system", "content": r.System},
-			{"role": "user", "content": prompt},
-		},
+		"model":      filepath.Base(m.Model),
+		"messages":   messages,
 		"max_tokens": maxTokens,
 		// How long the model may think. The server stops the thought at the
 		// budget and closes it with the message, so the answer follows.
@@ -437,8 +464,11 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt s
 		return nil, err
 	}
 	if logDir != "" {
-		_ = os.WriteFile(filepath.Join(logDir, "plan-prompt.txt"),
-			[]byte("=== system ===\n"+r.System+"\n\n=== user ===\n"+prompt), 0o644)
+		turns := make([]string, len(messages))
+		for i, message := range messages {
+			turns[i] = "=== " + message.Role + " ===\n" + message.Content
+		}
+		_ = os.WriteFile(filepath.Join(logDir, promptFile), []byte(strings.Join(turns, "\n\n")), 0o644)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -485,9 +515,15 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt s
 	if t := answer.Timings; t != nil {
 		reading, writing = t.PromptPerSecond, t.PredictedPerSecond
 	}
-	e.Log.Info("local model answered in %ss  read %s tok at %s tok/s  wrote %s tok at %s tok/s",
+	// A prompt that starts the way the one before did is read only from
+	// where it differs, and the count of what was read says so.
+	fresh := ""
+	if t := answer.Timings; t != nil && t.PromptN > 0 && t.PromptN < answer.PromptTokens {
+		fresh = fmt.Sprintf(", %s of them new", commas(t.PromptN))
+	}
+	e.Log.Info("local model answered in %ss  read %s tok%s at %s tok/s  wrote %s tok at %s tok/s",
 		fixed(time.Since(started).Seconds(), 1),
-		commas(answer.PromptTokens), fixed(reading, 0),
+		commas(answer.PromptTokens), fresh, fixed(reading, 0),
 		commas(answer.Written), fixed(writing, 1))
 	if answer.Reasoning > 0 {
 		e.Log.Detail("the model thought for %s characters before it answered",

@@ -141,6 +141,28 @@ apart. A clip that shares more than half the lines of the shorter of the
 two with a clip before it is left out and said in the log, and the clips
 after it move up, so a slot is never spent on the same moment.
 
+**Clips are fitted to the length by measuring them.** Three runs of the
+same prompt gave clips of 10 s on one and of 60 s on another. A model
+cannot tell time from line or sentence numbers, and the engine knows it
+to the millisecond. So with a local model, a clip under 90 % of the
+minimum or over 120 % of the maximum is held back as the answer arrives,
+the bounds the log has always flagged. Once the answer is in, the model is
+asked once more, in the same conversation, `engine/fit.go`: how long each
+held clip runs, how far off it is, and how long each line or sentence six
+either side of it lasts. It gives those clips again, shortened by leaving
+out what lies between the opening and the payoff, or lengthened with what
+belongs to the moment. The model stays loaded for 30 s after its answer,
+`fitKeep`, so the second ask shares the first one's start and llama-server
+reads only the answer and the new question. The log says how many tokens
+of the prompt were new. The model may think 1024 tokens about it.
+
+Whichever of the two is nearer the length becomes the clip, so a clip is
+never lost, and one that ran into another clip keeps its first form. The
+answer to the second ask is saved in the reply file as `fit`, so a search
+that reuses the reply is fitted the same way without asking. The second
+ask is not recorded for training. What the user does with the fitted clip
+is.
+
 ## Lines, cuts and captions
 
 The model reads the transcript as numbered lines. A line ends at a pause of
@@ -492,6 +514,7 @@ Everything else is in `engine/`:
   recipe.go     ways of asking for clips, and reading the answer back
                 into lines. recipe_stories.go is the stories recipe
   compare.go    one window searched with several recipes, and the report
+  fit.go        clips well off the length asked for again, measured
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken

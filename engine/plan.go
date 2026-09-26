@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Window is the part of the episode a run works on, in seconds.
@@ -149,7 +150,18 @@ func buildPrompt(lines []Line, opts PlanOptions) string {
 type savedReply struct {
 	Parsed json.RawMessage `json:"parsed"`
 	Text   *string         `json:"text"`
+	// Fit is the answer to the clips that did not fit the length, asked
+	// for again, so a reused reply is fitted the same way.
+	Fit *string `json:"fit"`
 }
+
+// fitKeep is how long the model stays loaded after the answer, for the
+// clips that do not fit the length to be asked for again while it still
+// holds the transcript. fitThink is how long it may think about them.
+const (
+	fitKeep  = 30 * time.Second
+	fitThink = 1024
+)
 
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
@@ -178,7 +190,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		cachePath = filepath.Join(opts.LogDir, "reply-"+fingerprint+".json")
 	}
 
-	reply, haveReply, fresh := "", false, false
+	reply, haveReply, fresh, savedFit := "", false, false, ""
 	var how *localAnswer
 	if cachePath != "" {
 		if _, err := os.Stat(cachePath); err == nil {
@@ -192,6 +204,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 						reply, haveReply = string(saved.Parsed), true
 					} else if saved.Text != nil {
 						reply, haveReply = *saved.Text, true
+					}
+					if saved.Fit != nil {
+						savedFit = *saved.Fit
 					}
 				}
 				if haveReply {
@@ -216,6 +231,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	build := e.newPlanBuilder(ctx, sourcePath, source, lines, units, opts,
 		planIDFor(opts, fingerprint, !haveReply))
 	defer build.stop()
+	// A local model can be asked again about the clips that do not fit the
+	// length, and a reused reply brings the answer it had to that.
+	build.fits = opts.Local != nil && (!haveReply || savedFit != "")
 	var scanner clipScanner
 	listen := &Listener{Text: func(piece string) {
 		for _, raw := range scanner.feed(piece) {
@@ -240,7 +258,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 	if !haveReply && opts.Local != nil {
 		err := e.Log.Step("choosing and condensing on this machine", func() error {
-			answer, err := e.CallLocal(ctx, *opts.Local, recipe, prompt, len(units), opts.Count,
+			local := *opts.Local
+			local.Keep = fitKeep
+			answer, err := e.CallLocal(ctx, local, recipe, prompt, len(units), opts.Count,
 				opts.MaxTokens, opts.LogDir, listen)
 			if err == nil {
 				reply, how = answer.Content, answer
@@ -359,6 +379,34 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		build.rest(raw)
 	}
 
+	if held := build.holding(); len(held) > 0 {
+		var ask func(string, int) (string, error)
+		switch {
+		case savedFit != "":
+			ask = func(string, int) (string, error) { return savedFit, nil }
+		case fresh && opts.Local != nil:
+			ask = func(request string, count int) (string, error) {
+				var answer *localAnswer
+				err := e.Log.Step(fmt.Sprintf("fitting %d clip(s) to the length", count), func() error {
+					local := *opts.Local
+					if local.Think < 0 || local.Think > fitThink {
+						local.Think = fitThink
+					}
+					var err error
+					answer, err = e.CallLocalAgain(ctx, local, recipe, prompt, reply, request,
+						len(units), count, fitThink+1024+512*count, opts.LogDir, nil)
+					return err
+				})
+				if err != nil {
+					return "", err
+				}
+				saveFit(cachePath, answer.Content)
+				return answer.Content, nil
+			}
+		}
+		build.fit(ask)
+	}
+
 	clips, entries, ids, err := build.finish()
 	if err != nil {
 		return nil, err
@@ -419,6 +467,27 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 		body, _ = MarshalPlan(map[string]string{"text": reply})
 	}
 	_ = os.WriteFile(cachePath, body, 0o644)
+}
+
+// saveFit adds the answer about the clips that did not fit to the saved
+// reply, where a search that reuses the reply finds it.
+func saveFit(cachePath, fit string) {
+	if cachePath == "" {
+		return
+	}
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return
+	}
+	var saved map[string]json.RawMessage
+	if json.Unmarshal(data, &saved) != nil {
+		return
+	}
+	value, _ := json.Marshal(fit)
+	saved["fit"] = value
+	if body, err := json.MarshalIndent(saved, "", "  "); err == nil {
+		_ = os.WriteFile(cachePath, body, 0o644)
+	}
 }
 
 // windowFits says whether the transcript of a window fits in one request to

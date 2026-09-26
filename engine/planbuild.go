@@ -86,6 +86,13 @@ type planBuilder struct {
 	// repeats counts the clips left out as they arrived for keeping a
 	// moment an earlier clip keeps, so the whole answer says only the rest.
 	repeats int
+	// order is every clip of the answer taken so far, the held ones too,
+	// in the order the answer gave them.
+	order []PlanEntry
+	// fits is whether a clip that does not fit the length may be held back
+	// and asked for again once the answer is in. held is those clips.
+	fits    bool
+	held    []PlanEntry
 	seen    map[string]bool
 	entries []PlanEntry
 	ids     []string
@@ -138,7 +145,7 @@ func (b *planBuilder) take(raw string) {
 		return
 	}
 	b.mu.Lock()
-	if b.closed || len(b.entries) >= b.opts.Count {
+	if b.closed || len(b.order) >= b.opts.Count {
 		b.mu.Unlock()
 		return
 	}
@@ -148,14 +155,65 @@ func (b *planBuilder) take(raw string) {
 		b.mu.Unlock()
 		return
 	}
-	if earlier, repeated := sameMomentAs(b.entries, entry); repeated {
+	if earlier, repeated := sameMomentAs(b.order, entry); repeated {
 		b.repeats++
 		b.mu.Unlock()
 		b.e.Log.Warn("%s", repeatNote(entry, earlier))
 		return
 	}
-	b.queueLocked(entry)
+	b.acceptLocked(entry)
 	b.mu.Unlock()
+}
+
+// acceptLocked takes a clip of the answer. One that does not fit the length
+// is held back, when it can be asked for again, and every other one goes to
+// the framers.
+func (b *planBuilder) acceptLocked(entry PlanEntry) {
+	b.order = append(b.order, entry)
+	if b.fits && b.outside(b.seconds(entry.Keep)) {
+		b.held = append(b.held, entry)
+		return
+	}
+	b.queueLocked(entry)
+}
+
+// seconds is how long a clip that keeps these lines runs, the way it is
+// framed: filler at its edges dropped and long pauses inside it cut.
+func (b *planBuilder) seconds(keep [][2]int) float64 {
+	total := 0.0
+	for _, s := range SegmentsFromRanges(trimFiller(b.lines, keep), b.lines, b.opts.KeepPause, b.opts.MaxPause) {
+		total += s.Duration()
+	}
+	return total
+}
+
+// outside says whether a clip is well off the length asked for. Both
+// bounds are targets, not walls: a clip a little over is a clip, and a
+// warning about a tenth of a second teaches you to ignore the warning.
+func (b *planBuilder) outside(seconds float64) bool {
+	return seconds < b.opts.MinLen*0.9 || seconds > b.opts.MaxLen*1.2
+}
+
+// trimFiller drops a leading or trailing line that carries nothing. Whole
+// lines, never part of one.
+func trimFiller(lines []Line, keep [][2]int) [][2]int {
+	ranges := append([][2]int(nil), keep...)
+	for len(ranges) > 0 && IsFiller(lines[ranges[0][0]-1].Text()) {
+		if ranges[0][0] < ranges[0][1] {
+			ranges[0][0]++
+		} else {
+			ranges = ranges[1:]
+		}
+	}
+	for len(ranges) > 0 && IsFiller(lines[ranges[len(ranges)-1][1]-1].Text()) {
+		last := len(ranges) - 1
+		if ranges[last][0] < ranges[last][1] {
+			ranges[last][1]--
+		} else {
+			ranges = ranges[:last]
+		}
+	}
+	return ranges
 }
 
 // sameMomentAs finds a clip among these that keeps the same moment as
@@ -246,29 +304,29 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 		b.e.Log.Warn("%s", repeatNote(r[0], r[1]))
 	}
 	b.repeats = max(b.repeats, len(repeats))
-	taken := len(b.entries)
+	taken := len(b.order)
 	if len(whole) < taken {
 		return
 	}
 	for i := range taken {
-		if fmt.Sprint(whole[i].Keep) != fmt.Sprint(b.entries[i].Keep) {
+		if fmt.Sprint(whole[i].Keep) != fmt.Sprint(b.order[i].Keep) {
 			b.e.Log.Warn("the whole answer reads differently from the clips taken as it " +
 				"arrived. Those are kept.")
 			return
 		}
 	}
 	for _, entry := range whole[taken:] {
-		if len(b.entries) >= b.opts.Count {
+		if len(b.order) >= b.opts.Count {
 			return
 		}
-		b.queueLocked(entry)
+		b.acceptLocked(entry)
 	}
 }
 
 func (b *planBuilder) count() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return len(b.entries)
+	return len(b.order)
 }
 
 // finish waits for every clip taken to be framed and written. It gives the
@@ -384,22 +442,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	e, lines, opts, index := b.e, b.lines, b.opts, job.index
 	// Drop a leading or trailing line that carries nothing. Whole lines,
 	// never part of one.
-	ranges := append([][2]int(nil), job.entry.Keep...)
-	for len(ranges) > 0 && IsFiller(lines[ranges[0][0]-1].Text()) {
-		if ranges[0][0] < ranges[0][1] {
-			ranges[0][0]++
-		} else {
-			ranges = ranges[1:]
-		}
-	}
-	for len(ranges) > 0 && IsFiller(lines[ranges[len(ranges)-1][1]-1].Text()) {
-		last := len(ranges) - 1
-		if ranges[last][0] < ranges[last][1] {
-			ranges[last][1]--
-		} else {
-			ranges = ranges[:last]
-		}
-	}
+	ranges := trimFiller(lines, job.entry.Keep)
 	if len(ranges) == 0 {
 		e.Log.Warn("   %02d: every line in it was filler, skipped", index)
 		return PlanClip{}, false, nil
@@ -480,13 +523,13 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	}
 
 	total := pysum(lengths)
-	// Both bounds are targets, not walls. Warning about a tenth of a
-	// second teaches you to ignore the warning.
 	flag, advice := "", ""
-	if total < opts.MinLen*0.9 {
+	switch {
+	case !b.outside(total):
+	case total < opts.MinLen:
 		flag = fmt.Sprintf("  (well under the %ss minimum)", fixed(opts.MinLen, 0))
 		advice = "it may be missing context. Widen it in clips.json, or re-run with --replan"
-	} else if total > opts.MaxLen*1.2 {
+	default:
 		flag = fmt.Sprintf("  (well over the %ss target)", fixed(opts.MaxLen, 0))
 		advice = "trim it in clips.json and re-render just that clip, or re-run with --replan"
 	}
