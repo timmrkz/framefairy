@@ -155,6 +155,7 @@ func (b *planBuilder) take(raw string) {
 		b.mu.Unlock()
 		return
 	}
+	entry = b.joined(entry)
 	if earlier, repeated := sameMomentAs(b.order, entry); repeated {
 		b.repeats++
 		b.mu.Unlock()
@@ -163,6 +164,15 @@ func (b *planBuilder) take(raw string) {
 	}
 	b.acceptLocked(entry)
 	b.mu.Unlock()
+}
+
+// joined is a clip as its recipe means it: runs that follow each other are
+// one run when the recipe leaves the pauses to the engine.
+func (b *planBuilder) joined(entry PlanEntry) PlanEntry {
+	if b.opts.recipe().Joins {
+		entry.Keep = joinRuns(entry.Keep)
+	}
+	return entry
 }
 
 // acceptLocked takes a clip of the answer. One that does not fit the length
@@ -299,6 +309,9 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	}
 	// The clips taken as the answer arrived were checked for repeats in
 	// the same order, so the first of the repeats were already said.
+	for i := range whole {
+		whole[i] = b.joined(whole[i])
+	}
 	whole, repeats := distinctMoments(whole)
 	for _, r := range repeats[min(b.repeats, len(repeats)):] {
 		b.e.Log.Warn("%s", repeatNote(r[0], r[1]))

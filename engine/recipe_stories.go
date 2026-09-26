@@ -16,7 +16,8 @@ var storiesRecipe = Recipe{
 	Name:    "stories",
 	About:   "a brief for any video, the transcript as sentences in paragraphs, the strongest first",
 	Unit:    "sentence",
-	Version: 2,
+	Joins:   true,
+	Version: 3,
 	System:  storiesSystem,
 	Units:   sentenceUnits,
 	Request: storiesRequest,
@@ -42,9 +43,9 @@ Strong moments come in different kinds: something human or moving, a surprise, `
 A clip must reach its payoff, and it must fit the length asked for. When a ` +
 	`moment runs longer than that, keep the opening and the payoff and leave out ` +
 	`sentences between them: asides, restarts, a second example, whatever the ` +
-	`story holds without. A clip made of two or three runs is usual, not a last ` +
-	`resort. Never reorder anything, and never join two parts so that they say ` +
-	`something the speaker did not.
+	`story holds without. Leaving out a sentence or two inside a moment is usual, ` +
+	`not a last resort. Never reorder anything, and never join two parts so that ` +
+	`they say something the speaker did not.
 
 Fewer strong clips beat padding. Return at most the number asked for, the ` +
 	`strongest first.
@@ -62,7 +63,8 @@ Your reply is parsed by a program. Return exactly one JSON object and nothing ` 
 - "reason": one sentence on why it works, at most 300 characters.
 - "keep": runs of sentences to keep, as [first, last] sentence numbers from the ` +
 	`transcript, in order and not overlapping. A clip is its runs played one after ` +
-	`the other.
+	`the other. A new run starts only where something is left out, so ` +
+	`[[12, 14], [17, 18]] leaves out 15 and 16. Pauses are not yours to cut.
 `
 
 // A sentence ends where its last word ends one, at a long pause, or when it

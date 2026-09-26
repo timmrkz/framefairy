@@ -499,6 +499,13 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
 			message = refused.Error.Message
 		}
+		// llama.cpp says only this when the graphics memory runs out partway,
+		// and the usual reason is another program holding some of it.
+		if strings.Contains(message, "Compute error") {
+			return nil, renderErr("the local model ran out of memory while it worked, llama-server "+
+				"says %q. Another program using the graphics memory, another language model above "+
+				"all, is the usual cause. Close it and search again.", Scrub(message, 100))
+		}
 		return nil, renderErr("the local model reported an error: %s", Scrub(message, 400))
 	}
 	answer, err := readLocalStream(response.Body, listen)

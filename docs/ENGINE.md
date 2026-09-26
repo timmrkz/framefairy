@@ -134,7 +134,13 @@ once it has run 45 s. Sentence numbers say nothing of time, and the first
 version of `stories`, which gave only the paragraph times, ran 8 of 10
 clips far past 30 s. The second says the length in words too, from the
 words and seconds of the window: at 2.2 words a second, 20 to 30 s is
-about 43 to 65 words.
+about 43 to 65 words. It left sentences out for the first time, and gave
+every sentence a run of its own, so every pause between two sentences was
+cut and 8 of 12 clips came out short. `stories` leaves the pauses to the
+engine, so since the third version runs that follow each other are one
+run, `Recipe.Joins`, and the brief says a new run starts only where
+something is left out. In `lines` two runs that meet still cut the pause
+between them, because there the pauses are the model's.
 
 Whatever the recipe, the model sometimes gives one moment twice, a line
 apart. A clip that shares more than half the lines of the shorter of the

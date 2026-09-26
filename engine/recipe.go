@@ -32,6 +32,11 @@ type Recipe struct {
 	About string
 	// Unit is what it numbers, in a word: line, sentence.
 	Unit string
+	// Joins is true for a recipe that leaves the pauses to the engine. Runs
+	// that follow each other in its answer are one run, and a pause inside
+	// a run is cut or kept by the engine's rule, as in any run. Without it,
+	// as in lines, two runs that meet say the pause between them is cut.
+	Joins bool
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.
@@ -143,6 +148,19 @@ func toLines(keep [][2]int, units [][2]int) ([][2]int, error) {
 		out = append(out, [2]int{units[first-1][0] + 1, units[last-1][1] + 1})
 	}
 	return out, nil
+}
+
+// joinRuns makes one run of runs that follow each other.
+func joinRuns(keep [][2]int) [][2]int {
+	var out [][2]int
+	for _, run := range keep {
+		if n := len(out); n > 0 && run[0] == out[n-1][1]+1 {
+			out[n-1][1] = run[1]
+			continue
+		}
+		out = append(out, run)
+	}
+	return out
 }
 
 // linesRecipe is how clips have been chosen from the start: every line of

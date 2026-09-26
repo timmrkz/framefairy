@@ -65,6 +65,20 @@ func TestAnAnswerInUnitsBecomesLines(t *testing.T) {
 	}
 }
 
+// Stories leaves the pauses to the engine, so sentences that follow each
+// other are one run, however the model wrote them. Lines keeps the model's
+// word: two runs that meet cut the pause between them.
+func TestSentencesThatFollowEachOtherAreOneRun(t *testing.T) {
+	if got := fmt.Sprint(joinRuns([][2]int{{318, 318}, {319, 319}, {320, 322}, {325, 326}, {327, 327}})); got != "[[318 322] [325 327]]" {
+		t.Errorf("joined %s", got)
+	}
+	stories, _ := RecipeNamed("stories")
+	lines, _ := RecipeNamed("lines")
+	if !stories.Joins || lines.Joins {
+		t.Error("stories must join runs and lines must not")
+	}
+}
+
 func speech(start, gap float64, words ...string) Line {
 	var cues []Cue
 	at := start

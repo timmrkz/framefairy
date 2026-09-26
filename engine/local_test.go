@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,5 +214,23 @@ func TestAModelIsFoundByItsName(t *testing.T) {
 		if got := LocalModelPath(named); got != named {
 			t.Errorf("%q became %s", named, got)
 		}
+	}
+}
+
+// llama.cpp answers "Compute error." when the graphics memory runs out
+// partway, which says nothing to somebody who only asked for clips. The
+// error says what it most likely means and what to do.
+func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"code":500,"message":"Compute error.","type":"server_error"}}`)
+	}))
+	defer server.Close()
+	e := NewEngine(NewLog(io.Discard, false, false))
+	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "Transcript:",
+		40, 12, 1000, "", nil)
+	if err == nil || !strings.Contains(err.Error(), "ran out of memory") ||
+		!strings.Contains(err.Error(), "another language model") {
+		t.Errorf("got %v", err)
 	}
 }
