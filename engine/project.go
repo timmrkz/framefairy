@@ -141,7 +141,7 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	if err := p.run(ctx, opts); err != nil {
 		return "", err
 	}
-	return PlanFor(p.WorkDir(), opts.Recipe, opts.Experiment, name), nil
+	return PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name), nil
 }
 
 // warmChars is how many characters of prompt a second of window makes,

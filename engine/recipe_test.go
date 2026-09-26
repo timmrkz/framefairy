@@ -3,10 +3,14 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -267,5 +271,65 @@ func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 	}
 	if matches, _ := filepath.Glob(filepath.Join(WorkDir(source), "experiments", "compare-*.md")); len(matches) > 0 {
 		t.Errorf("a report was written: %v", matches)
+	}
+}
+
+// A side of a comparison may be a recipe thinking for a set number of
+// tokens. The same recipe then runs twice, each in a folder of its own,
+// and the model is told the budget of each.
+func TestAComparisonOfThinkingBudgets(t *testing.T) {
+	if v, err := ParseVariant("stories@1024"); err != nil || v.Recipe != "stories" || v.Think == nil || *v.Think != 1024 {
+		t.Errorf("stories@1024 read as %+v %v", v, err)
+	}
+	if v, err := ParseVariant("lines"); err != nil || v.Think != nil {
+		t.Errorf("lines read as %+v %v", v, err)
+	}
+	for _, bad := range []string{"stories@", "stories@viel", "stories@-2", "@1024", "nonsense@1024"} {
+		if _, err := ParseVariant(bad); err == nil {
+			t.Errorf("%q was taken", bad)
+		}
+	}
+
+	source := testEpisode(t, "20")
+	SetTrainingDir(t.TempDir())
+	var mu sync.Mutex
+	var budgets []float64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if messages, _ := request["messages"].([]any); len(messages) <= 2 {
+			mu.Lock()
+			budgets = append(budgets, request["reasoning_budget_tokens"].(float64))
+			mu.Unlock()
+		}
+		writeLocalStream(w, `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`, 7)
+	}))
+	defer server.Close()
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	opts := DefaultOptions()
+	opts.Source = source
+	opts.LLMURL = server.URL
+	opts.ASRModel = t.TempDir()
+	opts.Count = 1
+	opts.Replan = true
+	runs, report, err := e.Compare(context.Background(), opts, []string{"stories", "stories@1024"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(budgets) != fmt.Sprintf("[%d 1024]", DefaultThink) {
+		t.Errorf("the model was told to think %v", budgets)
+	}
+	for _, run := range runs {
+		if want := filepath.Join(WorkDir(source), "experiments", run.Recipe); filepath.Dir(run.Plan) != want {
+			t.Errorf("%s's plan is %s", run.Recipe, run.Plan)
+		}
+	}
+	body, _ := os.ReadFile(report)
+	for _, want := range []string{"## stories\n", "## stories@1024", "thinking at most 1,024 tokens"} {
+		if !bytes.Contains(body, []byte(want)) {
+			t.Errorf("the report has no %q:\n%s", want, body)
+		}
 	}
 }

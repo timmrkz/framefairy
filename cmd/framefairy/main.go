@@ -128,12 +128,13 @@ func specs() []flagSpec {
 			}},
 		{[]string{"--compare"}, kString, "RECIPES", "search the window once with each recipe, as " +
 			"experiments, and write a report of what each cost and found beside the plans in " +
-			"<episode>.framefairy/experiments, for instance --compare lines,stories. Nothing is " +
-			"rendered and the episode's own plan is left alone",
+			"<episode>.framefairy/experiments, for instance --compare lines,stories. A recipe with " +
+			"@ and a number thinks that many tokens, so --compare stories,stories@1024 compares " +
+			"thinking budgets. Nothing is rendered and the episode's own plan is left alone",
 			func(o *engine.Options, v string) error {
 				for _, name := range strings.Split(v, ",") {
 					name = strings.TrimSpace(name)
-					if _, err := engine.RecipeNamed(name); err != nil {
+					if _, err := engine.ParseVariant(name); err != nil {
 						return err
 					}
 					o.Compare = append(o.Compare, name)

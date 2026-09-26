@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,27 +52,64 @@ type FoundClip struct {
 	Text string
 }
 
+// Variant is one side of a comparison: a recipe, and how long the model
+// may think with it when that is given, written stories@1024. Two sides
+// may be the same recipe thinking for longer and shorter.
+type Variant struct {
+	Recipe string
+	// Think is the thinking budget in tokens, nil for the search's own.
+	Think *int
+}
+
+// ParseVariant reads a side of a comparison: a recipe name, and after an
+// @ the tokens it may think, -1 for no limit.
+func ParseVariant(name string) (Variant, error) {
+	recipe, think, hasThink := strings.Cut(strings.TrimSpace(name), "@")
+	if _, err := RecipeNamed(recipe); err != nil || recipe == "" {
+		if err == nil {
+			err = renderErr("a side of a comparison needs a recipe, as in stories@1024")
+		}
+		return Variant{}, err
+	}
+	v := Variant{Recipe: recipe}
+	if hasThink {
+		n, err := strconv.Atoi(think)
+		if err != nil || n < -1 {
+			return Variant{}, renderErr("%s: after the @ goes how many tokens the model may think, "+
+				"for instance stories@1024, or -1 for no limit", pyRepr(name))
+		}
+		v.Think = &n
+	}
+	return v, nil
+}
+
 // Compare searches the window of opts once with each recipe and writes a
 // report beside the plans. It gives the runs and the report's path.
 func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]RecipeRun, string, error) {
 	if len(names) == 0 {
 		return nil, "", renderErr("name the recipes to compare, for instance --compare lines,stories")
 	}
-	for _, name := range names {
-		if _, err := RecipeNamed(name); err != nil {
+	variants := make([]Variant, len(names))
+	for i, name := range names {
+		v, err := ParseVariant(name)
+		if err != nil {
 			return nil, "", err
 		}
+		variants[i] = v
 	}
 	work := WorkDir(opts.Source)
 	logs := filepath.Join(work, "logs")
 	var runs []RecipeRun
-	for _, name := range names {
+	for i, name := range names {
 		if ctx.Err() != nil {
 			return runs, "", ctx.Err()
 		}
 		e.Log.Info("searching with the %s recipe", name)
 		o := opts
-		o.Recipe, o.Experiment, o.PlanOnly = name, true, true
+		o.Recipe, o.Variant, o.Experiment, o.PlanOnly = variants[i].Recipe, name, true, true
+		if variants[i].Think != nil {
+			o.Think = *variants[i].Think
+		}
 		began := time.Now()
 		// The hook can be called from the goroutines that frame the clips.
 		var mu sync.Mutex
@@ -243,8 +281,13 @@ func compareReport(opts Options, runs []RecipeRun) string {
 	}
 	for _, r := range runs {
 		fmt.Fprintf(&b, "\n## %s\n\n", r.Recipe)
-		if recipe, err := RecipeNamed(r.Recipe); err == nil {
-			b.WriteString(recipe.About + ".\n\n")
+		if v, err := ParseVariant(r.Recipe); err == nil {
+			recipe, _ := RecipeNamed(v.Recipe)
+			b.WriteString(recipe.About)
+			if v.Think != nil {
+				fmt.Fprintf(&b, ", thinking at most %s tokens", commas(*v.Think))
+			}
+			b.WriteString(".\n\n")
 		}
 		if r.Failed != "" {
 			fmt.Fprintf(&b, "The search failed: %s\n", r.Failed)

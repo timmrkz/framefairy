@@ -103,7 +103,7 @@ fits.
 | `--silence-db -42` | measured | what counts as silence. Taken from the audio when not given |
 | `--context ""` | empty | guest name, company, vocabulary. Helps the choice of moments and the spelling of names |
 | `--recipe lines` | `lines` | how the model is asked for clips, see [Trying other ways of asking](#trying-other-ways-of-asking) |
-| `--compare lines,stories` | off | search the window once with each recipe and write a report, see below |
+| `--compare lines,stories` | off | search the window once with each recipe and write a report, see below. `stories@1024` is `stories` thinking 1024 tokens |
 | `--replan` | off | discard the saved plan and choose again |
 | `--plan-only` | off | write `clips.json` and stop |
 | `--transcribe-only` | off | transcribe, write `logs/words.srt` and stop |
@@ -205,6 +205,15 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories-edit
 ```
 
 shows whether the second ask makes better edges, and what it costs.
+
+A recipe with `@` and a number thinks that many tokens, whatever
+`--think` says, so one recipe can be compared with itself:
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories@1024
+```
+
+Each side has its own folder in `experiments/`, named as it was written.
 
 ```
 framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories

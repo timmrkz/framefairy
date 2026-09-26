@@ -44,6 +44,9 @@ type Options struct {
 	// plan in a folder of its own, nothing rendered and nothing recorded.
 	// A comparison asks for it. Any other recipe is always an experiment.
 	Experiment bool
+	// Variant is the name a comparison gives this search, stories@1024 say,
+	// and the folder its plan goes in. Empty is the recipe's own name.
+	Variant string
 
 	// Planner is "local", the default, or "api".
 	Planner   string
@@ -255,7 +258,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 	planPath := opts.ClipsPath
 	if planPath == "" {
-		planPath = PlanFor(work, opts.Recipe, opts.Experiment, planName)
+		planPath = PlanFor(work, opts.folder(), opts.Experiment, planName)
 	}
 
 	// Plans written by an early version sat in the work directory itself.
@@ -825,4 +828,13 @@ func (e *Engine) planFailed(ctx context.Context, err error) int {
 	}
 	e.Log.Error("planning failed: %s", err)
 	return 1
+}
+
+// folder is what an experiment's plan folder is named after: the name a
+// comparison gave the search, or its recipe.
+func (opts Options) folder() string {
+	if opts.Variant != "" {
+		return opts.Variant
+	}
+	return opts.Recipe
 }
