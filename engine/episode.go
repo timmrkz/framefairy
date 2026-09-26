@@ -54,6 +54,10 @@ type EpisodeStatus struct {
 	// It stays true after the clips are removed again, because the app
 	// looks by itself only for an episode nobody has looked at yet.
 	Looked bool `json:"looked"`
+	// LastSearch is how the last search ended when it did not end with
+	// clips: still running, which after a restart means it was cut off, or
+	// failed with its reason. Nil when there is nothing to say.
+	LastSearch *SearchNote `json:"lastSearch,omitempty"`
 }
 
 // Status reads an episode's state from disk.
@@ -86,6 +90,7 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
 	st.Work = exists(work)
 	st.Looked = Looked(source)
+	st.LastSearch = ReadSearchNote(source)
 	return st
 }
 

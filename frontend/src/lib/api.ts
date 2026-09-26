@@ -92,6 +92,21 @@ export interface EpisodeStatus {
   // Whether anyone has ever searched this episode for clips. It stays true
   // when the clips are removed again.
   looked: boolean;
+  // How the last search ended when it did not end with clips: still
+  // running, which with nothing running means it was cut off, or failed
+  // with its reason. Left out when there is nothing to say.
+  lastSearch?: SearchNote;
+}
+
+export interface SearchNote {
+  state: "running" | "failed";
+  // The window it was asked about. To is 0 for the end of the episode.
+  from: number;
+  to: number;
+  error?: string;
+  // True while it waited for the transcript to reach the end of its window,
+  // before anything was sent to the model.
+  waiting?: boolean;
 }
 
 export interface Word {
@@ -409,6 +424,12 @@ export const api = {
   source: (path: string) => call<SourceView>("Source", path),
   clips: (path: string) => call<ClipEntry[]>("Clips", path),
   coverage: (path: string, least: number) => call<CoverageView>("Coverage", path, least),
+  // A search asked for before the transcript covers its window is held by
+  // the interface until it does. These note it with the episode, and take
+  // the note away when it is called off, so an app closed in that wait
+  // leaves the episode saying so.
+  askSearch: (path: string, from: number, to: number) => call<void>("AskSearch", path, from, to),
+  forgetSearch: (path: string) => call<void>("ForgetSearch", path),
   // How much of the episode one search can read, and the weight of every
   // line so far, so the range picker knows how far a window may reach.
   room: (path: string) => call<RoomView>("Room", path),

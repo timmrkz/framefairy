@@ -13,6 +13,7 @@
     coming = 0,
     waiting = true,
     next = null,
+    stopped = null,
     onselect,
     onremove,
     onputback,
@@ -32,6 +33,13 @@
     // is not known. That row wears the work running, because it is where
     // the next clip will appear.
     next?: { what: string; left: string; fraction: number } | null;
+    // How the last search ended, when it stopped before it was done and
+    // nothing is running now. It is said in the row its next clip would
+    // have appeared in, the same row that says what a search is doing
+    // while it runs, so the end of the story is where the story was told.
+    // It stays until a search starts: after a restart too, because the
+    // engine keeps it with the episode.
+    stopped?: { what: string; left: string; full: string } | null;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -153,6 +161,11 @@
         <Busy fraction={next.fraction} />
         <span class="title">{next.what}</span>
         <span class="meta muted num">{next.left}</span>
+      </li>
+    {:else if row === 0 && stopped}
+      <li class="ghost next stopped" title={stopped.full}>
+        <span class="title">{stopped.what}</span>
+        <span class="meta muted num">{stopped.left}</span>
       </li>
     {:else}
       <li class="ghost" class:waiting style="--wait-in: {row * 800}ms"></li>
@@ -341,5 +354,22 @@
     gap: 2px;
     padding: 0 10px;
     background: var(--ink-1);
+  }
+
+  /* A search that stopped before it was done: the same row, still, in the
+     colour of a warning. Not the red of what was taken away, because
+     nothing was lost: New looks again. */
+  .stopped .title {
+    color: var(--warn);
+  }
+
+  /* One line, as tall as every other row, whatever the reason says. The
+     whole of it is in the row's title. */
+  .stopped .meta {
+    display: block;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
