@@ -24,6 +24,9 @@
 #                   pack both of them, with a manifest, for a release
 #   make notices    write the licence notices again, from what the programs
 #                   are built from
+#   make changed    what this branch changed against main, and only that:
+#                   the tests of the Go packages it reaches, the interface,
+#                   the build, before every push
 #   make test       all tests: unit, fuzz and interface
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
@@ -101,7 +104,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key icon motion ffmpeg llama tools-archive notices deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app install update-key changed icon motion ffmpeg llama tools-archive notices deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -133,7 +136,7 @@ tools-beside:
 	fi
 
 help:
-	@sed -n '1,36p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,39p' Makefile | sed 's/^# \{0,1\}//'
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
@@ -281,6 +284,12 @@ motion: frontend/node_modules/.package-lock.json
 # stand alone as well, because they do not need each other and CI runs them
 # on three machines at once: waiting for the fuzzing to finish before the
 # interface is type checked is waiting for nothing.
+# The check before a push: what the branch changed, worked out file by
+# file, and only that. See scripts/changed.sh for what each kind of file
+# runs. CI still runs everything.
+changed:
+	@GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
+
 test: unit fuzz interface
 
 # The tests run with the race detector, because the app is a queue of jobs
