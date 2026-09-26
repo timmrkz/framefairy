@@ -351,17 +351,16 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	}
 }
 
-// lines2 asks what lines asks with the brief put right: nothing about one
-// kind of show, no "exactly" against "fewer is better", what must never be
-// cut, and the task again after the transcript. The transcript itself is
-// written exactly as lines writes it.
-func TestLines2IsLinesWithTheBriefPutRight(t *testing.T) {
+// lines, since version 3, and stories2 ask with the brief put right:
+// nothing about one kind of show, no "exactly" against "fewer is better",
+// what must never be cut, and the task again after the transcript.
+func TestTheBriefIsPutRight(t *testing.T) {
 	lines := []Line{speech(0, 0, "Was", "ist", "das?"), speech(2, 0.4, "Ein", "Schirm.")}
 	for i := range lines {
 		lines[i].Index = i + 1
 	}
 	opts := PlanOptions{Count: 3, MinLen: 20, MaxLen: 30}
-	for _, name := range []string{"lines2", "stories2"} {
+	for _, name := range []string{"lines", "stories2"} {
 		r, err := RecipeNamed(name)
 		if err != nil {
 			t.Fatal(err)
@@ -381,8 +380,11 @@ func TestLines2IsLinesWithTheBriefPutRight(t *testing.T) {
 			t.Errorf("%s does not say the task after the transcript:\n%s", name, request)
 		}
 	}
-	l2, _ := RecipeNamed("lines2")
-	if !strings.Contains(l2.Request(lines, l2.units(lines), opts), AnnotateLines(lines)) {
-		t.Error("lines2 writes the transcript differently from lines")
+	l, _ := RecipeNamed("lines")
+	if !strings.Contains(l.Request(lines, l.units(lines), opts), AnnotateLines(lines)) {
+		t.Error("lines no longer writes every line with its time, pause and level")
+	}
+	if PromptVersion != 3 {
+		t.Error("the brief changed, so the prompt version has to")
 	}
 }

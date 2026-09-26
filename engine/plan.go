@@ -127,23 +127,22 @@ func MarshalPlan(plan any) ([]byte, error) {
 }
 
 func buildPrompt(lines []Line, opts PlanOptions) string {
+	task := fmt.Sprintf("Find up to %d clips, the strongest first. Each runs %s to %s seconds "+
+		"once what you leave out is gone. Keep the heart and the payoff of every story whole.",
+		opts.Count, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
 	ask := []string{
-		fmt.Sprintf("Choose exactly %d clip(s).", opts.Count),
-		fmt.Sprintf("Each clip must total between %s and %s seconds once condensed.",
-			fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0)),
-		fmt.Sprintf("Reaching the payoff matters more than being brief. If a clip needs "+
-			"%s seconds to get there, take them.", fixed(opts.MaxLen, 0)),
+		task,
 		fmt.Sprintf("The transcript below is numbered from 1 to %d. Those numbers are what "+
 			"you return. Each line shows its talking time in seconds, and any pause before "+
 			"it, so a clip's length is the lines you keep plus the pauses inside the runs "+
 			"you keep.", len(lines)),
 	}
 	if opts.Context != "" {
-		ask = append(ask, "Episode context: "+opts.Context)
+		ask = append(ask, "About the video: "+opts.Context)
 	}
 	ask = append(ask, "", "Transcript:", "", AnnotateLines(lines), "",
-		"Reply with the JSON object and nothing else. No preamble, no explanation, "+
-			"no markdown fences.")
+		"That is the whole transcript. "+task,
+		"Reply with the JSON object and nothing else.")
 	return strings.Join(ask, "\n")
 }
 

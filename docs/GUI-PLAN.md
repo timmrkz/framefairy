@@ -205,6 +205,25 @@ then makes the code survive it.
 
 ---
 
+## Clip choice track: better stories, better cuts, less waiting
+
+How the model is asked, and what the engine does with its answer. Every
+experiment runs from the command line with `--compare`, see
+[CLI.md](CLI.md#trying-other-ways-of-asking), and is kept or taken out by
+what Tim reads and what the report counts.
+
+| # | Batch | Status |
+|---|---|---|
+| C.1 | Recipes, `--compare` with a report of what each cost, found and got wrong, the same seed on every side | `[x]` |
+| C.2 | The engine around the answer: numbers kept apart from words, every edge on a whole sentence, one clip per moment, clips far off the length asked for again | `[x]` |
+| C.3 | A brief for any video, what must never be cut, the task said again after the transcript. The app's default since prompt version 3 | `[x]` |
+| C.4 | A yardstick: about 40 stories whose first and last sentence and what to leave out Tim has marked, scored by the program over three seeds | `[ ]` |
+| C.5 | Decided with the yardstick, not by one run: 1024 tokens of thinking, the shorter `stories2` transcript, worked examples from Tim's cuts, a close second look at each clip's edges | `[ ]` |
+
+Tried and taken out: asking the model to review its own edges, telling
+the voices apart, cutting an overlong clip automatically. The reasons are
+in [ENGINE.md](ENGINE.md#recipes).
+
 ## Training track, separate from the app
 
 Follows `framefairy-training-plan.md`, with one change: nothing of it appears in

@@ -173,7 +173,7 @@ func joinRuns(keep [][2]int) [][2]int {
 // it, and the answer runs of lines. Its prompt and answer are PromptVersion.
 var linesRecipe = Recipe{
 	Name:    "lines",
-	About:   "every line of speech numbered, with its length, pauses and level",
+	About:   "a brief for any video, every line of speech numbered, with its length, pauses and level, and the task again after the transcript",
 	Unit:    "line",
 	Version: PromptVersion,
 	System:  SystemPrompt,

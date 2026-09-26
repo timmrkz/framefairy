@@ -27,6 +27,17 @@ A cut leaves 0.1 seconds (`--keep-pause`) of silence after the last word and
 before the next one. Where a pause is shorter than that, the two runs join
 into one piece and nothing plays twice.
 
+### Version 3
+
+The brief for any video. The brief before it was written for one podcast
+and pulled two ways: a founder portrait and the guest, exactly N clips
+against fewer beat padding, 20 to 30 seconds against the payoff mattering
+more than being brief. Version 3 gives one order: the heart of a story and
+its payoff are never cut, the clip starts on the least a stranger needs and
+ends on the payoff, and the length comes after that. The task is said
+again after the transcript. The answer is version 2's, so every version 2
+answer is still a valid version 3 answer.
+
 ### Version 1
 
 Runs could not follow each other directly. A pause could only be cut by
