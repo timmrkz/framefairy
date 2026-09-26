@@ -167,6 +167,14 @@ messages, pull request text, code comments and chat replies.
   place for a moment, says what became of it and offers itself back, and
   only then does the list close over it. Nothing vanishes under the
   pointer. Something undoable never asks first, it shows what it did.
+- **An outcome stays where its work was.** How a piece of work ended is
+  said where it was started and where its result would have appeared, and
+  it stays there until it is acted on, after a restart too. A search that
+  stopped says so in the row its next clip would have appeared in, a
+  transcription that was paused keeps its mark on the range picker. No
+  toasts and no banners: a toast is gone before it is read and appears
+  far from what it is about, and a banner is standing text that moves the
+  workspace. Work that was called off by hand has nothing to report.
 - **What the app can do by itself, it does.** Adding a video is enough: the
   transcription starts, and the first search follows as soon as the
   transcript covers the window. A state every episode passes

@@ -203,6 +203,19 @@
         title: "Call the search off. The transcription it waits for stops with it",
       };
     }
+    // A search that was cut off or failed is carried on, not started anew:
+    // the button says Continue and takes up the window the search was
+    // about, wherever the window on the range picker is now.
+    if (stopped) {
+      return {
+        label: "Continue",
+        icon: "play",
+        run: carryOnSearch,
+        off: duration <= 0,
+        primary: true,
+        title: `Carry on the search of ${stopped.window.toLowerCase()}`,
+      };
+    }
     return {
       label: "New",
       icon: "plus",
@@ -238,6 +251,8 @@
   function skipLook() {
     chosen.looked[path] = true;
     delete chosen.asked[path];
+    // Called off by hand, so there is nothing for the episode to say.
+    api.forgetSearch(path).catch(() => {});
     // The transcription runs for the search, so it stops with it.
     stopTranscribing();
     // The transcription stops at the window only for that search.
@@ -490,6 +505,52 @@
   // is going on, and New looked as if it had done nothing until the
   // transcript was there. Counting the clips of the plan rather than the
   // clips shown also opened a row for every clip removed.
+  // How the last search ended, when it stopped before it was done and
+  // nothing is running now: cut off, because the app was closed or fell
+  // over in the middle, or failed with a reason. It is said in the first
+  // row still to come and points to New, and nothing starts by itself. A
+  // search called off by hand leaves nothing to say.
+  const stopped = $derived.by(() => {
+    const note = status?.lastSearch;
+    if (!note || finding || starting || lookPending) return null;
+    const end = note.to > 0 ? note.to : duration;
+    const window = `Window ${clock(note.from)} to ${clock(end)}`;
+    const span = { from: note.from, to: end, window };
+    if (note.state === "failed") {
+      // The engine's reasons begin in lower case, the way an error does
+      // in the log. In a row of the list it is a sentence.
+      const said = note.error?.trim() ?? "";
+      const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
+      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
+    }
+    // Cut off while it waited for the transcript, which is the first half
+    // of every search on an episode read only part way: Continue
+    // transcribes on from where it stopped and then looks.
+    if (note.waiting) {
+      const reached = Math.min(status?.covered ?? 0, end);
+      return {
+        ...span,
+        what: "Interrupted. Click Continue",
+        left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
+        full: `${window}. The app was closed while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
+      };
+    }
+    return {
+      ...span,
+      what: "Interrupted. Click Continue",
+      left: window,
+      full: `${window}. The app was closed or stopped while the clips were found. Continue looks again`,
+    };
+  });
+
+  // Continue: the window goes back to the one the search was about, and
+  // the search is asked for again, the same way New asks for it.
+  function carryOnSearch() {
+    if (!stopped) return;
+    from = stopped.from;
+    to = stopped.to;
+    findClips(covering);
+  }
   const coming = $derived(
     finding || starting
       ? shown.length + Math.max(0, count - foundSoFar)
@@ -497,7 +558,11 @@
         ? shown.length + count
         : shown.length === 0
           ? count
-          : 0,
+          : // Clips a search wrote before it was cut off stay, and one row
+            // after them says what became of the rest.
+            stopped
+            ? shown.length + 1
+            : 0,
   );
   // What the window lies over. A window may be drawn anywhere, so looking
   // again at material that was searched is allowed, it only asks first and
@@ -1303,6 +1368,9 @@
     if (!readyToLook) {
       chosen.asked[path] = { replan };
       fedFor = -1;
+      // Kept with the episode as well as here, because here is gone the
+      // moment the app is closed, and the search with it.
+      api.askSearch(path, whole ? 0 : from, whole ? 0 : to).catch(() => {});
       return;
     }
     starting = true;
@@ -1536,11 +1604,16 @@
     if (!finished.length) return;
     waiting = waiting.filter((id) => !finished.some((j) => j.id === id));
     starting = false;
-    for (const job of finished) {
-      if (job.state === "failed") problem = job.error ?? "The job failed.";
-    }
     onchange();
     load().then(() => {
+      // A search that failed says so in the clip list, where its clips
+      // would have been, and only a failure that never reached the search
+      // itself, with no note to show, goes to the line over the workspace.
+      for (const job of finished) {
+        if (job.state !== "failed") continue;
+        if (job.kind === "plan" && status?.lastSearch) continue;
+        problem = job.error ?? "The job failed.";
+      }
       const plan = finished.find((j) => j.kind === "plan" && j.state === "done")?.result;
       if (!plan) return;
       // The window just searched is a wall now, so the window moves on to
@@ -2147,6 +2220,7 @@
               {coming}
               waiting={comingNow}
               next={shownNext}
+              {stopped}
               removed={removed?.key ?? ""}
               onselect={select}
               onremove={removeClip}

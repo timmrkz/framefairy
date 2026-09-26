@@ -670,6 +670,29 @@ place.
       Clips says, following it as it changes, and still, because nothing
       is filling them yet. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
+    - **A search that stopped before it was done says so** in the row its
+      next clip would have appeared in, in the colour of a warning, and
+      **New** becomes **Continue**. *Interrupted. Click Continue* is a
+      search the app was closed or fell over in, with the window it was
+      about under it, or with how far the transcript came when it still
+      waited for the transcript, which is the first half of every search on
+      an episode read only part way. *Failed. Click Continue* has its
+      reason under it. The whole of it is in the row's title. **Continue**
+      takes the window back to the one the search was about and asks for
+      it again: a search that waited transcribes on from where it stopped
+      and then looks. Nothing starts by itself. It stays until a search
+      starts, after a restart too, because the episode keeps how its last
+      search ended in `search.json` in its work folder: running from the
+      moment the search is asked for, marked as waiting until the
+      transcript is there, which includes **New** pressed before the
+      transcript covers the window, a search the interface holds until it
+      does, the reason when it fails, and nothing once it has found its
+      clips. **Cancel** takes it away too, because whoever pressed it knows
+      why. Closing the app stops every search as well, and that leaves the
+      note as it is, so a note that still says running when the episode is
+      opened is a search that was cut off. Clips it wrote before that stay,
+      with the row after them. A failure that never reached the search
+      itself still goes to the line over the workspace.
     - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
