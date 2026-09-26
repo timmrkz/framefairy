@@ -231,8 +231,10 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories
 
 searches the same window once with each recipe and writes
 `<episode>.framefairy/experiments/compare-<date>.md`: a table of what each
-search cost, the time, the size of the request and what the local model
-read and wrote, and then every clip each found, with its title and the
+search cost, the time, the seconds the model took, the size of the request
+and what the local model read and wrote, a table of what can be counted
+about the clips, how many start or end mid-sentence and how many are well
+off the length, and then every clip each found, with its title and the
 words that stay, to read side by side. Each recipe's plan is in
 `experiments/<recipe>/`, beside `prompt.txt`, what it asked, and
 `reply.json`, what came back. So `experiments/` holds everything a

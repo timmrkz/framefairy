@@ -135,3 +135,35 @@ func TestAClipTooLongLosesItsMiddle(t *testing.T) {
 		}
 	}
 }
+
+// A filler word that begins the sentence stays at the start of a clip,
+// because without it the clip starts in the middle of the sentence. One
+// that stands before a new sentence goes.
+func TestAFillerThatBeginsTheSentenceStays(t *testing.T) {
+	lines := said(
+		0.0, 0.2, "Und", // 1
+		1.1, 2.0, "irgendein Typ auf dem Schulhof gemobbt.", // 2
+		0.5, 0.3, "Äh", // 3
+		0.5, 2.0, "Ich war noch klein.", // 4
+	)
+	if !IsFiller("Und") || !IsFiller("Äh") {
+		t.Fatal("the test needs Und and Äh to be filler")
+	}
+	if got := fmt.Sprint(trimFiller(lines, [][2]int{{1, 2}})); got != "[[1 2]]" {
+		t.Errorf("Und before irgendein went: %s", got)
+	}
+	if got := fmt.Sprint(trimFiller(lines, [][2]int{{3, 4}})); got != "[[4 4]]" {
+		t.Errorf("Äh before Ich stayed: %s", got)
+	}
+}
+
+func TestTheReportCountsFaults(t *testing.T) {
+	clips := []FoundClip{
+		{Text: "irgendein Typ auf dem Schulhof.", Seconds: 25},
+		{Text: "Und dann war es hell, aber davor", Seconds: 40},
+		{Text: "Was ist deine erste Erinnerung? Ein Schirm.", Seconds: 15},
+	}
+	if s, e, o := clipFaults(clips, 20, 30); s != 1 || e != 1 || o != 2 {
+		t.Errorf("counted %d starts, %d ends, %d off", s, e, o)
+	}
+}

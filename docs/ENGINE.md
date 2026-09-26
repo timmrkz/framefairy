@@ -163,7 +163,10 @@ sentence begins or ends, when that is at most 8 s away, `sentenceReach`.
 Further than that the model's edge stands, since a transcript can go a
 while without a full stop. Runs that overlap once they are whole
 sentences are one. This is done before a clip is measured, so the length
-check sees the clip as it will be cut.
+check sees the clip as it will be cut. A filler word at the start of a
+clip goes, unless the line after it goes on in lower case: then it is the
+first word of the sentence, "Und" before "irgendein Typ auf dem Schulhof",
+and without it the clip would start mid-sentence.
 
 Whatever the recipe, the model sometimes gives one moment twice, a line
 apart. A clip that shares more than half the lines of the shorter of the

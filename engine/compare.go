@@ -38,8 +38,10 @@ type RecipeRun struct {
 	// PromptChars is the whole request, what the model is told and the
 	// request with the transcript in it.
 	PromptChars int
-	// What a local model says it read and wrote, when one was asked.
+	// What a local model says it read and wrote, when one was asked, and
+	// the seconds it took to read the request and write the answer.
 	PromptTokens, WrittenTokens, ThoughtChars int
+	ModelSeconds                              float64
 	Clips                                     []FoundClip
 	Failed                                    string
 }
@@ -165,7 +167,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 			keepCopy(dir, "prompt.txt", body)
 		}
 		var reply string
-		reply, run.PromptTokens, run.WrittenTokens, run.ThoughtChars = lastLocalAnswer(logs, began)
+		reply, run.PromptTokens, run.WrittenTokens, run.ThoughtChars, run.ModelSeconds = lastLocalAnswer(logs, began)
 		if body, err := os.ReadFile(reply); reply != "" && err == nil {
 			keepCopy(dir, "reply.json", body)
 		}
@@ -210,7 +212,7 @@ func keepCopy(dir, name string, body []byte) {
 // model said about it: the tokens it read, the tokens it wrote, and how much
 // of what it wrote was thought. The numbers are zero for the API, and the
 // path empty for an answer reused.
-func lastLocalAnswer(logs string, began time.Time) (path string, read, written, thought int) {
+func lastLocalAnswer(logs string, began time.Time) (path string, read, written, thought int, seconds float64) {
 	matches, _ := filepath.Glob(filepath.Join(logs, "reply-*.json"))
 	var newest string
 	var at time.Time
@@ -222,19 +224,23 @@ func lastLocalAnswer(logs string, began time.Time) (path string, read, written, 
 		newest, at = m, info.ModTime()
 	}
 	if newest == "" {
-		return "", 0, 0, 0
+		return "", 0, 0, 0, 0
 	}
 	body, err := os.ReadFile(newest)
 	if err != nil {
-		return "", 0, 0, 0
+		return "", 0, 0, 0, 0
 	}
 	var saved struct {
 		How *localAnswer `json:"how"`
 	}
 	if json.Unmarshal(body, &saved) != nil || saved.How == nil {
-		return newest, 0, 0, 0
+		return newest, 0, 0, 0, 0
 	}
-	return newest, saved.How.PromptTokens, saved.How.Written, saved.How.Reasoning
+	h := saved.How
+	if h.Timings != nil {
+		seconds = (h.Timings.PromptMS + h.Timings.PredictedMS) / 1000
+	}
+	return newest, h.PromptTokens, h.Written, h.Reasoning, seconds
 }
 
 // newestPlan is the plan written in dir since began.
@@ -308,12 +314,27 @@ func compareReport(opts Options, runs []RecipeRun) string {
 		"Seed %d, temperature %s unless a side says otherwise.\n\n",
 		filepath.Base(opts.Source), window, opts.Count, fixed(opts.Min, 0), fixed(opts.Max, 0),
 		seed, temperature)
-	b.WriteString("| Recipe | Clips | Seconds | Request, characters | Read, tokens | Written, tokens | Thought, characters |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
+	b.WriteString("| Recipe | Clips | Seconds | Model, seconds | Request, characters | Read, tokens | Written, tokens | Thought, characters |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, r := range runs {
-		fmt.Fprintf(&b, "| %s | %d | %s | %s | %s | %s | %s |\n", r.Recipe, len(r.Clips),
-			fixed(r.Seconds, 0), commas(r.PromptChars), orNone(r.PromptTokens),
+		model := "-"
+		if r.ModelSeconds > 0 {
+			model = fixed(r.ModelSeconds, 0)
+		}
+		fmt.Fprintf(&b, "| %s | %d | %s | %s | %s | %s | %s | %s |\n", r.Recipe, len(r.Clips),
+			fixed(r.Seconds, 0), model, commas(r.PromptChars), orNone(r.PromptTokens),
 			orNone(r.WrittenTokens), orNone(r.ThoughtChars))
+	}
+	// What can be counted about the clips, beside what has to be read.
+	b.WriteString("\nWhat can be counted, fewer is better. A clip starts mid-sentence when its first " +
+		"word is in lower case, ends mid-sentence when its last has no full stop, question or " +
+		"exclamation mark, and is off the length when it runs under 90 % of the shortest or over " +
+		"120 % of the longest asked for.\n\n")
+	b.WriteString("| Recipe | Starts mid-sentence | Ends mid-sentence | Off the length |\n")
+	b.WriteString("| --- | --- | --- | --- |\n")
+	for _, r := range runs {
+		starts, ends, off := clipFaults(r.Clips, opts.Min, opts.Max)
+		fmt.Fprintf(&b, "| %s | %d | %d | %d |\n", r.Recipe, starts, ends, off)
 	}
 	for _, r := range runs {
 		fmt.Fprintf(&b, "\n## %s\n\n", r.Recipe)
@@ -347,6 +368,24 @@ func every(runs []RecipeRun, test func(RecipeRun) bool) bool {
 		}
 	}
 	return true
+}
+
+// clipFaults counts the clips that start or end mid-sentence and the ones
+// well off the length, the same bounds the log flags.
+func clipFaults(clips []FoundClip, least, most float64) (starts, ends, off int) {
+	for _, c := range clips {
+		text := strings.TrimSpace(c.Text)
+		if startsLower(text) {
+			starts++
+		}
+		if !endsSentence(text) {
+			ends++
+		}
+		if c.Seconds < least*0.9 || c.Seconds > most*1.2 {
+			off++
+		}
+	}
+	return starts, ends, off
 }
 
 func orDash(s string) string {

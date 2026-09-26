@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 // ---------------------------------------------------------------------------
@@ -229,6 +230,13 @@ func (b *planBuilder) outside(seconds float64) bool {
 func trimFiller(lines []Line, keep [][2]int) [][2]int {
 	ranges := append([][2]int(nil), keep...)
 	for len(ranges) > 0 && IsFiller(lines[ranges[0][0]-1].Text()) {
+		// "Und" before "irgendein Typ auf dem Schulhof" is the first word
+		// of the sentence, and without it the clip starts in the middle of
+		// one. The recogniser writes a sentence with a capital, so a line
+		// that goes on in lower case is the rest of the filler's sentence.
+		if ranges[0][0] < ranges[0][1] && startsLower(lines[ranges[0][0]].Text()) {
+			break
+		}
 		if ranges[0][0] < ranges[0][1] {
 			ranges[0][0]++
 		} else {
@@ -244,6 +252,16 @@ func trimFiller(lines []Line, keep [][2]int) [][2]int {
 		}
 	}
 	return ranges
+}
+
+// startsLower is true for text whose first letter is a small one.
+func startsLower(text string) bool {
+	for _, r := range text {
+		if unicode.IsLetter(r) {
+			return unicode.IsLower(r)
+		}
+	}
+	return false
 }
 
 // sameMomentAs finds a clip among these that keeps the same moment as
