@@ -111,40 +111,42 @@ model hearing's and the language model finding's, as today.
 ## The record
 
 Every job keeps one record in its episode's work folder, in `jobs/`, one
-file per job, written on every change of step and every report of how far
-it has come, atomically, the way plans are written:
+file per job, written atomically on every change of step. The search is
+`jobs/search.json`, since an episode has one at a time, and a render is
+`jobs/render-<id>.json`. The code is `engine/jobs.go`.
 
 ```json
 {
-  "id": "s-1790449…",
+  "id": "search",
   "kind": "search",
   "from": 1800, "to": 3600,
-  "count": 12, "min": 20, "max": 30, "replan": false,
+  "count": 12, "min": 20, "max": 30,
   "step": "hearing",
-  "covered": 2712.4,
-  "error": "",
   "asked": "2026-09-26T19:05:00Z",
-  "steps": {
-    "waiting": {"from": "2026-09-26T19:05:00Z", "to": "2026-09-26T19:05:02Z"},
-    "hearing": {"from": "2026-09-26T19:05:02Z"}
-  }
+  "steps": [
+    {"step": "waiting", "from": "2026-09-26T19:05:00Z", "to": "2026-09-26T19:05:02Z"},
+    {"step": "hearing", "from": "2026-09-26T19:05:02Z"}
+  ]
 }
 ```
 
 A render has the plan and the clips instead of the window and the
-numbers, and the clips it has finished.
+numbers, and `done`, the clips it has finished, written as each one is.
 
-- `step` is one of `waiting`, `hearing`, `finding`, `rendering`, `failed`.
-  A job that is done or called off has no record: the transcript, the
-  plans and the shorts say what it made.
+- `step` is one of `waiting`, `hearing`, `finding`, `rendering`, `failed`,
+  with `error` beside a failed one. A job that is done or called off has
+  no record: the transcript, the plans and the shorts say what it made.
+- How far hearing got is not in the record. The transcript says it, and
+  saying it twice is two things that can disagree.
 - `steps` is when each step began and ended. It is the timings: how long
-  a search waited, heard, loaded the model and found, and how long a
-  render took. When a job is done, its timings are added to
-  `jobs/timings.jsonl` before the record goes, so `framefairy-train` can
-  add them up over the library. They stay on the machine. `searchclock.go`
-  keeps timing the model's own parts for the progress fill, as today.
+  a search waited for its turn, heard and found, and how long a render
+  took. When a job is done, its timings are added to `jobs/timings.jsonl`
+  before the record goes, with the model that found the clips. They stay
+  on the machine. `searchclock.go` keeps timing the model's own parts for
+  the progress fill, as today.
 - It is read as untrusted, like every file on disk: a record that is not
-  one is no record.
+  one is no record, and a render's plan has to be one of the episode's
+  own plans.
 - It replaces `looked` and today's `search.json`. Whether an episode has
   ever been searched is whether it has a plan or a record.
 
@@ -158,8 +160,9 @@ without somewhere to send it.
 ## Who does what
 
 **The engine** gets `Project.Search`, which runs hearing and finding in
-order and writes the record as it goes, and `Project.Render` writes its
-record the same way. `Project.Search` is the command line's `Run` split at
+order and writes the record as it goes, and `Project.RenderJob` renders
+clips one at a time and writes its record the same way. Before each step
+they ask the app for their turn in that step's lane. `Project.Search` is the command line's `Run` split at
 the seam it already has, transcribing and then planning. The command line
 keeps its flags and gets the same records for free.
 
