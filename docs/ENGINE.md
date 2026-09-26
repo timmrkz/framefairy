@@ -206,10 +206,14 @@ Whichever of the two is nearer the length becomes the clip, so a clip is
 never lost, and one that ran into another clip keeps its first form.
 Answering without thinking, the model sometimes gives a clip back
 unchanged, and a short of fifty seconds is not a short. So a clip still
-over 120 % of the maximum after all that loses whole sentences from its
-start until it fits, `fromTheStart` in `edges.go`. The end stays, because
-that is where the payoff is. A clip that is one sentence too long for
-that is left as it is.
+over 120 % of the maximum after all that is cut the way an editor would,
+`fromTheMiddle` in `edges.go`: the opening sentence stays, because that is
+what lets a stranger follow, the end stays, because that is where the
+payoff is, and whole sentences go from between them, the ones straight
+after the opening first. When even the opening and the last sentence are
+too long together, the opening goes too. The first version cut from the
+start, and on Tim's episode took the setup off the mirror story. A clip
+one sentence too long for any of that is left as it is.
 
 A recipe with `Edit`, `stories-edit`, holds back every clip, not only
 those off the length, and the second ask is about the edit: where each

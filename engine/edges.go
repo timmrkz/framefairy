@@ -90,27 +90,51 @@ func nearer(at, back, forward int, time func(int) float64) int {
 	return forward
 }
 
-// fromTheStart shortens a clip that runs past most seconds by leaving out
-// whole sentences from its start, the end kept, where the payoff is. A
-// clip that is one sentence too long for that is left as it is.
-func fromTheStart(lines []Line, keep [][2]int, most float64, seconds func([][2]int) float64) [][2]int {
+// fromTheMiddle shortens a clip that runs past most seconds the way an
+// editor would: the opening sentence stays, because that is what lets a
+// stranger follow, the end stays, because that is where the payoff is, and
+// whole sentences go from between them, the ones straight after the
+// opening first. When even the opening and the last sentence are too long
+// together, the opening goes too. A clip one sentence too long for any of
+// that is left as it is.
+func fromTheMiddle(lines []Line, keep [][2]int, most float64, seconds func([][2]int) float64) [][2]int {
 	if seconds(keep) <= most {
 		return keep
 	}
-	ends := func(n int) bool { return endsSentence(strings.TrimSpace(lines[n-1].Text())) }
+	// The clip's sentences in order, each with the run it is part of.
+	type sentence struct{ first, last, run int }
+	var all []sentence
 	for r, run := range keep {
-		for first := run[0] + 1; first <= run[1]; first++ {
-			if !ends(first - 1) {
-				continue
-			}
-			shorter := append([][2]int{{first, run[1]}}, keep[r+1:]...)
-			if seconds(shorter) <= most {
-				return shorter
+		first := run[0]
+		for n := run[0]; n <= run[1]; n++ {
+			if n == run[1] || endsSentence(strings.TrimSpace(lines[n-1].Text())) {
+				all = append(all, sentence{first, n, r})
+				first = n + 1
 			}
 		}
-		// The whole of this run goes, and the next one starts on a sentence.
-		if r+1 < len(keep) && seconds(keep[r+1:]) <= most {
-			return keep[r+1:]
+	}
+	// runs puts sentences back together, one run for those that were one.
+	runs := func(parts []sentence) [][2]int {
+		var out [][2]int
+		for i, p := range parts {
+			if i > 0 && p.run == parts[i-1].run && p.first == parts[i-1].last+1 {
+				out[len(out)-1][1] = p.last
+				continue
+			}
+			out = append(out, [2]int{p.first, p.last})
+		}
+		return out
+	}
+	for from := 2; from < len(all); from++ {
+		shorter := runs(append([]sentence{all[0]}, all[from:]...))
+		if seconds(shorter) <= most {
+			return shorter
+		}
+	}
+	for from := 1; from < len(all); from++ {
+		shorter := runs(all[from:])
+		if seconds(shorter) <= most {
+			return shorter
 		}
 	}
 	return keep

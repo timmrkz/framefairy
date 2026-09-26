@@ -95,14 +95,16 @@ func parseRuns(t *testing.T, s string) [][2]int {
 	return runs
 }
 
-// A clip still far too long after the model was asked again loses whole
-// sentences from its start until it fits. The end, the payoff, stays.
-func TestAClipTooLongLosesSentencesFromItsStart(t *testing.T) {
+// A clip still far too long after the model was asked again is cut the way
+// an editor would: the opening sentence and the end stay, and whole
+// sentences go from between them.
+func TestAClipTooLongLosesItsMiddle(t *testing.T) {
 	lines := said(
-		0.0, 10.0, "Das war damals in der Schule so.", // 1
+		0.0, 8.0, "Was ist deine erste Erinnerung?", // 1
 		0.5, 10.0, "Wir hatten eine Bücherwand zu Hause.", // 2
-		0.5, 12.0, "Und dann habe ich die ganze Nacht gelesen", // 3
-		0.5, 12.0, "bis es hell war.", // 4
+		0.5, 10.0, "Da standen alle Bände.", // 3
+		0.5, 12.0, "Und dann habe ich die ganze Nacht gelesen", // 4
+		0.5, 6.0, "bis es hell war.", // 5
 	)
 	seconds := func(keep [][2]int) float64 {
 		total := 0.0
@@ -111,24 +113,25 @@ func TestAClipTooLongLosesSentencesFromItsStart(t *testing.T) {
 		}
 		return total
 	}
-	// 45 seconds, and 36 at most: the first sentence is enough to go.
-	if got := fmt.Sprint(fromTheStart(lines, [][2]int{{1, 4}}, 36, seconds)); got != "[[2 4]]" {
-		t.Errorf("got %s", got)
-	}
-	// At 30 at most, the second goes too.
-	if got := fmt.Sprint(fromTheStart(lines, [][2]int{{1, 4}}, 30, seconds)); got != "[[3 4]]" {
-		t.Errorf("got %s", got)
-	}
-	// A clip that fits is left alone, and one sentence too long for any
-	// cut stays as it is.
-	if got := fmt.Sprint(fromTheStart(lines, [][2]int{{2, 4}}, 36, seconds)); got != "[[2 4]]" {
-		t.Errorf("got %s", got)
-	}
-	if got := fmt.Sprint(fromTheStart(lines, [][2]int{{3, 4}}, 20, seconds)); got != "[[3 4]]" {
-		t.Errorf("got %s", got)
-	}
-	// With two runs, the first goes before the second is touched.
-	if got := fmt.Sprint(fromTheStart(lines, [][2]int{{1, 1}, {3, 4}}, 30, seconds)); got != "[[3 4]]" {
-		t.Errorf("got %s", got)
+	for _, c := range []struct {
+		keep string
+		most float64
+		want string
+	}{
+		// 48 seconds: the sentence after the opening goes, then the next.
+		{"[[1 5]]", 40, "[[1 1] [3 5]]"},
+		{"[[1 5]]", 30, "[[1 1] [4 5]]"},
+		// The opening and the last sentence together are too long: the
+		// opening goes too.
+		{"[[1 5]]", 20, "[[4 5]]"},
+		// It fits, or no cut makes it fit: it stays.
+		{"[[1 5]]", 50, "[[1 5]]"},
+		{"[[4 5]]", 10, "[[4 5]]"},
+		// A cut the model made stays a cut.
+		{"[[1 2] [4 5]]", 30, "[[1 1] [4 5]]"},
+	} {
+		if got := fmt.Sprint(fromTheMiddle(lines, parseRuns(t, c.keep), c.most, seconds)); got != c.want {
+			t.Errorf("%s at %v became %s, not %s", c.keep, c.most, got, c.want)
+		}
 	}
 }
