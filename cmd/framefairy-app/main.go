@@ -78,6 +78,9 @@ func main() {
 	}
 	svc := &FrameFairy{store: st}
 	svc.jobs = newQueue(st, emit, notify)
+	// The searches and renders that were cut off or failed the last time
+	// say so where their work was.
+	svc.jobs.restore(st.Episodes())
 	// Nothing the app started outlives it: a model loaded or still loading
 	// is stopped and no other is loaded, and the jobs are stopped, and with
 	// them any ffmpeg they run. On macOS app.Run never returns: Cmd+Q ends
@@ -493,17 +496,18 @@ func (s *FrameFairy) AddEpisodes() ([]string, error) {
 	}
 	// One file that cannot be added is not a reason to drop the others, so
 	// what was added is started either way and the reason travels with it.
+	return s.addEpisodes(videos)
+}
+
+// addEpisodes adds videos to the library. A new episode's first search
+// starts by itself, and hears the episode as far as its window and no
+// further. An episode that has been searched before waits for a search to
+// be asked for.
+func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	added, err := s.store.AddEpisodes(videos)
-	// A new episode's first search starts by itself, so its transcription
-	// starts right away, in the background, and goes as far as that
-	// search's window and no further. The window is the first half hour,
-	// or the whole of a shorter episode, which the workspace holds it to
-	// once it is open. firstLook is a part of every first window, so the
-	// transcription never runs past the one it is for. An episode that
-	// has been searched before transcribes when a search needs it.
 	for _, v := range added {
 		s.jobs.openEpisode(v)
-		s.transcribeForFirstSearch(v)
+		s.firstSearch(context.Background(), v)
 	}
 	return added, err
 }
@@ -1239,40 +1243,11 @@ func (s *FrameFairy) Still(ctx context.Context, path string, at float64, width i
 	return e.Still(ctx, path, at, fps, width)
 }
 
-// Render queues rendering clips of a plan.
+// Render queues rendering clips of a plan. The render keeps a record of
+// the clips it has finished, so one that is cut off carries on with the
+// rest, see search.go.
 func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
-	label := "Render"
-	if req.Preview {
-		label = "Preview"
-	}
-	// The plan is a path of its own, read and written to, so it is checked
-	// the same way the episode is.
-	if !s.store.Known(path) || (req.Plan != "" && !s.store.Known(req.Plan)) {
-		return s.jobs.refuse(path, "render", label, notInLibrary)
-	}
-	return s.jobs.addFor(path, "render", label, req.Plan, req.Clips, func(ctx context.Context, p *engine.Project) (string, error) {
-		if err := p.Render(ctx, req); err != nil {
-			return req.Plan, err
-		}
-		if !req.Preview {
-			// A finished render is the strongest sign a clip was right, and
-			// it is recorded with the clip as it was rendered.
-			ids := req.Clips
-			if len(ids) == 0 {
-				if view, err := engine.ReadPlan(req.Plan); err == nil {
-					for _, c := range view.Clips {
-						if !c.Rejected {
-							ids = append(ids, c.ID)
-						}
-					}
-				}
-			}
-			for _, id := range ids {
-				_ = engine.RecordDecision(req.Plan, id, engine.DecisionRendered, nil)
-			}
-		}
-		return req.Plan, nil
-	})
+	return s.render(path, req, nil)
 }
 
 // WordsView is the words of a part, with the lead-in and lead-out the
@@ -1773,6 +1748,9 @@ func (s *FrameFairy) ForgetSearch(path string) error {
 }
 
 func (s *FrameFairy) CancelJob(id string) {
+	if s.cancelSteps(id) {
+		return
+	}
 	// A search called off by hand has nothing to report: whoever called it
 	// off knows why. The app closing cancels every search too, and that
 	// one leaves its note, so the episode says it was cut off when it is

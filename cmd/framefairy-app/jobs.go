@@ -20,6 +20,10 @@ const (
 	JobDone      = "done"
 	JobFailed    = "failed"
 	JobCancelled = "cancelled"
+	// JobInterrupted is a search or a render whose record says it was
+	// running when the app last stopped: the app was closed or fell over
+	// in the middle of it. Continue carries it on.
+	JobInterrupted = "interrupted"
 )
 
 // Job is one engine step the interface asked for.
@@ -44,8 +48,19 @@ type Job struct {
 	Progress *engine.Event `json:"progress,omitempty"`
 	Queued   time.Time     `json:"queued"`
 	// Lane is "transcribe" or "work". Each lane runs one job at a time, so a
-	// long transcription never holds up finding or rendering clips.
+	// long transcription never holds up finding or rendering clips. A search
+	// moves from one lane to the other as it goes from hearing to finding.
 	Lane string `json:"lane"`
+	// Step is where a search or a render is: waiting, hearing, finding or
+	// rendering. See docs/JOBS.md.
+	Step string `json:"step,omitempty"`
+	// Record is the id of the record a search or a render keeps in the
+	// episode's work folder, see engine/jobs.go.
+	Record string `json:"record,omitempty"`
+	// From and To are the window of a search, To 0 for the end of the
+	// episode.
+	From float64 `json:"from,omitempty"`
+	To   float64 `json:"to,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -54,7 +69,11 @@ type Job struct {
 	// window keeps the snapshot with the larger number.
 	Seq uint64 `json:"seq"`
 
-	work   func(ctx context.Context, p *engine.Project) (string, error)
+	work func(ctx context.Context, p *engine.Project) (string, error)
+	// steps is the work of a job that takes a turn in a lane for each of
+	// its steps, a search or a render, instead of one for the whole job.
+	steps  func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error)
+	ask    *ask
 	cancel context.CancelFunc
 	ctx    context.Context
 }
@@ -72,12 +91,16 @@ const (
 )
 
 // queue runs one transcription and one other job at a time. More would
-// only make each of them slower.
+// only make each of them slower. Every job runs on a goroutine of its own
+// and waits for its turn in a lane, see lanes.go.
 type queue struct {
-	mu     sync.Mutex
-	jobs   []*Job
-	next   int
-	wake   map[string]chan struct{}
+	mu    sync.Mutex
+	jobs  []*Job
+	next  int
+	lanes *lanes
+	// idle is a queue that takes work and does none of it, see
+	// newIdleQueue.
+	idle   bool
 	emit   func(JobUpdate)
 	store  *store
 	notify func(episode string)
@@ -99,13 +122,10 @@ func (q *queue) stampLocked(j *Job) {
 	j.Seq = q.seq
 }
 
-// newQueue builds the queue and sets its lanes running.
+// newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	q := newIdleQueue(s, emit, notify)
-	for lane := range q.wake {
-		go q.loop(lane)
-	}
-	return q
+	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
+		lanes: newLanes()}
 }
 
 // newIdleQueue builds the queue without setting it running, so work can be
@@ -118,9 +138,9 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // test's own folder is taken away. That is exactly what happened, as
 // "TempDir RemoveAll cleanup: directory not empty".
 func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
-		wake: map[string]chan struct{}{
-			LaneTranscribe: make(chan struct{}, 1), LaneWork: make(chan struct{}, 1)}}
+	q := newQueue(s, emit, notify)
+	q.idle = true
+	return q
 }
 
 // Which lane a kind of work runs in. Each model install shares the lane of
@@ -195,16 +215,113 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
 		State: JobQueued, Queued: time.Now(), Lane: lane, work: work, cancel: cancel, ctx: ctx,
 		Plan: plan, Clips: append([]string(nil), clips...)}
+	// Its turn is asked for now, under the lock, so jobs of one lane run
+	// in the order they were queued.
+	job.ask = q.lanes.enqueue(lane, plainTurn)
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job
+	idle := q.idle
 	q.mu.Unlock()
 	q.emit(JobUpdate{Job: snapshot})
-	select {
-	case q.wake[lane] <- struct{}{}:
-	default:
+	if !idle {
+		go q.runSafely(job)
 	}
 	return snapshot
+}
+
+// addSteps queues a search or a render: work that takes a turn in a lane
+// for each of its steps. It runs from the start, waiting for its first
+// turn. With once, it hands back the job of the kind that already runs for
+// the episode instead, looked for under the same lock, see addOnce.
+func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*Job),
+	steps func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error)) Job {
+	q.mu.Lock()
+	if q.closed[episode] > 0 {
+		q.mu.Unlock()
+		return q.refuse(episode, kind, label, "the episode is being removed")
+	}
+	if q.shut {
+		q.mu.Unlock()
+		return q.refuse(episode, kind, label, "the app is closing")
+	}
+	if once {
+		for _, j := range q.jobs {
+			// One that was called off and is still stopping is not it: New
+			// pressed right after Cancel is a new search.
+			if j.Episode == episode && j.Kind == kind && (j.State == JobQueued || j.State == JobRunning) &&
+				j.ctx.Err() == nil {
+				already := *j
+				q.mu.Unlock()
+				return already
+			}
+		}
+	}
+	q.next++
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
+		State: JobRunning, Step: engine.StepWaiting, Queued: time.Now(), Lane: laneFor(kind),
+		steps: steps, cancel: cancel, ctx: ctx}
+	if prepare != nil {
+		prepare(job)
+	}
+	q.stampLocked(job)
+	q.jobs = append(q.jobs, job)
+	snapshot := *job
+	idle := q.idle
+	q.mu.Unlock()
+	q.emit(JobUpdate{Job: snapshot})
+	if !idle {
+		go q.runSafely(job)
+	}
+	return snapshot
+}
+
+// turn is how a job with steps waits for the lane of each: it says on the
+// job which step it waits for and which it is in.
+func (q *queue) turn(job *Job) engine.Turn {
+	return func(ctx context.Context, step string) (context.Context, func(), error) {
+		lane, kind := laneOfStep(step)
+		q.update(job, nil, func(j *Job) { j.Step = engine.StepWaiting })
+		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
+		if err != nil {
+			return nil, nil, err
+		}
+		q.update(job, nil, func(j *Job) { j.Step, j.Lane = step, lane })
+		return stepCtx, release, nil
+	}
+}
+
+// restore puts the searches and renders the episodes' records say were
+// cut off or failed into the queue, as the app starts, so each says so
+// where its work was. See engine/jobs.go.
+func (q *queue) restore(episodes []string) {
+	for _, episode := range episodes {
+		for _, rec := range engine.ReadJobs(episode) {
+			state := JobInterrupted
+			if !rec.Interrupted() {
+				state = JobFailed
+			}
+			label := "Find clips"
+			if rec.Kind == engine.JobRender {
+				label = "Render"
+				if rec.Preview {
+					label = "Preview"
+				}
+			}
+			q.mu.Lock()
+			q.next++
+			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
+				Label: label, State: state, Error: rec.Error, Queued: rec.Asked, Lane: laneFor(rec.Kind),
+				Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Plan: rec.Plan,
+				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
+			q.stampLocked(job)
+			q.jobs = append(q.jobs, job)
+			snapshot := *job
+			q.mu.Unlock()
+			q.emit(JobUpdate{Job: snapshot})
+		}
+	}
 }
 
 // refuse records a job that was never started, so the interface hears why
@@ -387,6 +504,43 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
+// settle marks the searches or renders of an episode that stopped, cut
+// off or failed, as taken care of: carried on by a new job, or their note
+// taken away. A record id picks one of them, and "" all of that kind.
+func (q *queue) settle(episode, kind, record string) {
+	q.mu.Lock()
+	var settled []Job
+	for _, j := range q.jobs {
+		if j.Episode == episode && j.Kind == kind && (record == "" || j.Record == record) &&
+			(j.State == JobInterrupted || (j.State == JobFailed && j.Record != "")) {
+			j.State = JobCancelled
+			q.stampLocked(j)
+			settled = append(settled, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range settled {
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
+// waitJob waits, at most stopWait, until a job is no longer running.
+func (q *queue) waitJob(id string) {
+	deadline := time.Now().Add(stopWait)
+	for time.Now().Before(deadline) {
+		running := false
+		for _, j := range q.list() {
+			if j.ID == id && (j.State == JobRunning || j.State == JobQueued) {
+				running = true
+			}
+		}
+		if !running {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // clear forgets finished jobs.
 func (q *queue) clear() {
 	q.mu.Lock()
@@ -410,30 +564,6 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 		}
 	}
 	return Job{}, false
-}
-
-func (q *queue) take(lane string) *Job {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	for _, j := range q.jobs {
-		if j.State == JobQueued && j.Lane == lane {
-			j.State = JobRunning
-			q.stampLocked(j)
-			return j
-		}
-	}
-	return nil
-}
-
-func (q *queue) loop(lane string) {
-	for {
-		job := q.take(lane)
-		if job == nil {
-			<-q.wake[lane]
-			continue
-		}
-		q.runSafely(job)
-	}
 }
 
 // runSafely runs a job and keeps the lane alive whatever happens around
@@ -469,7 +599,31 @@ func quietly[T any](f func(T)) func(T) {
 }
 
 func (q *queue) runJob(job *Job) {
-	q.update(job, nil, func(j *Job) {})
+	ctx := job.ctx
+	if job.ask != nil {
+		turnCtx, release, err := q.lanes.wait(job.ctx, job.ask)
+		if err != nil {
+			// Called off while it waited. Cancel has said so already.
+			return
+		}
+		defer release()
+		ctx = turnCtx
+		// Called off in the moment its turn came, it does not start: it
+		// said cancelled already, and nothing waits for a job that says
+		// so, so work it did now would run on behind everyone's back.
+		started := false
+		q.update(job, nil, func(j *Job) {
+			if j.State == JobQueued && j.ctx.Err() == nil {
+				j.State = JobRunning
+				started = true
+			}
+		})
+		if !started {
+			return
+		}
+	} else {
+		q.update(job, nil, func(j *Job) {})
+	}
 
 	log := engine.NewLog(io.Discard, false, false)
 	log.SetSink(func(ev engine.Event) {
@@ -492,11 +646,14 @@ func (q *queue) runJob(job *Job) {
 	setUp(e, &opts)
 	project := engine.NewProject(e, job.Episode, opts)
 
-	result, err := run(job, project)
+	result, err := run(ctx, job, project, q.turn(job))
 	log.SetSink(nil)
 	q.update(job, nil, func(j *Job) {
 		j.Progress = nil
 		j.Result = result
+		if j.steps != nil && err == nil {
+			j.Step = ""
+		}
 		switch {
 		case err == nil:
 			j.State = JobDone
@@ -523,13 +680,16 @@ var setUp = func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = asr.O
 // run does the work of a job and turns a panic into a job that failed. A
 // desktop app that dies takes the interface, the other lane and whatever
 // was being transcribed with it, and one bad episode is not worth that.
-func run(job *Job, project *engine.Project) (result string, err error) {
+func run(ctx context.Context, job *Job, project *engine.Project, turn engine.Turn) (result string, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			err = fmt.Errorf("%s stopped unexpectedly: %v\n%s", job.Label, caught, debug.Stack())
 		}
 	}()
-	return job.work(job.ctx, project)
+	if job.steps != nil {
+		return job.steps(ctx, project, turn)
+	}
+	return job.work(ctx, project)
 }
 
 func (q *queue) update(job *Job, ev *engine.Event, change func(*Job)) {

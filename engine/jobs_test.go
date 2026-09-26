@@ -38,13 +38,13 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	p, asked := searchProject(t, nil)
 	var turns []string
-	turn := func(ctx context.Context, step string) error {
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
 		turns = append(turns, step)
 		// While it waits for its turn, the record says so.
 		if rec := ReadSearch(p.Source); rec == nil || rec.Step != StepWaiting {
 			t.Errorf("waiting for %s, the record says %+v", step, rec)
 		}
-		return nil
+		return ctx, func() {}, nil
 	}
 	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, turn)
 	if err != nil {
@@ -143,12 +143,12 @@ func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	p, asked := searchProject(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	turn := func(ctx context.Context, step string) error {
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
 		if step == StepFinding {
 			cancel()
-			return ctx.Err()
+			return nil, nil, ctx.Err()
 		}
-		return nil
+		return ctx, func() {}, nil
 	}
 	if _, err := p.Search(ctx, PlanRequest{To: 20, Count: 1, Min: 5}, turn); !errors.Is(err, ErrCancelled) {
 		t.Fatalf("stopped: %v", err)
@@ -215,7 +215,10 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	// A render that was cut off after the first clip.
 	cut := &JobRecord{ID: id, Kind: JobRender, Plan: plan, Done: []string{view.Clips[0].ID}, Step: StepRendering}
 	var turns []string
-	turn := func(ctx context.Context, step string) error { turns = append(turns, step); return nil }
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		turns = append(turns, step)
+		return ctx, func() {}, nil
+	}
 	p.Base.Out = t.TempDir()
 	shorts := func() int {
 		found, _ := filepath.Glob(filepath.Join(p.Base.Out, "*.mp4"))
@@ -313,4 +316,53 @@ func FuzzReadJob(f *testing.F) {
 			t.Errorf("a render of %s", rec.Plan)
 		}
 	})
+}
+
+// takenBack is a speech model that ends the step it hears in the first time
+// it is given audio, the way the app takes the hearing lane back for a
+// search that finds.
+type takenBack struct {
+	take *context.CancelFunc
+	fakeRecognizer
+}
+
+func (s takenBack) Recognize(samples []float32, rate int) []Token {
+	if *s.take != nil {
+		(*s.take)()
+		*s.take = nil
+	}
+	return s.fakeRecognizer.Recognize(samples, rate)
+}
+
+// A search whose hearing lane is taken back waits for its turn again and
+// carries on from what it heard.
+func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
+	var take context.CancelFunc
+	var heard int32
+	p, asked := searchProject(t, func(string) (Recognizer, error) {
+		return takenBack{&take, fakeRecognizer{&heard}}, nil
+	})
+	var turns []string
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		turns = append(turns, step)
+		stepCtx, cancel := context.WithCancel(ctx)
+		if step == StepHearing && len(turns) == 1 {
+			take = cancel
+		}
+		return stepCtx, cancel, nil
+	}
+	// The whole episode, which is heard to its end without a hold to stop
+	// at first.
+	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, turn); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if got := strings.Join(turns, " "); got != "hearing hearing finding" {
+		t.Errorf("turns %s", got)
+	}
+	if *asked != 1 {
+		t.Errorf("the model asked %d times", *asked)
+	}
+	if _, done := Coverage(p.Source, p.Base.ASRModel); !done {
+		t.Error("the transcript was not finished")
+	}
 }

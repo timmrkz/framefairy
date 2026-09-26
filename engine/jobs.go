@@ -252,9 +252,11 @@ var planFile = regexp.MustCompile(`^clips(-[0-9]+-[0-9]+)?\.json$`)
 
 // Turn waits until the job may start a step: the step's lane is free.
 // Hearing, finding and rendering each have a lane, see docs/JOBS.md. The
-// engine asks before every step, and nil runs every step at once, which
-// is what the command line and the tests do.
-type Turn func(ctx context.Context, step string) error
+// engine asks before every step. It is given the context the step runs in,
+// which the app may end to take the lane back before the job is over, and
+// a function that lets the lane go. nil runs every step at once, which is
+// what the command line and the tests do.
+type Turn func(ctx context.Context, step string) (context.Context, func(), error)
 
 // job keeps a running job's record.
 type job struct {
@@ -289,25 +291,29 @@ func (j *job) step(name string) {
 	j.write()
 }
 
-// turn waits for the lane of a step and then starts it.
-func (j *job) turn(ctx context.Context, turn Turn, step string) error {
+// turn waits for the lane of a step and then starts it. It gives the
+// context the step runs in and what lets the lane go again.
+func (j *job) turn(ctx context.Context, turn Turn, step string) (context.Context, func(), error) {
 	// Stopped as the last step ended, it stays in that step.
 	if ctx.Err() != nil {
-		return ErrCancelled
+		return nil, nil, ErrCancelled
 	}
+	stepCtx, release := ctx, func() {}
 	if turn != nil {
 		if j.rec.Step != StepWaiting {
 			j.step(StepWaiting)
 		}
-		if err := turn(ctx, step); err != nil {
+		var err error
+		stepCtx, release, err = turn(ctx, step)
+		if err != nil {
 			if ctx.Err() != nil {
-				return ErrCancelled
+				return nil, nil, ErrCancelled
 			}
-			return err
+			return nil, nil, err
 		}
 	}
 	j.step(step)
-	return nil
+	return stepCtx, release, nil
 }
 
 // end writes down how the job ended. Done, it adds its timings to the
@@ -363,17 +369,30 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	if err != nil {
 		return "", err
 	}
-	if covered, done := Coverage(p.Source, p.Base.ASRModel); !done && covered < end-0.05 {
-		if err := j.turn(ctx, turn, StepHearing); err != nil {
+	// Only as far as the window. The whole episode is heard to its end,
+	// which finishes the transcript rather than holding it.
+	if !whole {
+		p.StopAt(func() float64 { return end })
+		defer p.StopAt(nil)
+	}
+	for {
+		covered, done := Coverage(p.Source, p.Base.ASRModel)
+		if done || covered >= end-0.05 {
+			break
+		}
+		stepCtx, release, err := j.turn(ctx, turn, StepHearing)
+		if err != nil {
 			return "", err
 		}
-		// Only as far as the window. The whole episode is heard to its end,
-		// which finishes the transcript rather than holding it.
-		if !whole {
-			p.StopAt(func() float64 { return end })
-			defer p.StopAt(nil)
+		err = p.Transcribe(stepCtx)
+		release()
+		if errors.Is(err, ErrCancelled) && ctx.Err() == nil {
+			// The lane was taken back, by a search that finds while this
+			// one hears. What was heard is saved, and the search waits
+			// for its turn to carry on.
+			continue
 		}
-		if err := p.Transcribe(ctx); err != nil {
+		if err != nil {
 			return "", err
 		}
 		if covered, done := Coverage(p.Source, p.Base.ASRModel); !done && covered < end-0.05 {
@@ -381,10 +400,12 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 				HMS(covered), HMS(end))
 		}
 	}
-	if err := j.turn(ctx, turn, StepFinding); err != nil {
+	stepCtx, release, err := j.turn(ctx, turn, StepFinding)
+	if err != nil {
 		return "", err
 	}
-	return p.plan(ctx, req, false)
+	defer release()
+	return p.plan(stepCtx, req, false)
 }
 
 // windowEnd is where a search's window ends, and whether that is the end
@@ -425,14 +446,16 @@ func (p *Project) RenderJob(ctx context.Context, id string, req RenderRequest, c
 	}
 	j := p.startJob(rec)
 	defer j.end(&err)
-	if err := j.turn(ctx, turn, StepRendering); err != nil {
+	stepCtx, release, err := j.turn(ctx, turn, StepRendering)
+	if err != nil {
 		return err
 	}
+	defer release()
 	for _, clip := range clips {
 		if slices.Contains(j.rec.Done, clip) {
 			continue
 		}
-		if err := p.Render(ctx, RenderRequest{Plan: req.Plan, Clips: []string{clip}, Preview: req.Preview}); err != nil {
+		if err := p.Render(stepCtx, RenderRequest{Plan: req.Plan, Clips: []string{clip}, Preview: req.Preview}); err != nil {
 			return err
 		}
 		j.rec.Done = append(j.rec.Done, clip)

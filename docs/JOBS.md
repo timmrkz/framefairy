@@ -166,9 +166,11 @@ they ask the app for their turn in that step's lane. `Project.Search` is the com
 the seam it already has, transcribing and then planning. The command line
 keeps its flags and gets the same records for free.
 
-**The app** runs jobs in its three lanes. When it starts, it reads the
-records of the episodes in its library, and a record in a running step is
-reported as interrupted. Adding a video asks for the first search of its
+**The app** runs jobs in its three lanes, each job on a goroutine of its
+own, and `lanes.go` hands out the turns in the order they were asked for.
+When it starts, it reads the records of the episodes in its library, and a
+record in a running step is a job in the list in the state `interrupted`,
+a failed one a job that `failed`, with its reason. Adding a video asks for the first search of its
 first window. That is what the interface decides today with
 `shouldTranscribe` and `shouldLook`, and it moves to the Go side, where
 the episode is added.
@@ -178,9 +180,10 @@ is no logic about jobs in TypeScript.
 
 | click | call |
 | --- | --- |
-| New, or Continue on a search | `Search(path, window, numbers)` |
-| Render, or Continue on a render | `Render(path, plan, clips)`, as today |
-| Cancel | `Cancel(job)` |
+| New | `Search(path, request)` |
+| Render | `Render(path, request)`, as today |
+| Continue, on a search or a render that stopped | `Continue(job)` |
+| Cancel, on one that runs or one that stopped | `CancelJob(job)` |
 
 It gets the state of every job in one event, `job`, as today, whenever it
 changes, and on opening an episode it asks for them once. Everything it

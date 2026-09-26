@@ -164,50 +164,42 @@ func (w window) request() engine.PlanRequest {
 	return engine.PlanRequest{From: w.from, To: w.to, Count: 1, Min: 5, Max: 30}
 }
 
-// add adds a video to the library, the way the Add button does, and then
-// does what the app does by itself for a new episode: its first search.
-//
-// Today the Go side starts the transcription and the interface asks for the
-// first search once the transcript is there. Plan waits for the transcript
-// itself, so asking for it at once is the same search.
+// add adds a video to the library, the way the Add button does. The app
+// starts its first search by itself.
 func (d *desk) add(name, seconds string) string {
 	d.t.Helper()
 	path := d.episode(name, seconds)
-	added, err := d.svc.store.AddEpisodes([]string{path})
-	if err != nil || len(added) != 1 {
+	if added, err := d.svc.addEpisodes([]string{path}); err != nil || len(added) != 1 {
 		d.t.Fatalf("adding %s: %v", path, err)
 	}
-	d.svc.jobs.openEpisode(path)
-	d.svc.transcribeForFirstSearch(path)
-	d.svc.Plan(path, firstWindow.request())
 	return path
 }
 
-// search presses New on a window, or Continue on a search that stopped.
+// search presses New on a window.
 func (d *desk) search(path string, w window) {
-	d.svc.Plan(path, w.request())
+	d.svc.Search(path, w.request())
 }
 
-// carryOn presses Continue on the search the episode says was cut off.
+// carryOn presses Continue on the search the episode says was cut off or
+// failed.
 func (d *desk) carryOn(path string) {
 	d.t.Helper()
 	o := d.outcome(path)
 	if !o.interrupted && o.failed == "" {
 		d.t.Fatalf("Continue on a search that did not stop: %+v", o)
 	}
-	d.search(path, o.window)
+	j, _ := d.svc.jobs.find(path, "search")
+	d.svc.Continue(j.ID)
 }
 
 // cancel presses Cancel on the episode's search.
 func (d *desk) cancel(path string) {
 	d.t.Helper()
-	if j, ok := d.svc.jobs.find(path, "plan"); ok && (j.State == JobQueued || j.State == JobRunning) {
-		d.svc.CancelJob(j.ID)
-		return
+	j, ok := d.svc.jobs.find(path, "search")
+	if !ok {
+		d.t.Fatal("no search to call off")
 	}
-	if err := d.svc.ForgetSearch(path); err != nil {
-		d.t.Fatal(err)
-	}
+	d.svc.CancelJob(j.ID)
 }
 
 // render presses Render on every clip of a plan.
@@ -223,9 +215,11 @@ func (d *desk) close() {
 	}
 }
 
-// reopen starts the app again over the same library.
+// reopen starts the app again over the same library, the way main does.
 func (d *desk) reopen() {
-	d.start(openStore())
+	st := openStore()
+	d.start(st)
+	d.svc.jobs.restore(st.Episodes())
 }
 
 // outcome is what the app says about an episode's last search where its
@@ -238,27 +232,18 @@ type outcome struct {
 }
 
 func (d *desk) outcome(path string) outcome {
-	note := engine.ReadSearchNote(path)
-	if note == nil {
+	j, ok := d.svc.jobs.find(path, "search")
+	if !ok {
 		return outcome{}
 	}
-	o := outcome{window: window{note.From, note.To}}
-	switch note.State {
-	case "failed":
-		o.failed = note.Error
-	case "running":
-		// A search this app is not running is one that was cut off.
-		if !d.searching(path) {
-			o.interrupted = true
-		}
+	w := window{j.From, j.To}
+	switch j.State {
+	case JobInterrupted:
+		return outcome{interrupted: true, window: w}
+	case JobFailed:
+		return outcome{failed: j.Error, window: w}
 	}
-	return o
-}
-
-// searching says whether a search of the episode is queued or running.
-func (d *desk) searching(path string) bool {
-	j, ok := d.svc.jobs.find(path, "plan")
-	return ok && (j.State == JobQueued || j.State == JobRunning)
+	return outcome{}
 }
 
 // idle waits until nothing of the episode is queued or running.
