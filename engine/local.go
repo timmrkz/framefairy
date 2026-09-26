@@ -96,6 +96,23 @@ func DefaultLocalModel() (string, error) {
 		dir, strings.Join(names, ", "))
 }
 
+// LocalModelPath is the model file a name given on the command line means.
+// A file that is there as named is that file. A bare file name that is not
+// is looked for in ~/.framefairy/models, where the models live, so the name
+// the setup shows is enough.
+func LocalModelPath(named string) string {
+	if named == "" || filepath.Base(named) != named {
+		return named
+	}
+	if _, err := os.Stat(named); err == nil {
+		return named
+	}
+	if inModels := filepath.Join(ModelsDir(), named); isFile(inModels) {
+		return inModels
+	}
+	return named
+}
+
 // LocalModelFiles is every model in a folder, in order: each .gguf, a
 // model split in parts by its first part, and never the image input files
 // some models ship beside them.

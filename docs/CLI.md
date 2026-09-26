@@ -135,7 +135,7 @@ fits.
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--planner local` | local | `local` plans on this machine, `api` uses the Claude API |
-| `--llm-model FILE` | the only `.gguf` in `~/.framefairy/models` | the local model file |
+| `--llm-model FILE` | the only `.gguf` in `~/.framefairy/models` | the local model file. A bare file name is also looked for in `~/.framefairy/models` |
 | `--llm-server PATH` | `llama-server` on PATH | the llama.cpp server program |
 | `--llm-url URL` | none | use a llama-server you already started, which saves loading the model on every run |
 | `--model claude-sonnet-5` | claude-sonnet-5 | the Claude model, with `--planner api` |
@@ -207,7 +207,8 @@ searches the same window once with each recipe and writes
 search cost, the time, the size of the request and what the local model
 read and wrote, and then every clip each found, with its title and the
 words that stay, to read side by side. Each recipe's plan is in
-`experiments/<recipe>/`.
+`experiments/<recipe>/`. When every search failed, there is nothing to
+compare: the comparison fails with the reason and writes no report.
 
 A search with any recipe but `lines`, and every search of a comparison, is
 an experiment. Its plan goes in `experiments/`, the episode's own plan and

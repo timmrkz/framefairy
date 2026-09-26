@@ -185,3 +185,33 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 		t.Errorf("stopping a server that ignores the interrupt took %s", took)
 	}
 }
+
+// The name of a model is enough on the command line. A bare file name that
+// is not in the working folder is found in the models folder, and anything
+// else is left as it was given, to be refused with its own name.
+func TestAModelIsFoundByItsName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(ModelsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(ModelsDir(), "gemma.gguf")
+	if err := os.WriteFile(installed, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LocalModelPath("gemma.gguf"); got != installed {
+		t.Errorf("gemma.gguf is %s", got)
+	}
+	// One in the working folder is the one named.
+	if err := os.WriteFile("gemma.gguf", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LocalModelPath("gemma.gguf"); got != "gemma.gguf" {
+		t.Errorf("gemma.gguf beside us is %s", got)
+	}
+	for _, named := range []string{"", "missing.gguf", "sub/gemma.gguf"} {
+		if got := LocalModelPath(named); got != named {
+			t.Errorf("%q became %s", named, got)
+		}
+	}
+}

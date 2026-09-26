@@ -102,6 +102,12 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		}
 		runs = append(runs, run)
 	}
+	// A report of nothing but failures says nothing a log line did not, and
+	// a line that says where it is reads as if the comparison worked.
+	if every(runs, func(r RecipeRun) bool { return r.Failed != "" }) {
+		return runs, "", renderErr("every search failed, so there is nothing to compare: %s",
+			runs[len(runs)-1].Failed)
+	}
 	report := filepath.Join(work, "experiments",
 		"compare-"+time.Now().Format("2006-01-02-150405")+".md")
 	if err := os.MkdirAll(filepath.Dir(report), 0o755); err != nil {
@@ -226,6 +232,15 @@ func compareReport(opts Options, runs []RecipeRun) string {
 		}
 	}
 	return b.String()
+}
+
+func every(runs []RecipeRun, test func(RecipeRun) bool) bool {
+	for _, r := range runs {
+		if !test(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func orDash(s string) string {

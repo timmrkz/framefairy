@@ -144,8 +144,8 @@ func specs() []flagSpec {
 			"the Claude API (default local)",
 			func(o *engine.Options, v string) error { o.Planner = v; return nil }},
 		{[]string{"--llm-model"}, kString, "FILE", "the GGUF model file for local planning (default: " +
-			"the only .gguf file in ~/.framefairy/models)",
-			func(o *engine.Options, v string) error { o.LLMModel = v; return nil }},
+			"the only .gguf file in ~/.framefairy/models). A bare file name is looked for there too",
+			func(o *engine.Options, v string) error { o.LLMModel = engine.LocalModelPath(v); return nil }},
 		{[]string{"--llm-server"}, kString, "PATH", "the llama-server binary (default llama-server on PATH)",
 			func(o *engine.Options, v string) error { o.LLMServer = v; return nil }},
 		{[]string{"--llm-url"}, kString, "URL", "use an already running llama-server, for instance " +

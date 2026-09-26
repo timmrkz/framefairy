@@ -195,3 +195,30 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 		t.Error("the comparison wrote the episode's own plan")
 	}
 }
+
+// A comparison in which every search failed has nothing to report, and says
+// so rather than pointing at a report of failures.
+func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
+	source := testEpisode(t, "20")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+
+	opts := DefaultOptions()
+	opts.Source = source
+	opts.ASRModel = t.TempDir()
+	opts.LLMModel = filepath.Join(t.TempDir(), "missing.gguf")
+	opts.Count = 1
+	opts.Replan = true
+	runs, report, err := e.Compare(context.Background(), opts, []string{"lines", "stories"})
+	if err == nil || report != "" {
+		t.Fatalf("a comparison of two failures was written to %q", report)
+	}
+	if len(runs) != 2 || runs[0].Failed == "" || runs[1].Failed == "" {
+		t.Errorf("runs %+v", runs)
+	}
+	if matches, _ := filepath.Glob(filepath.Join(WorkDir(source), "experiments", "compare-*.md")); len(matches) > 0 {
+		t.Errorf("a report was written: %v", matches)
+	}
+}
