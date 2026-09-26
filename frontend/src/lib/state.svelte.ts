@@ -72,6 +72,7 @@ export type View =
   | { name: "episode"; path: string }
   | { name: "jobs" }
   | { name: "settings" }
+  | { name: "updates" }
   | { name: "acknowledgements" }
   | { name: "empty" };
 

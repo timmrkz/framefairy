@@ -82,6 +82,12 @@
        else something has arrived. -->
   {:else if name === "check"}
     <path d="M3.2 8.4 6.5 11.7 12.8 4.9" />
+  <!-- Updates: an arrow down in a circle, the mark macOS gives updates in
+       the App Store and downloads in Finder and Safari. An update is
+       something that arrives, so the arrow comes down. -->
+  {:else if name === "update"}
+    <circle cx="8" cy="8" r="6" />
+    <path d="M8 5v5.8M5.5 8.4 8 10.9l2.5-2.5" />
   {:else if name === "sliders"}
     <path d="M2 4.5h12M2 11.5h12" />
     <circle cx="5.5" cy="4.5" r="1.9" fill="var(--ink-1)" />

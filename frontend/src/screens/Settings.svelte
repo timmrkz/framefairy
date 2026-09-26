@@ -160,12 +160,16 @@
     }
   }
 
-  onMount(async () => {
+  onMount(() => {
+    load();
+  });
+
+  async function load() {
     settings = await api.getSettings();
     await readTraining();
     await readModels();
     await check();
-  });
+  }
 </script>
 
 <section class="scroll">

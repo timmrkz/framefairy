@@ -434,6 +434,13 @@ input[type="password"] {
   background: var(--ok);
 }
 
+/* Something waiting to be picked up, a new build of the app ready to
+   restart into: the same dot in the same colour, standing still, because
+   nothing is running. */
+.dot.ready {
+  background: var(--accent);
+}
+
 /* Work running somewhere else: the pulse. The dot keeps its size and its
    place, and a ring of the same colour widens out of it and fades, once
    every couple of seconds, so a job running out of sight is seen from

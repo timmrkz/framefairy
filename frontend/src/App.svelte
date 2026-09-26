@@ -6,6 +6,9 @@
     onChrome,
     onEpisodeChanged,
     onAcknowledgements,
+    onShowUpdates,
+    onUpdates,
+    type UpdateState,
     onQuit,
     type Chrome,
     type EpisodeStatus,
@@ -21,6 +24,7 @@
   import Jobs from "./screens/Jobs.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Acknowledgements from "./screens/Acknowledgements.svelte";
+  import UpdatesScreen from "./screens/Updates.svelte";
   import Setup from "./screens/Setup.svelte";
 
   // The sidebar is a rail until the pointer reaches it, and stays open when
@@ -47,11 +51,15 @@
     }
     if (nav.view.name === "jobs") return "Activity";
     if (nav.view.name === "settings") return "Settings";
+    if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
     return "Frame Fairy";
   });
 
-  let version = $state("");
+  // Whether a newer build of the app is ready, which the rail marks on
+  // Settings, where the restart is. See docs/UPDATES.md.
+  let update = $state<UpdateState | null>(null);
+  const updateReady = $derived(update?.phase === "ready");
   let problem = $state("");
 
   // The first run. A new copy of the app cannot transcribe without a
@@ -202,7 +210,6 @@
       .getSettings()
       .then((s) => wearColour(s.appColour))
       .catch(() => {});
-    api.version().then((v) => (version = v));
     api
       .setup()
       .then((s) => (settingUp = !s.chosen || !s.hasSpeech))
@@ -212,6 +219,13 @@
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
+    api
+      .updates()
+      .then((u) => (update = u))
+      .catch(() => {});
+    const noUpdates = onUpdates((u) => (update = u));
+    // Check for Updates in the app menu shows the answer where it is kept.
+    const noShowUpdates = onShowUpdates(() => nav.go({ name: "updates" }));
     // The question lasts as long as the Go side waits for the second
     // press, quitAgain in quit.go.
     let asked: ReturnType<typeof setTimeout> | undefined;
@@ -232,6 +246,8 @@
       window.removeEventListener("pointerdown", handOverFocus);
       noChrome();
       noAcknowledgements();
+      noUpdates();
+      noShowUpdates();
       off();
     };
   });
@@ -368,7 +384,27 @@
         <Icon name="sliders" />
         <span class="label">Settings</span>
       </button>
-      <span class="muted small version num">Engine {version}</span>
+      <!-- The build that is running, which is also the way to its updates.
+           It says which build this is, so a report from testing always
+           names what was tested. -->
+      <button
+        class="quiet nav"
+        class:current={nav.view.name === "updates"}
+        onclick={() => nav.go({ name: "updates" })}
+        title={updateReady
+          ? `Updates. ${update?.nextName || update?.next} is ready, restart to use it`
+          : `Updates. This is ${update?.version ?? "the app"}`}
+      >
+        <span class="mark">
+          <Icon name="update" />
+          <!-- A new build ready is a dot that stands still, in the same
+               place as the dot for work in hand. It is not work running,
+               so it does not pulse. -->
+          {#if updateReady}<span class="dot ready"></span>{/if}
+        </span>
+        <span class="label">Updates</span>
+        <span class="label muted small num build">{update?.version ?? ""}</span>
+      </button>
     </div>
   </aside>
 
@@ -382,6 +418,8 @@
       {/key}
     {:else if nav.view.name === "jobs"}
       <Jobs />
+    {:else if nav.view.name === "updates"}
+      <UpdatesScreen />
     {:else if nav.view.name === "settings"}
       <SettingsScreen />
     {:else if nav.view.name === "acknowledgements"}
@@ -640,9 +678,8 @@
   /* What there is no room for on the rail waits until the sidebar opens.
      An icon on the rail has to be exactly where its row is when the
      sidebar opens, or the sidebar opens and moves it out from under the
-     pointer that came for it. So the version line keeps its height and
-     only its text goes, and an episode keeps its row and shows only its
-     lamp. */
+     pointer that came for it. So a row keeps its height and only its
+     words go, and an episode keeps its row and shows only its lamp. */
   aside:not(.open) h2,
   aside:not(.open) .label {
     display: none;
@@ -660,18 +697,13 @@
     display: none;
   }
 
-  aside:not(.open) .version {
-    visibility: hidden;
-  }
-
   /* The sidebar slides open, so for as long as it moves its contents are
      narrower than the room they will have. Nothing in it may reflow on the
      way, or a line wraps, a row grows and the icons jump out from under the
      pointer that came for them. Every line in the sidebar stays one line and
      what does not fit yet is clipped by the sidebar. */
   .head h2,
-  .nav .label,
-  .version {
+  .nav .label {
     white-space: nowrap;
   }
 
@@ -858,7 +890,8 @@
     flex: none;
   }
 
-  .mark .busy {
+  .mark .busy,
+  .mark .ready {
     position: absolute;
     top: -2px;
     right: -3px;
@@ -866,8 +899,10 @@
     height: 7px;
   }
 
-  .version {
-    padding: 6px 12px 0;
+  /* The build stands at the far end of its row, where a count stands in
+     a list. */
+  .nav .build {
+    margin-left: auto;
   }
 
   /* The sidebar is out of the flow, so the workspace has to be told to

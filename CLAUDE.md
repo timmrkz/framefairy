@@ -248,6 +248,16 @@ messages, pull request text, code comments and chat replies.
   the edge of the trigger its column reads from and grows away from it, so
   no name is ever cut short in the list and the edge stays one line down
   the column.
+- **Borrow what people already know.** Where the Mac, or the apps people
+  use every day, already have a way of doing something, an icon, a word, a
+  place for a control, a flow like updating, do it their way. Look it up
+  before choosing: what macOS does, then what the apps in the Dock do.
+  Somebody who has used a Mac for a year should find nothing to learn in
+  this app that is not about making shorts. A choice of our own is made
+  only where there is no convention, and the reason is said where it is
+  made. An arrow pointing up for updates, chosen for "a newer version"
+  without looking, was wrong: macOS brings updates in with an arrow
+  pointing down.
 - **Consistency over novelty.** A visual treatment used in one place must be
   used for every equivalent element, or not at all. Reuse existing patterns,
   for example the `--ink-3` background for a selected row, before inventing

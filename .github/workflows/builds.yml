@@ -1,0 +1,297 @@
+# Builds the app for every push to main and to a pull request, signs it with
+# the update key and publishes it where the app looks for a newer build of
+# itself. See docs/UPDATES.md.
+#
+# A channel is main or one pull request. Everything lives in one release of
+# this repository called dev, marked a pre-release so it is never taken for
+# the latest one:
+#
+#   app-<channel>-<version>.zip   a channel's build, the app and nothing else
+#   channel-<channel>.json        its entry: version, commit, where the zip
+#                                 is, its checksum and its signature
+#   channels.json                 every entry in one file, which is the one
+#                                 file the app reads
+#
+# Three jobs, because they need three different kinds of care:
+#
+# 1. build, on macOS, per channel. A second push to a pull request stops the
+#    build of the first, whose result nobody wants any more.
+# 2. publish, per channel, one after another and never stopped half way,
+#    uploads the zip and the entry, or takes the entry away when a pull
+#    request is merged or closed.
+# 3. list, for all channels at once, writes channels.json again from every
+#    entry. Two of them never run together, and one that is waiting is
+#    replaced by the next, which is safe, because each writes the list from
+#    what is there when it runs.
+#
+# Only branches of this repository are built. A build runs whatever the
+# pull request holds, and one from a fork gets no secrets anyway. Until the
+# key is made, nothing is published and the build says why.
+name: Builds to update to
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: >-
+      github.event.action != 'closed' &&
+      (github.event_name == 'push' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    concurrency:
+      group: builds-build-${{ github.event.pull_request.number || 'main' }}
+      cancel-in-progress: true
+    outputs:
+      built: ${{ steps.zip.outputs.built }}
+      channel: ${{ steps.what.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The branch as it is, not merged with main: the build Tim tests is
+          # the pull request's own.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - id: key
+        name: Is there an update key
+        env:
+          KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
+        run: |
+          if [ -z "$KEY" ] || [ ! -s cmd/framefairy-app/update-key.txt ]; then
+            echo "::notice::No update key yet, so nothing is built to update to. See docs/UPDATES.md, The keys."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A push that only changed the docs changes nothing the app does, so
+      # it gets no build of its own, and Tim no restart for nothing. When
+      # the push before cannot be read, say after a force push, it builds.
+      - id: needs
+        if: steps.key.outputs.ready == 'true'
+        name: Does this push change the app
+        env:
+          BEFORE: ${{ github.event.before }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          run=true
+          if [ "$ACTION" = synchronize ] && git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" HEAD)
+            if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^docs/|\.md$'; then
+              echo "::notice::Only the docs changed, so this push has no build of its own."
+              run=false
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - id: what
+        if: steps.needs.outputs.run == 'true'
+        name: What this build is
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          RUN: ${{ github.run_number }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          engine=$(awk -F'"' '/^const Version = /{ print $2; exit }' engine/log.go)
+          if [ -n "$NUMBER" ]; then
+            channel="pr-$NUMBER"
+            name="#$NUMBER $TITLE"
+            version="$engine-pr$NUMBER.$RUN"
+          else
+            channel=main
+            name=main
+            version="$engine-main.$RUN"
+          fi
+          {
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "commit=$(echo "$SHA" | cut -c1-12)"
+            echo "zip=app-$channel-$version.zip"
+          } >> "$GITHUB_OUTPUT"
+          # The name can hold anything a title can, so it goes by file.
+          mkdir -p dist
+          printf '%s' "$name" > dist/name.txt
+
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The two programs we ship beside the app, built by the same scripts
+      # as a release and kept until those change. The ffmpeg cache is the
+      # one CI keeps, so it is usually there already.
+      - id: ffmpeg
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@v5
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - id: llama
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@v5
+        with:
+          path: .build/llama
+          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+      - name: What building them needs
+        if: steps.needs.outputs.run == 'true' && (steps.ffmpeg.outputs.cache-hit != 'true' || steps.llama.outputs.cache-hit != 'true')
+        run: brew install meson ninja pkg-config nasm cmake
+      - name: The ffmpeg we ship
+        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: The llama-server we ship
+        if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
+        run: sh scripts/build-llama.sh .build/llama
+
+      - name: The app
+        if: steps.needs.outputs.run == 'true'
+        run: >-
+          make app
+          BUILD_VERSION='${{ steps.what.outputs.version }}'
+          BUILD_CHANNEL='${{ steps.what.outputs.channel }}'
+          BUILD_COMMIT='${{ steps.what.outputs.commit }}'
+
+      # One entry at the top, Frame Fairy.app, which is what Wails' updater
+      # asks of a zip. --norsrc, because ditto otherwise adds a ._ file
+      # beside every file for its extended attributes, and the updater
+      # would unpack them into the bundle. The signatures are inside the
+      # programs, not in attributes, so nothing is lost.
+      - id: zip
+        if: steps.needs.outputs.run == 'true'
+        name: Pack it and sign it
+        env:
+          FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
+          ZIP: ${{ steps.what.outputs.zip }}
+          CHANNEL: ${{ steps.what.outputs.channel }}
+          VERSION: ${{ steps.what.outputs.version }}
+          COMMIT: ${{ steps.what.outputs.commit }}
+          REPO: ${{ github.repository }}
+        run: |
+          ditto -c -k --norsrc --keepParent "bin/Frame Fairy.app" "dist/$ZIP"
+          go run ./cmd/framefairy-release sign \
+            -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
+            -version "$VERSION" -commit "$COMMIT" \
+            -url "https://github.com/$REPO/releases/download/dev/$ZIP" \
+            -out "dist/channel-$CHANNEL.json"
+          rm dist/name.txt
+          ls -l dist
+          echo "built=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.zip.outputs.built == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: build
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: build
+    # always(), so it also runs when build was skipped because the pull
+    # request closed.
+    if: >-
+      always() &&
+      ((github.event.action == 'closed' &&
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+       needs.build.outputs.built == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-publish-${{ github.event.pull_request.number || 'main' }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: The release the builds live in
+        run: |
+          gh release view dev >/dev/null 2>&1 ||
+            gh release create dev --prerelease --latest=false --target main \
+              --title "Builds to update to" \
+              --notes "The builds of main and of each open pull request, for the app to update itself to while it is being made. Not for customers. See docs/UPDATES.md." ||
+            gh release view dev >/dev/null
+
+      - if: github.event.action != 'closed'
+        uses: actions/download-artifact@v8
+        with:
+          name: build
+          path: dist
+
+      - name: Upload the build and its entry
+        if: github.event.action != 'closed'
+        run: gh release upload dev dist/* --clobber
+
+      - name: Take the pull request's entry away
+        if: github.event.action == 'closed'
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: gh release delete-asset dev "channel-pr-$NUMBER.json" -y || true
+
+  list:
+    needs: publish
+    if: always() && needs.publish.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-list
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # The same commit the build came from, so a pull request that changes
+      # the tool is listed by its own tool. Only branches of this repository
+      # get this far.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Write the channel list from every entry
+        run: |
+          mkdir -p entries
+          gh release download dev --pattern 'channel-*.json' --dir entries || true
+          set -- entries/*.json
+          [ -e "$1" ] || set --
+          go run ./cmd/framefairy-release list -out channels.json "$@"
+          cat channels.json
+          gh release upload dev channels.json --clobber
+
+      # A zip no entry points at is gone an hour after it was made. Not at
+      # once: a publish that runs beside this job may have uploaded a zip
+      # whose entry this job has not seen yet.
+      - name: Remove builds nobody can reach any more
+        run: |
+          jq -r '.channels[].url | split("/") | last' channels.json > kept.txt
+          now=$(date -u +%s)
+          gh release view dev --json assets \
+            --jq '.assets[] | select(.name | test("^app-.*\\.zip$")) | "\(.name) \(.createdAt)"' |
+          while read -r name created; do
+            grep -qxF "$name" kept.txt && continue
+            age=$(( now - $(date -u -d "$created" +%s) ))
+            if [ "$age" -gt 3600 ]; then
+              echo "removing $name"
+              gh release delete-asset dev "$name" -y || true
+            fi
+          done

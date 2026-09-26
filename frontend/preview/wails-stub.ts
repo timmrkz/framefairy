@@ -375,6 +375,19 @@ export const Call = {
     switch (method) {
       case "Version":
         return Promise.resolve("0.1.0");
+      case "Updates":
+        return Promise.resolve({ ...updNow() });
+      case "FollowChannel":
+        updNow().picked = args[0] as string;
+        updSend();
+        updFetch((args[0] as string) || "main");
+        return Promise.resolve(null);
+      case "CheckForUpdates":
+        updFetch(updNow().picked || updNow().follows);
+        return Promise.resolve(null);
+      case "RestartToUpdate":
+        (window as any).__restarted = true;
+        return Promise.resolve(null);
       case "Platform":
         return Promise.resolve(location.search.includes("linux") ? "linux" : "darwin");
       // The real notices, the ones the app builds in, so the page is looked
@@ -923,6 +936,79 @@ export const Call = {
   },
 };
 
+// Updates, the way updates.go reports them. The build running is pull
+// request 18's, or with ?makebuild one made by make, which follows nothing
+// until a channel is picked, and with ?updatesoff one with no update key.
+// Picking a channel checks, downloads over two seconds with the fill, and
+// says ready, the way the Go side does.
+const updListeners = new Set<(ev: unknown) => void>();
+const updChannels = [
+  { id: "main", name: "main", version: "0.3.0-main.40" },
+  { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.12" },
+  { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr18.51" },
+];
+let upd: any = null;
+const updNow = () => {
+  if (upd) return upd;
+  const local = location.search.includes("makebuild");
+  upd = {
+    version: local ? "0.3.0-local" : "0.3.0-pr18.51",
+    commit: local ? "" : "a1b2c3d4e5f6",
+    channel: local ? "" : "pr-18",
+    off: location.search.includes("updatesoff")
+      ? "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
+      : "",
+    channels: updChannels,
+    picked: "",
+    follows: local ? "main" : "pr-18",
+    phase: local ? "" : "current",
+    next: "",
+    nextName: "",
+    nextCommit: "",
+    checked: local ? "0001-01-01T00:00:00Z" : new Date(Date.now() - 7 * 60_000).toISOString(),
+    written: 0,
+    total: 0,
+    problem: "",
+  };
+  return upd;
+};
+const updSend = () => updListeners.forEach((fn) => fn({ data: { ...upd } }));
+const updFetch = (channel: string) => {
+  const ch = updChannels.find((c) => c.id === channel) ?? updChannels[0];
+  upd.follows = ch.id;
+  // A check that finds nothing is over at once, the way the real one is
+  // when the list is cached, which is what the page has to hold on to.
+  upd.phase = "checking";
+  updSend();
+  if (ch.version === upd.version) {
+    setTimeout(() => {
+      Object.assign(upd, { phase: "current", next: "", checked: new Date().toISOString() });
+      updSend();
+    }, 80);
+    return;
+  }
+  setTimeout(() => {
+    Object.assign(upd, {
+      phase: "downloading",
+      next: ch.version,
+      nextName: ch.name,
+      nextCommit: "9f8e7d6c5b4a",
+      total: 46e6,
+      written: 0,
+      checked: new Date().toISOString(),
+    });
+    updSend();
+    const t = setInterval(() => {
+      upd.written = Math.min(upd.total, upd.written + 4.6e6);
+      if (upd.written >= upd.total) {
+        clearInterval(t);
+        upd.phase = "ready";
+      }
+      updSend();
+    }, 200);
+  }, 500);
+};
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -944,6 +1030,18 @@ export const Events = {
     if (name === "acknowledgements") {
       (window as any).__help = () => fn({ data: null });
       return () => delete (window as any).__help;
+    }
+    if (name === "updates") {
+      updListeners.add(fn);
+      return () => updListeners.delete(fn);
+    }
+    // Check for Updates in the app menu, with window.__checkForUpdates().
+    if (name === "show-updates") {
+      (window as any).__checkForUpdates = () => {
+        updFetch(updNow().picked || updNow().follows);
+        fn({ data: null });
+      };
+      return () => delete (window as any).__checkForUpdates;
     }
     if (name !== "job") return () => {};
     // A transcription that reports where it got to, well ahead of the saved
