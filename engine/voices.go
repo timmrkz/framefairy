@@ -59,16 +59,17 @@ var VoiceModels = []VoiceModel{
 	{File: "sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx",
 		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
 		SHA256: "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488", Size: 6_958_444},
-	{File: "wespeaker_en_voxceleb_resnet34_LM.onnx",
-		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
-		SHA256: "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012", Size: 26_530_550},
+	{File: "nemo_en_titanet_small.onnx",
+		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx",
+		SHA256: "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e", Size: 40_257_283},
 }
 
 // VoicesDir is where the voice models live.
 func VoicesDir() string { return filepath.Join(ModelsDir(), "voices") }
 
-// voicesVersion changes when what is kept changes meaning.
-const voicesVersion = 1
+// voicesVersion changes when what is kept changes meaning. 2 is TitaNet,
+// which told apart the host and the guest that version 1 heard as one.
+const voicesVersion = 2
 
 type voicesFile struct {
 	Version int         `json:"version"`

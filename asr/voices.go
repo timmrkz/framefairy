@@ -17,12 +17,16 @@ type Voices struct {
 }
 
 // How the voices are told apart, measured on sherpa-onnx's four-speaker
-// sample. A window step of half a window is five times faster than the
-// default tenth and found the same turns to the tenth of a second. 0.4 is
-// how alike two stretches must sound to be the same voice.
+// sample against its known answer, four voice models at four thresholds
+// and two steps. TitaNet small at 0.7 was the only one to find all four
+// speakers and give every stretch to the right one at both steps. A step
+// of half a window rather than a tenth is four times faster, 52 rather
+// than 14 times real time on four cloud cores, and found the same.
+// WeSpeaker, the first choice, heard at most three of the four at any
+// threshold, and heard Tim and his guest as one.
 const (
 	voicesShift     = 0.5
-	voicesThreshold = 0.4
+	voicesThreshold = 0.7
 )
 
 // OpenVoices loads the voice models from dir.

@@ -150,8 +150,8 @@ between them, because there the pauses are the model's.
 interview the plainest boundary between two thoughts is the other person
 speaking. Two small models, through the speech library we already ship,
 tell the voices apart: pyannote's segmentation 3.0, which finds where
-somebody speaks (MIT, 7 MB), and WeSpeaker's ResNet34 trained on VoxCeleb,
-which tells one voice from another (Apache 2.0, 26.5 MB). `make models`
+somebody speaks (MIT, 7 MB), and NVIDIA's TitaNet small, which tells one
+voice from another (CC BY 4.0, 40 MB). `make models`
 fetches them into `~/.framefairy/models/voices`, checked by checksum. The
 window is heard once and what was found is kept as
 `logs/voices-<from>-<to>.json`. Speakers are lettered in the order they
@@ -159,13 +159,15 @@ first speak, so in an interview the host is usually A. Each line goes to
 whoever speaks most of it, a sentence also ends where the speaker
 changes, and a paragraph opens there with the speaker's letter.
 
-The windows the segmentation looks through step on by half a window
-rather than a tenth: on sherpa-onnx's four-speaker sample that was five
-times faster, 55 rather than 11 times real time on four cloud cores, and
-found the same turns to the tenth of a second. Two voices count as one
-when they are at least 0.4 alike. That sample has four speakers and the
-models heard two, so how well they do on a two-voice interview is what the
-first comparison on a real episode shows.
+The settings were measured on sherpa-onnx's four-speaker sample against
+its known answer: four voice models, four thresholds, two steps. TitaNet
+small at a threshold of 0.7 was the only one to find all four speakers and
+give every stretch to the right one at both steps. The windows the
+segmentation looks through step on by half a window rather than a tenth,
+four times faster, 52 rather than 14 times real time on four cloud cores,
+with the same answer. WeSpeaker, the first choice, heard at most three of
+the four at any threshold, and on Tim's episode heard the host and the
+guest as one voice.
 
 **Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
 searches cut the same story with three different first words and four

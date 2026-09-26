@@ -32,7 +32,7 @@ fi
 VOICES="$MODELS/voices"
 mkdir -p "$VOICES"
 SEG=sherpa-onnx-pyannote-segmentation-3-0
-EMB=wespeaker_en_voxceleb_resnet34_LM.onnx
+EMB=nemo_en_titanet_small.onnx
 RELEASES=https://github.com/k2-fsa/sherpa-onnx/releases/download
 check() {
 	if command -v shasum >/dev/null 2>&1; then
@@ -44,13 +44,13 @@ check() {
 if [ -f "$VOICES/$SEG/model.int8.onnx" ] && [ -f "$VOICES/$EMB" ]; then
 	echo "Voice models already there"
 else
-	echo "Downloading the voice models, about 33 MB"
+	echo "Downloading the voice models, about 47 MB"
 	curl -L --fail -o "$VOICES/$SEG.tar.bz2" "$RELEASES/speaker-segmentation-models/$SEG.tar.bz2"
 	check 24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488 "$VOICES/$SEG.tar.bz2"
 	tar -xjf "$VOICES/$SEG.tar.bz2" -C "$VOICES"
 	rm "$VOICES/$SEG.tar.bz2"
 	curl -L --fail -o "$VOICES/$EMB.part" "$RELEASES/speaker-recongition-models/$EMB"
-	check e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012 "$VOICES/$EMB.part"
+	check ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e "$VOICES/$EMB.part"
 	mv "$VOICES/$EMB.part" "$VOICES/$EMB"
 fi
 
