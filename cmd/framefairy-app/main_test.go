@@ -45,7 +45,7 @@ func TestPlanWaitsAndReportsAFailedTranscription(t *testing.T) {
 	// Finding clips queues the transcription itself, and fails with its
 	// reason when the transcription fails.
 	job := svc.Plan(source, engine.PlanRequest{To: 2, Count: 1, Min: 1, Max: 2})
-	if job.Lane != LaneWork {
+	if job.Lane != LaneFinding {
 		t.Errorf("plan lane %s", job.Lane)
 	}
 	deadline := time.After(30 * time.Second)
@@ -62,7 +62,7 @@ func TestPlanWaitsAndReportsAFailedTranscription(t *testing.T) {
 				t.Errorf("no reason given")
 			}
 			tr, ok := svc.jobs.find(source, "transcribe")
-			if !ok || tr.Lane != LaneTranscribe || tr.State != JobFailed {
+			if !ok || tr.Lane != LaneHearing || tr.State != JobFailed {
 				t.Errorf("transcription job %+v", tr)
 			}
 			return

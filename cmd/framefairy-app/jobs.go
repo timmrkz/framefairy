@@ -47,9 +47,10 @@ type Job struct {
 	Last     *engine.Event `json:"last,omitempty"`
 	Progress *engine.Event `json:"progress,omitempty"`
 	Queued   time.Time     `json:"queued"`
-	// Lane is "transcribe" or "work". Each lane runs one job at a time, so a
-	// long transcription never holds up finding or rendering clips. A search
-	// moves from one lane to the other as it goes from hearing to finding.
+	// Lane is "hearing", "finding" or "rendering". Each lane runs one job at
+	// a time, so a long transcription never holds up finding or rendering
+	// clips, and a render never holds up a search. A search moves from one
+	// lane to the other as it goes from hearing to finding.
 	Lane string `json:"lane"`
 	// Step is where a search or a render is: waiting, hearing, finding or
 	// rendering. See docs/JOBS.md.
@@ -84,15 +85,17 @@ type JobUpdate struct {
 	Event *engine.Event `json:"event,omitempty"`
 }
 
-// Lanes the queue runs side by side.
+// Lanes the queue runs side by side, one for each kind of machinery a step
+// uses: the speech model, the language model, and ffmpeg.
 const (
-	LaneTranscribe = "transcribe"
-	LaneWork       = "work"
+	LaneHearing   = "hearing"
+	LaneFinding   = "finding"
+	LaneRendering = "rendering"
 )
 
-// queue runs one transcription and one other job at a time. More would
-// only make each of them slower. Every job runs on a goroutine of its own
-// and waits for its turn in a lane, see lanes.go.
+// queue runs one job in each lane at a time. More would only make each of
+// them slower. Every job runs on a goroutine of its own and waits for its
+// turn in a lane, see lanes.go.
 type queue struct {
 	mu    sync.Mutex
 	jobs  []*Job
@@ -145,15 +148,18 @@ func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 
 // Which lane a kind of work runs in. Each model install shares the lane of
 // the work that needs it, so whatever is queued behind it waits for the
-// model rather than failing on it: the speech model with transcribing,
-// which cannot start without it, and the language model with finding
-// clips. That way installing one does not hold up the other.
+// model rather than failing on it: the speech model with hearing, which
+// cannot start without it, and the language model with finding clips.
+// That way installing one does not hold up the other. A search starts in
+// the lane of finding and moves as its steps go, see lanes.go.
 func laneFor(kind string) string {
 	switch kind {
 	case "transcribe", "model":
-		return LaneTranscribe
+		return LaneHearing
+	case "render":
+		return LaneRendering
 	}
-	return LaneWork
+	return LaneFinding
 }
 
 // addOnce queues work unless the same work is already queued or running,
@@ -546,7 +552,10 @@ func (q *queue) clear() {
 	q.mu.Lock()
 	kept := q.jobs[:0]
 	for _, j := range q.jobs {
-		if j.State == JobQueued || j.State == JobRunning {
+		// A search or a render that stopped and has not been acted on is
+		// not finished: it says so where its work was until it is.
+		if j.State == JobQueued || j.State == JobRunning || j.State == JobInterrupted ||
+			(j.State == JobFailed && j.Record != "") {
 			kept = append(kept, j)
 		}
 	}

@@ -282,13 +282,17 @@ area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
 
-- **The transcription runs for a search, and for nothing else.** It goes
-  as far as the window the search is for and stops exactly on its edge. A
-  new episode's first search starts it by itself, held at the first half
-  hour, and every search after that starts it again when its window is not
-  transcribed yet. Nothing carries it on through the rest of the episode
-  afterwards. So there is nothing to control about it but the search:
-  **New** starts both and **Cancel** stops both.
+- **The transcription is the first step of a search, and nothing else.**
+  A search is one job on the Go side, see [JOBS.md](JOBS.md): it hears the
+  episode from where the transcript ends to the end of its window, stops
+  exactly on its edge, and then finds. Adding a video asks for its first
+  search, of the first half hour, so the Go side starts it and the
+  workspace only shows it. Nothing carries the transcription on through
+  the rest of the episode afterwards. So there is nothing to control about
+  it but the search: **New** starts it and **Cancel** stops it, and what
+  was heard stays, so the next search goes on from there. While another
+  episode's search finds its clips, a search that hears waits and carries
+  on after, because the two models want the same memory.
 - **What is not there yet says so by waiting.** The part of the clip
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
@@ -345,23 +349,21 @@ place.
 - **The pane is the clip list and nothing else.** It says **Clips** and
   carries **New**, whatever else is happening. The transcription is not in
   it at any point: it has a place of its own, on the range picker, at the
-  edge it moves. The two run in lanes of their own, and a head that carried
-  both is how it came to say **Transcribing** over a list of clips.
+  edge it moves. A head that carried both is how it came to say
+  **Transcribing** over a list of clips.
 - **New works whether the window is transcribed or not.** Pressed before
   the episode has been heard to the end of the chosen window, the search
-  waits for it the way the first search does: the first row of the clip
-  list says Waiting for the transcript with the window, the window is
-  locked, the transcription starts if nothing is transcribing and stops
-  exactly on the window's edge, and the search starts the moment it gets
-  there. The transcription is the first step of the search as far as
+  hears it first: the first row of the clip list says Waiting for the
+  transcript with the window, the window is locked, and the search finds
+  the moment the episode is heard to the window's edge. The transcription is the first step of the search as far as
   anyone can see: the moment New is pressed the list opens as many rows as
   the search will look for, the first wearing the beam and the fill, the
   rest breathing, and the first is brought into view. The fill is how much
   of the window has been transcribed, a view of the window on the range
   picker: empty at its start, half full when the edge is half way across
   it, full at its end. It was measured from the start of the episode, and
-  a window two hours in began nearly full. **Cancel** calls the search off and stops the
-  transcription with it. New used to be off until the window was transcribed, and a
+  a window two hours in began nearly full. **Cancel** calls the search off, and what
+  it heard stays. New used to be off until the window was transcribed, and a
   transcription that had been paused had to be carried on first with a
   mark at the edge of the range picker, which nobody could be expected to
   know about. That mark is gone, and so is pausing: the transcription

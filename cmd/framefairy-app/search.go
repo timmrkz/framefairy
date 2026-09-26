@@ -53,7 +53,10 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 func (s *FrameFairy) Continue(id string) Job {
 	var stopped *Job
 	for _, j := range s.jobs.list() {
-		if j.ID == id && (j.State == JobInterrupted || j.State == JobFailed) && j.Record != "" {
+		// A search that failed before it had a record, refused as it was
+		// asked for, is asked for again.
+		if j.ID == id && (j.State == JobInterrupted || j.State == JobFailed) &&
+			(j.Record != "" || j.Kind == engine.JobSearch) {
 			stopped = &j
 		}
 	}

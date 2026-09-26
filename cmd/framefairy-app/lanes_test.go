@@ -55,11 +55,11 @@ func waits(t *testing.T, got chan func(), what string) {
 
 func TestOneTurnAtATimeInALaneInTheOrderAsked(t *testing.T) {
 	l := newLanes()
-	_, release := given(t, l, LaneWork, plainTurn)
-	second, _ := waiting(l, LaneWork, plainTurn)
-	third, _ := waiting(l, LaneWork, plainTurn)
+	_, release := given(t, l, LaneFinding, plainTurn)
+	second, _ := waiting(l, LaneFinding, plainTurn)
+	third, _ := waiting(l, LaneFinding, plainTurn)
 	// The other lane is free all the while.
-	_, other := given(t, l, LaneTranscribe, plainTurn)
+	_, other := given(t, l, LaneHearing, plainTurn)
 	other()
 	waits(t, second, "the second")
 	release()
@@ -71,9 +71,9 @@ func TestOneTurnAtATimeInALaneInTheOrderAsked(t *testing.T) {
 
 func TestATurnGivenUpLeavesItsPlace(t *testing.T) {
 	l := newLanes()
-	_, release := given(t, l, LaneWork, plainTurn)
-	second, giveUp := waiting(l, LaneWork, plainTurn)
-	third, _ := waiting(l, LaneWork, plainTurn)
+	_, release := given(t, l, LaneFinding, plainTurn)
+	second, giveUp := waiting(l, LaneFinding, plainTurn)
+	third, _ := waiting(l, LaneFinding, plainTurn)
 	giveUp()
 	release()
 	comes(t, third, "the one behind the one that gave up")()
@@ -84,15 +84,15 @@ func TestATurnGivenUpLeavesItsPlace(t *testing.T) {
 // hears, and hearing waits until it has found.
 func TestFindingTakesHearingBack(t *testing.T) {
 	l := newLanes()
-	hearing, heard := given(t, l, LaneTranscribe, hearingTurn)
-	_, found := given(t, l, LaneWork, findingTurn)
+	hearing, heard := given(t, l, LaneHearing, hearingTurn)
+	_, found := given(t, l, LaneFinding, findingTurn)
 	select {
 	case <-hearing.Done():
 	case <-time.After(time.Second):
 		t.Fatal("the hearing search was not stopped")
 	}
 	heard()
-	again, _ := waiting(l, LaneTranscribe, hearingTurn)
+	again, _ := waiting(l, LaneHearing, hearingTurn)
 	waits(t, again, "hearing while a search finds")
 	found()
 	comes(t, again, "hearing after the search found")()
@@ -102,13 +102,13 @@ func TestFindingTakesHearingBack(t *testing.T) {
 // a model being installed goes on while a search finds.
 func TestFindingLeavesOtherWorkAlone(t *testing.T) {
 	l := newLanes()
-	install, done := given(t, l, LaneTranscribe, plainTurn)
-	_, found := given(t, l, LaneWork, findingTurn)
+	install, done := given(t, l, LaneHearing, plainTurn)
+	_, found := given(t, l, LaneFinding, findingTurn)
 	if install.Err() != nil {
 		t.Error("an install was stopped for a search")
 	}
 	done()
-	_, next := given(t, l, LaneTranscribe, plainTurn)
+	_, next := given(t, l, LaneHearing, plainTurn)
 	next()
 	found()
 }
@@ -118,7 +118,7 @@ func TestFindingLeavesOtherWorkAlone(t *testing.T) {
 func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 	l := newLanes()
 	var inLane [2]atomic.Int32
-	lanesOf := []string{LaneTranscribe, LaneWork}
+	lanesOf := []string{LaneHearing, LaneFinding}
 	var wg sync.WaitGroup
 	for i := range 40 {
 		wg.Add(1)

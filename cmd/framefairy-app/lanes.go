@@ -103,7 +103,7 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 	h := &holder{kind: a.kind, cancel: cancel}
 	l.held[a.lane] = h
 	if a.kind == findingTurn {
-		if hearing := l.held[LaneTranscribe]; hearing != nil && hearing.kind == hearingTurn {
+		if hearing := l.held[LaneHearing]; hearing != nil && hearing.kind == hearingTurn {
 			hearing.cancel()
 		}
 	}
@@ -132,7 +132,7 @@ func (l *lanes) mayLocked(a *ask) bool {
 		return false
 	}
 	if a.kind == hearingTurn {
-		if finding := l.held[LaneWork]; finding != nil && finding.kind == findingTurn {
+		if finding := l.held[LaneFinding]; finding != nil && finding.kind == findingTurn {
 			return false
 		}
 	}
@@ -160,9 +160,9 @@ func (l *lanes) dropLocked(a *ask) {
 func laneOfStep(step string) (string, turnKind) {
 	switch step {
 	case "hearing":
-		return LaneTranscribe, hearingTurn
+		return LaneHearing, hearingTurn
 	case "finding":
-		return LaneWork, findingTurn
+		return LaneFinding, findingTurn
 	}
-	return LaneWork, plainTurn
+	return LaneRendering, plainTurn
 }

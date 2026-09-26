@@ -12,10 +12,10 @@
   // Stopping a job takes a moment to reach the work itself, so the button
   // says so at once rather than looking like nothing happened.
   let stopping = $state(false);
-  const word = $derived(job.kind === "transcribe" ? "Pause" : "Cancel");
-  // What it says while the stop is on its way, the same wording as the
-  // transcription note on the range picker.
-  const onItsWay = $derived(job.kind === "transcribe" ? "Pausing" : "Cancelling");
+  // Cancel, for every kind of work. Nothing done is lost by it: what a
+  // search heard and what a render finished stay, see docs/JOBS.md.
+  const word = "Cancel";
+  const onItsWay = "Cancelling";
 
   function stop() {
     stopping = true;

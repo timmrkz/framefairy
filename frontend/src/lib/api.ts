@@ -242,12 +242,19 @@ export interface EngineEvent {
   time: string;
 }
 
-export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
+// A search or a render that was running when the app last stopped is
+// "interrupted": its record in the work folder says so, and Continue
+// carries it on. See docs/JOBS.md.
+export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
+
+// Where a search or a render is: waiting for its turn, hearing the
+// episode, finding clips, or rendering them.
+export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed";
 
 export interface Job {
   id: string;
   episode: string;
-  kind: "transcribe" | "plan" | "render" | "model" | "llm";
+  kind: "search" | "transcribe" | "plan" | "render" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -259,11 +266,21 @@ export interface Job {
   last?: EngineEvent;
   progress?: EngineEvent;
   queued: string;
-  lane: "transcribe" | "work";
+  lane: Lane;
+  // Where a search or a render is, and the record it keeps.
+  step?: JobStep;
+  record?: string;
+  // The window of a search. To is 0 for the end of the episode.
+  from?: number;
+  to?: number;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
 }
+
+// The lanes the Go side runs work in, one job at a time in each: the
+// speech model, the language model and ffmpeg.
+export type Lane = "hearing" | "finding" | "rendering";
 
 export interface PlanRequest {
   From: number;
@@ -444,6 +461,10 @@ export const api = {
   transcribe: (path: string) => call<Job>("Transcribe", path),
   plan: (path: string, req: PlanRequest) => call<Job>("Plan", path, req),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
+  // New: finds clips in a window, hearing the episode that far first.
+  search: (path: string, req: PlanRequest) => call<Job>("Search", path, req),
+  // Continue: carries on a search or a render that stopped.
+  continueJob: (id: string) => call<Job>("Continue", id),
   still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
   words: (path: string, from: number, to: number) =>
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
