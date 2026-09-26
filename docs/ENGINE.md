@@ -163,7 +163,12 @@ sentence begins or ends, when that is at most 8 s away, `sentenceReach`.
 Further than that the model's edge stands, since a transcript can go a
 while without a full stop. Runs that overlap once they are whole
 sentences are one. This is done before a clip is measured, so the length
-check sees the clip as it will be cut. A filler word at the start of a
+check sees the clip as it will be cut. An edge moves to the nearer
+boundary unless that takes the clip past the longest length asked for,
+and then it moves the other way: the model stopped the umbrella story on
+the comma of the sentence after its payoff, the nearer boundary ran it to
+35 s, and the length limit then cut the payoff out of its middle. Now it
+ends on the payoff. A filler word at the start of a
 clip goes, unless the line after it goes on in lower case: then it is the
 first word of the sentence, "Und" before "irgendein Typ auf dem Schulhof",
 and without it the clip would start mid-sentence.

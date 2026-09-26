@@ -171,7 +171,7 @@ func (b *planBuilder) take(raw string) {
 // and runs that follow each other one run when the recipe leaves the
 // pauses to the engine.
 func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
-	entry.Keep = wholeSentences(b.lines, entry.Keep)
+	entry.Keep = wholeSentences(b.lines, entry.Keep, b.opts.MaxLen, b.seconds)
 	if b.opts.recipe().Joins {
 		entry.Keep = joinRuns(entry.Keep)
 	}

@@ -65,9 +65,46 @@ func TestAClipStartsAndEndsOnASentence(t *testing.T) {
 		{"[[2 3] [3 9]]", "[[2 9]]"},
 	} {
 		keep := parseRuns(t, c.keep)
-		if got := fmt.Sprint(wholeSentences(lines, keep)); got != c.want {
+		if got := fmt.Sprint(wholeSentences(lines, keep, 0, nil)); got != c.want {
 			t.Errorf("%s became %s, not %s", c.keep, got, c.want)
 		}
+	}
+}
+
+// An edge that would make the clip too long by moving to the nearer
+// sentence moves to the other one: the umbrella story ends on its payoff
+// rather than on the next thought.
+func TestAnEdgeMovesTheWayThatFits(t *testing.T) {
+	lines := said(
+		0.0, 3.5, "Und ich war dann noch ein relativ kleiner Dütz, zweite, dritte Klasse.", // 1
+		1.4, 0.1, "Und", // 2
+		1.1, 0.7, "irgendein Typ", // 3
+		0.5, 1.8, "auf dem Schulhof gemobbt.", // 4
+		0.5, 0.3, "Und", // 5
+		1.3, 2.3, "zum Typen mit so einem Regenschirm. Und", // 6
+		3.7, 4.9, "Er gesagt auf und dann hat er mich dort geschlagen und", // 7
+		1.0, 0.1, "dieser", // 8
+		0.5, 2.4, "Regenschirm ist zersprungen.", // 9
+		0.8, 7.2, "Also hat sich einfach zerlegt, ne? Das war eine der ersten Erinnerungen,", // 10
+		1.3, 1.6, "die ich habe, aber davor", // 11
+		2.4, 0.3, "Echt,", // 12
+		0.5, 0.8, "echt wenig.", // 13
+	)
+	seconds := func(keep [][2]int) float64 {
+		total := 0.0
+		for _, r := range keep {
+			total += lines[r[1]-1].End() - lines[r[0]-1].Start()
+		}
+		return total
+	}
+	// The model stopped on the comma of line 10. Forward to "echt wenig"
+	// is nearer, and runs past 30 seconds. Back to the payoff fits.
+	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 10}}, 30, seconds)); got != "[[2 9]]" {
+		t.Errorf("got %s", got)
+	}
+	// With room enough, the nearer boundary is taken as before.
+	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 10}}, 40, seconds)); got != "[[2 13]]" {
+		t.Errorf("got %s", got)
 	}
 }
 
@@ -77,7 +114,7 @@ func TestAnEdgeFarFromASentenceStands(t *testing.T) {
 	lines := said(
 		0.0, 2.0, "Das war so", 0.5, 9.0, "und dann kam noch einer und noch einer und dann",
 		0.5, 9.0, "ging es immer weiter so ohne Ende und wieder", 0.5, 2.0, "vorbei.")
-	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 2}})); got != "[[1 2]]" {
+	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 2}}, 0, nil)); got != "[[1 2]]" {
 		t.Errorf("got %s", got)
 	}
 }

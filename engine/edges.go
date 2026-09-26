@@ -26,9 +26,25 @@ const sentenceReach = 8.0
 
 // wholeSentences moves the edges of each run, lines numbered from 1, onto
 // sentence boundaries, and makes one run of runs that then overlap.
-func wholeSentences(lines []Line, keep [][2]int) [][2]int {
+//
+// An edge moves to the nearer boundary, unless that would take the clip
+// past longest seconds and the other would not. A story the model stopped
+// on a comma, one sentence after its payoff, then ends on the payoff
+// rather than running on into the next thought: on Tim's episode the
+// nearer boundary made the umbrella story 35 seconds long, and the length
+// limit then cut the payoff out of its middle. seconds measures a clip.
+// Without it, the nearer boundary is always taken.
+func wholeSentences(lines []Line, keep [][2]int, longest float64, seconds func([][2]int) float64) [][2]int {
 	ends := func(n int) bool { return endsSentence(strings.TrimSpace(lines[n-1].Text())) }
 	starts := func(n int) bool { return n == 1 || ends(n-1) }
+	total := 0.0
+	if seconds != nil {
+		total = seconds(keep)
+	}
+	// tooLong is whether growing the clip by that much takes it past longest.
+	tooLong := func(grows float64) bool {
+		return seconds != nil && longest > 0 && total+grows > longest
+	}
 	var out [][2]int
 	for _, run := range keep {
 		first, last := run[0], run[1]
@@ -46,7 +62,11 @@ func wholeSentences(lines []Line, keep [][2]int) [][2]int {
 					break
 				}
 			}
-			first = nearer(first, back, forward, func(n int) float64 { return lines[n-1].Start() })
+			chosen := nearer(first, back, forward, func(n int) float64 { return lines[n-1].Start() })
+			if chosen == back && forward > 0 && tooLong(lines[first-1].Start()-lines[back-1].Start()) {
+				chosen = forward
+			}
+			first = chosen
 		}
 		if !ends(last) {
 			back, forward := -1, -1
@@ -62,7 +82,11 @@ func wholeSentences(lines []Line, keep [][2]int) [][2]int {
 					break
 				}
 			}
-			last = nearer(last, back, forward, func(n int) float64 { return lines[n-1].End() })
+			chosen := nearer(last, back, forward, func(n int) float64 { return lines[n-1].End() })
+			if chosen == forward && back > 0 && tooLong(lines[forward-1].End()-lines[last-1].End()) {
+				chosen = back
+			}
+			last = chosen
 		}
 		if n := len(out); n > 0 && first <= out[n-1][1] {
 			out[n-1][1] = max(out[n-1][1], last)
