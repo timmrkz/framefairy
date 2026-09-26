@@ -263,11 +263,13 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		}
 	}
 	bad := map[string]string{
-		"render-2.json":  `{"id": "render-2", "kind": "render", "plan": "/etc/clips.json", "step": "rendering"}`,
-		"render-3.json":  `{"id": "render-3", "kind": "render", "plan": "` + filepath.Join(logs, "notes.txt") + `", "step": "rendering"}`,
-		"render-4.json":  `{"id": "render-5", "kind": "render", "step": "rendering"}`,
-		"render-6.json":  `{"id": "render-6", "kind": "render", "step": "hearing"}`,
-		"Search.json":    `{"id": "Search", "kind": "search", "step": "hearing"}`,
+		"render-2.json": `{"id": "render-2", "kind": "render", "plan": "/etc/clips.json", "step": "rendering"}`,
+		"render-3.json": `{"id": "render-3", "kind": "render", "plan": "` + filepath.Join(logs, "notes.txt") + `", "step": "rendering"}`,
+		"render-4.json": `{"id": "render-5", "kind": "render", "step": "rendering"}`,
+		"render-6.json": `{"id": "render-6", "kind": "render", "step": "hearing"}`,
+		// An id in capitals. Not Search.json: macOS does not tell that from
+		// search.json, and it overwrote the good record on the build runner.
+		"Other.json":     `{"id": "Other", "kind": "search", "step": "hearing"}`,
 		"other.json":     `{"id": "other", "kind": "search", "step": "hearing"}`,
 		"render-7.json":  `not json`,
 		"render-8.json":  `{"id": "render-8", "kind": "upload", "step": "waiting"}`,
