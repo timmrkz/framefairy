@@ -27,8 +27,8 @@ of it:
 
 | where | what it keeps |
 | --- | --- |
-| the interface, in memory | a search asked for and not started, where the transcription stops, whether the first search has happened, whether a search is starting, which jobs it waits on, about fifteen values in `Episode.svelte` |
-| the app's Go side | two jobs in two lanes, the stop point of each transcription, which transcriptions a search paused, twelve functions that stitch the two jobs together |
+| the interface, in memory | a search asked for and not started (`chosen.asked`), where the transcription stops (`chosen.held`), whether the first search has happened (`chosen.looked`), and what it works out from those: `readyToLook`, `stillWaiting`, `autoLook`, `lookPending`, `shouldLook`, `shouldWarm`, `shouldTranscribe` |
+| the app's Go side | two jobs in two lanes, the stop point of each transcription, which transcriptions a search paused, and the functions that stitch the two jobs together: `Transcribe`, `HoldTranscription`, `holdOf`, `releaseHold`, `waitForTranscript`, `untilNews`, `pauseTranscriptions`, `carryOn`, `stopped`, `stopTranscription`, `AskSearch`, `ForgetSearch`, `transcribeForFirstSearch` |
 | the work folder | `looked`, `search.json`, the transcript, the plans |
 
 Every feature that touches finding clips has to find all three, and the
@@ -160,26 +160,55 @@ line and its flags. The look of work in hand.
 
 ## How it is tested
 
-The steps are one function on the Go side, so they are tested there, with
-the fake speech model and the fake language model, the way searches are
-tested today. And not one call at a time but the paths a person takes:
+The tests of today are mostly tests of the parts, and most of the parts
+go away. Deleting them and writing new ones after would throw away what
+they proved. So the proof comes first and stays:
 
+**Path tests, written against the code of today, before anything
+changes.** Each one is what a person does, told through a small driver
+with the words of the app: add a video, press New, press Cancel, close
+the app, open it again, press Continue. The driver is the one place that
+knows which calls do that. The tests run green on today's code and are
+committed that way. The refactor then changes the driver and nothing in
+the tests, and they have to stay green through every batch after. What
+they prove today they still prove at the end.
+
+The paths, with the fake speech model and the fake language model:
+
+- A video added, and the first search going by itself through every step
+  to clips in the list.
 - New on an episode not transcribed, and the search going through every
   step to done.
 - The app closed in each step, which in a test is a new queue reading the
-  same records, and the search reported as interrupted, with how far it
-  got.
-- Continue after that, carrying on from where it was.
-- Cancel in each step, and nothing left.
-- Pause while transcribing, and carrying on.
+  same work folders, and the search reported as interrupted, with how far
+  it got.
+- Continue after that, carrying on from where it was, with nothing heard
+  twice.
+- Cancel in each step, and nothing said.
 - A failure in each step, with its reason.
-- Adding a video, and the first search starting by itself.
 - Two episodes at once, and a render while a search transcribes, under
   the race detector.
+
+A path that today's code gets wrong is written as it should be and marked
+as a known bug, so the refactor has to fix it rather than keep it.
 
 The interface's harness gets one fake search that goes through the same
 steps from the same record, so what a probe sees is what the Go side
 reports rather than a state made up for the probe.
+
+## Timings
+
+Every search writes down how long each of its steps took, beside the
+record: waiting, transcribing, loading the model, finding, and the whole.
+`searchclock.go` already times the model's parts, and this adds the rest.
+It stays on the machine, in the work folder, and a command of
+`framefairy-train` adds it up over the library. It says where the time
+goes before and after the refactor, so whether the refactor made anything
+faster is measured rather than hoped.
+
+Sending such numbers home from customers' machines is a separate
+decision, made with the packaging: it has to be asked for, and it is
+worth nothing without somewhere to send it.
 
 ## Batches
 
@@ -187,12 +216,14 @@ One pull request, a commit per batch, merged only once it has been tested
 on Tim's machine and works.
 
 1. This design.
-2. The record and `Project.Search` in the engine, with its tests. Nothing
+2. The path tests and their driver, green on today's code.
+3. The timings, on today's code, so there is a before.
+4. The record and `Project.Search` in the engine, with its tests. Nothing
    uses it yet.
-3. The app runs searches through it: one job, moving between the lanes,
+5. The app runs searches through it: one job, moving between the lanes,
    the records read at start, the first search asked for when a video is
-   added, and the calls and the event above. The old calls stay for the
-   moment, so the interface still works.
-4. The interface switched over to the search's state and intents, and the
+   added, and the calls and the event above. The driver switches over,
+   and the path tests stay green.
+6. The interface switched over to the search's state and intents, and the
    harness to one fake search.
-5. What goes away, goes, and the docs say how it is now.
+7. What goes away, goes, and the docs say how it is now.
