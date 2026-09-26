@@ -83,6 +83,9 @@ type planBuilder struct {
 	// framers both touch.
 	mu      sync.Mutex
 	objects int
+	// repeats counts the clips left out as they arrived for keeping a
+	// moment an earlier clip keeps, so the whole answer says only the rest.
+	repeats int
 	seen    map[string]bool
 	entries []PlanEntry
 	ids     []string
@@ -145,8 +148,59 @@ func (b *planBuilder) take(raw string) {
 		b.mu.Unlock()
 		return
 	}
+	if earlier, repeated := sameMomentAs(b.entries, entry); repeated {
+		b.repeats++
+		b.mu.Unlock()
+		b.e.Log.Warn("%s", repeatNote(entry, earlier))
+		return
+	}
 	b.queueLocked(entry)
 	b.mu.Unlock()
+}
+
+// sameMomentAs finds a clip among these that keeps the same moment as
+// entry: more than half the lines of the shorter of the two are in both.
+// The model sometimes gives one moment twice, a line apart, and two clips
+// of one moment are one clip and a slot gone.
+func sameMomentAs(entries []PlanEntry, entry PlanEntry) (PlanEntry, bool) {
+	for _, e := range entries {
+		shared := 0
+		for _, a := range e.Keep {
+			for _, b := range entry.Keep {
+				shared += max(0, min(a[1], b[1])-max(a[0], b[0])+1)
+			}
+		}
+		if 2*shared > min(keptLines(e), keptLines(entry)) {
+			return e, true
+		}
+	}
+	return PlanEntry{}, false
+}
+
+func keptLines(entry PlanEntry) int {
+	n := 0
+	for _, run := range entry.Keep {
+		n += run[1] - run[0] + 1
+	}
+	return n
+}
+
+// distinctMoments is the entries without those that keep a moment one
+// before them keeps, and the ones left out, each beside the one it repeats.
+func distinctMoments(entries []PlanEntry) (kept []PlanEntry, repeats [][2]PlanEntry) {
+	for _, entry := range entries {
+		if earlier, repeated := sameMomentAs(kept, entry); repeated {
+			repeats = append(repeats, [2]PlanEntry{entry, earlier})
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept, repeats
+}
+
+func repeatNote(entry, earlier PlanEntry) string {
+	return fmt.Sprintf("the model gave the moment of %q twice. %q is left out.",
+		earlier.Title, entry.Title)
 }
 
 // queueLocked gives an entry its id and hands it to the framers. The id is
@@ -185,6 +239,13 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	if b.closed {
 		return
 	}
+	// The clips taken as the answer arrived were checked for repeats in
+	// the same order, so the first of the repeats were already said.
+	whole, repeats := distinctMoments(whole)
+	for _, r := range repeats[min(b.repeats, len(repeats)):] {
+		b.e.Log.Warn("%s", repeatNote(r[0], r[1]))
+	}
+	b.repeats = max(b.repeats, len(repeats))
 	taken := len(b.entries)
 	if len(whole) < taken {
 		return

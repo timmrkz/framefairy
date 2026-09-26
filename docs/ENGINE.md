@@ -124,13 +124,22 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below | exactly N clips, as runs of lines |
-| `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more | up to N clips, the strongest first, as runs of sentences |
+| `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 
 `lines` is what the app uses. The others are tried with `--recipe` and
 compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
 A sentence in `stories` ends where a line ends one, before a pause of
 1.2 s, or once it has run 20 s. A paragraph ends before a pause of 1.5 s or
-once it has run 45 s.
+once it has run 45 s. Sentence numbers say nothing of time, and the first
+version of `stories`, which gave only the paragraph times, ran 8 of 10
+clips far past 30 s. The second says the length in words too, from the
+words and seconds of the window: at 2.2 words a second, 20 to 30 s is
+about 43 to 65 words.
+
+Whatever the recipe, the model sometimes gives one moment twice, a line
+apart. A clip that shares more than half the lines of the shorter of the
+two with a clip before it is left out and said in the log, and the clips
+after it move up, so a slot is never spent on the same moment.
 
 ## Lines, cuts and captions
 

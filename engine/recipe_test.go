@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +95,26 @@ func TestStoriesNumbersSentences(t *testing.T) {
 	want := "(0:00) [1] Als ich klein war, stand meine Oma in der Tür. [2] Sie hatte einen Korb … [3] und ich wusste es."
 	if written != want {
 		t.Errorf("written as\n%s\nnot\n%s", written, want)
+	}
+}
+
+// The model cannot tell time from sentence numbers, so the stories recipe
+// says the length in words, at the rate the speaker talks.
+func TestStoriesSaysTheLengthInWords(t *testing.T) {
+	var lines []Line
+	for i := range 10 {
+		// Five words in two seconds, every three seconds: 5/3 a second.
+		lines = append(lines, speech(float64(i)*3, 1, "eins", "zwei", "drei", "vier", "fünf."))
+		lines[i].Index = i + 1
+	}
+	lines[len(lines)-1].Cues[4].End = 30
+	request := storiesRequest(lines, sentenceUnits(lines), PlanOptions{Count: 2, MinLen: 20, MaxLen: 30})
+	if want := "about 1.7 words a second, so 20 to 30 seconds is about 33 to 50 words."; !strings.Contains(request, want) {
+		t.Errorf("the request has no %q:\n%s", want, request)
+	}
+	// Too little speech to tell says nothing of it.
+	if short := storiesRequest(lines[:1], [][2]int{{0, 0}}, PlanOptions{Count: 1}); strings.Contains(short, "words a second") {
+		t.Errorf("a rate from two seconds:\n%s", short)
 	}
 }
 

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -14,7 +15,7 @@ import (
 var storiesRecipe = Recipe{
 	Name:    "stories",
 	About:   "a brief for any video, the transcript as sentences in paragraphs, the strongest first",
-	Version: 1,
+	Version: 2,
 	System:  storiesSystem,
 	Units:   sentenceUnits,
 	Request: storiesRequest,
@@ -37,10 +38,12 @@ Strong moments come in different kinds: something human or moving, a surprise, `
 	`plainly. Look for all of them and prefer a mix. Something specific the speaker ` +
 	`saw, did or felt beats something general.
 
-A clip must reach its payoff. Stopping before it is the worst outcome, worse ` +
-	`than running long. When the payoff comes long after the setup, keep the setup ` +
-	`and the payoff and leave out sentences between them. Never reorder anything, ` +
-	`and never join two parts so that they say something the speaker did not.
+A clip must reach its payoff, and it must fit the length asked for. When a ` +
+	`moment runs longer than that, keep the opening and the payoff and leave out ` +
+	`sentences between them: asides, restarts, a second example, whatever the ` +
+	`story holds without. A clip made of two or three runs is usual, not a last ` +
+	`resort. Never reorder anything, and never join two parts so that they say ` +
+	`something the speaker did not.
 
 Fewer strong clips beat padding. Return at most the number asked for, the ` +
 	`strongest first.
@@ -96,12 +99,19 @@ func sentenceUnits(lines []Line) [][2]int {
 func storiesRequest(lines []Line, units [][2]int, opts PlanOptions) string {
 	ask := []string{
 		fmt.Sprintf("Find up to %d clips in the transcript below, the strongest first.", opts.Count),
-		fmt.Sprintf("Each clip runs %s to %s seconds once the sentences you leave out are gone. "+
-			"Reaching the payoff matters more than being brief.",
+		fmt.Sprintf("Each clip runs %s to %s seconds once the sentences you leave out are gone.",
 			fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0)),
 		fmt.Sprintf("The transcript has %d sentences, each with its number in brackets. "+
 			"Each paragraph opens with the time it starts at, so you can tell how long "+
 			"a stretch runs. Three dots mark a long pause.", len(units)),
+	}
+	// Sentence numbers say nothing of time, and a model does not add up
+	// the times of paragraphs well. Words it can count, so the length is
+	// said in words, at the rate this speaker talks.
+	if rate := wordsPerSecond(lines); rate > 0 {
+		ask = append(ask, fmt.Sprintf("Speech here runs at about %s words a second, so %s to %s "+
+			"seconds is about %d to %d words.", fixed(rate, 1), fixed(opts.MinLen, 0),
+			fixed(opts.MaxLen, 0), int(math.Round(rate*opts.MinLen)), int(math.Round(rate*opts.MaxLen))))
 	}
 	if opts.Context != "" {
 		ask = append(ask, "About the video: "+opts.Context)
@@ -109,6 +119,23 @@ func storiesRequest(lines []Line, units [][2]int, opts PlanOptions) string {
 	ask = append(ask, "", "Transcript:", "", writeSentences(lines, units), "",
 		"Reply with the JSON object and nothing else.")
 	return strings.Join(ask, "\n")
+}
+
+// wordsPerSecond is how fast the lines are spoken, pauses included, since
+// a clip's length has its pauses in it too. Zero for too little to tell.
+func wordsPerSecond(lines []Line) float64 {
+	if len(lines) == 0 {
+		return 0
+	}
+	words := 0
+	for _, line := range lines {
+		words += len(line.Cues)
+	}
+	seconds := lines[len(lines)-1].End() - lines[0].Start()
+	if seconds < 10 {
+		return 0
+	}
+	return float64(words) / seconds
 }
 
 // writeSentences writes the transcript as paragraphs of numbered
