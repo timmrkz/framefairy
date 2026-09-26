@@ -203,6 +203,19 @@
         title: "Call the search off. The transcription it waits for stops with it",
       };
     }
+    // A search that was cut off or failed is carried on, not started anew:
+    // the button says Continue and takes up the window the search was
+    // about, wherever the window on the range picker is now.
+    if (stopped) {
+      return {
+        label: "Continue",
+        icon: "play",
+        run: carryOnSearch,
+        off: duration <= 0,
+        primary: true,
+        title: `Carry on the search of ${stopped.window.toLowerCase()}`,
+      };
+    }
     return {
       label: "New",
       icon: "plus",
@@ -500,32 +513,44 @@
   const stopped = $derived.by(() => {
     const note = status?.lastSearch;
     if (!note || finding || starting || lookPending) return null;
-    const window = `Window ${clock(note.from)} to ${clock(note.to > 0 ? note.to : duration)}`;
+    const end = note.to > 0 ? note.to : duration;
+    const window = `Window ${clock(note.from)} to ${clock(end)}`;
+    const span = { from: note.from, to: end, window };
     if (note.state === "failed") {
       // The engine's reasons begin in lower case, the way an error does
       // in the log. In a row of the list it is a sentence.
       const said = note.error?.trim() ?? "";
       const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
-      return { what: "Failed. New looks again", left: why, full: `${window}. ${why}` };
+      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
     }
     // Cut off while it waited for the transcript, which is the first half
-    // of every search on an episode read only part way: New transcribes
-    // on from where it stopped and then looks.
+    // of every search on an episode read only part way: Continue
+    // transcribes on from where it stopped and then looks.
     if (note.waiting) {
-      const end = note.to > 0 ? note.to : duration;
       const reached = Math.min(status?.covered ?? 0, end);
       return {
-        what: "Stopped. New carries on",
+        ...span,
+        what: "Interrupted. Click Continue",
         left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
-        full: `${window}. The app was closed while the episode was transcribed for it. New transcribes on from ${clock(reached)} and then finds the clips`,
+        full: `${window}. The app was closed while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
       };
     }
     return {
-      what: "Stopped. New looks again",
+      ...span,
+      what: "Interrupted. Click Continue",
       left: window,
-      full: `${window}. The app was closed or stopped while it ran`,
+      full: `${window}. The app was closed or stopped while the clips were found. Continue looks again`,
     };
   });
+
+  // Continue: the window goes back to the one the search was about, and
+  // the search is asked for again, the same way New asks for it.
+  function carryOnSearch() {
+    if (!stopped) return;
+    from = stopped.from;
+    to = stopped.to;
+    findClips(covering);
+  }
   const coming = $derived(
     finding || starting
       ? shown.length + Math.max(0, count - foundSoFar)
