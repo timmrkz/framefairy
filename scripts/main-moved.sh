@@ -52,12 +52,12 @@ gh pr list --base main --state open --limit 100 \
 			body=$(printf '%s\n\n%s\n\n%s\n\n%s' \
 				"main moved to $short, $subject. It no longer merges into this branch. These files conflict:" \
 				"$list" \
-				"Merge main into this branch, resolve them, run the checks and push." \
+				"Merge main into this branch, resolve them, read CLAUDE.md again, because main may have changed the rules, then run \`make changed\` and push." \
 				"<!-- main-moved $short -->")
 			echo "#$number: conflicts in $(printf '%s' "$conflicts" | tr '\n' ' ')"
 		else
 			body=$(printf '%s\n\n%s' \
-				"main moved to $short, $subject. It merges into this branch without conflicts. Merge it in, run the checks and push, so this pull request is tested against what it will land on." \
+				"main moved to $short, $subject. It merges into this branch without conflicts. Merge it in, read CLAUDE.md again, because main may have changed the rules, then run \`make changed\` and push, so this pull request is tested against what it will land on." \
 				"<!-- main-moved $short -->")
 			echo "#$number: merges cleanly"
 		fi

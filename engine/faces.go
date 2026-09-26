@@ -85,6 +85,15 @@ func (e *Engine) faceDetector() *faceDetector {
 	return e.faces
 }
 
+// classify is left out of the race detector. It only reads: the
+// detector's tables, which never change after loading, and the frame it is
+// handed, which is its caller's alone. It is also where framing spends
+// nearly all its time, and the detector's bookkeeping on every one of its
+// reads made each test that frames a clip six times slower, a minute and
+// a half for one test, for no race it could ever find. What writes the
+// frame is still watched.
+//
+//go:norace
 func (d *faceDetector) classify(r, c, s int, pixels []byte, cols int) float32 {
 	leaves := 1 << d.depth
 	r *= 256
