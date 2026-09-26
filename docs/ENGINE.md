@@ -200,15 +200,12 @@ a question the numbers in it already answer.
 Whichever of the two is nearer the length becomes the clip, so a clip is
 never lost, and one that ran into another clip keeps its first form.
 Answering without thinking, the model sometimes gives a clip back
-unchanged, and a short of fifty seconds is not a short. So a clip still
-over 120 % of the maximum after all that is cut the way an editor would,
-`fromTheMiddle` in `edges.go`: the opening sentence stays, because that is
-what lets a stranger follow, the end stays, because that is where the
-payoff is, and whole sentences go from between them, the ones straight
-after the opening first. When even the opening and the last sentence are
-too long together, the opening goes too. The first version cut from the
-start, and on Tim's episode took the setup off the mirror story. A clip
-one sentence too long for any of that is left as it is.
+unchanged. Such a clip stays whole, flagged in the log, for a hand to trim
+in the app. An automatic cut was tried and taken out again: the engine
+cannot tell where the heart of a story is, and on Tim's episode it cut
+the setup off the mirror story when it cut from the start, and the payoff
+out of the umbrella story, twice, when it cut from the middle. A complete
+story of 38 s is worth more than one of 19 s without its core.
 
 A recipe with `Edit`, `stories-edit`, holds back every clip, not only
 those off the length, and the second ask is about the edit: where each
@@ -573,7 +570,7 @@ Everything else is in `engine/`:
                 into lines. recipe_stories.go is the stories recipe
   compare.go    one window searched with several recipes, and the report
   fit.go        clips well off the length asked for again, measured
-  edges.go      every clip edge on a sentence, and the hard ceiling
+  edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken

@@ -187,25 +187,7 @@ func (b *planBuilder) acceptLocked(entry PlanEntry) {
 		b.held = append(b.held, entry)
 		return
 	}
-	b.queueLocked(b.capped(entry))
-}
-
-// capped is a clip that runs well past the length shortened in its middle,
-// see fromTheMiddle. Asked again, a model does not always shorten a clip,
-// and a short of fifty seconds is not a short.
-func (b *planBuilder) capped(entry PlanEntry) PlanEntry {
-	most := b.opts.MaxLen * 1.2
-	was := b.seconds(entry.Keep)
-	if was <= most {
-		return entry
-	}
-	keep := fromTheMiddle(b.lines, entry.Keep, most, b.seconds)
-	if now := b.seconds(keep); now < was {
-		b.e.Log.Info("%s shortened in its middle, %ss rather than %ss", entry.Slug,
-			fixed(now, 1), fixed(was, 1))
-		entry.Keep = keep
-	}
-	return entry
+	b.queueLocked(entry)
 }
 
 // seconds is how long a clip that keeps these lines runs, the way it is

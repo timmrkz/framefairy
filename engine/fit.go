@@ -141,7 +141,7 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 		if b.closed {
 			return
 		}
-		b.queueLocked(b.capped(chosen))
+		b.queueLocked(chosen)
 	}
 }
 
