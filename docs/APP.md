@@ -670,6 +670,20 @@ place.
       Clips says, following it as it changes, and still, because nothing
       is filling them yet. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
+    - **A search that stopped before it was done says so** in the row its
+      next clip would have appeared in, in the colour of a warning:
+      *Stopped. New looks again*, with the window it was about, when the
+      app was closed or fell over while it ran, and *Failed. New looks
+      again*, with its reason, when it failed. The whole of it is in the
+      row's title. Nothing starts by itself. It stays until a search starts,
+      after a restart too, because the engine keeps how the last search
+      ended in `search.json` in the episode's work folder: running when it
+      starts, the reason when it fails, and nothing once it has found its
+      clips or was called off by hand, because then there is nothing to
+      say. A note that still says running when the episode is opened is a
+      search that was cut off. Clips it wrote before that stay, with the
+      row after them. A failure that never reached the search itself still
+      goes to the line over the workspace.
     - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
