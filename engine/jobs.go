@@ -116,6 +116,10 @@ func JobsDir(source string) string {
 // disk, so it is held to something that cannot be a path.
 var jobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
+// reasonLimit is the most of a reason a record keeps. A reason is one line
+// said to a person, and a record is read every time the app starts.
+const reasonLimit = 500
+
 // recordLimit is the most a record may weigh. A record holds a few numbers
 // and a reason, and it is read every time the app starts.
 const recordLimit = 64 << 10
@@ -237,8 +241,8 @@ func saneJob(source string, r *JobRecord) bool {
 		return false
 	}
 	r.Error = strings.TrimSpace(r.Error)
-	if runes := []rune(r.Error); len(runes) > noteLimit {
-		r.Error = string(runes[:noteLimit])
+	if runes := []rune(r.Error); len(runes) > reasonLimit {
+		r.Error = string(runes[:reasonLimit])
 	}
 	if len(r.Steps) > 100 {
 		r.Steps = r.Steps[len(r.Steps)-100:]
@@ -405,7 +409,7 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 		return "", err
 	}
 	defer release()
-	return p.plan(stepCtx, req, false)
+	return p.Plan(stepCtx, req)
 }
 
 // windowEnd is where a search's window ends, and whether that is the end

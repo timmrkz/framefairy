@@ -228,7 +228,7 @@ func TestInstallingTheSpeechModelIsAJobLikeAnyOther(t *testing.T) {
 		if got := laneFor("model"); got != LaneHearing {
 			t.Errorf("a model install runs in the %q lane", got)
 		}
-		if got := laneFor("plan"); got != LaneFinding {
+		if got := laneFor("search"); got != LaneFinding {
 			t.Errorf("finding clips runs in the %q lane", got)
 		}
 	})

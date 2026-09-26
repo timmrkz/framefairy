@@ -309,7 +309,7 @@ func FuzzReadJob(f *testing.F) {
 		if !ok {
 			return
 		}
-		if !jobID.MatchString(rec.ID) || len([]rune(rec.Error)) > noteLimit || len(rec.Steps) > 100 {
+		if !jobID.MatchString(rec.ID) || len([]rune(rec.Error)) > reasonLimit || len(rec.Steps) > 100 {
 			t.Errorf("read %+v", rec)
 		}
 		if rec.Kind == JobRender && filepath.Dir(rec.Plan) != filepath.Join(WorkDir(source), "logs") {

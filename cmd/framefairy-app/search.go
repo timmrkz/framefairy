@@ -26,17 +26,15 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	// A search that stopped is taken up by this one, which writes a record
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
-	// From here on this episode has been looked at, so the workspace never
-	// asks for a first search of its own.
-	if err := engine.MarkLooked(path); err != nil {
-		log.Printf("could not note the search of %s: %v", path, err)
-	}
 	return s.jobs.addSteps(path, engine.JobSearch, "Find clips", true, func(j *Job) {
 		j.Record, j.From, j.To = engine.SearchID, req.From, req.To
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.
-		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done && covered < req.To-0.05 {
+		// A window to the end of the episode, To 0, is never heard before
+		// the transcript is finished.
+		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done &&
+			(req.To <= 0 || covered < req.To-0.05) {
 			go func() {
 				defer func() { _ = recover() }()
 				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {
@@ -134,8 +132,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 // searched, the moment it is added: the first half hour, or all of a
 // shorter episode, and no more than the model can read at once.
 func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
-	if engine.Looked(path) || engine.ReadSearch(path) != nil ||
-		len(engine.Status(path, s.store.Settings().ASRModel).Plans) > 0 {
+	if engine.EverSearched(path) {
 		return
 	}
 	info, err := s.probe(ctx, path)

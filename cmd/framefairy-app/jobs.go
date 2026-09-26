@@ -7,6 +7,7 @@ import (
 	"io"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"framefairy/asr"
@@ -154,7 +155,7 @@ func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // the lane of finding and moves as its steps go, see lanes.go.
 func laneFor(kind string) string {
 	switch kind {
-	case "transcribe", "model":
+	case "model":
 		return LaneHearing
 	case "render":
 		return LaneRendering
@@ -681,10 +682,22 @@ func (q *queue) runJob(job *Job) {
 	}
 }
 
-// setUp readies the engine and the options a job runs with. It is a
-// variable so the path tests can hand the app a stand-in speech model and
-// a stand-in language model, and run everything else as it is.
-var setUp = func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = asr.Open }
+// setUp readies the engine and the options a job runs with: the speech
+// model the app carries, unless a test has put stand-ins in standIns.
+func setUp(e *engine.Engine, o *engine.Options) {
+	if f := standIns.Load(); f != nil {
+		(*f)(e, o)
+		return
+	}
+	e.OpenRecognizer = asr.Open
+}
+
+// standIns is how the path tests hand the app a stand-in speech model and a
+// stand-in language model and run everything else as it is. It is read by
+// every job and written by the tests, from goroutines of their own, so it
+// is atomic: a job still finishing from one test read it while the next
+// test put its own in, which the race detector caught.
+var standIns atomic.Pointer[func(*engine.Engine, *engine.Options)]
 
 // run does the work of a job and turns a panic into a job that failed. A
 // desktop app that dies takes the interface, the other lane and whatever

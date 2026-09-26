@@ -635,10 +635,6 @@ export const Call = {
       case "UseLanguageModel":
         (window as any).__used = String(args[0]);
         return Promise.resolve(`/Users/tim/.framefairy/models/${String(args[0])}`);
-      case "WarmModel":
-        // A probe reads which windows the model was loaded for.
-        ((window as any).__warmed ??= []).push(args.slice(1));
-        return Promise.resolve(null);
       case "ChoosePlanner":
         (window as any).__planner = args[0];
         return Promise.resolve(null);
@@ -649,11 +645,11 @@ export const Call = {
         return Promise.resolve(null);
       case "Library":
         return Promise.resolve([
-          { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, looked: true },
-          { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, looked: true },
+          { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
+          { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
         ]);
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, looked: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number };

@@ -91,22 +91,7 @@ export interface EpisodeStatus {
   work: boolean;
   // Whether anyone has ever searched this episode for clips. It stays true
   // when the clips are removed again.
-  looked: boolean;
-  // How the last search ended when it did not end with clips: still
-  // running, which with nothing running means it was cut off, or failed
-  // with its reason. Left out when there is nothing to say.
-  lastSearch?: SearchNote;
-}
-
-export interface SearchNote {
-  state: "running" | "failed";
-  // The window it was asked about. To is 0 for the end of the episode.
-  from: number;
-  to: number;
-  error?: string;
-  // True while it waited for the transcript to reach the end of its window,
-  // before anything was sent to the model.
-  waiting?: boolean;
+  everSearched: boolean;
 }
 
 export interface Word {
@@ -254,7 +239,7 @@ export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed"
 export interface Job {
   id: string;
   episode: string;
-  kind: "search" | "transcribe" | "plan" | "render" | "model" | "llm";
+  kind: "search" | "render" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -431,11 +416,9 @@ export const api = {
   addEpisodes: () => call<string[] | null>("AddEpisodes"),
   // Loads the local model for the first search of an episode while the
   // transcript is still on its way. Nothing comes back and nothing waits.
-  warmModel: (path: string, from: number, to: number) => call<void>("WarmModel", path, from, to),
   // Where the transcription stops for now: the end of the window the first
   // search is waiting for. The speech model's chunk is cut exactly there.
   // 0 lets go, and a transcription that had stopped there carries on.
-  holdTranscription: (path: string, at: number) => call<void>("HoldTranscription", path, at),
   removeEpisode: (path: string, deleteWork: boolean) =>
     call<void>("RemoveEpisode", path, deleteWork),
   source: (path: string) => call<SourceView>("Source", path),
@@ -445,8 +428,6 @@ export const api = {
   // the interface until it does. These note it with the episode, and take
   // the note away when it is called off, so an app closed in that wait
   // leaves the episode saying so.
-  askSearch: (path: string, from: number, to: number) => call<void>("AskSearch", path, from, to),
-  forgetSearch: (path: string) => call<void>("ForgetSearch", path),
   // How much of the episode one search can read, and the weight of every
   // line so far, so the range picker knows how far a window may reach.
   room: (path: string) => call<RoomView>("Room", path),
@@ -458,8 +439,6 @@ export const api = {
   fonts: () => call<CaptionFont[]>("Fonts"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
-  transcribe: (path: string) => call<Job>("Transcribe", path),
-  plan: (path: string, req: PlanRequest) => call<Job>("Plan", path, req),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
   // New: finds clips in a window, hearing the episode that far first.
   search: (path: string, req: PlanRequest) => call<Job>("Search", path, req),

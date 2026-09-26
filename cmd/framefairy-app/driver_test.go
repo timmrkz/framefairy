@@ -61,14 +61,14 @@ func open(t *testing.T) *desk {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	was := setUp
-	setUp = func(e *engine.Engine, o *engine.Options) {
+	fakes := func(e *engine.Engine, o *engine.Options) {
 		e.OpenRecognizer = d.speech.open
 		o.LLMURL = d.model.server.URL
 		o.Width, o.Height = 360, 640
 		o.Preset = "ultrafast"
 	}
-	t.Cleanup(func() { setUp = was })
+	standIns.Store(&fakes)
+	t.Cleanup(func() { standIns.Store(nil) })
 	d.start(st)
 	return d
 }
