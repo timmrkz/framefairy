@@ -939,6 +939,12 @@ export const Call = {
       case "RemoveEpisode":
         (window as any).__removals = ((window as any).__removals ?? 0) + 1;
         return new Promise((r) => setTimeout(() => r(null), 1500));
+      case "AskSearch":
+        ((window as any).__askedSearch ??= []).push(args.slice(1));
+        return Promise.resolve(null);
+      case "ForgetSearch":
+        (window as any).__forgotSearch = ((window as any).__forgotSearch ?? 0) + 1;
+        return Promise.resolve(null);
       case "CancelJob":
         (window as any).__stopped = true;
         ((window as any).__cancels ??= []).push(args[0]);

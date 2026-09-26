@@ -1746,6 +1746,27 @@ func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, ind
 func (s *FrameFairy) Jobs() []Job { return s.jobs.list() }
 
 // CancelJob stops a job, or takes it out of the queue.
+// AskSearch notes a search asked for before the transcript covers its
+// window. The interface holds on to such a search itself and asks for it
+// with Plan the moment the transcript is there, so without this the app
+// closed in that wait left the episode with nothing to say: Plan was never
+// called. To is 0 for the end of the episode.
+func (s *FrameFairy) AskSearch(path string, from, to float64) error {
+	if !s.store.Known(path) {
+		return os.ErrNotExist
+	}
+	return engine.NoteSearchAsked(path, from, to)
+}
+
+// ForgetSearch takes the note of a search away: Cancel pressed while it
+// still waited for the transcript, which is a search called off by hand.
+func (s *FrameFairy) ForgetSearch(path string) error {
+	if !s.store.Known(path) {
+		return os.ErrNotExist
+	}
+	return engine.ClearSearchNote(path)
+}
+
 func (s *FrameFairy) CancelJob(id string) {
 	// A search called off by hand has nothing to report: whoever called it
 	// off knows why. The app closing cancels every search too, and that

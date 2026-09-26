@@ -682,7 +682,9 @@ place.
       starts by itself. It stays until a search starts, after a restart
       too, because the episode keeps how its last search ended in
       `search.json` in its work folder: running from the moment the search
-      is asked for, marked as waiting until the transcript is there, the
+      is asked for, marked as waiting until the transcript is there, which
+      includes **New** pressed before the transcript covers the window,
+      a search the interface holds until it does, the
       reason when it fails, and nothing once it has found its clips.
       **Cancel** takes it away too, because whoever pressed it knows why.
       Closing the app stops every search as well, and that leaves the note

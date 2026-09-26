@@ -67,3 +67,27 @@ func TestCancelTakesTheNoteAwayAndClosingDoesNot(t *testing.T) {
 		t.Errorf("after the app closed: %+v", note)
 	}
 }
+
+// New pressed before the transcript covers the window is held by the
+// interface, which never calls Plan until it does. AskSearch is what keeps
+// that search with the episode, and ForgetSearch is Cancel.
+func TestASearchHeldByTheInterfaceIsNoted(t *testing.T) {
+	svc, mine, home := library(t)
+	if err := svc.AskSearch(mine, 1800, 3600); err != nil {
+		t.Fatal(err)
+	}
+	note := engine.ReadSearchNote(mine)
+	if note == nil || note.State != "running" || !note.Waiting || note.From != 1800 || note.To != 3600 {
+		t.Fatalf("asked for: %+v", note)
+	}
+	if err := svc.ForgetSearch(mine); err != nil {
+		t.Fatal(err)
+	}
+	if note := engine.ReadSearchNote(mine); note != nil {
+		t.Errorf("after Cancel: %+v", note)
+	}
+	other := home + "/not-mine.mp4"
+	if svc.AskSearch(other, 0, 10) == nil || svc.ForgetSearch(other) == nil {
+		t.Error("a file outside the library was noted")
+	}
+}

@@ -424,6 +424,12 @@ export const api = {
   source: (path: string) => call<SourceView>("Source", path),
   clips: (path: string) => call<ClipEntry[]>("Clips", path),
   coverage: (path: string, least: number) => call<CoverageView>("Coverage", path, least),
+  // A search asked for before the transcript covers its window is held by
+  // the interface until it does. These note it with the episode, and take
+  // the note away when it is called off, so an app closed in that wait
+  // leaves the episode saying so.
+  askSearch: (path: string, from: number, to: number) => call<void>("AskSearch", path, from, to),
+  forgetSearch: (path: string) => call<void>("ForgetSearch", path),
   // How much of the episode one search can read, and the weight of every
   // line so far, so the range picker knows how far a window may reach.
   room: (path: string) => call<RoomView>("Room", path),

@@ -238,6 +238,8 @@
   function skipLook() {
     chosen.looked[path] = true;
     delete chosen.asked[path];
+    // Called off by hand, so there is nothing for the episode to say.
+    api.forgetSearch(path).catch(() => {});
     // The transcription runs for the search, so it stops with it.
     stopTranscribing();
     // The transcription stops at the window only for that search.
@@ -1341,6 +1343,9 @@
     if (!readyToLook) {
       chosen.asked[path] = { replan };
       fedFor = -1;
+      // Kept with the episode as well as here, because here is gone the
+      // moment the app is closed, and the search with it.
+      api.askSearch(path, whole ? 0 : from, whole ? 0 : to).catch(() => {});
       return;
     }
     starting = true;
