@@ -68,6 +68,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make llama` | the same for the llama-server framefairy ships, which is what runs a local model |
 | `make tools-archive` | packs both of them into one archive with a manifest, for a release. See [PACKAGING.md](PACKAGING.md#the-tools-we-ship) |
 | `make notices` | writes the licence notices in `notices/` again, from the Go modules, the interface's packages and the source trees ffmpeg and llama-server are built from. Run it when a test or the interface build says a notice is missing or out of date. See [THIRD_PARTY.md](THIRD_PARTY.md) |
+| `make changed` | what the branch changed against main, and only that. The check before every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
@@ -92,6 +93,34 @@ The first one takes a while, because it installs the tools and builds
 ffmpeg and llama-server. The app then walks you through the rest: the
 speech model it fetches itself, and it asks once how clips should be found.
 
+## Checking a change
+
+`make changed` looks at what the branch changed against `origin/main`,
+committed or not, new files included, and runs what those files can reach:
+
+| Changed | Runs |
+| --- | --- |
+| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, `go vet`, the tests under the race detector and the fuzz targets, for the changed packages and every package that imports them |
+| `go.mod`, `go.sum` | every package |
+| `frontend/` | `make interface` |
+| `Makefile`, a build script | `make` |
+| `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
+| `scripts/changed*.sh` | `scripts/changed-test.sh` |
+| a workflow | a read of its YAML |
+| docs | nothing |
+| anything else | `make`, so a file nobody thought of is checked rather than skipped |
+
+It says what it will run before it runs it, and `sh scripts/changed.sh
+--plan` says it and runs nothing. `BASE=` compares with another commit.
+Measured on the cloud machine: a change to `updates/` 20 s, to the app 11 s,
+to the interface 8 s. A change to the engine reaches every program and
+every fuzz target, and takes about four minutes. `make test` is ten minutes. CI still runs
+everything on every pull request, so this only saves the round trips, it
+does not replace the check.
+
+`scripts/changed-test.sh` checks the rules without running anything, and
+`make changed` runs it whenever the rules change.
+
 ## Tests
 
 `make test` runs every Go test under the race detector, type checks the
@@ -100,7 +129,10 @@ interface and runs the interface's own tests with vitest,
 goroutines and an interface asking them things from another, so the tests of
 anything asynchronous use it from several goroutines at once and let
 `-race` judge. The fuzzing runs without the detector: it is the same code,
-many more times over. Those cover
+many more times over. One function is left out of the detector,
+`faceDetector.classify` in `engine/faces.go`: it only reads, and it is where
+framing spends nearly all its time, so the detector's bookkeeping made every
+test that frames a clip six times slower. Those cover
 the rules the app follows by itself, in `frontend/src/lib/flow.ts`: that a
 new episode transcribes itself and that the first clips are found as soon as
 the transcript covers the chosen window. Both have broken before, so they

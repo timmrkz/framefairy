@@ -7,7 +7,7 @@ and builds. Nothing runs Claude Code locally, and no zip files change hands.
 
 ```
 you describe a task at claude.ai/code
-  → Claude works on a branch in the cloud, runs make test, pushes
+  → Claude works on a branch in the cloud, runs make changed, pushes
   → a pull request opens, CI builds and tests it on Linux and macOS
   → you review and merge
   → on your Mac: git pull && make run
@@ -79,8 +79,8 @@ whatever version the machine came with.
    screenshots included. Batch numbers from [GUI-PLAN.md](GUI-PLAN.md) work
    as shorthand.
 2. **Claude works** on a new branch. It reads `CLAUDE.md` first, which holds
-   the project's rules and your preferences. It runs `make test` and `make`,
-   pushes, and opens a pull request. You can watch and steer the session at
+   the project's rules and your preferences. It runs `make changed`, which
+   checks what the branch changed and only that, pushes, and opens a pull request. You can watch and steer the session at
    any time, also from the Claude app on your phone.
 3. **CI checks the pull request**, see below. With auto-fix switched on for
    the pull request, Claude fixes failed checks by itself.
@@ -134,7 +134,7 @@ each one `main` is not already in:
   tested against what it will land on
 
 The comment is what wakes the session. It merges `main` in, resolves what
-conflicts, runs `make test` and `make`, and pushes. The workflow itself never
+conflicts, runs `make changed`, and pushes. The workflow itself never
 pushes, because a merge made there would reach the branch untested. It
 comments once per pull request for each move of `main`, and leaves pull
 requests from forks alone.

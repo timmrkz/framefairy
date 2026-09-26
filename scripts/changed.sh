@@ -156,7 +156,14 @@ fi
 # What will run, said first, so a run that is less than expected is seen
 # before it is trusted.
 [ -n "$gofiles" ] && say "gofmt:     $(echo $gofiles)"
-[ -n "$affected" ] && say "go test:   $(echo $affected | sed "s|$module/||g; s|$module|.|g")"
+if [ -n "$affected" ]; then
+	short=""
+	for p in $affected; do
+		case $p in "$module") p=. ;; "$module"/*) p=${p#"$module"/} ;; esac
+		short="$short $p"
+	done
+	say "go test:  $short"
+fi
 [ "$interface" = 1 ] && say "interface: make interface"
 [ "$build" = 1 ] && say "build:     make"
 [ "$rules" = 1 ] && say "rules:     scripts/ci-needs-test.sh"
