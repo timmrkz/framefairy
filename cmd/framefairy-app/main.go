@@ -1067,7 +1067,9 @@ func (s *FrameFairy) WarmModel(path string, from, to float64) {
 	go func() {
 		defer func() { _ = recover() }()
 		e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-		p := engine.NewProject(e, path, s.store.Settings().options())
+		opts := s.store.Settings().options()
+		setUp(e, &opts)
+		p := engine.NewProject(e, path, opts)
 		if err := p.WarmModel(context.Background(), windowLength(req)); err != nil {
 			log.Printf("could not load the model ahead of the search: %v", err)
 		}
@@ -1150,7 +1152,10 @@ func (s *FrameFairy) waitForTranscript(ctx context.Context, p *engine.Project,
 				reason = "the transcription stopped at " + engine.HMS(covered)
 			}
 			p.Log().Error("%s", reason)
-			return nil, engine.ErrStepFailed
+			// The reason itself, so the note of the search says it. It
+			// said "step failed" for a speech model that could not be
+			// loaded.
+			return nil, errors.New(reason)
 		default:
 			queued := s.Transcribe(p.Source)
 			started = &queued

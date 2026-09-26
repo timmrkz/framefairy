@@ -488,8 +488,9 @@ func (q *queue) runJob(job *Job) {
 		})
 	})
 	e := engine.NewEngine(log)
-	e.OpenRecognizer = asr.Open
-	project := engine.NewProject(e, job.Episode, q.store.Settings().options())
+	opts := q.store.Settings().options()
+	setUp(e, &opts)
+	project := engine.NewProject(e, job.Episode, opts)
 
 	result, err := run(job, project)
 	log.SetSink(nil)
@@ -513,6 +514,11 @@ func (q *queue) runJob(job *Job) {
 		q.notify(job.Episode)
 	}
 }
+
+// setUp readies the engine and the options a job runs with. It is a
+// variable so the path tests can hand the app a stand-in speech model and
+// a stand-in language model, and run everything else as it is.
+var setUp = func(e *engine.Engine, o *engine.Options) { e.OpenRecognizer = asr.Open }
 
 // run does the work of a job and turns a panic into a job that failed. A
 // desktop app that dies takes the interface, the other lane and whatever

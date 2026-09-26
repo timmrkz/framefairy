@@ -245,6 +245,11 @@ The paths, with the fake speech model and the fake language model:
 What today's code does not do at all, like a render that says it was
 interrupted, gets its path test in the batch that brings it.
 
+The path tests are in `cmd/framefairy-app/paths_test.go`, and the driver
+in `driver_test.go`. Written against today's code, they found one bug on
+the way: a search whose speech model could not be loaded said "step
+failed" instead of why. That is fixed in the same commit.
+
 The interface's harness gets fake jobs that go through the same steps
 from the same records, so what a probe sees is what the Go side reports
 rather than a state made up for the probe.
