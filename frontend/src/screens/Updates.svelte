@@ -79,27 +79,28 @@
     }
   }
 
-  // A channel is main or a pull request, and on the trigger it is only
-  // that: main or #18. The list says the whole title.
-  const face = (id: string) => (id.startsWith("pr-") ? `#${id.slice(3)}` : id);
+  // A channel is what it is and nothing more: a branch or a pull request
+  // by its number. The pull request's title says what it is about, which
+  // is not what is being picked here. Customers will see releases the same
+  // way, by their version.
+  const channelName = (id: string) =>
+    id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : id ? `Branch ${id}` : "Nothing";
   const channelOptions = $derived.by(() => {
-    const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: c.name, face: face(c.id) }));
+    const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
     // A pull request that was picked and has since gone stays in the list
     // for as long as it is picked, so the trigger never names nothing.
     const picked = update?.picked ?? "";
     if (picked && !listed.some((o) => o.value === picked)) {
-      listed.push({ value: picked, label: `${face(picked)}, merged or closed`, face: face(picked) });
+      listed.push({ value: picked, label: `${channelName(picked)}, closed` });
     }
     // A build made by make follows nothing until a channel is picked.
-    if (update && !update.channel) listed.unshift({ value: "", label: "Nothing", face: "Nothing" });
+    if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
     return listed;
   });
   const following = $derived(
     update ? (update.channel ? update.picked || update.follows : update.picked) : "",
   );
-  const followingName = $derived(
-    update?.channels?.find((c) => c.id === (update?.follows || following))?.name ?? face(update?.follows ?? ""),
-  );
+  const followingName = $derived(channelName(update?.follows || following || "main"));
 
   function when(checked: string | undefined): string {
     if (!checked) return "";
@@ -124,7 +125,7 @@
     if (u.off) return { mark: "off", head: "This build does not update itself", more: u.off };
     switch (u.phase) {
       case "checking":
-        return { mark: "look", head: "Looking for a newer build", more: `Of ${followingName || "main"}.` };
+        return { mark: "look", head: "Looking for a newer build", more: `Of ${followingName}.` };
       case "downloading": {
         const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
         return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}`.trim() };
@@ -138,11 +139,11 @@
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
       case "current": {
-        const gone = u.picked && u.follows !== u.picked ? `${face(u.picked)} was merged or closed, so this follows main. ` : "";
+        const gone = u.picked && u.follows !== u.picked ? `${channelName(u.picked)} was merged or closed, so this follows branch main. ` : "";
         return {
           mark: "ok",
           head: "Up to date",
-          more: `${gone}This is the newest build of ${followingName || "main"}. ${when(u.checked)}`.trim(),
+          more: `${gone}This is the newest build of ${followingName}. ${when(u.checked)}`.trim(),
         };
       }
     }
@@ -197,6 +198,7 @@
             onpick={follow}
             id="channel"
             label="Channel"
+            align="right"
             title="Where the next build comes from: main, or one pull request"
             disabled={channelOptions.length === 0}
           />
@@ -328,9 +330,9 @@
     color: var(--ok);
   }
 
-  /* The list is as wide as what its trigger says, main or #18, and no
-     wider, the same as every list in the settings. The titles are in the
-     list itself, which grows away from it. */
+  /* The list is as wide as what its trigger says and no wider, the same
+     as every list in the settings. It hangs from the trigger's right edge,
+     the edge of the card, and grows away from it into the card. */
   .build :global(button.pick) {
     width: max-content;
   }
