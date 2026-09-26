@@ -134,7 +134,11 @@ each one `main` is not already in:
   tested against what it will land on
 
 The comment is what wakes the session. It merges `main` in, resolves what
-conflicts, runs `make changed`, and pushes. The workflow itself never
+conflicts, reads `CLAUDE.md` again, runs `make changed`, and pushes.
+Reading `CLAUDE.md` again is in the comment on purpose: a session reads it
+once when it starts, so a rule that lands on `main` while the session runs
+would otherwise reach it only in its next session. Every move of `main`
+hands it to every open pull request. The workflow itself never
 pushes, because a merge made there would reach the branch untested. It
 comments once per pull request for each move of `main`, and leaves pull
 requests from forks alone.

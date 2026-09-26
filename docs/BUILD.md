@@ -100,8 +100,8 @@ committed or not, new files included, and runs what those files can reach:
 
 | Changed | Runs |
 | --- | --- |
-| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, `go vet`, the tests under the race detector and the fuzz targets, for the changed packages and every package that imports them |
-| `go.mod`, `go.sum` | every package |
+| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below |
+| `go.mod`, `go.sum` | every package and every fuzz target |
 | `frontend/` | `make interface` |
 | `Makefile`, a build script | `make` |
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
@@ -110,11 +110,20 @@ committed or not, new files included, and runs what those files can reach:
 | docs | nothing |
 | anything else | `make`, so a file nobody thought of is checked rather than skipped |
 
+Fuzzing is the slow part, ten thousand executions a target, and most
+targets read one kind of input a change never goes near. So a target is
+fuzzed only when its seeds, run once with coverage, go through a file that
+changed, or when one of its own seeds or a test file of its package
+changed. Running the seeds takes a second. A change to framing fuzzes
+nothing, a change to the caption writer fuzzes the four targets that write
+captions, and the rest are named as skipped.
+
 It says what it will run before it runs it, and `sh scripts/changed.sh
 --plan` says it and runs nothing. `BASE=` compares with another commit.
-Measured on the cloud machine: a change to `updates/` 20 s, to the app 11 s,
-to the interface 8 s. A change to the engine reaches every program and
-every fuzz target, and takes about four minutes. `make test` is ten minutes. CI still runs
+Measured on the cloud machine, which has four cores: a change to `updates/`
+5 s, to the app 11 s, to the interface 8 s. A change to the engine reaches
+every program and takes about two minutes, most of it the engine's own
+tests. `make test` is ten minutes. CI still runs
 everything on every pull request, so this only saves the round trips, it
 does not replace the check.
 

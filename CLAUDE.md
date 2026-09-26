@@ -344,9 +344,9 @@ messages, pull request text, code comments and chat replies.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
   without ffmpeg. **Run `make changed` before every push.** It checks what
-  the branch changed against main and only that: the Go tests and fuzz
-  targets of the packages that changed and every package that imports
-  them, `make interface` for `frontend/`, the build for the Makefile and
+  the branch changed against main and only that: the Go tests of the
+  packages that changed and every package that imports them, the fuzz
+  targets that go through a changed file, `make interface` for `frontend/`, the build for the Makefile and
   the scripts, the rules tests for the rules, nothing for docs. A change
   to one package is checked in seconds rather than the ten minutes of
   everything, and a change that reaches everything, `go.mod` or the

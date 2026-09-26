@@ -13,8 +13,10 @@
 #
 #   Go code         gofmt on the files, then go vet and the tests under the
 #                   race detector for the packages that changed and every
-#                   package that imports them, and the fuzz targets of
-#                   those packages. go.mod or go.sum is every package.
+#                   package that imports them, and of their fuzz targets
+#                   those that go through a changed file, see
+#                   fuzz_what_changed. go.mod or go.sum is every package
+#                   and every target.
 #   frontend/       make interface
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
@@ -186,6 +188,78 @@ if [ "$plan_only" = 1 ]; then
 	exit 0
 fi
 
+# The fuzz targets a change reaches, fuzzed, and no others. Fuzzing is the
+# slow part, ten thousand executions a target, and most targets read one
+# kind of input a change never goes near. A target is fuzzed when:
+#
+#   one of its own seeds changed, in testdata/fuzz/<target>/
+#   a test file of its package changed, which may be the target itself
+#   go.mod or go.sum changed, which can change anything
+#   running its seeds once, with coverage, goes through a file that changed
+#
+# The last is the one that decides most of the time. Running the seeds is
+# what go test does anyway, and takes a second. What it goes through is
+# what the target is about, so a change to the renderer does not fuzz the
+# plan reader, and a change to the plan reader does.
+fuzz_what_changed() {
+	gosources=""
+	gotests=""
+	for f in $changed; do
+		case $f in
+		*_test.go) gotests="$gotests $f" ;;
+		*.go) gosources="$gosources $f" ;;
+		esac
+	done
+	targets=""
+	skipped=""
+	for pkg in $affected; do
+		dir=${pkg#"$module"}
+		dir=${dir#/}
+		[ -z "$dir" ] && dir=.
+		for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
+			if fuzz_reaches "$pkg" "$dir" "$target"; then
+				targets="$targets$pkg $target
+"
+			else
+				skipped="$skipped $target"
+			fi
+		done
+	done
+	[ -n "$skipped" ] && printf 'skip	fuzzing%s, which no change reaches\n' "$skipped"
+	if [ -n "$targets" ]; then
+		printf '%s' "$targets" | GO=$GO FUZZTIME=$FUZZTIME \
+			xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" -n 2 sh scripts/fuzz.sh --one
+	fi
+}
+
+fuzz_reaches() {
+	pkg=$1
+	dir=$2
+	target=$3
+	[ "$all_go" = 1 ] && return 0
+	for f in $changed; do
+		case $f in "$dir"/testdata/fuzz/"$target"/*) return 0 ;; esac
+	done
+	for f in $gotests; do
+		[ "$(dirname -- "$f")" = "$dir" ] && return 0
+	done
+	[ -z "$gosources" ] && return 1
+	profile=$(mktemp)
+	if ! $GO test -run "^$target\$" -coverpkg="$module/..." -coverprofile="$profile" "$pkg" >/dev/null 2>&1; then
+		# Its seeds fail, so fuzzing it says why.
+		rm -f "$profile"
+		return 0
+	fi
+	for f in $gosources; do
+		if grep "^$module/$f:" "$profile" | awk '$NF > 0 { hit = 1 } END { exit !hit }'; then
+			rm -f "$profile"
+			return 0
+		fi
+	done
+	rm -f "$profile"
+	return 1
+}
+
 if [ -n "$gofiles" ]; then
 	unformatted=$(gofmt -l $gofiles)
 	if [ -n "$unformatted" ]; then
@@ -201,15 +275,7 @@ if [ -n "$affected" ]; then
 	printf 'ok  \tgo vet\n'
 	# The same flags make unit passes, so a test here is the test there.
 	$GO test -race -ldflags "${LDFLAGS:-}" $affected
-	targets=$(for pkg in $affected; do
-		for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
-			echo "$pkg $target"
-		done
-	done)
-	if [ -n "$targets" ]; then
-		echo "$targets" | GO=$GO FUZZTIME=$FUZZTIME \
-			xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" -n 2 sh scripts/fuzz.sh --one
-	fi
+	fuzz_what_changed
 fi
 
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
