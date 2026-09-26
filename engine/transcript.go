@@ -12,8 +12,9 @@ import (
 )
 
 // transcriptVersion changes whenever the stored transcript changes meaning,
-// so an old file is transcribed again rather than misread.
-const transcriptVersion = 1
+// so an old file is transcribed again rather than misread. Version 2 keeps
+// a number apart from the word before it, which version 1 glued on.
+const transcriptVersion = 2
 
 type sourceStamp struct {
 	Name     string `json:"name"`

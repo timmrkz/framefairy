@@ -122,17 +122,24 @@ func quietestCut(frames []float32) int {
 
 // TokensToWords joins tokens into words. Punctuation that arrives as its own
 // token belongs to the word before it.
+//
+// A token that is only a space starts the word after it. The speech model
+// has no digit that starts a word, so a number comes as a lone space and
+// then its digits, and without the space "dass 5000" is "dass5000".
 func TokensToWords(tokens []Token, offset float64) []Cue {
 	var words []Cue
+	spaced := false
 	for _, token := range tokens {
 		text := token.Text
 		start := offset + token.Start
 		end := start + max(token.Duration, 0)
 		trimmed := strip(text)
 		if trimmed == "" {
+			spaced = spaced || text != ""
 			continue
 		}
-		startsWord := strings.HasPrefix(text, " ") || len(words) == 0
+		startsWord := spaced || strings.HasPrefix(text, " ") || len(words) == 0
+		spaced = false
 		if !startsWord || (isPunctuation(trimmed) && len(words) > 0) {
 			last := &words[len(words)-1]
 			last.Text += trimmed

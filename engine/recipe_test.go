@@ -178,8 +178,18 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 		if run.Failed != "" || len(run.Clips) != 1 || run.PromptChars == 0 {
 			t.Errorf("%s: %+v", run.Recipe, run)
 		}
-		if want := filepath.Join(WorkDir(source), "experiments", run.Recipe); filepath.Dir(run.Plan) != want {
+		dir := filepath.Join(WorkDir(source), "experiments", run.Recipe)
+		if filepath.Dir(run.Plan) != dir {
 			t.Errorf("%s's plan is %s", run.Recipe, run.Plan)
+		}
+		// Each recipe keeps what it asked and what came back, and the
+		// next one does not write over it.
+		prompt, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
+		if err != nil || runeLen(string(prompt)) != run.PromptChars {
+			t.Errorf("%s kept no prompt of its own: %v", run.Recipe, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "reply.json")); err != nil {
+			t.Errorf("%s kept no reply: %v", run.Recipe, err)
 		}
 	}
 	body, err := os.ReadFile(report)

@@ -246,9 +246,9 @@ func TestCoverageAndSlicing(t *testing.T) {
 // a convenience, so anything it cannot vouch for has to come back as a plain
 // no, never as half a transcript.
 func FuzzReadTranscriptFile(f *testing.F) {
-	f.Add(`{"version":1,"source":{"name":"ep.mp4","size":24,"modified":"x"},"model":"m",`+
+	f.Add(`{"version":2,"source":{"name":"ep.mp4","size":24,"modified":"x"},"model":"m",`+
 		`"from":0.0,"to":3.0,"mean":-30.0,"words":[[0.1,0.5,"eins"]]}`, []byte{0, 0, 0, 0})
-	f.Add(`{"version":1,"words":[[0.1,"x",5]]}`, []byte{1, 2, 3})
+	f.Add(`{"version":2,"words":[[0.1,"x",5]]}`, []byte{1, 2, 3})
 	f.Add(`nicht json`, []byte{})
 	f.Fuzz(func(t *testing.T, body string, raw []byte) {
 		dir := t.TempDir()

@@ -207,7 +207,9 @@ searches the same window once with each recipe and writes
 search cost, the time, the size of the request and what the local model
 read and wrote, and then every clip each found, with its title and the
 words that stay, to read side by side. Each recipe's plan is in
-`experiments/<recipe>/`. When every search failed, there is nothing to
+`experiments/<recipe>/`, beside `prompt.txt`, what it asked, and
+`reply.json`, what came back. So `experiments/` holds everything a
+comparison made. When every search failed, there is nothing to
 compare: the comparison fails with the reason and writes no report.
 
 A search with any recipe but `lines`, and every search of a comparison, is

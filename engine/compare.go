@@ -92,11 +92,20 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 				run.Failed = "the search failed"
 			}
 		}
-		if body, err := os.ReadFile(filepath.Join(logs, "plan-prompt.txt")); err == nil {
+		// What was asked and what came back are kept beside the plan, where
+		// the next recipe's search does not write over them.
+		dir := filepath.Join(work, "experiments", name)
+		if body, err := os.ReadFile(filepath.Join(logs, "plan-prompt.txt")); err == nil &&
+			!modifiedBefore(filepath.Join(logs, "plan-prompt.txt"), began) {
 			run.PromptChars = runeLen(string(body))
+			keepCopy(dir, "prompt.txt", body)
 		}
-		run.PromptTokens, run.WrittenTokens, run.ThoughtChars = lastLocalAnswer(logs, began)
-		run.Plan = newestPlan(filepath.Join(work, "experiments", name), began)
+		var reply string
+		reply, run.PromptTokens, run.WrittenTokens, run.ThoughtChars = lastLocalAnswer(logs, began)
+		if body, err := os.ReadFile(reply); reply != "" && err == nil {
+			keepCopy(dir, "reply.json", body)
+		}
+		run.Plan = newestPlan(dir, began)
 		if run.Plan != "" {
 			run.Clips = foundClips(run.Plan)
 		}
@@ -119,10 +128,25 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 	return runs, report, nil
 }
 
-// lastLocalAnswer reads what the local model said about the answer saved
-// since began: the tokens it read, the tokens it wrote, and how much of what
-// it wrote was thought. All zero for the API, or an answer reused.
-func lastLocalAnswer(logs string, began time.Time) (read, written, thought int) {
+// modifiedBefore is true for a file last written before t, or not there.
+func modifiedBefore(path string, t time.Time) bool {
+	info, err := os.Stat(path)
+	return err != nil || info.ModTime().Before(t)
+}
+
+// keepCopy writes a copy into dir. A copy that cannot be written costs the
+// report nothing, so it is only left out.
+func keepCopy(dir, name string, body []byte) {
+	if os.MkdirAll(dir, 0o755) == nil {
+		_ = os.WriteFile(filepath.Join(dir, name), body, 0o644)
+	}
+}
+
+// lastLocalAnswer finds the answer saved since began and reads what the local
+// model said about it: the tokens it read, the tokens it wrote, and how much
+// of what it wrote was thought. The numbers are zero for the API, and the
+// path empty for an answer reused.
+func lastLocalAnswer(logs string, began time.Time) (path string, read, written, thought int) {
 	matches, _ := filepath.Glob(filepath.Join(logs, "reply-*.json"))
 	var newest string
 	var at time.Time
@@ -134,19 +158,19 @@ func lastLocalAnswer(logs string, began time.Time) (read, written, thought int) 
 		newest, at = m, info.ModTime()
 	}
 	if newest == "" {
-		return 0, 0, 0
+		return "", 0, 0, 0
 	}
 	body, err := os.ReadFile(newest)
 	if err != nil {
-		return 0, 0, 0
+		return "", 0, 0, 0
 	}
 	var saved struct {
 		How *localAnswer `json:"how"`
 	}
 	if json.Unmarshal(body, &saved) != nil || saved.How == nil {
-		return 0, 0, 0
+		return newest, 0, 0, 0
 	}
-	return saved.How.PromptTokens, saved.How.Written, saved.How.Reasoning
+	return newest, saved.How.PromptTokens, saved.How.Written, saved.How.Reasoning
 }
 
 // newestPlan is the plan written in dir since began.
