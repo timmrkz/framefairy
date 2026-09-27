@@ -621,13 +621,19 @@ export const Call = {
           memory: 34359738368,
           planner: fresh ? planner : "local",
           // Two companies, and a key for each or not. ?nokey is a machine
-          // with none, and a fresh one has none until one is saved.
+          // with none, and a fresh one has none until one is saved. ?envkey
+          // has Anthropic's in the environment.
           ...(() => {
             const apiModel: string = (window as any).__settings?.apiModel || (window as any).__apiModel || "claude-sonnet-5";
             const provider = apiModel.startsWith("gpt-") ? "openai" : "anthropic";
             const stored: Record<string, boolean> = (window as any).__keys ?? {};
             const none = fresh || location.search.includes("nokey");
-            const keys = { anthropic: none ? !!stored.anthropic || key : true, openai: !!stored.openai };
+            const env = location.search.includes("envkey") && !stored.anthropic;
+            const where = (here: boolean) => (here ? "keychain" : "");
+            const keys: Record<string, string> = {
+              anthropic: env ? "environment" : where(none ? !!stored.anthropic || !!key : true),
+              openai: where(!!stored.openai),
+            };
             return {
               apiModel,
               provider,
@@ -640,7 +646,7 @@ export const Call = {
                 { model: "gpt-6-sol", title: "GPT-6 Sol", provider: "openai" },
               ],
               keys,
-              hasKey: keys[provider],
+              hasKey: !!keys[provider],
             };
           })(),
           hasLocalModel: fresh ? llmDone() : true,
@@ -678,9 +684,19 @@ export const Call = {
       case "ChoosePlanner":
         (window as any).__planner = args[0];
         return Promise.resolve(null);
-      case "SaveAPIKey":
-        ((window as any).__keys ??= {})[String(args[0])] = !!String(args[1] ?? "").trim();
-        return Promise.resolve(null);
+      case "SaveAPIKey": {
+        // A key that ends in "bad" is one the company refuses, after the
+        // moment it takes to ask.
+        const typed = String(args[1] ?? "").trim();
+        if (typed.endsWith("bad")) {
+          const title = String(args[0]) === "openai" ? "OpenAI" : "Anthropic";
+          return new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`${title} did not accept this key. Check it at ${String(args[0]) === "openai" ? "platform.openai.com" : "console.anthropic.com"}.`)), 600),
+          );
+        }
+        ((window as any).__keys ??= {})[String(args[0])] = !!typed;
+        return new Promise((resolve) => setTimeout(() => resolve(null), 600));
+      }
       case "ChooseCloudModel":
         (window as any).__apiModel = String(args[0]);
         if ((window as any).__settings) (window as any).__settings.apiModel = String(args[0]);

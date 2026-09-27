@@ -386,6 +386,15 @@ than budget. Any other model either company has can be named with `--model`.
 The tests stand a fake server in for both, in `engine/provider_test.go`, down
 to a whole search on a GPT model from transcript to plan.
 
+The command line reads the environment first and the keychain after. The
+app turns that round with `PreferSavedKeys` as it starts, so the key saved
+in its settings is the one used, and a key left in a terminal's
+environment never wins over it. `VerifyAPIKey` shows a key to its company
+before the app keeps it, by asking for the list of models, and a key
+refused during a search is said in words, naming where it came from. The
+company's own answer is kept in the `logs` folder, as every refused request
+is, and in the detail lines of `--verbose`.
+
 A search is three kinds of work that no longer wait on each other, in
 `engine/planbuild.go`. The model writes on the graphics side of the
 machine, framing decodes video with ffmpeg on the processor, and writing a

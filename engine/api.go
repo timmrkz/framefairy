@@ -221,7 +221,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		if err != nil {
 			return nil, nil, err
 		}
-		key, err := ReadAPIKey(ctx, p)
+		key, source, err := readAPIKey(ctx, p)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -231,13 +231,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			return nil, nil, err
 		}
 		request.Header.Set("content-type", "application/json")
-		switch p.Name {
-		case "openai":
-			request.Header.Set("authorization", "Bearer "+key)
-		default:
-			request.Header.Set("anthropic-version", apiVersion)
-			request.Header.Set("x-api-key", key)
-		}
+		setKey(request, p, key)
 
 		response, err := httpClient.Do(request)
 		if err != nil {
@@ -345,10 +339,14 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				delay = min(delay*2, 60)
 				continue
 			}
+			if code == http.StatusUnauthorized {
+				// The provider's own words are kept in logDir, above, and
+				// in the detail lines, and the person is told what to do.
+				e.Log.Detail("the API returned 401: %s", Scrub(detail, 400))
+				return nil, nil, refusedKey(p, source)
+			}
 			hint := ""
 			switch code {
-			case 401:
-				hint = " The key was rejected. Check it at " + p.KeysAt + "."
 			case 400:
 				hint = " The request itself was refused, so this will not succeed on a retry."
 			}
@@ -542,6 +540,17 @@ type openAIRequest struct {
 // answer, which a stream otherwise leaves out.
 type openAIOptions struct {
 	IncludeUsage bool `json:"include_usage"`
+}
+
+// setKey puts a key on a request the way its provider asks for one.
+func setKey(request *http.Request, p Provider, key string) {
+	switch p.Name {
+	case "openai":
+		request.Header.Set("authorization", "Bearer "+key)
+	default:
+		request.Header.Set("anthropic-version", apiVersion)
+		request.Header.Set("x-api-key", key)
+	}
 }
 
 // bodyFor builds the body of one request to whichever provider the model

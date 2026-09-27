@@ -67,7 +67,7 @@
   // back: the Go side only ever says whether there is one.
   let providers = $state<Provider[]>([]);
   let cloud = $state<CloudModel[]>([]);
-  let keys = $state<Record<string, boolean>>({});
+  let keys = $state<Record<string, string>>({});
   // The company of the model named, as the Go side last said. A model the
   // app offers is known here at once; one written in by hand is known once
   // the settings are saved and read again.
@@ -75,6 +75,9 @@
   let key = $state("");
   let savingKey = $state(false);
   let savedKey = $state(false);
+  // Why the company refused the key just typed, said in the key's own row
+  // until it is typed again.
+  let keyRefused = $state("");
 
   // The model in the cloud, its company, and whether that company's key is
   // here. Which company decides whose key the row asks for.
@@ -142,16 +145,20 @@
     !!settings && !colours.some((c) => c.hex === settings!.appColour?.toLowerCase()),
   );
 
+  // The Go side asks the company whether it takes the key before keeping
+  // it, so a key it refuses is found here, where it was typed.
   async function saveKey() {
     savingKey = true;
-    problem = "";
+    keyRefused = "";
     try {
       await api.saveAPIKey(provider.name, key);
       key = "";
       savedKey = true;
       setTimeout(() => (savedKey = false), 1800);
     } catch (err) {
-      problem = errorText(err);
+      // The Go side's errors start small, to sit inside a sentence.
+      const said = errorText(err);
+      keyRefused = said.charAt(0).toUpperCase() + said.slice(1);
     }
     savingKey = false;
     await Promise.all([readModels(), check()]);
@@ -556,19 +563,34 @@
                  settings file. An app opened from Finder has no shell
                  environment, so this is the only way to give it one. -->
             <div class="item">
-              <span class="mark" class:ok={hasKey} class:warn={!hasKey} aria-hidden="true">
-                {#if hasKey}<Icon name="check" />{:else}<Icon name="warn" />{/if}
+              <span class="mark" class:ok={hasKey && !keyRefused} class:err={!!keyRefused} class:warn={!hasKey && !keyRefused} aria-hidden="true">
+                {#if hasKey && !keyRefused}<Icon name="check" />{:else}<Icon name="warn" />{/if}
               </span>
               <div class="words">
                 <span class="head">{provider.title} API key</span>
-                <span class="small line" class:muted={hasKey} class:warn={!hasKey}>
-                  {savedKey ? "Saved in the keychain." : hasKey ? "In the keychain." : `None yet. Get one at ${provider.keysAt}.`}
+                <span
+                  class="small line"
+                  class:muted={hasKey && !keyRefused}
+                  class:warn={!hasKey && !keyRefused}
+                  class:error={!!keyRefused}
+                  title={keyRefused || undefined}
+                >
+                  {keyRefused
+                    ? keyRefused
+                    : savedKey
+                    ? "Saved in the keychain."
+                    : keys[provider.name] === "environment"
+                      ? `From ${provider.env}.`
+                      : hasKey
+                        ? "In the keychain."
+                        : `None yet. Get one at ${provider.keysAt}.`}
                 </span>
               </div>
               <input
                 class="key"
                 type="password"
                 bind:value={key}
+                oninput={() => (keyRefused = "")}
                 placeholder={hasKey ? "Replace the key" : provider.name === "openai" ? "sk-proj-..." : "sk-ant-..."}
                 aria-label="{provider.title} API key"
                 title="It goes in the keychain and nowhere else"
@@ -578,7 +600,7 @@
               />
               <button class="act" disabled={savingKey || !key.trim()} onclick={saveKey}>
                 {#if savingKey}<Busy />{/if}
-                {savingKey ? "Saving" : "Save key"}
+                {savingKey ? "Checking" : "Save key"}
               </button>
             </div>
           {:else}

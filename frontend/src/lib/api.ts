@@ -393,7 +393,9 @@ export interface SetupState {
   providers: Provider[];
   cloud: CloudModel[];
   // Whether a key can be found, for each company. Never a key itself.
-  keys: Record<string, boolean>;
+  // Where each company's key is found, "keychain" or "environment", and
+  // empty or missing when there is none.
+  keys: Record<string, string>;
   // Whether a key can be found for the company of the model named.
   hasKey: boolean;
   hasLocalModel: boolean;

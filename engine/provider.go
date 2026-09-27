@@ -25,6 +25,9 @@ type Provider struct {
 	// and never derived from any input, so a key is only ever sent to the
 	// company it belongs to.
 	URL string `json:"-"`
+	// Models is the provider's list of models, which is asked for to find
+	// out whether a key is taken before it is kept. Written here like URL.
+	Models string `json:"-"`
 	// Env is the variable the key is read from before the keychain, which
 	// is how the command line is given one.
 	Env string `json:"env"`
@@ -43,10 +46,12 @@ type Provider struct {
 // a server of their own, which is the only reason this is a variable.
 var providers = []Provider{
 	{Name: "anthropic", Title: "Anthropic", URL: "https://api.anthropic.com/v1/messages",
-		Env: "ANTHROPIC_API_KEY", Item: "Frame Fairy: Anthropic API key", Keychain: "anthropic-api-key",
+		Models: "https://api.anthropic.com/v1/models",
+		Env:    "ANTHROPIC_API_KEY", Item: "Frame Fairy: Anthropic API key", Keychain: "anthropic-api-key",
 		KeysAt: "console.anthropic.com"},
 	{Name: "openai", Title: "OpenAI", URL: "https://api.openai.com/v1/chat/completions",
-		Env: "OPENAI_API_KEY", Item: "Frame Fairy: OpenAI API key", Keychain: "openai-api-key",
+		Models: "https://api.openai.com/v1/models",
+		Env:    "OPENAI_API_KEY", Item: "Frame Fairy: OpenAI API key", Keychain: "openai-api-key",
 		KeysAt: "platform.openai.com"},
 }
 

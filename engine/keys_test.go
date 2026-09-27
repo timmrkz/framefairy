@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -197,5 +200,140 @@ func TestCheckAPIKeyNeverReadsTheSecret(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-a\nb")
 	if err := CheckAPIKey(openai); err == nil {
 		t.Error("a key with a newline in the environment passed the check")
+	}
+}
+
+// The app uses the key saved in it before one in the environment. An app
+// started from a terminal has the terminal's environment, and an old key in
+// it won over the one just saved in the settings, until the provider
+// refused it. The command line still reads the environment first.
+func TestTheAppUsesTheSavedKeyFirst(t *testing.T) {
+	p, _ := ProviderNamed("anthropic")
+	keychains(t, map[string]string{p.Item: "sk-ant-saved"}, nil)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-old-in-the-shell")
+	t.Cleanup(func() { savedFirst.Store(false) })
+
+	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-ant-old-in-the-shell" {
+		t.Errorf("the command line read %q", key)
+	}
+	if got := KeySource(p); got != KeyInEnvironment {
+		t.Errorf("the command line's key is in the %q", got)
+	}
+
+	PreferSavedKeys()
+	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-ant-saved" {
+		t.Errorf("the app read %q", key)
+	}
+	if got := KeySource(p); got != KeyInKeychain {
+		t.Errorf("the app's key is in the %q", got)
+	}
+
+	// With nothing saved, the environment still stands in.
+	keychains(t, nil, nil)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-in-the-shell")
+	if key, _ := ReadAPIKey(context.Background(), p); key != "sk-ant-in-the-shell" {
+		t.Errorf("with nothing saved the app read %q", key)
+	}
+	if got := KeySource(p); got != KeyInEnvironment {
+		t.Errorf("with nothing saved the key is in the %q", got)
+	}
+}
+
+// A key is shown to its company before it is kept, the way that company
+// asks for one, and a key it refuses is refused. A company that cannot be
+// reached says nothing about the key, so it is kept.
+func TestVerifyAPIKeyAsksTheCompany(t *testing.T) {
+	var mu sync.Mutex
+	var asked []*http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.Clone(context.Background()))
+		mu.Unlock()
+		if strings.Contains(r.Header.Get("x-api-key")+r.Header.Get("authorization"), "bad") {
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`)
+			return
+		}
+		fmt.Fprint(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+	anthropic, _ := ProviderNamed("anthropic")
+	openai, _ := ProviderNamed("openai")
+	anthropic.Models, openai.Models = server.URL+"/anthropic", server.URL+"/openai"
+
+	if err := VerifyAPIKey(context.Background(), anthropic, "sk-ant-good\n"); err != nil {
+		t.Errorf("a good key: %v", err)
+	}
+	err := VerifyAPIKey(context.Background(), anthropic, "sk-ant-bad")
+	if err == nil || !strings.Contains(err.Error(), "Anthropic did not accept this key") ||
+		strings.Contains(err.Error(), "{") {
+		t.Errorf("a refused key: %v", err)
+	}
+	if err := VerifyAPIKey(context.Background(), openai, "sk-proj-bad"); err == nil ||
+		!strings.Contains(err.Error(), "platform.openai.com") {
+		t.Errorf("a refused OpenAI key: %v", err)
+	}
+
+	mu.Lock()
+	first, third := asked[0], asked[2]
+	mu.Unlock()
+	if first.Method != http.MethodGet || first.URL.Path != "/anthropic" ||
+		first.Header.Get("x-api-key") != "sk-ant-good" || first.Header.Get("anthropic-version") == "" {
+		t.Errorf("anthropic was asked %s %s with %v", first.Method, first.URL.Path, first.Header)
+	}
+	if third.URL.Path != "/openai" || third.Header.Get("authorization") != "Bearer sk-proj-bad" ||
+		third.Header.Get("x-api-key") != "" {
+		t.Errorf("openai was asked at %s with %v", third.URL.Path, third.Header)
+	}
+
+	// The ID the Console lists a key by is not the key, and is said to be
+	// the ID without asking anybody.
+	mu.Lock()
+	before := len(asked)
+	mu.Unlock()
+	if err := VerifyAPIKey(context.Background(), anthropic, "apikey_01Jc8z2Rkr225X8W3UCSCFSD"); err == nil ||
+		!strings.Contains(err.Error(), "the key's ID") {
+		t.Errorf("a key's ID: %v", err)
+	}
+	mu.Lock()
+	if len(asked) != before {
+		t.Error("a key's ID was sent to the company")
+	}
+	mu.Unlock()
+
+	// Nobody there: the key passes, since nothing is known against it.
+	server.Close()
+	if err := VerifyAPIKey(context.Background(), anthropic, "sk-ant-bad"); err != nil {
+		t.Errorf("with the company out of reach: %v", err)
+	}
+}
+
+// A key refused in the middle of a search is said in words, names where
+// the key came from, and keeps the company's JSON for the log.
+func TestARefusedKeyIsSaidInWords(t *testing.T) {
+	refuse := func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_1"}`)
+	}
+	_, e := cloud(t, refuse, refuse)
+	_, err := e.CallAPI(context.Background(), "the transcript", "claude-sonnet-5", 4000, "", "plan", "", nil)
+	if err == nil || strings.Contains(err.Error(), "{") ||
+		!strings.Contains(err.Error(), "Anthropic did not accept the API key in ANTHROPIC_API_KEY") {
+		t.Errorf("from the environment: %v", err)
+	}
+
+	p, _ := ProviderNamed("anthropic")
+	keychains(t, map[string]string{p.Item: "sk-ant-saved"}, nil)
+	_, err = e.CallAPI(context.Background(), "the transcript", "claude-sonnet-5", 4000, "", "plan", "", nil)
+	if err == nil || !strings.Contains(err.Error(), "did not accept the saved API key. Replace it in the settings") {
+		t.Errorf("from the keychain: %v", err)
+	}
+}
+
+func TestTestsNeverShowAKeyToACompany(t *testing.T) {
+	for _, p := range Providers() {
+		if p.Models != "" {
+			t.Errorf("a test binary would show %s a key at %s", p.Title, p.Models)
+		}
 	}
 }

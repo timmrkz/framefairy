@@ -3,9 +3,12 @@ package engine
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -56,11 +59,18 @@ func (noKeys) remove(string)                              {}
 // screen when it is locked, a box nobody answers is a test that hangs, and
 // a test that writes a key writes it into somebody's keychain. Tests that
 // are about keeping keys put a keyStore of their own here.
+//
+// Nor does a test show a key to a company: a key saved in a test is never
+// sent anywhere, and a test that means to ask a company names a server of
+// its own.
 var keys, oldKeys keyStore = systemKeys(), legacyKeys()
 
 func init() {
 	if testing.Testing() {
 		keys, oldKeys = noKeys{}, noKeys{}
+		for i := range providers {
+			providers[i].Models = ""
+		}
 	}
 }
 
@@ -78,12 +88,54 @@ func missingKey(p Provider) error {
 		p.Title, p.Env)
 }
 
-// ReadAPIKey takes a provider's key from the environment first, then the
-// keychain. Never from a file on disk. A key still kept the old way is
-// moved into an item only this app may read, and the old one is removed.
+// savedFirst puts the key saved in the app before the one in the
+// environment. The command line reads the environment first, which is how
+// it is given a key. The app is given one in its settings, and a key saved
+// there has to be the one used: an app started from a terminal has the
+// terminal's environment, and an old key in it would otherwise win over
+// the one just saved, without a word.
+var savedFirst atomic.Bool
+
+// PreferSavedKeys makes the key saved in the app the one used, and one in
+// the environment a stand-in for when none is saved. The app calls it once,
+// as it starts.
+func PreferSavedKeys() { savedFirst.Store(true) }
+
+// Where a key was found, as KeySource says it.
+const (
+	KeyInKeychain    = "keychain"
+	KeyInEnvironment = "environment"
+)
+
+// KeySource says where a provider's key would be read from, without reading
+// it: the keychain, the environment, or nowhere. The settings ask this every
+// time they are opened, and a secret read each time would be a box on screen
+// each time.
+func KeySource(p Provider) string {
+	saved := keys.has(p.Item) || oldKeys.has(p.Keychain)
+	env := envKey(p) != ""
+	switch {
+	case saved && (savedFirst.Load() || !env):
+		return KeyInKeychain
+	case env:
+		return KeyInEnvironment
+	}
+	return ""
+}
+
+// ReadAPIKey takes a provider's key from the environment and the keychain,
+// in the order KeySource says. Never from a file on disk. A key still kept
+// the old way is moved into an item only this app may read, and the old one
+// is removed.
 func ReadAPIKey(ctx context.Context, p Provider) (string, error) {
-	key, source := envKey(p), p.Env
-	if key == "" {
+	key, _, err := readAPIKey(ctx, p)
+	return key, err
+}
+
+// readAPIKey is ReadAPIKey, and says where the key came from, so a key the
+// provider refuses can be named.
+func readAPIKey(ctx context.Context, p Provider) (key, source string, err error) {
+	fromKeychain := func() {
 		if found, ok := keys.get(ctx, p.Item); ok {
 			key, source = strings.TrimSpace(found), "the keychain"
 		} else if found, ok := oldKeys.get(ctx, p.Keychain); ok {
@@ -95,31 +147,96 @@ func ReadAPIKey(ctx context.Context, p Provider) (string, error) {
 			}
 		}
 	}
+	fromEnv := func() {
+		if env := envKey(p); env != "" {
+			key, source = env, p.Env
+		}
+	}
+	if savedFirst.Load() {
+		fromKeychain()
+		if key == "" {
+			fromEnv()
+		}
+	} else {
+		fromEnv()
+		if key == "" {
+			fromKeychain()
+		}
+	}
 	if key == "" {
-		return "", missingKey(p)
+		return "", "", missingKey(p)
 	}
 	if !keyIsSane(key) {
-		return "", renderErr("the API key from %s contains characters that cannot go in "+
+		return "", "", renderErr("the API key from %s contains characters that cannot go in "+
 			"an HTTP header. It was probably stored with a stray newline.", source)
 	}
-	return key, nil
+	return key, source, nil
+}
+
+// refusedKey is what a search says when the provider does not take the key,
+// in words rather than the provider's JSON, and naming where the key came
+// from, since a key in the environment and one in the keychain are fixed in
+// different places.
+func refusedKey(p Provider, source string) error {
+	if source == "the keychain" {
+		return renderErr("%s did not accept the saved API key. Replace it in the settings, "+
+			"or check it at %s.", p.Title, p.KeysAt)
+	}
+	return renderErr("%s did not accept the API key in %s. Check it at %s.",
+		p.Title, source, p.KeysAt)
 }
 
 // CheckAPIKey says whether a provider's key can be found, without reading
-// it, and why not when it cannot. The settings ask this every time they are
-// opened, and a secret read each time would be a box on screen each time.
+// it, and why not when it cannot.
 func CheckAPIKey(p Provider) error {
-	if key := envKey(p); key != "" {
-		if !keyIsSane(key) {
+	switch KeySource(p) {
+	case KeyInKeychain:
+		return nil
+	case KeyInEnvironment:
+		if !keyIsSane(envKey(p)) {
 			return renderErr("the API key in %s contains characters that cannot go in "+
 				"an HTTP header.", p.Env)
 		}
 		return nil
 	}
-	if keys.has(p.Item) || oldKeys.has(p.Keychain) {
+	return missingKey(p)
+}
+
+// VerifyAPIKey asks the provider whether it takes a key, before the key is
+// kept. It asks for the list of models, which costs nothing and needs a key
+// the provider knows. A key it refuses is refused here, where it was typed,
+// rather than an hour later, when an episode has been transcribed and the
+// first search fails. When the provider cannot be reached, nothing can be
+// said about the key, so it passes: somebody saving a key on a train keeps
+// it.
+func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
+	key = strings.TrimSpace(key)
+	// The Console lists each key by an ID that looks like a key, and the
+	// key itself is only shown once, when it is made. The ID is the easy
+	// one to copy, so it is named for what it is.
+	if strings.HasPrefix(key, "apikey_") {
+		return renderErr("that is the key's ID, not the key. The key is shown once, "+
+			"when it is made at %s.", p.KeysAt)
+	}
+	if key == "" || !keyIsSane(key) || p.Models == "" {
 		return nil
 	}
-	return missingKey(p)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.Models, nil)
+	if err != nil {
+		return nil
+	}
+	setKey(request, p, key)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil
+	}
+	response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized {
+		return renderErr("%s did not accept this key. Check it at %s.", p.Title, p.KeysAt)
+	}
+	return nil
 }
 
 // StoreAPIKey puts a provider's key in the keychain, which is the only place

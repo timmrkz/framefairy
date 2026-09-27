@@ -62,6 +62,7 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 
 func main() {
 	widenPath()
+	engine.PreferSavedKeys()
 	st := openStore()
 
 	var app *application.App
@@ -406,7 +407,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		if err := engine.CheckAPIKey(p); err != nil {
 			key.Detail = err.Error()
 		} else {
-			key.OK, key.Detail = true, "found"
+			key.OK, key.Detail = true, "found in the "+engine.KeySource(p)
 		}
 		return append(out, key)
 	}

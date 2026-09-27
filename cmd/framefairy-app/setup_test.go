@@ -328,7 +328,8 @@ func TestTheKeyIsTheCloudModelsProviders(t *testing.T) {
 		t.Errorf("gpt without its key: provider %s, has key %v, ready %v",
 			state.Provider, state.HasKey, state.Ready)
 	}
-	if !state.Keys["anthropic"] || state.Keys["openai"] {
+	// The Anthropic key is in the environment here, and the settings say so.
+	if state.Keys["anthropic"] != engine.KeyInEnvironment || state.Keys["openai"] != "" {
 		t.Errorf("keys: %v", state.Keys)
 	}
 	if c := keyCheck(); c.Name != "OpenAI API key" || c.OK || !strings.Contains(c.Detail, "OPENAI_API_KEY") {

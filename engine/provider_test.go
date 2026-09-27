@@ -154,6 +154,7 @@ func cloud(t *testing.T, answers ...func(w http.ResponseWriter)) (*fakeCloud, *E
 	providers = nil
 	for _, p := range saved {
 		p.URL = server.URL + "/" + p.Name
+		p.Models = server.URL + "/" + p.Name + "/models"
 		providers = append(providers, p)
 	}
 	t.Cleanup(func() { providers = saved })

@@ -1325,7 +1325,20 @@ each way costs and, with a local model chosen, how much memory this
 machine has and what that decides. The key goes in the keychain the
 moment **Save key** is pressed, not with the rest of the settings, because
 it never lands in the settings file. An app opened from Finder has no shell
-environment, so this is the only way to give it a key.
+environment, so this is the only way to give it a key. Before it is kept,
+the key is shown to its company, which asks for the list of models and
+costs nothing, and while that runs the button says Checking. A key the
+company refuses is said in the key's own row, in red, and not kept, so a
+wrong key is found where it was typed rather than when the first search
+fails. A company that cannot be reached says nothing about the key, so it
+is kept. A key in `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, which an app
+started from a terminal has, reads **From ANTHROPIC_API_KEY** in the row
+until a key is saved, and a saved key is the one used.
+
+A key refused in the middle of a search says so in words on the search's
+row, and says where the key came from: the saved key, to be replaced in
+the settings, or the variable it was read from. The company's own answer
+is kept in the episode's `logs` folder, as every refused request is.
 
 **The settings are not left while clips cannot be found.** A model
 chosen and not downloaded, a model in the cloud without its key, nothing
@@ -1435,16 +1448,21 @@ job opens to its log in **Activity**. The list is built into the app from
   where any other program could see it while the command ran, and the
   item's access list names Frame Fairy: another program asking for the key
   gets a box from macOS first. Whether a key is there is asked without
-  reading it, so opening the settings never asks for anything. Until the
-  app is signed with a Developer ID, every new build is a new app to the
-  keychain, and the first search on a model in the cloud after an update
-  asks once whether it may use the key, which **Always Allow** answers for
-  that build. The first keys were kept with the `security` command, under
+  reading it, so opening the settings never asks for anything, and saving
+  one never asks either, because an app may always write an item of its
+  own. Until the app is signed with a Developer ID, every new build is a
+  new app to the keychain, so a key saved by one build and read by a later
+  one asks once whether the later one may use it, which **Always Allow**
+  answers for that build. A key saved and used by the same build never
+  asks. The first keys were kept with the `security` command, under
   `anthropic-api-key` and `openai-api-key`, where anything could read them.
   A key found there is moved into the app's own item the first time it is
   used, and the old item removed. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
-  in the environment is read first where there is one, which is how the
-  command line gets it.
+  in the environment stands in when no key is saved. The command line
+  reads the environment first, which is how it is given a key, and the app
+  reads the saved key first: an app started from a terminal has the
+  terminal's environment, and an old key in it would otherwise win over
+  the one just saved, without a word.
 - **Settings and the episode list:** plain JSON files in
   `~/Library/Application Support/Frame Fairy` on macOS, `%AppData%\Frame Fairy` on
   Windows and `~/.config/Frame Fairy` on Linux.

@@ -134,8 +134,9 @@ that runs the same command, without being asked. The app moves a key it
 finds kept that way into an item of its own the first time it uses it, and
 removes the old one.
 
-`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` work on every system and take
-priority, which is how the command line is given a key. On Windows and
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` work on every system. The command
+line reads them first, which is how it is given a key. The app reads a key
+saved in its settings first, and the variables only when none is saved. On Windows and
 Linux they are currently the only option. Get an
 Anthropic key from the Claude Console at console.anthropic.com under
 Settings, then API keys, and an OpenAI key at platform.openai.com under API
