@@ -132,8 +132,9 @@ export function finderStanding(f: FinderFacts): { text: string; tone: Tone; stat
 }
 
 // Whether the settings keep the app where it is: while what finds the clips
-// cannot find any, and never while a download is putting it right or the
-// page is still reading what it has to show.
+// cannot find any yet, a download on its way included, since a model is no
+// use until the last of it has arrived. Only a page still reading what it
+// has to show never holds anybody.
 export function holdsTheApp(state: Standing, loaded: boolean): boolean {
-  return loaded && (state === "warn" || state === "err");
+  return loaded && state !== "ok";
 }

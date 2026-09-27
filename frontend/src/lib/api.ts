@@ -969,7 +969,10 @@ export interface UpdateState {
   channels: UpdateChannel[] | null;
   picked: string;
   follows: string;
-  phase: "" | "checking" | "current" | "downloading" | "ready" | "failed";
+  // The channel followed when it is not on the list any more, a pull
+  // request merged or closed. Nothing downloads until another is picked.
+  gone: string;
+  phase: "" | "checking" | "current" | "gone" | "downloading" | "ready" | "failed";
   next: string;
   nextName: string;
   nextCommit: string;

@@ -101,6 +101,23 @@ Start with [README.md](README.md). In short:
   what gets built.
 - **Report plainly.** What changed, what to test and how, what is still open.
   Name bugs you found on the way, including your own.
+- **End with what the thread is and what Tim has to do.** He has several
+  sessions open at once, and a pull request number or a branch name tells
+  him nothing about what he is looking at. So every message that waits for
+  him ends the same way, at the very bottom, after everything else:
+  one short line in plain words saying what this thread is about, and
+  under it the list of what he has to do for it to move on, each item a
+  step he can take as it stands: try this in the app and look for that,
+  answer this question, merge that pull request. Nothing he has to do is
+  anywhere but in that list, so he never has to scroll up through a
+  report to find it. When there is nothing for him to do, the list says
+  so in one line. The report above it stays short. For example:
+
+  **This thread:** the settings page, made ready for customers (#23)
+  **For you:**
+  1. Pick a model you do not have, press Download, then click Activity. The
+     settings should stay and the card should shake.
+  2. Merge #23 when it looks right.
 - **Watch a pull request, quietly.** Subscribe to its events and act on them:
   a failing CI run is still your work, so is a review comment. But never set
   up a recurring check, never poll, and never write a message that says

@@ -1088,6 +1088,9 @@ export const Call = {
 // Updates, the way updates.go reports them. The build running is pull
 // request 18's, or with ?makebuild one made by make, which follows nothing
 // until a channel is picked, and with ?updatesoff one with no update key.
+// ?prgone is pull request 18's build after the pull request was merged:
+// it is not on the list any more, and nothing downloads until another
+// channel is picked.
 // Picking a channel checks, downloads over two seconds with the fill, and
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
@@ -1097,9 +1100,13 @@ const updChannels = [
   { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr18.51" },
 ];
 let upd: any = null;
+// The download in hand, stopped when another channel is picked, the way
+// the Go side stops it.
+let updTimers: ReturnType<typeof setTimeout>[] = [];
 const updNow = () => {
   if (upd) return upd;
   const local = location.search.includes("makebuild");
+  const gone = location.search.includes("prgone");
   upd = {
     version: local ? "0.3.0-local" : "0.3.0-pr18.51",
     commit: local ? "" : "a1b2c3d4e5f6",
@@ -1107,10 +1114,11 @@ const updNow = () => {
     off: location.search.includes("updatesoff")
       ? "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
       : "",
-    channels: updChannels,
+    channels: gone ? updChannels.filter((c) => c.id !== "pr-18") : updChannels,
     picked: "",
-    follows: local ? "main" : "pr-18",
-    phase: local ? "" : "current",
+    follows: local || gone ? "" : "pr-18",
+    gone: gone ? "pr-18" : "",
+    phase: local ? "" : gone ? "gone" : "current",
     next: "",
     nextName: "",
     nextCommit: "",
@@ -1123,20 +1131,27 @@ const updNow = () => {
 };
 const updSend = () => updListeners.forEach((fn) => fn({ data: { ...upd } }));
 const updFetch = (channel: string) => {
-  const ch = updChannels.find((c) => c.id === channel) ?? updChannels[0];
-  upd.follows = ch.id;
+  updTimers.forEach((t) => clearTimeout(t));
+  updTimers = [];
+  const ch = upd.channels.find((c: any) => c.id === channel);
+  if (!ch) {
+    Object.assign(upd, { phase: "gone", gone: channel, follows: "", next: "", written: 0, total: 0 });
+    updSend();
+    return;
+  }
+  Object.assign(upd, { follows: ch.id, gone: "", next: "", nextName: "", written: 0, total: 0 });
   // A check that finds nothing is over at once, the way the real one is
   // when the list is cached, which is what the page has to hold on to.
   upd.phase = "checking";
   updSend();
   if (ch.version === upd.version) {
-    setTimeout(() => {
+    updTimers.push(setTimeout(() => {
       Object.assign(upd, { phase: "current", next: "", checked: new Date().toISOString() });
       updSend();
-    }, 80);
+    }, 80));
     return;
   }
-  setTimeout(() => {
+  updTimers.push(setTimeout(() => {
     Object.assign(upd, {
       phase: "downloading",
       next: ch.version,
@@ -1147,15 +1162,14 @@ const updFetch = (channel: string) => {
       checked: new Date().toISOString(),
     });
     updSend();
-    const t = setInterval(() => {
+    const step = () => {
       upd.written = Math.min(upd.total, upd.written + 4.6e6);
-      if (upd.written >= upd.total) {
-        clearInterval(t);
-        upd.phase = "ready";
-      }
+      if (upd.written >= upd.total) upd.phase = "ready";
+      else updTimers.push(setTimeout(step, 200));
       updSend();
-    }, 200);
-  }, 500);
+    };
+    updTimers.push(setTimeout(step, 200));
+  }, 500));
 };
 
 export const Events = {

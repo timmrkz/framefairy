@@ -169,10 +169,14 @@ describe("when the settings keep the app where it is", () => {
     expect(holdsTheApp(finderStanding({ planner: "api", provider: openai, hasKey: false }).state, true)).toBe(true);
   });
 
-  test("a download on its way and a working choice let it go", () => {
+  test("a download on its way holds it too, since the model is no use until it has arrived", () => {
     const far = model("far", { installed: false, inUse: true });
     const downloading = finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: far, fetching: far });
-    expect(holdsTheApp(downloading.state, true)).toBe(false);
+    expect(downloading.state).toBe("busy");
+    expect(holdsTheApp(downloading.state, true)).toBe(true);
+  });
+
+  test("a working choice lets it go", () => {
     expect(holdsTheApp(finderStanding({ planner: "api", provider: openai, hasKey: true }).state, true)).toBe(false);
   });
 

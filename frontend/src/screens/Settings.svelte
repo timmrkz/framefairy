@@ -408,8 +408,8 @@
   // card that needs the answer comes into view and shakes, the way the
   // Mac's own password field does when it will not let somebody in, with
   // the keyboard on the list where the answer is. A download on its way
-  // is not held: it is being put right. Nor is a page still reading what
-  // it has to show.
+  // holds it too, because the model is no use until the last of it has
+  // arrived. Only a page still reading what it has to show does not.
   let findingCard = $state<HTMLElement>();
   let shaking = $state(false);
   let loaded = $state(false);

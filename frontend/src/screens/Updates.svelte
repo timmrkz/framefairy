@@ -87,20 +87,19 @@
     id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : id ? `Branch ${id}` : "Nothing";
   const channelOptions = $derived.by(() => {
     const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
-    // A pull request that was picked and has since gone stays in the list
-    // for as long as it is picked, so the trigger never names nothing.
-    const picked = update?.picked ?? "";
-    if (picked && !listed.some((o) => o.value === picked)) {
-      listed.push({ value: picked, label: `${channelName(picked)}, closed` });
+    // A pull request that was followed and has since gone stays in the
+    // list for as long as it is followed, so the trigger never names
+    // nothing and says what became of it.
+    const gone = update?.picked || update?.gone || "";
+    if (gone && !listed.some((o) => o.value === gone)) {
+      listed.push({ value: gone, label: `${channelName(gone)}, closed` });
     }
     // A build made by make follows nothing until a channel is picked.
     if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
     return listed;
   });
-  const following = $derived(
-    update ? (update.channel ? update.picked || update.follows : update.picked) : "",
-  );
-  const followingName = $derived(channelName(update?.follows || following || "main"));
+  const following = $derived(update ? update.picked || update.follows || update.gone || "" : "");
+  const followingName = $derived(channelName(following || "main"));
 
   function when(checked: string | undefined): string {
     if (!checked) return "";
@@ -138,14 +137,20 @@
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
-      case "current": {
-        const gone = u.picked && u.follows !== u.picked ? `${channelName(u.picked)} was merged or closed, so this follows branch main. ` : "";
+      case "current":
         return {
           mark: "ok",
           head: "Up to date",
-          more: `${gone}This is the newest build of ${followingName}. ${when(u.checked)}`.trim(),
+          more: `This is the newest build of ${followingName}. ${when(u.checked)}`.trim(),
         };
-      }
+      // The pull request followed was merged or closed. Nothing downloads
+      // by itself: which channel to follow next is the person's to say.
+      case "gone":
+        return {
+          mark: "warn",
+          head: `${channelName(u.gone)} is closed`,
+          more: "Nothing downloads until you choose what to follow next.",
+        };
     }
     if (!u.channel && !u.picked) {
       return {
@@ -200,6 +205,7 @@
             label="Channel"
             align="right"
             title="Where the next build comes from: main, or one pull request"
+            tone={update.phase === "gone" ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />
         {/if}
@@ -211,7 +217,13 @@
           {#if standing.mark === "ok"}
             <Icon name="check" size={14} />
           {:else}
-            <span class="dot" class:busy={standing.mark === "look"} class:ready={standing.mark === "new"} class:err={standing.mark === "err"}></span>
+            <span
+              class="dot"
+              class:busy={standing.mark === "look"}
+              class:ready={standing.mark === "new"}
+              class:err={standing.mark === "err"}
+              class:warn={standing.mark === "warn"}
+            ></span>
           {/if}
         </span>
         <div class="words">

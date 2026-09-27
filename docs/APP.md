@@ -1335,8 +1335,9 @@ right. So a move to another page, from the sidebar or the menu, is refused,
 and the card comes into view and shakes, the way the Mac's own password
 field does when it will not let somebody in, with the keyboard on the
 list, where choosing a model that is here or the one with a key puts it
-right. A download on its way does not hold the app, because it is being
-put right, and neither does a page still reading what it has to show. The
+right. A download on its way holds the app too, because a model is no use
+until the last of it has arrived. Only a page still reading what it has
+to show does not. The
 settings hold the app through `nav.hold` in `lib/state.svelte.ts`, which
 every move between pages asks first, and when they hold it is decided in
 `lib/finding.ts`, with its tests.
