@@ -640,8 +640,12 @@ place.
       itself beats the clock: the transcript it has read, what it has
       thought against its budget, the clips it has written. A local model
       this machine has never timed is measured against a search timed on
-      an M2 Max until its own first search has finished. The API has no
-      such stand-in, so its first search shows the beam without a fill.
+      an M2 Max until its own first search has finished. A model in the
+      cloud the app knows by name is measured against a first guess the
+      same way, and one written in by hand shows the beam without a fill
+      until it has been timed. Anthropic's models that think by
+      themselves are asked for a summary of their thought as it goes, so
+      the fill moves on while they think rather than waiting in silence.
       The engine keeps the timings, see [ENGINE.md](ENGINE.md).
     - **Clips arrive one at a time.** The engine writes each clip to the
       plan the moment it is framed, while the model is still writing the

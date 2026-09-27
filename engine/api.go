@@ -522,6 +522,25 @@ type requestBody struct {
 	System    string    `json:"system"`
 	Messages  []message `json:"messages"`
 	Stream    bool      `json:"stream,omitempty"`
+	Thinking  *thinking `json:"thinking,omitempty"`
+}
+
+// thinking asks a model that decides by itself how long to think to send
+// a summary of it as it goes. These models think either way, and the
+// summary costs nothing more, but without it they send nothing at all
+// until the answer begins, which for a search is a minute or more of
+// silence nobody can tell from a search that hangs.
+type thinking struct {
+	Type    string `json:"type"`
+	Display string `json:"display"`
+}
+
+// adaptiveThinking are Anthropic's models that decide by themselves how
+// long to think, and think unless told not to.
+var adaptiveThinking = map[string]bool{
+	"claude-fable-5-1": true,
+	"claude-opus-5":    true,
+	"claude-sonnet-5":  true,
 }
 
 // openAIRequest is the same request as OpenAI's Chat Completions takes it.
@@ -567,7 +586,12 @@ func bodyFor(p Provider, model string, maxTokens int, system, prompt string,
 		}
 		return json.Marshal(body)
 	}
-	return json.Marshal(requestBody{model, maxTokens, system, messages(prompt, prefill), stream})
+	body := requestBody{Model: model, MaxTokens: maxTokens, System: system,
+		Messages: messages(prompt, prefill), Stream: stream}
+	if adaptiveThinking[model] && !prefill {
+		body.Thinking = &thinking{Type: "adaptive", Display: "summarized"}
+	}
+	return json.Marshal(body)
 }
 
 // CallAPI makes one call to the provider the model belongs to. The answer

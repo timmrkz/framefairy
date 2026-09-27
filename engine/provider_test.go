@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -383,4 +384,40 @@ func FuzzReadOpenAIStream(f *testing.F) {
 		}
 		_, _ = readOpenAIReply([]byte(stream))
 	})
+}
+
+// A model that thinks by itself is asked to send a summary of its thought
+// as it goes, so a search on it is not a minute of silence. Nobody else is
+// sent a setting it may refuse.
+func TestAThinkingModelIsAskedToSayItThinks(t *testing.T) {
+	anthropic, _ := ProviderNamed("anthropic")
+	openai, _ := ProviderNamed("openai")
+	thought := func(p Provider, model string, prefill bool) any {
+		raw, err := bodyFor(p, model, 4000, "system", "prompt", prefill, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		return body["thinking"]
+	}
+	want := map[string]any{"type": "adaptive", "display": "summarized"}
+	for _, model := range []string{"claude-sonnet-5", "claude-opus-5", "claude-fable-5-1"} {
+		if got := thought(anthropic, model, false); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: %v", model, got)
+		}
+	}
+	for _, model := range []string{"claude-haiku-4-5-20251001", "claude-somebody-9"} {
+		if got := thought(anthropic, model, false); got != nil {
+			t.Errorf("%s was sent %v", model, got)
+		}
+	}
+	if got := thought(anthropic, "claude-sonnet-5", true); got != nil {
+		t.Errorf("with a prefill: %v", got)
+	}
+	if got := thought(openai, "gpt-6-sol", false); got != nil {
+		t.Errorf("openai was sent %v", got)
+	}
 }

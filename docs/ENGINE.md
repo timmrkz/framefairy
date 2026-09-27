@@ -431,8 +431,16 @@ what the model counts beats the clock: llama-server's count of the prompt
 it has read, and the tokens it has thought against its budget. A local
 model this machine has not timed yet is measured against a search timed on
 an M2 Max with Gemma 4, which is close enough to say how far it is and is
-replaced by the first search that finishes. The API has no stand-in, and
-its first search says what it is doing without saying how far it is. A
+replaced by the first search that finishes. A model in the cloud listed
+in `engine/api.go` is measured against `measuredCloud`, a guess rather than
+a measurement, replaced the same way. One written in by hand says what it
+is doing without saying how far it is until it has been timed. Claude
+Sonnet 5, Opus 5 and Fable 5.1 think by themselves, and are sent
+`thinking: {type: "adaptive", display: "summarized"}` so that their thought
+arrives as it goes. It costs nothing more, and without it the stream is
+silent until the answer begins, so the search could not tell thinking from
+hanging. There is no thinking budget in the cloud: these models refuse
+one, and `effort` is the only lever, left at its default. A
 search against a server that was already running loaded nothing, and
 leaves the loading time as it was. A record from before the thinking was
 timed on its own measured something else, and is replaced.
