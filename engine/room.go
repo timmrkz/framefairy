@@ -158,7 +158,8 @@ func SearchRoom(opts Options, logDir string) Room {
 // planRoom works the room out. Whatever the request sends besides the
 // transcript, the instructions and the ask, comes off the top.
 func planRoom(opts PlanOptions) Room {
-	around := runeLen(SystemPrompt) + runeLen(buildPrompt(nil, opts))
+	recipe := opts.recipe()
+	around := runeLen(recipe.System) + runeLen(recipe.Request(nil, nil, opts))
 	if opts.Local != nil {
 		// A server somebody started themselves has the context and the
 		// memory they gave it, which the engine cannot know.

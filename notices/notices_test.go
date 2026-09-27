@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
@@ -159,5 +160,38 @@ func TestTheFFmpegNoticeSaysWhereTheSourceIs(t *testing.T) {
 	n, _ := find(all(t), "ffmpeg")
 	if !strings.Contains(n.Note, "framefairy-tools-source.tar.gz") {
 		t.Errorf("the ffmpeg notice does not say where its source is: %q", n.Note)
+	}
+}
+
+// Every hyphenation pattern file the engine carries has its notice, and
+// every notice for one has its file, so a language added or taken out
+// without make notices fails here.
+func TestEveryHyphenationFileHasANotice(t *testing.T) {
+	heads, err := filepath.Glob(filepath.Join("..", "engine", "hyphenation", "hyph-*.head.txt"))
+	if err != nil || len(heads) == 0 {
+		t.Fatalf("no hyphenation patterns found: %v", err)
+	}
+	want := map[string]bool{}
+	for _, head := range heads {
+		want[strings.TrimSuffix(filepath.Base(head), ".head.txt")+".txt"] = true
+	}
+	have := map[string]bool{}
+	for _, n := range all(t) {
+		if !strings.HasPrefix(n.Name, "Hyphenation patterns, ") {
+			continue
+		}
+		for _, text := range n.Texts {
+			have[text] = true
+		}
+	}
+	for text := range want {
+		if !have[text] {
+			t.Errorf("%s has no notice. Run make notices", text)
+		}
+	}
+	for text := range have {
+		if !want[text] {
+			t.Errorf("a notice for %s, which the engine does not carry. Run make notices", text)
+		}
 	}
 }

@@ -263,3 +263,64 @@ func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 		t.Error("the clock stopped and left the progress line held")
 	}
 }
+
+// Two clips that keep mostly the same lines are one moment given twice.
+// The second is left out, said once, and the clips after it keep their
+// places, both when the answer streams in and when it is read whole.
+func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
+	entry := func(title string, keep ...[2]int) PlanEntry { return PlanEntry{Title: title, Keep: keep} }
+	kept, repeats := distinctMoments([]PlanEntry{
+		entry("Spiegel", [2]int{347, 352}),
+		entry("Stücke", [2]int{348, 352}),
+		entry("Nachbar", [2]int{353, 360}),
+		// Sharing a line with each of those is another moment.
+		entry("Flur", [2]int{352, 353}, [2]int{370, 375}),
+	})
+	var titles []string
+	for _, k := range kept {
+		titles = append(titles, k.Title)
+	}
+	if got := strings.Join(titles, " "); got != "Spiegel Nachbar Flur" {
+		t.Errorf("kept %s", got)
+	}
+	if len(repeats) != 1 || repeats[0][0].Title != "Stücke" || repeats[0][1].Title != "Spiegel" {
+		t.Errorf("repeats %+v", repeats)
+	}
+
+	source := testEpisode(t, "40")
+	SetTrainingDir(t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeLocalStream(w, `{"clips": [`+
+			`{"slug": "a", "title": "Erste", "reason": "r", "keep": [[1, 2]]}, `+
+			`{"slug": "b", "title": "Wieder", "reason": "r", "keep": [[2, 2]]}, `+
+			`{"slug": "c", "title": "Dritte", "reason": "r", "keep": [[3, 3]]}]}`, 9)
+	}))
+	defer server.Close()
+	var heard int32
+	var said bytes.Buffer
+	e := NewEngine(NewLog(&said, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.LLMURL = server.URL
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	p := NewProject(e, source, base)
+	path, err := p.Plan(context.Background(), PlanRequest{Count: 3, Min: 1})
+	if err != nil {
+		t.Fatalf("plan: %v %s", err, p.LastError())
+	}
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range clips {
+		got = append(got, c.ID+" "+c.Title)
+	}
+	if strings.Join(got, ", ") != "01 Erste, 02 Dritte" {
+		t.Errorf("clips %v", got)
+	}
+	if n := strings.Count(said.String(), "twice"); n != 1 {
+		t.Errorf("the repeat was said %d times:\n%s", n, said.String())
+	}
+}

@@ -44,31 +44,31 @@ func TestTheClocksOfAClipAndItsEpisodeMeet(t *testing.T) {
 
 func TestACaptionIsShownEarlier(t *testing.T) {
 	clip := timedClip()
-	natural := Captions(clip, 38)
+	natural := Captions(clip, 38, nil)
 	// "Und dann" shown 0.15 s before "Und" is heard: 3.05 in the clip. It
 	// lies in the pause after the first caption has gone, so nothing else
 	// moves.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(20.05), nil)}
-	got := Captions(clip, 38)
+	got := Captions(clip, 38, nil)
 	if !near(got[1].Start, 3.05) || !near(got[0].End, natural[0].End) {
 		t.Errorf("got %+v, was %+v", got, natural)
 	}
 	// Earlier than the piece it is in begins is a moment the clip cuts out,
 	// so it is shown the moment the clip comes back.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(19.8), nil)}
-	if got := Captions(clip, 38); !near(got[1].Start, 3.0) {
+	if got := Captions(clip, 38, nil); !near(got[1].Start, 3.0) {
 		t.Errorf("a start in what the clip cuts out: %+v", got[1])
 	}
 	// Earlier than the caption before it may run: that one goes when this
 	// one comes, and never later than it.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(11.9), nil)}
-	got = Captions(clip, 38)
+	got = Captions(clip, 38, nil)
 	if !near(got[1].Start, 1.9) || got[0].End > got[1].Start+1e-9 {
 		t.Errorf("an early start over the caption before: %+v", got)
 	}
 	// And never before the caption before it has been shown at all.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(0), nil)}
-	got = Captions(clip, 38)
+	got = Captions(clip, 38, nil)
 	if got[1].Start < got[0].Start+shortestMoved-1e-9 {
 		t.Errorf("a caption was put before the one before it: %+v", got)
 	}
@@ -76,22 +76,22 @@ func TestACaptionIsShownEarlier(t *testing.T) {
 
 func TestACaptionGoesEarlierAndStaysLonger(t *testing.T) {
 	clip := timedClip()
-	natural := Captions(clip, 38)
+	natural := Captions(clip, 38, nil)
 	// Gone half a second after "dort." starts: the next is where it was.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(11.5): moved(nil, at(12.0))}
-	got := Captions(clip, 38)
+	got := Captions(clip, 38, nil)
 	if !near(got[0].End, 2.0) || !near(got[1].Start, natural[1].Start) {
 		t.Errorf("gone earlier: %+v", got)
 	}
 	// Longer than the next one lets it: it stops where the next begins.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(11.5): moved(nil, at(21))}
-	got = Captions(clip, 38)
+	got = Captions(clip, 38, nil)
 	if !near(got[0].End, got[1].Start) {
 		t.Errorf("stayed over the next caption: %+v", got)
 	}
 	// And a caption never ends before it began.
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(11.5): moved(nil, at(0))}
-	got = Captions(clip, 38)
+	got = Captions(clip, 38, nil)
 	if got[0].End < got[0].Start+shortestMoved-1e-9 {
 		t.Errorf("ended before it began: %+v", got)
 	}
@@ -101,9 +101,9 @@ func TestACaptionGoesEarlierAndStaysLonger(t *testing.T) {
 // the captions break elsewhere at another size, is simply not used.
 func TestATimingOnAWordInsideACaptionIsNotUsed(t *testing.T) {
 	clip := timedClip()
-	natural := Captions(clip, 38)
+	natural := Captions(clip, 38, nil)
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(10.7): moved(at(10.9), at(11.0))}
-	got := Captions(clip, 38)
+	got := Captions(clip, 38, nil)
 	for i := range got {
 		if !near(got[i].Start, natural[i].Start) || !near(got[i].End, natural[i].End) {
 			t.Errorf("caption %d moved by a word in its middle: %+v", i, got[i])
