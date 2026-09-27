@@ -391,3 +391,47 @@ func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 		t.Errorf("a job with no record: %v", err)
 	}
 }
+
+// counting is a speech model that counts the seconds of audio it is given.
+type counting struct {
+	seconds *float64
+	fakeRecognizer
+}
+
+func (c counting) Recognize(samples []float32, rate int) []Token {
+	*c.seconds += float64(len(samples)) / float64(rate)
+	return c.fakeRecognizer.Recognize(samples, rate)
+}
+
+// A search of a later window hears on from where the transcript ends, not
+// from the start of the episode, and says how long is left until the end
+// of its window, not until the end of the episode. Tim saw a search of the
+// half hour after a half hour already heard say almost six minutes left.
+func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
+	var heard int32
+	seconds := 0.0
+	p, _ := searchProject(t, func(string) (Recognizer, error) {
+		return counting{&seconds, fakeRecognizer{&heard}}, nil
+	})
+	if _, err := p.Search(context.Background(), PlanRequest{To: 15, Count: 1, Min: 5}, nil); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	first := seconds
+	if first > 16 {
+		t.Errorf("the first window of 15 s heard %.1f s", first)
+	}
+	var lefts []float64
+	p.engine.Log.SetSink(func(ev Event) {
+		if ev.Kind == EventProgress && ev.Stage == "" && ev.Covered > 0 {
+			lefts = append(lefts, ev.Remaining)
+		}
+	})
+	seconds = 0
+	if _, err := p.Search(context.Background(), PlanRequest{From: 20, To: 30, Count: 1, Min: 5}, nil); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if seconds > 16 {
+		t.Errorf("a window from 20 to 30, with 15 s heard, heard %.1f s again", seconds)
+	}
+	t.Logf("heard %.1f s, then %.1f s, time left said %v", first, seconds, lefts)
+}

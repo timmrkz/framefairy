@@ -251,3 +251,64 @@ func TestPathTwoEpisodesAndARender(t *testing.T) {
 		t.Errorf("the render: %q, %d shorts", reason, len(d.shorts()))
 	}
 }
+
+// New on a window further on, in the part not heard yet, hears on from
+// where the transcript ends, and never from the start of the episode. Tim
+// saw a search of the half hour after the one heard start transcribing
+// from the beginning, with almost six minutes left for a window that takes
+// less than one.
+func TestPathNewOnALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
+	d := open(t)
+	// What the hearing reports, from a queue that tells it, set before any
+	// work runs.
+	var mu sync.Mutex
+	var reports []float64
+	listening := false
+	d.svc.jobs = newQueue(d.svc.store, func(u JobUpdate) {
+		mu.Lock()
+		defer mu.Unlock()
+		if listening && u.Job.Step == "hearing" && u.Job.Progress != nil && u.Job.Progress.Covered > 0 {
+			reports = append(reports, u.Job.Progress.Covered, u.Job.Progress.Fraction)
+		}
+	}, func(string) {})
+	t.Cleanup(func() { d.svc.jobs.shutDown() })
+	path := d.episode("ep", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{path}); err != nil {
+		t.Fatal(err)
+	}
+	d.search(path, window{0, 100})
+	d.idle(path)
+	heard, _ := d.heard(path)
+	if heard < 99 || heard > 101 {
+		t.Fatalf("the first window of 100 s was heard to %.0f s", heard)
+	}
+	given := d.speech.seconds()
+	mu.Lock()
+	listening = true
+	mu.Unlock()
+	d.search(path, window{150, 250})
+	d.idle(path)
+	again := d.speech.seconds() - given
+	if again > 150+30 {
+		t.Errorf("a window from 150 to 250, with 100 heard, heard %.0f s", again)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reports) == 0 {
+		t.Fatal("the hearing never said how far it was")
+	}
+	if first := reports[0]; first < 100 {
+		t.Errorf("the hearing said it had got to %.0f s, where the transcript was at 100", first)
+	}
+	// How far it has come, and with it the time left, is measured to the
+	// end of the window, 250, and not to the end of the episode, 300: at
+	// the end of the window it is all the way, where to the end of the
+	// episode it was three quarters of it.
+	for i := 0; i+1 < len(reports); i += 2 {
+		covered, share := reports[i], reports[i+1]
+		if covered >= 245 && share < 0.95 {
+			t.Errorf("at %.0f s of a window to 250 it said it was %.2f of the way", covered, share)
+		}
+	}
+	t.Logf("heard %.0f s again, reports (covered, share): %v", again, reports)
+}

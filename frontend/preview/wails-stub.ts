@@ -434,8 +434,14 @@ function searchJob(s: FakeSearch) {
   const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, record: "search", from: s.from, to: s.to, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
   if (now.state !== "running") return base;
   if (now.step === "hearing") {
+    // How far and how long, to the end of the window it hears for, the way
+    // the engine reports it. A made-up time left here hid that the engine
+    // said the time to the end of the whole episode.
     const covered = location.search.includes("transcribing") ? 1800 : now.covered;
-    return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: covered / fullLength, remaining: 276, covered, elapsed: 1, time: "" } };
+    const end = s.to > 0 ? s.to : fullLength;
+    const share = Math.min(Math.max((covered - s.heardFrom) / Math.max(end - s.heardFrom, 1), 0), 1);
+    const remaining = Math.max(end - covered, 0) / hearsPerSecond;
+    return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, covered, elapsed: 1, time: "" } };
   }
   const lasts = findFor();
   const text = now.found ? `${now.found} of 12 found` : "Finding clips";
