@@ -973,11 +973,12 @@ place.
       are the same marks the range picker draws, across the middle of the
       track where the captions run, in the app's colour and green once
       rendered, one style in `app.css` for both tracks. Each is the same
-      share of its track's height, 12%, so the mark on the range picker is
-      half as tall, as the range picker is. A click on one chooses it. The
+      share of its track's height, 16%, so the mark on the range picker is
+      half as tall, as the range picker is, and a ring of the darkest grey
+      parts it from the waveform it lies on. A click on one chooses it. The
       chosen clip has no mark, because its frame already shows it. On the
       range picker the chosen clip is drawn the way it is up close, a
-      frame round the wash, a little taller than the rest. Zoomed out, the
+      frame round the wash, nearly three times as tall as the rest. Zoomed out, the
       track is the episode with all its clips, the way an editor's
       timeline shows every clip on it.
     - **Detail comes in as there is room for it.** The caption blocks are

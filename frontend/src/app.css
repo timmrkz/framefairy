@@ -284,12 +284,16 @@ input[type="password"] {
    so they draw them with this one mark, and it is the same share of each
    track's height: the range picker is half as tall, and so is its mark.
    Rounded to two pixels, so the middle of a mark lands on a whole pixel.
+   A ring of the darkest grey parts it from what it lies on: over the
+   waveform, the jagged grey ran straight into the colour, and the eye could
+   not find where the mark ended.
 
    The clip chosen looks like the clip it is on the clip timeline, a frame
-   round the wash, a little taller than the rest. On the clip timeline it
-   has no mark, because it is the frame already. */
+   round the wash, and stands out: nearly three times as tall as the rest,
+   and never too narrow to have wash inside its frame. On the clip timeline
+   it has no mark, because it is the frame already. */
 .clipmark {
-  --clipmark-h: round(12%, 2px);
+  --clipmark-h: round(16%, 2px);
   position: absolute;
   top: round(down, calc(50% - var(--clipmark-h) / 2), 1px);
   height: var(--clipmark-h);
@@ -298,6 +302,7 @@ input[type="password"] {
   border: none;
   border-radius: 2px;
   background: var(--accent);
+  box-shadow: 0 0 0 1px var(--ink-0);
   z-index: 2;
   cursor: pointer;
 }
@@ -311,9 +316,9 @@ input[type="password"] {
 }
 
 .clipmark.selected {
-  --clipmark-h: round(18%, 2px);
+  --clipmark-h: round(44%, 2px);
   box-sizing: border-box;
-  min-width: calc(2 * var(--frame-line) + 2px);
+  min-width: 10px;
   background: var(--accent-wash);
   border: var(--frame-line) solid var(--accent);
   border-radius: var(--frame-radius);
