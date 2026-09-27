@@ -136,28 +136,88 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 	}
 }
 
-// Nothing may leave the frame, so a word too wide to break brings the size
-// of the whole clip down until it fits.
-func TestAWordTooWideBringsTheSizeDown(t *testing.T) {
+// Nothing may leave the frame, and one long word may not make every caption
+// of the clip smaller either. It is hyphenated at the size that was chosen.
+func TestAWordTooWideIsHyphenated(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitaensmuetze"
-	caption := Caption{Start: 0, End: 2, Text: long, Words: []Cue{{0, 2, long}}}
 	s := ResolveStyle(map[string]any{"size": 96.0})
-	laid, fitted := LayOutCaptions([]Caption{caption}, s)
-	if fitted.Size >= s.Size {
-		t.Errorf("the size stayed at %v", fitted.Size)
-	}
-	if len(laid) != 1 || len(laid[0].Lines) != 1 {
+	short := Caption{Start: 2, End: 3, Text: "und dann", Words: []Cue{{2, 2.4, "und"}, {2.5, 3, "dann"}}}
+	laid := LayOutCaptions([]Caption{
+		{Start: 0, End: 2, Text: "die " + long, Words: []Cue{{0, 0.2, "die"}, {0.2, 2, long}}},
+		short,
+	}, s)
+	if len(laid) != 2 {
 		t.Fatalf("laid out as %v", laid)
 	}
-	width, ok := TextWidth(fitted.Font, long, fitted.Size)
-	if !ok || width > CaptionRoom(fitted) {
-		t.Errorf("%v wide at size %v, the room is %v", width, fitted.Size, CaptionRoom(fitted))
+	var joined string
+	var flat []Cue
+	for _, line := range laid[0].Lines {
+		width, ok := TextWidth(s.Font, cueText(line), s.Size)
+		if !ok || width > CaptionRoom(s) {
+			t.Errorf("%q is %v wide, the room is %v", cueText(line), width, CaptionRoom(s))
+		}
+		flat = append(flat, line...)
 	}
-	// A caption that fits is left at the size it was given.
-	_, kept := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "kurz",
-		Words: []Cue{{0, 2, "kurz"}}}}, s)
-	if kept.Size != s.Size {
-		t.Errorf("a short caption came back at %v", kept.Size)
+	// The render highlights the caption's words against its lines, so the
+	// two have to be the same pieces in the same order.
+	if len(flat) != len(laid[0].Words) {
+		t.Fatalf("%d pieces drawn, %d words", len(flat), len(laid[0].Words))
+	}
+	for i, w := range laid[0].Words {
+		if flat[i] != w {
+			t.Errorf("piece %d is %v in the lines and %v in the words", i, flat[i], w)
+		}
+		if i > 0 {
+			joined += strings.TrimSuffix(w.Text, "-")
+		}
+	}
+	if joined != long || len(laid[0].Words) < 3 {
+		t.Errorf("the word came back as %v", laid[0].Words)
+	}
+	// The pieces share the time the word was spoken in, one after another.
+	pieces := laid[0].Words[1:]
+	if pieces[0].Start != 0.2 || pieces[len(pieces)-1].End != 2 {
+		t.Errorf("the pieces run %v to %v", pieces[0].Start, pieces[len(pieces)-1].End)
+	}
+	for i := 1; i < len(pieces); i++ {
+		if pieces[i].Start != pieces[i-1].End || pieces[i].End <= pieces[i].Start {
+			t.Errorf("piece %d runs %v to %v after %v", i, pieces[i].Start, pieces[i].End, pieces[i-1].End)
+		}
+	}
+	// The other caption is as it was.
+	if len(laid[1].Lines) != 1 || cueText(laid[1].Lines[0]) != "und dann" || len(laid[1].Words) != 2 {
+		t.Errorf("the short caption became %v", laid[1].Lines)
+	}
+}
+
+// A word is broken where a syllable ends when one ends within reach.
+func TestAWordBreaksBetweenSyllables(t *testing.T) {
+	for _, c := range []struct {
+		word string
+		at   int
+		ok   bool
+	}{
+		{"Menschen", 3, true}, {"Menschen", 4, false}, {"Menschen", 5, false},
+		{"Zucker", 2, true}, {"Zucker", 3, false},
+		{"Optimierung", 2, true}, {"Optimierung", 4, true}, {"Optimierung", 7, true},
+		{"Optimierung", 3, false}, {"Optimierung", 8, false},
+		{"SEO-Agentur", 4, true}, {"Telefon", 3, false},
+	} {
+		if got := syllableEnds([]rune(c.word), c.at); got != c.ok {
+			t.Errorf("%s before %d: %v, want %v", c.word, c.at, got, c.ok)
+		}
+	}
+	fits := func(text string) bool { return runeLen(text) <= 16 }
+	got := breakWord("Suchmaschinenoptimierung", fits)
+	if len(got) != 2 || got[0] != "Suchmaschinenop-" || got[1] != "timierung" {
+		t.Errorf("broken as %q", got)
+	}
+	if got := breakWord("kurz", fits); len(got) != 1 || got[0] != "kurz" {
+		t.Errorf("a word that fits became %q", got)
+	}
+	// Nothing to break at that leaves three letters either side.
+	if got := breakWord("abcde", func(string) bool { return false }); len(got) != 1 {
+		t.Errorf("a word no cut helps became %q", got)
 	}
 }
 

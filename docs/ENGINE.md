@@ -335,9 +335,16 @@ program carries. Kerning and shaping are left out, and since kerning almost
 always pulls letters closer, the measure comes out a shade wider than what
 libass draws, so a line that fits here fits there.
 
-When even a single word is too wide to break, the caption size comes down
-for that clip until it fits, so the captions of one short stay one size. A
-face the program does not carry cannot be measured, and then `wrap_chars`
+A word too wide for a line on its own is hyphenated. Each piece is as long
+as the line allows and ends where a syllable ends, before a consonant that
+comes before a vowel, with "sch", "ch", "ck", "ph" and "th" kept whole, or
+after a hyphen the word already has. "Suchmaschinenoptimierung" at size 96
+becomes "Suchmaschinenopti-" and "mierung". Each piece gets its share of
+the time the word was spoken in, so the highlight runs over both, and a
+correction made on either piece corrects the whole word. The size is never
+changed: it used to come down for the whole clip until the widest word
+fitted, and one long word made every caption of the short a third smaller.
+A face the program does not carry cannot be measured, and then `wrap_chars`
 decides the breaks, as it always did.
 
 One catch worth knowing: the size in a caption style is not the em square.
