@@ -232,8 +232,14 @@ func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
 			t.Errorf("%q does not fit", piece)
 		}
 	}
-	// A language without patterns here has no hyphenator.
-	if hyphenatorFor("cs") != nil || hyphenatorFor("xx") != nil {
+	// Every language whose patterns are here has a hyphenator, found by the
+	// file's name alone, and a language without patterns has none.
+	for _, code := range []string{"de", "en", "el", "hr", "hu", "ru", "sv"} {
+		if hyphenatorFor(code) == nil {
+			t.Errorf("no hyphenator for %s", code)
+		}
+	}
+	if hyphenatorFor("cs") != nil || hyphenatorFor("xx") != nil || hyphenatorFor("") != nil {
 		t.Error("patterns where none ship")
 	}
 }

@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"embed"
+	"io/fs"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,13 +19,15 @@ import (
 // language, and the episode's language is not written anywhere, so it is
 // read off the captions' own words.
 //
-// Here are the languages the speech model hears whose patterns may ship
-// in a paid app. Czech is under the GPL alone, Latvian under the LGPL or
-// the GPL, and Romanian has no licence at all, so those three are left
-// out, and a word in them is broken where the line ends. Beside each
-// language's patterns is the top of the file they came from, which says
-// who made them, under what licence, and how few letters TeX leaves either
-// side of a hyphen.
+// The patterns here are the languages the speech model hears whose
+// patterns may ship in a paid app. Which files those are is decided by the
+// licences their own headers name, and the notices refuse a file that
+// cannot ship, see notices/gen. Czech is under the GPL alone, Latvian
+// under the LGPL or the GPL, and Romanian has no licence at all, so those
+// three are not here, and a word in them is broken where the line ends.
+// Beside each language's patterns is the top of the file they came from,
+// which says who made them, under what licence, and how few letters TeX
+// leaves either side of a hyphen.
 //
 //go:embed hyphenation/*.txt
 var hyphenationFiles embed.FS
@@ -41,17 +44,21 @@ var (
 	hyphenators   = map[string]*hyphenator{}
 )
 
-// patternFile is the name hyph-utf8 gives a language's patterns.
+// patternFile is the pattern file of a language, as ISO 639-1: the one
+// named for it, or the one whose tag begins with it, like de-1996 for
+// German. Empty when none is here.
 func patternFile(code string) string {
-	switch code {
-	case "de":
-		return "de-1996"
-	case "en":
-		return "en-us"
-	case "el":
-		return "el-monoton"
+	if code == "" {
+		return ""
 	}
-	return code
+	names, _ := fs.Glob(hyphenationFiles, "hyphenation/hyph-"+code+".pat.txt")
+	if len(names) == 0 {
+		names, _ = fs.Glob(hyphenationFiles, "hyphenation/hyph-"+code+"-*.pat.txt")
+	}
+	if len(names) != 1 {
+		return ""
+	}
+	return strings.TrimSuffix(names[0], ".pat.txt")
 }
 
 // hyphenatorFor gives the hyphenator of a language, as ISO 639-1, or nil
@@ -63,8 +70,8 @@ func hyphenatorFor(code string) *hyphenator {
 		return h
 	}
 	var h *hyphenator
-	name := "hyphenation/hyph-" + patternFile(code)
-	if patterns, err := hyphenationFiles.Open(name + ".pat.txt"); err == nil {
+	name := patternFile(code)
+	if patterns, err := hyphenationFiles.Open(name + ".pat.txt"); name != "" && err == nil {
 		defer patterns.Close()
 		if lang, err := hyphenation.New(patterns); err == nil {
 			h = &hyphenator{lang: lang, left: 2, right: 2}
