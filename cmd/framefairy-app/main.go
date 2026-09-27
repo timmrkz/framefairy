@@ -440,6 +440,11 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	if model != "" {
 		lm.OK = fileExists(model)
 		lm.Detail = model
+		// Chosen and not fetched yet, which is a step still to take rather
+		// than a file gone missing.
+		if known, ok := engine.LanguageModelByName(filepath.Base(model)); !lm.OK && ok {
+			lm.Detail = known.Title + " is not downloaded yet."
+		}
 	}
 	return append(out, lm)
 }

@@ -39,6 +39,10 @@
     // Everywhere else a field reads from the left.
     align = "left",
     disabled = false,
+    // How what is picked stands, where that matters: a choice that cannot
+    // work yet wears a frame in the colour of a warning, the way a field
+    // that needs something does, so it is seen on the control itself.
+    tone = undefined,
   }: {
     // What is picked. It goes one way only, and nothing here ever writes
     // it back: what the trigger says is what the caller says is true, and
@@ -63,6 +67,7 @@
     id?: string;
     align?: "left" | "right";
     disabled?: boolean;
+    tone?: "warn" | "err";
   } = $props();
 
   // What the trigger says. A value that is not in the list yet, which is
@@ -118,6 +123,8 @@
         {...props}
         class="pick"
         class:right={align === "right"}
+        class:warn={tone === "warn"}
+        class:err={tone === "err"}
         aria-label={label}
         {title}
         {id}
@@ -194,6 +201,14 @@
     padding-right: 8px;
     color: var(--text);
     text-align: left;
+  }
+
+  .pick.warn {
+    border-color: var(--warn);
+  }
+
+  .pick.err {
+    border-color: var(--err);
   }
 
   /* The same ring the rest of the app gives whatever has the keyboard,

@@ -1258,19 +1258,35 @@ The line under the choice says what it costs: a few cents an episode at
 Anthropic, or who made the model, the memory it needs and whether it fits.
 Beside each model in the list is what it would cost to fetch, or that it is
 the best here, or that it is too big for this machine. The list holds any
-number of models in the room of one control. Choosing a model that is not
-there yet does not fetch it: a download of gigabytes starts when
-**Download** is pressed, not as a side effect of looking through a list.
-The line says it is not on this machine yet, what it would cost, and that
-the model before it goes on finding clips until it is. Once **Download**
-is pressed, the line says how far it has come, **Cancel** beside the list
-carries the beam and the fill, the list waits, and when the model is there
-it is the one in use. A download cancelled leaves the choice as it was, and
-**Download** carries on from what arrived. Choosing an installed model uses
-it at once, and the Go side names it in the settings. The page then reads
-the models again, because the list says which one is in use from them:
-reading only the settings once left the list on the model before, so a
-choice looked as if it had done nothing. Its info mark, at the right end of the heading, says what
+number of models in the room of one control.
+
+**Choosing a model chooses it**, whether it is on this machine or not.
+The settings name it, and the list ticks it. One that is not here yet
+cannot find clips until it is downloaded, and everything about the row
+says so in the colour of a warning: the triangle with the exclamation mark
+before it, the frame round the list, and the line under it, **Not
+downloaded yet** and its size. **Download** beside the list fetches it: a
+download of gigabytes starts when it is pressed, never as a side effect of
+looking through a list. While it runs the line says how far it has come and
+how long is left, **Cancel** carries the beam and the fill, and the list
+waits. When it is there the row turns to the check, with nothing more to
+do, because the model was already the one chosen. A download cancelled
+leaves the choice as it was, and **Download** carries on from what arrived.
+Keeping the model before it in use until the download was done was tried
+first, and the list then ticked one model while the line said the clips
+came from another.
+
+**The line under a name is one line.** It is short enough to fit beside
+the list and a button, and anything longer is cut short with the whole of
+it in the line's title, because a line that wraps when a button arrives
+beside it moves the whole card. What the choice costs, who made a model
+and how much it asks of the machine, is on the line. Everything else is
+for the info mark. After a model is chosen the page reads the models again,
+because the list says which one is in use from them: reading only the
+settings once left the list on the model before, so a choice looked as if
+it had done nothing.
+
+Its info mark, at the right end of the heading, says what
 each way costs and, with a local model chosen, how much memory this
 machine has and what that decides. The key goes in the keychain the
 moment **Save key** is pressed, not with the rest of the settings, because

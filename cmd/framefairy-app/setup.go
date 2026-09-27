@@ -104,7 +104,9 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir),
 			Fit:         string(m.FitsIn(state.Memory)),
 			Recommended: hasBest && m.Name == best.Name}
-		view.InUse = view.Installed && using == m.Name
+		// A model chosen before it is downloaded is still the one chosen,
+		// so the list says so, and says as well that it is not here.
+		view.InUse = using == m.Name
 		if view.Installed {
 			state.HasLocalModel = true
 		}
@@ -256,9 +258,15 @@ func modelInUse(settings Settings) string {
 	return filepath.Base(found)
 }
 
-// UseLanguageModel makes an installed model the one clips are found with,
-// and says the path it is found at, so the settings on screen can show it
-// without being read again over whatever else was being typed there.
+// UseLanguageModel makes a model the one clips are found with, and says
+// the path it is found at, so the settings on screen can show it without
+// being read again over whatever else was being typed there.
+//
+// It does not have to be downloaded yet. Choosing a model chooses it: the
+// settings name it, the check says it is not here, and a search cannot
+// start until it is. Keeping the model before it in use meanwhile made the
+// list say one model while the searches ran on another. The download is a
+// step of its own, and when it ends the model is already the one named.
 //
 // Two models on the machine and none named is a search that cannot start,
 // because the engine will not guess which one was meant. Installing a
@@ -269,11 +277,7 @@ func (s *FrameFairy) UseLanguageModel(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("there is no language model called %s", name)
 	}
-	dir := engine.ModelsDir()
-	if !model.Installed(dir) {
-		return "", fmt.Errorf("%s is not installed", model.Title)
-	}
-	path := filepath.Join(dir, model.Name)
+	path := filepath.Join(engine.ModelsDir(), model.Name)
 	settings := s.store.Settings()
 	settings.LLMModel = path
 	return path, s.store.SetSettings(settings)

@@ -462,7 +462,9 @@ export const Call = {
               },
             ].map((m, i) => {
               const installed = !removed.includes(m.name) && (i < 2 || llmDone());
-              return { ...m, installed, inUse: installed && used === m.name };
+              // Chosen is chosen, downloaded or not, the way the Go side
+              // reports it.
+              return { ...m, installed, inUse: used === m.name };
             })
           : [
           {
@@ -719,7 +721,13 @@ export const Call = {
           out.push(broken
             ? { name: "llama-server", ok: false, detail: "llama-server was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path." }
             : { name: "llama-server", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/llama-server" });
-          out.push({ name: "Language model", ok: true, detail: "/Users/tim/.framefairy/models/gemma-4-26B_q4_0-it.gguf" });
+          // A model chosen before its download is not here yet, which the
+          // check says in the Go side's words.
+          const used: string = (window as any).__used ?? "gemma-4-26B_q4_0-it.gguf";
+          const here = !location.search.includes("models") || used !== "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf" || llmDone();
+          out.push(here
+            ? { name: "Language model", ok: true, detail: `/Users/tim/.framefairy/models/${used}` }
+            : { name: "Language model", ok: false, detail: "Ministral 3 8B is not downloaded yet." });
         }
         return new Promise((r) => setTimeout(() => r(out), 300));
       }

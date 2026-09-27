@@ -239,36 +239,36 @@
 
   // What finds the clips, as one choice: the Claude API or one of the
   // models that run here, in one list, the way the apps that offer models
-  // put them, grouped by where they run. A model not fetched yet is in the
-  // list too, with what it would cost, and choosing it fetches it and then
-  // uses it. So the list holds any number of models in the room of one
-  // control.
+  // put them, grouped by where they run. So the list holds any number of
+  // models in the room of one control.
+  //
+  // Choosing a model chooses it, whether it is on this machine or not. One
+  // that is not here yet is the choice all the same, and it cannot find
+  // clips until it is downloaded, which is a step of its own: a download of
+  // gigabytes starts when Download is pressed, never as a side effect of
+  // looking through a list. The mark, the frame round the list and the
+  // line under it all say so. Keeping the model before it in use meanwhile
+  // made the list say one model while the searches ran on another.
   const inUse = $derived(language.find((m) => m.inUse));
-  // A model chosen that is not on this machine yet. Choosing it does not
-  // fetch it: a download of several gigabytes starts when Download is
-  // pressed, not as a side effect of looking through a list. Until it is
-  // there, the model before it goes on finding clips.
-  let wanted = $state("");
-  const wantedModel = $derived(language.find((m) => m.name === wanted && !m.installed));
-  // The model being fetched because it was chosen here, and what became of
-  // the last one.
-  let fetching = $state("");
+  // What was just chosen, shown until the Go side's answer is read, so a
+  // click shows at once.
+  let choosing = $state("");
+  const notHere = $derived(!!inUse && !inUse.installed);
   let fetchFailed = $state("");
   const llmJob = $derived(jobs.list.filter((j) => j.kind === "llm").at(-1));
   const llmRunning = $derived(
     llmJob && (llmJob.state === "running" || llmJob.state === "queued") ? llmJob : undefined,
   );
-  // A download that was running before this page opened is still this
-  // page's to show.
+  // Download pressed and the job not reported yet.
+  let starting = $state(false);
+  // Whatever is being downloaded, even one started before this page
+  // opened, is this page's to show.
   const fetchingModel = $derived(
-    language.find((m) => m.name === fetching) ??
-      (llmRunning ? language.find((m) => m.title === llmRunning.label) : undefined),
+    llmRunning ? language.find((m) => m.title === llmRunning.label) : starting ? inUse : undefined,
   );
 
   const finder = $derived(
-    settings?.planner === "api"
-      ? "api"
-      : (fetchingModel?.name ?? wantedModel?.name ?? inUse?.name ?? ""),
+    settings?.planner === "api" ? "api" : choosing || (inUse?.name ?? ""),
   );
 
   const finderOptions = $derived([
@@ -291,44 +291,36 @@
   async function pickFinder(value: string) {
     if (!settings) return;
     fetchFailed = "";
-    wanted = "";
     if (value === "api") {
       settings.planner = "api";
       return;
     }
     settings.planner = "local";
-    const model = language.find((m) => m.name === value);
-    if (!model) return;
-    if (model.installed) {
-      await useModel(model.name);
-      return;
-    }
-    wanted = model.name;
+    choosing = value;
+    await useModel(value);
+    choosing = "";
   }
 
   async function download() {
-    const model = wantedModel;
-    if (!model) return;
+    if (!inUse || inUse.installed) return;
     fetchFailed = "";
-    // A click shows at once: the row says it is fetching before the first
-    // job event arrives.
-    fetching = model.name;
+    // A click shows at once: the row says it is downloading before the
+    // first job event arrives.
+    starting = true;
     try {
-      const job = await api.installLanguageModel(model.name);
-      if (job.state === "failed") {
-        fetchFailed = job.error ?? "The download did not start.";
-        fetching = "";
-      }
+      const job = await api.installLanguageModel(inUse.name);
+      if (job.state === "failed") fetchFailed = job.error ?? "The download did not start.";
     } catch (err) {
       fetchFailed = errorText(err);
-      fetching = "";
     }
+    starting = false;
   }
 
-  // When the download chosen here ends, the model it fetched is the one in
-  // use, because that is what was asked for. One that stopped says why,
-  // where it was asked for. Read when the job settles, not on every job
-  // event, which arrive about once a second while it runs.
+  // When a download ends the models are read again: the model it fetched
+  // is already the one chosen, so being there is all that changes. One
+  // that stopped says why, where it was asked for. Read when the job
+  // settles, not on every job event, which arrive about once a second
+  // while it runs.
   let settled = "";
   $effect(() => {
     const job = llmJob;
@@ -336,16 +328,8 @@
     if (now === settled) return;
     settled = now;
     if (!job || job.state === "running" || job.state === "queued") return;
-    const model = language.find((m) => m.title === job.label);
-    const mine = model && model.name === fetching;
-    fetching = "";
-    if (job.state === "failed" && mine) fetchFailed = job.error ?? "The download stopped.";
-    if (job.state === "done" && mine) {
-      wanted = "";
-      useModel(model.name);
-    } else {
-      modelsChanged();
-    }
+    if (job.state === "failed") fetchFailed = job.error ?? "The download stopped.";
+    modelsChanged();
   });
 
   let cancelling = $state(false);
@@ -362,50 +346,44 @@
     if (!llmRunning) cancelling = false;
   });
 
-  // The one line under Find clips with: what the choice costs, how far a
-  // download has come, or what is in the way.
-  const finderLine = $derived.by((): { text: string; bad: boolean } => {
+  // The one line under Find clips with. One line and never two: it is cut
+  // short with the rest in its title rather than wrapped, because a line
+  // that wraps when a button arrives beside it moves the whole card. So
+  // every wording here is short enough to fit beside the list and a
+  // button, and what does not fit is for the info mark.
+  const finderLine = $derived.by((): { text: string; tone: "" | "warn" | "err" } => {
     if (settings?.planner === "api") {
-      return { text: "Runs at Anthropic, on any machine. A few cents an episode.", bad: false };
+      return { text: "Runs at Anthropic. A few cents an episode.", tone: "" };
     }
-    if (fetching && !llmRunning) {
-      return { text: `${fetchingModel?.title ?? "The model"}. Starting`, bad: false };
-    }
-    if (llmRunning) {
-      const p = llmRunning.progress;
-      const text = p?.text ? p.text[0].toUpperCase() + p.text.slice(1) : "Starting";
+    if (fetchingModel) {
+      const p = llmRunning?.progress;
+      const total = fetchingModel.download;
+      const done = p && p.fraction > 0 ? `${size(p.fraction * total)} of ${size(total)}` : size(total);
       const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
-      return { text: `${fetchingModel?.title ?? "The model"}. ${text}${left}`, bad: false };
+      return { text: `Downloading, ${done}${left}`, tone: "" };
     }
-    if (fetchFailed) return { text: fetchFailed, bad: true };
-    if (wantedModel) {
-      const until = inUse ? ` Until then, clips are found with ${inUse.title}.` : "";
-      return {
-        text: `Not on this machine yet. ${size(wantedModel.download)} to download.${until}`,
-        bad: false,
-      };
-    }
-    if (!inUse) {
-      return {
-        text: language.some((m) => m.installed)
-          ? "No model is chosen yet. Choose one to find clips with."
-          : "No model is on this machine yet. Choose one to fetch it.",
-        bad: true,
-      };
-    }
+    if (fetchFailed) return { text: fetchFailed, tone: "err" };
+    if (!inUse) return { text: "Choose a model to find clips with.", tone: "warn" };
+    if (notHere) return { text: `Not downloaded yet. ${size(inUse.download)}.`, tone: "warn" };
     const lm = broken("Language model");
-    if (lm) return { text: lm.detail, bad: true };
+    if (lm) return { text: lm.detail, tone: "err" };
     const { note } = fitNote(inUse.fit, inUse.recommended);
     return {
-      text: `By ${inUse.maker}. Runs here for free, and needs ${memorySize(inUse.needs)} of memory.${note ? ` ${note}.` : ""}`,
-      bad: false,
+      text: `By ${inUse.maker}. ${memorySize(inUse.needs)} of memory.${note ? ` ${note}.` : ""}`,
+      tone: "",
     };
   });
-  const finderOk = $derived(
-    settings?.planner === "api"
-      ? hasKey
-      : !!inUse && !finderLine.bad && !llmRunning && !wantedModel,
-  );
+  // How the choice stands, which the mark before it and the frame round
+  // the list both show: ready, busy downloading, or not able to find clips
+  // yet. The API is ready once it has a key, and the key row says what is
+  // missing when it has not.
+  const finderState = $derived.by((): "ok" | "busy" | "warn" | "err" => {
+    if (settings?.planner === "api") return hasKey ? "ok" : "warn";
+    if (fetchingModel) return "busy";
+    if (finderLine.tone === "err" || broken("llama-server")) return "err";
+    if (finderLine.tone === "warn") return "warn";
+    return "ok";
+  });
 
   // The models on this machine, which is only about the room they take,
   // so it stays folded until somebody wants some of it back.
@@ -485,19 +463,23 @@
                the same card, the way a pop-up in the Mac's own settings
                changes the rows beneath it. -->
           <div class="item">
-            <span class="mark" class:ok={finderOk} aria-hidden="true">
-              {#if llmRunning || fetching}
+            <span class="mark {finderState}" aria-hidden="true">
+              {#if finderState === "busy"}
                 <span class="dot busy"></span>
-              {:else if finderOk}
+              {:else if finderState === "ok"}
                 <Icon name="check" />
-              {:else if finderLine.bad}
-                <span class="dot err"></span>
+              {:else}
+                <Icon name="warn" />
               {/if}
             </span>
             <div class="words">
               <span class="head">Find clips with</span>
-              <span class="small selectable" class:muted={!finderLine.bad} class:error={finderLine.bad}
-                >{finderLine.text}</span
+              <span
+                class="small line"
+                class:muted={!finderLine.tone}
+                class:warn={finderLine.tone === "warn"}
+                class:error={finderLine.tone === "err"}
+                title={finderLine.text}>{finderLine.text}</span
               >
             </div>
             {#if llmRunning}
@@ -505,7 +487,7 @@
                    control that can do something about it. -->
               <button
                 class="act"
-                title="Stop the download. What has arrived stays, and choosing the model again carries on from it"
+                title="Stop the download. What has arrived stays, and Download carries on from it"
                 disabled={cancelling}
                 onclick={cancelFetch}
               >
@@ -516,11 +498,13 @@
                 />
                 {cancelling ? "Cancelling" : "Cancel"}
               </button>
-            {:else if wantedModel && !fetching}
+            {:else if notHere && settings.planner === "local"}
               <button
                 class="act"
-                title="Fetch {wantedModel.title} and find clips with it once it is here"
-                onclick={download}>Download</button
+                title="Fetch {inUse?.title}, {size(inUse?.download ?? 0)}. It finds clips once it is here"
+                disabled={starting}
+                onclick={download}
+                >{#if starting}<Busy />{/if}{starting ? "Starting" : "Download"}</button
               >
             {/if}
             <Pick
@@ -529,7 +513,8 @@
               onpick={pickFinder}
               label="Find clips with"
               align="right"
-              disabled={!!llmRunning || !!fetching}
+              tone={finderState === "warn" || finderState === "err" ? finderState : undefined}
+              disabled={!!llmRunning || starting}
               title="What reads the transcript and picks the moments"
             />
           </div>
@@ -540,19 +525,13 @@
                  settings file. An app opened from Finder has no shell
                  environment, so this is the only way to give it one. -->
             <div class="item">
-              <span class="mark" class:ok={hasKey} aria-hidden="true">
-                {#if hasKey}<Icon name="check" />{:else}<span class="dot err"></span>{/if}
+              <span class="mark" class:ok={hasKey} class:warn={!hasKey} aria-hidden="true">
+                {#if hasKey}<Icon name="check" />{:else}<Icon name="warn" />{/if}
               </span>
               <div class="words">
                 <span class="head">API key</span>
-                <span class="small" class:muted={hasKey || savedKey} class:error={!hasKey && !savedKey}>
-                  {#if savedKey}
-                    Saved in the keychain, and nowhere else.
-                  {:else if hasKey}
-                    In the keychain, and nowhere else. Paste another to replace it.
-                  {:else}
-                    There is none yet. Paste one from console.anthropic.com. It goes in the keychain and nowhere else.
-                  {/if}
+                <span class="small line" class:muted={hasKey} class:warn={!hasKey}>
+                  {savedKey ? "Saved in the keychain." : hasKey ? "In the keychain." : "None yet. Get one at console.anthropic.com."}
                 </span>
               </div>
               <input
@@ -561,6 +540,7 @@
                 bind:value={key}
                 placeholder={hasKey ? "Replace the key" : "sk-ant-..."}
                 aria-label="Anthropic API key"
+                title="It goes in the keychain and nowhere else"
                 autocomplete="off"
                 spellcheck="false"
                 onkeydown={(e) => e.key === "Enter" && key.trim() && saveKey()}
@@ -575,11 +555,13 @@
               <!-- A model is the answer and llama-server is what runs it,
                    so one without the other finds nothing. -->
               <div class="item">
-                <span class="mark" aria-hidden="true"><span class="dot err"></span></span>
+                <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
                 <div class="words">
                   <span class="head">llama-server</span>
-                  <span class="small error"
-                    >{"What runs a model on this machine is missing. Installing the app again brings it back, and until then the Claude API works."}</span
+                  <span
+                    class="small error line"
+                    title="What runs a model on this machine is missing. Installing the app again brings it back, and until then the Claude API works."
+                    >Missing. Installing the app again brings it back.</span
                   >
                 </div>
               </div>
@@ -658,11 +640,13 @@
           </div>
           {#if broken("ffmpeg")}
             <div class="item">
-              <span class="mark" aria-hidden="true"><span class="dot err"></span></span>
+              <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
               <div class="words">
                 <span class="head">ffmpeg</span>
-                <span class="small error"
-                  >{"What reads and renders video is missing. Installing the app again brings it back."}</span
+                <span
+                  class="small error line"
+                  title="What reads and renders video is missing. Installing the app again brings it back."
+                  >Missing. Installing the app again brings it back.</span
                 >
               </div>
             </div>
@@ -988,6 +972,27 @@
     .chevron {
       transition: none;
     }
+  }
+
+  /* A line under a name is one line. It is cut short, with the whole of it
+     in its title, rather than wrapped, because a line that wraps when a
+     button arrives beside it moves the card. */
+  .line {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .warn {
+    color: var(--warn);
+  }
+
+  .mark.warn {
+    color: var(--warn);
+  }
+
+  .mark.err {
+    color: var(--err);
   }
 
   /* A row that opens what is under it: the whole row is the button, and
