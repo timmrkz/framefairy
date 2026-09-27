@@ -37,6 +37,9 @@ type hyphenator struct {
 	lang *hyphenation.Lang
 	// left and right are the fewest letters before and after a hyphen.
 	left, right int
+	// joints, where a language has them, break a word only where the
+	// parts of a compound join, and are tried first, see breakWord.
+	joints *hyphenator
 }
 
 var (
@@ -46,16 +49,33 @@ var (
 
 // patternFile is the pattern file of a language, as ISO 639-1: the one
 // named for it, or the one whose tag begins with it, like de-1996 for
-// German. Empty when none is here.
+// German. Empty when none is here. A tag with -x- in it is a set of its
+// own for that language, like the joints, and never the patterns.
 func patternFile(code string) string {
 	if code == "" {
 		return ""
 	}
 	names, _ := fs.Glob(hyphenationFiles, "hyphenation/hyph-"+code+".pat.txt")
 	if len(names) == 0 {
-		names, _ = fs.Glob(hyphenationFiles, "hyphenation/hyph-"+code+"-*.pat.txt")
+		all, _ := fs.Glob(hyphenationFiles, "hyphenation/hyph-"+code+"-*.pat.txt")
+		for _, name := range all {
+			if !strings.Contains(name, "-x-") {
+				names = append(names, name)
+			}
+		}
 	}
 	if len(names) != 1 {
+		return ""
+	}
+	return strings.TrimSuffix(names[0], ".pat.txt")
+}
+
+// jointsFile is the file of the language's joints, the patterns built from
+// the Trennmuster team's word list that break a word only where the parts
+// of a compound join. Empty when the language has none.
+func jointsFile(code string) string {
+	names, _ := fs.Glob(hyphenationFiles, "hyphenation/hyph-"+code+"-*-x-major.pat.txt")
+	if code == "" || len(names) != 1 {
 		return ""
 	}
 	return strings.TrimSuffix(names[0], ".pat.txt")
@@ -69,18 +89,33 @@ func hyphenatorFor(code string) *hyphenator {
 	if h, ok := hyphenators[code]; ok {
 		return h
 	}
-	var h *hyphenator
-	name := patternFile(code)
-	if patterns, err := hyphenationFiles.Open(name + ".pat.txt"); name != "" && err == nil {
-		defer patterns.Close()
-		if lang, err := hyphenation.New(patterns); err == nil {
-			h = &hyphenator{lang: lang, left: 2, right: 2}
-			if head, err := hyphenationFiles.ReadFile(name + ".head.txt"); err == nil {
-				h.left, h.right = hyphenMins(string(head), h.left, h.right)
-			}
-		}
+	h := loadPatterns(patternFile(code))
+	if h != nil {
+		h.joints = loadPatterns(jointsFile(code))
 	}
 	hyphenators[code] = h
+	return h
+}
+
+// loadPatterns reads one pattern file and the fewest letters its header
+// asks for. Nil when there is no such file.
+func loadPatterns(name string) *hyphenator {
+	if name == "" {
+		return nil
+	}
+	patterns, err := hyphenationFiles.Open(name + ".pat.txt")
+	if err != nil {
+		return nil
+	}
+	defer patterns.Close()
+	lang, err := hyphenation.New(patterns)
+	if err != nil {
+		return nil
+	}
+	h := &hyphenator{lang: lang, left: 2, right: 2}
+	if head, err := hyphenationFiles.ReadFile(name + ".head.txt"); err == nil {
+		h.left, h.right = hyphenMins(string(head), h.left, h.right)
+	}
 	return h
 }
 
@@ -171,42 +206,77 @@ func TooWide(s Style) func(string) bool {
 // piece but the last ending in a hyphen. It breaks where the patterns of
 // the language allow, and after a hyphen the word already has, and like
 // TeX and every word processor it takes the last break that still fits,
-// so each line is as full as it can be. With no patterns, or none that
-// help, it is broken where the line ends. A word that fits, or that no
-// break can help, comes back as it is.
+// so each line is as full as it can be. Where the language has joints, a
+// joint that fits comes before any other break: the Trennmuster team, who
+// make the German patterns, name the joints of the highest rank for ragged
+// text, and a caption is ragged text. So Suchmaschinenoptimierung breaks
+// as Suchmaschinen- and optimierung, not Suchmaschinenopti- and mierung,
+// as long as that takes no more lines than breaking without the joints.
+// With no patterns, or none that help, it is broken where the line ends.
+// A word that fits, or that no break can help, comes back as it is.
 func breakWord(word string, r captionRoom, h *hyphenator) []string {
 	if r.fits(word) {
 		return []string{word}
 	}
 	runes := []rune(word)
-	points := breakPoints(runes, h)
+	var joints []int
+	if h != nil {
+		joints = breakPoints(runes, h.joints, true)
+	}
+	points := breakPoints(runes, h, false)
 	piece := func(from, to int) string {
 		if runes[to-1] == '-' {
 			return string(runes[from:to])
 		}
 		return string(runes[from:to]) + "-"
 	}
-	var out []string
-	from := 0
-	for !r.fits(string(runes[from:])) {
+	last := func(from int, among []int) int {
 		cut := 0
-		for _, p := range points {
+		for _, p := range among {
 			if p > from && r.fits(piece(from, p)) {
 				cut = p
 			}
 		}
-		if cut == 0 {
-			break
-		}
-		out = append(out, piece(from, cut))
-		from = cut
+		return cut
 	}
-	return append(out, string(runes[from:]))
+	cutAll := func(jointsFirst bool) []string {
+		var out []string
+		from := 0
+		for !r.fits(string(runes[from:])) {
+			cut := 0
+			if jointsFirst {
+				cut = last(from, joints)
+			}
+			if cut == 0 {
+				cut = last(from, points)
+			}
+			if cut == 0 {
+				break
+			}
+			out = append(out, piece(from, cut))
+			from = cut
+		}
+		return append(out, string(runes[from:]))
+	}
+	// A joint is worth having, but not a line more: a joint the patterns
+	// know early in a word, with none they know later, would otherwise
+	// leave a word that needs two lines on three.
+	plain := cutAll(false)
+	if len(joints) == 0 {
+		return plain
+	}
+	if preferred := cutAll(true); len(preferred) <= len(plain) {
+		return preferred
+	}
+	return plain
 }
 
 // breakPoints are where a word may be broken, as the number of runes
-// before the break, in order. Punctuation around the word stays with it.
-func breakPoints(runes []rune, h *hyphenator) []int {
+// before the break, in order: after a hyphen the word already has, and
+// where the patterns allow. Punctuation around the word stays with it.
+// With no patterns and nothing else to go by, anywhere will do, unless
+// only the joints are asked for, which are only ever where they are.
+func breakPoints(runes []rune, h *hyphenator, joints bool) []int {
 	first, last := 0, len(runes)
 	for first < last && !unicode.IsLetter(runes[first]) {
 		first++
@@ -224,15 +294,24 @@ func breakPoints(runes []rune, h *hyphenator) []int {
 			allowed[i] = true
 		}
 	}
+	// The patterns are learned from words without hyphens, so each part
+	// of a word that has them is read on its own.
 	if h != nil {
-		for _, p := range h.lang.Hyphenate(strings.ToLower(string(runes[first:last]))) {
-			allowed[first+p] = true
+		start := first
+		for i := first; i <= last; i++ {
+			if i < last && runes[i] != '-' {
+				continue
+			}
+			for _, p := range h.lang.Hyphenate(strings.ToLower(string(runes[start:i]))) {
+				allowed[start+p] = true
+			}
+			start = i + 1
 		}
 	}
+	anywhere := h == nil && !joints && len(allowed) == 0
 	var out []int
 	for i := first + left; i <= last-right; i++ {
-		// With nothing to go by, anywhere the line runs out will do.
-		if allowed[i] || (h == nil && len(allowed) == 0) {
+		if allowed[i] || anywhere {
 			out = append(out, i)
 		}
 	}

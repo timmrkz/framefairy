@@ -244,6 +244,33 @@ func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
 	}
 }
 
+// German breaks where the parts of a compound join when a joint fits, at
+// the size a caption is really drawn at. The last syllable that fits
+// would give Suchmaschinenopti- and mierung.
+func TestAGermanWordBreaksWhereItsPartsJoin(t *testing.T) {
+	r := roomFor(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
+	de := hyphenatorFor("de")
+	if de == nil || de.joints == nil {
+		t.Fatal("no joints for German")
+	}
+	for word, want := range map[string]string{
+		"Suchmaschinenoptimierung":   "Suchmaschinen-|optimierung",
+		"Persönlichkeitsentwicklung": "Persönlichkeits-|entwicklung",
+		"Kindheitserinnerungen":      "Kindheits-|erinnerungen",
+		// Kundenzufriedenheits- is wider than the line, and the one joint
+		// that fits, Kunden-, would take three lines. Two lines win.
+		"Kundenzufriedenheitsumfrage": "Kundenzufrieden-|heitsumfrage",
+	} {
+		if got := strings.Join(breakWord(word, r, de), "|"); got != want {
+			t.Errorf("%s broke as %s, want %s", word, got, want)
+		}
+	}
+	// No other language borrows them.
+	if en := hyphenatorFor("en"); en == nil || en.joints != nil {
+		t.Error("English has joints")
+	}
+}
+
 // The language is read off the words of the captions.
 func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 	for text, want := range map[string]string{

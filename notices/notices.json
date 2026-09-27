@@ -191,6 +191,17 @@
     ]
   },
   {
+    "name": "Hyphenation patterns, German, reformed spelling, major",
+    "version": "2026-09-25",
+    "licence": "MIT",
+    "url": "https://repo.or.cz/w/wortliste.git?a=commit;h=a68004108c475a5edf9e6502da11d6135ab9dcc1",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-de-1996-x-major.txt"
+    ]
+  },
+  {
     "name": "Hyphenation patterns, Hungarian",
     "version": "2011-08-15",
     "licence": "MPL-1.1",

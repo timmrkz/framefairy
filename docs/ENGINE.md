@@ -341,16 +341,32 @@ words around it. It is hyphenated the way TeX hyphenates: Liang's
 algorithm, from `github.com/speedata/hyphenation`, over the hyph-utf8
 patterns that TeX, LibreOffice and Firefox use, which are in
 `engine/hyphenation/`. Like TeX and every word processor it takes the last
-break that still fits, so "Suchmaschinenoptimierung" at size 96 in Inter
-Black becomes "Suchmaschinenopti-" and "mierung". Each piece gets its share
-of the time the word was spoken in, so the highlight runs over both, and a
-correction made on either piece corrects the whole word.
+break that still fits, so each line is as full as it can be.
+
+German also knows where the parts of a compound join. The Trennmuster
+team, who make the German patterns, keep a word list of half a million
+words with every joint marked, and their own build learns patterns from it
+that break a word only at the joints of the highest rank, which their
+documentation names for ragged text. A caption is ragged text, so a joint
+that fits comes first: "Suchmaschinenoptimierung" at size 96 in Inter
+Black becomes "Suchmaschinen-" and "optimierung", not "Suchmaschinenopti-"
+and "mierung". Over the list the joint patterns find 99.7% of the joints
+and put 0.1% in the wrong place. A joint never costs a line: where the
+only joint that fits would leave a word on three lines that two syllable
+breaks fit in two, the two lines win. Those patterns are
+`hyph-de-1996-x-major`, MIT like the list.
+
+Each piece gets its share of the time the word was spoken in, so the
+highlight runs over both, and a correction made on either piece corrects
+the whole word.
 
 Patterns are per language, and the episode's language is written nowhere,
 so it is read off the clip's own words by `github.com/abadojack/whatlanggo`,
 a port of the franc and whatlang detectors. Which languages ship is decided
 by the files in `engine/hyphenation/` and nothing else: a language is found
-by the name of its file. They are the languages the speech model hears
+by the name of its file. None of them is written by hand, `make
+hyphenation` writes the folder again from the commits
+`scripts/hyphenation.sh` pins. They are the languages the speech model hears
 whose patterns may go into a paid app: Bulgarian, Croatian, Danish, Dutch,
 English, Estonian, French, German, Greek, Hungarian, Italian, Lithuanian,
 Polish, Portuguese, Russian, Slovak, Slovenian, Spanish, Swedish and
