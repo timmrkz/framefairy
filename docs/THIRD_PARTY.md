@@ -24,7 +24,7 @@ under **Help → Acknowledgements**, which is where apps keep them.
 | ffmpeg | ffmpeg, FreeType, FriBidi, HarfBuzz and libass |
 | llama-server | llama.cpp and the eight small libraries inside the server |
 | Caption fonts | Inter, Anton and Archivo Black, under the SIL Open Font Licence |
-| The app, hyphenation | the hyph-utf8 hyphenation patterns of 21 languages, each under the licence its own header offers that a paid app may ship |
+| The app, hyphenation | the hyph-utf8 hyphenation patterns of 20 languages, each under the licence its own header offers that a paid app may ship |
 | Fetched by the app from its maker | the speech model, credited as CC BY 4.0 asks, and the language models |
 
 ## How they are made, and kept complete
@@ -45,7 +45,8 @@ with `notices/gen`, from what the programs are really built from:
   BSD before the LPPL and the MPL. Its text is the top of the file, with
   the full licence from the SPDX licence list where the file only names
   it. Terms a file writes out itself, which no tool can name, count only
-  once a person has read them, kept by their SHA-256 in `notices/gen`, so
+  once two readings, one of them independent, found they allow a paid
+  app, kept by their SHA-256 in `notices/gen`, so
   a changed text is refused until it is read again. The GPL, the LGPL and
   no licence at all are refused
 - the few texts nothing on disk holds, fetched from their makers: ONNX

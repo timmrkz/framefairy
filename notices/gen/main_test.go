@@ -40,11 +40,11 @@ func TestAPatternFileIsTakenUnderALicenceTheAppMayShip(t *testing.T) {
 // the same terms with one word changed are refused until they are read
 // again.
 func TestAFilesOwnTermsCountOnceRead(t *testing.T) {
-	read := patternLicence{text: "Patterns may be freely distributed"}
+	read := patternLicence{text: "Copying and distribution of this file, with or without modification, are permitted in any medium without royalty provided the copyright notice and this notice are preserved."}
 	if got := chooseLicence([]patternLicence{read}); got == nil {
 		t.Error("terms that were read are refused")
 	}
-	changed := patternLicence{text: "Patterns may be freely distributed for free"}
+	changed := patternLicence{text: "Copying and distribution of this file are permitted."}
 	if got := chooseLicence([]patternLicence{changed}); got != nil {
 		t.Error("changed terms are taken without being read")
 	}

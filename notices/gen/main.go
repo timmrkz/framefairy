@@ -442,14 +442,14 @@ func spdxOf(name, version string, orLater bool) string {
 
 // ownTerms are licences a pattern file writes out and names nowhere, so no
 // tool can tell what they allow. Each was read once by a person and found
-// to allow the unchanged file in a paid app with its notice. They are kept
+// to allow the unchanged file in a paid app with its notice, and read a
+// second time by someone else, who came to the same answer. They are kept
 // by the SHA-256 of the text, the way cargo-deny clarifies a licence, so a
 // text that changes, or a new one, is refused until it has been read.
 var ownTerms = map[string]string{
 	"9fb5df34635858528cc5b3cc91180a42d64e849490319ae7447db01880ebd1bd": "Bulgarian: use, copy, distribute and sell, keeping the notice",
 	"8940d49ecfdc619ab795d73e033ace38bf1d01806d39d59cc209f6bc221650f7": "English: copy and distribute in any medium, keeping the notice",
 	"f8f12b3fdcd9afc6ed1353d0ab4c520f5af416b9ea72364473bfff6a9e58014e": "Croatian: deal in the files without restriction, keeping the notice",
-	"3cf8937c5bd5a9b161f9c6470037b0f8f3526a3bb344eb514889515b0cd9902a": "Finnish: may be freely distributed",
 }
 
 // chooseLicence is the licence a file is taken under: the first of those

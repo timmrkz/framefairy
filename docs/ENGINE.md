@@ -352,11 +352,13 @@ a port of the franc and whatlang detectors. Which languages ship is decided
 by the files in `engine/hyphenation/` and nothing else: a language is found
 by the name of its file. They are the languages the speech model hears
 whose patterns may go into a paid app: Bulgarian, Croatian, Danish, Dutch,
-English, Estonian, Finnish, French, German, Greek, Hungarian, Italian,
-Lithuanian, Polish, Portuguese, Russian, Slovak, Slovenian, Spanish,
-Swedish and Ukrainian. Czech is under the GPL alone, Latvian under the LGPL
-or GPL, and Romanian has no licence, so a word in those is broken where
-the line ends.
+English, Estonian, French, German, Greek, Hungarian, Italian, Lithuanian,
+Polish, Portuguese, Russian, Slovak, Slovenian, Spanish, Swedish and
+Ukrainian. Czech is under the GPL alone, Latvian under the LGPL or GPL, and
+Romanian has no licence. Finnish says only "Patterns may be freely
+distributed", which grants no more than passing the file on and may mean
+free of charge, so two readings found it unclear for a paid app. A word in
+any of those four is broken where the line ends.
 
 The notices for the patterns come from `make notices` like every other
 notice. It reads the metadata hyph-utf8 writes at the top of each file,
@@ -364,7 +366,8 @@ takes the first licence the app may ship of those the file is offered
 under, MIT before BSD before the LPPL and the MPL, and fetches the full
 text from the SPDX licence list where the file only names it. A file that
 writes out terms of its own, which no tool can recognise, counts only once
-a person has read those exact terms, kept by their SHA-256 in
+two readings, one of them independent, found those exact terms allow a
+paid app, kept by their SHA-256 in
 `notices/gen`, so a changed text is refused until it is read again. A file
 offered only under the GPL or the LGPL, or under nothing, stops the
 notices, and has to come out of `engine/hyphenation/`.

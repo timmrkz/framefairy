@@ -169,17 +169,6 @@
     ]
   },
   {
-    "name": "Hyphenation patterns, Finnish",
-    "version": "2.2",
-    "licence": "Own terms, in the text",
-    "url": "https://github.com/hyphenation/tex-hyphen",
-    "part": "The app",
-    "note": "Built into the app. They break a word too long for a caption line.",
-    "texts": [
-      "hyph-fi.txt"
-    ]
-  },
-  {
     "name": "Hyphenation patterns, French",
     "version": "V2.13 2016/05/12",
     "licence": "MIT",
