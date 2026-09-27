@@ -2,15 +2,16 @@
 
 The code lives in a GitHub repository. Claude works on it in cloud sessions
 at [claude.ai/code](https://claude.ai/code), in a virtual machine at
-Anthropic, and delivers every change as a pull request. Your Mac only pulls
-and builds. Nothing runs Claude Code locally, and no zip files change hands.
+Anthropic, and delivers every change as a pull request. The app on your Mac
+brings a change in by itself, from its Updates page. Nothing runs Claude
+Code locally, and no zip files change hands.
 
 ```
 you describe a task at claude.ai/code
   → Claude works on a branch in the cloud, runs make changed, pushes
   → a pull request opens, CI builds and tests it on Linux and macOS
   → you review and merge
-  → on your Mac: git pull && make run
+  → in the app: Updates, following main
 ```
 
 Cloud sessions are a research preview for Pro, Max, Team and Enterprise
@@ -86,7 +87,9 @@ whatever version the machine came with.
    the pull request, Claude fixes failed checks by itself.
 4. **Review** the diff in the session or on GitHub. Comment on lines to ask
    for changes. Merge when it is right.
-5. **On your Mac:**
+5. **In the app:** Updates, at the foot of the sidebar, following main,
+   brings the merged change in. A change to the command line or to `make`
+   itself is tried from the checkout instead:
    ```
    git checkout main
    git pull
@@ -95,7 +98,8 @@ whatever version the machine came with.
 6. **Feedback** from testing goes back into the same session, or into a new
    one for a new task.
 
-To try a pull request before merging:
+To try a pull request before merging, follow it on the Updates page, by
+its number. From the checkout it is:
 
 ```
 git fetch origin
