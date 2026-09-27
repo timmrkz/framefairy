@@ -58,10 +58,14 @@ type UpdateState struct {
 	Off      string          `json:"off"`
 	Channels []UpdateChannel `json:"channels"`
 	// Picked is the channel picked in the app, and Follows the one followed
-	// now, which is main once a picked pull request has gone.
+	// now: the one picked, or with none picked the one this build came from.
 	Picked  string `json:"picked"`
 	Follows string `json:"follows"`
-	// Phase is "", checking, current, downloading, ready or failed.
+	// Gone is the channel followed when it is not on the list any more, a
+	// pull request merged or closed. Nothing is downloaded for it, and
+	// nothing else is either until another channel is picked.
+	Gone string `json:"gone"`
+	// Phase is "", checking, current, gone, downloading, ready or failed.
 	Phase      string `json:"phase"`
 	Next       string `json:"next"`
 	NextName   string `json:"nextName"`
@@ -100,8 +104,15 @@ type updating struct {
 	run sync.Mutex
 	// picking keeps two picks from writing updates.json at once.
 	picking sync.Mutex
-	emit    func(UpdateState)
-	busy    func() bool
+	// round counts picks. A check belongs to the pick it started under, and
+	// once another channel is picked, whatever it goes on to find is thrown
+	// away rather than shown: a download of the channel before, finishing
+	// after the pick, would otherwise have the last word. stop cancels the
+	// check in hand, so a download nobody wants any more ends at once.
+	round int
+	stop  context.CancelFunc
+	emit  func(UpdateState)
+	busy  func() bool
 	// load and save keep the picked channel, in updates.json beside the
 	// settings. Not in the settings themselves: the settings screen saves
 	// what it read, and would put back a channel picked since.
@@ -217,10 +228,11 @@ func (c *updating) seen(l updates.List) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Channels = chans
+	c.state.Follows, c.state.Gone = "", ""
 	if b, ok := l.Follow(c.state.Picked, buildChannel); ok {
 		c.state.Follows = b.Channel
 	} else {
-		c.state.Follows = ""
+		c.state.Gone = updates.Followed(c.state.Picked, buildChannel)
 	}
 }
 
@@ -228,6 +240,12 @@ func (c *updating) seen(l updates.List) {
 // few times a second, which is as often as a fill can be seen to move.
 func (c *updating) progress(written, total int64) {
 	c.mu.Lock()
+	// A download that was let go of goes on reporting for a moment until
+	// it hears, and what it says is no longer anything on screen.
+	if c.state.Phase != "downloading" {
+		c.mu.Unlock()
+		return
+	}
 	c.state.Written, c.state.Total = written, total
 	due := time.Since(c.lastSent) > 200*time.Millisecond || written == total
 	c.mu.Unlock()
@@ -258,7 +276,9 @@ func (c *updating) refreshList() {
 	c.change(func(*UpdateState) {})
 }
 
-// Follow picks a channel and looks at once.
+// Follow picks a channel and looks at once. A download of the channel
+// before is stopped and what it found forgotten, and the state shown is
+// the new channel's from this moment: a click shows at once.
 func (c *updating) Follow(channel string) error {
 	if channel != "" && !updates.ValidChannel(channel) {
 		return fmt.Errorf("%q is not a channel", channel)
@@ -271,10 +291,43 @@ func (c *updating) Follow(channel string) error {
 		c.picking.Unlock()
 		return err
 	}
-	c.change(func(s *UpdateState) { s.Picked = channel })
+	c.mu.Lock()
+	c.round++
+	if c.stop != nil {
+		c.stop()
+	}
+	c.mu.Unlock()
+	c.change(func(s *UpdateState) {
+		s.Picked = channel
+		s.Phase, s.Problem = "checking", ""
+		s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
+		s.Follows, s.Gone = "", ""
+		for _, ch := range s.Channels {
+			if ch.ID == updates.Followed(channel, buildChannel) {
+				s.Follows = ch.ID
+			}
+		}
+	})
 	c.picking.Unlock()
 	go c.check()
 	return nil
+}
+
+// changeIn is change for a check, which only counts while no other channel
+// has been picked since it began.
+func (c *updating) changeIn(round int, f func(*UpdateState)) {
+	c.mu.Lock()
+	if c.round != round {
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+	c.change(func(s *UpdateState) {
+		// Asked again under the lock, since a pick may have landed between.
+		if c.round == round {
+			f(s)
+		}
+	})
 }
 
 // check looks for the followed channel's build, and downloads it when it
@@ -304,18 +357,34 @@ func (c *updating) check() {
 }
 
 func (c *updating) checkOnce() {
-	c.change(func(s *UpdateState) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	c.mu.Lock()
+	round := c.round
+	c.stop = cancel
+	c.mu.Unlock()
+	defer func() {
+		cancel()
+		c.mu.Lock()
+		if c.round == round {
+			c.stop = nil
+		}
+		c.mu.Unlock()
+	}()
+	mine := func(f func(*UpdateState)) { c.changeIn(round, f) }
+
+	mine(func(s *UpdateState) {
 		if s.Phase != "ready" {
 			s.Phase = "checking"
 		}
 		s.Problem = ""
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
 	rel, err := c.u.Check(ctx)
 	if err != nil {
+		if ctx.Err() == context.Canceled {
+			return
+		}
 		log.Printf("update check: %v", err)
-		c.change(func(s *UpdateState) {
+		mine(func(s *UpdateState) {
 			if s.Phase != "ready" {
 				s.Phase = "failed"
 			}
@@ -325,35 +394,43 @@ func (c *updating) checkOnce() {
 		return
 	}
 	if rel == nil {
-		c.change(func(s *UpdateState) {
+		mine(func(s *UpdateState) {
 			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
+			if s.Gone != "" {
+				s.Phase = "gone"
+			}
 			s.Checked = time.Now()
 		})
 		return
 	}
 	c.mu.Lock()
-	have := c.state.Phase == "ready" && c.state.Next == rel.Version
+	have := c.round == round && c.state.Phase == "ready" && c.state.Next == rel.Version
 	c.mu.Unlock()
 	if have {
-		c.change(func(s *UpdateState) { s.Checked = time.Now() })
+		mine(func(s *UpdateState) { s.Checked = time.Now() })
 		return
 	}
 	commit, _ := rel.Metadata["commit"].(string)
-	c.change(func(s *UpdateState) {
+	mine(func(s *UpdateState) {
 		s.Phase, s.Next, s.NextName, s.NextCommit = "downloading", rel.Version, rel.Name, commit
 		s.Written, s.Total = 0, rel.Artifact.Size
 		s.Checked = time.Now()
 	})
 	if err := c.u.DownloadAndInstall(ctx); err != nil {
+		// Let go of because another channel was picked: nothing went
+		// wrong, and the next check is already on its way.
+		if ctx.Err() == context.Canceled {
+			return
+		}
 		log.Printf("update download: %v", err)
-		c.change(func(s *UpdateState) {
+		mine(func(s *UpdateState) {
 			s.Phase = "failed"
 			s.Problem = "The download did not arrive whole. " + plainUpdateError(err)
 		})
 		return
 	}
 	log.Printf("update ready: %s, %s", rel.Version, c.u.DownloadedPath())
-	c.change(func(s *UpdateState) { s.Phase = "ready" })
+	mine(func(s *UpdateState) { s.Phase = "ready" })
 }
 
 // Restart quits into the build that is ready. Never while work runs: the

@@ -69,6 +69,15 @@
     <path d="M5 9.7 8 12.6l3-2.9" />
   <!-- Done. Beside a speech model that is on the machine, and anywhere
        else something has arrived. -->
+  {:else if name === "chevron"}
+    <!-- A disclosure, pointing at what it opens: right while closed,
+         turned down once open. -->
+    <path d="M6 3.5 10.5 8 6 12.5" />
+  {:else if name === "warn"}
+    <!-- Something that stops a thing from working, the triangle with the
+         exclamation mark the Mac uses for the same. -->
+    <path d="M8 2.3 14.2 13.2H1.8Z" />
+    <path d="M8 6.4v3.1M8 11.3v.2" />
   {:else if name === "check"}
     <path d="M3.2 8.4 6.5 11.7 12.8 4.9" />
   <!-- Updates: an arrow down in a circle, the mark macOS gives updates in

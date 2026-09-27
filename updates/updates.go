@@ -175,20 +175,27 @@ func (l List) Find(channel string) (Build, bool) {
 	return Build{}, false
 }
 
-// Follow decides which channel a build follows: the one picked, while the
-// list still has it, and main once it does not, which is what happens to a
-// pull request when it is merged or closed. Nothing picked follows the
-// channel the running build came from.
+// Follow is the build of the channel followed: the one picked, or with
+// none picked the one the running build came from. A channel that is not
+// on the list any more, a pull request merged or closed, is followed by
+// nothing until another is picked. It never falls back to main by itself:
+// a build downloading that nobody picked, the moment the pull request they
+// were following was merged, is a surprise, and choosing what to follow
+// next is the person's.
 func (l List) Follow(picked, own string) (Build, bool) {
-	for _, c := range []string{picked, own, "main"} {
-		if c == "" {
-			continue
-		}
-		if b, ok := l.Find(c); ok {
-			return b, true
-		}
+	wanted := Followed(picked, own)
+	if wanted == "" {
+		return Build{}, false
 	}
-	return Build{}, false
+	return l.Find(wanted)
+}
+
+// Followed is the channel followed, whether or not it is still there.
+func Followed(picked, own string) string {
+	if picked != "" {
+		return picked
+	}
+	return own
 }
 
 // Digest is the SHA-256 of what r reads, and how many bytes that was.

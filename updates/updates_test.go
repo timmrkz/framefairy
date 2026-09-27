@@ -118,8 +118,9 @@ func TestParseRefusesWhatIsNotAList(t *testing.T) {
 }
 
 // A pull request that was merged goes from the list, and a build that
-// followed it follows main.
-func TestFollowFallsBackToMain(t *testing.T) {
+// followed it follows nothing until another channel is picked. It never
+// falls back to main by itself.
+func TestFollowNeverFallsBackToMain(t *testing.T) {
 	key := testKey(t)
 	zipped := appZip(t, "x")
 	list := List{Channels: []Build{
@@ -128,19 +129,20 @@ func TestFollowFallsBackToMain(t *testing.T) {
 	}}
 	for _, c := range []struct{ picked, own, want string }{
 		{"pr-20", "", "pr-20"},
-		{"pr-18", "", "main"},
+		{"pr-18", "", ""},
+		{"pr-18", "main", ""},
 		{"", "pr-20", "pr-20"},
-		{"", "pr-18", "main"},
-		{"", "", "main"},
+		{"", "pr-18", ""},
+		{"", "", ""},
 		{"main", "pr-20", "main"},
 	} {
 		b, ok := list.Follow(c.picked, c.own)
-		if !ok || b.Channel != c.want {
+		if ok != (c.want != "") || b.Channel != c.want {
 			t.Errorf("picked %q, own %q: followed %q, want %q", c.picked, c.own, b.Channel, c.want)
 		}
 	}
-	if _, ok := (List{}).Follow("pr-20", "main"); ok {
-		t.Error("an empty list gave a channel")
+	if got := Followed("", "pr-18"); got != "pr-18" {
+		t.Errorf("followed %q", got)
 	}
 }
 
@@ -312,7 +314,7 @@ func TestABuildSignedByAnybodyElseIsRefused(t *testing.T) {
 	s := &served{zip: appZip(t, "not ours")}
 	srv := serve(t, s)
 	s.list = listJSON(t, build(t, theirs, "main", "9.9.9", srv.URL+"/dev/app.zip", s.zip))
-	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client()}
+	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client(), Own: "main"}
 	u := newUpdater(t, src, "0.3.0-main.4", ours)
 	if rel, err := u.Check(context.Background()); err != nil || rel == nil {
 		t.Fatalf("check: %v, %v", rel, err)
@@ -333,7 +335,7 @@ func TestASwappedZipIsRefused(t *testing.T) {
 	signed := appZip(t, "signed")
 	s.list = listJSON(t, build(t, key, "main", "9.9.9", srv.URL+"/dev/app.zip", signed))
 	s.zip = appZip(t, "swapped")
-	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client()}
+	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client(), Own: "main"}
 	u := newUpdater(t, src, "0.3.0-main.4", key)
 	if _, err := u.Check(context.Background()); err != nil {
 		t.Fatal(err)
@@ -349,7 +351,7 @@ func TestADownloadLargerThanPromisedStops(t *testing.T) {
 	s := &served{zip: appZip(t, "x"), extra: 1 << 20}
 	srv := serve(t, s)
 	s.list = listJSON(t, build(t, key, "main", "9.9.9", srv.URL+"/dev/app.zip", s.zip))
-	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client()}
+	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client(), Own: "main"}
 	u := newUpdater(t, src, "0.3.0-main.4", key)
 	if _, err := u.Check(context.Background()); err != nil {
 		t.Fatal(err)

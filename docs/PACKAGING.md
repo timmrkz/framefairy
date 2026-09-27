@@ -42,9 +42,11 @@ is not an installer, and it is not most machines.
 So finding clips is a choice the user makes, once, and the app asks it
 plainly:
 
-- **An Anthropic API key.** Works on any machine, costs per episode, nothing
-  to install. This is the path that gets somebody to their first short in
-  minutes.
+- **An API key for a model in the cloud**, Anthropic's or OpenAI's.
+  Works on any machine, costs per episode, nothing to install. This is the
+  path that gets somebody to their first short in minutes. More than one
+  company, because nobody should need an account with a particular one to
+  use the app.
 - **A local model.** Free per run, private, needs the machine for it. The
   app walks them through getting it: four models from three houses, each
   saying what it costs to fetch and what it costs in memory to run, with

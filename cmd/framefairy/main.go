@@ -142,7 +142,7 @@ func specs() []flagSpec {
 				return nil
 			}},
 		{[]string{"--planner"}, kString, "PLANNER", "local plans on this machine with llama.cpp, api uses " +
-			"the Claude API (default local)",
+			"a model in the cloud, Anthropic's or OpenAI's, see --model (default local)",
 			func(o *engine.Options, v string) error { o.Planner = v; return nil }},
 		{[]string{"--llm-model"}, kString, "FILE", "the GGUF model file for local planning (default: " +
 			"the only .gguf file in ~/.framefairy/models). A bare file name is looked for there too",
@@ -152,7 +152,7 @@ func specs() []flagSpec {
 		{[]string{"--llm-url"}, kString, "URL", "use an already running llama-server, for instance " +
 			"http://127.0.0.1:8080, instead of starting one",
 			func(o *engine.Options, v string) error { o.LLMURL = v; return nil }},
-		{[]string{"--model"}, kString, "MODEL", "which Claude model plans with --planner api (default " + d.Model + ")",
+		{[]string{"--model"}, kString, "MODEL", "which model in the cloud plans with --planner api. A claude- model is Anthropic's, a gpt- model OpenAI's, each with its own key (default " + d.Model + ")",
 			func(o *engine.Options, v string) error { o.Model = v; return nil }},
 		{[]string{"--max-tokens"}, kInt, "MAX_TOKENS", "ceiling on the model's reply length. This is " +
 			"a limit, not a charge. Current models think before they answer and those tokens come " +

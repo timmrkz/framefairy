@@ -63,6 +63,7 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 
 func main() {
 	widenPath()
+	engine.PreferSavedKeys()
 	st := openStore()
 
 	var app *application.App
@@ -401,11 +402,13 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	out = append(out, speech)
 
 	if opts.Planner == "api" {
-		key := Check{Name: "Claude API key"}
-		if _, err := engine.ReadAPIKey(ctx); err != nil {
+		// The key of whichever company the model in the settings belongs to.
+		p := engine.ProviderFor(opts.Model)
+		key := Check{Name: p.Title + " API key"}
+		if err := engine.CheckAPIKey(p); err != nil {
 			key.Detail = err.Error()
 		} else {
-			key.OK, key.Detail = true, "found"
+			key.OK, key.Detail = true, "found in the "+engine.KeySource(p)
 		}
 		return append(out, key)
 	}
@@ -434,12 +437,17 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 			model = found[0]
 		default:
 			lm.Detail = fmt.Sprintf("%d are installed and none is in use. Choose the one to find "+
-				"clips with under Finding clips, with Use.", len(found))
+				"clips with under Finding clips.", len(found))
 		}
 	}
 	if model != "" {
 		lm.OK = fileExists(model)
 		lm.Detail = model
+		// Chosen and not fetched yet, which is a step still to take rather
+		// than a file gone missing.
+		if known, ok := engine.LanguageModelByName(filepath.Base(model)); !lm.OK && ok {
+			lm.Detail = known.Title + " is not downloaded yet."
+		}
 	}
 	return append(out, lm)
 }
@@ -473,6 +481,20 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 		return engine.EpisodeStatus{}
 	}
 	return engine.Status(path, s.store.Settings().ASRModel)
+}
+
+// ChooseFolder asks for a folder, the way a Mac app asks where to save
+// things, and says which one was chosen, or nothing when the person
+// cancelled. It changes nothing: the settings keep the answer when they
+// are saved.
+func (s *FrameFairy) ChooseFolder(title string) (string, error) {
+	return s.app.Dialog.OpenFile().
+		SetTitle(title).
+		SetButtonText("Choose").
+		CanChooseFiles(false).
+		CanChooseDirectories(true).
+		CanCreateDirectories(true).
+		PromptForSingleSelection()
 }
 
 // AddEpisodes asks for video files and adds them to the library.

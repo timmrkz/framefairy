@@ -39,13 +39,14 @@ starts. It is a job like any other, in the lane of hearing, so it shows in
 **Activity** too, and a search that comes to hearing waits for the model
 rather than failing on it.
 
-**Finding clips** is the question. The Claude API works on any machine and
+**Finding clips** is the question. A model in the cloud, Anthropic's or
+OpenAI's with a key of your own, works on any machine and
 costs a few cents an episode. A model on this machine is free to run and
 needs the memory to hold it. Either way only the words are read: the video
 and the audio never leave the machine. The answer is saved the moment it is
 given and can be changed later in the settings.
 
-Choosing the API opens a field for the key, which goes in the macOS keychain
+Choosing the cloud opens a choice of model, Claude Sonnet 5 or GPT-6 Sol, and a field for that company's key, which goes in the macOS keychain
 and nowhere else, never in the settings file.
 
 Choosing **On this machine** shows the models that can be installed, each
@@ -647,8 +648,12 @@ place.
       itself beats the clock: the transcript it has read, what it has
       thought against its budget, the clips it has written. A local model
       this machine has never timed is measured against a search timed on
-      an M2 Max until its own first search has finished. The API has no
-      such stand-in, so its first search shows the beam without a fill.
+      an M2 Max until its own first search has finished. A model in the
+      cloud the app knows by name is measured against a first guess the
+      same way, and one written in by hand shows the beam without a fill
+      until it has been timed. Anthropic's models that think by
+      themselves are asked for a summary of their thought as it goes, so
+      the fill moves on while they think rather than waiting in silence.
       The engine keeps the timings, see [ENGINE.md](ENGINE.md).
     - **Clips arrive one at a time.** The engine writes each clip to the
       plan the moment it is framed, while the model is still writing the
@@ -1306,78 +1311,209 @@ froze the app under the spinning wheel for five seconds.
 
 ### Settings
 
-**This machine** tests what the engine needs and says what is missing.
-**Video decoding** says which of the system's own video decoders this
-ffmpeg can use, VideoToolbox on a Mac, or that decoding is done on the
-processor. Which one a file really went through is in the log of its
-search.
-**Speech** is the same list of models the first run shows, so a model can be
-installed or added later without going through the setup again, and it
-installs the same way, as a job with the same fill. **Around In and Out**
-under it is how many seconds In and Out transcribe on either side of the
-clip they make where nothing is transcribed yet, from 10 to 300 and 30
-unless it is changed. More gives more room to drag the edges out, less
-makes the clip come sooner. Its info mark says so. **Finding clips** holds
-the choice between the API and a local model. With the API chosen, the field
-for the key: it goes in the keychain the moment **Save key** is pressed, not
-with the rest of the settings, because it never lands in the settings file.
-An app opened from Finder has no shell environment, so this is the only way
-to give it a key. With **On this machine** chosen, the same list of language
-models the first run shows, judged against the same memory.
+The settings are made the way the **Updates** page is: a column of cards,
+each card one subject, each row a mark, what it is in a few words with a
+line under them, and at its end the one thing to do about it. The card and
+its rows are `.card` in `app.css`, shared by both pages. Everything saves
+as it is changed, the way System Settings does on the Mac, so there is no
+**Save** button and nothing to forget to press. A field saves a moment
+after the typing stops.
 
-In the settings a model that is there can go again, to give its room back.
-Its trash can is always there, the last button of the row, and every row of
-the list keeps its place, so the buttons stand in one column whether a model
-is there or not. It asks first in the box over the app, because fetching it
-again is gigabytes: **Cancel**, where the keyboard starts, and **Remove**.
-While a model is being installed the trash cans wait, dimmed.
-**In use** and **Installed** keep the frame of the button they stand in for,
-in green, so a row reads the same whatever its model is. Removing the speech model means
-the app asks for one again the next time it starts, because nothing can be
-transcribed without it. A model is not removed while it is being installed
-or while the work that reads it runs, and the refusal says which.
+**What is in the way is said where it is put right**, not in a list of
+its own. A missing API key is said on the row where the key goes, a
+missing llama-server under the choice of model, a missing ffmpeg under
+**Shorts**, a missing speech model on its row, which offers **Install**.
+A problem the page has no row for, which none of today's checks is, is
+said at the top so nothing goes unsaid. The first version had one card at
+the top listing every problem, and a person had to go from the top of the
+page to the bottom to find where to fix what it said.
 
-**Several language models, one in use.** Trying a second model leaves two
-on the machine, and the engine will not guess which one was meant, so a
-search would fail until one is named. The one in use wears the colour of a
-chosen row and says **In use**, and every other one that is there offers
-**Use**, which names it in the settings at once and in the **Model file**
-field below, so the next **Save** keeps it. Removing the model in use lets
-go of it in the settings too.
+**Finding clips is one choice**, **Find clips with**, in one list: under
+**In the cloud** a model from each company the app knows, Claude Sonnet 5
+from Anthropic and GPT-6 Sol from OpenAI, with the company beside each,
+and under **On this machine** every model that runs here, the way apps that
+offer models list them by where they run. The rows that depend on the
+choice are under it in the same card, the way a pop-up in the Mac's own
+settings changes the rows beneath it: the key of the company whose model it
+is, and with a local model what it needs and, when it is missing,
+llama-server. The first version had a card of two ways and a second card of
+models under it, one deciding the other, and the two read as things that
+had nothing to do with each other. It also had room for one company only.
+Nobody should need an account with a particular company to use the app,
+so every company is a row of the same list, and a third is an entry in
+`engine/provider.go` and nothing more.
 
-A second model arriving never takes the first one's place by itself. When
+**Each company's key is its own.** The key row names the company of the
+model chosen, **OpenAI API key** or **Anthropic API key**, and where to get
+one. Keys are kept apart in the keychain, so trying one company never costs
+the other's key, and going back finds it still there. Without its key the
+choice wears the warning like a model not downloaded: the triangle, the
+frame round the list and the line under the key's name. A model written in
+by hand under **Advanced**, **Model in the cloud**, belongs to the company
+its name says, `claude-` or `gpt-`, and is in the list too, so the list
+never names nothing.
+
+The decisions behind the row, which company a model belongs to, what the
+list offers, and what the line says and how it stands in every state, are
+in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
+somebody can click their way into, run by `make interface` and CI.
+
+**Around In and Out**, in a card under the speech model, is how many
+seconds In and Out transcribe on either side of the clip they make where
+nothing is transcribed yet, from 10 to 300 and 30 unless it is changed.
+More gives more room to drag the edges out, less makes the clip come
+sooner. Its info mark says so.
+
+The line under the choice says what it costs: a few cents an episode and
+which company, or who made the model, the memory it needs and whether it fits.
+Beside each model in the list is what it would cost to fetch, or that it is
+the best here, or that it is too big for this machine. The list holds any
+number of models in the room of one control.
+
+**Choosing a model chooses it**, whether it is on this machine or not.
+The settings name it, and the list ticks it. One that is not here yet
+cannot find clips until it is downloaded, and everything about the row
+says so in the colour of a warning: the triangle with the exclamation mark
+before it, the frame round the list, and the line under it, **Not
+downloaded yet** and its size. **Download** beside the list fetches it: a
+download of gigabytes starts when it is pressed, never as a side effect of
+looking through a list. While it runs the line says how far it has come and
+how long is left, **Cancel** carries the beam and the fill, and the list
+waits. When it is there the row turns to the check, with nothing more to
+do, because the model was already the one chosen. A download cancelled
+leaves the choice as it was, and **Download** carries on from what arrived.
+Keeping the model before it in use until the download was done was tried
+first, and the list then ticked one model while the line said the clips
+came from another.
+
+**The line under a name is one line.** It is short enough to fit beside
+the list and a button, and anything longer is cut short with the whole of
+it in the line's title, because a line that wraps when a button arrives
+beside it moves the whole card. What the choice costs, who made a model
+and how much it asks of the machine, is on the line. Everything else is
+for the info mark. After a model is chosen the page reads the models again,
+because the list says which one is in use from them: reading only the
+settings once left the list on the model before, so a choice looked as if
+it had done nothing.
+
+Its info mark, at the right end of the heading, says what
+each way costs and, with a local model chosen, how much memory this
+machine has and what that decides. The key goes in the keychain the
+moment **Save key** is pressed, not with the rest of the settings, because
+it never lands in the settings file. An app opened from Finder has no shell
+environment, so this is the only way to give it a key. Before it is kept,
+the key is shown to its company, which asks for the list of models and
+costs nothing, and while that runs the button says Checking. A key the
+company refuses is said in the key's own row, in red, and not kept, so a
+wrong key is found where it was typed rather than when the first search
+fails. A company that cannot be reached says nothing about the key, so it
+is kept. A refusal is one short line: **Anthropic did not accept this
+key**, or, for something else copied from the same page, like the key's ID,
+**Not an Anthropic key. Those start with sk-ant-**. The field takes it the
+way the Mac's password fields take a wrong password: it shakes, keeps what
+was typed, selected, with the keyboard in it, so the next paste replaces
+it, and Save waits until the field holds something else, since the same
+text would be refused again. Without a key the row says **None yet. Get one
+at platform.claude.com**, or platform.openai.com, and the address is a link
+that opens the page where keys are made in the browser. The app only ever
+opens the two addresses written in `engine/provider.go`. A saved key is shown in
+short, the way the companies list keys, `sk-ant-api03...MwAA`, its first
+twelve characters and its last four. The short form is kept as the
+keychain item's comment, which macOS lets the app read without the key,
+so showing it never asks for anything. The field is narrow, since what is
+typed shows as dots. The trash can beside it removes the saved key, and
+asks first, because the app keeps no other copy. Without a saved key it
+keeps its room, so the field does not move. A key in `ANTHROPIC_API_KEY`
+or `OPENAI_API_KEY`, which an app started from a terminal has, is shown in
+short too, with where it comes from in the title, until a key is saved,
+and a saved key is the one used. It cannot be removed here.
+
+A key refused in the middle of a search says so in words on the search's
+row, and says where the key came from: the saved key, to be replaced in
+the settings, or the variable it was read from. The company's own answer
+is kept in the episode's `logs` folder, as every refused request is.
+
+**The settings are not left while clips cannot be found.** A model
+chosen and not downloaded, a model in the cloud without its key, nothing
+chosen, or llama-server missing: going on from any of them is going on to
+an app whose every search fails, far from the one place it can be put
+right. So a move to another page, from the sidebar or the menu, is refused,
+and the card comes into view and shakes, the way the Mac's own password
+field does when it will not let somebody in, with the keyboard on the
+list, where choosing a model that is here or the one with a key puts it
+right. A download on its way holds the app too, because a model is no use
+until the last of it has arrived. Only a page still reading what it has
+to show does not. The
+settings hold the app through `nav.hold` in `lib/state.svelte.ts`, which
+every move between pages asks first, and when they hold it is decided in
+`lib/finding.ts`, with its tests.
+
+**Downloaded models** is the last row of the card, folded, with how many
+there are and the room they take. It is only about that room: opened, it
+lists them with their size on disk and a trash can each, quiet until the
+pointer reaches it. Removing one asks first in the box over the app,
+because fetching it again is gigabytes: **Cancel**, where the keyboard
+starts, and **Remove**. While a model is being installed the trash cans
+wait, dimmed. A model is not removed while it is being installed or while
+the work that reads it runs, and the refusal says which. Removing the model
+in use lets go of it in the settings too, and the page reads the settings
+again rather than saving over that.
+
+Two other ways of choosing a model were tried before this one and left: a
+card of rows with a round mark each, which took a row per model and grew
+with every model added, and a row of tiles by size, which does not hold
+four models and put names like Largest on models that are only larger than
+each other.
+
+A second model arriving by itself never takes the first one's place. When
 the settings name none, the one model on the machine is in use by being the
-only one, and a download that finishes names it in the settings, so what was
-in use stays in use until **Use** is pressed on the new one. A machine that
-already has two and none named, from before this was so, says so at the top
-of the settings in the app's own words, and **Use** settles it.
+only one, and a download that finishes names it in the settings. A machine
+that already has two and none named, from before this was so, says so
+under the choice, and choosing one settles it.
 
-The rest is paths to ffmpeg, llama-server and the models, and the output
-folder. **Colours** holds **the app**, what the app picks things out in, the
-chosen clip, the window on the range picker, a button that matters. The
-colours burned into a short, the words, their box and the pill behind the
-word being spoken, are set together in the captions column of the
-workspace, where the video preview and the clip timeline show them as they
-are picked. A taste in one is not a taste in the other. The app and the pill
-start out the same, `#942192`, so an app nobody has touched looks of a piece
-with what it makes. A highlight colour chosen here before is still the one a
-search gets until its own is picked in the captions column.
-The app's colour is the only one the interface has: the lighter shade under
-the pointer and the wash behind a chosen clip are mixed from it, so changing
-it moves all three, and it moves as the colour is picked rather than when it
-is saved. Every setting in a column ends in the same place, the face of the
-captions along with the numbers, and the mark that says a field opens a
-list stands where a unit stands rather than where the system would draw
-it. **Training data** says where the records of
-every episode are, `~/.framefairy/training` unless another folder is named, how
-many there are, and has the one trash can that throws them away, which asks
-first. What belongs to the episode being worked on is not here: the caption
-face, the size and the height, and how many clips a search looks for and how
-long they may be, all sit in the workspace next to the clip, and what is set
-there is kept for the next episode. Empty paths use the same defaults as the
-command line. **Check again** tests the
-setup and says what is missing, and lists the caption faces the app carries
-inside itself.
+**Speech** is one model today, so it is a row rather than a choice: a
+check before it once it is there, what it covers and the room it takes.
+Removing the speech model means the app asks for one again the next time it
+starts, because nothing can be transcribed without it.
+
+**Shorts** says where rendered shorts go, next to each episode unless a
+folder is chosen with **Choose…**, which
+opens the system's own folder dialog. **Next to episode** goes back to the
+default.
+
+**Appearance** holds the **accent colour**, what the app picks things out
+in: the chosen clip, the window on the range picker, a button that matters.
+It is the Mac's own row of round colours, with the app's purple, `#942192`,
+first, and a colour wheel at the end for any other. The app's colour is the
+only one the interface has: the lighter shade under the pointer and the
+wash behind a chosen clip are mixed from it, so changing it moves all
+three, and it moves as the colour is picked. The colours burned into a
+short, the words, their box and the pill behind the word being spoken, are
+set together in the captions column of the workspace, where the video
+preview and the clip timeline show them as they are picked. A taste in one
+is not a taste in the other. A highlight colour chosen here before is still
+the one a search gets until its own is picked in the captions column.
+
+**Training data** says how many records there are and has the one trash
+can that throws them away, which asks first.
+
+**Advanced** is closed until it is opened, like a disclosure in Finder, and
+holds the machinery: the paths to the language model file and llama-server,
+or the Claude model, the speech model folder, ffmpeg and the training data
+folder, each a name on the left and a field on the right. Empty paths use
+the same defaults as the command line. Under the paths is everything the
+check looked at, found or not, with the check's own words and **Check
+again**, though the check runs again by itself whenever a setting changes:
+which ffmpeg,
+which of the system's own video decoders it can use, VideoToolbox on a Mac
+or decoding on the processor, the caption faces the app carries inside
+itself, and which model files it found. Which decoder a file really went
+through is in the log of its search.
+
+What belongs to the episode being worked on is not here: the caption face,
+the size and the height, and how many clips a search looks for and how
+long they may be, all sit in the workspace next to the clip, and what is
+set there is kept for the next episode.
 
 ### Acknowledgements
 
@@ -1398,10 +1534,28 @@ job opens to its log in **Activity**. The list is built into the app from
   language model is one `.gguf` file. Neither is part of the app, so the
   app fetches them: the speech model by itself on the first run, a language
   model when somebody picks one. See [PACKAGING.md](PACKAGING.md).
-- **The Anthropic API key:** in the macOS keychain, under `framefairy` and
-  `anthropic-api-key`. Never in a file. `ANTHROPIC_API_KEY` in the
-  environment is read first where there is one, which is how the command
-  line gets it.
+- **The API keys:** in the macOS keychain, one item for each company,
+  **Frame Fairy: Anthropic API key** and **Frame Fairy: OpenAI API key**,
+  under the account `framefairy`. Never in a file. They are kept through
+  the Security framework, so a key never passes through a command line,
+  where any other program could see it while the command ran, and the
+  item's access list names Frame Fairy: another program asking for the key
+  gets a box from macOS first. Whether a key is there is asked without
+  reading it, so opening the settings never asks for anything, and saving
+  one never asks either, because an app may always write an item of its
+  own. Until the app is signed with a Developer ID, every new build is a
+  new app to the keychain, so a key saved by one build and read by a later
+  one asks once whether the later one may use it, which **Always Allow**
+  answers for that build. A key saved and used by the same build never
+  asks. The first keys were kept with the `security` command, under
+  `anthropic-api-key` and `openai-api-key`, where anything could read them.
+  A key found there is moved into the app's own item the first time it is
+  used, and the old item removed. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+  in the environment stands in when no key is saved. The command line
+  reads the environment first, which is how it is given a key, and the app
+  reads the saved key first: an app started from a terminal has the
+  terminal's environment, and an old key in it would otherwise win over
+  the one just saved, without a word.
 - **Settings and the episode list:** plain JSON files in
   `~/Library/Application Support/Frame Fairy` on macOS, `%AppData%\Frame Fairy` on
   Windows and `~/.config/Frame Fairy` on Linux.

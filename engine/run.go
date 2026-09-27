@@ -340,7 +340,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			}
 		}
 		if !opts.TranscribeOnly && opts.Planner == "api" {
-			if _, err := ReadAPIKey(ctx); err != nil {
+			if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
 				saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
 				if len(saved) == 0 || opts.Replan {
 					log.Error("%s", err)
