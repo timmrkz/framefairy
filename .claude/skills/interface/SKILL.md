@@ -44,12 +44,16 @@ not the workspace: the first run, the settings, the empty window.
 | mode | what it pretends |
 | --- | --- |
 | *(none)* | a finished episode with clips and two searched stretches |
-| `?busy` | a search running, with progress |
+| `?busy` | a search finding, with progress |
 | `?unknown` | the same, with progress it cannot put a number on |
-| `?transcribing` | a transcription part way, reporting ahead of the saved transcript |
-| `?growing` | a transcript that really grows, job events every 900 ms |
-| `?paused` | clips found, the episode read part way, nothing reading the rest |
-| `?found` | a search that runs and really finishes, clips and all |
+| `?transcribing` | a search hearing, reporting ahead of the saved transcript, and never getting further |
+| `?growing` | an episode just added: its first search, started by the Go side, hears from 10 minutes to the end of its window and then finds, with job events every 250 ms |
+| `?lagging` | with `?growing`, the saved transcript trails what is heard, saved every 8 s of work the way the engine saves it |
+| `?hear=100` | a search hears 100 seconds of audio a second instead of 600, so the hearing lasts long enough to look at |
+| `?paused` | clips found, the episode read part way, nothing reading the rest. `?short` reads it only to 2500 |
+| `?found` | New starts a search that really finishes, clips and all |
+| `?interrupted` | a search whose record says it was cut off while it found. `?waiting` cut off while it heard, at 15 minutes. Cancel on any running search leaves it stopped, the way the Go side does |
+| `?failed` | a search whose record says it failed, with its reason |
 | `?rendering` | a render running on the first clip, with progress |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
@@ -58,6 +62,12 @@ Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
 the first search never starting was invisible until `?growing` sent job
 events the way the Go side does.
+
+Every search in the stub is one fake search that goes through the steps
+the Go side goes through, from the same kind of record: hearing, then
+finding, its clips landing one at a time. What the interface asked for is
+on `window.__searches`. A mode that needs a search in another state
+starts it there, rather than making up a job of its own.
 
 **The job list is only ever brought up to date by events.** It is read once
 at startup and changed after that by nothing but `onJob`. So a mode that
@@ -571,6 +581,44 @@ clicking and then pressing a key, then list what matches `:focus-visible`.
 clip had three copies of a 2 pixel border with three different corners.
 They are `.frame` in `app.css` now. Before styling something that is
 "like" another thing, find the other thing and share its rule.
+
+## A click is answered in the frame it lands in
+
+Tim felt this twice in one afternoon, and both times every test was green.
+Continue left the row the Stopped note stood in empty for six frames
+before it said Transcribing. Cancel made its button say Cancelling at once,
+while the row beside it went on saying Transcribing for the second the
+search took to save what it heard. Nothing was wrong in the end state.
+Everything was wrong in between, and the in between is what a hand feels.
+
+The rule: **everything a click changes shows the change in the same
+frame**, the control and every place that shows the same work, the row,
+the fill, the range picker. Say what is under way, Stopping, Starting, the
+step it goes into, and stand still where it got to. The Go side's answer
+replaces that when it comes. Never wait for a job event or a timer's tick
+to show what the click already knows. The only thing that may wait is a
+change the engine makes by itself, a step that lasted a moment, so it does
+not flash.
+
+How to catch it, because a screenshot never will: click inside
+`page.evaluate` and read the thing on every `requestAnimationFrame` for a
+second, then print the runs of frames that looked the same.
+
+```js
+const frames = await page.evaluate(() => new Promise((done) => {
+  const seen = [], row = () => document.querySelector(".ghost.next")?.textContent.trim() ?? "(none)";
+  document.querySelector("button.new").click();
+  let n = 0;
+  const tick = () => { seen.push(row()); if (++n < 60) requestAnimationFrame(tick); else done(seen); };
+  requestAnimationFrame(tick);
+}));
+```
+
+A run of `(empty)`, or of the state before the click, is the bug. And the
+stub has to take as long as the real thing takes: the fake search stopped
+at once, so the second the real one spends saving could not be seen at
+all, and the probe passed against broken code until the stub waited
+800 ms the way the engine does.
 
 ## Before saying it is done
 

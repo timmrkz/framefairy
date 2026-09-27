@@ -338,13 +338,22 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 			lastSave = time.Now()
 			keep(covered, covered)
 		}
+		// How far it has come, and how long is left, towards where it will
+		// stop: the end of the window a search is hearing for, when there
+		// is one, and not the end of the episode. A search of a half hour
+		// said almost six minutes left, the time to hear the four hours of
+		// the whole episode.
+		goal := total
+		if stop := e.stopAt(); stop > window.Start && stop < window.End {
+			goal = stop - window.Start
+		}
 		done := covered - window.Start
 		elapsed := time.Since(started).Seconds()
 		left := 0.0
 		if done > 0 {
-			left = elapsed / done * (total - done)
+			left = elapsed / done * math.Max(goal-done, 0)
 		}
-		share := math.Min(done/math.Max(total, 1), 1)
+		share := math.Min(done/math.Max(goal, 1), 1)
 		// Every chunk says how far the audio has been heard, not only
 		// every save, so what shows it moves with the work.
 		e.Log.ProgressTo("transcribing", share, left, covered)
@@ -399,7 +408,8 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 				last = w.End
 			}
 			heardTo = stop
-			e.Log.ProgressTo("transcribing", math.Min((stop-window.Start)/math.Max(total, 1), 1), 0, stop)
+			// All the way to where it was to stop, see recognise.
+			e.Log.ProgressTo("transcribing", 1, 0, stop)
 			keep(stop, resume)
 			stopReading()
 			_ = cmd.Wait()

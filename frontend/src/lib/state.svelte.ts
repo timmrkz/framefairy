@@ -1,5 +1,5 @@
 // Shared state: the job list, kept current from the Go side's events.
-import { api, onJob, type Job, type EngineEvent } from "./api";
+import { api, onJob, type Job, type EngineEvent, type Lane } from "./api";
 import { mergeJob } from "./flow";
 
 // How often the list is read again while anything runs. The events keep it
@@ -47,7 +47,7 @@ class JobStore {
     return this.list.filter((j) => j.episode === path);
   }
 
-  active(path: string, lane?: "transcribe" | "work"): Job | undefined {
+  active(path: string, lane?: Lane): Job | undefined {
     return this.list.find(
       (j) =>
         j.episode === path &&
@@ -56,17 +56,33 @@ class JobStore {
     );
   }
 
+  // The episode's search, the newest there is: running, or stopped with
+  // something to say, cut off or failed. One called off by hand or done
+  // has nothing to say, and is not it.
+  search(path: string): Job | undefined {
+    const last = this.list.findLast((j) => j.episode === path && j.kind === "search");
+    if (!last || last.state === "done" || last.state === "cancelled") return undefined;
+    return last;
+  }
+
   get busy(): number {
     return this.list.filter((j) => j.state === "running" || j.state === "queued").length;
   }
 
   async clear() {
     await api.clearJobs();
-    this.list = this.list.filter((j) => j.state === "running" || j.state === "queued");
+    this.list = this.list.filter((j) => j.state === "running" || j.state === "queued" || stays(j));
   }
 }
 
 export const jobs = new JobStore();
+
+// A search or a render that stopped, cut off or failed, and has not been
+// carried on or called off yet. It is not finished, so clearing the
+// finished leaves it: it says so where its work was until it is acted on.
+export function stays(j: Job): boolean {
+  return j.state === "interrupted" || (j.state === "failed" && !!j.record);
+}
 
 export type View =
   | { name: "episode"; path: string }
@@ -115,18 +131,6 @@ export const shell = new Shell();
 // neither is looking at another episode in between.
 class Chosen {
   windows = $state<Record<string, { from: number; to: number }>>({});
-  // Whether the app has already looked for clips by itself for an episode.
-  // Once for each one while the app runs, so coming back to a workspace
-  // never starts a second search of its own.
-  looked = $state<Record<string, boolean>>({});
-  // Whether the model has been loaded ahead of that first search.
-  warmed = $state<Record<string, boolean>>({});
-  // Where the transcription was told to stop for that first search.
-  held = $state<Record<string, number>>({});
-  // New pressed before the window was transcribed. The search waits for the
-  // transcript the way the first search does, and starts when it is there.
-  // replan is whether it looks at the window again.
-  asked = $state<Record<string, { replan: boolean }>>({});
 
   keep(path: string, from: number, to: number) {
     this.windows[path] = { from, to };
@@ -135,10 +139,6 @@ class Chosen {
   // Forgets an episode that was removed.
   forget(path: string) {
     delete this.windows[path];
-    delete this.looked[path];
-    delete this.warmed[path];
-    delete this.held[path];
-    delete this.asked[path];
   }
 
   of(path: string, duration: number): { from: number; to: number } | null {

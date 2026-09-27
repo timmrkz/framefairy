@@ -35,8 +35,8 @@ it is about to do and does it: the download starts by itself and reports how
 far it has come, with the same fill every other piece of work in the app
 wears, and **Cancel** stops it. The row says what the model is, what it
 covers, what the download costs and what it costs on disk, before anything
-starts. It is a job like any other, on the transcribe lane, so it shows in
-**Activity** too, and a transcription queued behind it waits for the model
+starts. It is a job like any other, in the lane of hearing, so it shows in
+**Activity** too, and a search that comes to hearing waits for the model
 rather than failing on it.
 
 **Finding clips** is the question. The Claude API works on any machine and
@@ -117,9 +117,9 @@ its mark says a newer one is ready. Its page has the build and its commit,
 the channel it follows, where things stand, and Check or Update. See
 [UPDATES.md](UPDATES.md). Every mark is in the same place on the rail as it is in the open
 sidebar, to the pixel, so opening the sidebar never moves the mark out from
-under the pointer that came for it. A dot on the Activity mark says work is
-in hand. It sits over the mark, so nothing on the rail moves when a job
-starts or ends.
+under the pointer that came for it. The Activity mark has no dot of its
+own: work in hand is the lamp of the episode it is for, and a second dot
+said the same thing twice.
 
 The episodes stay on the rail too, as their lamps. **An episode's row is
 one line and the rail's own 36 pixel box**, so shut it is a square around
@@ -282,13 +282,17 @@ area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
 
-- **The transcription runs for a search, and for nothing else.** It goes
-  as far as the window the search is for and stops exactly on its edge. A
-  new episode's first search starts it by itself, held at the first half
-  hour, and every search after that starts it again when its window is not
-  transcribed yet. Nothing carries it on through the rest of the episode
-  afterwards. So there is nothing to control about it but the search:
-  **New** starts both and **Cancel** stops both.
+- **The transcription is the first step of a search, and nothing else.**
+  A search is one job on the Go side, see [JOBS.md](JOBS.md): it hears the
+  episode from where the transcript ends to the end of its window, stops
+  exactly on its edge, and then finds. Adding a video asks for its first
+  search, of the first half hour, so the Go side starts it and the
+  workspace only shows it. Nothing carries the transcription on through
+  the rest of the episode afterwards. So there is nothing to control about
+  it but the search: **New** starts it and **Cancel** stops it, and what
+  was heard stays, so the next search goes on from there. While another
+  episode's search finds its clips, a search that hears waits and carries
+  on after, because the two models want the same memory.
 - **What is not there yet says so by waiting.** The part of the clip
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
@@ -345,23 +349,21 @@ place.
 - **The pane is the clip list and nothing else.** It says **Clips** and
   carries **New**, whatever else is happening. The transcription is not in
   it at any point: it has a place of its own, on the range picker, at the
-  edge it moves. The two run in lanes of their own, and a head that carried
-  both is how it came to say **Transcribing** over a list of clips.
+  edge it moves. A head that carried both is how it came to say
+  **Transcribing** over a list of clips.
 - **New works whether the window is transcribed or not.** Pressed before
   the episode has been heard to the end of the chosen window, the search
-  waits for it the way the first search does: the first row of the clip
-  list says Waiting for the transcript with the window, the window is
-  locked, the transcription starts if nothing is transcribing and stops
-  exactly on the window's edge, and the search starts the moment it gets
-  there. The transcription is the first step of the search as far as
+  hears it first: the first row of the clip list says Waiting for the
+  transcript with the window, the window is locked, and the search finds
+  the moment the episode is heard to the window's edge. The transcription is the first step of the search as far as
   anyone can see: the moment New is pressed the list opens as many rows as
   the search will look for, the first wearing the beam and the fill, the
   rest breathing, and the first is brought into view. The fill is how much
   of the window has been transcribed, a view of the window on the range
   picker: empty at its start, half full when the edge is half way across
   it, full at its end. It was measured from the start of the episode, and
-  a window two hours in began nearly full. **Cancel** calls the search off and stops the
-  transcription with it. New used to be off until the window was transcribed, and a
+  a window two hours in began nearly full. **Cancel** calls the search off, and what
+  it heard stays. New used to be off until the window was transcribed, and a
   transcription that had been paused had to be carried on first with a
   mark at the edge of the range picker, which nobody could be expected to
   know about. That mark is gone, and so is pausing: the transcription
@@ -581,30 +583,29 @@ place.
       timeline, parted from each other by lighter lines than the ones that
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
-      all it takes: the transcription starts, and the moment it covers the
-      window chosen on the track the first search runs. Until then the
-      first row of the clip list says so, and the window is locked, from
-      the moment the transcription starts until the search has run,
-      because the window's end is where the transcription stops.
-      **Cancel** in that row lets go of both. The local model is loaded
-      in the meantime, so the search
-      starts with it in memory. **While clips are found, the transcription
-      waits**, on this episode and any other, so the model has the
-      machine to itself. Another episode's carries on by itself when the
-      search ends, because it runs for a search of its own. **The
-      transcription stops exactly at the end of the window**: the
-      workspace tells it where, and the piece of audio the speech model
-      hears is cut on the window's edge, so it hears nothing past it. It
-      saves what it heard, the search starts at once, and the
-      transcription stays stopped there until a search needs more. A word
-      that runs across the edge is not in the window, and is heard whole
-      by the next search that needs it. The first search
-      happens only for an episode nobody has ever searched. The episode
-      remembers that somebody looked, so removing every clip again does not
-      bring a search of its own back: a search is the machine's time, and
-      nobody asked for it. Deleting the work folder makes the episode new,
-      and then it starts over as a new one does. The rule and its tests are
-      in `frontend/src/lib/flow.ts`.
+      all it takes: the Go side asks for its first search, of the first
+      half hour or the whole of a shorter episode, and no longer than the
+      model can read at once, and the range picker goes to that window.
+      The search hears the episode to the end of the window and then
+      finds. Until it finds, the first row of the clip list says Waiting
+      for the transcript, and the window is locked for as long as the
+      search runs. **Cancel** calls it off, and what was heard stays. The
+      local model is loaded while the episode is heard, so the search
+      starts finding with it in memory. **While clips are found, no search
+      hears**, on this episode or any other, so the model has the machine
+      to itself: a search that hears when another comes to finding saves
+      what it heard, waits its turn, and carries on after. **Hearing stops
+      exactly at the end of the window**: the piece of audio the speech
+      model hears is cut on the window's edge, so it hears nothing past
+      it, and the search finds at once. A word that runs across the edge
+      is not in the window, and is heard whole by the next search that
+      needs it. The first search happens only for an episode nobody has
+      ever searched, which is one with no plan and no `jobs/` folder, so
+      removing every clip again does not bring a search of its own back:
+      a search is the machine's time, and nobody asked for it. Deleting
+      the work folder makes the episode new, and then it starts over as a
+      new one does. The rule is `firstSearch` in
+      `cmd/framefairy-app/search.go`, and the path tests follow it.
     - **What a search is doing is in the row its next clip appears in.**
       The first of the rows still to come wears the beam and the fill and
       says two things: Waiting for the transcript with the window it is
@@ -679,25 +680,28 @@ place.
       an episode read only part way. *Failed. Click Continue* has its
       reason under it. The whole of it is in the row's title. **Continue**
       takes the window back to the one the search was about and asks for
-      it again: a search that waited transcribes on from where it stopped
-      and then looks. Nothing starts by itself. It stays until a search
-      starts, after a restart too, because the episode keeps how its last
-      search ended in `search.json` in its work folder: running from the
-      moment the search is asked for, marked as waiting until the
-      transcript is there, which includes **New** pressed before the
-      transcript covers the window, a search the interface holds until it
-      does, the reason when it fails, and nothing once it has found its
-      clips. **Cancel** takes it away too, because whoever pressed it knows
-      why. Closing the app stops every search as well, and that leaves the
-      note as it is, so a note that still says running when the episode is
-      opened is a search that was cut off. Clips it wrote before that stay,
-      with the row after them. A failure that never reached the search
-      itself still goes to the line over the workspace.
+      it again: a search cut off while it heard hears on from where it
+      stopped and then finds. Nothing starts by itself. It stays until it
+      is acted on, after a restart too, because the search keeps its record
+      in `jobs/search.json` in the work folder, see [JOBS.md](JOBS.md), and
+      the app reads the records as it starts: one in a running step is a
+      search that was cut off, a failed one says why. **Cancel** says
+      *Stopping* in that row the moment it is pressed, standing still, and
+      then leaves the same row, *Stopped. Click Continue*, with how far the episode was
+      transcribed, because what it did stays and can be carried on. **New**
+      takes its place. Clips it wrote before it stopped stay, with the row
+      after them. The episode's dot in the sidebar says it too: the colour
+      of a warning for a search stopped or cut off, of an error for one
+      that failed.
     - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
       again replaces its clips and everything done to them, so it asks
-      first.
+      first. When a search is done the window moves on to the next part
+      nobody has searched, so it never lies over the marks of the clips it
+      just found, and the same when the search ended while the workspace
+      was not open, on Activity say: a window searched all through is not
+      opened on again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
       can, saying **Removed** and offering **Put it back**. Nothing above or

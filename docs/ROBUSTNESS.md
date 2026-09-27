@@ -74,15 +74,14 @@ what became of it.
    goroutines at once did not make it happen in five runs.
    `cmd/framefairy-app/jobs.go`, `frontend/src/lib/state.svelte.ts`,
    `frontend/src/lib/flow.ts`.
-6. **Work waiting behind work.** A search waiting for a transcript holds the
-   work lane, and every render of every episode waits behind it. Slower,
-   not stuck. Carrying on paused transcriptions held it up to 15 s more,
-   fixed with the next point. The rest is open, R.2.
-7. **A transcription paused for good.** If a paused transcription takes more
-   than 15 s to stop, it is not carried on, and the next search fails with a
-   pause nobody made. Fixed: a transcription that has not stopped within a
-   second is waited for in the background, for as long as it takes, and
-   carried on then. The search's way out no longer waits for it.
+6. **Work waiting behind work.** A search waiting for a transcript held the
+   work lane, and every render of every episode waited behind it. Gone: a
+   search takes a turn in the lane of each step as it comes to it, and a
+   render has a lane of its own, see [JOBS.md](JOBS.md).
+7. **A transcription paused for good.** A paused transcription that took
+   more than 15 s to stop was never carried on. Gone with pausing: a search
+   whose hearing is taken back by one that finds waits for its turn and
+   carries on itself, in `cmd/framefairy-app/lanes.go`.
    `cmd/framefairy-app/main.go`, test in `pause_test.go`.
 8. **Clip lists landing out of order in the interface.** An older list that
    arrives after an edit writes over it, so the edit looks undone until the

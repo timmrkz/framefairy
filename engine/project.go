@@ -105,6 +105,9 @@ type PlanRequest struct {
 // that is not the whole episode gets its own plan file, as with --from and
 // --to on the command line. An existing plan for the same window is reused
 // unless Replan is set.
+//
+// It is the finding step of a search, see Search in jobs.go, which the app
+// runs. On its own it keeps no record.
 func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	opts := p.Base
 	opts.PlanOnly = true
@@ -138,9 +141,7 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 			name = PlanName(&Window{from, to})
 		}
 	}
-	// The window as it was asked for, so the note says the same window
-	// the range picker showed.
-	if err := p.noted(req.From, req.To, func() error { return p.run(ctx, opts) }); err != nil {
+	if err := p.run(ctx, opts); err != nil {
 		return "", err
 	}
 	return PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name), nil
