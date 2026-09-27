@@ -732,13 +732,30 @@ export const Call = {
       // Past the transcript, the part around the playhead is heard first,
       // which takes a while. Before it, it answers at once.
       case "Unheard": {
+        const at = Number(args[1]);
         const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
-        return Promise.resolve(Number(args[1]) >= heardTo);
+        return Promise.resolve(at >= heardTo && !islands.some((i) => i.from <= at - 30 && i.to >= at + 60));
       }
+      // Past the transcript, the part around the playhead is heard as an
+      // island, a chunk at a time, saved and said after each, the way the
+      // Go side hears one: 30 seconds before the playhead to 30 past the
+      // longest clip, a chunk of 18 seconds every half second.
       case "HearAround": {
         const at = Number(args[1]);
         const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
-        return at < heardTo ? Promise.resolve(null) : new Promise((done) => setTimeout(() => done(null), 2500));
+        if (at < heardTo) return Promise.resolve(null);
+        const island = { from: at - 30, to: at + 60, covered: at - 30 };
+        islands.push(island);
+        return new Promise((done) => {
+          const timer = setInterval(() => {
+            island.covered = Math.min(island.to, island.covered + 18);
+            for (const fn of hearingListeners) fn({ data: { path: args[0], covered: island.covered } });
+            if (island.covered >= island.to) {
+              clearInterval(timer);
+              done(null);
+            }
+          }, 500);
+        });
       }
       // The clip MakeClip is about to make, from the transcript alone and
       // at once, the way the engine sketches it.
@@ -1031,7 +1048,7 @@ export const Call = {
         // neighbouring frames cannot show a staircase however coarsely it
         // is drawn, so a stub without it says every drawing is fine.
         const loud = (t: number) => {
-          if (t > edge) return -90;
+          if (t > edge && !islands.some((i) => t >= i.from && t < i.covered)) return -90;
           const said = Math.abs(Math.sin(t * 6.3)) * Math.abs(Math.cos(t * 0.7));
           const grain = Math.abs(Math.sin(t * 997));
           return -60 + 45 * said * (0.55 + 0.45 * grain);
@@ -1083,6 +1100,10 @@ export const Call = {
 // Picking a channel checks, downloads over two seconds with the fill, and
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
+// The parts heard out of turn for clips made by hand, and who is told as
+// each chunk of one is heard.
+const islands: { from: number; to: number; covered: number }[] = [];
+const hearingListeners = new Set<(ev: unknown) => void>();
 const updChannels = [
   { id: "main", name: "main", version: "0.3.0-main.40" },
   { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.12" },
@@ -1183,6 +1204,10 @@ export const Events = {
         fn({ data: null });
       };
       return () => delete (window as any).__checkForUpdates;
+    }
+    if (name === "hearing") {
+      hearingListeners.add(fn);
+      return () => hearingListeners.delete(fn);
     }
     if (name !== "job") return () => {};
     // Every search reports the way the Go side reports one: about four

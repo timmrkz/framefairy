@@ -1017,8 +1017,12 @@ by hand wherever the transcript has reached, searched or not:
   How many seconds is **Around In and Out** in the settings, under
   **Speech**.
   Until its words are there the clip is an outline as long as
-  **Shortest**, with a card that says **Transcribing here**. Then it
-  settles onto its sentences. Only what is missing is transcribed: next
+  **Shortest**, with a card that says **Transcribing here**. What is still
+  to be heard breathes on the clip timeline, and the waveform fills it in
+  chunk by chunk as it is heard, every few seconds of the episode. The
+  crop frame waits in the middle of the video preview, breathing too,
+  until the clip's own crop is placed. Then it settles onto its
+  sentences. Only what is missing is transcribed: next
   to a part heard before, In and Out hear just the rest, and where
   everything is there already the clip comes at once. That part is kept,
   with its waveform on the clip timeline, and when the transcription from
@@ -1101,7 +1105,10 @@ moved by hand, on the clip timeline.
   timeline, the clip frame, the time lines and the playhead included. The
   colours never change with the state, because a dimmed colour is another
   colour. At rest the bar is a hairline and under the pointer it is
-  thicker. The caption the video preview is showing wears the highlight
+  thicker. It stands six pixels in from either end, and a quarter of the
+  block in from them when the block is too narrow for that, so the block
+  of a caption of one short word still has its bar and never reads as an
+  empty box. The caption the video preview is showing wears the highlight
   colour over its box, with its own opacity, the pill the spoken word
   wears, and pops with the same animation that pill makes in the video
   preview, on every word as the pill does, so walking the words with shift

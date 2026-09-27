@@ -114,10 +114,11 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 		if !ok || w.End <= reached {
 			continue
 		}
-		read, ok := readTranscript(path, stamp, model, w, p.Base.SilenceDB)
-		if !ok {
+		read, heard, ok := readIsland(path, stamp, model, w, p.Base.SilenceDB)
+		if !ok || heard.End <= reached {
 			continue
 		}
+		w = heard
 		own := Window{math.Max(w.Start, covered), w.End}
 		if n := len(islands); n > 0 && w.Start < islands[n-1].own.End {
 			seam := (math.Max(w.Start, covered) + islands[n-1].own.End) / 2
@@ -161,6 +162,24 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 	t.Extra = append(t.Extra, levels...)
 	t.IslandFrames = append(t.IslandFrames, runs...)
 	return t
+}
+
+// readIsland reads an island, finished or still being heard. One being
+// heard is saved as it goes, and reads as far as it has come, so the words
+// and the waveform of a part heard for a clip made by hand arrive while it
+// is heard. What it answers with is the part the file really covers.
+func readIsland(path string, stamp sourceStamp, model string, w Window,
+	silenceDB *float64) (*Transcript, Window, bool) {
+	if t, ok := readTranscript(path, stamp, model, w, silenceDB); ok {
+		return t, w, true
+	}
+	file, words, frames, ok := readTranscriptFile(path, stamp, model)
+	if !ok || !file.Partial || math.Abs(float64(file.From)-w.Start) > 0.001 ||
+		float64(file.To) <= w.Start || float64(file.To) > w.End+0.001 {
+		return nil, w, false
+	}
+	return fromStored(words, frames, w.Start, float64(file.Mean), silenceDB),
+		Window{w.Start, float64(file.To)}, true
 }
 
 func (p *Project) modelDir() string {

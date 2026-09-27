@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -306,5 +307,68 @@ func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
 	}
 	if _, _, err := p.MakeClip(ctx, 130, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// cancellingRecognizer stops the work it is part of once it has heard a
+// given number of chunks.
+type cancellingRecognizer struct {
+	fakeRecognizer
+	after  int32
+	cancel context.CancelFunc
+}
+
+func (c cancellingRecognizer) Recognize(samples []float32, rate int) []Token {
+	tokens := c.fakeRecognizer.Recognize(samples, rate)
+	if atomic.LoadInt32(c.calls) >= c.after {
+		c.cancel()
+	}
+	return tokens
+}
+
+// An island is saved as it is heard, so its words and its waveform arrive
+// while it is heard. One cut off part way reads as far as it came and
+// counts as unheard, so the next In or Out hears it again, whole.
+func TestAnIslandIsReadWhileItIsHeard(t *testing.T) {
+	source := testEpisode(t, "300")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) {
+		return cancellingRecognizer{fakeRecognizer{&heard}, 2, cancel}, nil
+	}
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Min, base.Max = 20, 30
+	p := NewProject(e, source, base)
+
+	if err := p.HearAround(ctx, 200, false, 300); err == nil {
+		t.Fatal("the island was heard whole although it was stopped")
+	}
+	words := mustWords(t, p)
+	if len(words) == 0 || words[0].Start < 165 || words[len(words)-1].End > 240 {
+		t.Fatalf("the island cut off reads from %v", words)
+	}
+	tr, _ := p.Transcript()
+	peaks := tr.Peaks(165, 175, 10)
+	if peaks[5] < -89.5 {
+		t.Fatalf("the island cut off has no waveform: %v", peaks)
+	}
+	if !p.Unheard(200, false, 300) {
+		t.Fatal("an island cut off counts as heard")
+	}
+
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	if err := p.HearAround(context.Background(), 200, false, 300); err != nil {
+		t.Fatal(err)
+	}
+	if p.Unheard(200, false, 300) {
+		t.Fatal("the island heard again is still unheard")
+	}
+	words = mustWords(t, p)
+	if words[len(words)-1].End < 255 {
+		t.Fatalf("the island heard again ends at %.1f", words[len(words)-1].End)
 	}
 }

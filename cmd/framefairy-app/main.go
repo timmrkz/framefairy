@@ -1257,13 +1257,28 @@ func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, ba
 	if err != nil {
 		return err
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	log := engine.NewLog(io.Discard, false, false)
+	// Every chunk heard is saved before it is reported, so the interface
+	// is told to read the part again each time and sees it grow.
+	log.SetSink(func(ev engine.Event) {
+		if ev.Kind == engine.EventProgress && ev.Covered > 0 && s.app != nil {
+			s.app.Event.Emit("hearing", Hearing{Path: path, Covered: ev.Covered})
+		}
+	})
+	e := engine.NewEngine(log)
 	if ff := s.store.Settings().FFmpeg; ff != "" {
 		e.FFmpeg = ff
 	}
 	e.OpenRecognizer = asr.Open
 	p := engine.NewProject(e, path, s.store.Settings().options())
 	return p.HearAround(ctx, at, backward, info.Duration)
+}
+
+// Hearing says how far a part heard for a clip made by hand has come, in
+// seconds of the episode.
+type Hearing struct {
+	Path    string  `json:"path"`
+	Covered float64 `json:"covered"`
 }
 
 // Unheard says whether a clip made by hand at a moment needs any of the

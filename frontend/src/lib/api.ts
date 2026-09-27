@@ -589,6 +589,17 @@ export interface JobUpdate {
   event?: EngineEvent;
 }
 
+// How far a part heard for a clip made by hand has come. Each chunk is
+// saved before it is said, so the part can be read again at once.
+export interface Hearing {
+  path: string;
+  covered: number;
+}
+
+export function onHearing(fn: (h: Hearing) => void): () => void {
+  return Events.On("hearing", (ev) => fn(ev.data as Hearing));
+}
+
 export function onJob(fn: (u: JobUpdate) => void): () => void {
   return Events.On("job", (ev) => fn(ev.data as JobUpdate));
 }

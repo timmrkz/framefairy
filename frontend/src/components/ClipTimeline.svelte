@@ -58,6 +58,7 @@
     thumbnails = [],
     onthumbnail,
     arriving = false,
+    hearing = false,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -125,6 +126,10 @@
     // A clip made by hand is being framed, and its captions come in one
     // after another along it, the way they will be said.
     arriving?: boolean;
+    // True while a part is heard for a clip made by hand. Every part of
+    // the view with nothing heard in it breathes, and fills in chunk by
+    // chunk as the part is heard.
+    hearing?: boolean;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -837,8 +842,33 @@
     let from: number;
     if (working) from = peaks.length ? soundEdge : view.from;
     else if (heardTo === null) return null;
-    else from = peaks.length ? Math.max(heardTo, soundEdge) : heardTo;
+    else from = heardTo;
     return from < view.to ? from : null;
+  });
+
+  // The parts past waitsFrom with nothing heard in them, each waiting on
+  // its own. A part heard out of turn, for a clip made by hand, lies
+  // in the middle of what the transcript has not reached, so what waits is
+  // the part before it and the part after it, and never the part itself.
+  // A run shorter than half a second is a quiet moment, not a gap.
+  const waits = $derived.by((): { from: number; to: number }[] => {
+    const start = waitsFrom;
+    if (start === null) return [];
+    if (!peaks.length) return [{ from: Math.max(start, view.from), to: view.to }];
+    const step = (data.to - data.from) / peaks.length;
+    const out: { from: number; to: number }[] = [];
+    let run = -1;
+    for (let i = 0; i <= peaks.length; i++) {
+      const at = data.from + i * step;
+      const empty = i < peaks.length && at + step > start && peaks[i] <= -89.5;
+      if (empty && run < 0) run = Math.max(at, start);
+      if (!empty && run >= 0) {
+        if (at - run >= 0.5) out.push({ from: run, to: at });
+        run = -1;
+      }
+    }
+    if (data.to < view.to) out.push({ from: Math.max(data.to, start), to: view.to });
+    return out.filter((w) => w.to > view.from && w.from < view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
@@ -1269,13 +1299,13 @@
          keeps its grey and stands still, the way paused work does, so a
          part nobody has heard never reads as silence. It starts where the
          waveform ends, so the two never lie over each other. -->
-    {#if waitsFrom !== null}
+    {#each waits as w}
       <div
         class="asleep"
-        class:waiting={working}
-        style="left: {Math.max(x(waitsFrom), 0)}%; right: 0"
+        class:waiting={working || hearing}
+        style="left: {Math.max(x(w.from), 0)}%; right: {Math.max(100 - x(w.to), 0)}%"
       ></div>
-    {/if}
+    {/each}
     <!-- The ruler in two layers, the same as on the range picker: the line
          under what is drawn on the track, the time over it. A time written
          inside its own line is held at the line's level, because an element
@@ -1713,9 +1743,6 @@
     height: 16px;
     margin-left: 1px;
     box-sizing: border-box;
-    padding: 0 6px;
-    display: flex;
-    align-items: center;
     background: var(--cap-box);
     border-radius: 3px;
     pointer-events: auto;
@@ -1737,10 +1764,20 @@
     animation: pop 0.22s ease-out;
   }
 
+  /* The words of the caption, a bar in the middle of its block. It stands
+     six pixels in from either end, and less in a block too narrow for
+     that: a caption of one short word is a block a dozen pixels wide at
+     most zooms, and with the six pixels on each side it had no bar left in
+     it at all, so it read as an empty box. A quarter of the block, in whole
+     pixels and never less than one, keeps half of it or more a bar. */
   .caption i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: clamp(1px, round(down, 25%, 1px), 6px);
+    right: clamp(1px, round(down, 25%, 1px), 6px);
+    margin: auto 0;
     display: block;
-    flex: 1;
-    min-width: 0;
     height: 2px;
     border-radius: 1px;
     background: var(--cap-text);

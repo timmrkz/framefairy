@@ -329,12 +329,13 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 		}
 		return writeTranscript(path, file, allFrames)
 	}
-	var progress checkpoint
-	if !windowed {
-		progress = func(words []Cue, frames []float32, covered, resume float64) {
-			if err := save(words, frames, covered, resume, true); err != nil {
-				e.Log.Detail("could not save the transcript so far: %s", err)
-			}
+	// A window saves as it goes too, for whoever reads it while it is
+	// heard, an island above all. What is saved part way says so, and is
+	// never taken for the finished window, so a window cut off is heard
+	// again from its start.
+	progress := func(words []Cue, frames []float32, covered, resume float64) {
+		if err := save(words, frames, covered, resume, true); err != nil {
+			e.Log.Detail("could not save the transcript so far: %s", err)
 		}
 	}
 
@@ -348,7 +349,7 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 		}
 		defer rec.Close()
 		started := time.Now()
-		t, err = e.transcribe(ctx, source, todo, rec, silenceDB, progress)
+		t, err = e.transcribe(ctx, source, todo, rec, silenceDB, progress, !windowed)
 		if err != nil {
 			return err
 		}

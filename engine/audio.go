@@ -266,12 +266,18 @@ func NoiseFloor(mean float64) float64 {
 // Transcribe reads the audio once and returns the words with their timings.
 func (e *Engine) Transcribe(ctx context.Context, path string, window Window,
 	rec Recognizer, silenceDB *float64) (*Transcript, error) {
-	return e.transcribe(ctx, path, window, rec, silenceDB, nil)
+	return e.transcribe(ctx, path, window, rec, silenceDB, nil, true)
 }
 
 // checkpointEvery is how often, in wall time, a long transcription saves what
 // it has so far.
 var checkpointEvery = 8 * time.Second
+
+// chunkyUpTo is how long a window may be and still save after every chunk.
+// A part heard for a clip made by hand is a minute or two, heard in a few
+// seconds, and saving it as it goes is what lets its waveform grow on the
+// clip timeline while it is heard rather than arrive all at once.
+const chunkyUpTo = 600.0
 
 // checkpoint receives the words and loudness frames of everything up to
 // covered, which always falls on a chunk boundary. resume is where carrying
@@ -283,8 +289,16 @@ type checkpoint func(raw []Cue, frames []float32, covered, resume float64)
 // carries on when it is asked again.
 var ErrHeld = errors.New("the transcription stopped at the end of the window")
 
+// held says whether it stops where StopAt asks, which only the
+// transcription of the whole episode does.
 func (e *Engine) transcribe(ctx context.Context, path string, window Window,
-	rec Recognizer, silenceDB *float64, save checkpoint) (*Transcript, error) {
+	rec Recognizer, silenceDB *float64, save checkpoint, held bool) (*Transcript, error) {
+	stopAt := func() float64 {
+		if !held {
+			return 0
+		}
+		return e.stopAt()
+	}
 	// Starting part way in is done by dropping samples here, not by asking
 	// ffmpeg to seek. A seek into a compressed stream lands on the packet,
 	// and whether the build decodes that packet and trims it or begins at
@@ -340,7 +354,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		raw = append(raw, TokensToWords(rec.Recognize(samples, SampleRate), at)...)
 		covered := at + float64(len(samples))/SampleRate
 		heardTo = covered
-		if save != nil && time.Since(lastSave) >= checkpointEvery {
+		if save != nil && (total <= chunkyUpTo || time.Since(lastSave) >= checkpointEvery) {
 			lastSave = time.Now()
 			keep(covered, covered)
 		}
@@ -350,7 +364,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		// said almost six minutes left, the time to hear the four hours of
 		// the whole episode.
 		goal := total
-		if stop := e.stopAt(); stop > window.Start && stop < window.End {
+		if stop := stopAt(); stop > window.Start && stop < window.End {
 			goal = stop - window.Start
 		}
 		done := covered - window.Start
@@ -400,7 +414,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		// and not a chunk past it. A word that runs across the edge is not
 		// in the window and is not kept, because half a word is heard as
 		// another word: carrying on starts before it and hears it whole.
-		if stop := e.stopAt(); save != nil && stop > chunkStart &&
+		if stop := stopAt(); save != nil && stop > chunkStart &&
 			chunkStart+float64(len(pending))/SampleRate >= stop {
 			cut := min(int(math.Round((stop-chunkStart)*SampleRate)), len(pending))
 			resume := stop

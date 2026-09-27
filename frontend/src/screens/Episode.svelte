@@ -30,6 +30,7 @@
     type Word,
     type WindowView,
     onUndo,
+    onHearing,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
   import {
@@ -899,6 +900,15 @@
   // is seen taking shape from the moment the key is pressed.
   let sketch = $state<ClipEntry | null>(null);
   let sketchCues = $state<CaptionCue[]>([]);
+  // True while the part around the playhead is heard for it. Each chunk
+  // heard is read again as soon as the Go side says it is saved, so the
+  // waveform grows chunk by chunk, and whatever is still to come breathes.
+  let hearing = $state(false);
+  onMount(() =>
+    onHearing((h) => {
+      if (hearing && h.path === path) timeline?.reread();
+    }),
+  );
   const cards = $derived(
     sketch ? [...shown, sketch].sort((a, b) => a.start - b.start) : shown,
   );
@@ -937,7 +947,12 @@
           plan: "",
           cropLefts: [],
         };
-        await api.hearAround(path, at, backward);
+        hearing = true;
+        try {
+          await api.hearAround(path, at, backward);
+        } finally {
+          hearing = false;
+        }
         timeline?.reread();
       }
       const sk = await api.sketchClip(path, at, backward);
@@ -2253,6 +2268,7 @@
           {path}
           {source}
           clip={sketch ? null : current}
+          placing={!!sketch}
           bind:time
           {still}
           stillAt={showing}
@@ -2340,6 +2356,7 @@
         working={!!transcribing}
         locked={renderingCurrent || !!sketch}
         arriving={!!sketch}
+        {hearing}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers

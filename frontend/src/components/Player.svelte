@@ -52,6 +52,7 @@
     oncaptiony,
     onword,
     locked = false,
+    placing = false,
     strip,
     paused = $bindable(true),
     looping = $bindable(false),
@@ -91,6 +92,11 @@
     // there to read until it is done, the way they were while they were
     // corrected on the playhead.
     locked?: boolean;
+    // True while a clip made by hand is on its way and its crop is not
+    // placed yet. The crop frame waits in the middle, breathing, the way a
+    // place waiting to be filled does, and settles where it belongs when
+    // the clip arrives.
+    placing?: boolean;
     // The range picker sits under the video preview, so it is exactly as
     // wide as it is.
     strip?: Snippet;
@@ -771,6 +777,11 @@
         onpointerdown={dragCrop}
       ></div>
       <div class="shade" style="left: {crop.left + crop.width}%; right: 0"></div>
+    {:else if placing && source.width && source.cropWidth}
+      {@const width = (source.cropWidth / source.width) * 100}
+      <div class="shade" style="left: 0; width: {(100 - width) / 2}%"></div>
+      <div class="frame waiting placing" style="left: {(100 - width) / 2}%; width: {width}%"></div>
+      <div class="shade" style="left: {(100 + width) / 2}%; right: 0"></div>
     {/if}
     {#if dragCaptions !== null}
       <div
@@ -937,6 +948,11 @@
 
   .frame.lit {
     cursor: grabbing;
+  }
+
+  .frame.placing {
+    cursor: default;
+    pointer-events: none;
   }
 
   .frame.outside {

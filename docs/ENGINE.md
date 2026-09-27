@@ -211,6 +211,12 @@ into what is there on either side, because a window's edge can cut a word
 in two. `Unheard` says whether there is anything to hear, which the app
 asks before it says it is transcribing.
 
+An island is saved after every chunk while it is heard, marked as not
+finished, and read as far as it has come, so its words and its waveform
+arrive while it is heard. One cut off part way counts as unheard and is
+heard again whole. The app says `hearing` after each chunk, with how far
+it has come, so the clip timeline reads it again at once.
+
 `Project.Transcript` adds the islands' words, loudness and waveform wherever the
 whole-episode transcript has not reached, in time order, and every moment
 is read from one transcript only. Where two islands overlap, the seam is
