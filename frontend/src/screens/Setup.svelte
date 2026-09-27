@@ -12,7 +12,7 @@
   // answered there is no workspace to put a box over, so this is the
   // whole app.
   import { onMount } from "svelte";
-  import { api, errorText, fitNote, memorySize, size, type ModelRow, type SetupState } from "../lib/api";
+  import { api, errorText, languageRow, memorySize, speechRow, type ModelRow, type SetupState } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
@@ -42,36 +42,9 @@
     }
   }
 
-  // The rows the two lists draw. The Go side stays factual and the interface
-  // does the wording, so the same fact is never worded two ways.
-  const speechRows = $derived<ModelRow[]>(
-    (setup?.speech ?? []).map((m) => ({
-      name: m.name,
-      label: m.title,
-      title: m.title,
-      about: m.about,
-      cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
-      room: size(m.unpacked),
-      installed: m.installed,
-    })),
-  );
-
-  const languageRows = $derived<ModelRow[]>(
-    (setup?.language ?? []).map((m) => {
-      const { note, warn } = fitNote(m.fit, m.recommended);
-      return {
-        name: m.name,
-        label: m.title,
-        title: `${m.title} by ${m.maker}`,
-        about: m.about,
-        cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
-        room: size(m.download),
-        installed: m.installed,
-        note,
-        warn,
-      };
-    }),
-  );
+  // The rows the two lists draw, in the same words as the settings.
+  const speechRows = $derived<ModelRow[]>((setup?.speech ?? []).map((m) => speechRow(m)));
+  const languageRows = $derived<ModelRow[]>((setup?.language ?? []).map((m) => languageRow(m)));
 
   // Whether the speech model is still coming. The job list is shared, so
   // the last step reads it for itself rather than being told.

@@ -475,6 +475,20 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	return engine.Status(path, s.store.Settings().ASRModel)
 }
 
+// ChooseFolder asks for a folder, the way a Mac app asks where to save
+// things, and says which one was chosen, or nothing when the person
+// cancelled. It changes nothing: the settings keep the answer when they
+// are saved.
+func (s *FrameFairy) ChooseFolder(title string) (string, error) {
+	return s.app.Dialog.OpenFile().
+		SetTitle(title).
+		SetButtonText("Choose").
+		CanChooseFiles(false).
+		CanChooseDirectories(true).
+		CanCreateDirectories(true).
+		PromptForSingleSelection()
+}
+
 // AddEpisodes asks for video files and adds them to the library.
 func (s *FrameFairy) AddEpisodes() ([]string, error) {
 	dialog := s.app.Dialog.OpenFile().

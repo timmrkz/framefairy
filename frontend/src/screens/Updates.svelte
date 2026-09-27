@@ -181,9 +181,9 @@
   {#if update}
     <div class="card">
       <!-- The build, and where the next one comes from. -->
-      <div class="build">
+      <div class="item build">
         <Icon name="update" size={24} />
-        <div class="what">
+        <div class="words">
           <span class="version num selectable">{update.version}</span>
           <span class="muted small num selectable">
             {update.commit ? `Commit ${short(update.commit)}` : "Built on this Mac"}
@@ -206,7 +206,7 @@
       </div>
 
       <!-- Where things stand, and the one thing to do about it. -->
-      <div class="state" class:ready={update.phase === "ready"}>
+      <div class="item" class:on={update.phase === "ready"}>
         <span class="mark {standing.mark}" aria-hidden="true">
           {#if standing.mark === "ok"}
             <Icon name="check" size={14} />
@@ -261,54 +261,11 @@
     margin: 0 auto;
   }
 
-  /* One card, the way a model is one card in the settings: the same
-     border, radius and background. */
-  .card {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--ink-1);
-  }
-
-  .build,
-  .state {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px;
-  }
-
-  .state {
-    border-top: 1px solid var(--line);
-  }
-
-  /* The same background a chosen row wears everywhere else in the app,
-     for the moment there is something to do. */
-  .state.ready {
-    background: var(--ink-3);
-    border-bottom-left-radius: var(--radius-m);
-    border-bottom-right-radius: var(--radius-m);
-  }
-
-  .what,
-  .words {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .words {
-    flex: 1;
-  }
-
+  /* The build is the head of the page, so its version is set larger. The
+     card, its rows and the mark before the words are app.css's .card, the
+     same as the settings. */
   .version {
     font-size: var(--size-l);
-    font-weight: 600;
-  }
-
-  .head {
     font-weight: 600;
   }
 
@@ -316,18 +273,8 @@
     flex: 1;
   }
 
-  /* The mark before the words is as wide as the icon beside the build, so
-     the two lines start their words in one column. */
-  .mark {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
+  .build .words {
     flex: none;
-  }
-
-  .mark.ok {
-    color: var(--ok);
   }
 
   /* The list is as wide as what its trigger says and no wider, the same

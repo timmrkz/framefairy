@@ -602,3 +602,94 @@ button:has(> .beam):disabled {
     transition: none;
   }
 }
+
+/* A card: one subject and the few things about it, in rows split by a
+   line. The Updates page and the settings are made of these, so a page
+   of the app's own reads as one kind of thing wherever it is. A row is a
+   mark, what it is in a few words with a line under them, and at its end
+   the one thing to do about it. */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--ink-1);
+  /* So a chosen row's background keeps the card's corners. */
+  overflow: hidden;
+  /* Whole lines. The app's own 1.45 of 13 is 18.85, and a stack of those
+     leaves every row below a fraction off a whole pixel. */
+  line-height: 19px;
+}
+
+/* The info mark of a card stands in its corner, and a card clips what
+   overflows it, so the mark goes inside the corner rather than on it. */
+.card > .ask.corner {
+  top: 6px;
+  right: 6px;
+}
+
+.card .item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 64px;
+  box-sizing: border-box;
+}
+
+.card .item + .item {
+  border-top: 1px solid var(--line);
+}
+
+/* The same background a chosen row wears everywhere else in the app. */
+.card .item.on {
+  background: var(--ink-3);
+}
+
+/* The mark before the words, as wide as the biggest icon a row carries,
+   so the words of every row in a card start in one column. */
+.card .mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex: none;
+}
+
+.card .mark.ok {
+  color: var(--ok);
+}
+
+.card .words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.card .head {
+  font-weight: 600;
+}
+
+.card .words .small {
+  font-size: var(--size-s);
+}
+
+/* A choice between a few things in a card: the mark is a round button
+   that fills with the app's colour, the way a radio button does on the
+   Mac, and the whole of the row is what is pressed. */
+.radio {
+  display: block;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+}
+
+.radio.on {
+  border: 5px solid var(--accent);
+  background: #fff;
+}

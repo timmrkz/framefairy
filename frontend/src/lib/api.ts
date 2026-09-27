@@ -412,6 +412,8 @@ export const api = {
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
   addEpisodes: () => call<string[] | null>("AddEpisodes"),
+  // Asks for a folder and says which one, or nothing when it was cancelled.
+  chooseFolder: (title: string) => call<string>("ChooseFolder", title),
   // Loads the local model for the first search of an episode while the
   // transcript is still on its way. Nothing comes back and nothing waits.
   warmModel: (path: string, from: number, to: number) => call<void>("WarmModel", path, from, to),
@@ -637,6 +639,43 @@ export function fitNote(
     default:
       return { note: best ? "The safest of these" : "", warn: false };
   }
+}
+
+// A model as a row of a list, in the words the setup and the settings
+// both use, so one fact is never worded two ways. What a model is made of,
+// how it was quantised and how many parameters it has, is for whoever asks:
+// it goes in the row's title, and the row itself says what it costs and
+// whether this machine can run it.
+export function speechRow(m: SpeechModel): ModelRow {
+  return {
+    name: m.name,
+    label: m.title,
+    title: m.title,
+    about: m.about,
+    cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+    room: size(m.unpacked),
+    installed: m.installed,
+  };
+}
+
+export function languageRow(m: LanguageModel, pickable = false): ModelRow {
+  const { note, warn } = fitNote(m.fit, m.recommended);
+  const needs = memorySize(m.needs);
+  return {
+    name: m.name,
+    label: m.title,
+    title: m.title,
+    about: m.about,
+    // Once it is there, the download is spent and only the memory matters.
+    cost: m.installed
+      ? `By ${m.maker}. Needs ${needs} of memory`
+      : `By ${m.maker}. ${size(m.download)} to fetch, needs ${needs} of memory`,
+    room: size(m.download),
+    inUse: pickable ? m.inUse : undefined,
+    installed: m.installed,
+    note,
+    warn,
+  };
 }
 
 // A size in bytes the way a download is always quoted: metric, a thousand

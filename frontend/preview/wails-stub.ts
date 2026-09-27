@@ -690,7 +690,36 @@ export const Call = {
         (window as any).__chosen = args[1];
         return Promise.resolve();
       case "GetSettings":
-        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: "local", apiModel: "", count: 12, min: 20, max: 30, highlightColour: "#b4236f", outputDir: "", captionY: 240, trainingDir: "" });
+        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "", count: 12, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
+      // What the settings page saves, kept, so a probe can read what was
+      // saved and a page opened again reads it back.
+      case "SaveSettings":
+        (window as any).__settings = args[0];
+        (window as any).__saves = ((window as any).__saves ?? 0) + 1;
+        (window as any).__planner = (args[0] as any).planner;
+        return Promise.resolve(null);
+      case "ChooseFolder":
+        return Promise.resolve("/Users/tim/Movies/Shorts");
+      // The machine's checks, the way CheckSetup makes them. ?broken is a
+      // machine that has lost llama-server.
+      case "CheckSetup": {
+        const broken = location.search.includes("broken");
+        const api = ((window as any).__settings?.planner ?? (window as any).__planner) === "api";
+        const out = [
+          { name: "ffmpeg", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg" },
+          { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
+          { name: "Caption fonts", ok: true, detail: "built in: Inter Black, Montserrat ExtraBold" },
+          { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
+        ];
+        if (api) out.push({ name: "Claude API key", ok: !!(window as any).__key, detail: (window as any).__key ? "found" : "no key in the keychain or in ANTHROPIC_API_KEY" });
+        else {
+          out.push(broken
+            ? { name: "llama-server", ok: false, detail: "llama-server was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path." }
+            : { name: "llama-server", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/llama-server" });
+          out.push({ name: "Language model", ok: true, detail: "/Users/tim/.framefairy/models/gemma-4-26B_q4_0-it.gguf" });
+        }
+        return new Promise((r) => setTimeout(() => r(out), 300));
+      }
       case "RemoveClip": {
         const [, , id, gone] = args as [string, string, string, boolean];
         const n = Number(id);
