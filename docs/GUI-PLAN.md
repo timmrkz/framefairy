@@ -151,6 +151,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.10 | The colour of the caption text, of the box behind it and of the highlight, each with how much of it is seen, beside the face and the size. The caption blocks of the clip timeline wear all three with their opacity, over everything else on the track | `[x]` |
 | 3.11 | One frame for what is chosen: the crop, the window and the clip drawn by one rule, with the same line, corners and colour | `[x]` |
 | 3.12 | Captions stay the size chosen. A word too long for a line gets a caption of its own and is hyphenated with TeX's patterns for the language of the episode, a German compound where its parts join, instead of one long word making every caption of the clip smaller | `[x]` |
+| 3.13 | The clip timeline zoomed out: every other clip of the episode drawn as the range picker marks it, a click choosing it, and the caption blocks only once they are wide enough to be read | `[x]` |
 
 ## Phase 4: caption editor
 

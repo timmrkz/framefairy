@@ -1463,13 +1463,17 @@
   onMount(() => onUndo(undo));
 
   // The first clip a search finds, shown as soon as it is in the list.
+  // Not while the video plays: choosing a clip puts the playhead on it, and
+  // a picture that jumps from where it was playing to a clip nobody asked
+  // for is the search taking the video away from the hand. The clips land
+  // in the list and on both tracks either way, and are one click off.
   function showFirstFound() {
     if (!listedBefore || shownFirst) return;
     const known = listedBefore;
     const found = clips.filter((c) => !known.has(c.key));
     if (!found.length) return;
     shownFirst = true;
-    if (selected !== pickedBefore) return;
+    if (selected !== pickedBefore || !paused) return;
     // The list is in the order of the episode, and so is what is new in
     // it, so this is the earliest of what has landed.
     select(found[0].key);
@@ -1593,7 +1597,7 @@
       // A window searched again comes back under the names it had, so
       // nothing in the list is new. Its first clip, as long as nobody has
       // picked another.
-      if (!shownFirst && selected === pickedBefore && ended.result) {
+      if (!shownFirst && selected === pickedBefore && paused && ended.result) {
         const first = clips.find((c) => c.plan === ended.result);
         if (first) select(first.key);
       }
@@ -2248,6 +2252,8 @@
         onwalkclip={walkClip}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
+        {marks}
+        onmark={select}
         captions={captions?.captions ?? []}
         captionLook={shownCaptions
           ? {
