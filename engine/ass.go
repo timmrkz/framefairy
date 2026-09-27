@@ -30,6 +30,12 @@ type Style struct {
 	Radius        float64
 	BoxPadX       float64
 	BoxPadY       float64
+	// Text is whether captions are burned in at all. Off, a short is
+	// rendered without any, box and highlight included.
+	Text bool
+	// Box is whether the box behind the text is drawn. Off, it keeps its
+	// colour for when it is switched on again, and is drawn clear.
+	Box bool
 	// Highlight marks the word being spoken with a coloured pill.
 	Highlight bool
 	// HighlightColour is the pill colour as an ASS colour tag value.
@@ -72,6 +78,11 @@ var DefaultStyle = map[string]any{
 	"radius":    18.0,
 	"box_pad_x": 26.0,
 	"box_pad_y": 26.0,
+	// Captions are burned in, on a box. Either can be switched off in the
+	// app: no text renders a short without captions, no box leaves the
+	// text on the picture.
+	"text": 1.0,
+	"box":  1.0,
 	// The word being spoken sits on a pill in this colour and bounces.
 	"highlight":        1.0,
 	"highlight_colour": "#942192",
@@ -219,11 +230,22 @@ func ResolveStyle(overrides map[string]any) Style {
 		Radius:        number("radius"),
 		BoxPadX:       number("box_pad_x"),
 		BoxPadY:       number("box_pad_y"),
+		Text:          number("text") != 0,
+		Box:           number("box") != 0,
 		Highlight:     number("highlight") != 0,
 		HighlightColour: highlightColour(s["highlight_colour"],
 			highlightColour(DefaultStyle["highlight_colour"], "&H6F23B4&")),
 		HighlightAlpha: highlightAlpha(s["highlight_colour"]),
 	}
+}
+
+// boxColour is the colour the box is drawn in: its own, or entirely clear
+// when the box is switched off.
+func (s Style) boxColour() string {
+	if s.Box || len(s.BackColour) < 10 {
+		return s.BackColour
+	}
+	return "&HFF" + s.BackColour[4:]
 }
 
 // highlightAlpha is the alpha of a highlight colour given as a whole
@@ -685,11 +707,12 @@ func (e *Engine) WriteASS(ctx context.Context, captions []Caption, path string,
 		padX := float64(pyround(s.BoxPadX * scale))
 		padY := float64(pyround(s.BoxPadY * scale))
 		radius := float64(pyround(s.Radius * scale))
+		back := s.boxColour()
 		alpha := "80"
-		if len(s.BackColour) >= 10 {
-			alpha = s.BackColour[2:4]
+		if len(back) >= 10 {
+			alpha = back[2:4]
 		}
-		fill := "&H" + s.BackColour[max(0, len(s.BackColour)-6):] + "&"
+		fill := "&H" + back[max(0, len(back)-6):] + "&"
 		for i, c := range laid {
 			start, end := SecondsToASS(c.Start), SecondsToASS(c.End)
 			box := boxes[i]
@@ -729,7 +752,7 @@ Style: Box,%s,%d,%s,%s,%s,%s,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `, width, height,
-		s.Font, size, s.Primary, s.Primary, s.OutlineColour, s.BackColour, int(s.Bold),
+		s.Font, size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
 		captionBorder, outline, shadow, marginH, marginH, marginV,
 		s.Font, size, s.Primary, s.Primary, s.Primary, s.Primary)
 

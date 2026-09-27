@@ -428,3 +428,33 @@ func FuzzResolveStyle(f *testing.F) {
 		}
 	})
 }
+
+// The box switched off in the captions column draws no box, and keeps the
+// colour it had for when it is switched on again. With it on, the box is
+// there in its colour.
+func TestTheBoxCanBeSwitchedOff(t *testing.T) {
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	write := func(style map[string]any) string {
+		path := filepath.Join(t.TempDir(), "clip.ass")
+		if err := e.WriteASS(context.Background(), []Caption{{Start: 0, End: 2, Text: "zwei worte"}},
+			path, 1080, 1920, style); err != nil {
+			t.Fatal(err)
+		}
+		body, _ := os.ReadFile(path)
+		return string(body)
+	}
+	on := write(map[string]any{"radius": 0.0, "highlight": 0.0, "back_colour": "&H40102030"})
+	off := write(map[string]any{"radius": 0.0, "highlight": 0.0, "back_colour": "&H40102030", "box": 0.0})
+	if !strings.Contains(on, "&H40102030") {
+		t.Errorf("the box is not drawn in its colour:\n%s", on)
+	}
+	if strings.Contains(off, "&H40102030") || !strings.Contains(off, "&HFF102030") {
+		t.Errorf("the box switched off is still drawn:\n%s", off)
+	}
+	if s := ResolveStyle(map[string]any{"back_colour": "&H40102030", "box": 0.0}); s.BackColour != "&H40102030" || s.Box {
+		t.Errorf("the colour of a box switched off was not kept: %+v", s)
+	}
+	if s := ResolveStyle(nil); !s.Text || !s.Box {
+		t.Errorf("text and box are on until they are switched off: %+v", s)
+	}
+}
