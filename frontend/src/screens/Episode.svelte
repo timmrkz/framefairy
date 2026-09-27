@@ -592,7 +592,10 @@
       const now = await api.coverage(path, min);
       if (coverageRead.keep(ticket)) coverage = now;
     } catch {
-      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [] };
+      // What was known stays known. Written down as nothing searched and
+      // nothing free, a read that failed sent the window over the whole
+      // episode, and took the searched parts off the range picker.
+      coverageRead.keep(ticket);
     }
   }
 
