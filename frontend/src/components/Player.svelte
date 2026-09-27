@@ -778,7 +778,9 @@
         style="left: {box.left}%; width: {box.width}%; --step: {px(captionYStep / 1920)}px"
       ></div>
     {/if}
-    {#if caption && captions}
+    <!-- Captions switched off in the captions column are not drawn, so the
+         video preview shows the short as it will be rendered. -->
+    {#if caption && captions && captions.style.text !== false}
       <div
         class="captions"
         style="left: {box.left}%; width: {box.width}%;
@@ -796,7 +798,7 @@
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
-          style="background: {captions.style.box};
+          style="background: {captions.style.boxOn === false ? 'transparent' : captions.style.box};
                  border-radius: {px(captions.style.radius)}px;
                  padding: {px(captions.style.padY)}px {px(captions.style.padX)}px"
           title="Drag the handle up or down to place the captions"

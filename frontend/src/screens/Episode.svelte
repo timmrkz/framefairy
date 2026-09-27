@@ -22,6 +22,7 @@
     type CaptionCue,
     type CaptionFont,
     type CaptionsView,
+    type CaptionSwitch,
     type ClipEntry,
     type CoverageView,
     type EpisodeStatus,
@@ -1061,6 +1062,8 @@
     box?: string;
     highlight?: string;
     highlightOn?: boolean;
+    textOn?: boolean;
+    boxOn?: boolean;
   } | null>(null);
   // The captions the draft was made against. The draft is let go of when
   // they come back changed, so the caption box never flashes back to the
@@ -1083,6 +1086,8 @@
           box: colourDraft.box ?? view.style.box,
           highlightColour: colourDraft.highlight ?? view.style.highlightColour,
           highlight: colourDraft.highlightOn ?? view.style.highlight,
+          text: colourDraft.textOn ?? view.style.text,
+          boxOn: colourDraft.boxOn ?? view.style.boxOn,
         },
       };
     }
@@ -1102,12 +1107,36 @@
   // Whether the word being spoken sits on its pill and bounces. Off, the
   // captions are the box and the words.
   const highlightOn = $derived(shownCaptions?.style.highlight ?? true);
+  // Whether captions are burned in at all, and whether the box is drawn
+  // behind them. Off, nothing of the captions renders, and a short can be
+  // made without any.
+  const textOn = $derived(shownCaptions?.style.text ?? true);
+  const boxOn = $derived(shownCaptions?.style.boxOn ?? true);
+  // What the column shows for the box and the highlight. With the text off
+  // nothing of the captions is drawn, so they read as off too, the way the
+  // video preview shows them. Each keeps its own setting underneath, and
+  // turning the text on again brings them back as they were.
+  const boxShown = $derived(textOn && boxOn);
+  const highlightShown = $derived(textOn && highlightOn);
+
+  // A click on Box or Highlight. With the text off it says the captions are
+  // wanted, with this part of them, so both come on.
+  async function flipPart(which: "box" | "highlight", on: boolean) {
+    if (!textOn) {
+      await setCaptionSwitch("text", true);
+      if (!on) await setCaptionSwitch(which, true);
+      return;
+    }
+    await setCaptionSwitch(which, !on);
+  }
 
   function drawColour(part: {
     primary?: string;
     box?: string;
     highlight?: string;
     highlightOn?: boolean;
+    textOn?: boolean;
+    boxOn?: boolean;
   }) {
     if (!colourDraft) colourHeld = captions;
     colourDraft = { ...colourDraft, ...part };
@@ -1147,15 +1176,16 @@
     }
   }
 
-  // The highlight on or off, shown at once and saved straight after.
-  async function setCaptionHighlight(on: boolean) {
+  // A switch of the captions column on or off, shown at once and saved
+  // straight after: the text, the box, or the highlight.
+  async function setCaptionSwitch(which: CaptionSwitch, on: boolean) {
     if (!current) return;
     problem = "";
     captionsWere = null;
-    drawColour({ highlightOn: on });
+    drawColour(which === "text" ? { textOn: on } : which === "box" ? { boxOn: on } : { highlightOn: on });
     colourSaving = true;
     try {
-      await api.setCaptionHighlight(path, current.plan, on);
+      await api.setCaptionSwitch(path, current.plan, which, on);
       await refreshClips();
     } catch (err) {
       problem = errorText(err);
@@ -1165,10 +1195,24 @@
     }
   }
 
+  // The text's colour or how much of it is seen, and the same for the box.
+  // Choosing either while it is off says it is wanted, so it comes back on
+  // with it, the way the highlight does below.
+  async function setTextColour(colour: string, share: number) {
+    if (captions?.style.text === false) await setCaptionSwitch("text", true);
+    await setCaptionColours(colour, share, "", boxOpacity);
+  }
+  async function setBoxColour(colour: string, share: number) {
+    if (captions?.style.text === false) await setCaptionSwitch("text", true);
+    if (captions?.style.boxOn === false) await setCaptionSwitch("box", true);
+    await setCaptionColours("", textOpacity, colour, share);
+  }
+
   // The pill's colour or how much of it is seen. Choosing either while the
   // highlight is off says the pill is wanted, so it comes back on with it.
   async function setHighlightColour(colour: string, share: number) {
-    if (captions?.style.highlight === false) await setCaptionHighlight(true);
+    if (captions?.style.text === false) await setCaptionSwitch("text", true);
+    if (captions?.style.highlight === false) await setCaptionSwitch("highlight", true);
     await setCaptionColours("", textOpacity, "", boxOpacity, colour, share);
   }
 
@@ -1243,6 +1287,8 @@
     highlight: string;
     highlightOpacity: number;
     highlightOn: boolean;
+    textOn: boolean;
+    boxOn: boolean;
   } | null>(null);
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
@@ -1255,6 +1301,8 @@
     highlight: splitColour(captions?.style.highlightColour ?? "").hex,
     highlightOpacity: Math.round(splitColour(captions?.style.highlightColour ?? "").alpha * 100),
     highlightOn: captions?.style.highlight ?? true,
+    textOn: captions?.style.text ?? true,
+    boxOn: captions?.style.boxOn ?? true,
     box: splitColour(captions?.style.box ?? "").hex,
     opacity: Math.round(splitColour(captions?.style.box ?? "rgba(0, 0, 0, 0.5)").alpha * 100),
   });
@@ -1271,6 +1319,8 @@
       captionsNow.size !== captionSizeDefault ||
       captionsNow.y !== captionYDefault ||
       !captionsNow.highlightOn ||
+      !captionsNow.textOn ||
+      !captionsNow.boxOn ||
       coloursMoved,
   );
 
@@ -1283,7 +1333,9 @@
       await setCaptionStyle(captionFontDefault, captionSizeDefault);
     }
     if (captionsNow.y !== captionYDefault) await resetCaptionsHeight();
-    if (!captionsNow.highlightOn) await setCaptionHighlight(true);
+    if (!captionsNow.highlightOn) await setCaptionSwitch("highlight", true);
+    if (!captionsNow.textOn) await setCaptionSwitch("text", true);
+    if (!captionsNow.boxOn) await setCaptionSwitch("box", true);
     if (coloursMoved) {
       await setCaptionColours(
         captionTextDefault,
@@ -1306,7 +1358,9 @@
       await setCaptionStyle(was.font, was.size);
     }
     if (was.y !== captionsNow.y) await setCaptionsHeight(was.y);
-    if (was.highlightOn !== captionsNow.highlightOn) await setCaptionHighlight(was.highlightOn);
+    if (was.highlightOn !== captionsNow.highlightOn) await setCaptionSwitch("highlight", was.highlightOn);
+    if (was.textOn !== captionsNow.textOn) await setCaptionSwitch("text", was.textOn);
+    if (was.boxOn !== captionsNow.boxOn) await setCaptionSwitch("box", was.boxOn);
     if (
       was.text !== captionsNow.text ||
       was.textOpacity !== captionsNow.textOpacity ||
@@ -2029,9 +2083,20 @@
                  are picked, and are saved when the picker lets go. -->
             <!-- The text and how much of it is seen, the same pair as the
                  box under it. -->
+            <!-- Its name is its switch, the way Highlight's is: off, no
+                 captions are burned in at all, and a short can be made
+                 without any. -->
             <div class="setting">
-              <span>Text</span>
-              <span class="field pair">
+              <button
+                class="name"
+                class:off={!textOn}
+                aria-pressed={textOn}
+                title={textOn
+                  ? "The captions are burned into the short. Click to turn them off and render without captions"
+                  : "Off: the short is rendered without captions. Click to burn them in again"}
+                onclick={() => setCaptionSwitch("text", !textOn)}>Text</button
+              >
+              <span class="field pair" class:off={!textOn}>
                 <input
                   class="swatch"
                   type="color"
@@ -2039,9 +2104,8 @@
                   aria-label="Text colour"
                   value={textColour}
                   oninput={(e) =>
-                    drawColour({ primary: joinColour(e.currentTarget.value, textOpacity / 100) })}
-                  onchange={(e) =>
-                    setCaptionColours(e.currentTarget.value, textOpacity, "", boxOpacity)}
+                    drawColour({ primary: joinColour(e.currentTarget.value, textOpacity / 100), textOn: true })}
+                  onchange={(e) => setTextColour(e.currentTarget.value, textOpacity)}
                 />
                 <input
                   class="num"
@@ -2054,23 +2118,28 @@
                   value={textOpacity}
                   oninput={(e) => {
                     const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
-                    if (Number.isFinite(v)) drawColour({ primary: joinColour(textColour, v / 100) });
+                    if (Number.isFinite(v)) drawColour({ primary: joinColour(textColour, v / 100), textOn: true });
                   }}
                   onchange={(e) =>
-                    setCaptionColours(
-                      textColour,
-                      Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
-                      "",
-                      boxOpacity,
-                    )}
+                    setTextColour(textColour, Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)))}
                 /><span class="unit">%</span>
               </span>
             </div>
             <!-- The box and how much of it is seen, side by side, because
                  they are one thing: what is behind the words. -->
             <div class="setting">
-              <span>Box</span>
-              <span class="field pair">
+              <button
+                class="name"
+                class:off={!boxShown}
+                aria-pressed={boxShown}
+                title={!textOn
+                  ? "Off with the text. Click to turn the captions on again, with the box"
+                  : boxOn
+                    ? "The captions sit on a box. Click to turn it off, so the words stand on the picture"
+                    : "Off: the words stand on the picture. Click to put the box behind them again"}
+                onclick={() => flipPart("box", boxOn)}>Box</button
+              >
+              <span class="field pair" class:off={!boxShown}>
                 <input
                   class="swatch"
                   type="color"
@@ -2078,9 +2147,8 @@
                   aria-label="Box colour"
                   value={boxColour.hex}
                   oninput={(e) =>
-                    drawColour({ box: joinColour(e.currentTarget.value, boxOpacity / 100) })}
-                  onchange={(e) =>
-                    setCaptionColours("", textOpacity, e.currentTarget.value, boxOpacity)}
+                    drawColour({ box: joinColour(e.currentTarget.value, boxOpacity / 100), boxOn: true })}
+                  onchange={(e) => setBoxColour(e.currentTarget.value, boxOpacity)}
                 />
                 <input
                   class="num"
@@ -2093,15 +2161,10 @@
                   value={boxOpacity}
                   oninput={(e) => {
                     const v = Math.min(100, Math.max(0, Number(e.currentTarget.value)));
-                    if (Number.isFinite(v)) drawColour({ box: joinColour(boxColour.hex, v / 100) });
+                    if (Number.isFinite(v)) drawColour({ box: joinColour(boxColour.hex, v / 100), boxOn: true });
                   }}
                   onchange={(e) =>
-                    setCaptionColours(
-                      "",
-                      textOpacity,
-                      boxColour.hex,
-                      Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)),
-                    )}
+                    setBoxColour(boxColour.hex, Math.min(100, Math.max(0, Number(e.currentTarget.value) || 0)))}
                 /><span class="unit">%</span>
               </span>
             </div>
@@ -2116,14 +2179,16 @@
             <div class="setting">
               <button
                 class="name"
-                class:off={!highlightOn}
-                aria-pressed={highlightOn}
-                title={highlightOn
+                class:off={!highlightShown}
+                aria-pressed={highlightShown}
+                title={!textOn
+                  ? "Off with the text. Click to turn the captions on again, with the highlight"
+                  : highlightOn
                   ? "The word being spoken sits on a pill that bounces. Click to turn it off, so the captions are the box and the words"
                   : "Off: the captions are the box and the words. Click to light up the word being spoken again"}
-                onclick={() => setCaptionHighlight(!highlightOn)}>Highlight</button
+                onclick={() => flipPart("highlight", highlightOn)}>Highlight</button
               >
-              <span class="field pair" class:off={!highlightOn}>
+              <span class="field pair" class:off={!highlightShown}>
                 <input
                   class="swatch"
                   type="color"

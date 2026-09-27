@@ -178,6 +178,18 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 	if s := ResolveStyle(plan.CaptionStyle()); s.Font != "Anton" || s.Size != 72 {
 		t.Errorf("the style came back as %+v", s)
 	}
+	// The switches of the captions column, text and box, are on or off.
+	if err := SetCaptionStyle(path, map[string]any{"text": false, "box": false}); err != nil {
+		t.Fatal(err)
+	}
+	if plan, _, err := LoadClips(path); err != nil {
+		t.Fatal(err)
+	} else if s := ResolveStyle(plan.CaptionStyle()); s.Text || s.Box {
+		t.Errorf("switched off, the style came back as %+v", s)
+	}
+	if err := SetCaptionStyle(path, map[string]any{"text": true, "box": true}); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, bad := range []map[string]any{
 		{"size": 4.0},
@@ -195,6 +207,8 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		{"highlight_colour": "red"},
 		{"highlight_colour": "#942192\nStyle: b"},
 		{"highlight_colour": "&H922194&"},
+		{"text": 0.0},
+		{"box": "off"},
 	} {
 		if err := SetCaptionStyle(path, bad); err == nil {
 			t.Errorf("%v was accepted", bad)

@@ -465,6 +465,11 @@ type CaptionStyleView struct {
 	Box             string  `json:"box"`
 	Highlight       bool    `json:"highlight"`
 	HighlightColour string  `json:"highlightColour"`
+	// Text and BoxOn are the switches in the captions column: captions at
+	// all, and the box behind them. Box keeps its colour either way, which
+	// is what the column shows.
+	Text  bool `json:"text"`
+	BoxOn bool `json:"boxOn"`
 }
 
 // CaptionsView is one clip's captions with the look to draw them in.
@@ -523,7 +528,7 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,
 		Radius: s.Radius / authored, Primary: WebColour(s.Primary),
 		Box: WebColour(s.BackColour), Highlight: s.Highlight,
-		HighlightColour: s.HighlightWeb(),
+		HighlightColour: s.HighlightWeb(), Text: s.Text, BoxOn: s.Box,
 	}}
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
