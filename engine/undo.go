@@ -119,7 +119,9 @@ func (c *Change) LeaveOutNewClips() *Change {
 	}
 	var kept []string
 	for _, path := range c.paths {
-		if path == correctionsPath(c.logsDir) {
+		// No search writes into the clip set made by hand, so a clip that
+		// appears there is the edit's own and is kept.
+		if path == correctionsPath(c.logsDir) || IsHandPlan(path) {
 			kept = append(kept, path)
 			continue
 		}

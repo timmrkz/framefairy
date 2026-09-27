@@ -279,7 +279,9 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		matches, _ := filepath.Glob(filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
-			if isFile(m) {
+			// Clips made by hand are no search, so they never stand in for
+			// one. They are rendered with --clips.
+			if isFile(m) && !IsHandPlan(m) {
 				existing = append(existing, m)
 			}
 		}

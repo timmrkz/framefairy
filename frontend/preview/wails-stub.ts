@@ -101,6 +101,23 @@ const applyCut = (list: Piece[], from: number, to: number): Piece[] => {
   return out;
 };
 
+// The clips made by hand so far, by where each starts.
+const made = (): number[] => ((window as any).__made ??= []);
+
+// A clip made by hand looks like any clip, from its own clip set.
+const handClip = (i: number, start: number) => {
+  const id = `h0${i + 1}`;
+  return {
+    ...clip(20 + i, start, "Und dann habe ich …", false),
+    id,
+    slug: "und-dann-habe-ich",
+    basename: `${id}_und-dann-habe-ich`,
+    reason: "",
+    key: `clips-hand.json/${id}`,
+    plan: "/eps/ep.framefairy/logs/clips-hand.json",
+  };
+};
+
 const clip = (n: number, start: number, title: string, rendered: boolean) => {
   const segments = pieces(n, start);
   const first = segments.length ? segments[0].start : start;
@@ -624,7 +641,20 @@ export const Call = {
           clip(2, 400, "Der Typ vor mir auf einmal", false),
           clip(3, 902, "Warum ich nie wieder", false),
           clip(4, 1400, "Ein echtes Thema", false),
+          ...made().map((at, i) => handClip(i, at)),
         ]);
+      // A clip made by hand at the playhead, in the clip set of its own,
+      // starting a little before it the way the engine starts one on the
+      // line the playhead stands in.
+      case "MakeClip": {
+        const at = Number(args[1]);
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error(`the transcript has not reached ${Math.round(at)} s yet`));
+        }
+        made().push(Math.max(0, Math.round(at) - 1));
+        const i = made().length - 1;
+        return new Promise((done) => setTimeout(() => done(handClip(i, made()[i])), 400));
+      }
       case "Coverage":
         if (found) {
           if (!landed().length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });

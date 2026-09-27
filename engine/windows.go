@@ -95,6 +95,11 @@ func Without(w Window, holes []Window) []Window {
 func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
 	var found []Searched
 	for _, p := range plans {
+		// Clips made by hand searched nothing. A set with no window is
+		// otherwise read as a search of the whole episode.
+		if p.Hand {
+			continue
+		}
 		w := Window{p.From, p.To}
 		if w.End <= w.Start {
 			w = Window{0, duration}

@@ -1,0 +1,199 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode"
+)
+
+// HandPlanName is the clip set clips made by hand go into. It is no search:
+// it has no window, it marks nothing as searched, and giving a searched
+// part back leaves its clips where they are.
+const HandPlanName = "clips-hand.json"
+
+// IsHandPlan says whether a plan file is the clip set made by hand.
+func IsHandPlan(path string) bool { return filepath.Base(path) == HandPlanName }
+
+// HandPlanPath is where this episode's clips made by hand are kept.
+func (p *Project) HandPlanPath() string { return filepath.Join(p.LogsDir(), HandPlanName) }
+
+// MakeClip makes a clip at a moment of the episode, for a part the model
+// did not pick. It starts at the line the moment stands in, the way the
+// model's clips start on a line, and takes the lines after it until the
+// clip is as long as Min asks, never going past Max for the sake of a line
+// more. The pauses are cut and the crop is framed exactly as they are for
+// a clip the model found. It answers with the clip set and the new clip's
+// id.
+func (p *Project) MakeClip(ctx context.Context, at float64) (string, string, error) {
+	t, err := p.Transcript()
+	if err != nil {
+		return "", "", err
+	}
+	o := p.Base
+	lines := BuildLines(t.Words, t.Levels(), o.MaxPause)
+	first := -1
+	for i, l := range lines {
+		if l.End() > at {
+			first = i
+			break
+		}
+	}
+	if first < 0 {
+		if len(t.Words) > 0 && at > t.Words[len(t.Words)-1].End {
+			return "", "", renderErr("the transcript has not reached %s yet", HMS(at))
+		}
+		return "", "", renderErr("nothing is said after %s", HMS(at))
+	}
+	length := func(last int) float64 {
+		total := 0.0
+		for _, s := range SegmentsFromRanges([][2]int{{first + 1, last + 1}}, lines, o.KeepPause, o.MaxPause) {
+			total += s.Duration()
+		}
+		return total
+	}
+	last := first
+	for last+1 < len(lines) && length(last) < o.Min {
+		if length(last+1) > o.Max {
+			break
+		}
+		last++
+	}
+	ranges := [][2]int{{first + 1, last + 1}}
+	spans := SegmentsFromRanges(ranges, lines, o.KeepPause, o.MaxPause)
+	if len(spans) == 0 {
+		return "", "", renderErr("there is nothing to make a clip of at %s", HMS(at))
+	}
+
+	e := p.engine
+	source, err := e.Probe(ctx, p.Source)
+	if err != nil {
+		return "", "", err
+	}
+	cropW, _ := CropWindow(source, o.Width, o.Height)
+	tight := make([]Span, len(spans))
+	for k, s := range spans {
+		tight[k] = Span{s.Start, s.End}
+	}
+	segments, err := e.ClipSegments(ctx, p.Source, tight, source, cropW, newCropCache())
+	if err != nil {
+		return "", "", err
+	}
+	if len(segments) == 0 {
+		return "", "", renderErr("there is nothing to make a clip of at %s", HMS(at))
+	}
+
+	var said []Cue
+	for n := first; n <= last; n++ {
+		said = append(said, lines[n].Cues...)
+	}
+	title := handTitle(said)
+	clip := PlanClip{Title: title, Slug: strings.ToLower(SanitiseName(title, "clip")),
+		Keep: ranges, Words: [][3]any{}}
+	for _, w := range said {
+		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
+			PyFloat(roundTo(w.End, 3)), w.Text})
+	}
+	for _, s := range segments {
+		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
+			CropX: "center"}
+		if s.CropX != nil {
+			seg.CropX = *s.CropX
+		}
+		clip.Segments = append(clip.Segments, seg)
+	}
+
+	path := p.HandPlanPath()
+	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
+		return "", "", err
+	}
+	id, err := addHandClip(path, filepath.Base(p.Source), clip)
+	if err != nil {
+		return "", "", err
+	}
+	return path, id, nil
+}
+
+// addHandClip puts a clip into the clip set made by hand, under the first
+// id that set has not used, and makes the set if it is not there yet.
+func addHandClip(path, source string, clip PlanClip) (string, error) {
+	for n := 1; n <= MaxClips; n++ {
+		clip.ID = fmt.Sprintf("h%02d", n)
+		if taken(path, clip.ID) {
+			continue
+		}
+		made, err := makeHandPlan(path, source, clip)
+		if err != nil {
+			return "", err
+		}
+		if made {
+			return clip.ID, nil
+		}
+		err = appendClip(path, clip)
+		if err == errNotAdded {
+			// Taken since it was looked at, by a click just before.
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		return clip.ID, nil
+	}
+	return "", renderErr("a clip set holds %d clips at most", MaxClips)
+}
+
+// makeHandPlan writes the clip set with this one clip in it, when there is
+// no set yet. It answers whether it did, and holds the plan's lock so two
+// clips made at the same moment do not both write a new set.
+func makeHandPlan(path, source string, clip PlanClip) (bool, error) {
+	unlock := lockPlan(path)
+	defer unlock()
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	}
+	body, err := MarshalPlan(PlanFile{Source: source, PlannedWith: PlannedWith{By: "hand"},
+		Clips: []PlanClip{clip}})
+	if err != nil {
+		return false, err
+	}
+	// Under the lock already held, which writePlanFile would take again.
+	return true, replacePlan(path, body)
+}
+
+func taken(path, id string) bool {
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		return false
+	}
+	for _, c := range clips {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// handTitle is the first words said in a clip, which is what a person
+// would call it until they call it something else.
+func handTitle(said []Cue) string {
+	var words []string
+	for _, w := range said {
+		text := strings.TrimFunc(w.Text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if text != "" {
+			words = append(words, text)
+		}
+		if len(words) == 6 {
+			break
+		}
+	}
+	title := strings.Join(words, " ")
+	if len(said) > len(words) && title != "" {
+		title += " …"
+	}
+	if title == "" {
+		return "Clip"
+	}
+	return Scrub(title, 200)
+}

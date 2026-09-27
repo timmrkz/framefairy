@@ -26,6 +26,9 @@ type PlanSummary struct {
 	Clips    int       `json:"clips"`
 	Model    string    `json:"model"`
 	Modified time.Time `json:"modified"`
+	// Hand means the clip set of clips made by hand, which is no search:
+	// it has no window and marks nothing as searched.
+	Hand bool `json:"hand,omitempty"`
 }
 
 // EpisodeStatus is what the library shows for one episode. It is read from
@@ -135,7 +138,7 @@ func PlanSummaries(logs string) []PlanSummary {
 			continue
 		}
 		s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-			Modified: info.ModTime()}
+			Modified: info.ModTime(), Hand: IsHandPlan(m)}
 		made := plan.PlannedWith()
 		if v, ok := toFloat(made["from"]); ok {
 			s.From = v

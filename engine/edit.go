@@ -1111,7 +1111,7 @@ func IsPlanFile(path string) bool {
 	return planNameRe.MatchString(filepath.Base(path))
 }
 
-var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+)?\.json$`)
+var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+|-hand)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
 // with it the clips it held. The part it covered is free to be searched
@@ -1191,7 +1191,9 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 	if !IsPlanFile(planPath) {
 		return 0, renderErr("%s is not a plan", filepath.Base(planPath))
 	}
-	if to <= from {
+	// Clips made by hand were no search's, so giving a searched part back
+	// leaves them where they are.
+	if to <= from || IsHandPlan(planPath) {
 		return 0, nil
 	}
 	plan, clips, err := LoadClips(planPath)

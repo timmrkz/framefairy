@@ -89,6 +89,9 @@ type PlannedWith struct {
 	Model string   `json:"model"`
 	From  *PyFloat `json:"from"`
 	To    *PyFloat `json:"to"`
+	// By is "hand" for the clip set of clips made by hand, which no model
+	// made and which searched nothing.
+	By string `json:"by,omitempty"`
 }
 
 // PlanClip is one clip in clips.json.

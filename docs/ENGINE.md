@@ -184,6 +184,18 @@ window with holes in it. `RemoveRange` makes a hole: the clips inside the
 part go, their caption files are moved aside, and a plan with nothing
 left of its window goes altogether.
 
+Clips made by hand, for a part the model did not pick, go into a clip set
+of their own, `clips-hand.json`, whose `planned_with` says `"by": "hand"`.
+It is no search. `SearchedPlans` leaves it out, so it marks nothing as
+searched, `RemoveRange` leaves its clips where they are, and the command
+line never takes it for a search, so it is rendered with `--clips`.
+`MakeClip` in `engine/handclip.go` makes one at a moment: it starts at the
+line the moment stands in, takes the lines after it until the clip is as
+long as `--min` asks, never past `--max` for a line more, and cuts and
+frames it through the same `SegmentsFromRanges` and `ClipSegments` a
+search uses. Undo takes it back: a clip that appears in this set during an
+edit is the edit's own, because no search writes there.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and
