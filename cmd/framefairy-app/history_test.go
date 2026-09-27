@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"framefairy/engine"
 )
@@ -297,7 +298,9 @@ func TestThumbnailsAreSavedAndUndone(t *testing.T) {
 func TestARenderSaysWhatItIsOfFromTheStart(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	job := svc.Render(mine, engine.RenderRequest{Plan: plan, Clips: []string{"01"}})
-	defer svc.CancelJob(job.ID)
+	// Called off, the render takes its record with it once it has stopped,
+	// and that is waited for before the test's folder goes.
+	defer calledOff(t, svc, mine, job.ID)
 	if job.Plan != plan || len(job.Clips) != 1 || job.Clips[0] != "01" {
 		t.Fatalf("the render is of %q %v", job.Plan, job.Clips)
 	}
@@ -306,4 +309,25 @@ func TestARenderSaysWhatItIsOfFromTheStart(t *testing.T) {
 			t.Errorf("the job list has the render of %q %v", j.Plan, j.Clips)
 		}
 	}
+}
+
+// calledOff presses Cancel on a job and waits until it has stopped and its
+// record is gone.
+func calledOff(t *testing.T, svc *FrameFairy, path, id string) {
+	t.Helper()
+	svc.CancelJob(id)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		running := false
+		for _, j := range svc.Jobs() {
+			if j.ID == id && (j.State == JobQueued || j.State == JobRunning) {
+				running = true
+			}
+		}
+		if !running && len(engine.ReadJobs(path)) == 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Error("the job called off never stopped")
 }

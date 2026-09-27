@@ -225,10 +225,10 @@ func TestInstallingTheSpeechModelIsAJobLikeAnyOther(t *testing.T) {
 	// failing on it, and finding clips in an episode that already has a
 	// transcript carries on in the other lane.
 	t.Run("it shares the lane with transcribing", func(t *testing.T) {
-		if got := laneFor("model"); got != LaneTranscribe {
+		if got := laneFor("model"); got != LaneHearing {
 			t.Errorf("a model install runs in the %q lane", got)
 		}
-		if got := laneFor("plan"); got != LaneWork {
+		if got := laneFor("search"); got != LaneFinding {
 			t.Errorf("finding clips runs in the %q lane", got)
 		}
 	})
@@ -378,10 +378,10 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 	// queued behind it waits for it, and a transcription carries on in the
 	// other lane rather than waiting for a download it does not need.
 	t.Run("it shares the lane with finding clips", func(t *testing.T) {
-		if got := laneFor("llm"); got != LaneWork {
+		if got := laneFor("llm"); got != LaneFinding {
 			t.Errorf("a language model install runs in the %q lane", got)
 		}
-		if got := laneFor("model"); got != LaneTranscribe {
+		if got := laneFor("model"); got != LaneHearing {
 			t.Errorf("a speech model install runs in the %q lane", got)
 		}
 	})

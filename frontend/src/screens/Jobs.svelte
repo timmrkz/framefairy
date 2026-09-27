@@ -1,12 +1,14 @@
 <script lang="ts">
   import { clock, type Job } from "../lib/api";
-  import { jobs } from "../lib/state.svelte";
+  import { jobs, stays } from "../lib/state.svelte";
   import JobProgress from "../components/JobProgress.svelte";
 
   let open = $state<string | null>(null);
 
   const ordered = $derived([...jobs.list].reverse());
-  const finished = $derived(jobs.list.some((j) => j.state !== "running" && j.state !== "queued"));
+  const finished = $derived(
+    jobs.list.some((j) => j.state !== "running" && j.state !== "queued" && !stays(j)),
+  );
 
   function name(path: string): string {
     return path.split(/[\\/]/).pop() ?? path;
@@ -20,12 +22,18 @@
         return "Failed";
       case "cancelled":
         return "Cancelled";
+      case "interrupted":
+        // Called off with Cancel, it says what the row in the clip list
+        // says. Cut off by the app closing, it was interrupted.
+        return job.step === "stopped" ? "Stopped" : "Interrupted";
     }
     return "";
   }
 
   function dot(job: Job): string {
-    return { done: "ok", failed: "err", cancelled: "warn", running: "busy", queued: "" }[job.state];
+    return { done: "ok", failed: "err", cancelled: "warn", interrupted: "warn", running: "busy", queued: "" }[
+      job.state
+    ];
   }
 </script>
 

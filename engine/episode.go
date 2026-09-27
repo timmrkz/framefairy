@@ -53,14 +53,9 @@ type EpisodeStatus struct {
 	// deleted it by hand, and then there is nothing of the episode to keep
 	// or to throw away.
 	Work bool `json:"work"`
-	// Looked says whether anyone has ever searched this episode for clips.
-	// It stays true after the clips are removed again, because the app
-	// looks by itself only for an episode nobody has looked at yet.
-	Looked bool `json:"looked"`
-	// LastSearch is how the last search ended when it did not end with
-	// clips: still running, which after a restart means it was cut off, or
-	// failed with its reason. Nil when there is nothing to say.
-	LastSearch *SearchNote `json:"lastSearch,omitempty"`
+	// EverSearched says whether anyone has ever searched this episode for
+	// clips, see EverSearched.
+	EverSearched bool `json:"everSearched"`
 }
 
 // Status reads an episode's state from disk.
@@ -92,35 +87,17 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	st.Rendered = countFiles(filepath.Join(work, "out"), ".mp4")
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
 	st.Work = exists(work)
-	st.Looked = Looked(source)
-	st.LastSearch = ReadSearchNote(source)
+	st.EverSearched = EverSearched(source)
 	return st
 }
 
-// lookedName is the note that an episode has been searched for clips. It
-// is empty: that it is there is the whole of what it says. It lives with
-// the episode rather than in the app's own folder, so deleting the work
-// folder makes the episode new again, and keeping it means the app will
-// not spend the machine on a search nobody asked for.
-const lookedName = "looked"
-
-// Looked reports whether this episode has ever been searched for clips.
-func Looked(source string) bool {
-	return exists(filepath.Join(WorkDir(source), lookedName))
-}
-
-// MarkLooked notes that a search of this episode has been asked for. It is
-// written once and never removed, because removing the clips again does
-// not make the episode one nobody has looked at.
-func MarkLooked(source string) error {
-	work := WorkDir(source)
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		return err
-	}
-	if Looked(source) {
-		return nil
-	}
-	return os.WriteFile(filepath.Join(work, lookedName), nil, 0o644)
+// EverSearched says whether this episode has ever been searched for clips: it
+// has a plan, or a search or a render has kept its record or its timings,
+// see jobs.go. It stays true after the clips are removed again, because
+// the timings stay, and the app searches by itself only for an episode
+// nobody has searched. Deleting the work folder makes the episode new.
+func EverSearched(source string) bool {
+	return exists(JobsDir(source)) || len(PlanSummaries(filepath.Join(WorkDir(source), "logs"))) > 0
 }
 
 // PlanSummaries lists the plan files in a logs folder, newest first. Files

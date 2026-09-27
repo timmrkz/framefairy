@@ -33,7 +33,9 @@
     // being done, how long is left, and how far it has come, -1 when that
     // is not known. That row wears the work running, because it is where
     // the next clip will appear.
-    next?: { what: string; left: string; fraction: number } | null;
+    // still is work that has been told to stop and has not said so yet:
+    // it keeps its fill and stops moving, the way Busy draws it.
+    next?: { what: string; left: string; fraction: number; still?: boolean } | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
     // have appeared in, the same row that says what a search is doing
@@ -171,7 +173,7 @@
   {#each ghosts as row (row)}
     {#if row === 0 && next}
       <li class="ghost next" aria-live="polite" bind:this={nextRow}>
-        <Busy fraction={next.fraction} />
+        <Busy fraction={next.fraction} still={next.still} />
         <span class="title">{next.what}</span>
         <span class="meta muted num">{next.left}</span>
       </li>

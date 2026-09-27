@@ -474,6 +474,22 @@ framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 The server's output is kept in `logs/llm-server.log`, at log level 4,
 which is the first level where llama.cpp says what it took from memory.
 
+## Jobs and their records
+
+A search, the way the app runs one, is `Project.Search` in `jobs.go`: it
+hears the episode from where the transcript ends to the end of its window,
+and then plans, the same two steps `Run` takes for the command line. A
+render is `Project.RenderJob`, one clip at a time. Each keeps one record in
+the episode's `jobs/` folder, written atomically as it goes from one step to
+the next, and before each step it asks the app for its turn in that step's
+lane. Done, the record goes and the job's timings are added to
+`jobs/timings.jsonl`. Failed, the record says why. Stopped from outside,
+the record stays as it was, which is how an app that starts knows the job
+was cut off. What each step made stays however the job ends: the
+transcript as far as it was heard, the clips as they landed, the shorts
+that were finished. The command line does not keep records. The design is
+in [JOBS.md](JOBS.md).
+
 ## The code
 
 `asr/` wraps the speech recogniser and is the only package with native code.
@@ -491,6 +507,8 @@ Everything else is in `engine/`:
   plan.go       building the plan: the prompt, the call, the whole answer
   planbuild.go  clips framed and written as the answer arrives
   searchclock.go how far a search has come, against how long it took before
+  jobs.go       a search and a render as one job each, with their records
+                and timings
   undo.go       an edit remembered as the files before and after it, and
                 put back clip by clip, so what landed since stays
   analysis.go   camera switches and framing

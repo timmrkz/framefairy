@@ -39,9 +39,6 @@
     inEpisode,
     Newest,
     nextWindow,
-    shouldLook,
-    shouldWarm,
-    shouldTranscribe,
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
@@ -54,6 +51,7 @@
     type RoomView,
   } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
+  import { stepLine } from "../lib/steps";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -131,9 +129,19 @@
   const leastLong = $derived(leastWindow(count, min, duration));
   const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
   const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
-  const transcribing = $derived(jobs.active(path, "transcribe"));
-  const working = $derived(jobs.active(path, "work"));
-  const finding = $derived(working?.kind === "plan");
+  // The episode's search, as the Go side keeps it: one job from New to its
+  // clips, which hears the episode as far as the window reaches and then
+  // finds, see docs/JOBS.md. Everything the workspace shows about finding
+  // clips comes from it, and the workspace decides nothing about when a
+  // search starts or stops. It is undefined when there is nothing to say.
+  const search = $derived(jobs.search(path));
+  const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
+  const working = $derived(searching ? search : undefined);
+  // The search while it hears the episode. Its progress says how far the
+  // audio has been heard.
+  const transcribing = $derived(working?.step === "hearing" ? working : undefined);
+  const finding = $derived(working?.step === "finding");
+  const renderingJob = $derived(jobs.active(path, "rendering"));
   // Whether work is running, as a plain yes or no. The Go side sends a job
   // event about once a second, and every one of them replaces the job
   // object, so anything that watches the job itself is torn down and set
@@ -144,15 +152,16 @@
   const isFinding = $derived(!!finding);
   // A render is shown by the Render button it was started from, which
   // fills up and becomes Cancel. The head of the clip list is about
-  // finding clips, so a render is not its business.
-  const rendering = $derived(working?.kind === "render");
-  // A search in the work lane. While it runs, the head of the clip list
-  // carries it: New becomes Cancel and the line under the head fills up.
-  // Nothing is added to the column and nothing moves.
-  const busy = $derived((!!working && !rendering) || starting);
-  // What the work is doing right now, in the engine's words: loading the
-  // model, reading the transcript, how many clips are found.
-  const doing = $derived(working?.progress?.text ?? "");
+  // finding clips, so a render is not its business, and it runs in a lane
+  // of its own, so it holds no search up.
+  const rendering = $derived(!!renderingJob);
+  // While a search runs, the head of the clip list carries it: New becomes
+  // Cancel and the line under the head fills up. Nothing is added to the
+  // column and nothing moves.
+  const busy = $derived(searching || starting);
+  // What the search is doing right now, in the step's own words, see
+  // lib/steps.ts.
+  const doing = $derived(working ? stepLine(working).what : "");
   const leftOfWork = $derived(
     working?.progress && working.progress.remaining > 0
       ? `${clock(working.progress.remaining)} left`
@@ -170,7 +179,7 @@
   // from the range picker, at the edge it moves, so none of it belongs in
   // this head: the two ran in lanes of their own and the head carried both,
   // which is how it came to say Transcribing over a list of clips.
-  const lane = $derived({ word: "Clips", count: true, job: busy ? working : null });
+  const lane = $derived({ word: "Clips", count: true, job: working ?? null });
   const action = $derived.by(() => {
     if (busy) {
       return {
@@ -179,29 +188,7 @@
         run: stopWork,
         off: stopping || (starting && !working),
         primary: false,
-        title: `${finding || starting ? "Stop looking for clips" : "Stop the render"}${leftOfWork ? `, ${leftOfWork}` : ""}`,
-      };
-    }
-    // One lane does the work, so a search waits for the render. New stays
-    // New and says why it cannot be pressed.
-    if (rendering) {
-      return {
-        label: "New",
-        icon: "plus",
-        run: newClips,
-        off: true,
-        primary: true,
-        title: "Clips can be looked for once the render is done",
-      };
-    }
-    if (lookPending) {
-      return {
-        label: "Cancel",
-        icon: "close",
-        run: skipLook,
-        off: false,
-        primary: false,
-        title: "Call the search off. The transcription it waits for stops with it",
+        title: "Stop looking for clips. What was heard of the episode is kept",
       };
     }
     // A search that was cut off or failed is carried on, not started anew:
@@ -223,7 +210,7 @@
       run: newClips,
       off: duration <= 0 || to <= 0,
       primary: true,
-      title: !readyToLook
+      title: !heardWindow
         ? `Look for clips in the window. The episode is transcribed up to ${clock(to)} first, it is at ${clock(heard)}`
         : covering
           ? "Look at the window again, removing the clips it has"
@@ -234,9 +221,7 @@
   // How far whatever the head is about has come.
   // How far the render has come, for the Render button.
   const renderShare = $derived(
-    rendering && working?.progress && working.progress.fraction >= 0
-      ? working.progress.fraction
-      : -1,
+    renderingJob?.progress && renderingJob.progress.fraction >= 0 ? renderingJob.progress.fraction : -1,
   );
   const share = $derived(
     lane.job?.progress && lane.job.progress.fraction >= 0 ? lane.job.progress.fraction : -1,
@@ -246,26 +231,15 @@
     if (!working) stopping = false;
   });
 
-  // A search called off while it waits for the transcript. The episode
-  // counts as looked at, so it does not start by itself again, and New is
-  // there for when it is wanted.
-  function skipLook() {
-    chosen.looked[path] = true;
-    delete chosen.asked[path];
-    // Called off by hand, so there is nothing for the episode to say.
-    api.forgetSearch(path).catch(() => {});
-    // The transcription runs for the search, so it stops with it.
-    stopTranscribing();
-    // The transcription stops at the window only for that search.
-    if (chosen.held[path]) {
-      delete chosen.held[path];
-      api.holdTranscription(path, 0).catch(() => {});
-    }
-  }
-
+  // Cancel: the search stops, and what it heard of the episode stays, so
+  // the next search goes on from there. The edge on the range picker stops
+  // where it is, on the click: the speech model is part way through a
+  // chunk and keeps reporting until it hears the stop, and without this
+  // the edge carries on for a second or two and the click looks missed.
   function stopWork() {
     if (!working) return;
     stopping = true;
+    if (transcribing) stoppedAt = heard;
     api.cancelJob(working.id);
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
@@ -298,16 +272,9 @@
   let stoppedAt = $state<number | null>(null);
   const shownHeard = $derived(stoppedAt ?? heard);
 
-  // A search can be asked for the moment the window has been heard. It
-  // reads the transcript off disk, and the Go side makes sure that is
-  // there: the search pauses the transcription, the pause writes down all
-  // it heard, and then it reads. This used to go by what was saved, which
-  // is written every 8 s of work, minutes of audio apart, and read here
-  // every 2 s: the first search was asked for up to 10 s after the window
-  // had been heard, and the transcription ran on minutes past its end.
-  // Everything that decides about a search goes by heard for that reason,
-  // shouldLook and shouldWarm too.
-  const readyToLook = $derived(duration > 0 && to > 0 && heard >= to - 0.5);
+  // Whether the episode has been heard to the end of the window. A search
+  // of a window not heard yet hears it first, which New's title says.
+  const heardWindow = $derived(duration > 0 && to > 0 && heard >= to - 0.5);
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -318,22 +285,6 @@
       ? `${clock(transcribing.progress.remaining)} left`
       : "",
   );
-  // There is nothing to list until the transcript reaches the end of the
-  // window. The list waits with a row of placeholders and the info
-  // mark beside the head says why, the same mark that tells what the list
-  // is once there are clips in it.
-  const stillWaiting = $derived(!busy && waitingOnWords && heard < to - 0.5);
-  // A new episode's first search is on its way: nobody has searched it,
-  // and it starts by itself the moment the transcript covers the window.
-  // From then on it is work in hand, with the row that says so and a
-  // Cancel that stops it before it starts.
-  const autoLook = $derived(
-    !!status &&
-      !(status.looked || chosen.looked[path]) &&
-      (status.plans?.length ?? 0) === 0 &&
-      clips.length === 0,
-  );
-  const lookPending = $derived(stillWaiting && (autoLook || !!chosen.asked[path]));
   // How many rows the clip list holds open. Nothing is known about the
   // clips before the search answers, but their number is: it is the one
   // asked for. So the list stands in the shape it is about to take, with
@@ -354,7 +305,7 @@
   // but still: they are what New will fill, and nothing is filling them
   // yet. An episode whose first search was stopped, by quitting among
   // other things, had an empty column there instead.
-  const comingNow = $derived(finding || starting || lookPending);
+  const comingNow = $derived(busy);
   // What the row the next clip will appear in is waiting on. While the
   // transcript has not reached the end of the window, that is the
   // transcript, and how far it has come is how much of the window it
@@ -370,22 +321,30 @@
   // its end. It used to be measured from the start of the episode, so a
   // window two hours in began nearly full.
   const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
+  // The row the next clip will appear in says which step the search is in,
+  // in the words of lib/steps.ts, the same words every row that shows work
+  // uses. While it hears, how far it has come is how far the window has
+  // been heard. Nothing more: the clips it has found so far are the cards
+  // above the row, and the row said "2 of 12 found" in the place the third
+  // clip was to appear.
   const next = $derived.by(() => {
-    if (finding || starting) {
-      const p = working?.progress;
-      if (p?.text === "Waiting for the transcript") {
-        return { what: p.text, left: windowText, fraction: heardShare };
-      }
-      return {
-        what: p?.text ?? "",
-        // In steps of five seconds, so the number is something to read
-        // rather than something that flickers.
-        left: p && p.remaining > 0 ? `About ${clock(Math.ceil(p.remaining / 5) * 5)} left` : "",
-        fraction: p && p.fraction >= 0 ? p.fraction : -1,
-      };
+    if (!busy) return null;
+    // Clicked, and the job not there yet: the row already says the step
+    // the search is about to take, so Continue goes from Stopped straight
+    // to Transcribing, with no empty card and no word in between.
+    if (!working) {
+      return heardWindow
+        ? { what: "Finding clips", left: windowText, fraction: -1, now: true }
+        : { what: "Transcribing", left: windowText, fraction: heardShare, now: true };
     }
-    if (!lookPending) return null;
-    return { what: "Waiting for the transcript", left: windowText, fraction: heardShare };
+    const line = stepLine(working, heardShare);
+    // Cancel pressed: the row says so in the same frame, and stands still
+    // where it got to, until the search has saved what it did and says it
+    // stopped. It went on saying Transcribing for a second after the click.
+    if (stopping) {
+      return { what: "Stopping", left: line.left || windowText, fraction: line.fraction, still: true, now: true };
+    }
+    return { ...line, left: line.left || windowText };
   });
 
   // What the row says, held long enough to be read. The engine reports
@@ -395,9 +354,25 @@
   // found going up. The fill and the time left follow at once, because
   // they are the same thing moving on. It keeps its own time, in onMount,
   // because an effect that reads the job is set up again on every report.
-  let shownNext = $state<{ what: string; left: string; fraction: number } | null>(null);
+  let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
+    null,
+  );
   let shownSince = 0;
-  const counting = (what: string) => / of \d+ found$/.test(what);
+  // What a click brings about shows in the same frame as the click, not on
+  // the timer's next tick: the row the Stopped note stood in was empty for
+  // up to a quarter of a second after Continue, which read as a flash, and
+  // Cancel went on saying Transcribing. Work starting or ending, and a
+  // headline marked now, go straight in. Only the engine's own moving from
+  // one step to the next waits, below.
+  $effect(() => {
+    const want = next;
+    if (want && (!shownNext || (want.now && (want.what !== shownNext.what || !!want.still !== !!shownNext.still)))) {
+      shownSince = Date.now();
+      shownNext = { what: want.what, left: want.left, fraction: want.fraction, still: want.still };
+    } else if (!want && shownNext) {
+      shownNext = null;
+    }
+  });
   onMount(() => {
     const timer = window.setInterval(() => {
       const want = next;
@@ -407,13 +382,15 @@
       }
       // Nothing new to say: the row stays as it is.
       if (!want.what && shownNext) return;
-      const what = want.what || "Finding clips";
+      const what = want.what;
       if (!shownNext || what === shownNext.what) {
         if (!shownNext) shownSince = Date.now();
         shownNext = { ...want, what };
         return;
       }
-      const hold = counting(what) && counting(shownNext.what) ? 1000 : 2500;
+      // A step that lasted a moment, a turn that came at once, is not
+      // flashed up: a new headline waits a second.
+      const hold = 1000;
       if (Date.now() - shownSince < hold) {
         shownNext = { ...shownNext, left: want.left, fraction: Math.max(shownNext.fraction, want.fraction) };
         return;
@@ -424,14 +401,16 @@
     return () => window.clearInterval(timer);
   });
   const waitNote = $derived.by(() => {
-    if (finding || starting) {
-      return `The model is reading the window from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${doing ? ` ${doing}${leftOfWork ? `, about ${leftOfWork}` : ""}.` : leftOfWork ? ` About ${leftOfWork}.` : ""}`;
+    if (!busy) return "";
+    if (finding) {
+      return `The model is reading the window from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${leftOfWork ? ` About ${leftOfWork}.` : ""}`;
     }
-    if (!stillWaiting) return "";
     const first = transcribing
       ? `The episode is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
-      : "The episode is not transcribed to the end of the window yet.";
-    return `${first} Clips are found by themselves once the transcript reaches ${clock(to)}, and the window on the range picker can be moved and resized while it runs.`;
+      : heardWindow
+        ? "The search waits while another one finds its clips."
+        : "The episode is not transcribed to the end of the window yet.";
+    return `${first} Clips are found by themselves once the transcript reaches ${clock(to)}.`;
   });
   // The window stays with the episode while the app runs, so leaving the
   // workspace and coming back does not throw away what was chosen.
@@ -509,55 +488,66 @@
   // How the last search ended, when it stopped before it was done and
   // nothing is running now: cut off, because the app was closed or fell
   // over in the middle, or failed with a reason. It is said in the first
-  // row still to come and points to New, and nothing starts by itself. A
-  // search called off by hand leaves nothing to say.
+  // row still to come and points to Continue, and nothing starts by
+  // itself. A search called off by hand leaves nothing to say.
   const stopped = $derived.by(() => {
-    const note = status?.lastSearch;
-    if (!note || finding || starting || lookPending) return null;
-    const end = note.to > 0 ? note.to : duration;
-    const window = `Window ${clock(note.from)} to ${clock(end)}`;
-    const span = { from: note.from, to: end, window };
-    if (note.state === "failed") {
+    if (!search || busy) return null;
+    if (search.state !== "interrupted" && search.state !== "failed") return null;
+    const start = search.from ?? 0;
+    const end = search.to && search.to > 0 ? search.to : duration;
+    const window = `Window ${clock(start)} to ${clock(end)}`;
+    const span = { from: start, to: end, window };
+    if (search.state === "failed") {
       // The engine's reasons begin in lower case, the way an error does
       // in the log. In a row of the list it is a sentence.
-      const said = note.error?.trim() ?? "";
+      const said = search.error?.trim() ?? "";
       const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
       return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
     }
-    // Cut off while it waited for the transcript, which is the first half
-    // of every search on an episode read only part way: Continue
-    // transcribes on from where it stopped and then looks.
-    if (note.waiting) {
-      const reached = Math.min(status?.covered ?? 0, end);
+    // Called off with Cancel, or cut off by the app closing: the same row
+    // either way, because either way what it did stays and Continue
+    // carries it on. Only the first word says which it was.
+    const byHand = search.step === "stopped";
+    const what = byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue";
+    const how = byHand ? "Cancel stopped the search" : "The app was closed";
+    // Stopped before it had heard its window, which is the first half of
+    // every search on an episode heard only part way: Continue hears on
+    // from where it stopped and then finds.
+    const reached = Math.min(covered, end);
+    if (reached < end - 0.5) {
       return {
         ...span,
-        what: "Interrupted. Click Continue",
+        what,
         left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
-        full: `${window}. The app was closed while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
+        full: `${window}. ${how} while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
       };
     }
     return {
       ...span,
-      what: "Interrupted. Click Continue",
+      what,
       left: window,
-      full: `${window}. The app was closed or stopped while the clips were found. Continue looks again`,
+      full: `${window}. ${how} while the clips were found. Continue looks again`,
     };
   });
 
-  // Continue: the window goes back to the one the search was about, and
-  // the search is asked for again, the same way New asks for it.
-  function carryOnSearch() {
-    if (!stopped) return;
+  // Continue: the search carries on from what it left, on the window it
+  // was about, which the range picker shows again.
+  async function carryOnSearch() {
+    if (!stopped || !search) return;
     from = stopped.from;
     to = stopped.to;
-    findClips(covering);
+    begin();
+    try {
+      await api.continueJob(search.id);
+    } catch (err) {
+      problem = errorText(err);
+      starting = false;
+    }
   }
   const coming = $derived(
-    finding || starting
+    busy
       ? shown.length + Math.max(0, count - foundSoFar)
-      : lookPending
-        ? shown.length + count
-        : shown.length === 0
+      : shown.length === 0
           ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
@@ -583,11 +573,10 @@
   // of from the moment it is queued: its result only says so once it is
   // over, which is how the button never saw its own render running.
   const renderingCurrent = $derived(
-    !!working &&
-      working.kind === "render" &&
+    !!renderingJob &&
       !!current &&
-      working.plan === current.plan &&
-      (!working.clips?.length || working.clips.includes(current.id)),
+      renderingJob.plan === current.plan &&
+      (!renderingJob.clips?.length || renderingJob.clips.includes(current.id)),
   );
 
   // The free room changes whenever a search finishes, so it is taken again
@@ -621,7 +610,7 @@
   // what that is changes: the room, or the clips asked for. Not while clips
   // are being found for it, because then it is the window being searched.
   function keepWindow() {
-    if (finding || starting || duration <= 0 || to <= from) return;
+    if (busy || duration <= 0 || to <= from) return;
     const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
     if (Math.abs(kept.from - from) > 0.001) from = kept.from;
     if (Math.abs(kept.to - to) > 0.001) to = kept.to;
@@ -640,7 +629,13 @@
   // ago if it still fits, otherwise wherever a window goes by itself.
   function openWindow() {
     const kept = chosen.of(path, duration);
-    if (kept) {
+    // A window that has been searched all through since is not opened on
+    // again: the search it was drawn for ended while the workspace was not
+    // open, on Activity say, and nothing moved it on then. It lay over the
+    // clips just found and hid their marks.
+    const searchedThrough =
+      !!kept && !busy && coverage.searched.some((w) => w.from <= kept.from + 0.5 && w.to >= kept.to - 0.5);
+    if (kept && !searchedThrough) {
       from = kept.from;
       to = kept.to;
       keepWindow();
@@ -711,15 +706,6 @@
       }
       await refreshClips();
       if (first) await openOnAClip();
-      // A video added a moment ago: nothing searched, nothing found, and the
-      // transcript still on its way. That one gets its first clips without
-      // being asked.
-      if (
-        first &&
-        shouldTranscribe({ missing: status.missing, work: status.work, busy: !!jobs.active(path) })
-      ) {
-        api.transcribe(path).catch((err) => (problem = errorText(err)));
-      }
     } catch (err) {
       problem = errorText(err);
     }
@@ -762,17 +748,6 @@
     await tick();
     showChosen();
     timeline?.fit();
-  }
-
-  // Stops the transcription, which runs for a search and stops with it.
-  function stopTranscribing() {
-    if (!transcribing) return;
-    // The edge stops where it is, on the click. The recogniser is part way
-    // through a chunk and keeps reporting until it hears the stop, so
-    // without this the edge carries on for a second or two after the press
-    // and the click looks like it missed.
-    stoppedAt = heard;
-    api.cancelJob(transcribing.id);
   }
 
   // Removing a clip is one click, so putting it back is one click too, for
@@ -1454,30 +1429,23 @@
     findClips(false);
   }
 
-  async function findClips(replan: boolean) {
+  // A click shows at once: the list opens its rows and the head says
+  // Cancel before the job has reported in.
+  function begin() {
     problem = "";
-    // The window is not transcribed yet. The search waits for it the way
-    // the first search of an episode does, with the same row, the same
-    // Cancel and the transcription stopping exactly at the window's edge,
-    // and it starts the transcription itself when nothing is transcribing.
-    // There used to be no way to ask for clips until the transcript was
-    // there, and a transcription that was paused had to be carried on
-    // first with a button at the edge of the range picker, which nobody
-    // could be expected to know about.
-    if (!readyToLook) {
-      chosen.asked[path] = { replan };
-      fedFor = -1;
-      // Kept with the episode as well as here, because here is gone the
-      // moment the app is closed, and the search with it.
-      api.askSearch(path, whole ? 0 : from, whole ? 0 : to).catch(() => {});
-      return;
-    }
     starting = true;
+    stoppedAt = null;
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
     shownFirst = false;
+  }
+
+  // New. The search hears the window first if the episode has not been
+  // heard that far, all of it on the Go side, see docs/JOBS.md.
+  async function findClips(replan: boolean) {
+    begin();
     try {
-      const job = await api.plan(path, {
+      await api.search(path, {
         From: whole ? 0 : from,
         To: whole ? 0 : to,
         Count: count,
@@ -1485,7 +1453,6 @@
         Max: max,
         Replan: replan,
       });
-      waiting = [...waiting, job.id];
     } catch (err) {
       problem = errorText(err);
       starting = false;
@@ -1558,89 +1525,33 @@
     if (working) starting = false;
   });
 
-  // An episode that was just added finds its first clips by itself. The
-  // first search starts the moment the transcript covers the window, so
-  // adding a video is all it takes to end up with clips. The
-  // rule itself is in lib/flow.ts, with its tests.
+  // The window on the range picker is the window being searched, for as
+  // long as a search runs. A search the Go side started by itself, the
+  // first one of an episode just added, has a window the workspace did not
+  // draw, so the range picker goes to it. And its rows are counted from
+  // the list as it was when it started, the same as for one started here.
+  let followed = "";
   $effect(() => {
-    if (!source || !status) return;
-    const look = shouldLook({
-      covered: heard,
-      to,
-      plans: status.plans?.length ?? 0,
-      clips: clips.length,
-      busy: busy || waiting.length > 0,
-      // Ever searched, by the app or by hand, in this run or an earlier
-      // one. Removing the clips again does not make it a new episode.
-      looked: status.looked || !!chosen.looked[path],
-    });
-    if (!look) return;
-    chosen.looked[path] = true;
-    findClips(false);
-  });
-
-  // New pressed before the window was transcribed: the search starts the
-  // moment it is, the same as the first search does.
-  $effect(() => {
-    const asked = chosen.asked[path];
-    if (!asked || !readyToLook || busy || waiting.length > 0) return;
-    delete chosen.asked[path];
-    chosen.looked[path] = true;
-    findClips(asked.replan);
-  });
-
-  // The transcription stops exactly at the end of that first search's
-  // window, rather than being paused from outside a chunk or two past it:
-  // the chunk the speech model hears is cut on the window's edge. The
-  // window is locked from here until the search has run, so the edge the
-  // transcription stops at is the edge the search reads to.
-  $effect(() => {
-    if (!source || !status || !lookPending || to <= 0) return;
-    if (chosen.held[path] === to) return;
-    chosen.held[path] = to;
-    api.holdTranscription(path, to).catch(() => {
-      // Without the hold the search pauses the transcription itself.
-    });
-  });
-
-  // A search waiting for words that nothing is transcribing starts the
-  // transcription, held at its window by the effect above: the first
-  // search of an episode whose transcription stopped, and New pressed
-  // before the window was transcribed. Once for each window, so a
-  // transcription that fails is not started again and again.
-  let fedFor = -1;
-  $effect(() => {
-    if (!source || !status || !lookPending || transcribing || to <= 0) return;
-    if (fedFor === to) return;
-    fedFor = to;
-    stoppedAt = null;
-    api.transcribe(path).catch((err) => (problem = errorText(err)));
-  });
-
-  // The model for that first search is loaded while the transcript is on
-  // its way, once for each episode while the app runs.
-  $effect(() => {
-    if (!source || !status || chosen.warmed[path]) return;
-    const warm = shouldWarm({
-      covered: heard,
-      to,
-      plans: status.plans?.length ?? 0,
-      clips: clips.length,
-      busy: busy || waiting.length > 0,
-      looked: status.looked || !!chosen.looked[path],
-    });
-    if (!warm) return;
-    chosen.warmed[path] = true;
-    api.warmModel(path, from, to).catch(() => {
-      // A model that cannot be loaded ahead is loaded by the search.
-    });
+    if (!working || !source || followed === working.id) return;
+    followed = working.id;
+    const start = working.from ?? 0;
+    const end = working.to && working.to > 0 ? working.to : duration;
+    if (end > start) {
+      from = start;
+      to = end;
+    }
+    if (!listedBefore) {
+      listedBefore = new Set(clips.map((c) => c.key));
+      pickedBefore = selected;
+      shownFirst = false;
+    }
   });
 
   // The clip a render was asked for, from the click until the job is
   // there, so the button fills from the moment it is pressed.
   let renderAsked = $state("");
   $effect(() => {
-    if (working) renderAsked = "";
+    if (renderingJob) renderAsked = "";
   });
 
   async function render(clip: ClipEntry) {
@@ -1682,39 +1593,39 @@
   // While the transcript grows, the covered part of the timeline grows.
 
 
+  // How far the episode has been heard is read again when the hearing
+  // stops, so the range picker's edge lands on what was saved.
   let wasTranscribing = false;
   $effect(() => {
     const now = !!transcribing;
     if (wasTranscribing && !now) {
       onchange();
       load();
-      const last = jobs.list.findLast((j) => j.episode === path && j.kind === "transcribe");
-      if (last?.state === "failed") problem = last.error ?? "The transcription failed.";
     }
     wasTranscribing = now;
   });
 
-  // Finished jobs this screen started: show new clips, or the reason it failed.
+  // A search that ends: the list shows what it found, and the window moves
+  // on. How it ended otherwise is said by the search itself, in the row its
+  // next clip would have appeared in. Watched by whether one runs, not by
+  // the job, which is replaced on every report.
+  let searchRan = "";
   $effect(() => {
-    if (!waiting.length) return;
-    const finished = jobs.list.filter(
-      (j) => waiting.includes(j.id) && j.state !== "queued" && j.state !== "running",
-    );
-    if (!finished.length) return;
-    waiting = waiting.filter((id) => !finished.some((j) => j.id === id));
+    const id = working?.id ?? "";
+    if (id) {
+      searchRan = id;
+      return;
+    }
+    if (!searchRan) return;
+    const ended = jobs.list.find((j) => j.id === searchRan);
+    searchRan = "";
     starting = false;
     onchange();
     load().then(() => {
-      // A search that failed says so in the clip list, where its clips
-      // would have been, and only a failure that never reached the search
-      // itself, with no note to show, goes to the line over the workspace.
-      for (const job of finished) {
-        if (job.state !== "failed") continue;
-        if (job.kind === "plan" && status?.lastSearch) continue;
-        problem = job.error ?? "The job failed.";
+      if (ended?.state !== "done") {
+        listedBefore = null;
+        return;
       }
-      const plan = finished.find((j) => j.kind === "plan" && j.state === "done")?.result;
-      if (!plan) return;
       // The window just searched is a wall now, so the window moves on to
       // the next one nobody has looked at. It would otherwise sit on the
       // clips it just found, lying over their marks as an X-ray and
@@ -1727,11 +1638,28 @@
       // A window searched again comes back under the names it had, so
       // nothing in the list is new. Its first clip, as long as nobody has
       // picked another.
-      if (!shownFirst && selected === pickedBefore) {
-        const first = clips.find((c) => c.plan === plan);
+      if (!shownFirst && selected === pickedBefore && ended.result) {
+        const first = clips.find((c) => c.plan === ended.result);
         if (first) select(first.key);
       }
       listedBefore = null;
+    });
+  });
+
+  // Finished renders this screen started: the list shows what was
+  // rendered, and a render that failed says why over the workspace.
+  $effect(() => {
+    if (!waiting.length) return;
+    const finished = jobs.list.filter(
+      (j) => waiting.includes(j.id) && j.state !== "queued" && j.state !== "running",
+    );
+    if (!finished.length) return;
+    waiting = waiting.filter((id) => !finished.some((j) => j.id === id));
+    onchange();
+    load().then(() => {
+      for (const job of finished) {
+        if (job.state === "failed") problem = job.error ?? "The render failed.";
+      }
     });
   });
 
@@ -1880,7 +1808,7 @@
     onseek={seekTo}
     searched={coverage.searched}
     onremove={(span) => (removingSearch = span)}
-    locked={finding || starting || lookPending}
+    locked={busy}
     least={leastLong}
     leastSays="room for {count} clips of {min} s"
     most={reachAnywhere}

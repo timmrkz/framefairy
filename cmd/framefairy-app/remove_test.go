@@ -149,31 +149,44 @@ func waitForRunning(t *testing.T, s *FrameFairy, source string) {
 	t.Fatal("no job ever started")
 }
 
-// Removing an episode while its search runs. The search paused the
-// episode's transcription, and a search that is told to stop carries on
-// what it paused on its way out, so the removal used to start a new
-// transcription of the episode it was removing, wait for it in vain and
-// then refuse to delete anything.
-func TestRemovingAnEpisodeWhileItsSearchPausedTheTranscription(t *testing.T) {
-	s, source, work := anEpisodeWithWork(t)
-	transcribing(t, s, source)
-	searching := make(chan struct{})
-	s.jobs.add(source, "plan", "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {
-		paused := s.pauseTranscriptions()
-		defer s.carryOn(paused)
-		close(searching)
-		<-ctx.Done()
-		return "", engine.ErrCancelled
-	})
-	<-searching
+// hearing puts a search in the queue that hears the episode until it is
+// told to stop, and then takes a moment to save what it heard, the way a
+// real one does.
+func hearing(t *testing.T, s *FrameFairy, path string) {
+	t.Helper()
+	// Whatever carries on is stopped before the test's folder goes.
+	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
+	started := make(chan struct{})
+	s.jobs.addSteps(path, engine.JobSearch, "Find clips", true, nil,
+		func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+			stepCtx, release, err := turn(ctx, engine.StepHearing)
+			if err != nil {
+				return "", engine.ErrCancelled
+			}
+			defer release()
+			close(started)
+			<-stepCtx.Done()
+			time.Sleep(200 * time.Millisecond)
+			return "", engine.ErrCancelled
+		})
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the search never started hearing")
+	}
+}
 
+// Removing an episode while its search hears it. The search is stopped and
+// waited for, and nothing of it is left running on an episode that is gone.
+func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
+	s, source, work := anEpisodeWithWork(t)
+	hearing(t, s, source)
 	if err := s.RemoveEpisode(source, true); err != nil {
 		t.Fatalf("removing the episode: %v", err)
 	}
 	if _, err := os.Stat(work); !os.IsNotExist(err) {
 		t.Error("the work folder is still there")
 	}
-	// Give the search's way out time to try to carry on.
 	time.Sleep(300 * time.Millisecond)
 	for _, j := range s.jobs.list() {
 		if j.Episode == source && (j.State == JobQueued || j.State == JobRunning) {
@@ -208,7 +221,7 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 						return "", engine.ErrCancelled
 					})
 				}
-				s.Transcribe(source)
+				s.Search(source, engine.PlanRequest{To: 10, Count: 1, Min: 5})
 				s.jobs.list()
 			}
 		}()
@@ -237,22 +250,22 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 }
 
 // Removing an episode and keeping its work stops its jobs as well, without
-// waiting for them, so a removed episode does not go on holding the one
-// transcription lane.
-func TestARemovedEpisodeStopsTranscribing(t *testing.T) {
+// waiting for them, so a removed episode does not go on holding the lane of
+// hearing.
+func TestARemovedEpisodeStopsHearing(t *testing.T) {
 	s, source, _ := anEpisodeWithWork(t)
-	transcribing(t, s, source)
+	hearing(t, s, source)
 	if err := s.RemoveEpisode(source, false); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if j, ok := s.jobs.find(source, "transcribe"); !ok || j.State != JobRunning {
+		if j, ok := s.jobs.find(source, engine.JobSearch); !ok || j.State != JobRunning {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Error("the removed episode is still being transcribed")
+	t.Error("the removed episode is still being heard")
 }
 
 // An episode added again after it was removed takes work again.
