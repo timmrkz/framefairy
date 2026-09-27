@@ -70,6 +70,9 @@ type Transcript struct {
 	Floor float64
 	// Mean level in dB over the whole window.
 	Mean float64
+	// Extra are the loudness readings of the islands past the end of the
+	// frames: parts transcribed out of turn, see islands.go.
+	Extra []Reading
 }
 
 // Levels are the loudness readings the transcript annotations use, one per
@@ -84,6 +87,7 @@ func (t *Transcript) Levels() []Reading {
 		level := 10 * math.Log10(power/10+1e-20)
 		out = append(out, Reading{roundTo(t.Start+float64(i)*FrameSeconds, 2), level})
 	}
+	out = append(out, t.Extra...)
 	return out
 }
 

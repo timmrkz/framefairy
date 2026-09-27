@@ -998,6 +998,14 @@ by hand wherever the transcript has reached, searched or not:
   from the transcript, so the clip is there in the moment it takes to
   frame it. Pauses are cut and the crop is framed the way they are for the
   model's clips, and the beam runs round the button while that happens.
+- **Where nothing is transcribed yet**, In and Out work too. The part
+  around the playhead is transcribed first, a minute before it and a
+  minute past the longest clip after it, or the other way round for Out.
+  Until its words are there the clip is an outline as long as
+  **Shortest**, with a card that says **Transcribing here**. Then it
+  settles onto its sentences. That part is kept, and when the
+  transcription from the start gets there, it hears it again and its own
+  words take over.
 - **The clip takes shape at once.** The sentences come from the
   transcript in a moment, and everything they decide is shown straight
   away: the clip's frame on the clip timeline, which moves to it, its

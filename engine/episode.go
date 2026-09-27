@@ -222,10 +222,17 @@ func (p *Project) Transcript() (*Transcript, error) {
 	path := filepath.Join(p.LogsDir(), TranscriptName(nil))
 	file, words, frames, ok := readTranscriptFile(path, stamp,
 		filepath.Base(filepath.Clean(modelDir)))
-	if !ok {
+	var t *Transcript
+	covered := 0.0
+	if ok {
+		t = fromStored(words, frames, float64(file.From), float64(file.Mean), p.Base.SilenceDB)
+		covered = float64(file.To)
+	}
+	// And the parts transcribed out of turn, past where it has come.
+	t = p.withIslands(t, covered)
+	if t == nil {
 		return nil, ErrNoTranscript
 	}
-	t := fromStored(words, frames, float64(file.From), float64(file.Mean), p.Base.SilenceDB)
 	// Corrected words show corrected, in the app and in every clip made or
 	// changed from here on.
 	ApplyCorrections(t.Words, LoadCorrections(p.LogsDir()))

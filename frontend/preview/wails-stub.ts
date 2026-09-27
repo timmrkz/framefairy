@@ -646,6 +646,13 @@ export const Call = {
       // A clip made by hand at the playhead, in the clip set of its own,
       // starting a little before it the way the engine starts one on the
       // line the playhead stands in.
+      // Past the transcript, the part around the playhead is heard first,
+      // which takes a while. Before it, it answers at once.
+      case "HearAround": {
+        const at = Number(args[1]);
+        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
+        return at < heardTo ? Promise.resolve(null) : new Promise((done) => setTimeout(() => done(null), 2500));
+      }
       // The clip MakeClip is about to make, from the transcript alone and
       // at once, the way the engine sketches it.
       case "SketchClip": {

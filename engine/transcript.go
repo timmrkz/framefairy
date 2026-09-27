@@ -63,7 +63,11 @@ func TranscriptName(window *Window) string {
 // transcript while none of them has changed underneath it.
 func TranscriptFiles(logsDir string) []string {
 	words := filepath.Join(logsDir, TranscriptName(nil))
-	return []string{words, framesPath(words), correctionsPath(logsDir)}
+	files := []string{words, framesPath(words), correctionsPath(logsDir)}
+	for _, island := range islandFiles(logsDir) {
+		files = append(files, island, framesPath(island))
+	}
+	return files
 }
 
 func framesPath(jsonPath string) string {

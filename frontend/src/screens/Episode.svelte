@@ -926,13 +926,42 @@
   const cards = $derived(
     sketch ? [...shown, sketch].sort((a, b) => a.start - b.start) : shown,
   );
-  const canMake = $derived(!making && !!source && time < covered);
+  const canMake = $derived(!making && !!source);
   async function makeClip(backward: boolean) {
     if (!canMake) return;
     problem = "";
     making = backward ? "out" : "in";
     const at = time;
     try {
+      // Where the transcription from the start has not come yet, the part
+      // around the playhead is heard first. Until its words are there the
+      // clip is an outline as long as Shortest, from the playhead or up to
+      // it, with a card saying what is going on, so the press is answered
+      // at once and the clip is seen settling onto its sentences after.
+      if (at >= covered) {
+        const from = backward ? Math.max(0, at - min) : at;
+        const to = backward ? at : Math.min(duration, at + min);
+        sketch = {
+          id: "sketch",
+          slug: "",
+          basename: "",
+          title: "Transcribing here",
+          reason: "",
+          duration: to - from,
+          start: from,
+          end: to,
+          segments: [{ start: from, end: to, cropX: null, moved: false }],
+          words: [],
+          rejected: false,
+          captionY: captionY,
+          captionYMoved: false,
+          thumbnails: [],
+          key: "sketch",
+          plan: "",
+          cropLefts: [],
+        };
+        await api.hearAround(path, at, backward);
+      }
       const sk = await api.sketchClip(path, at, backward);
       sketch = {
         id: "sketch",
@@ -2387,11 +2416,9 @@
             onclick={() => makeClip(mark.backward)}
             title={making === (mark.backward ? "out" : "in")
               ? "Making the clip"
-              : time < covered
-                ? mark.backward
-                  ? "Make a clip that ends with the sentence under the playhead, as long as Shortest and Longest ask. O does the same"
-                  : "Make a clip that starts with the sentence under the playhead, as long as Shortest and Longest ask. I does the same"
-                : "Clips can be made where the transcript has reached"}
+              : mark.backward
+                ? "Make a clip that ends with the sentence under the playhead, as long as Shortest and Longest ask. Where nothing is transcribed yet, the part around the playhead is transcribed first. O does the same"
+                : "Make a clip that starts with the sentence under the playhead, as long as Shortest and Longest ask. Where nothing is transcribed yet, the part around the playhead is transcribed first. I does the same"}
           >
             {#if making === (mark.backward ? "out" : "in")}<Busy />{/if}
             <span class="letter">{mark.key}</span>

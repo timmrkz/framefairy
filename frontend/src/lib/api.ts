@@ -494,6 +494,11 @@ export const api = {
     edge: "start" | "end",
     at: number,
   ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
+  // Transcribes the part a clip made by hand at a moment needs, where the
+  // transcription from the start has not reached it yet. Where the words
+  // are there already it answers at once.
+  hearAround: (path: string, at: number, backward: boolean) =>
+    call<void>("HearAround", path, at, backward),
   // The clip made by hand at a moment, worked out from the transcript
   // alone and at once, to be shown while its crop is placed.
   sketchClip: (path: string, at: number, backward: boolean) =>

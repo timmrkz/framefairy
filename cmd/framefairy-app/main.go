@@ -26,6 +26,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	"framefairy/asr"
 	"framefairy/engine"
 	"framefairy/notices"
 )
@@ -1648,6 +1649,27 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 		}
 	}
 	return ClipEntry{}, os.ErrNotExist
+}
+
+// HearAround transcribes the part of the episode a clip made by hand at a
+// moment needs, where the transcription from the start has not reached it
+// yet: an island around the playhead, kept until that transcription passes
+// it. Where the words are there already it answers at once.
+func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, backward bool) error {
+	if !s.store.Known(path) {
+		return os.ErrNotExist
+	}
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return err
+	}
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	if ff := s.store.Settings().FFmpeg; ff != "" {
+		e.FFmpeg = ff
+	}
+	e.OpenRecognizer = asr.Open
+	p := engine.NewProject(e, path, s.store.Settings().options())
+	return p.HearAround(ctx, at, backward, info.Duration)
 }
 
 // ClipSketch is a clip made by hand before it is framed, for the interface

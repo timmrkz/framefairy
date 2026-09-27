@@ -174,3 +174,64 @@ func mustWords(t *testing.T, p *Project) []Cue {
 	}
 	return tr.Words
 }
+
+// Where the transcription from the start has not reached, a clip is made
+// by hand by hearing the part around the playhead first. The island's
+// words count wherever that transcription has not come, and once it has,
+// its own words stand and none is counted twice.
+func TestAClipMadeByHandWhereNothingIsTranscribed(t *testing.T) {
+	source := testEpisode(t, "240")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Min, base.Max = 20, 30
+	p := NewProject(e, source, base)
+	ctx := context.Background()
+
+	if p.Heard(200) {
+		t.Fatal("a part nobody transcribed counts as heard")
+	}
+	if _, err := p.SketchClip(200, false); err == nil {
+		t.Fatal("a clip was sketched where nothing is transcribed")
+	}
+	if err := p.HearAround(ctx, 200, false, 240); err != nil {
+		t.Fatal(err)
+	}
+	if !p.Heard(200) || p.Heard(20) {
+		t.Fatal("the island is not where the playhead was, or reaches too far")
+	}
+	calls := heard
+	if err := p.HearAround(ctx, 200, false, 240); err != nil || heard != calls {
+		t.Fatalf("the same part was heard again: %v", err)
+	}
+	_, id, err := p.MakeClip(ctx, 200, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, clips, _ := LoadClips(p.HandPlanPath())
+	if len(clips) != 1 || clips[0].ID != id || clips[0].Segments[0].Start < 190 {
+		t.Fatalf("the clip made on the island is %+v", clips)
+	}
+
+	// Now the transcription from the start runs over it. The island is
+	// left unread and no word is there twice.
+	if err := p.Transcribe(ctx); err != nil {
+		t.Fatalf("transcribe: %v %s", err, p.LastError())
+	}
+	tr, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := 1; k < len(tr.Words); k++ {
+		if tr.Words[k].Start < tr.Words[k-1].End-0.001 {
+			t.Fatalf("words %d and %d overlap: %+v %+v", k-1, k, tr.Words[k-1], tr.Words[k])
+		}
+	}
+	if len(tr.Extra) != 0 {
+		t.Errorf("the island still adds %d readings after the transcription passed it", len(tr.Extra))
+	}
+}

@@ -196,7 +196,19 @@ stands in and takes the lines after it. Backward, it ends at that line and
 takes the lines before it. Either way it grows until the clip is as long as
 `--min` asks, never past `--max` for a line more, and cuts and frames it
 through the same `SegmentsFromRanges` and `ClipSegments` a search uses. No
-model is asked. Undo takes it back: a clip that appears in this set during an
+model is asked.
+
+Where the transcription from the start has not reached yet, `HearAround`
+in `engine/islands.go` first transcribes the part a clip needs: its
+longest length on the side it grows to and `IslandMargin`, a minute, on
+both sides, for the sentence the playhead stands in and for dragging the
+edges further out. The part is an island, kept as the transcript of a
+window, `words-<from>-<to>.json`, the file `--from` and `--to` make, with
+its loudness. `Project.Transcript` adds an island's words and loudness
+wherever the whole-episode transcript has not reached. Once it has, its
+own words stand and the island is left unread: that minute or two of
+audio is heard again rather than stitched in, so there is one transcript
+to trust at every moment. What is heard already is never heard twice. Undo takes it back: a clip that appears in this set during an
 edit is the edit's own, because no search writes there.
 
 ## The bouncing word
