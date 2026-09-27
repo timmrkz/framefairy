@@ -1,68 +1,7 @@
-// What the app does by itself, in one place and away from the screen, so
-// it can be tested. Two promises live here: adding a video is enough for
-// it to be transcribed, and the first clips are found as soon as the
-// transcript covers the window. Both have broken before, which is
-// why they are written as plain rules with tests beside them.
-
-export type TranscribeState = {
-  // The episode file itself is gone.
-  missing: boolean;
-  // The episode has its work folder, <episode>.framefairy, beside it.
-  work: boolean;
-  // Anything of this episode is running or waiting in the queue.
-  busy: boolean;
-};
-
-// An episode with no work folder has nothing at all: it was added a moment
-// ago, or what it had was deleted by hand. Either way that is where a new
-// episode starts, and a new episode transcribes itself.
-export function shouldTranscribe(s: TranscribeState): boolean {
-  return !s.missing && !s.work && !s.busy;
-}
-
-export type SearchState = {
-  // How far the episode has been heard, in seconds, and the end of the
-  // window chosen on the range picker. Heard, not saved: the transcript is
-  // written seconds of work apart, and a search waited for that while the
-  // transcription ran minutes past the window. The Go side waits for the
-  // words to be on disk before the search reads them.
-  covered: number;
-  to: number;
-  // What the episode already has.
-  plans: number;
-  clips: number;
-  // A search or a render is running, or one was asked for a moment ago.
-  busy: boolean;
-  // Anyone has ever searched this episode, in this run of the app or an
-  // earlier one. An episode whose clips were all removed has still been
-  // looked at, so it never gets a search of its own again.
-  looked: boolean;
-};
-
-// The first search follows the transcript: as soon as it covers the
-// window, and only for an episode nobody has ever searched. Whether the
-// transcript is finished is not part of it, so an episode that was already
-// transcribed when it was added gets its clips too. An episode that was
-// searched before and emptied since is not searched again, because a search
-// is the machine's time and nobody asked for it.
-export function shouldLook(s: SearchState): boolean {
-  if (s.looked || s.busy) return false;
-  if (s.plans > 0 || s.clips > 0) return false;
-  if (s.to <= 0) return false;
-  // Half a second of slack, because the transcript is counted in frames.
-  return s.covered >= s.to - 0.5;
-}
-
-// The model is loaded for that first search while the transcript is still
-// on its way, so the search starts with the model already in memory
-// rather than spending its first half minute loading it. The same episode,
-// before the same moment.
-export function shouldWarm(s: SearchState): boolean {
-  if (s.looked || s.busy) return false;
-  if (s.plans > 0 || s.clips > 0) return false;
-  if (s.to <= 0) return false;
-  return s.covered < s.to - 0.5;
-}
+// What the workspace decides by itself, in one place and away from the
+// screen, so it can be tested. When a search starts and stops is not among
+// it: that is the Go side's, see docs/JOBS.md, and its tests are the path
+// tests in cmd/framefairy-app.
 
 export type PictureState = {
   // The video preview has decoded a frame of the episode at all.

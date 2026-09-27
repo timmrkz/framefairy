@@ -6,71 +6,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"framefairy/engine"
 )
-
-func TestPlanWaitsAndReportsAFailedTranscription(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	source := filepath.Join(home, "episode.mp4")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i",
-		"testsrc=s=320x180:r=25:d=4", "-f", "lavfi", "-i", "sine=d=4", "-shortest",
-		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", source).CombinedOutput()
-	if err != nil {
-		t.Fatalf("%s %s", err, out)
-	}
-
-	st := openStore()
-	settings := st.Settings()
-	settings.ASRModel = filepath.Join(home, "no-model")
-	if err := st.SetSettings(settings); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.AddEpisodes([]string{source}); err != nil {
-		t.Fatal(err)
-	}
-	updates := make(chan JobUpdate, 1000)
-	svc := &FrameFairy{store: st}
-	svc.jobs = newQueue(st, func(u JobUpdate) { updates <- u }, nil)
-
-	// Finding clips queues the transcription itself, and fails with its
-	// reason when the transcription fails.
-	job := svc.Plan(source, engine.PlanRequest{To: 2, Count: 1, Min: 1, Max: 2})
-	if job.Lane != LaneWork {
-		t.Errorf("plan lane %s", job.Lane)
-	}
-	deadline := time.After(30 * time.Second)
-	for {
-		select {
-		case u := <-updates:
-			if u.Job.ID != job.ID || (u.Job.State != JobFailed && u.Job.State != JobDone) {
-				continue
-			}
-			if u.Job.State != JobFailed {
-				t.Fatalf("plan ended %s", u.Job.State)
-			}
-			if u.Job.Error == "" {
-				t.Errorf("no reason given")
-			}
-			tr, ok := svc.jobs.find(source, "transcribe")
-			if !ok || tr.Lane != LaneTranscribe || tr.State != JobFailed {
-				t.Errorf("transcription job %+v", tr)
-			}
-			return
-		case <-deadline:
-			t.Fatalf("the plan never finished: %+v", svc.jobs.list())
-		}
-	}
-}
 
 func TestLanesRunSideBySide(t *testing.T) {
 	home := t.TempDir()
@@ -91,8 +32,8 @@ func TestLanesRunSideBySide(t *testing.T) {
 			}
 		}
 	}
-	q.add("a.mp4", "transcribe", "Transcription", block("transcribe"))
-	q.add("a.mp4", "plan", "Find clips", block("plan"))
+	q.add("a.mp4", "model", "Speech model", block("model"))
+	q.add("a.mp4", "llm", "Language model", block("llm"))
 	for i := 0; i < 2; i++ {
 		select {
 		case <-started:
