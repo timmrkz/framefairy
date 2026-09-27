@@ -333,10 +333,16 @@
     // to Transcribing, with no empty card and no word in between.
     if (!working) {
       return heardWindow
-        ? { what: "Finding clips", left: windowText, fraction: -1 }
-        : { what: "Transcribing", left: windowText, fraction: heardShare };
+        ? { what: "Finding clips", left: windowText, fraction: -1, now: true }
+        : { what: "Transcribing", left: windowText, fraction: heardShare, now: true };
     }
     const line = stepLine(working, heardShare);
+    // Cancel pressed: the row says so in the same frame, and stands still
+    // where it got to, until the search has saved what it did and says it
+    // stopped. It went on saying Transcribing for a second after the click.
+    if (stopping) {
+      return { what: "Stopping", left: line.left || windowText, fraction: line.fraction, still: true, now: true };
+    }
     return { ...line, left: line.left || windowText };
   });
 
@@ -347,17 +353,21 @@
   // found going up. The fill and the time left follow at once, because
   // they are the same thing moving on. It keeps its own time, in onMount,
   // because an effect that reads the job is set up again on every report.
-  let shownNext = $state<{ what: string; left: string; fraction: number } | null>(null);
+  let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
+    null,
+  );
   let shownSince = 0;
-  // Work starting or ending shows in the same frame as the click, not on
+  // What a click brings about shows in the same frame as the click, not on
   // the timer's next tick: the row the Stopped note stood in was empty for
-  // up to a quarter of a second after Continue, which read as a flash.
-  // Only the change from one headline to another waits, below.
+  // up to a quarter of a second after Continue, which read as a flash, and
+  // Cancel went on saying Transcribing. Work starting or ending, and a
+  // headline marked now, go straight in. Only the engine's own moving from
+  // one step to the next waits, below.
   $effect(() => {
     const want = next;
-    if (want && !shownNext) {
+    if (want && (!shownNext || (want.now && (want.what !== shownNext.what || !!want.still !== !!shownNext.still)))) {
       shownSince = Date.now();
-      shownNext = { ...want };
+      shownNext = { what: want.what, left: want.left, fraction: want.fraction, still: want.still };
     } else if (!want && shownNext) {
       shownNext = null;
     }

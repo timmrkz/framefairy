@@ -404,8 +404,11 @@ function searchAt(s: FakeSearch, now = Date.now()) {
     return { state: s.settled ? "cancelled" : s.stopped, step: s.step, covered: s.heardFrom, found: 0, since: 0 };
   }
   // Called off with Cancel, it stops where it is and says so, with
-  // Continue, the way the Go side does.
-  const byHand = s.cancelledAt !== undefined;
+  // Continue, the way the Go side does, after the moment the real one takes
+  // to save what it heard: it goes on reporting that it runs for 800 ms.
+  // Stopping at once hid that the row went on saying Transcribing for as
+  // long as that moment lasts.
+  const byHand = s.cancelledAt !== undefined && now - s.cancelledAt >= 800;
   const at = Math.min(now, s.cancelledAt ?? now);
   const since = at - s.wall;
   // ?transcribing hears and never gets anywhere: it reports 1800 while the

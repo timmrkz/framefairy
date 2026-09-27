@@ -582,6 +582,44 @@ clip had three copies of a 2 pixel border with three different corners.
 They are `.frame` in `app.css` now. Before styling something that is
 "like" another thing, find the other thing and share its rule.
 
+## A click is answered in the frame it lands in
+
+Tim felt this twice in one afternoon, and both times every test was green.
+Continue left the row the Stopped note stood in empty for six frames
+before it said Transcribing. Cancel made its button say Cancelling at once,
+while the row beside it went on saying Transcribing for the second the
+search took to save what it heard. Nothing was wrong in the end state.
+Everything was wrong in between, and the in between is what a hand feels.
+
+The rule: **everything a click changes shows the change in the same
+frame**, the control and every place that shows the same work, the row,
+the fill, the range picker. Say what is under way, Stopping, Starting, the
+step it goes into, and stand still where it got to. The Go side's answer
+replaces that when it comes. Never wait for a job event or a timer's tick
+to show what the click already knows. The only thing that may wait is a
+change the engine makes by itself, a step that lasted a moment, so it does
+not flash.
+
+How to catch it, because a screenshot never will: click inside
+`page.evaluate` and read the thing on every `requestAnimationFrame` for a
+second, then print the runs of frames that looked the same.
+
+```js
+const frames = await page.evaluate(() => new Promise((done) => {
+  const seen = [], row = () => document.querySelector(".ghost.next")?.textContent.trim() ?? "(none)";
+  document.querySelector("button.new").click();
+  let n = 0;
+  const tick = () => { seen.push(row()); if (++n < 60) requestAnimationFrame(tick); else done(seen); };
+  requestAnimationFrame(tick);
+}));
+```
+
+A run of `(empty)`, or of the state before the click, is the bug. And the
+stub has to take as long as the real thing takes: the fake search stopped
+at once, so the second the real one spends saving could not be seen at
+all, and the probe passed against broken code until the stub waited
+800 ms the way the engine does.
+
 ## Before saying it is done
 
 - `make interface`, which is the type check and the interface's own tests.

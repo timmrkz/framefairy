@@ -162,7 +162,9 @@ messages, pull request text, code comments and chat replies.
 - **A click shows at once.** Never let a control sit as if nothing happened
   while a job starts or stops. The control says what it is doing and takes no
   second click, and it keeps room for the longer wording so the row does not
-  move.
+  move. The same frame, the same everywhere the work shows: the row of a
+  search says Stopping the moment Cancel is pressed, not a second later
+  when the search has stopped. See the interface skill.
 - **What is taken away is seen going.** A row that is removed keeps its
   place for a moment, says what became of it and offers itself back, and
   only then does the list close over it. Nothing vanishes under the

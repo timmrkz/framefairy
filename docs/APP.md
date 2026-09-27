@@ -685,8 +685,9 @@ place.
       is acted on, after a restart too, because the search keeps its record
       in `jobs/search.json` in the work folder, see [JOBS.md](JOBS.md), and
       the app reads the records as it starts: one in a running step is a
-      search that was cut off, a failed one says why. **Cancel** leaves the
-      same row, *Stopped. Click Continue*, with how far the episode was
+      search that was cut off, a failed one says why. **Cancel** says
+      *Stopping* in that row the moment it is pressed, standing still, and
+      then leaves the same row, *Stopped. Click Continue*, with how far the episode was
       transcribed, because what it did stays and can be carried on. **New**
       takes its place. Clips it wrote before it stopped stay, with the row
       after them. The episode's dot in the sidebar says it too: the colour
