@@ -859,15 +859,7 @@
     border-color: var(--accent);
   }
 
-  /* A clip is the same mark on both tracks, see .clipmark in app.css.
-     Only where it stands along the foot is this track's. */
-  .clipmark {
-    bottom: 5px;
-  }
 
-  .clipmark.selected {
-    bottom: 3px;
-  }
 
   /* The box the playhead is drawn over, exactly the track and nothing
      more, so a position worked out for the track is right here too. */

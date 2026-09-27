@@ -278,13 +278,21 @@ input[type="password"] {
 }
 
 /* A clip as a mark on a track: a capsule from where it starts to where it
-   ends, in the app's colour, green once it is rendered and white while it
-   is the one chosen. The range picker and the clip timeline show the same
-   clips at two distances, so they draw them with this one mark, and each
-   track only says where along its foot it stands. */
+   ends, in the app's colour, green once it is rendered, across the middle
+   of the track the way the captions run across the clip timeline. The
+   range picker and the clip timeline show the same clips at two distances,
+   so they draw them with this one mark, and it is the same share of each
+   track's height: the range picker is half as tall, and so is its mark.
+   Rounded to two pixels, so the middle of a mark lands on a whole pixel.
+
+   The clip chosen looks like the clip it is on the clip timeline, a frame
+   round the wash, a little taller than the rest. On the clip timeline it
+   has no mark, because it is the frame already. */
 .clipmark {
+  --clipmark-h: round(12%, 2px);
   position: absolute;
-  height: 12px;
+  top: round(down, calc(50% - var(--clipmark-h) / 2), 1px);
+  height: var(--clipmark-h);
   min-width: 4px;
   padding: 0;
   border: none;
@@ -303,8 +311,17 @@ input[type="password"] {
 }
 
 .clipmark.selected {
-  background: #fff;
-  height: 16px;
+  --clipmark-h: round(18%, 2px);
+  box-sizing: border-box;
+  min-width: calc(2 * var(--frame-line) + 2px);
+  background: var(--accent-wash);
+  border: var(--frame-line) solid var(--accent);
+  border-radius: var(--frame-radius);
+}
+
+.clipmark.selected:hover:not(:disabled) {
+  background: var(--accent-wash);
+  border-color: var(--accent-hi);
 }
 
 :focus-visible {

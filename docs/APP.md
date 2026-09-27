@@ -785,8 +785,9 @@ place.
       that part is free again, even when it is the middle of a longer
       search: the plan keeps the rest of its window and notes the part it
       gave back.
-    - A mark for every clip sits inside the track, green once rendered.
-      Click a mark to select that clip.
+    - A mark for every clip runs across the middle of the track, green once
+      rendered, and the chosen clip is a frame round the wash, the way the
+      clip timeline draws it. Click a mark to select that clip.
     - A click without dragging moves the player there, wherever it lands,
       marked or not. A press that wobbles a few pixels is still a click, so
       nothing is drawn by accident.
@@ -969,10 +970,14 @@ place.
       are read once and kept, so swiping does not wait for a file to be
       read again.
     - **Every clip is on it, not only the chosen one.** The other clips
-      are the same marks the range picker draws, along the foot of the
-      track, in the app's colour and green once rendered, one style in
-      `app.css` for both tracks. A click on one chooses it. The chosen clip
-      has no mark, because its frame already shows it. Zoomed out, the
+      are the same marks the range picker draws, across the middle of the
+      track where the captions run, in the app's colour and green once
+      rendered, one style in `app.css` for both tracks. Each is the same
+      share of its track's height, 12%, so the mark on the range picker is
+      half as tall, as the range picker is. A click on one chooses it. The
+      chosen clip has no mark, because its frame already shows it. On the
+      range picker the chosen clip is drawn the way it is up close, a
+      frame round the wash, a little taller than the rest. Zoomed out, the
       track is the episode with all its clips, the way an editor's
       timeline shows every clip on it.
     - **Detail comes in as there is room for it.** The caption blocks are

@@ -1012,7 +1012,7 @@
     }));
   });
 
-  // The other clips in view, as marks along the foot of the track.
+  // The other clips in view, as marks across the middle of the track.
   const shownMarks = $derived(
     marks.filter((m) => m.key !== clip?.key && m.end > view.from && m.start < view.to),
   );
@@ -1610,12 +1610,6 @@
     /* Over the time lines, the cuts and the captions, so the clip is one
        solid frame that nothing on the track crosses. */
     z-index: 2;
-  }
-
-  /* A clip is the same mark here as on the range picker, see .clipmark in
-     app.css. Only where it stands along the foot is this track's. */
-  .clipmark {
-    bottom: 5px;
   }
 
   /* What the clip keeps. The wash is the one thing that says which parts
