@@ -947,6 +947,8 @@
           plan: "",
           cropLefts: [],
         };
+        // The playhead goes where the clip is, the moment it has a frame.
+        player?.seek(sketch.start);
         hearing = true;
         try {
           await api.hearAround(path, at, backward);
@@ -976,6 +978,9 @@
         cropLefts: [],
       };
       sketchCues = sk.captions.map((c) => ({ start: c.start, end: c.end, lines: [] }));
+      // And again when the sentences move the frame, as they do for Out,
+      // which grows the clip back from the playhead.
+      player?.seek(sk.start);
       const made = await api.makeClip(path, at, backward);
       clips = [...clips.filter((c) => c.key !== made.key), made].sort((a, b) => a.start - b.start);
       await select(made.key);

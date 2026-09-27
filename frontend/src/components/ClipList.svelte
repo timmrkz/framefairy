@@ -125,6 +125,14 @@
     <li
       animate:flip={{ duration: 180 }}
       in:slide={{ duration: clip.key === making ? 200 : 0 }}
+      onintroend={(e) => {
+        // A clip made by hand has its card from the moment the key is
+        // pressed, in its place in the list, which may be anywhere in it.
+        // It is brought into view once it has slid open, so the work is
+        // seen where its result will be. Asked while it slides, it would
+        // still be a row of no height, which is in view anywhere.
+        if (clip.key === making) e.currentTarget.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }}
       out:slide={{ duration: clip.plan ? 200 : 0 }}
       data-key={clip.key}
       class:waiting={clip.key === making}

@@ -1032,7 +1032,9 @@ by hand wherever the transcript has reached, searched or not:
   away: the clip's frame on the clip timeline, which moves to it, its
   caption blocks coming in one after another along it, its title in the
   row below, and its card in its place in the clip list, breathing like
-  any place waiting to be filled. Placing the crop reads the picture and
+  any place waiting to be filled, and scrolled into view. The playhead
+  goes to the start of the frame the moment there is one, and again when
+  the sentences move it, as they do for Out. Placing the crop reads the picture and
   takes a few seconds. When it is done the card becomes the clip's own,
   chosen, and the crop frame appears in the video preview.
 - **The new clip is chosen**, and from there it is a clip like any other:
