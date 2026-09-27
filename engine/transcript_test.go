@@ -139,6 +139,31 @@ func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
 	return source, path
 }
 
+// A transcript from before numbers stood apart is still the episode's
+// transcript. Reading it as stale took the waveform off the clip timeline.
+func TestAnOlderTranscriptIsStillRead(t *testing.T) {
+	words := []Cue{{0.5, 1.2, "Hallo"}, {1.3, 2, "am15."}}
+	source, path := storedTranscript(t, words, make([]float32, 300), 3, false)
+	stamp, err := stampOf(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version, read := range map[int]bool{0: false, 1: true, transcriptVersion: true,
+		transcriptVersion + 1: false} {
+		file := transcriptFile{Version: version, Source: stamp, Model: "modell",
+			To: 3, Mean: -30, Words: storedWords(words)}
+		if err := writeTranscript(path, file, make([]float32, 300)); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, ok := readTranscriptFile(path, stamp, "modell"); ok != read {
+			t.Errorf("version %d read %v, want %v", version, ok, read)
+		}
+		if st := Status(source, "modell"); st.TranscriptStale == read {
+			t.Errorf("version %d stale %v", version, st.TranscriptStale)
+		}
+	}
+}
+
 func TestTranscriptNames(t *testing.T) {
 	if got := TranscriptName(nil); got != "words.json" {
 		t.Errorf("whole episode: %s", got)
@@ -262,7 +287,8 @@ func FuzzReadTranscriptFile(f *testing.F) {
 		if !ok {
 			return
 		}
-		if file.Version != transcriptVersion || file.Source != stamp || file.Model != "m" {
+		if file.Version < oldestTranscript || file.Version > transcriptVersion ||
+			file.Source != stamp || file.Model != "m" {
 			t.Fatalf("served a cache for %+v", file)
 		}
 		if len(framesRead)*4 != len(raw) {

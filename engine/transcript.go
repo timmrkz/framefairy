@@ -16,6 +16,13 @@ import (
 // a number apart from the word before it, which version 1 glued on.
 const transcriptVersion = 2
 
+// oldestTranscript is the oldest version still read as it is. Version 1 is
+// laid out the same and means the same, only its numbers stick to the word
+// before them. Treating it as stale left every episode transcribed before
+// version 2 with no waveform and no words, and waiting for hours of
+// transcription to split a few numbers apart.
+const oldestTranscript = 1
+
 type sourceStamp struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
@@ -189,7 +196,8 @@ func readTranscriptFile(path string, stamp sourceStamp, model string) (transcrip
 	if err != nil || decodeJSON(data, &file) != nil {
 		return file, nil, nil, false
 	}
-	if file.Version != transcriptVersion || file.Source != stamp || file.Model != model {
+	if file.Version < oldestTranscript || file.Version > transcriptVersion ||
+		file.Source != stamp || file.Model != model {
 		return file, nil, nil, false
 	}
 	raw, err := os.ReadFile(framesPath(path))

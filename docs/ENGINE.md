@@ -98,6 +98,12 @@ The recogniser's own timings are what gets stored in `words.json`. The
 correction is applied on every load, so improving it never needs a new
 transcription.
 
+`words.json` carries a version. Version 2 keeps a number apart from the
+word before it, where version 1 glued it on, for example "am15." for
+"am 15.". A version 1 file is still read as it is, numbers and all, since
+an update has to read what an older version wrote. Only a new
+transcription splits the numbers.
+
 Transcribing a window that does not start at the beginning, after an
 interrupted run carried on or with `--from`, decodes from the start of the
 file and drops the samples before it, rather than asking ffmpeg to seek. A
