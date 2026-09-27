@@ -1245,7 +1245,7 @@ the top listing every problem, and a person had to go from the top of the
 page to the bottom to find where to fix what it said.
 
 **Finding clips is one choice**, **Find clips with**, in one list: the
-Claude API under **Online**, and every model that runs here under **On
+Claude API under **In the cloud**, and every model that runs here under **On
 this machine**, the way apps that offer models list them by where they
 run. The rows that depend on the choice are under it in the same card, the
 way a pop-up in the Mac's own settings changes the rows beneath it: the

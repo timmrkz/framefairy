@@ -256,7 +256,7 @@
   );
 
   const finderOptions = $derived([
-    { value: "api", label: "Claude API", detail: "A few cents an episode", group: "Online" },
+    { value: "api", label: "Claude API", detail: "A few cents an episode", group: "In the cloud" },
     ...[...language]
       .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
       .map((m) => {
