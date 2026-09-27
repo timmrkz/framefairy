@@ -981,15 +981,21 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
 }
 
-// SetCaptionHighlight turns the pill behind the word being spoken, and the
-// bounce it makes, on or off for a whole clip set. Off, the captions are
-// the box and the words, and nothing in them moves.
-func (s *FrameFairy) SetCaptionHighlight(ctx context.Context, path, plan string, on bool) error {
+// SetCaptionSwitch turns one of the switches of the captions column on or
+// off for a whole clip set: "text", captions burned in at all, "box", the
+// box behind them, and "highlight", the pill behind the word being spoken
+// and the bounce it makes. Anything else is refused.
+func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which string, on bool) error {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return os.ErrNotExist
 	}
+	switch which {
+	case "text", "box", "highlight":
+	default:
+		return fmt.Errorf("%q is no switch of the captions", which)
+	}
 	return s.edit(path, func() error {
-		return engine.SetCaptionStyle(plan, map[string]any{"highlight": on})
+		return engine.SetCaptionStyle(plan, map[string]any{which: on})
 	})
 }
 

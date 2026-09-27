@@ -211,7 +211,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 // The word highlight is switched off and on for a whole clip set, saved to
 // the plan the render reads, shown by the video preview and taken back by
 // Undo. Off means the words alone: no pill and no bounce.
-func TestCaptionHighlightIsSwitchedAndUndone(t *testing.T) {
+func TestCaptionSwitchesAreSwitchedAndUndone(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	ctx := context.Background()
 	on := func() bool {
@@ -225,7 +225,7 @@ func TestCaptionHighlightIsSwitchedAndUndone(t *testing.T) {
 	if !on() {
 		t.Fatal("a new plan starts without the highlight")
 	}
-	if err := svc.SetCaptionHighlight(ctx, mine, plan, false); err != nil {
+	if err := svc.SetCaptionSwitch(ctx, mine, plan, "highlight", false); err != nil {
 		t.Fatal(err)
 	}
 	if on() {
@@ -240,8 +240,21 @@ func TestCaptionHighlightIsSwitchedAndUndone(t *testing.T) {
 	if !on() {
 		t.Error("undo left the highlight off")
 	}
-	if err := svc.SetCaptionHighlight(ctx, mine, filepath.Join(filepath.Dir(plan), "..", "..", "x.json"),
-		false); err == nil {
+	// The text and the box are switched the same way, and the video
+	// preview is told.
+	for _, which := range []string{"text", "box"} {
+		if err := svc.SetCaptionSwitch(ctx, mine, plan, which, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if view, err := svc.Captions(plan, "01"); err != nil || view.Style.Text || view.Style.BoxOn {
+		t.Errorf("the video preview would still draw the text or the box: %v %+v", err, view.Style)
+	}
+	if err := svc.SetCaptionSwitch(ctx, mine, plan, "font", false); err == nil {
+		t.Error("something that is no switch was switched")
+	}
+	if err := svc.SetCaptionSwitch(ctx, mine, filepath.Join(filepath.Dir(plan), "..", "..", "x.json"),
+		"highlight", false); err == nil {
 		t.Error("a plan outside the library was written")
 	}
 }

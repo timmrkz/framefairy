@@ -414,7 +414,13 @@ place.
   again, and so does choosing a colour or an opacity for the pill, because
   that says the pill is wanted. The row keeps its size either way. It is
   kept per clip set, like the colours, and the way back of the captions
-  puts it on again. Beside each colour is
+  puts it on again. **Text** and **Box** are switches the same way. Box
+  off leaves the words on the picture with no box behind them, and keeps
+  the box's colour for when it comes back. Text off renders the short
+  without any captions at all, and the video preview draws none, so what
+  it shows is what the render makes. The transcription is still needed
+  either way: the model reads it to choose the clips, and the cuts go by
+  its words. Beside each colour is
   how much of it is seen:
   100, where the text and the pill start, is solid, and a box at 0
   leaves only the words. A see-through text keeps its opacity in the
