@@ -143,8 +143,13 @@ func TestALocalModelSaysHowFarItIsTheFirstTime(t *testing.T) {
 	if got, known := pastSpeed("local:new", true); !known || got != measuredLocal {
 		t.Errorf("got %+v %v", got, known)
 	}
-	if _, known := pastSpeed("claude-sonnet-5", false); known {
-		t.Error("the API was measured against a local model")
+	// A model in the cloud the app knows is measured against a guess of its
+	// own, never against a local model, and one nobody knows not at all.
+	if got, known := pastSpeed("claude-sonnet-5", false); !known || got != measuredCloud {
+		t.Errorf("a model in the cloud: %+v %v", got, known)
+	}
+	if _, known := pastSpeed("claude-somebody-9", false); known {
+		t.Error("a model nobody knows was given a guess")
 	}
 	old := `{"local:old": {"load": 24, "read": 127, "clip": 1, "tail": 28, "runs": 1}}`
 	if err := os.WriteFile(speedFile(), []byte(old), 0o644); err != nil {
@@ -171,7 +176,7 @@ func TestTimingsAreKeptPerModelAndBlended(t *testing.T) {
 	if !known || got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
-	if _, known := pastSpeed("claude-sonnet-5", false); known {
+	if got, _ := pastSpeed("claude-sonnet-5", false); got != measuredCloud {
 		t.Error("one model's timings were taken for another's")
 	}
 

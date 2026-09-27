@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"framefairy/engine"
 )
@@ -64,8 +66,23 @@ type SetupState struct {
 	Memory int64 `json:"memory"`
 	// Planner is "api" or "local", as the settings have it.
 	Planner string `json:"planner"`
-	// HasKey is true when an Anthropic key can be found. It never carries
-	// the key itself.
+	// APIModel is the model in the cloud the settings name, and Provider
+	// the company it belongs to.
+	APIModel string `json:"apiModel"`
+	Provider string `json:"provider"`
+	// Providers are the companies whose API can find clips, and Cloud the
+	// models of theirs the app offers by name.
+	Providers []engine.Provider   `json:"providers"`
+	Cloud     []engine.CloudModel `json:"cloud"`
+	// Keys says, for each provider, where a key of theirs is found, the
+	// keychain or the environment, and is empty when there is none. It
+	// never carries a key itself.
+	Keys map[string]string `json:"keys"`
+	// KeyHints is each key in short, the way the companies list keys,
+	// read without the secret. Empty when it cannot be said.
+	KeyHints map[string]string `json:"keyHints"`
+	// HasKey is true when a key can be found for the provider of the model
+	// the settings name.
 	HasKey bool `json:"hasKey"`
 	// HasLocalModel is true when a language model is on the machine.
 	HasLocalModel bool `json:"hasLocalModel"`
@@ -104,15 +121,33 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		view := LanguageModelView{LanguageModel: m, Installed: m.Installed(dir),
 			Fit:         string(m.FitsIn(state.Memory)),
 			Recommended: hasBest && m.Name == best.Name}
-		view.InUse = view.Installed && using == m.Name
+		// A model chosen before it is downloaded is still the one chosen,
+		// so the list says so, and says as well that it is not here.
+		view.InUse = using == m.Name
 		if view.Installed {
 			state.HasLocalModel = true
 		}
 		state.Language = append(state.Language, view)
 	}
-	if _, err := engine.ReadAPIKey(ctx); err == nil {
-		state.HasKey = true
+	state.APIModel = settings.APIModel
+	if state.APIModel == "" {
+		state.APIModel = engine.DefaultModel
 	}
+	state.Provider = engine.ProviderFor(state.APIModel).Name
+	state.Providers = engine.Providers()
+	state.Cloud = engine.CloudModels()
+	state.Keys = map[string]string{}
+	state.KeyHints = map[string]string{}
+	// Whether each key is there, without reading any of them. The settings
+	// ask this every time they open, and reading a secret is what puts a
+	// box from macOS on screen for an app it does not know yet.
+	for _, p := range state.Providers {
+		if engine.CheckAPIKey(p) == nil {
+			state.Keys[p.Name] = engine.KeySource(p)
+			state.KeyHints[p.Name] = engine.KeyHint(p)
+		}
+	}
+	state.HasKey = state.Keys[state.Provider] != ""
 	state.HasServer = engine.HasLlamaServer()
 	// A model put there by hand counts too. The catalogue is a convenience,
 	// not the only way in: somebody who already has a .gguf they like keeps
@@ -218,15 +253,49 @@ func (s *FrameFairy) keepInUse(before string) error {
 	return s.store.SetSettings(settings)
 }
 
-// SaveAPIKey puts a key in the macOS keychain, which is the only place the
-// app ever keeps one. An app opened from Finder has no shell environment,
-// so the variable the command line reads is never set, and until now there
-// was no way to give the app a key except a terminal command in an error
-// message.
+// OpenKeysPage opens the page where a company makes keys, in the browser.
+// Only the address written for that company is ever opened, never one the
+// interface names.
+func (s *FrameFairy) OpenKeysPage(provider string) error {
+	p, ok := engine.ProviderNamed(provider)
+	if !ok || p.KeysPage == "" {
+		return fmt.Errorf("there is no provider called %s", provider)
+	}
+	if s.app == nil {
+		return errors.New("there is no app to open it from")
+	}
+	return s.app.Browser.OpenURL(p.KeysPage)
+}
+
+// SaveAPIKey puts a provider's key in the macOS keychain, which is the only
+// place the app ever keeps one. An app opened from Finder has no shell
+// environment, so the variable the command line reads is never set, and
+// until now there was no way to give the app a key except a terminal
+// command in an error message. Each provider's key is kept apart, so
+// trying one never costs the other.
 //
 // An empty key removes the stored one rather than saving nothing.
-func (s *FrameFairy) SaveAPIKey(key string) error {
-	return engine.StoreAPIKey(key)
+func (s *FrameFairy) SaveAPIKey(provider, key string) error {
+	p, ok := engine.ProviderNamed(provider)
+	if !ok {
+		return fmt.Errorf("there is no provider called %s", provider)
+	}
+	if err := engine.VerifyAPIKey(context.Background(), p, key); err != nil {
+		return err
+	}
+	return engine.StoreAPIKey(p, key)
+}
+
+// ChooseCloudModel names the model in the cloud clips are found with, and
+// with it the company, whose key is then the one that counts. Any model a
+// company has can be named, not only the ones the app offers by name, so
+// only what could never be a model's name is refused.
+func (s *FrameFairy) ChooseCloudModel(model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" || len(model) > 100 || strings.ContainsAny(model, " \t\r\n/\\\"") {
+		return fmt.Errorf("%q is not the name of a model", model)
+	}
+	return s.store.UpdateSettings(func(set *Settings) { set.APIModel = model })
 }
 
 // ChoosePlanner records the answer to the one question, so the app knows
@@ -256,9 +325,15 @@ func modelInUse(settings Settings) string {
 	return filepath.Base(found)
 }
 
-// UseLanguageModel makes an installed model the one clips are found with,
-// and says the path it is found at, so the settings on screen can show it
-// without being read again over whatever else was being typed there.
+// UseLanguageModel makes a model the one clips are found with, and says
+// the path it is found at, so the settings on screen can show it without
+// being read again over whatever else was being typed there.
+//
+// It does not have to be downloaded yet. Choosing a model chooses it: the
+// settings name it, the check says it is not here, and a search cannot
+// start until it is. Keeping the model before it in use meanwhile made the
+// list say one model while the searches ran on another. The download is a
+// step of its own, and when it ends the model is already the one named.
 //
 // Two models on the machine and none named is a search that cannot start,
 // because the engine will not guess which one was meant. Installing a
@@ -269,11 +344,7 @@ func (s *FrameFairy) UseLanguageModel(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("there is no language model called %s", name)
 	}
-	dir := engine.ModelsDir()
-	if !model.Installed(dir) {
-		return "", fmt.Errorf("%s is not installed", model.Title)
-	}
-	path := filepath.Join(dir, model.Name)
+	path := filepath.Join(engine.ModelsDir(), model.Name)
 	settings := s.store.Settings()
 	settings.LLMModel = path
 	return path, s.store.SetSettings(settings)

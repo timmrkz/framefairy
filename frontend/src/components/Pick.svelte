@@ -39,6 +39,10 @@
     // Everywhere else a field reads from the left.
     align = "left",
     disabled = false,
+    // How what is picked stands, where that matters: a choice that cannot
+    // work yet wears a frame in the colour of a warning, the way a field
+    // that needs something does, so it is seen on the control itself.
+    tone = undefined,
   }: {
     // What is picked. It goes one way only, and nothing here ever writes
     // it back: what the trigger says is what the caller says is true, and
@@ -48,7 +52,11 @@
     // trigger naming a face the engine had never taken, and it would have
     // gone on naming it until the face really changed.
     value?: string;
-    options: { value: string; label: string }[];
+    // A row may say a word beside its name, what it would cost or that it
+    // will not run here, and rows may stand in groups under a head, the way
+    // a pop-up menu on the Mac puts a separator and a heading between kinds
+    // of thing. A group is named on its first row and runs until the next.
+    options: { value: string; label: string; detail?: string; warn?: boolean; group?: string }[];
     // What to do with a pick. A caller that keeps the value itself sets it
     // here, and a caller that sends it to the engine draws whatever comes
     // back. Either way the trigger only ever says what came back.
@@ -59,6 +67,7 @@
     id?: string;
     align?: "left" | "right";
     disabled?: boolean;
+    tone?: "warn" | "err";
   } = $props();
 
   // What the trigger says. A value that is not in the list yet, which is
@@ -85,6 +94,13 @@
   // after. The two lines below are the whole of how it is kept: it follows
   // the truth whenever the truth changes, and it is set back to the truth
   // every time the list opens.
+  // A list whose rows say something beside their names reads from the
+  // left whatever side it hangs on, the way a pop-up menu on the Mac puts
+  // names down the left and what goes with them down the right. Names that
+  // end in one line with the trigger's only work while a name is all a row
+  // holds.
+  const columns = $derived(options.some((o) => o.detail || o.group));
+
   let ticked = $state("");
   $effect(() => {
     ticked = value;
@@ -107,6 +123,8 @@
         {...props}
         class="pick"
         class:right={align === "right"}
+        class:warn={tone === "warn"}
+        class:err={tone === "err"}
         aria-label={label}
         {title}
         {id}
@@ -127,7 +145,10 @@
         {#if open}
           <div {...wrapperProps}>
             <div {...props} class="pick-list">
-              {#each options as option (option.value)}
+              {#each options as option, i (option.value)}
+                {#if option.group && option.group !== options[i - 1]?.group}
+                  <div class="pick-group" class:first={i === 0}>{option.group}</div>
+                {/if}
                 <Select.Item value={option.value} label={option.label}>
                   {#snippet child({ props: row, selected })}
                     <!-- Read from the same side the trigger reads from,
@@ -137,10 +158,10 @@
                     <div
                       {...row}
                       class="pick-row"
-                      class:right={align === "right"}
+                      class:right={align === "right" && !columns}
                       title={option.label}
                     >
-                      {#if align === "right"}
+                      {#if align === "right" && !columns}
                         <span class="what">{option.label}</span>
                         <span class="tick">
                           {#if selected}<Icon name="check" size={12} />{/if}
@@ -150,6 +171,9 @@
                           {#if selected}<Icon name="check" size={12} />{/if}
                         </span>
                         <span class="what">{option.label}</span>
+                      {/if}
+                      {#if option.detail}
+                        <span class="detail" class:warn={option.warn}>{option.detail}</span>
                       {/if}
                     </div>
                   {/snippet}
@@ -177,6 +201,14 @@
     padding-right: 8px;
     color: var(--text);
     text-align: left;
+  }
+
+  .pick.warn {
+    border-color: var(--warn);
+  }
+
+  .pick.err {
+    border-color: var(--err);
   }
 
   /* The same ring the rest of the app gives whatever has the keyboard,
@@ -339,5 +371,37 @@
 
   .pick-row.right .what {
     text-align: right;
+  }
+
+  /* The word beside a name, what it would cost or that it will not run
+     here, in the colour of a unit, apart from the name by the room a
+     column needs, so the words line up down the list. */
+  .detail {
+    flex: none;
+    margin-left: 24px;
+    color: var(--muted);
+    font-size: var(--size-s);
+  }
+
+  .detail.warn {
+    color: var(--warn);
+  }
+
+  /* The head of a group of rows, and the line above it that parts it from
+     the group before, the way a pop-up menu on the Mac is parted. */
+  .pick-group {
+    padding: 8px 8px 4px 28px;
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: var(--size-s);
+    font-weight: 600;
+    user-select: none;
+  }
+
+  .pick-group.first {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 4px;
   }
 </style>

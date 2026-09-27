@@ -52,6 +52,33 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 		t.Error("a model that is not in the catalogue was used")
 	}
 
+	// One not downloaded yet can be chosen too. It is the one chosen, the
+	// list says it is not here, and the check says what is missing.
+	later := models[1]
+	if _, err := svc.UseLanguageModel(later.Name); err != nil {
+		t.Fatalf("use before download: %v", err)
+	}
+	if got := inUse(); len(got) != 1 || got[0] != later.Name {
+		t.Errorf("chosen before download, in use: %v", got)
+	}
+	for _, m := range svc.Setup(context.Background()).Language {
+		if m.Name == later.Name && m.Installed {
+			t.Error("a model chosen before download reads as installed")
+		}
+	}
+	var lm Check
+	for _, c := range svc.CheckSetup(context.Background()) {
+		if c.Name == "Language model" {
+			lm = c
+		}
+	}
+	if lm.OK || !strings.Contains(lm.Detail, "not downloaded yet") {
+		t.Errorf("check for a model not downloaded: %+v", lm)
+	}
+	if _, err := svc.UseLanguageModel(second.Name); err != nil {
+		t.Fatal(err)
+	}
+
 	// Not while clips are being found: the search may be reading it.
 	release := make(chan struct{})
 	svc.jobs.add("", "plan", "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {

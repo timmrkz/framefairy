@@ -584,7 +584,9 @@ export const Call = {
               },
             ].map((m, i) => {
               const installed = !removed.includes(m.name) && (i < 2 || llmDone());
-              return { ...m, installed, inUse: installed && used === m.name };
+              // Chosen is chosen, downloaded or not, the way the Go side
+              // reports it.
+              return { ...m, installed, inUse: used === m.name };
             })
           : [
           {
@@ -618,7 +620,40 @@ export const Call = {
           language,
           memory: 34359738368,
           planner: fresh ? planner : "local",
-          hasKey: fresh ? key : true,
+          // Two companies, and a key for each or not. ?nokey is a machine
+          // with none, and a fresh one has none until one is saved. ?envkey
+          // has Anthropic's in the environment.
+          ...(() => {
+            const apiModel: string = (window as any).__settings?.apiModel || (window as any).__apiModel || "claude-sonnet-5";
+            const provider = apiModel.startsWith("gpt-") ? "openai" : "anthropic";
+            const stored: Record<string, boolean> = (window as any).__keys ?? {};
+            const none = fresh || location.search.includes("nokey");
+            const env = location.search.includes("envkey") && !stored.anthropic;
+            const where = (here: boolean) => (here ? "keychain" : "");
+            const keys: Record<string, string> = {
+              anthropic: env ? "environment" : where(stored.anthropic === false ? false : none ? !!stored.anthropic || !!key : true),
+              openai: where(!!stored.openai),
+            };
+            return {
+              apiModel,
+              provider,
+              providers: [
+                { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "platform.claude.com" },
+                { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" },
+              ],
+              cloud: [
+                { model: "claude-sonnet-5", title: "Claude Sonnet 5", provider: "anthropic" },
+                { model: "gpt-6-sol", title: "GPT-6 Sol", provider: "openai" },
+              ],
+              keys,
+              // Each key in short, the way the companies list them.
+              keyHints: {
+                anthropic: keys.anthropic === "environment" ? "sk-ant-api03...WXYZ" : keys.anthropic ? "sk-ant-api03...MwAA" : "",
+                openai: keys.openai ? "sk-proj-7Fq2...k9Qa" : "",
+              },
+              hasKey: !!keys[provider],
+            };
+          })(),
           hasLocalModel: fresh ? llmDone() : true,
           // ?noserver is the machine with a model and nothing to run it,
           // which is the state the local way has to say something about.
@@ -654,8 +689,26 @@ export const Call = {
       case "ChoosePlanner":
         (window as any).__planner = args[0];
         return Promise.resolve(null);
-      case "SaveAPIKey":
-        (window as any).__key = !!String(args[0] ?? "").trim();
+      case "OpenKeysPage":
+        (window as any).__opened = String(args[0]);
+        return Promise.resolve(null);
+      case "SaveAPIKey": {
+        // A key that ends in "bad" is one the company refuses, after the
+        // moment it takes to ask, and one that does not look like theirs is
+        // said to be no key of theirs.
+        const typed = String(args[1] ?? "").trim();
+        if (typed.endsWith("bad")) {
+          const openai = String(args[0]) === "openai";
+          const [title, prefix] = openai ? ["OpenAI", "sk-"] : ["Anthropic", "sk-ant-"];
+          const why = typed.startsWith(prefix) ? `${title} did not accept this key.` : `not an ${title} key. Those start with ${prefix}.`;
+          return new Promise((_, reject) => setTimeout(() => reject(new Error(why)), 600));
+        }
+        ((window as any).__keys ??= {})[String(args[0])] = !!typed;
+        return new Promise((resolve) => setTimeout(() => resolve(null), 600));
+      }
+      case "ChooseCloudModel":
+        (window as any).__apiModel = String(args[0]);
+        if ((window as any).__settings) (window as any).__settings.apiModel = String(args[0]);
         return Promise.resolve(null);
       case "AddEpisodes":
         return Promise.resolve(null);
@@ -772,7 +825,50 @@ export const Call = {
         (window as any).__chosen = args[1];
         return Promise.resolve();
       case "GetSettings":
-        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: "local", apiModel: "", count: 12, min: 20, max: 30, highlightColour: "#b4236f", outputDir: "", captionY: 240, trainingDir: "" });
+        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", count: 12, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
+      // What the settings page saves, kept, so a probe can read what was
+      // saved and a page opened again reads it back.
+      case "SaveSettings":
+        (window as any).__settings = args[0];
+        (window as any).__saves = ((window as any).__saves ?? 0) + 1;
+        (window as any).__planner = (args[0] as any).planner;
+        return Promise.resolve(null);
+      case "ChooseFolder":
+        return Promise.resolve("/Users/tim/Movies/Shorts");
+      // The machine's checks, the way CheckSetup makes them. ?broken is a
+      // machine that has lost llama-server.
+      case "CheckSetup": {
+        const broken = location.search.includes("broken");
+        const api = ((window as any).__settings?.planner ?? (window as any).__planner) === "api";
+        const out = [
+          { name: "ffmpeg", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg" },
+          { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
+          { name: "Caption fonts", ok: true, detail: "built in: Inter Black, Montserrat ExtraBold" },
+          { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
+        ];
+        // The same key the setup answers about: there on a machine that is
+        // set up, and on a fresh one once it is saved. ?nokey takes it away.
+        const model: string = (window as any).__settings?.apiModel || (window as any).__apiModel || "claude-sonnet-5";
+        const openai = model.startsWith("gpt-");
+        const stored: Record<string, boolean> = (window as any).__keys ?? {};
+        const none = location.search.includes("nokey") || location.search.includes("setup");
+        const key = openai ? !!stored.openai : !none || !!stored.anthropic;
+        const who = openai ? "OpenAI" : "Anthropic";
+        if (api) out.push({ name: `${who} API key`, ok: key, detail: key ? "found" : `no ${who} API key found. Either set ${openai ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"}, or store it in the keychain` });
+        else {
+          out.push(broken
+            ? { name: "llama-server", ok: false, detail: "llama-server was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path." }
+            : { name: "llama-server", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/llama-server" });
+          // A model chosen before its download is not here yet, which the
+          // check says in the Go side's words.
+          const used: string = (window as any).__used ?? "gemma-4-26B_q4_0-it.gguf";
+          const here = !location.search.includes("models") || used !== "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf" || llmDone();
+          out.push(here
+            ? { name: "Language model", ok: true, detail: `/Users/tim/.framefairy/models/${used}` }
+            : { name: "Language model", ok: false, detail: "Ministral 3 8B is not downloaded yet." });
+        }
+        return new Promise((r) => setTimeout(() => r(out), 300));
+      }
       case "RemoveClip": {
         const [, , id, gone] = args as [string, string, string, boolean];
         const n = Number(id);
@@ -1017,6 +1113,9 @@ export const Call = {
 // Updates, the way updates.go reports them. The build running is pull
 // request 18's, or with ?makebuild one made by make, which follows nothing
 // until a channel is picked, and with ?updatesoff one with no update key.
+// ?prgone is pull request 18's build after the pull request was merged:
+// it is not on the list any more, and nothing downloads until another
+// channel is picked.
 // Picking a channel checks, downloads over two seconds with the fill, and
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
@@ -1026,9 +1125,13 @@ const updChannels = [
   { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr18.51" },
 ];
 let upd: any = null;
+// The download in hand, stopped when another channel is picked, the way
+// the Go side stops it.
+let updTimers: ReturnType<typeof setTimeout>[] = [];
 const updNow = () => {
   if (upd) return upd;
   const local = location.search.includes("makebuild");
+  const gone = location.search.includes("prgone");
   upd = {
     version: local ? "0.3.0-local" : "0.3.0-pr18.51",
     commit: local ? "" : "a1b2c3d4e5f6",
@@ -1036,10 +1139,11 @@ const updNow = () => {
     off: location.search.includes("updatesoff")
       ? "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
       : "",
-    channels: updChannels,
+    channels: gone ? updChannels.filter((c) => c.id !== "pr-18") : updChannels,
     picked: "",
-    follows: local ? "main" : "pr-18",
-    phase: local ? "" : "current",
+    follows: local || gone ? "" : "pr-18",
+    gone: gone ? "pr-18" : "",
+    phase: local ? "" : gone ? "gone" : "current",
     next: "",
     nextName: "",
     nextCommit: "",
@@ -1052,20 +1156,27 @@ const updNow = () => {
 };
 const updSend = () => updListeners.forEach((fn) => fn({ data: { ...upd } }));
 const updFetch = (channel: string) => {
-  const ch = updChannels.find((c) => c.id === channel) ?? updChannels[0];
-  upd.follows = ch.id;
+  updTimers.forEach((t) => clearTimeout(t));
+  updTimers = [];
+  const ch = upd.channels.find((c: any) => c.id === channel);
+  if (!ch) {
+    Object.assign(upd, { phase: "gone", gone: channel, follows: "", next: "", written: 0, total: 0 });
+    updSend();
+    return;
+  }
+  Object.assign(upd, { follows: ch.id, gone: "", next: "", nextName: "", written: 0, total: 0 });
   // A check that finds nothing is over at once, the way the real one is
   // when the list is cached, which is what the page has to hold on to.
   upd.phase = "checking";
   updSend();
   if (ch.version === upd.version) {
-    setTimeout(() => {
+    updTimers.push(setTimeout(() => {
       Object.assign(upd, { phase: "current", next: "", checked: new Date().toISOString() });
       updSend();
-    }, 80);
+    }, 80));
     return;
   }
-  setTimeout(() => {
+  updTimers.push(setTimeout(() => {
     Object.assign(upd, {
       phase: "downloading",
       next: ch.version,
@@ -1076,15 +1187,14 @@ const updFetch = (channel: string) => {
       checked: new Date().toISOString(),
     });
     updSend();
-    const t = setInterval(() => {
+    const step = () => {
       upd.written = Math.min(upd.total, upd.written + 4.6e6);
-      if (upd.written >= upd.total) {
-        clearInterval(t);
-        upd.phase = "ready";
-      }
+      if (upd.written >= upd.total) upd.phase = "ready";
+      else updTimers.push(setTimeout(step, 200));
       updSend();
-    }, 200);
-  }, 500);
+    };
+    updTimers.push(setTimeout(step, 200));
+  }, 500));
 };
 
 export const Events = {

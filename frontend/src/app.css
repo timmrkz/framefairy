@@ -241,6 +241,36 @@ button.on:hover:not(:disabled) {
   border-color: var(--accent-hi);
 }
 
+/* A link in a line of text, which opens a page in the browser. It reads
+   as part of the sentence, in the accent, and is underlined under the
+   hand, the way links are in the Mac's own settings. */
+button.link {
+  display: inline;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-lit);
+  cursor: pointer;
+}
+
+button.link:hover {
+  text-decoration: underline;
+  background: none;
+}
+
+/* The trash can: square at the height of every control, on a model and
+   on a key alike. */
+button.bin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  padding: 0;
+  flex: none;
+}
+
 button.quiet {
   background: transparent;
   border-color: transparent;
@@ -651,4 +681,70 @@ button:has(> .beam):disabled {
   .ask {
     transition: none;
   }
+}
+
+/* A card: one subject and the few things about it, in rows split by a
+   line. The Updates page and the settings are made of these, so a page
+   of the app's own reads as one kind of thing wherever it is. A row is a
+   mark, what it is in a few words with a line under them, and at its end
+   the one thing to do about it. */
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--ink-1);
+  /* So a chosen row's background keeps the card's corners. */
+  overflow: hidden;
+  /* Whole lines. The app's own 1.45 of 13 is 18.85, and a stack of those
+     leaves every row below a fraction off a whole pixel. */
+  line-height: 19px;
+}
+
+.card .item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 64px;
+  box-sizing: border-box;
+}
+
+.card .item + .item {
+  border-top: 1px solid var(--line);
+}
+
+/* The same background a chosen row wears everywhere else in the app. */
+.card .item.on {
+  background: var(--ink-3);
+}
+
+/* The mark before the words, as wide as the biggest icon a row carries,
+   so the words of every row in a card start in one column. */
+.card .mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex: none;
+}
+
+.card .mark.ok {
+  color: var(--ok);
+}
+
+.card .words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.card .head {
+  font-weight: 600;
+}
+
+.card .words .small {
+  font-size: var(--size-s);
 }

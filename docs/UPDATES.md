@@ -408,9 +408,18 @@ with its newest build, so one fetch is the whole check:
    The app looks by itself every ten minutes, downloads it quietly and
    puts the dot on Updates. One click, one restart. Check looks at once.
 5. **Tim picks #20**, or main. The app downloads that channel's newest
-   build, sideways, and says it is ready.
+   build, sideways, and says it is ready. A pick while another channel's
+   build is downloading stops that download at once, and the page shows
+   the new channel from the moment of the pick. Whatever the download
+   before says after that, its progress or that it finished, is thrown
+   away rather than shown: every pick starts a round of its own, and a
+   check only speaks for the round it began in.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
-   it follows main, and says so.
+   it downloads nothing. The page says **Pull request #18 is closed**,
+   the list names it, closed, in the colour of a warning, and nothing
+   downloads until another channel is picked. It used to follow main by
+   itself, and Tim, meaning to pick another pull request, watched main
+   download without having asked for it.
 
 A build made by `make`, and `make run` is one, follows nothing until a
 channel is picked, and looks only when it is picked or Check is clicked.
@@ -420,7 +429,7 @@ Otherwise every `make run` would fetch a build to replace itself with.
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. Falls back to main when a pull request has gone |
+| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check every ten minutes for a build from a channel, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, and Follows, which names the channel and nothing more, Branch main or Pull request #18, and opens from its right edge. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Update, which restarts into the new build. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |

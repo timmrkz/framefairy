@@ -531,6 +531,41 @@ does. An API answer that breaks off before a word of it arrived is asked
 for again. One that breaks off after is not, because what arrived has
 already been used.
 
+**The API is two companies, Anthropic and OpenAI,** in `engine/provider.go`.
+The model asked for says which: a `claude-` model is Anthropic's, a `gpt-`
+model OpenAI's, and a model nobody has heard of is taken to be Anthropic's,
+which is what every model was before there was a choice. Each company has
+its own address, written in the code and never derived from any input, its
+own key, read from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` and then the
+keychain, where `engine/keys.go` keeps it in an item only the app may
+read, through the Security framework on the Mac, never through a command
+line, and its own shape of request: Anthropic's Messages with the key in
+`x-api-key` and an optional prefilled brace, OpenAI's Chat Completions with
+the key as a bearer token, the instructions as a developer message, and
+`max_completion_tokens` for the ceiling, which counts the thinking as well.
+OpenAI's answer, streamed or plain, is put into the shape of Anthropic's as
+it is read, so everything after reading, the retries, the cost, the clips
+taken as they arrive, a ceiling spent thinking and given more room, and the
+repair of a broken answer, is one path whoever answered. OpenAI keeps its
+thinking to itself and only counts it, so a reply that thought and never
+answered reads as a thinking block with nothing in it, the way Anthropic's
+does. The app offers one model of each by name, Claude Sonnet 5 and
+GPT-6 Sol, two of the same price, so the choice is of company rather
+than budget. Any other model either company has can be named with `--model`.
+The tests stand a fake server in for both, in `engine/provider_test.go`, down
+to a whole search on a GPT model from transcript to plan.
+
+The command line reads the environment first and the keychain after. The
+app turns that round with `PreferSavedKeys` as it starts, so the key saved
+in its settings is the one used, and a key left in a terminal's
+environment never wins over it. `KeyHint` gives a key in short, its first
+twelve characters and its last four, kept as the keychain item's comment
+so it is read without the key. `VerifyAPIKey` shows a key to its company
+before the app keeps it, by asking for the list of models, and a key
+refused during a search is said in words, naming where it came from. The
+company's own answer is kept in the `logs` folder, as every refused request
+is, and in the detail lines of `--verbose`.
+
 A search is three kinds of work that no longer wait on each other, in
 `engine/planbuild.go`. The model writes on the graphics side of the
 machine, framing decodes video with ffmpeg on the processor, and writing a
@@ -567,8 +602,16 @@ what the model counts beats the clock: llama-server's count of the prompt
 it has read, and the tokens it has thought against its budget. A local
 model this machine has not timed yet is measured against a search timed on
 an M2 Max with Gemma 4, which is close enough to say how far it is and is
-replaced by the first search that finishes. The API has no stand-in, and
-its first search says what it is doing without saying how far it is. A
+replaced by the first search that finishes. A model in the cloud listed
+in `engine/api.go` is measured against `measuredCloud`, a guess rather than
+a measurement, replaced the same way. One written in by hand says what it
+is doing without saying how far it is until it has been timed. Claude
+Sonnet 5, Opus 5 and Fable 5.1 think by themselves, and are sent
+`thinking: {type: "adaptive", display: "summarized"}` so that their thought
+arrives as it goes. It costs nothing more, and without it the stream is
+silent until the answer begins, so the search could not tell thinking from
+hanging. There is no thinking budget in the cloud: these models refuse
+one, and `effort` is the only lever, left at its default. A
 search against a server that was already running loaded nothing, and
 leaves the loading time as it was. A record from before the thinking was
 timed on its own measured something else, and is replaced.
@@ -667,7 +710,9 @@ Everything else is in `engine/`:
   ass.go        the burned-in caption track and its measured boxes
   render.go     filter graph and ffmpeg command per clip
   ffmpeg.go     running ffmpeg, preflight checks, probing
-  api.go        the Anthropic API, costs and usage
+  api.go        the APIs in the cloud, costs and usage
+  provider.go   the companies in the cloud, Anthropic and OpenAI, their
+                addresses, keys and the models the app offers by name
   run.go        the run loop
   log.go        the timestamped terminal log
   events.go     the same log as structured events, for the app. Every

@@ -357,6 +357,24 @@ export interface ModelRow {
   warn?: boolean;
 }
 
+// A company whose API can find clips, and a model of theirs the app offers
+// by name. Which company a model in the cloud belongs to decides whose key
+// it needs.
+export interface Provider {
+  name: string;
+  title: string;
+  // The variable the command line reads the key from.
+  env: string;
+  // Where a person gets a key.
+  keysAt: string;
+}
+
+export interface CloudModel {
+  model: string;
+  title: string;
+  provider: string;
+}
+
 // What a new copy of the app still needs before it can make a short. Two
 // things are needed and only one of them is a question: speech is always
 // local and finding clips is a choice between an API key and a local
@@ -368,7 +386,20 @@ export interface SetupState {
   // What this machine has, in bytes, or zero where it would not say.
   memory: number;
   planner: "local" | "api" | "";
-  // Whether a key can be found. It never carries the key itself.
+  // The model in the cloud the settings name, and the company it belongs
+  // to, as the Go side works it out.
+  apiModel: string;
+  provider: string;
+  providers: Provider[];
+  cloud: CloudModel[];
+  // Whether a key can be found, for each company. Never a key itself.
+  // Where each company's key is found, "keychain" or "environment", and
+  // empty or missing when there is none.
+  keys: Record<string, string>;
+  // Each key in short, like sk-ant-api03...MwAA, and empty when it cannot
+  // be said.
+  keyHints?: Record<string, string>;
+  // Whether a key can be found for the company of the model named.
   hasKey: boolean;
   hasLocalModel: boolean;
   // Whether llama-server can be found. A model without it is a very large
@@ -416,11 +447,18 @@ export const api = {
   // Makes an installed model the one clips are found with, and says the
   // path it is found at.
   useLanguageModel: (name: string) => call<string>("UseLanguageModel", name),
-  saveAPIKey: (key: string) => call<void>("SaveAPIKey", key),
+  // Puts a key in the keychain under the company it is for.
+  saveAPIKey: (provider: string, key: string) => call<void>("SaveAPIKey", provider, key),
+  // Opens the page where the company makes keys, in the browser.
+  openKeysPage: (provider: string) => call<void>("OpenKeysPage", provider),
+  // Names the model in the cloud, and with it the company.
+  chooseCloudModel: (model: string) => call<void>("ChooseCloudModel", model),
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
   addEpisodes: () => call<string[] | null>("AddEpisodes"),
+  // Asks for a folder and says which one, or nothing when it was cancelled.
+  chooseFolder: (title: string) => call<string>("ChooseFolder", title),
   // Loads the local model for the first search of an episode while the
   // transcript is still on its way. Nothing comes back and nothing waits.
   // Where the transcription stops for now: the end of the window the first
@@ -644,6 +682,47 @@ export function fitNote(
     default:
       return { note: best ? "The safest of these" : "", warn: false };
   }
+}
+
+// A model as a row of a list, in the words the setup and the settings
+// both use, so one fact is never worded two ways. What a model is made of,
+// how it was quantised and how many parameters it has, is for whoever asks:
+// it goes in the row's title, and the row itself says what it costs and
+// whether this machine can run it.
+export function speechRow(m: SpeechModel): ModelRow {
+  return {
+    name: m.name,
+    label: m.title,
+    title: m.title,
+    about: m.about,
+    // Once it is there, the download is spent and only the room it takes
+    // is still true.
+    cost: m.installed
+      ? `${m.languages}. ${size(m.unpacked)} on disk`
+      : `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+    room: size(m.unpacked),
+    installed: m.installed,
+  };
+}
+
+export function languageRow(m: LanguageModel, pickable = false): ModelRow {
+  const { note, warn } = fitNote(m.fit, m.recommended);
+  const needs = memorySize(m.needs);
+  return {
+    name: m.name,
+    label: m.title,
+    title: m.title,
+    about: m.about,
+    // Once it is there, the download is spent and only the memory matters.
+    cost: m.installed
+      ? `By ${m.maker}. Needs ${needs} of memory`
+      : `By ${m.maker}. ${size(m.download)} to fetch, needs ${needs} of memory`,
+    room: size(m.download),
+    inUse: pickable ? m.inUse : undefined,
+    installed: m.installed,
+    note,
+    warn,
+  };
 }
 
 // A size in bytes the way a download is always quoted: metric, a thousand
@@ -897,7 +976,10 @@ export interface UpdateState {
   channels: UpdateChannel[] | null;
   picked: string;
   follows: string;
-  phase: "" | "checking" | "current" | "downloading" | "ready" | "failed";
+  // The channel followed when it is not on the list any more, a pull
+  // request merged or closed. Nothing downloads until another is picked.
+  gone: string;
+  phase: "" | "checking" | "current" | "gone" | "downloading" | "ready" | "failed";
   next: string;
   nextName: string;
   nextCommit: string;

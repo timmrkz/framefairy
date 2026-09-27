@@ -87,20 +87,19 @@
     id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : id ? `Branch ${id}` : "Nothing";
   const channelOptions = $derived.by(() => {
     const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
-    // A pull request that was picked and has since gone stays in the list
-    // for as long as it is picked, so the trigger never names nothing.
-    const picked = update?.picked ?? "";
-    if (picked && !listed.some((o) => o.value === picked)) {
-      listed.push({ value: picked, label: `${channelName(picked)}, closed` });
+    // A pull request that was followed and has since gone stays in the
+    // list for as long as it is followed, so the trigger never names
+    // nothing and says what became of it.
+    const gone = update?.picked || update?.gone || "";
+    if (gone && !listed.some((o) => o.value === gone)) {
+      listed.push({ value: gone, label: `${channelName(gone)}, closed` });
     }
     // A build made by make follows nothing until a channel is picked.
     if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
     return listed;
   });
-  const following = $derived(
-    update ? (update.channel ? update.picked || update.follows : update.picked) : "",
-  );
-  const followingName = $derived(channelName(update?.follows || following || "main"));
+  const following = $derived(update ? update.picked || update.follows || update.gone || "" : "");
+  const followingName = $derived(channelName(following || "main"));
 
   function when(checked: string | undefined): string {
     if (!checked) return "";
@@ -138,14 +137,20 @@
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
-      case "current": {
-        const gone = u.picked && u.follows !== u.picked ? `${channelName(u.picked)} was merged or closed, so this follows branch main. ` : "";
+      case "current":
         return {
           mark: "ok",
           head: "Up to date",
-          more: `${gone}This is the newest build of ${followingName}. ${when(u.checked)}`.trim(),
+          more: `This is the newest build of ${followingName}. ${when(u.checked)}`.trim(),
         };
-      }
+      // The pull request followed was merged or closed. Nothing downloads
+      // by itself: which channel to follow next is the person's to say.
+      case "gone":
+        return {
+          mark: "warn",
+          head: `${channelName(u.gone)} is closed`,
+          more: "Nothing downloads until you choose what to follow next.",
+        };
     }
     if (!u.channel && !u.picked) {
       return {
@@ -181,9 +186,9 @@
   {#if update}
     <div class="card">
       <!-- The build, and where the next one comes from. -->
-      <div class="build">
+      <div class="item build">
         <Icon name="update" size={24} />
-        <div class="what">
+        <div class="words">
           <span class="version num selectable">{update.version}</span>
           <span class="muted small num selectable">
             {update.commit ? `Commit ${short(update.commit)}` : "Built on this Mac"}
@@ -200,18 +205,25 @@
             label="Channel"
             align="right"
             title="Where the next build comes from: main, or one pull request"
+            tone={update.phase === "gone" ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />
         {/if}
       </div>
 
       <!-- Where things stand, and the one thing to do about it. -->
-      <div class="state" class:ready={update.phase === "ready"}>
+      <div class="item" class:on={update.phase === "ready"}>
         <span class="mark {standing.mark}" aria-hidden="true">
           {#if standing.mark === "ok"}
             <Icon name="check" size={14} />
           {:else}
-            <span class="dot" class:busy={standing.mark === "look"} class:ready={standing.mark === "new"} class:err={standing.mark === "err"}></span>
+            <span
+              class="dot"
+              class:busy={standing.mark === "look"}
+              class:ready={standing.mark === "new"}
+              class:err={standing.mark === "err"}
+              class:warn={standing.mark === "warn"}
+            ></span>
           {/if}
         </span>
         <div class="words">
@@ -261,54 +273,11 @@
     margin: 0 auto;
   }
 
-  /* One card, the way a model is one card in the settings: the same
-     border, radius and background. */
-  .card {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--ink-1);
-  }
-
-  .build,
-  .state {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px;
-  }
-
-  .state {
-    border-top: 1px solid var(--line);
-  }
-
-  /* The same background a chosen row wears everywhere else in the app,
-     for the moment there is something to do. */
-  .state.ready {
-    background: var(--ink-3);
-    border-bottom-left-radius: var(--radius-m);
-    border-bottom-right-radius: var(--radius-m);
-  }
-
-  .what,
-  .words {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .words {
-    flex: 1;
-  }
-
+  /* The build is the head of the page, so its version is set larger. The
+     card, its rows and the mark before the words are app.css's .card, the
+     same as the settings. */
   .version {
     font-size: var(--size-l);
-    font-weight: 600;
-  }
-
-  .head {
     font-weight: 600;
   }
 
@@ -316,18 +285,8 @@
     flex: 1;
   }
 
-  /* The mark before the words is as wide as the icon beside the build, so
-     the two lines start their words in one column. */
-  .mark {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
+  .build .words {
     flex: none;
-  }
-
-  .mark.ok {
-    color: var(--ok);
   }
 
   /* The list is as wide as what its trigger says and no wider, the same

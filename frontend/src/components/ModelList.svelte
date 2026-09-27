@@ -5,8 +5,16 @@
   // look the same anyway.
   //
   // No model ships with the app, so every copy fetches what it needs. The
-  // rows say what a model is, what it costs and, where the machine has
-  // something to say about it, whether it will run here.
+  // list is a card of rows, one model each, and a row says what a model is,
+  // what it costs and, where the machine has something to say about it,
+  // whether it will run here. What the model is made of is for whoever
+  // asks, in the title of its name.
+  //
+  // Which model finds clips is chosen in the settings from one list of all
+  // of them, so this list only installs and removes. Rows with a round mark
+  // for the model in use were tried here first, and a second card of
+  // choices under the card choosing between the API and this machine read
+  // as two things that had nothing to do with each other.
   //
   // An install is work in hand like any other, so it wears what all work
   // wears, in the control it was started from: the beam round the button
@@ -44,12 +52,12 @@
     // How to remove one, where models can be removed. The setup has
     // nothing to remove.
     onremove,
-    // How to make an installed one the one in use, where there is a choice
-    // between several: the models that find clips.
-    onuse,
     // What removing a model means beyond the room it gives back, said in
     // the box that asks first.
     removeSays = "",
+    // Rows only, for a card that already holds the list: the models on
+    // this machine, opened under the choice of which one finds clips.
+    bare = false,
   }: {
     models: ModelRow[];
     kind: "model" | "llm";
@@ -57,9 +65,10 @@
     onchange: () => void;
     auto?: boolean;
     onremove?: (name: string) => Promise<void>;
-    onuse?: (name: string) => Promise<void>;
     removeSays?: string;
+    bare?: boolean;
   } = $props();
+
 
   // The model an install was just asked for, so the row says so before the
   // first job event arrives. A click shows at once.
@@ -124,10 +133,8 @@
   const share = (job: Job) =>
     job.progress && job.progress.fraction >= 0 ? job.progress.fraction : -1;
 
-  // The model the box is asking about, and the one being made the one in
-  // use, so its button says so at once.
+  // The model the box is asking about.
   let removing = $state<ModelRow | null>(null);
-  let using = $state("");
 
   async function remove(model: ModelRow) {
     removing = null;
@@ -137,18 +144,6 @@
     } catch (err) {
       problem = errorText(err);
     }
-    onchange();
-  }
-
-  async function use(name: string) {
-    using = name;
-    problem = "";
-    try {
-      await onuse?.(name);
-    } catch (err) {
-      problem = errorText(err);
-    }
-    using = "";
     onchange();
   }
 
@@ -166,35 +161,17 @@
 </script>
 
 {#if problem}<p class="error selectable">{problem}</p>{/if}
-<ul>
+<ul class:card={!bare} class:bare>
   {#each models as model (model.name)}
     <!-- Which row an install belongs to. The job carries the name the Go
-         side gave it, which is the model's own title, and a row may show
-         more than that, the maker too, so rows are matched on the job's
-         name and not on what they show. -->
+         side gave it, which is the model's own title, so rows are matched
+         on the job's name and not on what they show. -->
     {@const mine = running?.label === model.label ? running : undefined}
-    {@const chosen = model.inUse ?? model.installed}
-    <li class:on={chosen}>
-      <div class="row head">
-        <span class="title grow">{model.title}</span>
-        {#if model.installed}
-          {#if chosen}
-            <!-- A state and not a control, so it does nothing when clicked,
-                 but it keeps the frame of the button it stands in for, so
-                 the row reads the same whatever the model is. -->
-            <span class="act state"><Icon name="check" />{model.inUse === undefined ? "Installed" : "In use"}</span>
-          {:else}
-            <button
-              class="act"
-              title="Find clips with this model"
-              disabled={using !== ""}
-              onclick={() => use(model.name)}
-            >
-              {#if using === model.name}<Busy />{/if}
-              {using === model.name ? "Choosing" : "Use"}
-            </button>
-          {/if}
-        {:else if mine}
+    <li class="item">
+      <span class="mark ok">{#if model.installed && !bare}<Icon name="check" />{/if}</span>
+      <span class="lone" title={model.about}>{@render words(model, mine)}</span>
+      {#if !model.installed}
+        {#if mine}
           <!-- The button the install was started from carries it: the beam
                and the fill, and the one thing to do about it. -->
           <button
@@ -207,45 +184,49 @@
             {cancelling === mine.id ? "Cancelling" : "Cancel"}
           </button>
         {:else}
-          <button class="act" disabled={asked === model.name || !!running} onclick={() => install(model.name)}>
+          <button
+            class="act"
+            title="Fetch it and keep it on this machine"
+            disabled={asked === model.name || !!running}
+            onclick={() => install(model.name)}
+          >
             {#if asked === model.name}<Busy />{/if}
             {asked === model.name ? "Starting" : "Install"}
           </button>
         {/if}
-        <!-- Last in the row, and always there. Every row of a list whose
-             models can be removed keeps its place, so the buttons beside
-             it stand in one column whether a model is there or not. -->
-        {#if onremove}
-          {#if model.installed}
-            <button
-              class="bin"
-              title="Remove it from this machine, to give its room back"
-              aria-label="Remove {model.title}"
-              aria-haspopup="dialog"
-              disabled={!!running}
-              onclick={() => (removing = model)}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {:else}
-            <span class="bin" aria-hidden="true"></span>
-          {/if}
-        {/if}
-      </div>
-      <p class="muted about">{model.about}</p>
-      {#if mine}
-        <p class="small muted num">{said(mine)}</p>
-      {:else}
-        <p class="small" class:muted={!model.warn} class:warn={model.warn}>
-          {model.cost}{model.note ? `. ${model.note}` : ""}
-        </p>
-      {/if}
-      {#if !mine && job && job.label === model.label && job.state === "failed"}
-        <p class="error selectable">{job.error}</p>
+      {:else if onremove}
+        <!-- Quiet until it is reached, then the colour of what it does,
+             the way the trash can on a clip is. -->
+        <button
+          class="quiet danger bin"
+          title="Remove it from this machine, to give its room back"
+          aria-label="Remove {model.title}"
+          aria-haspopup="dialog"
+          disabled={!!running}
+          onclick={() => (removing = model)}
+        >
+          <Icon name="trash" />
+        </button>
       {/if}
     </li>
   {/each}
 </ul>
+
+{#snippet words(model: ModelRow, mine: Job | undefined)}
+  <span class="words">
+    <span class="head">{model.title}</span>
+    {#if mine}
+      <span class="small muted num">{said(mine)}</span>
+    {:else}
+      <span class="small" class:muted={!model.warn} class:warn={model.warn}>
+        {model.cost}.{model.note ? ` ${model.note}.` : ""}
+      </span>
+    {/if}
+    {#if !mine && job && job.label === model.label && job.state === "failed"}
+      <span class="small error selectable">{job.error}</span>
+    {/if}
+  </span>
+{/snippet}
 
 {#if removing}
   {@const gone = removing}
@@ -266,51 +247,19 @@
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+
+  /* Rows in a card that is already there: the line above the first one
+     parts it from the row before, as between any two rows of a card. */
+  ul.bare > li:first-child {
+    border-top: 1px solid var(--line);
+  }
+
+  /* The words of a row, which take the room the buttons leave. */
+  .lone {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    /* Whole lines. The app's own 1.45 of 13 is 18.85, and a stack of
-       those leaves every row below a fraction off a whole pixel. */
-    line-height: 19px;
-  }
-
-  li {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--ink-1);
-  }
-
-  /* The same background a chosen row wears everywhere else in the app. */
-  li.on {
-    border-color: var(--accent);
-    background: var(--ink-3);
-  }
-
-  /* As tall as the control in it, so a row with a button and a row with a
-     word are the same height and nothing moves as one becomes the other. */
-  .head {
-    min-height: var(--control-h);
-  }
-
-  .title {
-    font-weight: 600;
-  }
-
-  .grow {
     flex: 1;
     min-width: 0;
-  }
-
-  .about {
-    font-size: var(--size-m);
-  }
-
-  .small {
-    font-size: var(--size-s);
   }
 
   .warn {
@@ -318,51 +267,9 @@
   }
 
   /* Room for the longest wording, Cancelling, so the row keeps still
-     whatever the button says. The word that stands in for it once the
-     model is there takes the same room, so the trash can beside it stays
-     where it is. */
+     whatever the button says. */
   .act {
     min-width: 104px;
-    justify-content: center;
-  }
-
-  /* What a model is once it is there, in the frame of the button it
-     stands in for: the same size, the same line, in the colour of what is
-     done. */
-  .state {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: var(--control-h);
-    box-sizing: border-box;
-    padding: 0 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    color: var(--ok);
-    white-space: nowrap;
-  }
-
-  /* The trash can: a button of the row, square at the height of every
-     control, quiet until it is reached and then the colour of what it
-     does, the way the trash can on a clip is. */
-  .bin {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--control-h);
-    height: var(--control-h);
-    box-sizing: border-box;
-    padding: 0;
     flex: none;
-    color: var(--muted);
-  }
-
-  button.bin:hover:not(:disabled) {
-    background: var(--lift-err);
-    color: var(--err);
-  }
-
-  span.bin {
-    visibility: hidden;
   }
 </style>

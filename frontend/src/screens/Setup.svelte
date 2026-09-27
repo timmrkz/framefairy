@@ -12,12 +12,13 @@
   // answered there is no workspace to put a box over, so this is the
   // whole app.
   import { onMount } from "svelte";
-  import { api, errorText, fitNote, memorySize, size, type ModelRow, type SetupState } from "../lib/api";
+  import { api, errorText, languageRow, memorySize, speechRow, type ModelRow, type SetupState } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let { ondone }: { ondone: () => void } = $props();
 
@@ -42,36 +43,9 @@
     }
   }
 
-  // The rows the two lists draw. The Go side stays factual and the interface
-  // does the wording, so the same fact is never worded two ways.
-  const speechRows = $derived<ModelRow[]>(
-    (setup?.speech ?? []).map((m) => ({
-      name: m.name,
-      label: m.title,
-      title: m.title,
-      about: m.about,
-      cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
-      room: size(m.unpacked),
-      installed: m.installed,
-    })),
-  );
-
-  const languageRows = $derived<ModelRow[]>(
-    (setup?.language ?? []).map((m) => {
-      const { note, warn } = fitNote(m.fit, m.recommended);
-      return {
-        name: m.name,
-        label: m.title,
-        title: `${m.title} by ${m.maker}`,
-        about: m.about,
-        cost: `${size(m.download)} to fetch, ${memorySize(m.needs)} of memory to run`,
-        room: size(m.download),
-        installed: m.installed,
-        note,
-        warn,
-      };
-    }),
-  );
+  // The rows the two lists draw, in the same words as the settings.
+  const speechRows = $derived<ModelRow[]>((setup?.speech ?? []).map((m) => speechRow(m)));
+  const languageRows = $derived<ModelRow[]>((setup?.language ?? []).map((m) => languageRow(m)));
 
   // Whether the speech model is still coming. The job list is shared, so
   // the last step reads it for itself rather than being told.
@@ -90,11 +64,39 @@
     await reload();
   }
 
+  // The model in the cloud and its company. The company decides whose key
+  // is asked for, and each company's key is kept apart.
+  const setupProvider = $derived(
+    setup?.providers.find((p) => p.name === setup?.provider) ?? {
+      name: "anthropic",
+      title: "Anthropic",
+      env: "ANTHROPIC_API_KEY",
+      keysAt: "platform.claude.com",
+    },
+  );
+  const cloudOptions = $derived(
+    (setup?.cloud ?? []).map((m) => ({
+      value: m.model,
+      label: m.title,
+      detail: setup?.providers.find((p) => p.name === m.provider)?.title ?? "",
+    })),
+  );
+
+  async function chooseCloud(model: string) {
+    problem = "";
+    try {
+      await api.chooseCloudModel(model);
+    } catch (err) {
+      problem = errorText(err);
+    }
+    await reload();
+  }
+
   async function saveKey() {
     saving = true;
     problem = "";
     try {
-      await api.saveAPIKey(key);
+      await api.saveAPIKey(setupProvider.name, key);
       key = "";
       savedKey = true;
       setTimeout(() => (savedKey = false), 1800);
@@ -178,9 +180,10 @@
         <div class="area asks">
           <span class="ask corner">
             <Info label="About finding clips" side="right">
-              A language model reads the transcript and picks the moments worth clipping. The
-              Claude API works on any machine and costs a few cents an episode. A model on this
-              machine is free to run and needs the memory to hold it. Either way the video and the
+              A language model reads the transcript and picks the moments worth clipping. A model
+              in the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own
+              from that company, and costs a few cents an episode. A model on this machine is free
+              to run and needs the memory to hold it. Either way the video and the
               audio stay here: only the words are read.
             </Info>
           </span>
@@ -189,17 +192,28 @@
           <ul class="ways">
             <li class:on={setup.chosen && setup.planner === "api"}>
               <button class="pick" onclick={() => choose("api")}>
-                <span class="title">Claude API</span>
-                <span class="muted about">Works on any machine. A few cents an episode.</span>
+                <span class="title">In the cloud</span>
+                <span class="muted about">Anthropic or OpenAI. Works on any machine. A few cents an episode.</span>
               </button>
               {#if setup.chosen && setup.planner === "api"}
                 <div class="more">
+                  <!-- Which company's model, and so whose key. -->
+                  <div class="row">
+                    <span class="muted grow">Model</span>
+                    <Pick
+                      value={setup.apiModel}
+                      options={cloudOptions}
+                      onpick={chooseCloud}
+                      label="Model in the cloud"
+                      align="right"
+                    />
+                  </div>
                   {#if setup.hasKey}
-                    <p class="done row"><Icon name="check" />A key is in place.</p>
+                    <p class="done row"><Icon name="check" />The {setupProvider.title} key is in place.</p>
                   {:else if !mac}
                     <p class="warn">
                       This machine has no keychain, so the key comes from
-                      <b>ANTHROPIC_API_KEY</b> in the environment the app starts in.
+                      <b>{setupProvider.env}</b> in the environment the app starts in.
                     </p>
                   {/if}
                   {#if mac}
@@ -207,8 +221,10 @@
                       <input
                         type="password"
                         bind:value={key}
-                        placeholder={setup.hasKey ? "Replace the key" : "sk-ant-..."}
-                        aria-label="Anthropic API key"
+                        placeholder={setup.hasKey
+                          ? "Replace the key"
+                          : `${setupProvider.title} key from ${setupProvider.keysAt}`}
+                        aria-label="{setupProvider.title} API key"
                         autocomplete="off"
                         spellcheck="false"
                       />
