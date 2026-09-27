@@ -37,6 +37,9 @@ type keyStore interface {
 	// has says whether an item is there without reading the secret in it,
 	// so asking never puts a box on screen.
 	has(item string) bool
+	// hint is the key in short, as abbreviate writes it, kept beside the
+	// secret where it can be read without it. Empty when there is none.
+	hint(item string) string
 	// get reads the secret.
 	get(ctx context.Context, item string) (string, bool)
 	set(item, secret string) error
@@ -50,6 +53,7 @@ var errNoKeychain = errors.New("no keychain")
 type noKeys struct{}
 
 func (noKeys) has(string) bool                            { return false }
+func (noKeys) hint(string) string                         { return "" }
 func (noKeys) get(context.Context, string) (string, bool) { return "", false }
 func (noKeys) set(string, string) error                   { return errNoKeychain }
 func (noKeys) remove(string)                              {}
@@ -119,6 +123,29 @@ func KeySource(p Provider) string {
 		return KeyInKeychain
 	case env:
 		return KeyInEnvironment
+	}
+	return ""
+}
+
+// abbreviate is a key in short, the way the companies list keys: its first
+// twelve characters, which on Anthropic's are the kind of key and not the
+// secret, and its last four. It says which key is saved without saying
+// the key. A key too short to cut that way is not shown at all.
+func abbreviate(key string) string {
+	if len(key) < 24 {
+		return ""
+	}
+	return key[:12] + "..." + key[len(key)-4:]
+}
+
+// KeyHint is the provider's key in short, from wherever KeySource says it
+// is, read without the secret. Empty when it cannot be said.
+func KeyHint(p Provider) string {
+	switch KeySource(p) {
+	case KeyInEnvironment:
+		return abbreviate(envKey(p))
+	case KeyInKeychain:
+		return keys.hint(p.Item)
 	}
 	return ""
 }
@@ -211,13 +238,6 @@ func CheckAPIKey(p Provider) error {
 // it.
 func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
 	key = strings.TrimSpace(key)
-	// The Console lists each key by an ID that looks like a key, and the
-	// key itself is only shown once, when it is made. The ID is the easy
-	// one to copy, so it is named for what it is.
-	if strings.HasPrefix(key, "apikey_") {
-		return renderErr("that is the key's ID, not the key. The key is shown once, "+
-			"when it is made at %s.", p.KeysAt)
-	}
 	if key == "" || !keyIsSane(key) || p.Models == "" {
 		return nil
 	}
@@ -234,7 +254,13 @@ func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
 	}
 	response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized {
-		return renderErr("%s did not accept this key. Check it at %s.", p.Title, p.KeysAt)
+		// Something else copied from the same page, like the key's ID,
+		// is said to be no key of theirs. The line is short, since it
+		// stands in one line of the settings.
+		if !strings.HasPrefix(key, p.KeyPrefix) {
+			return renderErr("not an %s key. Those start with %s.", p.Title, p.KeyPrefix)
+		}
+		return renderErr("%s did not accept this key.", p.Title)
 	}
 	return nil
 }

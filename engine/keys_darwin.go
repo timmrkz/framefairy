@@ -58,21 +58,50 @@ static int ff_get(const char *service, const char *account, char **out, long *le
 	return 0;
 }
 
-// Keeps a secret. An item that is there has its secret replaced, and one
-// that is not is added, with the access list macOS gives an item made by
-// an app: that app, and nothing else without asking.
-static int ff_set(const char *service, const char *account, const char *secret, long length) {
+// The item's comment, which holds the key in short, copied into out. It
+// is an attribute, so like ff_has it is read without the access list.
+static int ff_hint(const char *service, const char *account, char *out, long size) {
+	CFMutableDictionaryRef q = ff_item(service, account);
+	CFDictionarySetValue(q, kSecReturnAttributes, kCFBooleanTrue);
+	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
+	CFTypeRef found = NULL;
+	OSStatus status = SecItemCopyMatching(q, &found);
+	CFRelease(q);
+	out[0] = 0;
+	if (status != errSecSuccess) return (int)status;
+	if (found != NULL && CFGetTypeID(found) == CFDictionaryGetTypeID()) {
+		CFTypeRef comment = CFDictionaryGetValue((CFDictionaryRef)found, kSecAttrComment);
+		if (comment != NULL && CFGetTypeID(comment) == CFStringGetTypeID()) {
+			if (!CFStringGetCString((CFStringRef)comment, out, size, kCFStringEncodingUTF8)) {
+				out[0] = 0;
+			}
+		}
+	}
+	if (found != NULL) CFRelease(found);
+	return 0;
+}
+
+// Keeps a secret, with the key in short as the item's comment. An item
+// that is there has its secret replaced, and one that is not is added,
+// with the access list macOS gives an item made by an app: that app, and
+// nothing else without asking.
+static int ff_set(const char *service, const char *account, const char *secret, long length,
+		const char *hint) {
 	CFMutableDictionaryRef q = ff_item(service, account);
 	CFDataRef data = CFDataCreate(NULL, (const UInt8 *)secret, length);
+	CFStringRef comment = CFStringCreateWithCString(NULL, hint, kCFStringEncodingUTF8);
 	CFMutableDictionaryRef change = CFDictionaryCreateMutable(NULL, 0,
 		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 	CFDictionarySetValue(change, kSecValueData, data);
+	CFDictionarySetValue(change, kSecAttrComment, comment);
 	OSStatus status = SecItemUpdate(q, change);
 	if (status == errSecItemNotFound) {
 		CFDictionarySetValue(q, kSecValueData, data);
+		CFDictionarySetValue(q, kSecAttrComment, comment);
 		status = SecItemAdd(q, NULL);
 	}
 	CFRelease(change);
+	CFRelease(comment);
 	CFRelease(data);
 	CFRelease(q);
 	return (int)status;
@@ -127,6 +156,18 @@ func (keychainKeys) has(item string) bool {
 	return found
 }
 
+func (keychainKeys) hint(item string) string {
+	hint := ""
+	withNames(item, func(service, account *C.char) {
+		buf := (*C.char)(C.malloc(128))
+		defer C.free(unsafe.Pointer(buf))
+		if C.ff_hint(service, account, buf, 128) == 0 {
+			hint = C.GoString(buf)
+		}
+	})
+	return hint
+}
+
 func (keychainKeys) get(_ context.Context, item string) (string, bool) {
 	secret, ok := "", false
 	withNames(item, func(service, account *C.char) {
@@ -146,7 +187,9 @@ func (keychainKeys) set(item, secret string) error {
 	withNames(item, func(service, account *C.char) {
 		value := C.CString(secret)
 		defer C.ff_forget(value, C.long(len(secret)))
-		status = C.ff_set(service, account, value, C.long(len(secret)))
+		hint := C.CString(abbreviate(secret))
+		defer C.free(unsafe.Pointer(hint))
+		status = C.ff_set(service, account, value, C.long(len(secret)), hint)
 	})
 	if status != 0 {
 		return fmt.Errorf("status %d", int(status))
@@ -169,6 +212,9 @@ func (securityKeys) has(item string) bool {
 	res, _ := keychain(context.Background(), "find-generic-password", "-a", keyAccount, "-s", item)
 	return res.Code == 0
 }
+
+// The old items were kept without a key in short.
+func (securityKeys) hint(string) string { return "" }
 
 func (securityKeys) get(ctx context.Context, item string) (string, bool) {
 	res, _ := keychain(ctx, "find-generic-password", "-a", keyAccount, "-s", item, "-w")

@@ -78,6 +78,10 @@
   // Why the company refused the key just typed, said in the key's own row
   // until it is typed again.
   let keyRefused = $state("");
+  // The key in short, as the Go side read it without the secret, and
+  // whether the box that asks before it is removed is open.
+  let keyHints = $state<Record<string, string>>({});
+  let removingKey = $state(false);
 
   // The model in the cloud, its company, and whether that company's key is
   // here. Which company decides whose key the row asks for.
@@ -164,6 +168,20 @@
     await Promise.all([readModels(), check()]);
   }
 
+  // An empty key takes the saved one off the machine. It cannot be taken
+  // back, the key is not kept anywhere else, so it asks first.
+  async function removeKey() {
+    removingKey = false;
+    keyRefused = "";
+    try {
+      await api.saveAPIKey(provider.name, "");
+    } catch (err) {
+      const said = errorText(err);
+      keyRefused = said.charAt(0).toUpperCase() + said.slice(1);
+    }
+    await Promise.all([readModels(), check()]);
+  }
+
   // The one clips are found with is saved by the Go side at once, so the
   // settings are read again rather than saved over it.
   // The list says which model is in use from the models as the Go side
@@ -208,6 +226,7 @@
       providers = state.providers ?? [];
       cloud = state.cloud ?? [];
       keys = state.keys ?? {};
+      keyHints = state.keyHints ?? {};
       providerSaid = state.provider || "anthropic";
     } catch (err) {
       problem = errorText(err);
@@ -568,22 +587,32 @@
               </span>
               <div class="words">
                 <span class="head">{provider.title} API key</span>
+                <!-- A saved key is shown in short, the way the companies
+                     list keys, and where it comes from is in the title. -->
                 <span
                   class="small line"
                   class:muted={hasKey && !keyRefused}
+                  class:hint={hasKey && !keyRefused && !savedKey && !!keyHints[provider.name]}
                   class:warn={!hasKey && !keyRefused}
                   class:error={!!keyRefused}
-                  title={keyRefused || undefined}
+                  title={keyRefused ||
+                    (keys[provider.name] === "environment"
+                      ? `From ${provider.env}`
+                      : hasKey
+                        ? "In the keychain, where only this app may read it"
+                        : undefined)}
                 >
                   {keyRefused
                     ? keyRefused
                     : savedKey
-                    ? "Saved in the keychain."
-                    : keys[provider.name] === "environment"
-                      ? `From ${provider.env}.`
-                      : hasKey
-                        ? "In the keychain."
-                        : `None yet. Get one at ${provider.keysAt}.`}
+                      ? "Saved in the keychain."
+                      : keyHints[provider.name]
+                        ? keyHints[provider.name]
+                        : keys[provider.name] === "environment"
+                          ? `From ${provider.env}.`
+                          : hasKey
+                            ? "In the keychain."
+                            : `None yet. Get one at ${provider.keysAt}.`}
                 </span>
               </div>
               <input
@@ -591,7 +620,7 @@
                 type="password"
                 bind:value={key}
                 oninput={() => (keyRefused = "")}
-                placeholder={hasKey ? "Replace the key" : provider.name === "openai" ? "sk-proj-..." : "sk-ant-..."}
+                placeholder={hasKey ? "New key" : `${provider.name === "openai" ? "sk-proj" : "sk-ant"}-...`}
                 aria-label="{provider.title} API key"
                 title="It goes in the keychain and nowhere else"
                 autocomplete="off"
@@ -602,6 +631,24 @@
                 {#if savingKey}<Busy />{/if}
                 {savingKey ? "Checking" : "Save key"}
               </button>
+              <!-- Only a key the app keeps can be removed here. One in the
+                   environment is the terminal's to take away. The trash can
+                   keeps its place without one, so the field and the button
+                   do not move when a key is saved or removed. -->
+              {#if keys[provider.name] === "keychain"}
+                <button
+                  class="quiet danger bin"
+                  title="Remove the key from this machine"
+                  aria-label="Remove the {provider.title} API key"
+                  aria-haspopup="dialog"
+                  disabled={savingKey}
+                  onclick={() => (removingKey = true)}
+                >
+                  <Icon name="trash" />
+                </button>
+              {:else}
+                <span class="bin-room" aria-hidden="true"></span>
+              {/if}
             </div>
           {:else}
             {#if broken("llama-server")}
@@ -871,6 +918,19 @@
       {/snippet}
     </Confirm>
   {/if}
+
+  {#if removingKey}
+    <Confirm title="Remove the {provider.title} API key?" oncancel={() => (removingKey = false)}>
+      <p>
+        The key leaves this machine's keychain, and clips cannot be found in the cloud until a key
+        is saved again. The key itself stays valid at {provider.keysAt}.
+      </p>
+      {#snippet actions()}
+        <button onclick={() => (removingKey = false)}>Cancel</button>
+        <button class="danger" onclick={removeKey}>Remove</button>
+      {/snippet}
+    </Confirm>
+  {/if}
 </section>
 
 <style>
@@ -923,9 +983,22 @@
     flex: none;
   }
 
+  /* Narrow, since what is typed shows as dots, and the room goes to the
+     key in short beside it. */
   .key {
-    width: 240px;
+    width: 150px;
     flex: none;
+  }
+
+  /* The room of the trash can, where there is nothing to remove. */
+  .bin-room {
+    width: var(--control-h);
+    flex: none;
+  }
+
+  /* A key in short reads as a key: the figures and letters at one width. */
+  .hint {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
 
   .path {

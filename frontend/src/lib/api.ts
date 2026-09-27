@@ -396,6 +396,9 @@ export interface SetupState {
   // Where each company's key is found, "keychain" or "environment", and
   // empty or missing when there is none.
   keys: Record<string, string>;
+  // Each key in short, like sk-ant-api03...MwAA, and empty when it cannot
+  // be said.
+  keyHints?: Record<string, string>;
   // Whether a key can be found for the company of the model named.
   hasKey: boolean;
   hasLocalModel: boolean;

@@ -38,6 +38,8 @@ type Provider struct {
 	// security command, which anything on the machine could read. It is
 	// only ever read, to move a key out of it, and removed.
 	Keychain string `json:"-"`
+	// KeyPrefix is how every key of theirs begins.
+	KeyPrefix string `json:"-"`
 	// KeysAt is where a person gets a key.
 	KeysAt string `json:"keysAt"`
 }
@@ -48,11 +50,11 @@ var providers = []Provider{
 	{Name: "anthropic", Title: "Anthropic", URL: "https://api.anthropic.com/v1/messages",
 		Models: "https://api.anthropic.com/v1/models",
 		Env:    "ANTHROPIC_API_KEY", Item: "Frame Fairy: Anthropic API key", Keychain: "anthropic-api-key",
-		KeysAt: "console.anthropic.com"},
+		KeyPrefix: "sk-ant-", KeysAt: "console.anthropic.com"},
 	{Name: "openai", Title: "OpenAI", URL: "https://api.openai.com/v1/chat/completions",
 		Models: "https://api.openai.com/v1/models",
 		Env:    "OPENAI_API_KEY", Item: "Frame Fairy: OpenAI API key", Keychain: "openai-api-key",
-		KeysAt: "platform.openai.com"},
+		KeyPrefix: "sk-", KeysAt: "platform.openai.com"},
 }
 
 // Providers lists the companies the app can ask.

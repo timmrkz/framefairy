@@ -77,6 +77,9 @@ type SetupState struct {
 	// keychain or the environment, and is empty when there is none. It
 	// never carries a key itself.
 	Keys map[string]string `json:"keys"`
+	// KeyHints is each key in short, the way the companies list keys,
+	// read without the secret. Empty when it cannot be said.
+	KeyHints map[string]string `json:"keyHints"`
 	// HasKey is true when a key can be found for the provider of the model
 	// the settings name.
 	HasKey bool `json:"hasKey"`
@@ -133,12 +136,14 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	state.Providers = engine.Providers()
 	state.Cloud = engine.CloudModels()
 	state.Keys = map[string]string{}
+	state.KeyHints = map[string]string{}
 	// Whether each key is there, without reading any of them. The settings
 	// ask this every time they open, and reading a secret is what puts a
 	// box from macOS on screen for an app it does not know yet.
 	for _, p := range state.Providers {
 		if engine.CheckAPIKey(p) == nil {
 			state.Keys[p.Name] = engine.KeySource(p)
+			state.KeyHints[p.Name] = engine.KeyHint(p)
 		}
 	}
 	state.HasKey = state.Keys[state.Provider] != ""

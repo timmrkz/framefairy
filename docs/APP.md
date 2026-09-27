@@ -1335,9 +1335,19 @@ costs nothing, and while that runs the button says Checking. A key the
 company refuses is said in the key's own row, in red, and not kept, so a
 wrong key is found where it was typed rather than when the first search
 fails. A company that cannot be reached says nothing about the key, so it
-is kept. A key in `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, which an app
-started from a terminal has, reads **From ANTHROPIC_API_KEY** in the row
-until a key is saved, and a saved key is the one used.
+is kept. A refusal is one short line: **Anthropic did not accept this
+key**, or, for something else copied from the same page, like the key's ID,
+**Not an Anthropic key. Those start with sk-ant-**. A saved key is shown in
+short, the way the companies list keys, `sk-ant-api03...MwAA`, its first
+twelve characters and its last four. The short form is kept as the
+keychain item's comment, which macOS lets the app read without the key,
+so showing it never asks for anything. The field is narrow, since what is
+typed shows as dots. The trash can beside it removes the saved key, and
+asks first, because the app keeps no other copy. Without a saved key it
+keeps its room, so the field does not move. A key in `ANTHROPIC_API_KEY`
+or `OPENAI_API_KEY`, which an app started from a terminal has, is shown in
+short too, with where it comes from in the title, until a key is saved,
+and a saved key is the one used. It cannot be removed here.
 
 A key refused in the middle of a search says so in words on the search's
 row, and says where the key came from: the saved key, to be replaced in

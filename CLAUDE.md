@@ -103,8 +103,10 @@ Start with [README.md](README.md). In short:
   Name bugs you found on the way, including your own.
 - **End with what the thread is and what Tim has to do.** He has several
   sessions open at once, and a pull request number or a branch name tells
-  him nothing about what he is looking at. So every message that waits for
-  him ends the same way, at the very bottom, after everything else:
+  him nothing about what he is looking at. It is the first thing he looks
+  for when he comes back to a thread. So every reply ends the same way,
+  always, whether it waits for him or only reports, at the very bottom,
+  after everything else:
   one short line in plain words saying what this thread is about, and
   under it the list of what he has to do for it to move on, each item a
   step he can take as it stands: try this in the app and look for that,

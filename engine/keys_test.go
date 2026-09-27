@@ -35,6 +35,15 @@ func (m *memKeys) has(item string) bool {
 	return ok
 }
 
+func (m *memKeys) hint(item string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.items[item]; ok {
+		return abbreviate(v)
+	}
+	return ""
+}
+
 func (m *memKeys) get(_ context.Context, item string) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -270,7 +279,7 @@ func TestVerifyAPIKeyAsksTheCompany(t *testing.T) {
 		t.Errorf("a refused key: %v", err)
 	}
 	if err := VerifyAPIKey(context.Background(), openai, "sk-proj-bad"); err == nil ||
-		!strings.Contains(err.Error(), "platform.openai.com") {
+		err.Error() != "OpenAI did not accept this key." {
 		t.Errorf("a refused OpenAI key: %v", err)
 	}
 
@@ -286,20 +295,12 @@ func TestVerifyAPIKeyAsksTheCompany(t *testing.T) {
 		t.Errorf("openai was asked at %s with %v", third.URL.Path, third.Header)
 	}
 
-	// The ID the Console lists a key by is not the key, and is said to be
-	// the ID without asking anybody.
-	mu.Lock()
-	before := len(asked)
-	mu.Unlock()
-	if err := VerifyAPIKey(context.Background(), anthropic, "apikey_01Jc8z2Rkr225X8W3UCSCFSD"); err == nil ||
-		!strings.Contains(err.Error(), "the key's ID") {
+	// Something else copied from the same page, like the ID the Console
+	// lists a key by, is refused as no key of theirs, in a short line.
+	err = VerifyAPIKey(context.Background(), anthropic, "apikey_01Jc8z2Rkr225X8W3UCSCFSDbad")
+	if err == nil || err.Error() != "not an Anthropic key. Those start with sk-ant-." {
 		t.Errorf("a key's ID: %v", err)
 	}
-	mu.Lock()
-	if len(asked) != before {
-		t.Error("a key's ID was sent to the company")
-	}
-	mu.Unlock()
 
 	// Nobody there: the key passes, since nothing is known against it.
 	server.Close()
@@ -335,5 +336,36 @@ func TestTestsNeverShowAKeyToACompany(t *testing.T) {
 		if p.Models != "" {
 			t.Errorf("a test binary would show %s a key at %s", p.Title, p.Models)
 		}
+	}
+}
+
+// A saved key is shown in short, the way the companies list keys, without
+// reading the secret, and one too short to cut shows nothing of itself.
+func TestAKeyIsShownInShort(t *testing.T) {
+	p, _ := ProviderNamed("anthropic")
+	const key = "sk-ant-api03-Ah3xxxxxxxxxxxxxxxxxxxxxxxxxxMwAA"
+	now, _ := keychains(t, nil, nil)
+	if err := StoreAPIKey(p, key); err != nil {
+		t.Fatal(err)
+	}
+	reads := now.reads
+	if got := KeyHint(p); got != "sk-ant-api03...MwAA" {
+		t.Errorf("in short: %q", got)
+	}
+	if now.reads != reads {
+		t.Error("the secret was read to show it in short")
+	}
+	if got := abbreviate("sk-short"); got != "" {
+		t.Errorf("a short key showed %q", got)
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-fromtheenvironment0000WXYZ")
+	if got := KeyHint(p); got != "sk-ant-api03...WXYZ" {
+		t.Errorf("from the environment: %q", got)
+	}
+	if _, err := ReadAPIKey(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if err := StoreAPIKey(p, ""); err != nil || KeyHint(p) != "sk-ant-api03...WXYZ" || now.has(p.Item) {
+		t.Errorf("removed: %v, hint %q", err, KeyHint(p))
 	}
 }

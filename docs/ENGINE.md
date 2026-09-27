@@ -558,7 +558,9 @@ to a whole search on a GPT model from transcript to plan.
 The command line reads the environment first and the keychain after. The
 app turns that round with `PreferSavedKeys` as it starts, so the key saved
 in its settings is the one used, and a key left in a terminal's
-environment never wins over it. `VerifyAPIKey` shows a key to its company
+environment never wins over it. `KeyHint` gives a key in short, its first
+twelve characters and its last four, kept as the keychain item's comment
+so it is read without the key. `VerifyAPIKey` shows a key to its company
 before the app keeps it, by asking for the list of models, and a key
 refused during a search is said in words, naming where it came from. The
 company's own answer is kept in the `logs` folder, as every refused request

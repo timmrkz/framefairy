@@ -272,14 +272,4 @@
     min-width: 104px;
     flex: none;
   }
-
-  /* The trash can: square at the height of every control. */
-  .bin {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--control-h);
-    padding: 0;
-    flex: none;
-  }
 </style>

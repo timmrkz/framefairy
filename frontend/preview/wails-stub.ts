@@ -631,7 +631,7 @@ export const Call = {
             const env = location.search.includes("envkey") && !stored.anthropic;
             const where = (here: boolean) => (here ? "keychain" : "");
             const keys: Record<string, string> = {
-              anthropic: env ? "environment" : where(none ? !!stored.anthropic || !!key : true),
+              anthropic: env ? "environment" : where(stored.anthropic === false ? false : none ? !!stored.anthropic || !!key : true),
               openai: where(!!stored.openai),
             };
             return {
@@ -646,6 +646,11 @@ export const Call = {
                 { model: "gpt-6-sol", title: "GPT-6 Sol", provider: "openai" },
               ],
               keys,
+              // Each key in short, the way the companies list them.
+              keyHints: {
+                anthropic: keys.anthropic === "environment" ? "sk-ant-api03...WXYZ" : keys.anthropic ? "sk-ant-api03...MwAA" : "",
+                openai: keys.openai ? "sk-proj-7Fq2...k9Qa" : "",
+              },
               hasKey: !!keys[provider],
             };
           })(),
@@ -686,13 +691,14 @@ export const Call = {
         return Promise.resolve(null);
       case "SaveAPIKey": {
         // A key that ends in "bad" is one the company refuses, after the
-        // moment it takes to ask.
+        // moment it takes to ask, and one that does not look like theirs is
+        // said to be no key of theirs.
         const typed = String(args[1] ?? "").trim();
         if (typed.endsWith("bad")) {
-          const title = String(args[0]) === "openai" ? "OpenAI" : "Anthropic";
-          return new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`${title} did not accept this key. Check it at ${String(args[0]) === "openai" ? "platform.openai.com" : "console.anthropic.com"}.`)), 600),
-          );
+          const openai = String(args[0]) === "openai";
+          const [title, prefix] = openai ? ["OpenAI", "sk-"] : ["Anthropic", "sk-ant-"];
+          const why = typed.startsWith(prefix) ? `${title} did not accept this key.` : `not an ${title} key. Those start with ${prefix}.`;
+          return new Promise((_, reject) => setTimeout(() => reject(new Error(why)), 600));
         }
         ((window as any).__keys ??= {})[String(args[0])] = !!typed;
         return new Promise((resolve) => setTimeout(() => resolve(null), 600));
