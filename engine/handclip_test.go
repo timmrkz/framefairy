@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"sync"
 	"testing"
@@ -31,7 +32,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	// The way the app wraps an edit, so Undo can take the clip away. The
 	// first clip made by hand also makes its clip set.
 	before := TakeSnapshot(p.LogsDir())
-	path, id, err := p.MakeClip(ctx, 30)
+	path, id, err := p.MakeClip(ctx, 30, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,28 +67,63 @@ func TestAClipMadeByHand(t *testing.T) {
 		t.Errorf("the clip has %d words and the title %q", len(c.Words), c.Title)
 	}
 
-	// No search: nothing is searched, and giving back a part leaves it.
+	// Backward, the clip ends at the line the playhead stands in and
+	// reaches back from it, for a moment noticed once it has passed.
+	_, back, err := p.MakeClip(ctx, 60, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, clips, _ = LoadClips(path)
+	for _, b := range clips {
+		if b.ID != back {
+			continue
+		}
+		last := b.Segments[len(b.Segments)-1]
+		// The line holding second 60, which the fake recogniser, a word
+		// every 0.6 seconds without a pause, makes several seconds long.
+		lines := BuildLines(mustWords(t, p), nil, base.MaxPause)
+		want := 0.0
+		for _, l := range lines {
+			if l.End() > 60 {
+				want = l.End()
+				break
+			}
+		}
+		if math.Abs(last.End-want) > 0.5 {
+			t.Errorf("the clip made backward ends at %v, not at the line the playhead stands in", last.End)
+		}
+		if d := b.Duration(); d < 15 || d > 30.5 {
+			t.Errorf("the clip made backward is %vs long", d)
+		}
+	}
+
+	// No search: nothing is marked searched. But a clip is a clip, so
+	// giving back a part takes the clips made by hand in it, and leaves
+	// the ones outside it.
 	st := Status(source, base.ASRModel)
 	if got := SearchedWindows(st.Plans, 80); len(got) != 0 {
 		t.Errorf("a clip made by hand counts as a search of %v", got)
 	}
-	if n, err := RemoveRange(path, p.CaptionsDir(), 0, 80, 80); err != nil || n != 0 {
-		t.Errorf("giving back the whole episode took %d clips made by hand: %v", n, err)
+	if n, err := RemoveRange(path, p.CaptionsDir(), 28, 32, 80); err != nil || n != 1 {
+		t.Errorf("giving back the part round the first clip took %d clips: %v", n, err)
+	}
+	if _, left, _ := LoadClips(path); len(left) != 1 || left[0].ID != back {
+		t.Errorf("after giving back a part, %d clips made by hand are left", len(left))
 	}
 
 	// Past the transcript there is nothing to make a clip of.
-	if _, _, err := p.MakeClip(ctx, 500); err == nil {
+	if _, _, err := p.MakeClip(ctx, 500, false); err == nil {
 		t.Error("a clip was made where nothing is said")
 	}
 
 	// Several at once, the way a key held down asks: each gets an id of
 	// its own and none is lost.
 	var wg sync.WaitGroup
-	for range 4 {
+	for i := range 4 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, _, err := p.MakeClip(ctx, 10); err != nil {
+			if _, _, err := p.MakeClip(ctx, 10, i%2 == 1); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -95,9 +131,25 @@ func TestAClipMadeByHand(t *testing.T) {
 	wg.Wait()
 	_, clips, err = LoadClips(path)
 	if err != nil || len(clips) != 5 {
-		t.Fatalf("the clip set holds %d clips after five were made: %v", len(clips), err)
+		t.Fatalf("the clip set holds %d clips, not the one left and four more: %v", len(clips), err)
+	}
+	ids := map[string]bool{}
+	for _, c := range clips {
+		if ids[c.ID] {
+			t.Errorf("two clips are called %s", c.ID)
+		}
+		ids[c.ID] = true
 	}
 	if _, err := os.Stat(p.HandPlanPath()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func mustWords(t *testing.T, p *Project) []Cue {
+	t.Helper()
+	tr, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tr.Words
 }

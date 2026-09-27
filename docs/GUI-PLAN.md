@@ -139,7 +139,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.7 | Crop frame shown per shot, moved by hand per camera angle, reset to automatic | `[x]` |
 | 3.10 | The colour of the caption text, of the box behind it and of the highlight, each with how much of it is seen, beside the face and the size. The caption blocks of the clip timeline wear all three with their opacity, over everything else on the track | `[x]` |
 | 3.11 | One frame for what is chosen: the crop, the window and the clip drawn by one rule, with the same line, corners and colour | `[x]` |
-| 3.12 | A clip made by hand, where the model found none: a button and a key make a clip at the playhead, from the line it stands in, as long as Shortest and Longest ask, cut and framed the way the model's clips are. It lands in a clip set of its own, `clips-hand.json`, which is no search: it marks nothing searched on the range picker and stays when a search is removed. The engine `[x]`, the button and the key `[x]` | `[x]` |
+| 3.12 | A clip made by hand, where the model found none, the way an editor marks one: In, the I button and key, starts it at the sentence under the playhead and grows it forward, Out, the O button and key, ends it there and grows it back, as long as Shortest and Longest ask, cut and framed the way the model's clips are, with no model asked. It lands in a clip set of its own, `clips-hand.json`, which marks nothing searched on the range picker, and its clips go with the rest when a part is removed. The engine `[x]`, the button and the key `[x]` | `[x]` |
 
 ## Phase 4: caption editor
 

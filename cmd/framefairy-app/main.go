@@ -1651,9 +1651,11 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 }
 
 // MakeClip makes a clip by hand at a moment of the episode, for a part the
-// model did not pick, and returns it. It is framed the way the model's
-// clips are, so it can take a moment, and Undo takes it away again.
-func (s *FrameFairy) MakeClip(ctx context.Context, path string, at float64) (ClipEntry, error) {
+// model did not pick, and returns it: from the line the moment stands in
+// forward, the way an editor's In mark works, or back to it, the way the
+// Out mark does. It is framed the way the model's clips are, so it can
+// take a moment, and Undo takes it away again.
+func (s *FrameFairy) MakeClip(ctx context.Context, path string, at float64, backward bool) (ClipEntry, error) {
 	if !s.store.Known(path) {
 		return ClipEntry{}, os.ErrNotExist
 	}
@@ -1670,7 +1672,7 @@ func (s *FrameFairy) MakeClip(ctx context.Context, path string, at float64) (Cli
 	var plan, id string
 	if err := s.edit(path, func() error {
 		var err error
-		plan, id, err = p.MakeClip(ctx, at)
+		plan, id, err = p.MakeClip(ctx, at, backward)
 		return err
 	}); err != nil {
 		return ClipEntry{}, err

@@ -1191,9 +1191,7 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 	if !IsPlanFile(planPath) {
 		return 0, renderErr("%s is not a plan", filepath.Base(planPath))
 	}
-	// Clips made by hand were no search's, so giving a searched part back
-	// leaves them where they are.
-	if to <= from || IsHandPlan(planPath) {
+	if to <= from {
 		return 0, nil
 	}
 	plan, clips, err := LoadClips(planPath)
@@ -1203,7 +1201,14 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 		}
 		return 0, err
 	}
+	// A clip is a clip, so giving a part back takes the clips made by hand
+	// in it as well. Their set searched nothing, so it has no window to
+	// make a hole in, and it stays for the next clip made by hand.
+	hand := IsHandPlan(planPath)
 	window := planWindow(plan, duration)
+	if hand {
+		window = Window{from, to}
+	}
 	start, end := math.Max(from, window.Start), math.Min(to, window.End)
 	if end <= start {
 		return 0, nil
@@ -1215,8 +1220,11 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 			going = append(going, clip)
 		}
 	}
+	if hand && len(going) == 0 {
+		return 0, nil
+	}
 	// Nothing of the window is left, so the plan itself goes.
-	if len(Without(window, append(readWindows(plan.PlannedWith()["removed"]), Window{start, end}))) == 0 {
+	if !hand && len(Without(window, append(readWindows(plan.PlannedWith()["removed"]), Window{start, end}))) == 0 {
 		return len(going), RemovePlan(planPath, captionsDir)
 	}
 	if err := setCaptionsAside(captionsDir, going); err != nil {
@@ -1242,6 +1250,9 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 			kept = append(kept, c)
 		}
 		top.set("clips", kept)
+		if hand {
+			return nil
+		}
 		made, ok := top.values["planned_with"].(*object)
 		if !ok {
 			made = newObject()

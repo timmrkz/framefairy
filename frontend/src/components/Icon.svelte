@@ -49,24 +49,6 @@
     <rect x="3.5" y="1.5" width="9" height="13" rx="1.8" />
     <circle cx="6.6" cy="5.4" r="1.1" />
     <path d="M3.8 11.6l2.6-2.7 2 2 1.5-1.5 2.3 2.3" />
-  <!-- The same picture made smaller, with what a click does beside it:
-       a plus to add a thumbnail, a minus to take the one here away. -->
-  {:else if name === "thumbnail-add" || name === "thumbnail-remove"}
-    <rect x="1" y="0.8" width="9.2" height="14.2" rx="1.8" />
-    <circle cx="4.2" cy="4.6" r="1.1" />
-    <path d="M1.3 11.4l2.5-2.6 1.9 1.9 1.4-1.4 2.8 2.8" />
-    {#if name === "thumbnail-add"}
-      <path d="M13 8.6v5M10.5 11.1h5" />
-    {:else}
-      <path d="M10.5 11.1h5" />
-    {/if}
-  <!-- A clip made by hand: a clip as the clip timeline draws one, a
-       rounded frame lying on its side, with a plus beside it the way the
-       thumbnail button has one. -->
-  {:else if name === "clip-add"}
-    <rect x="0.8" y="3.5" width="9.4" height="8" rx="1.8" />
-    <path d="M3.6 3.5v8M7.4 3.5v8" />
-    <path d="M13 8.6v5M10.5 11.1h5" />
   {:else if name === "locate"}
     <circle cx="8" cy="8" r="3.6" />
     <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" />

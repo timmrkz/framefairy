@@ -21,45 +21,66 @@ func IsHandPlan(path string) bool { return filepath.Base(path) == HandPlanName }
 func (p *Project) HandPlanPath() string { return filepath.Join(p.LogsDir(), HandPlanName) }
 
 // MakeClip makes a clip at a moment of the episode, for a part the model
-// did not pick. It starts at the line the moment stands in, the way the
-// model's clips start on a line, and takes the lines after it until the
-// clip is as long as Min asks, never going past Max for the sake of a line
-// more. The pauses are cut and the crop is framed exactly as they are for
-// a clip the model found. It answers with the clip set and the new clip's
-// id.
-func (p *Project) MakeClip(ctx context.Context, at float64) (string, string, error) {
+// did not pick, the way an editor's In and Out marks do. Forward, it starts
+// at the line the moment stands in and takes the lines after it. Backward,
+// it ends at that line and takes the lines before it, for a moment noticed
+// only once it has passed. Either way it grows a whole line at a time until
+// it is as long as Min asks, never past Max for the sake of a line more.
+// The pauses are cut and the crop is framed exactly as they are for a clip
+// the model found. It answers with the clip set and the new clip's id.
+func (p *Project) MakeClip(ctx context.Context, at float64, backward bool) (string, string, error) {
 	t, err := p.Transcript()
 	if err != nil {
 		return "", "", err
 	}
 	o := p.Base
 	lines := BuildLines(t.Words, t.Levels(), o.MaxPause)
-	first := -1
+	if len(lines) == 0 {
+		return "", "", renderErr("nothing is said in this episode yet")
+	}
+	// The line the moment stands in. In a pause, that is the line after it
+	// for a clip that starts here and the line before it for one that ends
+	// here.
+	here := -1
 	for i, l := range lines {
 		if l.End() > at {
-			first = i
+			here = i
 			break
 		}
 	}
-	if first < 0 {
-		if len(t.Words) > 0 && at > t.Words[len(t.Words)-1].End {
-			return "", "", renderErr("the transcript has not reached %s yet", HMS(at))
-		}
+	switch {
+	case here < 0 && !backward:
 		return "", "", renderErr("nothing is said after %s", HMS(at))
+	case here < 0:
+		here = len(lines) - 1
+	case backward && lines[here].Start() > at:
+		if here == 0 {
+			return "", "", renderErr("nothing is said before %s", HMS(at))
+		}
+		here--
 	}
-	length := func(last int) float64 {
+	length := func(first, last int) float64 {
 		total := 0.0
 		for _, s := range SegmentsFromRanges([][2]int{{first + 1, last + 1}}, lines, o.KeepPause, o.MaxPause) {
 			total += s.Duration()
 		}
 		return total
 	}
-	last := first
-	for last+1 < len(lines) && length(last) < o.Min {
-		if length(last+1) > o.Max {
-			break
+	first, last := here, here
+	if backward {
+		for first > 0 && length(first, last) < o.Min {
+			if length(first-1, last) > o.Max {
+				break
+			}
+			first--
 		}
-		last++
+	} else {
+		for last+1 < len(lines) && length(first, last) < o.Min {
+			if length(first, last+1) > o.Max {
+				break
+			}
+			last++
+		}
 	}
 	ranges := [][2]int{{first + 1, last + 1}}
 	spans := SegmentsFromRanges(ranges, lines, o.KeepPause, o.MaxPause)

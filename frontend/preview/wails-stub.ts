@@ -651,7 +651,8 @@ export const Call = {
         if (location.search.includes("refuse")) {
           return Promise.reject(new Error(`the transcript has not reached ${Math.round(at)} s yet`));
         }
-        made().push(Math.max(0, Math.round(at) - 1));
+        // Forward from the line the playhead stands in, or back to it.
+        made().push(Math.max(0, Math.round(at) - (args[2] ? 25 : 1)));
         const i = made().length - 1;
         return new Promise((done) => setTimeout(() => done(handClip(i, made()[i])), 400));
       }

@@ -483,8 +483,10 @@ export const api = {
     at: number,
   ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
   // A clip made by hand at a moment of the episode, for a part the model
-  // did not pick. It is framed the way the model's clips are.
-  makeClip: (path: string, at: number) => call<ClipEntry>("MakeClip", path, at),
+  // did not pick: from the line the moment stands in forward, or back to
+  // it. It is framed the way the model's clips are.
+  makeClip: (path: string, at: number, backward: boolean) =>
+    call<ClipEntry>("MakeClip", path, at, backward),
   // A thumbnail added, moved or removed. A from below nought adds one at
   // to, and a to below nought removes the one at from.
   setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>

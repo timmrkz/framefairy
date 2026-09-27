@@ -916,26 +916,28 @@
   // frames it the way it frames the model's clips, which takes a moment,
   // so the button says it is at work until the clip is there. Then it is
   // chosen, and from there it is a clip like any other.
-  let making = $state(false);
+  let making = $state<"" | "in" | "out">("");
   const canMake = $derived(!making && !!source && time < covered);
-  async function makeClip() {
+  async function makeClip(backward: boolean) {
     if (!canMake) return;
     problem = "";
-    making = true;
+    making = backward ? "out" : "in";
     try {
-      const made = await api.makeClip(path, time);
+      const made = await api.makeClip(path, time, backward);
       clips = [...clips.filter((c) => c.key !== made.key), made].sort((a, b) => a.start - b.start);
       await select(made.key);
       void refreshClips();
     } catch (err) {
       problem = errorText(err);
     } finally {
-      making = false;
+      making = "";
     }
   }
 
+  // I and O, the keys every editor marks a clip with.
   function makeClipKey(event: KeyboardEvent) {
-    if (event.key !== "c" && event.key !== "C") return;
+    const key = event.key.toLowerCase();
+    if (key !== "i" && key !== "o") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
     const on = document.activeElement as HTMLElement | null;
@@ -943,7 +945,7 @@
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
     if (document.querySelector("dialog[open]")) return;
     event.preventDefault();
-    void makeClip();
+    void makeClip(key === "o");
   }
 
   function thumbnailKey(event: KeyboardEvent) {
@@ -2336,28 +2338,36 @@
             <Icon name="loop" />
           </button>
         {/if}
-        <!-- A clip made by hand at the playhead, for a part the model did
-             not pick, there whether a clip is chosen or not. The beam runs
-             round it while the clip is framed. -->
-        <button
-          class="glyph"
-          aria-label="Make a clip here"
-          disabled={!canMake}
-          onclick={makeClip}
-          title={making
-            ? "Making the clip"
-            : time < covered
-              ? "Make a clip from the line under the playhead, as long as Shortest and Longest ask. Then shape it like any clip. C does the same"
-              : "Clips can be made where the transcript has reached"}
-        >
-          {#if making}<Busy />{/if}
-          <Icon name="clip-add" />
-        </button>
+        <!-- A clip made by hand, for a part the model did not pick, the
+             way an editor marks one: In starts it at the line under the
+             playhead and grows it forward, Out ends it there and grows it
+             back. The letters are the keys, I and O, which every editor
+             uses for this. There whether a clip is chosen or not, and the
+             beam runs round the one pressed while the clip is framed. -->
+        {#each [{ key: "I", backward: false }, { key: "O", backward: true }] as mark (mark.key)}
+          <button
+            class="glyph inout"
+            aria-label={mark.backward ? "Make a clip that ends here" : "Make a clip that starts here"}
+            disabled={!canMake}
+            onclick={() => makeClip(mark.backward)}
+            title={making === (mark.backward ? "out" : "in")
+              ? "Making the clip"
+              : time < covered
+                ? mark.backward
+                  ? "Make a clip that ends with the sentence under the playhead, as long as Shortest and Longest ask. O does the same"
+                  : "Make a clip that starts with the sentence under the playhead, as long as Shortest and Longest ask. I does the same"
+                : "Clips can be made where the transcript has reached"}
+          >
+            {#if making === (mark.backward ? "out" : "in")}<Busy />{/if}
+            <span class="letter">{mark.key}</span>
+          </button>
+        {/each}
         {#if current}
           <!-- The frame under the playhead as a thumbnail. It is not a
-               mode, so it never looks pressed: its picture says what a
-               click does, a plus to add one and a minus when the
-               playhead stands on one. -->
+               mode, so it never looks pressed, and it is one picture, the
+               one the marks on the clip timeline wear. What a click does,
+               add one or remove the one under the playhead, is in its
+               title. -->
           <button
             class="glyph"
             aria-label={thumbHere !== null ? "Remove this thumbnail" : "Make this frame a thumbnail"}
@@ -2369,7 +2379,7 @@
                 ? "Make the frame under the playhead a thumbnail. Render writes it beside the short. T does the same"
                 : "Put the playhead in the clip to make a thumbnail of the frame there"}
           >
-            <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
+            <Icon name="thumbnail" />
           </button>
         {/if}
         <!-- One job, whatever is chosen: go to the playhead. Going back to
@@ -2649,6 +2659,18 @@
   .field {
     position: relative;
     flex: none;
+  }
+
+  /* In and Out are the letters of their keys, drawn as an icon is: the
+     same size, weight and colour as the icons beside them, so the row
+     reads as one row of marks. */
+  .inout .letter {
+    display: block;
+    width: 16px;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
   }
 
   /* A name that is also a switch. At rest it is every other name: the same

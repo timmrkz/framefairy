@@ -981,20 +981,26 @@ The model does not always pick the moment you would. A clip can be made
 by hand wherever the transcript has reached, searched or not:
 
 - **Find the moment** in the video preview or on the clip timeline.
-- **The clip button**, a strip of film with a plus in the row under the
-  clip timeline, makes a clip there. **C** does the same. It starts at the
-  line the playhead stands in and is as long as **Shortest** and
-  **Longest** ask. Pauses are cut and the crop is framed the way they are
-  for the model's clips. The beam runs round the button while that
-  happens.
+- **In and Out**, the buttons **I** and **O** in the row under the clip
+  timeline, make a clip there, the way every video editor marks one, and
+  the keys **I** and **O** do the same. **I** starts the clip with the
+  sentence under the playhead and grows it forward. **O** ends it with that
+  sentence and grows it back, for a moment noticed once it has passed.
+  Either way it grows a whole sentence at a time until it is as long as
+  **Shortest** and **Longest** ask. No model is asked: the sentences come
+  from the transcript, so the clip is there in the moment it takes to
+  frame it. Pauses are cut and the crop is framed the way they are for the
+  model's clips, and the beam runs round the button while that happens.
 - **The new clip is chosen**, and from there it is a clip like any other:
   drag its edges, make cuts, place the crop and the captions, add
   thumbnails and render. Its title is its first words.
 - **Undo** takes it away again.
 
-Clips made by hand are kept in a clip set of their own. It is no search:
-the range picker marks nothing as searched for them, and removing a
-search leaves them where they are.
+Clips made by hand are kept in a clip set of their own, and they are
+clips like any other: removing a part of the episode on the range picker
+takes them with the rest of the clips in it, and Undo brings them back.
+The one difference is that no model looked there, so the range picker
+marks nothing as searched for them.
 
 ### Thumbnails
 
@@ -1007,9 +1013,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
-  mode, so it never looks pressed. Its icon says what a click does: a
-  picture with a plus adds one, and a picture with a minus, shown while
-  the playhead stands on a thumbnail, removes it. It can only be pressed
+  mode, so it never looks pressed. Its icon is a picture, the same one the
+  marks on the clip timeline wear, and its title says what a click does:
+  add a thumbnail, or remove the one the playhead stands on. It can only be pressed
   with the playhead inside the clip, because a frame that was cut is not in
   the short.
 - **Each thumbnail is a mark** along the foot of the clip timeline, the
