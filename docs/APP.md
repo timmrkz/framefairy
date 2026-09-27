@@ -1016,7 +1016,10 @@ by hand wherever the transcript has reached, searched or not:
   minute past the longest clip after it, or the other way round for Out.
   Until its words are there the clip is an outline as long as
   **Shortest**, with a card that says **Transcribing here**. Then it
-  settles onto its sentences. That part is kept, and when the
+  settles onto its sentences. Only what is missing is transcribed: next
+  to a part heard before, In and Out hear just the rest, and where
+  everything is there already the clip comes at once. That part is kept,
+  and when the
   transcription from the start gets there, it hears it again and its own
   words take over.
 - **The clip takes shape at once.** The sentences come from the

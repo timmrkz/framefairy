@@ -731,6 +731,10 @@ export const Call = {
       // line the playhead stands in.
       // Past the transcript, the part around the playhead is heard first,
       // which takes a while. Before it, it answers at once.
+      case "Unheard": {
+        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
+        return Promise.resolve(Number(args[1]) >= heardTo);
+      }
       case "HearAround": {
         const at = Number(args[1]);
         const heardTo = location.search.includes("transcribing") ? 1200 : 14423;

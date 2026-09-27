@@ -506,6 +506,10 @@ export const api = {
   // are there already it answers at once.
   hearAround: (path: string, at: number, backward: boolean) =>
     call<void>("HearAround", path, at, backward),
+  // Whether a clip made by hand at a moment needs any of the episode
+  // transcribed first, where nothing has heard it yet.
+  unheard: (path: string, at: number, backward: boolean) =>
+    call<boolean>("Unheard", path, at, backward),
   // The clip made by hand at a moment, worked out from the transcript
   // alone and at once, to be shown while its crop is placed.
   sketchClip: (path: string, at: number, backward: boolean) =>

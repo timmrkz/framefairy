@@ -909,12 +909,13 @@
     making = backward ? "out" : "in";
     const at = time;
     try {
-      // Where the transcription from the start has not come yet, the part
-      // around the playhead is heard first. Until its words are there the
+      // Where part of what the clip needs has not been transcribed yet, by
+      // the transcription from the start or out of turn, that part is
+      // heard first, and only that part. Until its words are there the
       // clip is an outline as long as Shortest, from the playhead or up to
       // it, with a card saying what is going on, so the press is answered
       // at once and the clip is seen settling onto its sentences after.
-      if (at >= covered) {
+      if (await api.unheard(path, at, backward)) {
         const from = backward ? Math.max(0, at - min) : at;
         const to = backward ? at : Math.min(duration, at + min);
         sketch = {

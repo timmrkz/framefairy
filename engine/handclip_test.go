@@ -5,6 +5,8 @@ import (
 	"context"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -233,5 +235,62 @@ func TestAClipMadeByHandWhereNothingIsTranscribed(t *testing.T) {
 	}
 	if len(tr.Extra) != 0 {
 		t.Errorf("the island still adds %d readings after the transcription passed it", len(tr.Extra))
+	}
+}
+
+// A clip made by hand next to an island hears only what is missing, and the
+// two islands read as one transcript: in time order, whatever their names
+// sort as, with the seam where both heard the audio and no word twice.
+func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
+	source := testEpisode(t, "300")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Min, base.Max = 20, 30
+	p := NewProject(e, source, base)
+	ctx := context.Background()
+
+	if err := p.HearAround(ctx, 200, false, 300); err != nil {
+		t.Fatal(err)
+	}
+	if p.Unheard(200, false, 300) {
+		t.Fatal("the part just heard still counts as unheard")
+	}
+	if !p.Unheard(130, false, 300) {
+		t.Fatal("the part before the island counts as heard")
+	}
+	// I at 130 needs 70 to 220. 135 onwards is there, so only the part
+	// before it is heard, reaching a little into the island.
+	if err := p.HearAround(ctx, 130, false, 300); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range islandFiles(p.LogsDir()) {
+		names = append(names, filepath.Base(f))
+	}
+	if strings.Join(names, " ") != "words-65-140.json words-135-295.json" {
+		t.Fatalf("the islands are %v", names)
+	}
+	if p.Unheard(130, false, 300) {
+		t.Fatal("the part before the island is still unheard")
+	}
+	words := mustWords(t, p)
+	for k := 1; k < len(words); k++ {
+		if words[k].Start < words[k-1].End-0.001 {
+			t.Fatalf("words %d and %d overlap: %+v %+v", k-1, k, words[k-1], words[k])
+		}
+		if words[k].Start > 66 && words[k].End < 294 && words[k].Start-words[k-1].End > 2 {
+			t.Fatalf("a hole from %.1f to %.1f", words[k-1].End, words[k].Start)
+		}
+	}
+	if len(words) == 0 || words[0].Start > 66 || words[len(words)-1].End < 290 {
+		t.Fatalf("the words reach from %.1f to %.1f", words[0].Start, words[len(words)-1].End)
+	}
+	if _, _, err := p.MakeClip(ctx, 130, false); err != nil {
+		t.Fatal(err)
 	}
 }

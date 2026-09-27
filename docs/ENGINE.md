@@ -202,13 +202,23 @@ Where the transcription from the start has not reached yet, `HearAround`
 in `engine/islands.go` first transcribes the part a clip needs: its
 longest length on the side it grows to and `IslandMargin`, a minute, on
 both sides, for the sentence the playhead stands in and for dragging the
-edges further out. The part is an island, kept as the transcript of a
-window, `words-<from>-<to>.json`, the file `--from` and `--to` make, with
-its loudness. `Project.Transcript` adds an island's words and loudness
-wherever the whole-episode transcript has not reached. Once it has, its
-own words stand and the island is left unread: that minute or two of
-audio is heard again rather than stitched in, so there is one transcript
-to trust at every moment. What is heard already is never heard twice. Undo takes it back: a clip that appears in this set during an
+edges further out. Only the gaps in that part are heard, what neither the
+transcription from the start nor an earlier island has, so a clip made
+beside an island hears just the rest. Each gap becomes an island, kept as
+the transcript of a window, `words-<from>-<to>.json`, the file `--from`
+and `--to` make, with its loudness. It reaches `IslandSeam`, five seconds,
+into what is there on either side, because a window's edge can cut a word
+in two. `Unheard` says whether there is anything to hear, which the app
+asks before it says it is transcribing.
+
+`Project.Transcript` adds the islands' words and loudness wherever the
+whole-episode transcript has not reached, in time order, and every moment
+is read from one transcript only. Where two islands overlap, the seam is
+the middle of the overlap, away from both edges, and a word belongs to the
+side its middle is on. Once the transcription from the start has passed
+an island, its own words stand and the island is left unread: that minute
+or two of audio is heard again rather than stitched in, so there is one
+transcript to trust at every moment. Undo takes it back: a clip that appears in this set during an
 edit is the edit's own, because no search writes there.
 
 ## The bouncing word

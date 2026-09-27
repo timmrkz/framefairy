@@ -1266,6 +1266,22 @@ func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, ba
 	return p.HearAround(ctx, at, backward, info.Duration)
 }
 
+// Unheard says whether a clip made by hand at a moment needs any of the
+// episode transcribed first, by the transcription from the start or by an
+// island, so the interface says it is transcribing only when it is.
+func (s *FrameFairy) Unheard(ctx context.Context, path string, at float64, backward bool) (bool, error) {
+	if !s.store.Known(path) {
+		return false, os.ErrNotExist
+	}
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return false, err
+	}
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	p := engine.NewProject(e, path, s.store.Settings().options())
+	return p.Unheard(at, backward, info.Duration), nil
+}
+
 // ClipSketch is a clip made by hand before it is framed, for the interface
 // to show while the crop is placed: where it lies, the parts it keeps, the
 // words said in them, what it is called and where its captions fall on the
