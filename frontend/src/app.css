@@ -609,7 +609,6 @@ button:has(> .beam):disabled {
    mark, what it is in a few words with a line under them, and at its end
    the one thing to do about it. */
 .card {
-  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
@@ -620,13 +619,6 @@ button:has(> .beam):disabled {
   /* Whole lines. The app's own 1.45 of 13 is 18.85, and a stack of those
      leaves every row below a fraction off a whole pixel. */
   line-height: 19px;
-}
-
-/* The info mark of a card stands in its corner, and a card clips what
-   overflows it, so the mark goes inside the corner rather than on it. */
-.card > .ask.corner {
-  top: 6px;
-  right: 6px;
 }
 
 .card .item {

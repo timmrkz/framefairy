@@ -5,8 +5,18 @@
   // look the same anyway.
   //
   // No model ships with the app, so every copy fetches what it needs. The
-  // rows say what a model is, what it costs and, where the machine has
-  // something to say about it, whether it will run here.
+  // list is a card of rows, one model each, and a row says what a model is,
+  // what it costs and, where the machine has something to say about it,
+  // whether it will run here. What the model is made of is for whoever
+  // asks, in the title of its name.
+  //
+  // Where there is a choice, the models that find clips, the rows are a
+  // choice the way the Mac puts one: a round mark before each, filled for
+  // the one in use, and the mark and the name pressed as one. So one list
+  // chooses, installs and removes, and a model not there yet shows what it
+  // would cost beside a ring nobody can fill until it is. A dropdown of
+  // the models that are there, with a second list to get more, was tried
+  // and put the same models in two places.
   //
   // An install is work in hand like any other, so it wears what all work
   // wears, in the control it was started from: the beam round the button
@@ -18,7 +28,6 @@
   //
   // An installed model can be removed again, to give its room back. It
   // asks first, because getting it back means fetching gigabytes again.
-  import type { Snippet } from "svelte";
   import { api, clock, errorText, type Job, type ModelRow } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import Busy from "./Busy.svelte";
@@ -50,8 +59,6 @@
     // What removing a model means beyond the room it gives back, said in
     // the box that asks first.
     removeSays = "",
-    // The info mark in the corner of the list, where the list needs one.
-    info,
   }: {
     models: ModelRow[];
     kind: "model" | "llm";
@@ -61,7 +68,6 @@
     onremove?: (name: string) => Promise<void>;
     onuse?: (name: string) => Promise<void>;
     removeSays?: string;
-    info?: Snippet;
   } = $props();
 
   // Whether the rows are a choice, one of them the one in use.
@@ -172,8 +178,7 @@
 </script>
 
 {#if problem}<p class="error selectable">{problem}</p>{/if}
-<ul class="card asks">
-  {#if info}<span class="ask corner">{@render info()}</span>{/if}
+<ul class="card">
   {#each models as model (model.name)}
     <!-- Which row an install belongs to. The job carries the name the Go
          side gave it, which is the model's own title, so rows are matched

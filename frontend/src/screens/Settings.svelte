@@ -241,6 +241,24 @@
     };
   });
 
+  // What is in the way, in words somebody who only makes shorts can act
+  // on. The check's own words are for whoever has to find a file, so they
+  // stay under Advanced, and a check this does not know keeps them here too.
+  function plainly(c: Check): string {
+    switch (c.name) {
+      case "ffmpeg":
+        return "What reads and renders video is missing. Installing the app again brings it back.";
+      case "llama-server":
+        return "What runs a model on this machine is missing. Installing the app again brings it back, and until then the Claude API works.";
+      case "Speech model":
+        return "No speech model is installed. Install one under Speech.";
+      case "Claude API key":
+        return "There is no API key yet. Paste one under Finding clips.";
+      default:
+        return c.detail;
+    }
+  }
+
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
   onMount(() => {
@@ -285,24 +303,34 @@
           <span class="mark"></span>
           <div class="words">
             <span>{c.name}</span>
-            <span class="small error selectable">{c.detail}</span>
+            <span class="small error selectable">{plainly(c)}</span>
           </div>
         </div>
       {/each}
     </div>
 
     {#if settings}
-      <div class="group">
-        <h2>Finding clips</h2>
-        <div class="card asks" role="radiogroup" aria-label="How clips are found">
-          <span class="ask corner">
+      <div class="group asks">
+        <div class="headrow">
+          <h2>Finding clips</h2>
+          <span class="ask">
             <Info label="About finding clips" side="left">
-              A language model reads the transcript and picks the moments worth clipping. The
-              Claude API works on any machine and costs a few cents an episode. A model on this
-              machine is free to run and needs the memory to hold it. Either way the video and the
-              audio stay here: only the words are read.
+              A language model reads the transcript and picks the moments worth clipping. The Claude
+              API works on any machine and costs a few cents an episode. A model on this machine is
+              free to run and needs the memory to hold it. Either way the video and the audio stay
+              here: only the words are read.
+              {#if settings.planner === "local"}
+                <br /><br />
+                A model runs from memory, and this machine has
+                {memory > 0 ? memorySize(memory) : "not said how much"}. A bigger model reads the
+                transcript better and needs more of it, and <b>Best for this machine</b> is the
+                biggest it can hold. Models are fetched from the people who made them and kept in
+                <b>~/.framefairy/models</b>.
+              {/if}
             </Info>
           </span>
+        </div>
+        <div class="card" role="radiogroup" aria-label="How clips are found">
           {#each [{ value: "api", name: "Claude API", about: "Works on any machine. A few cents an episode, paid to Anthropic." }, { value: "local", name: "On this machine", about: "Free to run. Needs the memory to hold a model." }] as way (way.value)}
             {@const on = settings.planner === way.value}
             <div class="item">
@@ -330,18 +358,7 @@
             onchange={modelsChanged}
             onremove={api.removeLanguageModel}
             onuse={useModel}
-          >
-            {#snippet info()}
-              <Info label="About the models" side="left">
-                A model runs from memory, so what decides which of these this machine can hold is
-                its memory, {memory > 0 ? memorySize(memory) : "which it would not say"}. A bigger
-                model reads the transcript better and needs more memory. <b>Best for this machine</b>
-                is the biggest it can hold. The one with the filled circle is the one clips are found
-                with. A model is fetched from the people who made it and kept in
-                <b>~/.framefairy/models</b>.
-              </Info>
-            {/snippet}
-          </ModelList>
+          />
         {:else}
           <div class="card">
             <!-- The key goes in the keychain the moment it is saved, not
@@ -386,8 +403,17 @@
       <!-- Every episode is transcribed on this machine, so the model has to
            be on it. It is the same list as the setup, and installing one
            here is the same job. -->
-      <div class="group">
-        <h2>Speech</h2>
+      <div class="group asks">
+        <div class="headrow">
+          <h2>Speech</h2>
+          <span class="ask">
+            <Info label="About the speech model" side="left">
+              Every episode is transcribed on this machine, word by word with the time of each
+              word. Nothing about the episode is sent anywhere. The model is fetched from the
+              people who published it and kept in <b>~/.framefairy/models</b>.
+            </Info>
+          </span>
+        </div>
         <ModelList
           models={speechRows}
           kind="model"
@@ -395,15 +421,7 @@
           onchange={modelsChanged}
           onremove={api.removeSpeechModel}
           removeSays="Every episode is transcribed with it, so the app asks for one again the next time it starts."
-        >
-          {#snippet info()}
-            <Info label="About the speech model" side="left">
-              Every episode is transcribed on this machine, word by word with the time of each
-              word. Nothing about the episode is sent anywhere. The model is fetched from the
-              people who published it and kept in <b>~/.framefairy/models</b>.
-            </Info>
-          {/snippet}
-        </ModelList>
+        />
       </div>
 
       <div class="group">
@@ -526,7 +544,7 @@
                   <span class="head">Claude model</span>
                   <span class="small muted">Which model the API is asked.</span>
                 </span>
-                <input type="text" bind:value={settings.apiModel} placeholder="The engine's default" spellcheck="false" />
+                <input type="text" bind:value={settings.apiModel} placeholder="claude-sonnet-5" spellcheck="false" />
               </label>
             {/if}
             <label class="item field">
@@ -611,6 +629,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap);
+  }
+
+  /* The head of a group, with the mark that explains the group at its
+     right end, which is the group's top right corner. */
+  .headrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   /* The head of a group, the same size and weight as the head of the clip

@@ -496,7 +496,7 @@ export const Call = {
           language,
           memory: 34359738368,
           planner: fresh ? planner : "local",
-          hasKey: fresh ? key : true,
+          hasKey: fresh || location.search.includes("nokey") ? key : true,
           hasLocalModel: fresh ? llmDone() : true,
           // ?noserver is the machine with a model and nothing to run it,
           // which is the state the local way has to say something about.
@@ -690,7 +690,7 @@ export const Call = {
         (window as any).__chosen = args[1];
         return Promise.resolve();
       case "GetSettings":
-        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "", count: 12, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
+        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", count: 12, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
       // saved and a page opened again reads it back.
       case "SaveSettings":
@@ -711,7 +711,10 @@ export const Call = {
           { name: "Caption fonts", ok: true, detail: "built in: Inter Black, Montserrat ExtraBold" },
           { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
         ];
-        if (api) out.push({ name: "Claude API key", ok: !!(window as any).__key, detail: (window as any).__key ? "found" : "no key in the keychain or in ANTHROPIC_API_KEY" });
+        // The same key the setup answers about: there on a machine that is
+        // set up, and on a fresh one once it is saved. ?nokey takes it away.
+        const key = location.search.includes("nokey") ? !!(window as any).__key : !location.search.includes("setup") || !!(window as any).__key;
+        if (api) out.push({ name: "Claude API key", ok: key, detail: key ? "found" : "no key in the keychain or in ANTHROPIC_API_KEY" });
         else {
           out.push(broken
             ? { name: "llama-server", ok: false, detail: "llama-server was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path." }

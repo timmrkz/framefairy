@@ -434,7 +434,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 			model = found[0]
 		default:
 			lm.Detail = fmt.Sprintf("%d are installed and none is in use. Choose the one to find "+
-				"clips with under Finding clips, with Use.", len(found))
+				"clips with under Finding clips.", len(found))
 		}
 	}
 	if model != "" {

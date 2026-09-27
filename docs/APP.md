@@ -1227,74 +1227,102 @@ froze the app under the spinning wheel for five seconds.
 
 ### Settings
 
-**This machine** tests what the engine needs and says what is missing.
-**Video decoding** says which of the system's own video decoders this
-ffmpeg can use, VideoToolbox on a Mac, or that decoding is done on the
-processor. Which one a file really went through is in the log of its
-search.
-**Speech** is the same list of models the first run shows, so a model can be
-installed or added later without going through the setup again, and it
-installs the same way, as a job with the same fill. **Finding clips** holds
-the choice between the API and a local model. With the API chosen, the field
-for the key: it goes in the keychain the moment **Save key** is pressed, not
-with the rest of the settings, because it never lands in the settings file.
-An app opened from Finder has no shell environment, so this is the only way
-to give it a key. With **On this machine** chosen, the same list of language
-models the first run shows, judged against the same memory.
+The settings are made the way the **Updates** page is: a column of cards,
+each card one subject, each row a mark, what it is in a few words with a
+line under them, and at its end the one thing to do about it. The card and
+its rows are `.card` in `app.css`, shared by both pages. Everything saves
+as it is changed, the way System Settings does on the Mac, so there is no
+**Save** button and nothing to forget to press. A field saves a moment
+after the typing stops.
 
-In the settings a model that is there can go again, to give its room back.
-Its trash can is always there, the last button of the row, and every row of
-the list keeps its place, so the buttons stand in one column whether a model
-is there or not. It asks first in the box over the app, because fetching it
-again is gigabytes: **Cancel**, where the keyboard starts, and **Remove**.
-While a model is being installed the trash cans wait, dimmed.
-**In use** and **Installed** keep the frame of the button they stand in for,
-in green, so a row reads the same whatever its model is. Removing the speech model means
-the app asks for one again the next time it starts, because nothing can be
-transcribed without it. A model is not removed while it is being installed
-or while the work that reads it runs, and the refusal says which.
+**Where things stand** comes first: **Ready to make shorts**, and which
+model hears the speech and which one finds the clips, or how many things
+need attention and what each one is, in words somebody who only makes
+shorts can act on. **Check again** looks for the tools and models again.
+The check's own words, which name files and paths, are under **Advanced**.
 
-**Several language models, one in use.** Trying a second model leaves two
-on the machine, and the engine will not guess which one was meant, so a
-search would fail until one is named. The one in use wears the colour of a
-chosen row and says **In use**, and every other one that is there offers
-**Use**, which names it in the settings at once and in the **Model file**
-field below, so the next **Save** keeps it. Removing the model in use lets
-go of it in the settings too.
+**Finding clips** is the choice between the **Claude API** and **On this
+machine**, as two rows with a round mark, the way the Mac puts a choice.
+Its info mark, at the right end of the heading, says what each costs and,
+with a local model chosen, how much memory this machine has and what that
+decides. With the API chosen, the next card holds the key: it goes in the
+keychain the moment **Save key** is pressed, not with the rest of the
+settings, because it never lands in the settings file. An app opened from
+Finder has no shell environment, so this is the only way to give it a key.
+With **On this machine** chosen, the next card is the language models the
+first run shows, judged against the same memory.
+
+**The models are one list that chooses, installs and removes.** A row is
+the model's name and one line: who made it, what it needs of memory, what
+it costs to fetch while it is not there yet, and whether it fits this
+machine. How it was quantised and how many parameters it has is for whoever
+asks, in the title of its name. Before each row is a round mark, filled for
+the model in use. Pressing an installed row makes it the one in use at
+once, and the Go side names it in the settings. A model not there yet has
+a ring that cannot be filled and **Install** at its end, which carries the
+beam and the fill while it downloads and says **Cancel**. An installed model
+has a trash can at its end, quiet until the pointer reaches it. It asks
+first in the box over the app, because fetching it again is gigabytes:
+**Cancel**, where the keyboard starts, and **Remove**. While a model is
+being installed the trash cans wait, dimmed. A model is not removed while it
+is being installed or while the work that reads it runs, and the refusal
+says which. Removing the model in use lets go of it in the settings too,
+and the page reads the settings again rather than saving over that.
+
+Two other ways of choosing were tried in the harness and left: a dropdown
+of the models that are there, which needed a second list below it to get
+more, so every model showed twice, and a row of tiles by size, which does
+not hold four models and put names like Largest on models that are only
+larger than each other.
 
 A second model arriving never takes the first one's place by itself. When
 the settings name none, the one model on the machine is in use by being the
 only one, and a download that finishes names it in the settings, so what was
-in use stays in use until **Use** is pressed on the new one. A machine that
-already has two and none named, from before this was so, says so at the top
-of the settings in the app's own words, and **Use** settles it.
+in use stays in use until another is chosen. A machine that already has two
+and none named, from before this was so, says so under where things stand,
+and choosing one settles it.
 
-The rest is paths to ffmpeg, llama-server and the models, and the output
-folder. **Colours** holds **the app**, what the app picks things out in, the
-chosen clip, the window on the range picker, a button that matters. The
-colours burned into a short, the words, their box and the pill behind the
-word being spoken, are set together in the captions column of the
-workspace, where the video preview and the clip timeline show them as they
-are picked. A taste in one is not a taste in the other. The app and the pill
-start out the same, `#942192`, so an app nobody has touched looks of a piece
-with what it makes. A highlight colour chosen here before is still the one a
-search gets until its own is picked in the captions column.
-The app's colour is the only one the interface has: the lighter shade under
-the pointer and the wash behind a chosen clip are mixed from it, so changing
-it moves all three, and it moves as the colour is picked rather than when it
-is saved. Every setting in a column ends in the same place, the face of the
-captions along with the numbers, and the mark that says a field opens a
-list stands where a unit stands rather than where the system would draw
-it. **Training data** says where the records of
-every episode are, `~/.framefairy/training` unless another folder is named, how
-many there are, and has the one trash can that throws them away, which asks
-first. What belongs to the episode being worked on is not here: the caption
-face, the size and the height, and how many clips a search looks for and how
-long they may be, all sit in the workspace next to the clip, and what is set
-there is kept for the next episode. Empty paths use the same defaults as the
-command line. **Check again** tests the
-setup and says what is missing, and lists the caption faces the app carries
-inside itself.
+**Speech** is the same list, with a check before the model that is there
+instead of a round mark, because there is nothing to choose between.
+Removing the speech model means the app asks for one again the next time it
+starts, because nothing can be transcribed without it.
+
+**Shorts** says where rendered shorts go, next to each episode in its
+`.framefairy` folder unless a folder is chosen with **Choose…**, which
+opens the system's own folder dialog. **Next to episode** goes back to the
+default.
+
+**Appearance** holds the **accent colour**, what the app picks things out
+in: the chosen clip, the window on the range picker, a button that matters.
+It is the Mac's own row of round colours, with the app's purple, `#942192`,
+first, and a colour wheel at the end for any other. The app's colour is the
+only one the interface has: the lighter shade under the pointer and the
+wash behind a chosen clip are mixed from it, so changing it moves all
+three, and it moves as the colour is picked. The colours burned into a
+short, the words, their box and the pill behind the word being spoken, are
+set together in the captions column of the workspace, where the video
+preview and the clip timeline show them as they are picked. A taste in one
+is not a taste in the other. A highlight colour chosen here before is still
+the one a search gets until its own is picked in the captions column.
+
+**Training data** says how many records there are and has the one trash
+can that throws them away, which asks first.
+
+**Advanced** is closed until it is opened, like a disclosure in Finder, and
+holds the machinery: the paths to the language model file and llama-server,
+or the Claude model, the speech model folder, ffmpeg and the training data
+folder, each a name on the left and a field on the right. Empty paths use
+the same defaults as the command line. Under the paths is everything the
+check looked at, found or not, with the check's own words: which ffmpeg,
+which of the system's own video decoders it can use, VideoToolbox on a Mac
+or decoding on the processor, the caption faces the app carries inside
+itself, and which model files it found. Which decoder a file really went
+through is in the log of its search.
+
+What belongs to the episode being worked on is not here: the caption face,
+the size and the height, and how many clips a search looks for and how
+long they may be, all sit in the workspace next to the clip, and what is
+set there is kept for the next episode.
 
 ### Acknowledgements
 
