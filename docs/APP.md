@@ -979,8 +979,10 @@ place.
       track where the captions run, in the app's colour and green once
       rendered, one style in `app.css` for both tracks. Each is the same
       share of its track's height, 16%, so the mark on the range picker is
-      half as tall, as the range picker is, in solid colour with nothing
-      round it. A click on one chooses it. The
+      half as tall, as the range picker is, in solid colour with a soft
+      shadow on all four sides. The waveform's grey and the app's colour are
+      about as bright as each other, and such an edge seems to shimmer. The
+      shadow gives it a step in brightness. A click on one chooses it. The
       chosen clip has no mark, because its frame already shows it. On the
       range picker the chosen clip is drawn the way it is up close, a
       frame round the wash, nearly three times as tall as the rest. Zoomed out, the

@@ -314,8 +314,12 @@ input[type="password"] {
    so they draw them with this one mark, and it is the same share of each
    track's height: the range picker is half as tall, and so is its mark.
    Rounded to two pixels, so the middle of a mark lands on a whole pixel.
-   Solid colour and nothing round it: a dark ring was tried against the
-   waveform and did not look right.
+   A soft shadow on all four sides, and no ring: the waveform's grey and
+   the app's colour are about as bright as each other, and two colours
+   that differ in hue but not in brightness make an edge the eye cannot
+   hold still, so the marks seemed framed and shimmered on the clip
+   timeline. The shadow puts a step in brightness where the colour ends.
+   A hard dark ring was tried first and looked wrong.
 
    The clip chosen looks like the clip it is on the clip timeline, a frame
    round the wash, and stands out: nearly three times as tall as the rest,
@@ -331,6 +335,7 @@ input[type="password"] {
   border: none;
   border-radius: 2px;
   background: var(--accent);
+  box-shadow: 0 0 6px 1px rgba(0, 0, 0, 0.55);
   z-index: 2;
   cursor: pointer;
 }
