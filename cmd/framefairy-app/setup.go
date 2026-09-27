@@ -132,9 +132,11 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	state.Providers = engine.Providers()
 	state.Cloud = engine.CloudModels()
 	state.Keys = map[string]bool{}
+	// Whether each key is there, without reading any of them. The settings
+	// ask this every time they open, and reading a secret is what puts a
+	// box from macOS on screen for an app it does not know yet.
 	for _, p := range state.Providers {
-		_, err := engine.ReadAPIKey(ctx, p)
-		state.Keys[p.Name] = err == nil
+		state.Keys[p.Name] = engine.CheckAPIKey(p) == nil
 	}
 	state.HasKey = state.Keys[state.Provider]
 	state.HasServer = engine.HasLlamaServer()

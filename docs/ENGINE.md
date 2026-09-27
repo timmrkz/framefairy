@@ -368,7 +368,9 @@ model OpenAI's, and a model nobody has heard of is taken to be Anthropic's,
 which is what every model was before there was a choice. Each company has
 its own address, written in the code and never derived from any input, its
 own key, read from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` and then the
-keychain, and its own shape of request: Anthropic's Messages with the key in
+keychain, where `engine/keys.go` keeps it in an item only the app may
+read, through the Security framework on the Mac, never through a command
+line, and its own shape of request: Anthropic's Messages with the key in
 `x-api-key` and an optional prefilled brace, OpenAI's Chat Completions with
 the key as a bearer token, the instructions as a developer message, and
 `max_completion_tokens` for the ceiling, which counts the thinking as well.

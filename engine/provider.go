@@ -28,7 +28,12 @@ type Provider struct {
 	// Env is the variable the key is read from before the keychain, which
 	// is how the command line is given one.
 	Env string `json:"env"`
-	// Keychain is the service the key is kept under in the macOS keychain.
+	// Item is the keychain item the key is kept in, under this name, which
+	// is what Keychain Access shows. Only the app may read it.
+	Item string `json:"-"`
+	// Keychain is the item the first keys were kept in, made with the
+	// security command, which anything on the machine could read. It is
+	// only ever read, to move a key out of it, and removed.
 	Keychain string `json:"-"`
 	// KeysAt is where a person gets a key.
 	KeysAt string `json:"keysAt"`
@@ -38,9 +43,11 @@ type Provider struct {
 // a server of their own, which is the only reason this is a variable.
 var providers = []Provider{
 	{Name: "anthropic", Title: "Anthropic", URL: "https://api.anthropic.com/v1/messages",
-		Env: "ANTHROPIC_API_KEY", Keychain: "anthropic-api-key", KeysAt: "console.anthropic.com"},
+		Env: "ANTHROPIC_API_KEY", Item: "Frame Fairy: Anthropic API key", Keychain: "anthropic-api-key",
+		KeysAt: "console.anthropic.com"},
 	{Name: "openai", Title: "OpenAI", URL: "https://api.openai.com/v1/chat/completions",
-		Env: "OPENAI_API_KEY", Keychain: "openai-api-key", KeysAt: "platform.openai.com"},
+		Env: "OPENAI_API_KEY", Item: "Frame Fairy: OpenAI API key", Keychain: "openai-api-key",
+		KeysAt: "platform.openai.com"},
 }
 
 // Providers lists the companies the app can ask.

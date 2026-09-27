@@ -1404,11 +1404,23 @@ job opens to its log in **Activity**. The list is built into the app from
   language model is one `.gguf` file. Neither is part of the app, so the
   app fetches them: the speech model by itself on the first run, a language
   model when somebody picks one. See [PACKAGING.md](PACKAGING.md).
-- **The API keys:** in the macOS keychain, under `framefairy` and
-  `anthropic-api-key` or `openai-api-key`, one for each company. Never in a
-  file. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the
-  environment is read first where there is one, which is how the command
-  line gets it.
+- **The API keys:** in the macOS keychain, one item for each company,
+  **Frame Fairy: Anthropic API key** and **Frame Fairy: OpenAI API key**,
+  under the account `framefairy`. Never in a file. They are kept through
+  the Security framework, so a key never passes through a command line,
+  where any other program could see it while the command ran, and the
+  item's access list names Frame Fairy: another program asking for the key
+  gets a box from macOS first. Whether a key is there is asked without
+  reading it, so opening the settings never asks for anything. Until the
+  app is signed with a Developer ID, every new build is a new app to the
+  keychain, and the first search on a model in the cloud after an update
+  asks once whether it may use the key, which **Always Allow** answers for
+  that build. The first keys were kept with the `security` command, under
+  `anthropic-api-key` and `openai-api-key`, where anything could read them.
+  A key found there is moved into the app's own item the first time it is
+  used, and the old item removed. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+  in the environment is read first where there is one, which is how the
+  command line gets it.
 - **Settings and the episode list:** plain JSON files in
   `~/Library/Application Support/Frame Fairy` on macOS, `%AppData%\Frame Fairy` on
   Windows and `~/.config/Frame Fairy` on Linux.

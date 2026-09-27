@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -142,73 +141,6 @@ func keychain(ctx context.Context, args ...string) (result, bool) {
 	defer cancel()
 	res := run(ctx, "", "security", args...)
 	return res, ctx.Err() == nil
-}
-
-// ReadAPIKey takes a provider's key from the environment first, then the
-// macOS keychain. Never from a file on disk.
-func ReadAPIKey(ctx context.Context, p Provider) (string, error) {
-	key := strings.TrimSpace(os.Getenv(p.Env))
-	source := p.Env
-	if key == "" {
-		// A keychain that never answers is a keychain with no key in it
-		// as far as this is concerned, and the line below says what to do
-		// about it either way.
-		res, _ := keychain(ctx, "find-generic-password",
-			"-a", "framefairy", "-s", p.Keychain, "-w")
-		if res.Code == 0 && strip(res.Stdout) != "" {
-			key, source = strip(res.Stdout), "the keychain"
-		}
-	}
-	if key == "" {
-		return "", renderErr("no %s API key found. Either set %s, or store it in the "+
-			"keychain with:\n  security add-generic-password -a framefairy -s %s -w",
-			p.Title, p.Env, p.Keychain)
-	}
-	if !keyIsSane(key) {
-		return "", renderErr("the API key from %s contains characters that cannot go in "+
-			"an HTTP header. It was probably stored with a stray newline.", source)
-	}
-	return key, nil
-}
-
-// StoreAPIKey puts a provider's key in the macOS keychain, which is the only
-// place the app keeps one. Never a file on disk, and never the settings,
-// which are plain JSON in the config folder and get copied about. Each
-// provider's key is kept apart, so trying one never costs the other.
-//
-// An empty key removes the stored one. That is how somebody takes their key
-// off a machine, so it has to be an ordinary thing to do rather than an
-// error.
-//
-// The key is checked before it is stored rather than only when it is used.
-// A key pasted with a newline on the end is the common case, and finding
-// that out at the moment it is typed beats finding out when an episode has
-// already been transcribed.
-func StoreAPIKey(p Provider, key string) error {
-	key = strings.TrimSpace(key)
-	if runtime.GOOS != "darwin" {
-		return renderErr("this machine has no keychain to put a key in. "+
-			"Set %s instead.", p.Env)
-	}
-	ctx := context.Background()
-	if key == "" {
-		// Nothing stored is not a failure, so the result is not looked at.
-		keychain(ctx, "delete-generic-password", "-a", "framefairy", "-s", p.Keychain)
-		return nil
-	}
-	if !keyIsSane(key) {
-		return renderErr("that key has characters in it that cannot go in an HTTP header.")
-	}
-	res, answered := keychain(ctx, "add-generic-password",
-		"-U", "-a", "framefairy", "-s", p.Keychain, "-w", key)
-	if !answered {
-		return renderErr("the keychain did not answer. It may be locked, or waiting " +
-			"for an answer in a box somewhere on screen.")
-	}
-	if res.Code != 0 {
-		return renderErr("the keychain refused the key: %s", strip(res.Stderr))
-	}
-	return nil
 }
 
 // writeJSONText writes a JSON string indented, so a log file can be read by
