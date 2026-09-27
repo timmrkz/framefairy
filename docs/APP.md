@@ -418,7 +418,10 @@ place.
   off leaves the words on the picture with no box behind them, and keeps
   the box's colour for when it comes back. Text off renders the short
   without any captions at all, and the video preview draws none, so what
-  it shows is what the render makes. The transcription is still needed
+  it shows is what the render makes. With the text off, Box and Highlight
+  read as off too, because nothing of the captions is drawn, and each
+  keeps its own setting for when the text comes back. A click on either,
+  or a colour chosen for either, turns the captions on again with it. The transcription is still needed
   either way: the model reads it to choose the clips, and the cuts go by
   its words. Beside each colour is
   how much of it is seen:

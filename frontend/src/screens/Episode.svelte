@@ -1013,6 +1013,23 @@
   // made without any.
   const textOn = $derived(shownCaptions?.style.text ?? true);
   const boxOn = $derived(shownCaptions?.style.boxOn ?? true);
+  // What the column shows for the box and the highlight. With the text off
+  // nothing of the captions is drawn, so they read as off too, the way the
+  // video preview shows them. Each keeps its own setting underneath, and
+  // turning the text on again brings them back as they were.
+  const boxShown = $derived(textOn && boxOn);
+  const highlightShown = $derived(textOn && highlightOn);
+
+  // A click on Box or Highlight. With the text off it says the captions are
+  // wanted, with this part of them, so both come on.
+  async function flipPart(which: "box" | "highlight", on: boolean) {
+    if (!textOn) {
+      await setCaptionSwitch("text", true);
+      if (!on) await setCaptionSwitch(which, true);
+      return;
+    }
+    await setCaptionSwitch(which, !on);
+  }
 
   function drawColour(part: {
     primary?: string;
@@ -1087,6 +1104,7 @@
     await setCaptionColours(colour, share, "", boxOpacity);
   }
   async function setBoxColour(colour: string, share: number) {
+    if (captions?.style.text === false) await setCaptionSwitch("text", true);
     if (captions?.style.boxOn === false) await setCaptionSwitch("box", true);
     await setCaptionColours("", textOpacity, colour, share);
   }
@@ -1094,6 +1112,7 @@
   // The pill's colour or how much of it is seen. Choosing either while the
   // highlight is off says the pill is wanted, so it comes back on with it.
   async function setHighlightColour(colour: string, share: number) {
+    if (captions?.style.text === false) await setCaptionSwitch("text", true);
     if (captions?.style.highlight === false) await setCaptionSwitch("highlight", true);
     await setCaptionColours("", textOpacity, "", boxOpacity, colour, share);
   }
@@ -2010,14 +2029,16 @@
             <div class="setting">
               <button
                 class="name"
-                class:off={!boxOn}
-                aria-pressed={boxOn}
-                title={boxOn
-                  ? "The captions sit on a box. Click to turn it off, so the words stand on the picture"
-                  : "Off: the words stand on the picture. Click to put the box behind them again"}
-                onclick={() => setCaptionSwitch("box", !boxOn)}>Box</button
+                class:off={!boxShown}
+                aria-pressed={boxShown}
+                title={!textOn
+                  ? "Off with the text. Click to turn the captions on again, with the box"
+                  : boxOn
+                    ? "The captions sit on a box. Click to turn it off, so the words stand on the picture"
+                    : "Off: the words stand on the picture. Click to put the box behind them again"}
+                onclick={() => flipPart("box", boxOn)}>Box</button
               >
-              <span class="field pair" class:off={!boxOn}>
+              <span class="field pair" class:off={!boxShown}>
                 <input
                   class="swatch"
                   type="color"
@@ -2057,14 +2078,16 @@
             <div class="setting">
               <button
                 class="name"
-                class:off={!highlightOn}
-                aria-pressed={highlightOn}
-                title={highlightOn
+                class:off={!highlightShown}
+                aria-pressed={highlightShown}
+                title={!textOn
+                  ? "Off with the text. Click to turn the captions on again, with the highlight"
+                  : highlightOn
                   ? "The word being spoken sits on a pill that bounces. Click to turn it off, so the captions are the box and the words"
                   : "Off: the captions are the box and the words. Click to light up the word being spoken again"}
-                onclick={() => setCaptionSwitch("highlight", !highlightOn)}>Highlight</button
+                onclick={() => flipPart("highlight", highlightOn)}>Highlight</button
               >
-              <span class="field pair" class:off={!highlightOn}>
+              <span class="field pair" class:off={!highlightShown}>
                 <input
                   class="swatch"
                   type="color"
