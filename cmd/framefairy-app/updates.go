@@ -102,6 +102,12 @@ type updating struct {
 	listed time.Time
 
 	run sync.Mutex
+	// telling keeps what the screen is told in the order it happened. The
+	// state is read and sent under it, so a report read before a pick can
+	// never be sent after it. A download reporting how far it was, read
+	// just before a channel was picked and sent just after, showed the
+	// download before as if nothing had been picked, until its next word.
+	telling sync.Mutex
 	// picking keeps two picks from writing updates.json at once.
 	picking sync.Mutex
 	// round counts picks. A check belongs to the pick it started under, and
@@ -210,7 +216,9 @@ func (c *updating) change(f func(*UpdateState)) {
 	c.lastSent = time.Now()
 	c.mu.Unlock()
 	if c.emit != nil {
+		c.telling.Lock()
 		c.emit(c.State())
+		c.telling.Unlock()
 	}
 }
 

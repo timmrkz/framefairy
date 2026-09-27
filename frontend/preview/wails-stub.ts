@@ -517,11 +517,20 @@ export const Call = {
         return Promise.resolve("0.1.0");
       case "Updates":
         return Promise.resolve({ ...updNow() });
-      case "FollowChannel":
-        updNow().picked = args[0] as string;
-        updSend();
-        updFetch((args[0] as string) || "main");
-        return Promise.resolve(null);
+      // ?slowpick answers a second late, the way a Go side busy with the
+      // download before can, so what the page shows until then is seen.
+      case "FollowChannel": {
+        const pick = () => {
+          updNow().picked = args[0] as string;
+          updSend();
+          updFetch((args[0] as string) || "main");
+        };
+        if (!location.search.includes("slowpick")) {
+          pick();
+          return Promise.resolve(null);
+        }
+        return new Promise((done) => setTimeout(() => done(pick()), 1000));
+      }
       case "CheckForUpdates":
         updFetch(updNow().picked || updNow().follows);
         return Promise.resolve(null);

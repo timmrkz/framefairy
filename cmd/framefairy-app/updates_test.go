@@ -385,3 +385,43 @@ func TestTheSettingsListTheChannelsWithoutDownloading(t *testing.T) {
 		t.Errorf("read the list %d times", n)
 	}
 }
+
+// What the screen is told arrives in the order it happened. A download
+// reporting how far it is while another channel is picked read the state
+// before the pick and sent it after, so the screen was told of the pick
+// and then of the download before it, and showed that until the next word.
+func TestThePickIsTheLastWord(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	for round := range 200 {
+		c, sent := newTestUpdating(t, cs, false)
+		c.mu.Lock()
+		c.state.Picked, c.state.Phase, c.state.Next, c.state.Total = "main", "downloading", "0.3.0-main.5", 100
+		c.mu.Unlock()
+		// No check runs behind the pick, so nothing but these two speaks.
+		c.u = nil
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() {
+				for range 50 {
+					c.progress(100, 100)
+				}
+			})
+		}
+		wg.Go(func() {
+			c.change(func(s *UpdateState) {
+				s.Picked, s.Phase, s.Next, s.Written, s.Total = "pr-20", "checking", "", 0, 0
+			})
+		})
+		wg.Wait()
+		picked := -1
+		for i, s := range *sent {
+			if s.Picked == "pr-20" && picked < 0 {
+				picked = i
+			}
+			if picked >= 0 && s.Picked == "main" {
+				t.Fatalf("round %d: told of main at %d after the pick at %d", round, i, picked)
+			}
+		}
+	}
+}

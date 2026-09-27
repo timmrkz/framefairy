@@ -59,8 +59,28 @@
     }
   }
 
+  // A pick shows at once, the way the Go side will say it a moment later:
+  // the channel picked, looking for its newest build, and nothing of the
+  // channel before. The download of the pull request followed before
+  // went on showing until the Go side's word arrived.
   async function follow(channel: string) {
     problem = "";
+    if (update) {
+      const listed = update.channels?.some((c) => c.id === channel) ?? false;
+      heard({
+        ...update,
+        picked: channel,
+        follows: listed ? channel : "",
+        gone: "",
+        phase: "checking",
+        next: "",
+        nextName: "",
+        nextCommit: "",
+        written: 0,
+        total: 0,
+        problem: "",
+      });
+    }
     try {
       await api.followChannel(channel);
     } catch (e) {

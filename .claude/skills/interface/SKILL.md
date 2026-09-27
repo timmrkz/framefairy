@@ -55,6 +55,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?interrupted` | a search whose record says it was cut off while it found. `?waiting` cut off while it heard, at 15 minutes. Cancel on any running search leaves it stopped, the way the Go side does |
 | `?failed` | a search whose record says it failed, with its reason |
 | `?rendering` | a render running on the first clip, with progress |
+| `?slowpick` | a channel picked on the Updates page is answered a second late, so what the page shows before the Go side's word is seen |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 

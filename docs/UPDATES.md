@@ -413,7 +413,11 @@ with its newest build, so one fetch is the whole check:
    the new channel from the moment of the pick. Whatever the download
    before says after that, its progress or that it finished, is thrown
    away rather than shown: every pick starts a round of its own, and a
-   check only speaks for the round it began in.
+   check only speaks for the round it began in. The page shows the pick
+   from the click itself, before the Go side has answered, and what the
+   Go side says reaches the page in the order it happened: a report of
+   the download before, read just before the pick, used to arrive just
+   after it and show that download again until its next word.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
    it downloads nothing. The page says **Pull request #18 is closed**,
    the list names it, closed, in the colour of a warning, and nothing
