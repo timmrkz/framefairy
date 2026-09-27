@@ -284,17 +284,19 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	return snapshot
 }
 
-// turn is how a job with steps waits for the lane of each: it says on the
-// job which step it waits for and which it is in.
+// turn is how a job with steps waits for the lane of each. The job says
+// which lane it waits for, so the interface can say what it waits to do,
+// and which step it is in once it has its turn. How far the step before
+// came is not how far this one is, so the progress starts again with it.
 func (q *queue) turn(job *Job) engine.Turn {
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
 		lane, kind := laneOfStep(step)
-		q.update(job, nil, func(j *Job) { j.Step = engine.StepWaiting })
+		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
 		if err != nil {
 			return nil, nil, err
 		}
-		q.update(job, nil, func(j *Job) { j.Step, j.Lane = step, lane })
+		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = step, lane, nil })
 		return stepCtx, release, nil
 	}
 }

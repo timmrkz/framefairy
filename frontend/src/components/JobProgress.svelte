@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, clock, type Job } from "../lib/api";
   import Busy from "./Busy.svelte";
+  import { sentence, stepLine } from "../lib/steps";
 
   let {
     job,
@@ -23,10 +24,15 @@
   }
 
   const fraction = $derived(job.progress && job.progress.fraction >= 0 ? job.progress.fraction : -1);
+  // A search and a render say their step in the words every row uses, see
+  // lib/steps.ts. Other work, a model being installed, says what the
+  // engine says, as a sentence.
   const line = $derived(
     job.state === "queued"
       ? "Waiting for the job before it"
-      : (job.progress?.text ?? job.last?.stage ?? job.last?.text ?? "Starting"),
+      : job.step
+        ? stepLine(job).what
+        : sentence(job.progress?.text ?? job.last?.stage ?? job.last?.text ?? "") || "Starting",
   );
   const left = $derived(
     job.progress && job.progress.remaining > 0 ? `${clock(job.progress.remaining)} left` : "",

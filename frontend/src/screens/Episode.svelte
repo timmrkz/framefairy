@@ -50,6 +50,7 @@
     type RoomView,
   } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
+  import { stepLine } from "../lib/steps";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -157,9 +158,9 @@
   // Cancel and the line under the head fills up. Nothing is added to the
   // column and nothing moves.
   const busy = $derived(searching || starting);
-  // What the work is doing right now, in the engine's words: loading the
-  // model, reading the transcript, how many clips are found.
-  const doing = $derived(working?.progress?.text ?? "");
+  // What the search is doing right now, in the step's own words, see
+  // lib/steps.ts.
+  const doing = $derived(working ? stepLine(working).what : "");
   const leftOfWork = $derived(
     working?.progress && working.progress.remaining > 0
       ? `${clock(working.progress.remaining)} left`
@@ -319,24 +320,17 @@
   // its end. It used to be measured from the start of the episode, so a
   // window two hours in began nearly full.
   const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
-  // The window of the search, which is the window on the range picker
-  // while it runs, see below.
+  // The row the next clip will appear in says which step the search is in,
+  // in the words of lib/steps.ts, the same words every row that shows work
+  // uses. While it hears, how far it has come is how far the window has
+  // been heard. Nothing more: the clips it has found so far are the cards
+  // above the row, and the row said "2 of 12 found" in the place the third
+  // clip was to appear.
   const next = $derived.by(() => {
     if (!busy) return null;
-    const p = working?.progress;
-    if (!working || working.step === "hearing" || (working.step === "waiting" && !heardWindow)) {
-      return { what: "Waiting for the transcript", left: windowText, fraction: heardShare };
-    }
-    if (working.step === "waiting") {
-      return { what: "Waiting for the search before it", left: windowText, fraction: -1 };
-    }
-    return {
-      what: p?.text ?? "",
-      // In steps of five seconds, so the number is something to read
-      // rather than something that flickers.
-      left: p && p.remaining > 0 ? `About ${clock(Math.ceil(p.remaining / 5) * 5)} left` : "",
-      fraction: p && p.fraction >= 0 ? p.fraction : -1,
-    };
+    if (!working) return { what: "Starting", left: "", fraction: -1 };
+    const line = stepLine(working, heardShare);
+    return { ...line, left: line.left || windowText };
   });
 
   // What the row says, held long enough to be read. The engine reports
@@ -348,7 +342,6 @@
   // because an effect that reads the job is set up again on every report.
   let shownNext = $state<{ what: string; left: string; fraction: number } | null>(null);
   let shownSince = 0;
-  const counting = (what: string) => / of \d+ found$/.test(what);
   onMount(() => {
     const timer = window.setInterval(() => {
       const want = next;
@@ -358,13 +351,15 @@
       }
       // Nothing new to say: the row stays as it is.
       if (!want.what && shownNext) return;
-      const what = want.what || "Finding clips";
+      const what = want.what;
       if (!shownNext || what === shownNext.what) {
         if (!shownNext) shownSince = Date.now();
         shownNext = { ...want, what };
         return;
       }
-      const hold = counting(what) && counting(shownNext.what) ? 1000 : 2500;
+      // A step that lasted a moment, a turn that came at once, is not
+      // flashed up: a new headline waits a second.
+      const hold = 1000;
       if (Date.now() - shownSince < hold) {
         shownNext = { ...shownNext, left: want.left, fraction: Math.max(shownNext.fraction, want.fraction) };
         return;
@@ -377,7 +372,7 @@
   const waitNote = $derived.by(() => {
     if (!busy) return "";
     if (finding) {
-      return `The model is reading the window from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${doing ? ` ${doing}${leftOfWork ? `, about ${leftOfWork}` : ""}.` : leftOfWork ? ` About ${leftOfWork}.` : ""}`;
+      return `The model is reading the window from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${leftOfWork ? ` About ${leftOfWork}.` : ""}`;
     }
     const first = transcribing
       ? `The episode is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
