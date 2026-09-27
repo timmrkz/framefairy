@@ -436,6 +436,13 @@ place.
 - **Video preview:** the episode, with one **Play** button that plays from where
   the playhead stands. The space bar does the same, unless a field has the
   keyboard. Clicking the video preview plays or pauses.
+    - **With the playhead in the chosen clip**, the clip plays: its cuts
+      are jumped and it stops at its end, or starts again when it loops.
+      Pressed again right at its end, it plays from its start once more.
+    - **With the playhead anywhere else**, the episode plays on from there,
+      clip or no clip, because that is where it was put to be heard. It
+      used to go back to the start of the chosen clip, so no other part of
+      the episode could be heard while a clip was chosen.
     - For the selected clip, everything outside its vertical crop is dimmed
       and the frame sits where the render will put it. The frame is dashed
       while the playhead is in a part the clip cuts out. **The frame a
