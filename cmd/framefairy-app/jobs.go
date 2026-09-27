@@ -78,6 +78,9 @@ type Job struct {
 	ask    *ask
 	cancel context.CancelFunc
 	ctx    context.Context
+	// byHand is a search called off with Cancel, which says so where its
+	// work was the way one cut off by the app closing does, see stopByHand.
+	byHand bool
 }
 
 // JobUpdate is what the interface receives on the "job" event.
@@ -513,6 +516,19 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
+// stopByHand calls off a search with Cancel. It ends as a search that
+// stopped, not as one that is gone, see runJob.
+func (q *queue) stopByHand(id string) {
+	q.mu.Lock()
+	for _, j := range q.jobs {
+		if j.ID == id && j.Kind == engine.JobSearch && j.Record != "" {
+			j.byHand = true
+		}
+	}
+	q.mu.Unlock()
+	q.cancel(id)
+}
+
 // settle marks the searches or renders of an episode that stopped, cut
 // off or failed, as taken care of: carried on by a new job, or their note
 // taken away. A record id picks one of them, and "" all of that kind.
@@ -659,6 +675,17 @@ func (q *queue) runJob(job *Job) {
 	project := engine.NewProject(e, job.Episode, opts)
 
 	result, err := run(ctx, job, project, q.turn(job))
+	// A search called off by hand says so in its record before it says
+	// it has ended, so the note is there whenever anyone looks, the app
+	// quit a moment later included.
+	q.mu.Lock()
+	byHand := job.byHand
+	q.mu.Unlock()
+	if byHand && errors.Is(err, engine.ErrCancelled) {
+		if serr := engine.StopJob(job.Episode, job.Record); serr != nil {
+			project.Log().Warn("could not note the search as stopped: %s", serr)
+		}
+	}
 	log.SetSink(nil)
 	q.update(job, nil, func(j *Job) {
 		j.Progress = nil
@@ -669,6 +696,10 @@ func (q *queue) runJob(job *Job) {
 		switch {
 		case err == nil:
 			j.State = JobDone
+		case errors.Is(err, engine.ErrCancelled) && j.byHand:
+			// Called off by hand, a search says Stopped, Click Continue,
+			// because what it heard stays and it can be carried on.
+			j.State, j.Step = JobInterrupted, engine.StepStopped
 		case errors.Is(err, engine.ErrCancelled):
 			j.State = JobCancelled
 		default:

@@ -185,7 +185,7 @@ func (d *desk) search(path string, w window) {
 func (d *desk) carryOn(path string) {
 	d.t.Helper()
 	o := d.outcome(path)
-	if !o.interrupted && o.failed == "" {
+	if !o.interrupted && !o.stopped && o.failed == "" {
 		d.t.Fatalf("Continue on a search that did not stop: %+v", o)
 	}
 	j, _ := d.svc.jobs.find(path, "search")
@@ -223,12 +223,15 @@ func (d *desk) reopen() {
 }
 
 // outcome is what the app says about an episode's last search where its
-// clips would be: nothing, interrupted with Continue, or failed with the
-// reason.
+// clips would be: nothing, interrupted or stopped with Continue, or failed
+// with the reason.
 type outcome struct {
 	interrupted bool
-	failed      string
-	window      window
+	// stopped is a search called off with Cancel, which says so the same
+	// way, with Continue.
+	stopped bool
+	failed  string
+	window  window
 }
 
 func (d *desk) outcome(path string) outcome {
@@ -239,6 +242,9 @@ func (d *desk) outcome(path string) outcome {
 	w := window{j.From, j.To}
 	switch j.State {
 	case JobInterrupted:
+		if j.Step == engine.StepStopped {
+			return outcome{stopped: true, window: w}
+		}
 		return outcome{interrupted: true, window: w}
 	case JobFailed:
 		return outcome{failed: j.Error, window: w}

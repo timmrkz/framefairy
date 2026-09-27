@@ -23,6 +23,13 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobSearch, "Find clips", notInLibrary)
 	}
+	// A search called off a moment ago may still be on its way out, and it
+	// writes the same record as it goes, so this one waits for it.
+	for _, j := range s.jobs.list() {
+		if j.Episode == path && j.Kind == engine.JobSearch && j.State == JobRunning && j.ctx.Err() != nil {
+			s.jobs.waitJob(j.ID)
+		}
+	}
 	// A search that stopped is taken up by this one, which writes a record
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
@@ -165,8 +172,11 @@ func firstWindowEnd(duration float64, room engine.Room, req engine.PlanRequest) 
 }
 
 // cancelSteps calls off a search or a render, or takes away the note of
-// one that stopped, and with it its record. Called off by hand, it has
-// nothing to report. It says whether the job was one of those.
+// one that stopped. A search called off says so where its work was, with
+// Continue, the same as one cut off by the app closing: what it heard stays
+// and it can be carried on. A render called off keeps the shorts it
+// finished and goes, because its Render button is where it is carried on.
+// It says whether the job was one of those.
 func (s *FrameFairy) cancelSteps(id string) bool {
 	for _, j := range s.jobs.list() {
 		if j.ID != id || j.Record == "" {
@@ -177,19 +187,17 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
+		if j.Kind == engine.JobSearch {
+			// Its record says stopped as it ends, see runJob.
+			s.jobs.stopByHand(id)
+			return true
+		}
 		s.jobs.cancel(id)
-		// The record goes once the job has stopped, so nothing it writes
-		// on its way out brings it back. A search asked for in the
-		// meantime has written the same record, and keeps it.
+		// The record goes once the render has stopped, so nothing it
+		// writes on its way out brings it back.
 		go func() {
 			defer func() { _ = recover() }()
 			s.jobs.waitJob(id)
-			for _, other := range s.jobs.list() {
-				if other.ID != id && other.Episode == j.Episode && other.Record == j.Record &&
-					(other.State == JobQueued || other.State == JobRunning) {
-					return
-				}
-			}
 			s.forgetRecord(j.Episode, j.Record)
 		}()
 		return true

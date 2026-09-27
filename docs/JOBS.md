@@ -63,13 +63,18 @@ from waiting to finding.
 Every job can stop before done in one of two ways:
 
 - **Failed**, with the reason.
-- **Called off**, by Cancel. Nothing is said about it, as for any work
-  called off by hand.
+- **Stopped**, by Cancel. A search says so where its work was, with
+  **Continue**, the same way as one the app was closed on: what it heard
+  stays and it can be carried on, and an empty column after Cancel read as
+  work that had vanished. A render called off goes, and its Render button
+  carries it on.
 
 A job whose record says it was running when the app starts was
 **interrupted**: the app was closed or fell over. Nobody writes that
 state. It is what a running job looks like to an app that did not start
-it. It says so where its work was, with **Continue**.
+it. It says so where its work was, with **Continue**, and so does a
+stopped search, after a restart too. The sidebar gives both the colour of
+a warning, and a failed search the colour of an error.
 
 **There is no Pause.** Pause and Cancel did nearly the same thing under
 two names, and Pause only while transcribing. What made pausing worth
@@ -134,10 +139,11 @@ written atomically on every change of step. The search is
 A render has the plan and the clips instead of the window and the
 numbers, and `done`, the clips it has finished, written as each one is.
 
-- `step` is one of `waiting`, `hearing`, `finding`, `rendering` and
-  `failed`, with `error` beside a failed one. A job that is done or called
-  off has no record: the transcript, the plans and the shorts say what it
-  made.
+- `step` is one of `waiting`, `hearing`, `finding`, `rendering`,
+  `stopped` and `failed`, with `error` beside a failed one. A search
+  called off says `stopped`, written as it ends. A job that is done, and a
+  render called off, has no record: the transcript, the plans and the
+  shorts say what it made.
 - How far hearing got is not in the record. The transcript says it, and
   saying it twice is two things that can disagree.
 - `steps` is when each step began and ended: how long a search waited for
@@ -175,8 +181,11 @@ a failed one a job that `failed`, with its reason. Clearing the finished
 jobs leaves them, because they are not finished. Adding a video asks for
 its first search, of the first half hour or all of a shorter episode, and
 no longer than the model can read at once, see `firstSearch` in
-`cmd/framefairy-app/search.go`. Cancel takes a job's record away once the
-job has stopped, so nothing it writes on its way out brings it back.
+`cmd/framefairy-app/search.go`. Cancel on a search that runs marks its
+record stopped as it ends. Cancel on one that stopped, which only Activity
+offers, takes its record away. New on an episode waits for a search that
+was just called off to be on its way out first, because both write the
+same record.
 
 **The interface** sends what was clicked and shows what it is told. There
 is no logic about jobs in TypeScript.
@@ -246,8 +255,9 @@ The paths:
   interrupted.
 - Continue after that, carrying on from where it was, with nothing heard
   twice.
-- Cancel while it hears and while it finds, nothing said, and what was
-  heard kept.
+- Cancel while it hears and while it finds, what was heard kept, and the
+  search saying Stopped with Continue, after a restart too. This one
+  changed on purpose after the refactor: it said nothing at first.
 - A failure while it hears and while it finds, with its reason.
 - A render to the end, and one that fails.
 - Two episodes at once, and a render while a search runs, under the race

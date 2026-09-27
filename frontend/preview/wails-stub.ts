@@ -403,6 +403,9 @@ function searchAt(s: FakeSearch, now = Date.now()) {
   if (s.stopped) {
     return { state: s.settled ? "cancelled" : s.stopped, step: s.step, covered: s.heardFrom, found: 0, since: 0 };
   }
+  // Called off with Cancel, it stops where it is and says so, with
+  // Continue, the way the Go side does.
+  const byHand = s.cancelledAt !== undefined;
   const at = Math.min(now, s.cancelledAt ?? now);
   const since = at - s.wall;
   // ?transcribing hears and never gets anywhere: it reports 1800 while the
@@ -411,14 +414,18 @@ function searchAt(s: FakeSearch, now = Date.now()) {
   const still = location.search.includes("transcribing");
   const hearFor = still ? Infinity : (Math.max(end - s.heardFrom, 0) / hearsPerSecond) * 1000;
   const covered = still ? s.heardFrom : Math.min(end, s.heardFrom + (since / 1000) * hearsPerSecond);
-  const cancelled = s.cancelledAt !== undefined;
+  const stoppedState = s.settled ? "cancelled" : "interrupted";
   if (since < hearFor) {
-    return { state: cancelled ? "cancelled" : "running", step: "hearing", covered: Math.max(covered, s.heardFrom), found: 0, since };
+    return byHand
+      ? { state: stoppedState, step: "stopped", covered: Math.max(covered, s.heardFrom), found: 0, since }
+      : { state: "running", step: "hearing", covered: Math.max(covered, s.heardFrom), found: 0, since };
   }
   const finding = since - hearFor;
   const found = landOrder.filter((_, k) => finding >= 700 + k * landEvery()).length;
   if (finding < findFor()) {
-    return { state: cancelled ? "cancelled" : "running", step: "finding", covered: end, found, since: finding };
+    return byHand
+      ? { state: stoppedState, step: "stopped", covered: end, found, since: finding }
+      : { state: "running", step: "finding", covered: end, found, since: finding };
   }
   return { state: "done", step: "", covered: end, found: 12, since: finding };
 }
@@ -463,7 +470,7 @@ function foundClips(): number[] {
 }
 function askSearch(from: number, to: number): FakeSearch {
   const list = fakeSearches();
-  for (const s of list) if (s.stopped) s.settled = true;
+  for (const s of list) if (s.stopped || s.cancelledAt !== undefined) s.settled = true;
   const n = list.filter((s) => s.n > 0).length + 1;
   const made = { id: `s${n}`, n, from, to, heardFrom: savedCovered(), wall: Date.now() };
   list.push(made);
@@ -657,7 +664,7 @@ export const Call = {
         return Promise.resolve(searchJob(made));
       }
       case "Continue": {
-        const was = fakeSearches().find((s) => s.id === args[0] && s.stopped && !s.settled);
+        const was = fakeSearches().find((s) => s.id === args[0] && (s.stopped || s.cancelledAt !== undefined) && !s.settled);
         if (!was) return Promise.resolve({ id: "x", episode: "", kind: "continue", label: "Continue", state: "failed", queued: "", lane: "finding" });
         return Promise.resolve(searchJob(askSearch(was.from, was.to)));
       }

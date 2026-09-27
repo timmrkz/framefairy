@@ -3,8 +3,9 @@ package main
 // The path tests: what a person does with the app, from adding a video to
 // a finished short, told through the driver in driver_test.go. They were
 // written against the app as it was before jobs became one thing each, see
-// docs/JOBS.md, and passed on it. They stay as they are while the way work
-// is run underneath changes, and have to pass after every step of that.
+// docs/JOBS.md, and passed on it. They stayed as they were while the way
+// work is run underneath changed. What Cancel leaves behind changed later,
+// on purpose: a search called off says so, the way one cut off does.
 
 import (
 	"strings"
@@ -97,7 +98,10 @@ func TestPathCancelWhileHearing(t *testing.T) {
 	within(t, hearing, "hearing")
 	d.cancel(ep)
 	d.idle(ep)
-	if o := d.outcome(ep); o != (outcome{}) {
+	// Called off, it says so where its clips would be, with Continue, the
+	// way a search cut off by the app closing does. It used to say
+	// nothing, and Tim found the column bare after Cancel.
+	if o := d.outcome(ep); !o.stopped {
 		t.Errorf("a search called off says %+v", o)
 	}
 	if n := len(d.clips(ep)); n != 0 {
@@ -129,8 +133,20 @@ func TestPathCancelWhileFinding(t *testing.T) {
 	within(t, asked, "asking the model")
 	d.cancel(ep)
 	d.idle(ep)
-	if o := d.outcome(ep); o != (outcome{}) {
+	if o := d.outcome(ep); !o.stopped {
 		t.Errorf("a search called off says %+v", o)
+	}
+	// And after the app is opened again, too.
+	d.close()
+	d.reopen()
+	if o := d.outcome(ep); !o.stopped {
+		t.Errorf("a search called off says %+v after a restart", o)
+	}
+	d.model.hangs(false)
+	d.carryOn(ep)
+	d.idle(ep)
+	if n := len(d.clips(ep)); n == 0 {
+		t.Error("Continue after Cancel found no clips")
 	}
 	if _, done := d.heard(ep); !done {
 		t.Error("the transcript was not kept")

@@ -473,23 +473,29 @@
       const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
       return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
     }
-    // Cut off before it had heard its window, which is the first half of
+    // Called off with Cancel, or cut off by the app closing: the same row
+    // either way, because either way what it did stays and Continue
+    // carries it on. Only the first word says which it was.
+    const byHand = search.step === "stopped";
+    const what = byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue";
+    const how = byHand ? "Cancel stopped the search" : "The app was closed";
+    // Stopped before it had heard its window, which is the first half of
     // every search on an episode heard only part way: Continue hears on
     // from where it stopped and then finds.
     const reached = Math.min(covered, end);
     if (reached < end - 0.5) {
       return {
         ...span,
-        what: "Interrupted. Click Continue",
+        what,
         left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
-        full: `${window}. The app was closed while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
+        full: `${window}. ${how} while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
       };
     }
     return {
       ...span,
-      what: "Interrupted. Click Continue",
+      what,
       left: window,
-      full: `${window}. The app was closed or stopped while the clips were found. Continue looks again`,
+      full: `${window}. ${how} while the clips were found. Continue looks again`,
     };
   });
 

@@ -368,3 +368,26 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 		t.Error("the transcript was not finished")
 	}
 }
+
+// Called off by hand, a job's record says so, and keeps the window and the
+// numbers it was asked for, so it can be carried on.
+func TestAJobCalledOffByHandSaysSo(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "ep.mp4")
+	if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
+		Step: StepHearing, Steps: []StepTime{{Step: StepHearing}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := StopJob(source, SearchID); err != nil {
+		t.Fatal(err)
+	}
+	rec := ReadSearch(source)
+	if rec == nil || rec.Step != StepStopped || !rec.Interrupted() || rec.To != 1800 || rec.Count != 12 {
+		t.Fatalf("the record: %+v", rec)
+	}
+	if rec.Steps[0].To == nil {
+		t.Error("the step it was in did not end")
+	}
+	if err := StopJob(source, "render-9"); err != nil {
+		t.Errorf("a job with no record: %v", err)
+	}
+}

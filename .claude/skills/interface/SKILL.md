@@ -52,7 +52,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?hear=100` | a search hears 100 seconds of audio a second instead of 600, so the hearing lasts long enough to look at |
 | `?paused` | clips found, the episode read part way, nothing reading the rest. `?short` reads it only to 2500 |
 | `?found` | New starts a search that really finishes, clips and all |
-| `?interrupted` | a search whose record says it was cut off while it found. `?waiting` cut off while it heard, at 15 minutes |
+| `?interrupted` | a search whose record says it was cut off while it found. `?waiting` cut off while it heard, at 15 minutes. Cancel on any running search leaves it stopped, the way the Go side does |
 | `?failed` | a search whose record says it failed, with its reason |
 | `?rendering` | a render running on the first clip, with progress |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |

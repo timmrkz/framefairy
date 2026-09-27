@@ -43,6 +43,8 @@ const (
 	StepFinding   = "finding"
 	StepRendering = "rendering"
 	StepFailed    = "failed"
+	// StepStopped is a job called off by hand, see StopJob.
+	StepStopped = "stopped"
 )
 
 // The kinds of job.
@@ -101,8 +103,9 @@ func (r JobRecord) Render() RenderRequest {
 	return RenderRequest{Plan: r.Plan, Clips: r.Clips, Preview: r.Preview}
 }
 
-// Interrupted says whether the job was cut off: it was in a step that runs
-// when whatever ran it went away. A failed job says why instead.
+// Interrupted says whether the job stopped before it was done, cut off in a
+// step that runs when whatever ran it went away, or called off by hand, and
+// can be carried on. A failed job says why instead.
 func (r JobRecord) Interrupted() bool {
 	return r.Step != StepFailed
 }
@@ -187,6 +190,26 @@ func ReadJobs(source string) []JobRecord {
 	return out
 }
 
+// StopJob marks a job's record as called off by hand, once the job has
+// stopped. What it did stays and it can be carried on, so it says so where
+// its work was, the same way a job cut off by the app closing does, see
+// docs/JOBS.md. A job with no record is left alone.
+func StopJob(source, id string) error {
+	for _, rec := range ReadJobs(source) {
+		if rec.ID != id {
+			continue
+		}
+		now := time.Now()
+		if n := len(rec.Steps); n > 0 && rec.Steps[n-1].To == nil {
+			rec.Steps[n-1].To = &now
+		}
+		rec.Step = StepStopped
+		rec.Steps = append(rec.Steps, StepTime{Step: StepStopped, From: now, To: &now})
+		return WriteJob(source, rec)
+	}
+	return nil
+}
+
 // ReadSearch gives the record of the episode's search, or nil when it has
 // none.
 func ReadSearch(source string) *JobRecord {
@@ -219,7 +242,7 @@ func saneJob(source string, r *JobRecord) bool {
 		return false
 	}
 	switch r.Step {
-	case StepWaiting, StepHearing, StepFinding, StepRendering, StepFailed:
+	case StepWaiting, StepHearing, StepFinding, StepRendering, StepFailed, StepStopped:
 	default:
 		return false
 	}

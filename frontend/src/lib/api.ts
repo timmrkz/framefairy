@@ -233,8 +233,9 @@ export interface EngineEvent {
 export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
 
 // Where a search or a render is: waiting for its turn, hearing the
-// episode, finding clips, or rendering them.
-export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed";
+// episode, finding clips, or rendering them. A search called off with
+// Cancel is "stopped", and says so the way one cut off does.
+export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed" | "stopped";
 
 export interface Job {
   id: string;

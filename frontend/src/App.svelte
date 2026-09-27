@@ -157,6 +157,12 @@
   function dotFor(ep: EpisodeStatus): string {
     if (jobs.active(ep.source)) return "busy";
     if (ep.missing) return "err";
+    // A search that stopped says so here as well as in its row, so it can
+    // be found from the sidebar: stopped or cut off in the colour of a
+    // warning, failed in the colour of an error.
+    const search = jobs.search(ep.source);
+    if (search?.state === "failed") return "err";
+    if (search?.state === "interrupted") return "warn";
     if (ep.transcriptStale) return "warn";
     if (ep.plans?.length) return "ok";
     return "";
