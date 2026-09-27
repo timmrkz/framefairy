@@ -81,6 +81,10 @@
   // The key in short, as the Go side read it without the secret, and
   // whether the box that asks before it is removed is open.
   let keyHints = $state<Record<string, string>>({});
+  // The field a key is typed in, and whether it is shaking off a key that
+  // was refused.
+  let keyField = $state<HTMLInputElement>();
+  let keyShaking = $state(false);
   let removingKey = $state(false);
 
   // The model in the cloud, its company, and whether that company's key is
@@ -163,6 +167,16 @@
       // The Go side's errors start small, to sit inside a sentence.
       const said = errorText(err);
       keyRefused = said.charAt(0).toUpperCase() + said.slice(1);
+      // The way the Mac's password fields take a wrong password: the field
+      // shakes, keeps what was typed, selected, with the keyboard in it,
+      // so the next paste replaces it. Save waits for something new.
+      savingKey = false;
+      keyShaking = false;
+      requestAnimationFrame(() => {
+        keyShaking = true;
+        keyField?.focus();
+        keyField?.select();
+      });
     }
     savingKey = false;
     await Promise.all([readModels(), check()]);
@@ -602,22 +616,23 @@
                         ? "In the keychain, where only this app may read it"
                         : undefined)}
                 >
-                  {keyRefused
-                    ? keyRefused
-                    : savedKey
-                      ? "Saved in the keychain."
-                      : keyHints[provider.name]
-                        ? keyHints[provider.name]
-                        : keys[provider.name] === "environment"
-                          ? `From ${provider.env}.`
-                          : hasKey
-                            ? "In the keychain."
-                            : `None yet. Get one at ${provider.keysAt}.`}
+                  {#if keyRefused}{keyRefused}{:else if savedKey}Saved in the keychain.{:else if keyHints[
+                      provider.name
+                    ]}{keyHints[provider.name]}{:else if keys[provider.name] === "environment"}From {provider.env}.{:else if hasKey}In the keychain.{:else}None
+                    yet. Get one at <button
+                      class="link"
+                      title="Opens the page where {provider.title} makes keys"
+                      onclick={() => api.openKeysPage(provider.name).catch(() => {})}
+                      >{provider.keysAt}</button
+                    >.{/if}
                 </span>
               </div>
               <input
                 class="key"
+                class:shaking={keyShaking}
+                onanimationend={() => (keyShaking = false)}
                 type="password"
+                bind:this={keyField}
                 bind:value={key}
                 oninput={() => (keyRefused = "")}
                 placeholder={hasKey ? "New key" : `${provider.name === "openai" ? "sk-proj" : "sk-ant"}-...`}
@@ -625,9 +640,11 @@
                 title="It goes in the keychain and nowhere else"
                 autocomplete="off"
                 spellcheck="false"
-                onkeydown={(e) => e.key === "Enter" && key.trim() && saveKey()}
+                onkeydown={(e) => e.key === "Enter" && key.trim() && !keyRefused && saveKey()}
               />
-              <button class="act" disabled={savingKey || !key.trim()} onclick={saveKey}>
+              <!-- A key that was refused is refused again, so Save waits
+                   until the field holds something else. -->
+              <button class="act" disabled={savingKey || !key.trim() || !!keyRefused} onclick={saveKey}>
                 {#if savingKey}<Busy />{/if}
                 {savingKey ? "Checking" : "Save key"}
               </button>
@@ -1103,7 +1120,8 @@
   /* Not yet: the card that needs an answer shakes from side to side and
      settles, the way the Mac's password field does, a few times and less
      each time. Without motion it is lit for a moment instead. */
-  .finding.shaking {
+  .finding.shaking,
+  .key.shaking {
     animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
   }
 
@@ -1123,7 +1141,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .finding.shaking {
+    .finding.shaking,
+    .key.shaking {
       animation: lit 0.6s ease;
     }
   }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -250,6 +251,20 @@ func (s *FrameFairy) keepInUse(before string) error {
 	}
 	settings.LLMModel = filepath.Join(engine.ModelsDir(), before)
 	return s.store.SetSettings(settings)
+}
+
+// OpenKeysPage opens the page where a company makes keys, in the browser.
+// Only the address written for that company is ever opened, never one the
+// interface names.
+func (s *FrameFairy) OpenKeysPage(provider string) error {
+	p, ok := engine.ProviderNamed(provider)
+	if !ok || p.KeysPage == "" {
+		return fmt.Errorf("there is no provider called %s", provider)
+	}
+	if s.app == nil {
+		return errors.New("there is no app to open it from")
+	}
+	return s.app.Browser.OpenURL(p.KeysPage)
 }
 
 // SaveAPIKey puts a provider's key in the macOS keychain, which is the only

@@ -638,7 +638,7 @@ export const Call = {
               apiModel,
               provider,
               providers: [
-                { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "console.anthropic.com" },
+                { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "platform.claude.com" },
                 { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" },
               ],
               cloud: [
@@ -688,6 +688,9 @@ export const Call = {
         return Promise.resolve(`/Users/tim/.framefairy/models/${String(args[0])}`);
       case "ChoosePlanner":
         (window as any).__planner = args[0];
+        return Promise.resolve(null);
+      case "OpenKeysPage":
+        (window as any).__opened = String(args[0]);
         return Promise.resolve(null);
       case "SaveAPIKey": {
         // A key that ends in "bad" is one the company refuses, after the

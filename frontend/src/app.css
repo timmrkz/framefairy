@@ -241,6 +241,25 @@ button.on:hover:not(:disabled) {
   border-color: var(--accent-hi);
 }
 
+/* A link in a line of text, which opens a page in the browser. It reads
+   as part of the sentence, in the accent, and is underlined under the
+   hand, the way links are in the Mac's own settings. */
+button.link {
+  display: inline;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-lit);
+  cursor: pointer;
+}
+
+button.link:hover {
+  text-decoration: underline;
+  background: none;
+}
+
 /* The trash can: square at the height of every control, on a model and
    on a key alike. */
 button.bin {

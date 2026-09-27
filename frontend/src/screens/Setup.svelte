@@ -71,7 +71,7 @@
       name: "anthropic",
       title: "Anthropic",
       env: "ANTHROPIC_API_KEY",
-      keysAt: "console.anthropic.com",
+      keysAt: "platform.claude.com",
     },
   );
   const cloudOptions = $derived(

@@ -23,7 +23,7 @@ export function providerOf(
       name,
       title: name === "openai" ? "OpenAI" : "Anthropic",
       env: name === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY",
-      keysAt: name === "openai" ? "platform.openai.com" : "console.anthropic.com",
+      keysAt: name === "openai" ? "platform.openai.com" : "platform.claude.com",
     }
   );
 }

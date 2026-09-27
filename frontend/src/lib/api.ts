@@ -449,6 +449,8 @@ export const api = {
   useLanguageModel: (name: string) => call<string>("UseLanguageModel", name),
   // Puts a key in the keychain under the company it is for.
   saveAPIKey: (provider: string, key: string) => call<void>("SaveAPIKey", provider, key),
+  // Opens the page where the company makes keys, in the browser.
+  openKeysPage: (provider: string) => call<void>("OpenKeysPage", provider),
   // Names the model in the cloud, and with it the company.
   chooseCloudModel: (model: string) => call<void>("ChooseCloudModel", model),
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -578,5 +579,20 @@ func TestTheAPIWayDoesNotNeedAServer(t *testing.T) {
 	}
 	if !state.Ready {
 		t.Error("a key and a speech model are everything the API way needs, and it said no")
+	}
+}
+
+// The link beside a missing key opens only the page written for that
+// company, and names no other.
+func TestOpenKeysPageOpensOnlyTheCompanysPage(t *testing.T) {
+	s := &FrameFairy{}
+	if err := s.OpenKeysPage("nobody"); err == nil {
+		t.Error("a company that is not there had a page")
+	}
+	for _, p := range engine.Providers() {
+		u, err := url.Parse(p.KeysPage)
+		if err != nil || u.Scheme != "https" || !strings.HasSuffix(u.Host, p.KeysAt) {
+			t.Errorf("%s: keys are made at %q, said to be %s", p.Name, p.KeysPage, p.KeysAt)
+		}
 	}
 }

@@ -138,7 +138,7 @@ removes the old one.
 line reads them first, which is how it is given a key. The app reads a key
 saved in its settings first, and the variables only when none is saved. On Windows and
 Linux they are currently the only option. Get an
-Anthropic key from the Claude Console at console.anthropic.com under
+Anthropic key from the Claude Platform at platform.claude.com under
 Settings, then API keys, and an OpenAI key at platform.openai.com under API
 keys. The app asks for the key of the model it is set to and keeps each in
 the keychain for you.

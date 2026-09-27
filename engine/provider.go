@@ -40,8 +40,11 @@ type Provider struct {
 	Keychain string `json:"-"`
 	// KeyPrefix is how every key of theirs begins.
 	KeyPrefix string `json:"-"`
-	// KeysAt is where a person gets a key.
-	KeysAt string `json:"keysAt"`
+	// KeysAt is where a person gets a key, as it is said, and KeysPage the
+	// page there where keys are made, which the settings open. Written
+	// here, so the app only ever opens these two addresses.
+	KeysPage string `json:"-"`
+	KeysAt   string `json:"keysAt"`
 }
 
 // providers are the companies the app can ask. Tests point the addresses at
@@ -50,11 +53,13 @@ var providers = []Provider{
 	{Name: "anthropic", Title: "Anthropic", URL: "https://api.anthropic.com/v1/messages",
 		Models: "https://api.anthropic.com/v1/models",
 		Env:    "ANTHROPIC_API_KEY", Item: "Frame Fairy: Anthropic API key", Keychain: "anthropic-api-key",
-		KeyPrefix: "sk-ant-", KeysAt: "console.anthropic.com"},
+		KeyPrefix: "sk-ant-", KeysAt: "platform.claude.com",
+		KeysPage: "https://platform.claude.com/settings/keys"},
 	{Name: "openai", Title: "OpenAI", URL: "https://api.openai.com/v1/chat/completions",
 		Models: "https://api.openai.com/v1/models",
 		Env:    "OPENAI_API_KEY", Item: "Frame Fairy: OpenAI API key", Keychain: "openai-api-key",
-		KeyPrefix: "sk-", KeysAt: "platform.openai.com"},
+		KeyPrefix: "sk-", KeysAt: "platform.openai.com",
+		KeysPage: "https://platform.openai.com/api-keys"},
 }
 
 // Providers lists the companies the app can ask.

@@ -1337,7 +1337,14 @@ wrong key is found where it was typed rather than when the first search
 fails. A company that cannot be reached says nothing about the key, so it
 is kept. A refusal is one short line: **Anthropic did not accept this
 key**, or, for something else copied from the same page, like the key's ID,
-**Not an Anthropic key. Those start with sk-ant-**. A saved key is shown in
+**Not an Anthropic key. Those start with sk-ant-**. The field takes it the
+way the Mac's password fields take a wrong password: it shakes, keeps what
+was typed, selected, with the keyboard in it, so the next paste replaces
+it, and Save waits until the field holds something else, since the same
+text would be refused again. Without a key the row says **None yet. Get one
+at platform.claude.com**, or platform.openai.com, and the address is a link
+that opens the page where keys are made in the browser. The app only ever
+opens the two addresses written in `engine/provider.go`. A saved key is shown in
 short, the way the companies list keys, `sk-ant-api03...MwAA`, its first
 twelve characters and its last four. The short form is kept as the
 keychain item's comment, which macOS lets the app read without the key,

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { CloudModel, LanguageModel, Provider } from "./api";
 import { cloudModelIn, cloudValue, finderOptions, finderStanding, holdsTheApp, providerOf } from "./finding";
 
-const anthropic: Provider = { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "console.anthropic.com" };
+const anthropic: Provider = { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "platform.claude.com" };
 const openai: Provider = { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" };
 const providers = [anthropic, openai];
 const cloud: CloudModel[] = [
