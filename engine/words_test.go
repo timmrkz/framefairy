@@ -178,7 +178,7 @@ func TestCaptionsFollowWords(t *testing.T) {
 			{20.2, 20.6, "Und"}, {20.6, 21.4, "dann"},
 		},
 	}
-	cues := Captions(clip, 38)
+	cues := Captions(clip, 38, nil)
 	if len(cues) != 2 {
 		t.Fatalf("got %v", cues)
 	}
@@ -210,7 +210,7 @@ func TestCaptionsBreakAtWidth(t *testing.T) {
 		ws = append(ws, Cue{float64(i) * 0.3, float64(i)*0.3 + 0.3, "Zielgruppe"})
 	}
 	clip := Clip{Segments: []Segment{{Start: 0, End: 4}}, Words: ws}
-	for _, c := range Captions(clip, 38) {
+	for _, c := range Captions(clip, 38, nil) {
 		if runeLen(c.Text) > 38 {
 			t.Errorf("caption %q is %d characters", c.Text, runeLen(c.Text))
 		}

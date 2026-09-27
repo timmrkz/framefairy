@@ -573,7 +573,8 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 
 	cueMap := map[string][]Caption{}
 	for _, clip := range clips {
-		cues, err := resolveCues(clip, captionDir, opts.RefreshCaptions, maxChars)
+		cues, err := resolveCues(clip, captionDir, opts.RefreshCaptions, maxChars,
+			TooWide(ResolveStyle(style)))
 		if err != nil {
 			log.Error("caption problem: %s", err)
 			failures++
@@ -701,7 +702,8 @@ func trimFloat(v float64) string {
 // resolveCues gives a clip's captions, preferring a file you may have
 // corrected by hand. Once a per-clip file exists it is used as it is, which
 // is what makes a hand correction stick.
-func resolveCues(clip Clip, captionDir string, force bool, maxChars int) ([]Caption, error) {
+func resolveCues(clip Clip, captionDir string, force bool, maxChars int,
+	alone func(string) bool) ([]Caption, error) {
 	perClip, err := SafeChild(captionDir, clip.Basename()+".srt")
 	if err != nil {
 		return nil, err
@@ -712,7 +714,7 @@ func resolveCues(clip Clip, captionDir string, force bool, maxChars int) ([]Capt
 	if exists(perClip) && !force {
 		return LoadCaptions(perClip)
 	}
-	captions := Captions(clip, maxChars)
+	captions := Captions(clip, maxChars, alone)
 	if len(captions) == 0 {
 		return nil, nil
 	}
@@ -735,7 +737,7 @@ func clipStyle(style map[string]any, clip Clip) map[string]any {
 
 // ClipCaptions gives a clip's captions the way the render will draw them,
 // a caption file corrected by hand first, and writes nothing itself.
-func ClipCaptions(clip Clip, captionDir string, maxChars int) ([]Caption, error) {
+func ClipCaptions(clip Clip, captionDir string, maxChars int, alone func(string) bool) ([]Caption, error) {
 	perClip, err := SafeChild(captionDir, clip.Basename()+".srt")
 	if err != nil {
 		return nil, err
@@ -743,7 +745,7 @@ func ClipCaptions(clip Clip, captionDir string, maxChars int) ([]Caption, error)
 	if exists(perClip) {
 		return LoadCaptions(perClip)
 	}
-	return Captions(clip, maxChars), nil
+	return Captions(clip, maxChars, alone), nil
 }
 
 func writeProof(path string, clips []Clip, cueMap map[string][]Caption) error {

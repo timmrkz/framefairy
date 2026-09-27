@@ -86,7 +86,7 @@ func run() error {
 	if err := os.MkdirAll(texts, 0o755); err != nil {
 		return err
 	}
-	steps := []func() error{goToolchain, goModules, kept, speech, ffmpeg, llama, fonts, npm, downloads}
+	steps := []func() error{goToolchain, goModules, kept, hyphenation, speech, ffmpeg, llama, fonts, npm, downloads}
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return err
@@ -171,13 +171,15 @@ func classify(text string) string {
 		return "BSD-2-Clause"
 	case strings.Contains(t, "Permission to use, copy, modify, and/or distribute"):
 		return "ISC"
+	case strings.Contains(t, "CC0 1.0 Universal"):
+		return "CC0-1.0"
 	}
 	return ""
 }
 
 // licenceFiles are the names a licence goes by at the top of a module or
 // package, in the order they are looked for.
-var licenceFiles = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "COPYING", "LICENSE-MIT"}
+var licenceFiles = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "COPYING", "LICENSE-MIT"}
 
 func licenceIn(dir string) (string, []byte, error) {
 	entries, err := os.ReadDir(dir)
@@ -329,6 +331,76 @@ func kept() error {
 		URL: "https://github.com/nenadmarkus/pico", Part: partApp,
 		Note: "The trained face data is the facefinder cascade from pico."},
 		map[string][]byte{"pico.txt": pico})
+}
+
+// hyphenationPatterns are the hyph-utf8 pattern files built into the
+// engine, by the name hyph-utf8 gives them, with the licence each is taken
+// under where the file offers a choice, and what the language is called.
+var hyphenationPatterns = []struct{ file, language, licence string }{
+	{"bg", "Bulgarian", "BSD-3-Clause"},
+	{"da", "Danish", "MIT"},
+	{"de-1996", "German", "MIT"},
+	{"el-monoton", "Greek", "MIT"},
+	{"en-us", "English", "Permissive, copying and distribution permitted"},
+	{"es", "Spanish", "MIT"},
+	{"et", "Estonian", "MIT"},
+	{"fi", "Finnish", "Freely distributable"},
+	{"fr", "French", "MIT"},
+	{"it", "Italian", "MIT"},
+	{"lt", "Lithuanian", "MIT"},
+	{"nl", "Dutch", "MIT"},
+	{"pl", "Polish", "MIT"},
+	{"pt", "Portuguese", "BSD-3-Clause"},
+	{"sk", "Slovak", "MIT"},
+	{"sl", "Slovenian", "MIT"},
+	{"uk", "Ukrainian", "MIT"},
+}
+
+// mitText is the MIT licence, for the pattern files that name it without
+// writing it out. Their copyright lines are in their own headers.
+const mitText = `Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.`
+
+// hyphenation is the patterns that break long words in the captions. The
+// text of each is the top of the file it came from, which names its makers,
+// its copyright and its licence, with the MIT licence written out where
+// the file only names it.
+func hyphenation() error {
+	for _, p := range hyphenationPatterns {
+		head, err := read(filepath.Join("engine", "hyphenation", "hyph-"+p.file+".head.txt"))
+		if err != nil {
+			return err
+		}
+		version := "as shipped"
+		if m := regexp.MustCompile(`(?m)^% version: *([^\s,]+)`).FindSubmatch(head); m != nil {
+			version = string(m[1])
+		}
+		if p.licence == "MIT" && !bytes.Contains(head, []byte("Permission is hereby granted")) {
+			head = append(append(head, "\n\n"...), mitText...)
+		}
+		if err := add(notice{Name: "Hyphenation patterns, " + p.language, Version: version,
+			Licence: p.licence, URL: "https://github.com/hyphenation/tex-hyphen", Part: partApp,
+			Note: "Built into the app. They break a word too long for a caption line."},
+			map[string][]byte{"hyph-" + p.file + ".txt": head}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // speech is what the sherpa-onnx libraries carry besides sherpa-onnx.

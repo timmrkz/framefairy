@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 // Style is the resolved caption look. Values are authored against a
@@ -318,48 +317,59 @@ type LaidCaption struct {
 // A line is broken where the text would otherwise run wider than the frame,
 // which is what keeps a caption inside its box whatever face and size are
 // chosen. A word too wide for a line on its own is hyphenated across two,
-// and each half gets its share of the word's time, so the highlight runs
-// over both. It used to bring the size of the whole clip down instead, and
-// one long word anywhere in a short made every caption in it a third
-// smaller. A face the program does not carry cannot be measured, and then
-// the style's character count decides the breaks, as it always did.
+// see breakWord, and each half gets its share of the word's time, so the
+// highlight runs over both. It used to bring the size of the whole clip
+// down instead, and one long word anywhere in a short made every caption in
+// it a third smaller. A face the program does not carry cannot be measured,
+// and then the style's character count decides the breaks, as it always
+// did.
 func LayOutCaptions(captions []Caption, s Style) []LaidCaption {
-	room := CaptionRoom(s)
-	fits := fitsIn(s.Font, s.Size, room, s.WrapChars)
+	r := roomFor(s)
+	// The language is only worked out when a word needs breaking.
+	var h *hyphenator
+	decided := false
 	laid := make([]LaidCaption, len(captions))
 	for i, c := range captions {
-		c.Words = hyphenate(c.Words, fits)
-		laid[i] = LaidCaption{Caption: c, Lines: captionLines(c, s.Font, s.Size, room, s.WrapChars)}
+		if !decided && hasTooWide(c, r) {
+			h, decided = hyphenatorFor(languageOf(captions)), true
+		}
+		c.Words = hyphenate(c.Words, r, h)
+		laid[i] = LaidCaption{Caption: c, Lines: captionLines(c, r, h)}
 	}
 	return laid
 }
 
+func hasTooWide(c Caption, r captionRoom) bool {
+	if len(c.Words) == 0 {
+		for _, w := range fields(c.Text) {
+			if !r.fits(w) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, w := range c.Words {
+		if !r.fits(w.Text) {
+			return true
+		}
+	}
+	return false
+}
+
 // CaptionLines splits one caption into the lines the render draws it in.
 func CaptionLines(c Caption, s Style) [][]Cue {
-	return captionLines(c, s.Font, s.Size, CaptionRoom(s), s.WrapChars)
+	return captionLines(c, roomFor(s), nil)
 }
 
-// fitsIn says whether a text fits on one line: by its measured width, or by
-// its length when the face cannot be measured.
-func fitsIn(font string, size, room float64, wrapChars int) func(string) bool {
-	return func(text string) bool {
-		if width, ok := TextWidth(font, text, size); ok {
-			return width <= room
-		}
-		return runeLen(text) <= wrapChars
-	}
-}
-
-func captionLines(c Caption, font string, size, room float64, wrapChars int) [][]Cue {
-	fits := fitsIn(font, size, room, wrapChars)
+func captionLines(c Caption, r captionRoom, h *hyphenator) [][]Cue {
 	if len(c.Words) == 0 {
 		// A caption that came back from a file without word timings.
 		var words []string
 		for _, w := range fields(c.Text) {
-			words = append(words, breakWord(w, fits)...)
+			words = append(words, breakWord(w, r, h)...)
 		}
 		var out [][]Cue
-		for _, line := range wrapWords(words, fits) {
+		for _, line := range wrapWords(words, r.fits) {
 			parts := make([]string, len(line))
 			for i, at := range line {
 				parts[i] = words[at]
@@ -373,7 +383,7 @@ func captionLines(c Caption, font string, size, room float64, wrapChars int) [][
 		words[i] = w.Text
 	}
 	var out [][]Cue
-	for _, line := range wrapWords(words, fits) {
+	for _, line := range wrapWords(words, r.fits) {
 		row := make([]Cue, 0, len(line))
 		for _, at := range line {
 			row = append(row, c.Words[at])
@@ -381,125 +391,6 @@ func captionLines(c Caption, font string, size, room float64, wrapChars int) [][
 		out = append(out, row)
 	}
 	return out
-}
-
-// hyphenate splits every word too wide for a line into pieces that fit.
-// The span the word was spoken in is shared out by how long the pieces
-// are, the way SplitCorrected shares out a word corrected into two. The
-// words given are never changed, a split gives back a new list.
-func hyphenate(words []Cue, fits func(string) bool) []Cue {
-	var out []Cue
-	for i, w := range words {
-		parts := breakWord(w.Text, fits)
-		if len(parts) < 2 && out == nil {
-			continue
-		}
-		if out == nil {
-			out = append(make([]Cue, 0, len(words)+1), words[:i]...)
-		}
-		total := 0
-		for _, part := range parts {
-			total += runeLen(strings.TrimSuffix(part, "-"))
-		}
-		at, span := w.Start, w.End-w.Start
-		for k, part := range parts {
-			end := w.End
-			if k < len(parts)-1 {
-				end = at + span*float64(runeLen(strings.TrimSuffix(part, "-")))/float64(max(total, 1))
-			}
-			out = append(out, Cue{at, end, part})
-			at = end
-		}
-	}
-	if out == nil {
-		return words
-	}
-	return out
-}
-
-// leastPiece is the fewest letters either side of a hyphen. A piece of one
-// or two letters reads as a mistake rather than a break.
-const leastPiece = 3
-
-// breakWord cuts a word too wide for a line into pieces that each fit,
-// every piece but the last ending in a hyphen. Each piece is as long as
-// the line allows, cut where a syllable ends if one ends there: before a
-// consonant that comes before a vowel, with "sch", "ch", "ck", "ph" and
-// "th" kept whole, or after a hyphen the word already has. Where no
-// syllable ends in reach it is cut where the line ends. A word that fits,
-// or that no cut can help, comes back as it is.
-func breakWord(word string, fits func(string) bool) []string {
-	if fits(word) {
-		return []string{word}
-	}
-	var out []string
-	runes := []rune(word)
-	for !fits(string(runes)) {
-		most := 0
-		for k := leastPiece; k <= len(runes)-leastPiece; k++ {
-			if !fits(pieceOf(runes[:k])) {
-				break
-			}
-			most = k
-		}
-		if most == 0 {
-			break
-		}
-		cut := most
-		for k := most; k >= leastPiece; k-- {
-			if syllableEnds(runes, k) {
-				cut = k
-				break
-			}
-		}
-		out = append(out, pieceOf(runes[:cut]))
-		runes = runes[cut:]
-	}
-	return append(out, string(runes))
-}
-
-// pieceOf is the first piece of a broken word, with its hyphen.
-func pieceOf(head []rune) string {
-	if head[len(head)-1] == '-' {
-		return string(head)
-	}
-	return string(head) + "-"
-}
-
-// syllableEnds reports whether a word may be broken before its rune at k:
-// right after a hyphen, or before a consonant followed by a vowel. "sch",
-// "ch", "ck", "ph" and "th" count as one consonant, broken before and never
-// inside.
-func syllableEnds(runes []rune, k int) bool {
-	if runes[k-1] == '-' {
-		return true
-	}
-	if !unicode.IsLetter(runes[k-1]) || !unicode.IsLetter(runes[k]) || isVowel(runes[k]) {
-		return false
-	}
-	rest := []rune(strings.ToLower(string(runes[k:])))
-	before := unicode.ToLower(runes[k-1])
-	for _, onset := range []string{"sch", "ch", "ck", "ph", "th"} {
-		if strings.HasPrefix(string(rest), onset) {
-			if onset == "ch" && before == 's' {
-				return false
-			}
-			n := len([]rune(onset))
-			return n < len(rest) && isVowel(rest[n])
-		}
-	}
-	if len(rest) < 2 || !isVowel(rest[1]) {
-		return false
-	}
-	switch string([]rune{before, rest[0]}) {
-	case "sc", "ch", "ck", "ph", "th":
-		return false
-	}
-	return true
-}
-
-func isVowel(r rune) bool {
-	return strings.ContainsRune("aeiouyäöüàáâãåæèéêëìíîïòóôõøùúûýœ", unicode.ToLower(r))
 }
 
 // wrapWords groups words into lines, each line as long as it may be.

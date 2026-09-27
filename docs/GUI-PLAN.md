@@ -139,7 +139,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.7 | Crop frame shown per shot, moved by hand per camera angle, reset to automatic | `[x]` |
 | 3.10 | The colour of the caption text, of the box behind it and of the highlight, each with how much of it is seen, beside the face and the size. The caption blocks of the clip timeline wear all three with their opacity, over everything else on the track | `[x]` |
 | 3.11 | One frame for what is chosen: the crop, the window and the clip drawn by one rule, with the same line, corners and colour | `[x]` |
-| 3.12 | Captions stay the size chosen. A word too long for a line is hyphenated onto the next, instead of one long word making every caption of the clip smaller | `[x]` |
+| 3.12 | Captions stay the size chosen. A word too long for a line gets a caption of its own and is hyphenated with TeX's patterns for the language of the episode, instead of one long word making every caption of the clip smaller | `[x]` |
 
 ## Phase 4: caption editor
 

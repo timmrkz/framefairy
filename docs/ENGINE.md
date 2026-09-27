@@ -335,15 +335,33 @@ program carries. Kerning and shaping are left out, and since kerning almost
 always pulls letters closer, the measure comes out a shade wider than what
 libass draws, so a line that fits here fits there.
 
-A word too wide for a line on its own is hyphenated. Each piece is as long
-as the line allows and ends where a syllable ends, before a consonant that
-comes before a vowel, with "sch", "ch", "ck", "ph" and "th" kept whole, or
-after a hyphen the word already has. "Suchmaschinenoptimierung" at size 96
-becomes "Suchmaschinenopti-" and "mierung". Each piece gets its share of
-the time the word was spoken in, so the highlight runs over both, and a
-correction made on either piece corrects the whole word. The size is never
-changed: it used to come down for the whole clip until the widest word
-fitted, and one long word made every caption of the short a third smaller.
+A word too wide for a line on its own gets a caption of its own, so it is
+read as two lines of one caption rather than as a third line under the
+words around it. It is hyphenated the way TeX hyphenates: Liang's
+algorithm, from `github.com/speedata/hyphenation`, over the hyph-utf8
+patterns that TeX, LibreOffice and Firefox use, which are in
+`engine/hyphenation/`. Like TeX and every word processor it takes the last
+break that still fits, so "Suchmaschinenoptimierung" at size 96 in Inter
+Black becomes "Suchmaschinenopti-" and "mierung". Each piece gets its share
+of the time the word was spoken in, so the highlight runs over both, and a
+correction made on either piece corrects the whole word.
+
+Patterns are per language, and the episode's language is written nowhere,
+so it is read off the clip's own words by `github.com/abadojack/whatlanggo`,
+a port of the franc and whatlang detectors. The patterns shipped are the
+languages the speech model hears whose patterns may go into a paid app:
+Bulgarian, Danish, Dutch, English, Estonian, Finnish, French, German,
+Greek, Italian, Lithuanian, Polish, Portuguese, Slovak, Slovenian, Spanish
+and Ukrainian. Czech is under the GPL alone, Latvian under the LGPL or GPL,
+and Romanian has no licence. Croatian, Swedish and Russian are under the
+LPPL and Hungarian under the MPL, whose full texts have to travel with the
+file and are not in `notices/` yet. A word in any of those is broken where
+the line ends.
+
+The size is never changed: it used to come down for the whole clip until
+the widest word fitted, and one long word made every caption of the short
+a third smaller.
+
 A face the program does not carry cannot be measured, and then `wrap_chars`
 decides the breaks, as it always did.
 

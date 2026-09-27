@@ -515,7 +515,8 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 	}
 	s := ResolveStyle(style)
 	work := filepath.Dir(filepath.Dir(planPath))
-	captions, err := ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)))
+	captions, err := ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)),
+		TooWide(s))
 	if err != nil {
 		return nil, err
 	}

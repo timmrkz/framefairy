@@ -3,7 +3,9 @@ module framefairy
 go 1.27
 
 require (
+	github.com/abadojack/whatlanggo v1.0.1
 	github.com/k2-fsa/sherpa-onnx-go v1.13.8
+	github.com/speedata/hyphenation v1.0.2
 	github.com/wailsapp/wails/v3 v3.0.0-beta.23
 )
 

@@ -1,5 +1,15 @@
 [
   {
+    "name": "github.com/abadojack/whatlanggo",
+    "version": "1.0.1",
+    "licence": "MIT",
+    "url": "https://github.com/abadojack/whatlanggo",
+    "part": "The app",
+    "texts": [
+      "github.com-abadojack-whatlanggo.txt"
+    ]
+  },
+  {
     "name": "github.com/adrg/xdg",
     "version": "0.5.3",
     "licence": "MIT",
@@ -50,6 +60,16 @@
     ]
   },
   {
+    "name": "github.com/speedata/hyphenation",
+    "version": "1.0.2",
+    "licence": "CC0-1.0",
+    "url": "https://github.com/speedata/hyphenation",
+    "part": "The app",
+    "texts": [
+      "github.com-speedata-hyphenation.txt"
+    ]
+  },
+  {
     "name": "github.com/wailsapp/wails/v3",
     "version": "3.0.0-beta.23",
     "licence": "MIT",
@@ -80,6 +100,193 @@
     "part": "The app",
     "texts": [
       "golang.org-x-sys.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Bulgarian",
+    "version": "21",
+    "licence": "BSD-3-Clause",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-bg.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Danish",
+    "version": "2011-01-11",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-da.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Dutch",
+    "version": "1.1",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-nl.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, English",
+    "version": "2005-05-30",
+    "licence": "Permissive, copying and distribution permitted",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-en-us.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Estonian",
+    "version": "as shipped",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-et.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Finnish",
+    "version": "2.2",
+    "licence": "Freely distributable",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-fi.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, French",
+    "version": "V2.13",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-fr.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, German",
+    "version": "2024-02-28",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-de-1996.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Greek",
+    "version": "5.0",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-el-monoton.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Italian",
+    "version": "4.9",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-it.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Lithuanian",
+    "version": "as shipped",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-lt.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Polish",
+    "version": "3.0a",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-pl.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Portuguese",
+    "version": "1.4",
+    "licence": "BSD-3-Clause",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-pt.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Slovak",
+    "version": "2.0",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-sk.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Slovenian",
+    "version": "2.3",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-sl.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Spanish",
+    "version": "5.0",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-es.txt"
+    ]
+  },
+  {
+    "name": "Hyphenation patterns, Ukrainian",
+    "version": "2001/05/10",
+    "licence": "MIT",
+    "url": "https://github.com/hyphenation/tex-hyphen",
+    "part": "The app",
+    "note": "Built into the app. They break a word too long for a caption line.",
+    "texts": [
+      "hyph-uk.txt"
     ]
   },
   {

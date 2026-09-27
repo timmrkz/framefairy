@@ -190,34 +190,92 @@ func TestAWordTooWideIsHyphenated(t *testing.T) {
 	}
 }
 
-// A word is broken where a syllable ends when one ends within reach.
-func TestAWordBreaksBetweenSyllables(t *testing.T) {
+// A word is broken where TeX would break it in that language, at the last
+// break that still fits.
+func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
+	// A face that cannot be measured, so the room is sixteen characters.
+	room := captionRoom{font: "keine", size: 96, room: 888, wrapChars: 16}
+	de, en := hyphenatorFor("de"), hyphenatorFor("en")
+	if de == nil || en == nil {
+		t.Fatal("no patterns for German or English")
+	}
+	if de.left != 2 || de.right != 2 || en.left != 2 || en.right != 3 {
+		t.Errorf("fewest letters %d/%d in German and %d/%d in English", de.left, de.right, en.left, en.right)
+	}
 	for _, c := range []struct {
 		word string
-		at   int
-		ok   bool
+		h    *hyphenator
+		want []string
 	}{
-		{"Menschen", 3, true}, {"Menschen", 4, false}, {"Menschen", 5, false},
-		{"Zucker", 2, true}, {"Zucker", 3, false},
-		{"Optimierung", 2, true}, {"Optimierung", 4, true}, {"Optimierung", 7, true},
-		{"Optimierung", 3, false}, {"Optimierung", 8, false},
-		{"SEO-Agentur", 4, true}, {"Telefon", 3, false},
+		{"Suchmaschinenoptimierung", de, []string{"Suchmaschinen-", "optimierung"}},
+		{"Persönlichkeitsentwicklung,", de, []string{"Persönlichkeits-", "entwicklung,"}},
+		{"internationalization", en, []string{"international-", "ization"}},
+		{"SEO-Agenturmitarbeiter", de, []string{"SEO-Agenturmit-", "arbeiter"}},
+		// A hyphen the word has is a break, and not doubled.
+		{"Pflanzenpflege-Onlineshop", de, []string{"Pflanzenpflege-", "Onlineshop"}},
+		{"kurz", de, []string{"kurz"}},
+		// With no patterns the word is broken where the line allows.
+		{"abcdefghijklmnopqrstuvwxyz", nil, []string{"abcdefghijklmno-", "pqrstuvwxyz"}},
 	} {
-		if got := syllableEnds([]rune(c.word), c.at); got != c.ok {
-			t.Errorf("%s before %d: %v, want %v", c.word, c.at, got, c.ok)
+		got := breakWord(c.word, room, c.h)
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s broke as %q, want %q", c.word, got, c.want)
 		}
 	}
-	fits := func(text string) bool { return runeLen(text) <= 16 }
-	got := breakWord("Suchmaschinenoptimierung", fits)
-	if len(got) != 2 || got[0] != "Suchmaschinenop-" || got[1] != "timierung" {
-		t.Errorf("broken as %q", got)
+	// Longer than two lines, each as full as the breaks allow.
+	long := breakWord("Donaudampfschifffahrtsgesellschaftskapitänsmütze", room, de)
+	if len(long) < 3 {
+		t.Errorf("broke as %q", long)
 	}
-	if got := breakWord("kurz", fits); len(got) != 1 || got[0] != "kurz" {
-		t.Errorf("a word that fits became %q", got)
+	for _, piece := range long {
+		if !room.fits(piece) {
+			t.Errorf("%q does not fit", piece)
+		}
 	}
-	// Nothing to break at that leaves three letters either side.
-	if got := breakWord("abcde", func(string) bool { return false }); len(got) != 1 {
-		t.Errorf("a word no cut helps became %q", got)
+	// A language without patterns here has no hyphenator.
+	if hyphenatorFor("cs") != nil || hyphenatorFor("xx") != nil {
+		t.Error("patterns where none ship")
+	}
+}
+
+// The language is read off the words of the captions.
+func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
+	for text, want := range map[string]string{
+		"Wir haben mit Pflanzenpflege und Suchmaschinenoptimierung angefangen und dann gemerkt, dass es läuft": "de",
+		"We started with plant care and search engine optimisation and then noticed that it worked":            "en",
+		"Nous avons commencé avec l'entretien des plantes et ensuite nous avons vu que cela marchait":          "fr",
+	} {
+		var words []Cue
+		for i, w := range fields(text) {
+			words = append(words, Cue{float64(i), float64(i) + 1, w})
+		}
+		if got := languageOf([]Caption{{Words: words}}); got != want {
+			t.Errorf("%q read as %s", text, got)
+		}
+	}
+}
+
+// A word too wide for a line gets a caption of its own, so it is read as
+// two lines of one caption, and the words around it stay where they fit.
+func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
+	clip := Clip{
+		Segments: []Segment{{Start: 0, End: 5}},
+		Words: []Cue{
+			{0.1, 0.3, "mit"}, {0.3, 1.6, "Suchmaschinenoptimierung"}, {1.6, 2.0, "Geld"},
+			{2.0, 2.5, "verdient."},
+		},
+	}
+	alone := TooWide(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
+	var texts []string
+	for _, c := range Captions(clip, 38, alone) {
+		texts = append(texts, c.Text)
+	}
+	if strings.Join(texts, "|") != "mit|Suchmaschinenoptimierung|Geld verdient." {
+		t.Errorf("captions %q", texts)
+	}
+	// Without the rule it rides with the others, as before.
+	if got := Captions(clip, 38, nil); len(got) != 2 || got[0].Text != "mit Suchmaschinenoptimierung Geld" {
+		t.Errorf("captions %v", got)
 	}
 }
 
