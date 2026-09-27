@@ -23,7 +23,9 @@
       case "cancelled":
         return "Cancelled";
       case "interrupted":
-        return "Interrupted";
+        // Called off with Cancel, it says what the row in the clip list
+        // says. Cut off by the app closing, it was interrupted.
+        return job.step === "stopped" ? "Stopped" : "Interrupted";
     }
     return "";
   }
