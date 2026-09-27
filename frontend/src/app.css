@@ -284,9 +284,8 @@ input[type="password"] {
    so they draw them with this one mark, and it is the same share of each
    track's height: the range picker is half as tall, and so is its mark.
    Rounded to two pixels, so the middle of a mark lands on a whole pixel.
-   A ring of the darkest grey parts it from what it lies on: over the
-   waveform, the jagged grey ran straight into the colour, and the eye could
-   not find where the mark ended.
+   Solid colour and nothing round it: a dark ring was tried against the
+   waveform and did not look right.
 
    The clip chosen looks like the clip it is on the clip timeline, a frame
    round the wash, and stands out: nearly three times as tall as the rest,
@@ -302,7 +301,6 @@ input[type="password"] {
   border: none;
   border-radius: 2px;
   background: var(--accent);
-  box-shadow: 0 0 0 1px var(--ink-0);
   z-index: 2;
   cursor: pointer;
 }
