@@ -668,20 +668,3 @@ button:has(> .beam):disabled {
 .card .words .small {
   font-size: var(--size-s);
 }
-
-/* A choice between a few things in a card: the mark is a round button
-   that fills with the app's colour, the way a radio button does on the
-   Mac, and the whole of the row is what is pressed. */
-.radio {
-  display: block;
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 1.5px solid var(--muted);
-}
-
-.radio.on {
-  border: 5px solid var(--accent);
-  background: #fff;
-}

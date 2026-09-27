@@ -10,13 +10,11 @@
   // whether it will run here. What the model is made of is for whoever
   // asks, in the title of its name.
   //
-  // Where there is a choice, the models that find clips, the rows are a
-  // choice the way the Mac puts one: a round mark before each, filled for
-  // the one in use, and the mark and the name pressed as one. So one list
-  // chooses, installs and removes, and a model not there yet shows what it
-  // would cost beside a ring nobody can fill until it is. A dropdown of
-  // the models that are there, with a second list to get more, was tried
-  // and put the same models in two places.
+  // Which model finds clips is chosen in the settings from one list of all
+  // of them, so this list only installs and removes. Rows with a round mark
+  // for the model in use were tried here first, and a second card of
+  // choices under the card choosing between the API and this machine read
+  // as two things that had nothing to do with each other.
   //
   // An install is work in hand like any other, so it wears what all work
   // wears, in the control it was started from: the beam round the button
@@ -53,12 +51,12 @@
     // How to remove one, where models can be removed. The setup has
     // nothing to remove.
     onremove,
-    // How to make an installed one the one in use, where there is a choice
-    // between several: the models that find clips.
-    onuse,
     // What removing a model means beyond the room it gives back, said in
     // the box that asks first.
     removeSays = "",
+    // Rows only, for a card that already holds the list: the models on
+    // this machine, opened under the choice of which one finds clips.
+    bare = false,
   }: {
     models: ModelRow[];
     kind: "model" | "llm";
@@ -66,12 +64,10 @@
     onchange: () => void;
     auto?: boolean;
     onremove?: (name: string) => Promise<void>;
-    onuse?: (name: string) => Promise<void>;
     removeSays?: string;
+    bare?: boolean;
   } = $props();
 
-  // Whether the rows are a choice, one of them the one in use.
-  const pickable = $derived(!!onuse);
 
   // The model an install was just asked for, so the row says so before the
   // first job event arrives. A click shows at once.
@@ -136,10 +132,8 @@
   const share = (job: Job) =>
     job.progress && job.progress.fraction >= 0 ? job.progress.fraction : -1;
 
-  // The model the box is asking about, and the one being made the one in
-  // use, so its button says so at once.
+  // The model the box is asking about.
   let removing = $state<ModelRow | null>(null);
-  let using = $state("");
 
   async function remove(model: ModelRow) {
     removing = null;
@@ -149,18 +143,6 @@
     } catch (err) {
       problem = errorText(err);
     }
-    onchange();
-  }
-
-  async function use(name: string) {
-    using = name;
-    problem = "";
-    try {
-      await onuse?.(name);
-    } catch (err) {
-      problem = errorText(err);
-    }
-    using = "";
     onchange();
   }
 
@@ -178,36 +160,15 @@
 </script>
 
 {#if problem}<p class="error selectable">{problem}</p>{/if}
-<ul class="card">
+<ul class:card={!bare} class:bare>
   {#each models as model (model.name)}
     <!-- Which row an install belongs to. The job carries the name the Go
          side gave it, which is the model's own title, so rows are matched
          on the job's name and not on what they show. -->
     {@const mine = running?.label === model.label ? running : undefined}
-    {@const on = using ? using === model.name : !!model.inUse}
     <li class="item">
-      {#if pickable}
-        <!-- The mark and the words are one button, the way a radio button
-             and its label are one thing on the Mac. A model that is not
-             there yet cannot be chosen, so its ring is faint and pressing
-             it does nothing. It is not disabled, because a disabled
-             button fades its words, and the words are what say what the
-             model costs before anybody fetches it. -->
-        <button
-          class="choose"
-          role="radio"
-          aria-checked={on}
-          aria-disabled={!model.installed}
-          title={model.installed ? model.about : `${model.about} Install it to use it.`}
-          onclick={() => model.installed && !on && use(model.name)}
-        >
-          <span class="mark"><span class="radio" class:on class:faint={!model.installed}></span></span>
-          {@render words(model, mine)}
-        </button>
-      {:else}
-        <span class="mark ok">{#if model.installed}<Icon name="check" />{/if}</span>
-        <span class="lone" title={model.about}>{@render words(model, mine)}</span>
-      {/if}
+      <span class="mark ok">{#if model.installed && !bare}<Icon name="check" />{/if}</span>
+      <span class="lone" title={model.about}>{@render words(model, mine)}</span>
       {#if !model.installed}
         {#if mine}
           <!-- The button the install was started from carries it: the beam
@@ -287,41 +248,17 @@
     padding: 0;
   }
 
-  /* The mark and the words of a row that can be chosen, pressed as one.
-     A button with nothing of a button about it: the row is the control. */
-  .choose,
+  /* Rows in a card that is already there: the line above the first one
+     parts it from the row before, as between any two rows of a card. */
+  ul.bare > li:first-child {
+    border-top: 1px solid var(--line);
+  }
+
+  /* The words of a row, which take the room the buttons leave. */
   .lone {
     display: flex;
-    align-items: center;
-    gap: 12px;
     flex: 1;
     min-width: 0;
-    height: auto;
-    padding: 0;
-    border: none;
-    background: transparent;
-    text-align: left;
-    white-space: normal;
-  }
-
-  .choose:hover:not(:disabled) {
-    background: transparent;
-  }
-
-  .choose[aria-disabled="true"],
-  .choose[aria-checked="true"] {
-    cursor: default;
-  }
-
-  /* A row that can be chosen answers the pointer the way a row of the
-     clip list does. */
-  li:has(.choose[aria-checked="false"][aria-disabled="false"]:hover) {
-    background: var(--ink-2);
-  }
-
-  /* A model that is not there yet has a ring nobody can fill. */
-  .radio.faint {
-    border-color: var(--line);
   }
 
   .warn {

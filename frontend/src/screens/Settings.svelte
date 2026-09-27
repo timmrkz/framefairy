@@ -11,11 +11,15 @@
   // Mac. There is no Save button, so there is nothing to forget to press.
   import { onMount } from "svelte";
   import { wearColour } from "../lib/colour";
+  import { jobs } from "../lib/state.svelte";
   import {
     api,
     errorText,
+    clock,
+    fitNote,
     languageRow,
     memorySize,
+    size,
     speechRow,
     type Check,
     type LanguageModel,
@@ -28,6 +32,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[] | null>(null);
@@ -47,7 +52,6 @@
   let memory = $state(0);
 
   const speechRows = $derived(speech.map((m) => speechRow(m)));
-  const languageRows = $derived(language.map((m) => languageRow(m, true)));
 
   // The Anthropic key. It is never read back: the Go side only ever says
   // whether one can be found.
@@ -213,51 +217,178 @@
     }
   }
 
-  // Where things stand, in the words of the first card: whether a short
-  // can be made, and if not, what is in the way.
+  // What each check that failed is about, so it can be said in the row
+  // where it is put right rather than in a list of its own at the top.
   const failed = $derived((checks ?? []).filter((c) => !c.ok));
-  const counted = ["No", "One", "Two", "Three", "Four", "Five", "Six"];
-  const speechName = $derived(speech.find((m) => m.installed)?.title ?? "");
-  const clipsName = $derived(
-    settings?.planner === "api"
-      ? "the Claude API"
-      : (language.find((m) => m.inUse)?.title ?? "a model on this machine"),
+  const broken = (name: string) => failed.find((c) => c.name === name);
+  // A check this page has no row for is said at the top, so nothing that
+  // is in the way goes unsaid.
+  const homeless = $derived(
+    failed.filter(
+      (c) => !["ffmpeg", "llama-server", "Speech model", "Claude API key", "Language model"].includes(c.name),
+    ),
   );
-  const standing = $derived.by((): { mark: string; head: string; more: string } => {
-    if (checks === null) return { mark: "look", head: "Looking at this machine", more: "" };
-    if (failed.length === 0) {
-      return {
-        mark: "ok",
-        head: "Ready to make shorts",
-        more: speechName
-          ? `Speech is heard by ${speechName}, and clips are found with ${clipsName}.`
-          : `Clips are found with ${clipsName}.`,
-      };
-    }
-    return {
-      mark: "err",
-      head: `${counted[failed.length] ?? failed.length} ${failed.length === 1 ? "thing needs" : "things need"} attention`,
-      more: "Until then a search or a render may not get far.",
-    };
-  });
 
-  // What is in the way, in words somebody who only makes shorts can act
-  // on. The check's own words are for whoever has to find a file, so they
-  // stay under Advanced, and a check this does not know keeps them here too.
-  function plainly(c: Check): string {
-    switch (c.name) {
-      case "ffmpeg":
-        return "What reads and renders video is missing. Installing the app again brings it back.";
-      case "llama-server":
-        return "What runs a model on this machine is missing. Installing the app again brings it back, and until then the Claude API works.";
-      case "Speech model":
-        return "No speech model is installed. Install one under Speech.";
-      case "Claude API key":
-        return "There is no API key yet. Paste one under Finding clips.";
-      default:
-        return c.detail;
+  // What finds the clips, as one choice: the Claude API or one of the
+  // models that run here, in one list, the way the apps that offer models
+  // put them, grouped by where they run. A model not fetched yet is in the
+  // list too, with what it would cost, and choosing it fetches it and then
+  // uses it. So the list holds any number of models in the room of one
+  // control.
+  const inUse = $derived(language.find((m) => m.inUse));
+  // The model being fetched because it was chosen here, and what became of
+  // the last one.
+  let fetching = $state("");
+  let fetchFailed = $state("");
+  const llmJob = $derived(jobs.list.filter((j) => j.kind === "llm").at(-1));
+  const llmRunning = $derived(
+    llmJob && (llmJob.state === "running" || llmJob.state === "queued") ? llmJob : undefined,
+  );
+  // A download that was running before this page opened is still this
+  // page's to show.
+  const fetchingModel = $derived(
+    language.find((m) => m.name === fetching) ??
+      (llmRunning ? language.find((m) => m.title === llmRunning.label) : undefined),
+  );
+
+  const finder = $derived(
+    settings?.planner === "api" ? "api" : (fetchingModel?.name ?? inUse?.name ?? ""),
+  );
+
+  const finderOptions = $derived([
+    { value: "api", label: "Claude API", detail: "A few cents an episode", group: "Online" },
+    ...[...language]
+      .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
+      .map((m) => {
+        const { note, warn } = fitNote(m.fit, m.recommended);
+        const fetch = m.installed ? "" : `${size(m.download)} to fetch`;
+        return {
+          value: m.name,
+          label: m.title,
+          detail: warn ? note : m.recommended ? [fetch, "best here"].filter(Boolean).join(", ") : fetch,
+          warn,
+          group: "On this machine",
+        };
+      }),
+  ]);
+
+  async function pickFinder(value: string) {
+    if (!settings) return;
+    fetchFailed = "";
+    if (value === "api") {
+      settings.planner = "api";
+      return;
+    }
+    settings.planner = "local";
+    const model = language.find((m) => m.name === value);
+    if (!model) return;
+    if (model.installed) {
+      await useModel(model.name);
+      return;
+    }
+    // A click shows at once: the row says it is fetching before the first
+    // job event arrives.
+    fetching = model.name;
+    try {
+      const job = await api.installLanguageModel(model.name);
+      if (job.state === "failed") {
+        fetchFailed = job.error ?? "The download did not start.";
+        fetching = "";
+      }
+    } catch (err) {
+      fetchFailed = errorText(err);
+      fetching = "";
     }
   }
+
+  // When the download chosen here ends, the model it fetched is the one in
+  // use, because that is what was asked for. One that stopped says why,
+  // where it was asked for. Read when the job settles, not on every job
+  // event, which arrive about once a second while it runs.
+  let settled = "";
+  $effect(() => {
+    const job = llmJob;
+    const now = job ? `${job.id}:${job.state}` : "";
+    if (now === settled) return;
+    settled = now;
+    if (!job || job.state === "running" || job.state === "queued") return;
+    const model = language.find((m) => m.title === job.label);
+    const wanted = model && model.name === fetching;
+    fetching = "";
+    if (job.state === "failed" && wanted) fetchFailed = job.error ?? "The download stopped.";
+    if (job.state === "done" && wanted) {
+      useModel(model.name).then(readModels);
+    } else {
+      modelsChanged();
+    }
+  });
+
+  let cancelling = $state(false);
+  async function cancelFetch() {
+    if (!llmRunning) return;
+    cancelling = true;
+    try {
+      await api.cancelJob(llmRunning.id);
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+  $effect(() => {
+    if (!llmRunning) cancelling = false;
+  });
+
+  // The one line under Find clips with: what the choice costs, how far a
+  // download has come, or what is in the way.
+  const finderLine = $derived.by((): { text: string; bad: boolean } => {
+    if (settings?.planner === "api") {
+      return { text: "Runs at Anthropic, on any machine. A few cents an episode.", bad: false };
+    }
+    if (fetching && !llmRunning) {
+      return { text: `${fetchingModel?.title ?? "The model"}. Starting`, bad: false };
+    }
+    if (llmRunning) {
+      const p = llmRunning.progress;
+      const text = p?.text ? p.text[0].toUpperCase() + p.text.slice(1) : "Starting";
+      const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
+      return { text: `${fetchingModel?.title ?? "The model"}. ${text}${left}`, bad: false };
+    }
+    if (fetchFailed) return { text: fetchFailed, bad: true };
+    if (!inUse) {
+      return {
+        text: language.some((m) => m.installed)
+          ? "No model is chosen yet. Choose one to find clips with."
+          : "No model is on this machine yet. Choose one to fetch it.",
+        bad: true,
+      };
+    }
+    const lm = broken("Language model");
+    if (lm) return { text: lm.detail, bad: true };
+    const { note } = fitNote(inUse.fit, inUse.recommended);
+    return {
+      text: `By ${inUse.maker}. Runs here for free, and needs ${memorySize(inUse.needs)} of memory.${note ? ` ${note}.` : ""}`,
+      bad: false,
+    };
+  });
+  const finderOk = $derived(
+    settings?.planner === "api" ? hasKey : !!inUse && !finderLine.bad && !llmRunning,
+  );
+
+  // The models on this machine, which is only about the room they take,
+  // so it stays folded until somebody wants some of it back.
+  let downloads = $state(false);
+  const installedRows = $derived(
+    language
+      .filter((m) => m.installed)
+      .map((m) => ({
+        ...languageRow(m),
+        cost: `By ${m.maker}. ${size(m.download)} on disk`,
+        note: m.inUse ? "Finds the clips now" : "",
+        warn: false,
+      })),
+  );
+  const installedSize = $derived(
+    size(language.filter((m) => m.installed).reduce((sum, m) => sum + m.download, 0)),
+  );
 
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -280,34 +411,19 @@
   <div class="page">
     {#if problem}<p class="error selectable">{problem}</p>{/if}
 
-    <!-- Where things stand, and what is in the way. -->
-    <div class="card">
-      <div class="item">
-        <span class="mark {standing.mark}" aria-hidden="true">
-          {#if standing.mark === "ok"}
-            <Icon name="check" size={16} />
-          {:else}
-            <span class="dot" class:busy={standing.mark === "look"} class:err={standing.mark === "err"}></span>
-          {/if}
-        </span>
-        <div class="words">
-          <span class="head">{standing.head}</span>
-          {#if standing.more}<span class="small muted">{standing.more}</span>{/if}
-        </div>
-        <button class="act" onclick={check} disabled={checking} title="Look for the tools and models again"
-          >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
-        >
-      </div>
-      {#each failed as c (c.name)}
+    <!-- What is in the way and has no row of its own below. Everything
+         else is said in the row where it is put right. -->
+    {#each homeless as c (c.name)}
+      <div class="card">
         <div class="item">
-          <span class="mark"></span>
+          <span class="mark" aria-hidden="true"><span class="dot err"></span></span>
           <div class="words">
-            <span>{c.name}</span>
-            <span class="small error selectable">{plainly(c)}</span>
+            <span class="head">{c.name}</span>
+            <span class="small error selectable">{c.detail}</span>
           </div>
         </div>
-      {/each}
-    </div>
+      </div>
+    {/each}
 
     {#if settings}
       <div class="group asks">
@@ -330,54 +446,72 @@
             </Info>
           </span>
         </div>
-        <div class="card" role="radiogroup" aria-label="How clips are found">
-          {#each [{ value: "api", name: "Claude API", about: "Works on any machine. A few cents an episode, paid to Anthropic." }, { value: "local", name: "On this machine", about: "Free to run. Needs the memory to hold a model." }] as way (way.value)}
-            {@const on = settings.planner === way.value}
-            <div class="item">
-              <button
-                class="choose"
-                role="radio"
-                aria-checked={on}
-                onclick={() => settings && (settings.planner = way.value === "api" ? "api" : "local")}
+        <div class="card">
+          <!-- The one decision, and under it the rows that depend on it, in
+               the same card, the way a pop-up in the Mac's own settings
+               changes the rows beneath it. -->
+          <div class="item">
+            <span class="mark" class:ok={finderOk} aria-hidden="true">
+              {#if llmRunning || fetching}
+                <span class="dot busy"></span>
+              {:else if finderOk}
+                <Icon name="check" />
+              {:else if finderLine.bad}
+                <span class="dot err"></span>
+              {/if}
+            </span>
+            <div class="words">
+              <span class="head">Find clips with</span>
+              <span class="small selectable" class:muted={!finderLine.bad} class:error={finderLine.bad}
+                >{finderLine.text}</span
               >
-                <span class="mark"><span class="radio" class:on></span></span>
-                <span class="words">
-                  <span class="head">{way.name}</span>
-                  <span class="small muted">{way.about}</span>
-                </span>
-              </button>
             </div>
-          {/each}
-        </div>
+            {#if llmRunning}
+              <!-- The download carries the beam and the fill in the one
+                   control that can do something about it. -->
+              <button
+                class="act"
+                title="Stop the download. What has arrived stays, and choosing the model again carries on from it"
+                disabled={cancelling}
+                onclick={cancelFetch}
+              >
+                <Busy
+                  fraction={llmRunning.progress && llmRunning.progress.fraction >= 0
+                    ? llmRunning.progress.fraction
+                    : -1}
+                />
+                {cancelling ? "Cancelling" : "Cancel"}
+              </button>
+            {/if}
+            <Pick
+              value={finder || "Choose a model"}
+              options={finderOptions}
+              onpick={pickFinder}
+              label="Find clips with"
+              align="right"
+              disabled={!!llmRunning || !!fetching}
+              title="What reads the transcript and picks the moments"
+            />
+          </div>
 
-        {#if settings.planner === "local"}
-          <ModelList
-            models={languageRows}
-            kind="llm"
-            oninstall={api.installLanguageModel}
-            onchange={modelsChanged}
-            onremove={api.removeLanguageModel}
-            onuse={useModel}
-          />
-        {:else}
-          <div class="card">
+          {#if settings.planner === "api"}
             <!-- The key goes in the keychain the moment it is saved, not
                  with the rest of these, because it never lands in the
                  settings file. An app opened from Finder has no shell
                  environment, so this is the only way to give it one. -->
             <div class="item">
               <span class="mark" class:ok={hasKey} aria-hidden="true">
-                {#if hasKey}<Icon name="check" />{:else}<span class="dot warn"></span>{/if}
+                {#if hasKey}<Icon name="check" />{:else}<span class="dot err"></span>{/if}
               </span>
               <div class="words">
                 <span class="head">API key</span>
-                <span class="small muted">
+                <span class="small" class:muted={hasKey || savedKey} class:error={!hasKey && !savedKey}>
                   {#if savedKey}
                     Saved in the keychain, and nowhere else.
                   {:else if hasKey}
                     In the keychain, and nowhere else. Paste another to replace it.
                   {:else}
-                    From console.anthropic.com. It goes in the keychain and nowhere else.
+                    There is none yet. Paste one from console.anthropic.com. It goes in the keychain and nowhere else.
                   {/if}
                 </span>
               </div>
@@ -396,8 +530,46 @@
                 {savingKey ? "Saving" : "Save key"}
               </button>
             </div>
-          </div>
-        {/if}
+          {:else}
+            {#if broken("llama-server")}
+              <!-- A model is the answer and llama-server is what runs it,
+                   so one without the other finds nothing. -->
+              <div class="item">
+                <span class="mark" aria-hidden="true"><span class="dot err"></span></span>
+                <div class="words">
+                  <span class="head">llama-server</span>
+                  <span class="small error"
+                    >{"What runs a model on this machine is missing. Installing the app again brings it back, and until then the Claude API works."}</span
+                  >
+                </div>
+              </div>
+            {/if}
+            {#if installedRows.length > 0}
+              <!-- The models on this machine, which is only about the room
+                   they take, folded until somebody wants some of it back. -->
+              <button class="item disclose-row" aria-expanded={downloads} onclick={() => (downloads = !downloads)}>
+                <span class="mark" aria-hidden="true"><Icon name="folder" /></span>
+                <span class="words">
+                  <span class="head">Downloaded models</span>
+                  <span class="small muted">
+                    {plural(installedRows.length, "model", "models")} on this machine, {installedSize}.
+                  </span>
+                </span>
+                <span class="chevron" class:open={downloads}><Icon name="chevron" size={14} /></span>
+              </button>
+              {#if downloads}
+                <ModelList
+                  bare
+                  models={installedRows}
+                  kind="llm"
+                  oninstall={api.installLanguageModel}
+                  onchange={modelsChanged}
+                  onremove={api.removeLanguageModel}
+                />
+              {/if}
+            {/if}
+          {/if}
+        </div>
       </div>
 
       <!-- Every episode is transcribed on this machine, so the model has to
@@ -444,6 +616,17 @@
             {/if}
             <button class="act" onclick={chooseOutput}>Choose…</button>
           </div>
+          {#if broken("ffmpeg")}
+            <div class="item">
+              <span class="mark" aria-hidden="true"><span class="dot err"></span></span>
+              <div class="words">
+                <span class="head">ffmpeg</span>
+                <span class="small error"
+                  >{"What reads and renders video is missing. Installing the app again brings it back."}</span
+                >
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
 
@@ -573,6 +756,15 @@
           <!-- Everything the check looked at, found or not, for whoever
                needs to know which ffmpeg or which model it found. -->
           <div class="card">
+            <div class="item">
+              <div class="words">
+                <span class="head">What the app found</span>
+                <span class="small muted">Looked for again whenever a setting changes.</span>
+              </div>
+              <button class="act" onclick={check} disabled={checking} title="Look for the tools and models again"
+                >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
+              >
+            </div>
             {#each checks ?? [] as c (c.name)}
               <div class="item found">
                 <span class="mark" class:ok={c.ok} aria-hidden="true">
@@ -645,33 +837,6 @@
     font-size: var(--size-l);
     line-height: 23px;
     font-weight: 600;
-  }
-
-  /* A row of a choice: the mark and the words, pressed as one. */
-  .choose {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
-    height: auto;
-    padding: 0;
-    border: none;
-    background: transparent;
-    text-align: left;
-    white-space: normal;
-  }
-
-  .choose:hover:not(:disabled) {
-    background: transparent;
-  }
-
-  .choose[aria-checked="true"] {
-    cursor: default;
-  }
-
-  .item:has(.choose[aria-checked="false"]:hover) {
-    background: var(--ink-2);
   }
 
   /* Room for the longest wording, so a row keeps still whatever its
@@ -783,6 +948,30 @@
     .chevron {
       transition: none;
     }
+  }
+
+  /* A row that opens what is under it: the whole row is the button, and
+     the chevron at its end turns, the way a row in the Mac's own settings
+     leads on. */
+  .disclose-row {
+    width: 100%;
+    height: auto;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .disclose-row:hover:not(:disabled) {
+    background: var(--ink-2);
+  }
+
+  /* The list that says what finds the clips is as wide as the longest
+     name in it, and hangs from the card's right edge. */
+  .card :global(button.pick) {
+    width: max-content;
+    flex: none;
   }
 
   /* A path is a name on the left and a field on the right, the field half

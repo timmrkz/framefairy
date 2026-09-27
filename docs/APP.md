@@ -1235,55 +1235,66 @@ as it is changed, the way System Settings does on the Mac, so there is no
 **Save** button and nothing to forget to press. A field saves a moment
 after the typing stops.
 
-**Where things stand** comes first: **Ready to make shorts**, and which
-model hears the speech and which one finds the clips, or how many things
-need attention and what each one is, in words somebody who only makes
-shorts can act on. **Check again** looks for the tools and models again.
-The check's own words, which name files and paths, are under **Advanced**.
+**What is in the way is said where it is put right**, not in a list of
+its own. A missing API key is said on the row where the key goes, a
+missing llama-server under the choice of model, a missing ffmpeg under
+**Shorts**, a missing speech model on its row, which offers **Install**.
+A problem the page has no row for, which none of today's checks is, is
+said at the top so nothing goes unsaid. The first version had one card at
+the top listing every problem, and a person had to go from the top of the
+page to the bottom to find where to fix what it said.
 
-**Finding clips** is the choice between the **Claude API** and **On this
-machine**, as two rows with a round mark, the way the Mac puts a choice.
-Its info mark, at the right end of the heading, says what each costs and,
-with a local model chosen, how much memory this machine has and what that
-decides. With the API chosen, the next card holds the key: it goes in the
-keychain the moment **Save key** is pressed, not with the rest of the
-settings, because it never lands in the settings file. An app opened from
-Finder has no shell environment, so this is the only way to give it a key.
-With **On this machine** chosen, the next card is the language models the
-first run shows, judged against the same memory.
+**Finding clips is one choice**, **Find clips with**, in one list: the
+Claude API under **Online**, and every model that runs here under **On
+this machine**, the way apps that offer models list them by where they
+run. The rows that depend on the choice are under it in the same card, the
+way a pop-up in the Mac's own settings changes the rows beneath it: the
+API key with the Claude API, and with a local model what it needs and, when
+it is missing, llama-server. The first version had a card of two ways and a
+second card of models under it, one deciding the other, and the two read
+as things that had nothing to do with each other.
 
-**The models are one list that chooses, installs and removes.** A row is
-the model's name and one line: who made it, what it needs of memory, what
-it costs to fetch while it is not there yet, and whether it fits this
-machine. How it was quantised and how many parameters it has is for whoever
-asks, in the title of its name. Before each row is a round mark, filled for
-the model in use. Pressing an installed row makes it the one in use at
-once, and the Go side names it in the settings. A model not there yet has
-a ring that cannot be filled and **Install** at its end, which carries the
-beam and the fill while it downloads and says **Cancel**. An installed model
-has a trash can at its end, quiet until the pointer reaches it. It asks
-first in the box over the app, because fetching it again is gigabytes:
-**Cancel**, where the keyboard starts, and **Remove**. While a model is
-being installed the trash cans wait, dimmed. A model is not removed while it
-is being installed or while the work that reads it runs, and the refusal
-says which. Removing the model in use lets go of it in the settings too,
-and the page reads the settings again rather than saving over that.
+The line under the choice says what it costs: a few cents an episode at
+Anthropic, or who made the model, the memory it needs and whether it fits.
+Beside each model in the list is what it would cost to fetch, or that it is
+the best here, or that it is too big for this machine. The list holds any
+number of models in the room of one control. Choosing a model that is not
+there yet fetches it and then uses it, because that is what was asked for:
+the line says how far the download has come, **Cancel** beside the list
+carries the beam and the fill, and the list waits until it is done.
+Choosing an installed model uses it at once, and the Go side names it in
+the settings. Its info mark, at the right end of the heading, says what
+each way costs and, with a local model chosen, how much memory this
+machine has and what that decides. The key goes in the keychain the
+moment **Save key** is pressed, not with the rest of the settings, because
+it never lands in the settings file. An app opened from Finder has no shell
+environment, so this is the only way to give it a key.
 
-Two other ways of choosing were tried in the harness and left: a dropdown
-of the models that are there, which needed a second list below it to get
-more, so every model showed twice, and a row of tiles by size, which does
-not hold four models and put names like Largest on models that are only
-larger than each other.
+**Downloaded models** is the last row of the card, folded, with how many
+there are and the room they take. It is only about that room: opened, it
+lists them with their size on disk and a trash can each, quiet until the
+pointer reaches it. Removing one asks first in the box over the app,
+because fetching it again is gigabytes: **Cancel**, where the keyboard
+starts, and **Remove**. While a model is being installed the trash cans
+wait, dimmed. A model is not removed while it is being installed or while
+the work that reads it runs, and the refusal says which. Removing the model
+in use lets go of it in the settings too, and the page reads the settings
+again rather than saving over that.
 
-A second model arriving never takes the first one's place by itself. When
+Two other ways of choosing a model were tried before this one and left: a
+card of rows with a round mark each, which took a row per model and grew
+with every model added, and a row of tiles by size, which does not hold
+four models and put names like Largest on models that are only larger than
+each other.
+
+A second model arriving by itself never takes the first one's place. When
 the settings name none, the one model on the machine is in use by being the
-only one, and a download that finishes names it in the settings, so what was
-in use stays in use until another is chosen. A machine that already has two
-and none named, from before this was so, says so under where things stand,
-and choosing one settles it.
+only one, and a download that finishes names it in the settings. A machine
+that already has two and none named, from before this was so, says so
+under the choice, and choosing one settles it.
 
-**Speech** is the same list, with a check before the model that is there
-instead of a round mark, because there is nothing to choose between.
+**Speech** is one model today, so it is a row rather than a choice: a
+check before it once it is there, what it covers and the room it takes.
 Removing the speech model means the app asks for one again the next time it
 starts, because nothing can be transcribed without it.
 
@@ -1313,7 +1324,9 @@ holds the machinery: the paths to the language model file and llama-server,
 or the Claude model, the speech model folder, ffmpeg and the training data
 folder, each a name on the left and a field on the right. Empty paths use
 the same defaults as the command line. Under the paths is everything the
-check looked at, found or not, with the check's own words: which ffmpeg,
+check looked at, found or not, with the check's own words and **Check
+again**, though the check runs again by itself whenever a setting changes:
+which ffmpeg,
 which of the system's own video decoders it can use, VideoToolbox on a Mac
 or decoding on the processor, the caption faces the app carries inside
 itself, and which model files it found. Which decoder a file really went

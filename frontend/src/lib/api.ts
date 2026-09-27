@@ -652,7 +652,11 @@ export function speechRow(m: SpeechModel): ModelRow {
     label: m.title,
     title: m.title,
     about: m.about,
-    cost: `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
+    // Once it is there, the download is spent and only the room it takes
+    // is still true.
+    cost: m.installed
+      ? `${m.languages}. ${size(m.unpacked)} on disk`
+      : `${m.languages}. ${size(m.download)} to fetch, ${size(m.unpacked)} on disk`,
     room: size(m.unpacked),
     installed: m.installed,
   };
