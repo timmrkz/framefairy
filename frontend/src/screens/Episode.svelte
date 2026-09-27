@@ -993,9 +993,23 @@
       // that it is running.
       makingStep = { text: "Placing the crop", fraction: -1 };
       const made = await api.makeClip(path, at, backward);
-      clips = [...clips.filter((c) => c.key !== made.key), made].sort((a, b) => a.start - b.start);
+      // The clip is chosen the way a click on its card chooses it: the list
+      // read first, then the outline taken away and the clip chosen in one
+      // step, with the video preview holding the clip when it is sent to
+      // it. It used to be chosen while the outline still stood, so the
+      // video preview was sent there holding no clip, and the list was
+      // read again after it, which could change the clip under a play
+      // already started. The first play of a clip just made was jumpy,
+      // and a play after clicking its card was not.
+      await refreshClips();
+      if (!clips.some((c) => c.key === made.key)) {
+        clips = [...clips, made].sort((a, b) => a.start - b.start);
+      }
+      sketch = null;
+      sketchCues = [];
+      makingStep = null;
+      await tick();
       await select(made.key);
-      void refreshClips();
     } catch (err) {
       problem = errorText(err);
     } finally {
