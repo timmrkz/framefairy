@@ -49,8 +49,8 @@
     onremove?: (span: { from: number; to: number }) => void;
     locked?: boolean;
     // Whether the episode is being read. Nothing is done about it here:
-    // the reading runs for a search, and is started and called off with
-    // New and Cancel in the head of the clip list.
+    // the reading is a step of a search, and is started and called off
+    // with New and Cancel in the head of the clip list.
     transcribing?: boolean;
     // The edge is being held where it is, because Cancel was pressed. It
     // stops moving at once rather than sliding on to where the work had
@@ -365,10 +365,11 @@
        button of the app wears, with no rim because the track has no edge to
        run round. Not a copy of it, which is what this was and what looked
        different. Its fill slides by the same transform and the same glide
-       as the shade ahead of it, so the two never part. A reading that is
-       paused, by hand or while a search has the machine, keeps its fill
-       and stands still, the way Busy draws any work that is paused, so
-       what has been read never disappears from the track and comes back. -->
+       as the shade ahead of it, so the two never part. A reading that has
+       stopped, called off or waiting while another search finds, keeps
+       its fill and stands still, the way Busy draws any work that is not
+       moving, so what has been read never disappears from the track and
+       comes back. -->
   {#if pending && covered > 0}
     <span
       class="busyhost"
@@ -476,9 +477,9 @@
          reads. -->
     <Info label="What the range picker is" side="right">
       {#if pending}
-        The whole episode. The dark part is not read yet, and the line is how far it has got. The
-        mark on the line pauses the reading or carries it on. Clips can be looked for once the line
-        passes the window, and while they are found the reading waits and carries on after.
+        The whole episode. The dark part is not read yet, and the line is how far it has got. A
+        search reads as far as its window, and while another one finds its clips the reading waits
+        and carries on after.
       {:else}
         The whole episode. Drag to draw the window the model will search, or drag the window and
         its edges. Double-click for all of it. A shaded part has been searched, and the marks in it
@@ -709,7 +710,7 @@
     transition: transform 1s linear;
   }
 
-  /* Pause was pressed, so the edge stops. Taking the glide away should be
+  /* Cancel was pressed, so the edge stops. Taking the glide away should be
      enough and is not: a transition already on its way carries on to where
      it was going, which is a second of an edge still sliding after the
      press. Saying none outright ends it, and the edge lands on the second
@@ -742,8 +743,8 @@
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    /* Over everything on the track, the mark that pauses the reading and
-       the trash can included: it is what the hand is doing right now. */
+    /* Over everything on the track, the trash can included: it is what
+       the hand is doing right now. */
     z-index: 8;
   }
 

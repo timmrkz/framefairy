@@ -28,6 +28,7 @@
   // asks first, because getting it back means fetching gigabytes again.
   import { api, clock, errorText, type Job, type ModelRow } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
+  import { sentence } from "../lib/steps";
   import Busy from "./Busy.svelte";
   import Confirm from "./Confirm.svelte";
   import Icon from "./Icon.svelte";
@@ -125,7 +126,7 @@
     const text = job.progress?.text ?? job.last?.text ?? "";
     const left =
       job.progress && job.progress.remaining > 0 ? `, ${clock(job.progress.remaining)} left` : "";
-    const line = text ? text[0].toUpperCase() + text.slice(1) : "Starting";
+    const line = sentence(text) || "Starting";
     return line + left;
   }
 

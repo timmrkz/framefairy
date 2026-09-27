@@ -36,11 +36,11 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 				if err := appendRecord(filepath.Join(TrainingDir(), "decisions.jsonl"), record); err != nil {
 					t.Error(err)
 				}
-				if err := MarkLooked(source); err != nil {
+				if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
 					t.Error(err)
 				}
-				if !Looked(source) {
-					t.Error("an episode that was searched says it was not")
+				if !EverSearched(source) || ReadSearch(source) == nil {
+					t.Error("a search being written was not read whole")
 				}
 			}
 		}(hand)

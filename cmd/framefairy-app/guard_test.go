@@ -65,11 +65,8 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Room(other); err == nil {
 		t.Error("Room answered for a file that is not in the library")
 	}
-	if job := svc.Transcribe(other); job.State != JobFailed {
-		t.Errorf("Transcribe queued %s: %s", other, job.State)
-	}
-	if job := svc.Plan(other, engine.PlanRequest{To: 10}); job.State != JobFailed {
-		t.Errorf("Plan queued %s: %s", other, job.State)
+	if job := svc.Search(other, engine.PlanRequest{To: 10}); job.State != JobFailed {
+		t.Errorf("Search queued %s: %s", other, job.State)
 	}
 	if job := svc.Render(other, engine.RenderRequest{}); job.State != JobFailed {
 		t.Errorf("Render queued %s: %s", other, job.State)
