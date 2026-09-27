@@ -798,8 +798,9 @@ place.
       that part is free again, even when it is the middle of a longer
       search: the plan keeps the rest of its window and notes the part it
       gave back.
-    - A mark for every clip sits inside the track, green once rendered.
-      Click a mark to select that clip.
+    - A mark for every clip runs across the middle of the track, green once
+      rendered, and the chosen clip is a frame round the wash, the way the
+      clip timeline draws it. Click a mark to select that clip.
     - A click without dragging moves the player there, wherever it lands,
       marked or not. A press that wobbles a few pixels is still a click, so
       nothing is drawn by accident.
@@ -981,6 +982,26 @@ place.
       is already selected included, which puts that clip back in view. The words and the waveform of the whole episode
       are read once and kept, so swiping does not wait for a file to be
       read again.
+    - **Every clip is on it, not only the chosen one.** The other clips
+      are the same marks the range picker draws, across the middle of the
+      track where the captions run, in the app's colour and green once
+      rendered, one style in `app.css` for both tracks. Each is the same
+      share of its track's height, 16%, so the mark on the range picker is
+      half as tall, as the range picker is, in solid colour with a soft
+      shadow on all four sides. The waveform's grey and the app's colour are
+      about as bright as each other, and such an edge seems to shimmer. The
+      shadow gives it a step in brightness. A click on one chooses it. The
+      chosen clip has no mark, because its frame already shows it. On the
+      range picker the chosen clip is drawn the way it is up close, a
+      frame round the wash, nearly three times as tall as the rest. Zoomed out, the
+      track is the episode with all its clips, the way an editor's
+      timeline shows every clip on it.
+    - **Detail comes in as there is room for it.** The caption blocks are
+      drawn only while the caption in the middle of the clip is at least
+      as wide as a block is tall, 16 pixels. Narrower, a block's line has
+      no room inside its padding and the blocks run into one smear over the
+      waveform, so zoomed out there are the clips and the waveform and no
+      captions, and zoomed in to the clip they come back.
 - **Before the first transcription** there are no words and no waveform.
   That is where every episode starts, so the track is simply empty. The
   words and the waveform appear as the transcript grows past them, without

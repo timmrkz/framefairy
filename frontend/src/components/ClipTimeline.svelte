@@ -59,6 +59,8 @@
     onthumbnail,
     arriving = false,
     hearing = false,
+    marks = [],
+    onmark,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -130,6 +132,12 @@
     // the view with nothing heard in it breathes, and fills in chunk by
     // chunk as the part is heard.
     hearing?: boolean;
+    // Every clip of the episode, the way the range picker has them, so
+    // the timeline zoomed out shows where the others are. The chosen one
+    // is the frame and has no mark.
+    marks?: { key: string; start: number; end: number; rendered: boolean }[];
+    // A mark clicked, which chooses that clip, as on the range picker.
+    onmark?: (key: string) => void;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -1046,6 +1054,26 @@
     }));
   });
 
+  // The other clips in view, as marks across the middle of the track.
+  const shownMarks = $derived(
+    marks.filter((m) => m.key !== clip?.key && m.end > view.from && m.start < view.to),
+  );
+
+  // A caption block is detail for working inside a clip, and it is drawn
+  // only while it can be read as a block: while the caption in the middle
+  // of the list is at least as wide as a block is tall. Narrower, its line
+  // has no room inside its padding and the blocks run into one smear, which
+  // says nothing about the captions and covers the waveform. Editors do the
+  // same with titles on a timeline: the detail comes in as there is room
+  // for it. The middle caption rather than the narrowest, so one short
+  // "Ja." does not take them all away.
+  const captionLeast = 16;
+  const captionsReadable = $derived.by(() => {
+    if (!captionBlocks.length || !width) return false;
+    const wide = captionBlocks.map((b) => ((b.to - b.from) / span) * width).sort((a, b) => a - b);
+    return wide[Math.floor(wide.length / 2)] >= captionLeast;
+  });
+
   // The last word of a caption to have begun, counted through its lines,
   // or -1 before its first. The block of the caption shown is drawn afresh
   // whenever it changes, so it pops on every word the way the pill does in
@@ -1376,6 +1404,19 @@
         ></div>
       {/each}
     {/if}
+    <!-- The other clips, the same marks the range picker draws, so the
+         timeline zoomed out shows where they all are. A click chooses one. -->
+    {#each shownMarks as m (m.key)}
+      <button
+        class="clipmark"
+        class:rendered={m.rendered}
+        style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
+        aria-label="Clip at {clock(m.start)}"
+        title="Choose the clip at {clock(m.start)}"
+        onpointerdown={(e) => e.stopPropagation()}
+        onclick={() => onmark?.(m.key)}
+      ></button>
+    {/each}
     {#if clip && !locked}
       <div
         class="edge"
@@ -1398,7 +1439,7 @@
         onpointerdown={(e) => grab("end", e)}
       ></div>
     {/if}
-    {#if captionBlocks.length}
+    {#if captionsReadable}
       <!-- The captions across the middle of the track, each a block from
            where it appears to where it goes. -->
       <div

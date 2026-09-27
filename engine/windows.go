@@ -97,7 +97,7 @@ func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
 	for _, p := range plans {
 		// Clips made by hand searched nothing. A set with no window is
 		// otherwise read as a search of the whole episode.
-		if p.Hand {
+		if p.Hand || IsHandPlan(p.Path) {
 			continue
 		}
 		w := Window{p.From, p.To}
