@@ -2248,6 +2248,8 @@
         onwalkclip={walkClip}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
+        {marks}
+        onmark={select}
         captions={captions?.captions ?? []}
         captionLook={shownCaptions
           ? {

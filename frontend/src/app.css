@@ -277,6 +277,36 @@ input[type="password"] {
   border-color: var(--accent-hi);
 }
 
+/* A clip as a mark on a track: a capsule from where it starts to where it
+   ends, in the app's colour, green once it is rendered and white while it
+   is the one chosen. The range picker and the clip timeline show the same
+   clips at two distances, so they draw them with this one mark, and each
+   track only says where along its foot it stands. */
+.clipmark {
+  position: absolute;
+  height: 12px;
+  min-width: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--accent);
+  z-index: 2;
+  cursor: pointer;
+}
+
+.clipmark:hover:not(:disabled) {
+  background: var(--accent-hi);
+}
+
+.clipmark.rendered {
+  background: var(--ok);
+}
+
+.clipmark.selected {
+  background: #fff;
+  height: 16px;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent-hi);
   outline-offset: 1px;

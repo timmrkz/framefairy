@@ -968,6 +968,19 @@ place.
       is already selected included, which puts that clip back in view. The words and the waveform of the whole episode
       are read once and kept, so swiping does not wait for a file to be
       read again.
+    - **Every clip is on it, not only the chosen one.** The other clips
+      are the same marks the range picker draws, along the foot of the
+      track, in the app's colour and green once rendered, one style in
+      `app.css` for both tracks. A click on one chooses it. The chosen clip
+      has no mark, because its frame already shows it. Zoomed out, the
+      track is the episode with all its clips, the way an editor's
+      timeline shows every clip on it.
+    - **Detail comes in as there is room for it.** The caption blocks are
+      drawn only while the caption in the middle of the clip is at least
+      as wide as a block is tall, 16 pixels. Narrower, a block's line has
+      no room inside its padding and the blocks run into one smear over the
+      waveform, so zoomed out there are the clips and the waveform and no
+      captions, and zoomed in to the clip they come back.
 - **Before the first transcription** there are no words and no waveform.
   That is where every episode starts, so the track is simply empty. The
   words and the waveform appear as the transcript grows past them, without

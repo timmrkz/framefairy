@@ -435,7 +435,7 @@
   {#each marks as m (m.key)}
     {#if !(covering && m.end > from && m.start < to)}
     <button
-      class="mark"
+      class="clipmark"
       class:rendered={m.rendered}
       class:selected={m.key === selected}
       style="left: {at(m.start)}px; width: {Math.max(at(m.end) - at(m.start), 4)}px"
@@ -859,31 +859,14 @@
     border-color: var(--accent);
   }
 
-  .mark {
-    position: absolute;
+  /* A clip is the same mark on both tracks, see .clipmark in app.css.
+     Only where it stands along the foot is this track's. */
+  .clipmark {
     bottom: 5px;
-    height: 12px;
-    min-width: 4px;
-    padding: 0;
-    border: none;
-    border-radius: 2px;
-    background: var(--accent);
-    z-index: 2;
-    cursor: pointer;
   }
 
-  .mark:hover:not(:disabled) {
-    background: var(--accent-hi);
-  }
-
-  .mark.rendered {
-    background: var(--ok);
-  }
-
-  .mark.selected {
-    background: #fff;
+  .clipmark.selected {
     bottom: 3px;
-    height: 16px;
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing
