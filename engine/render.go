@@ -141,7 +141,8 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	}
 
 	assName := ""
-	if len(cues) > 0 && !e.SkipCaptions {
+	// Captions switched off in the app are left out like --no-captions.
+	if len(cues) > 0 && !e.SkipCaptions && ResolveStyle(style).Text {
 		// ffmpeg runs with the caption directory as its working directory, so
 		// the ass filter can reference a bare filename. That sidesteps the
 		// filter-graph escaping rules for colons and backslashes in paths.

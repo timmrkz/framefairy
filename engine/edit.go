@@ -857,9 +857,10 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 			if !hex && (!ok || !isAssColour(text)) {
 				return renderErr("%s is not a highlight colour", Scrub(pyStr(value), 40))
 			}
-		case "highlight":
+		case "highlight", "text", "box":
 			// The word being spoken on its pill, or the words alone. The
-			// render reads a number, so that is what is written.
+			// captions at all, and the box behind them. The render reads a
+			// number, so that is what is written.
 			on, ok := value.(bool)
 			if !ok {
 				return renderErr("%s is neither on nor off", Scrub(pyStr(value), 40))

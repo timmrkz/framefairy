@@ -167,7 +167,13 @@ export interface CaptionStyle {
   box: string;
   highlight: boolean;
   highlightColour: string;
+  // The switches of the captions column: captions burned in at all, and the
+  // box behind them. The box keeps its colour while it is off.
+  text: boolean;
+  boxOn: boolean;
 }
+
+export type CaptionSwitch = "text" | "box" | "highlight";
 
 export interface CaptionsView {
   captions: CaptionCue[] | null;
@@ -551,10 +557,10 @@ export const api = {
       highlight,
       highlightOpacity,
     ),
-  // The pill behind the word being spoken, and its bounce, on or off for a
-  // whole clip set.
-  setCaptionHighlight: (path: string, plan: string, on: boolean) =>
-    call<void>("SetCaptionHighlight", path, plan, on),
+  // One of the switches of the captions column: the text at all, the box
+  // behind it, or the pill behind the word being spoken.
+  setCaptionSwitch: (path: string, plan: string, which: CaptionSwitch, on: boolean) =>
+    call<void>("SetCaptionSwitch", path, plan, which, on),
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview saves it, so the next video starts there too.
   setCaptionsHeight: (path: string, y: number) => call<void>("SetCaptionsHeight", path, y),
