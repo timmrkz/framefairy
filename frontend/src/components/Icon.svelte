@@ -60,6 +60,13 @@
     {:else}
       <path d="M10.5 11.1h5" />
     {/if}
+  <!-- A clip made by hand: a clip as the clip timeline draws one, a
+       rounded frame lying on its side, with a plus beside it the way the
+       thumbnail button has one. -->
+  {:else if name === "clip-add"}
+    <rect x="0.8" y="3.5" width="9.4" height="8" rx="1.8" />
+    <path d="M3.6 3.5v8M7.4 3.5v8" />
+    <path d="M13 8.6v5M10.5 11.1h5" />
   {:else if name === "locate"}
     <circle cx="8" cy="8" r="3.6" />
     <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" />

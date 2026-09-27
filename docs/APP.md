@@ -975,6 +975,27 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### Clips made by hand
+
+The model does not always pick the moment you would. A clip can be made
+by hand wherever the transcript has reached, searched or not:
+
+- **Find the moment** in the video preview or on the clip timeline.
+- **The clip button**, a strip of film with a plus in the row under the
+  clip timeline, makes a clip there. **C** does the same. It starts at the
+  line the playhead stands in and is as long as **Shortest** and
+  **Longest** ask. Pauses are cut and the crop is framed the way they are
+  for the model's clips. The beam runs round the button while that
+  happens.
+- **The new clip is chosen**, and from there it is a clip like any other:
+  drag its edges, make cuts, place the crop and the captions, add
+  thumbnails and render. Its title is its first words.
+- **Undo** takes it away again.
+
+Clips made by hand are kept in a clip set of their own. It is no search:
+the range picker marks nothing as searched for them, and removing a
+search leaves them where they are.
+
 ### Thumbnails
 
 A clip can have any number of thumbnails, or none. A thumbnail is a frame

@@ -911,6 +911,41 @@
     }
   }
 
+  // A clip made by hand at the playhead, for a part the model did not
+  // pick. The engine starts it on the line the playhead stands in and
+  // frames it the way it frames the model's clips, which takes a moment,
+  // so the button says it is at work until the clip is there. Then it is
+  // chosen, and from there it is a clip like any other.
+  let making = $state(false);
+  const canMake = $derived(!making && !!source && time < covered);
+  async function makeClip() {
+    if (!canMake) return;
+    problem = "";
+    making = true;
+    try {
+      const made = await api.makeClip(path, time);
+      clips = [...clips.filter((c) => c.key !== made.key), made].sort((a, b) => a.start - b.start);
+      await select(made.key);
+      void refreshClips();
+    } catch (err) {
+      problem = errorText(err);
+    } finally {
+      making = false;
+    }
+  }
+
+  function makeClipKey(event: KeyboardEvent) {
+    if (event.key !== "c" && event.key !== "C") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    event.preventDefault();
+    void makeClip();
+  }
+
   function thumbnailKey(event: KeyboardEvent) {
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -1712,7 +1747,9 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", makeClipKey);
     return () => {
+      window.removeEventListener("keydown", makeClipKey);
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
     };
@@ -2299,6 +2336,23 @@
             <Icon name="loop" />
           </button>
         {/if}
+        <!-- A clip made by hand at the playhead, for a part the model did
+             not pick, there whether a clip is chosen or not. The beam runs
+             round it while the clip is framed. -->
+        <button
+          class="glyph"
+          aria-label="Make a clip here"
+          disabled={!canMake}
+          onclick={makeClip}
+          title={making
+            ? "Making the clip"
+            : time < covered
+              ? "Make a clip from the line under the playhead, as long as Shortest and Longest ask. Then shape it like any clip. C does the same"
+              : "Clips can be made where the transcript has reached"}
+        >
+          {#if making}<Busy />{/if}
+          <Icon name="clip-add" />
+        </button>
         {#if current}
           <!-- The frame under the playhead as a thumbnail. It is not a
                mode, so it never looks pressed: its picture says what a
