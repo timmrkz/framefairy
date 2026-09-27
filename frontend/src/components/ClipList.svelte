@@ -53,7 +53,7 @@
     // What that card is doing, said where its time and length will be, with
     // the beam round it and the fill when how far is known, the same as
     // the row of a search.
-    makingStep?: { text: string; fraction: number } | null;
+    makingStep?: { what: string; left: string; fraction: number } | null;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -125,6 +125,16 @@
   });
 </script>
 
+<!-- A row of work in hand: the beam, the motes and the fill round it, what
+     it is doing and how long it has left. The row the next clip of a search
+     will appear in and the row of a clip made by hand are the same kind of
+     thing, a clip on its way, so they are this one row, drawn once. -->
+{#snippet work(line: { what: string; left: string; fraction: number; still?: boolean })}
+  <Busy fraction={line.fraction} still={line.still} />
+  <span class="title">{line.what}</span>
+  <span class="meta muted num">{line.left}</span>
+{/snippet}
+
 <ol bind:this={list}>
   {#each clips as clip (clip.key)}
     <li
@@ -140,8 +150,20 @@
       }}
       out:slide={{ duration: clip.plan ? 200 : 0 }}
       data-key={clip.key}
+      class:ghost={clip.key === making}
+      class:next={clip.key === making}
+      aria-live={clip.key === making ? "polite" : undefined}
     >
-      {#if clip.key === removed}
+      {#if clip.key === making}
+        <!-- Where it is when nothing else says it: the time of the
+             episode it stands at, the way a search's row falls back on
+             its window. -->
+        {@render work({
+          what: makingStep?.what ?? "Placing the crop",
+          left: makingStep?.left || clock(clip.start),
+          fraction: makingStep?.fraction ?? -1,
+        })}
+      {:else if clip.key === removed}
         <div class="gone">
           <Icon name="trash" />
           <span class="what">Removed</span>
@@ -149,7 +171,6 @@
           <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
         </div>
       {:else}
-        {#if clip.key === making && makingStep}<Busy fraction={makingStep.fraction} />{/if}
         <button
           class="pick"
           class:current={clip.key === selected}
@@ -157,15 +178,11 @@
         >
           <span class="title">{clip.title || clip.slug}</span>
           <span class="meta muted num">
-            {#if clip.key === making && makingStep}
-              {makingStep.text}
-            {:else}
-              {clock(clip.start)}, {Math.round(clip.duration)} s
-            {/if}
+            {clock(clip.start)}, {Math.round(clip.duration)} s
             {#if clip.rendered}<span class="dot ok" title="This clip is rendered"></span>{/if}
           </span>
         </button>
-        {#if onremove && clip.key !== making}
+        {#if onremove}
           <button
             class="drop quiet danger"
             title="Take this clip out of the list"
@@ -190,9 +207,7 @@
   {#each ghosts as row (row)}
     {#if row === 0 && next}
       <li class="ghost next" aria-live="polite" bind:this={nextRow}>
-        <Busy fraction={next.fraction} still={next.still} />
-        <span class="title">{next.what}</span>
-        <span class="meta muted num">{next.left}</span>
+        {@render work(next)}
       </li>
     {:else if row === 0 && stopped}
       <li class="ghost next stopped" title={stopped.full}>

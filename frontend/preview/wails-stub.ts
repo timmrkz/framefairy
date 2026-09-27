@@ -812,7 +812,8 @@ export const Call = {
           const timer = setInterval(() => {
             island.covered = Math.min(island.to, island.covered + 18);
             const fraction = (island.covered - island.from) / (island.to - island.from);
-            for (const fn of hearingListeners) fn({ data: { path: args[0], covered: island.covered, fraction } });
+            const remaining = ((island.to - island.covered) / 18) * 0.5;
+            for (const fn of hearingListeners) fn({ data: { path: args[0], covered: island.covered, fraction, remaining } });
             if (island.covered >= island.to) {
               clearInterval(timer);
               done(null);

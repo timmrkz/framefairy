@@ -278,6 +278,20 @@ with `rim={false}` where there is no edge to run round, and a change to
 how work looks is made once, in `Busy.svelte` and `app.css`, and is then
 true everywhere. The same goes for the shimmer and the pulse.
 
+**What a thing is decides how it looks, not how it came to be.** A clip
+made by hand with I or O is a clip on its way to the clip list, exactly
+as the next clip of a search is. It was first given a card of its own: a
+clip's card that breathed, then one with the beam hidden behind its
+button, saying Transcribing and Placing the crop in a card that looked
+chosen. Next to the search's row, with its beam, motes, fill and time
+left, it read as a different thing, and Tim asked why the same element
+had two looks. Both are now one snippet in `ClipList.svelte`, fed by
+`stepLine` and `makingLine` in `steps.ts`. So before drawing any state of
+anything, ask what it is, find where the app already draws that, and
+put the new case through the same markup and the same words, even when
+the data arrives by another road. A new way into an old thing is new
+plumbing, never a new look.
+
 ## When the window itself looks wrong, measure it against a real one
 
 The app is a native window. Every other native window is on the same

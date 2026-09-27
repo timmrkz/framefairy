@@ -37,13 +37,27 @@ export type StepLine = {
 // the whole episode.
 export function stepLine(job: Job, hearing = -1): StepLine {
   const p = job.progress;
-  const left = p && p.remaining > 0 ? `About ${clock(Math.ceil(p.remaining / 5) * 5)} left` : "";
+  const left = leftText(p?.remaining ?? 0);
   if (!job.step || job.step === "waiting") {
     return { what: waitingTo[job.lane] ?? "Waiting", left: "", fraction: -1 };
   }
   const what = doing[job.step] ?? sentence(job.label);
   if (job.step === "hearing") return { what, left, fraction: hearing };
   return { what, left, fraction: p && p.fraction >= 0 ? p.fraction : -1 };
+}
+
+// The time left, the way every row says it, or nothing when it is not known.
+export function leftText(remaining: number): string {
+  return remaining > 0 ? `About ${clock(Math.ceil(remaining / 5) * 5)} left` : "";
+}
+
+// The line of a clip made by hand, in the row its card will be, said the
+// way a search says its own: it is the same kind of work in the same list.
+// It hears the part around the playhead where nothing has, with the fill
+// and the time left, and then places the crop, which cannot say how far.
+export function makingLine(step: "hearing" | "framing", fraction = -1, remaining = 0): StepLine {
+  if (step === "hearing") return { what: doing.hearing, left: leftText(remaining), fraction };
+  return { what: "Placing the crop", left: "", fraction: -1 };
 }
 
 // A line of the engine's, where one is shown as it is, as a sentence: the

@@ -53,7 +53,7 @@
     type RoomView,
   } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
-  import { stepLine } from "../lib/steps";
+  import { makingLine, stepLine, type StepLine } from "../lib/steps";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -904,14 +904,13 @@
   // heard is read again as soon as the Go side says it is saved, so the
   // waveform grows chunk by chunk, and whatever is still to come breathes.
   let hearing = $state(false);
-  // What the card of the clip being made says it is doing, the way the row
-  // of a search says it: the step, and how far it has come when that is
-  // known.
-  let makingStep = $state<{ text: string; fraction: number } | null>(null);
+  // What the row of the clip being made says, made by the same rules as
+  // the row of a search, see makingLine in steps.ts.
+  let makingStep = $state<StepLine | null>(null);
   onMount(() =>
     onHearing((h) => {
       if (!hearing || h.path !== path) return;
-      makingStep = { text: "Transcribing", fraction: h.fraction };
+      makingStep = makingLine("hearing", h.fraction, h.remaining);
       timeline?.reread();
     }),
   );
@@ -955,7 +954,7 @@
         };
         // The playhead goes where the clip is, the moment it has a frame.
         player?.seek(sketch.start);
-        makingStep = { text: "Transcribing", fraction: 0 };
+        makingStep = makingLine("hearing", 0);
         hearing = true;
         try {
           await api.hearAround(path, at, backward);
@@ -991,7 +990,7 @@
       // Its sentences are there. What is left is reading the picture to
       // place the crop, which takes a few seconds and says no more than
       // that it is running.
-      makingStep = { text: "Placing the crop", fraction: -1 };
+      makingStep = makingLine("framing");
       const made = await api.makeClip(path, at, backward);
       // The clip is chosen the way a click on its card chooses it: the list
       // read first, then the outline taken away and the clip chosen in one

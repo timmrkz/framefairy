@@ -634,6 +634,8 @@ export interface Hearing {
   covered: number;
   // How much of the part being heard is heard, 0 to 1.
   fraction: number;
+  // How many seconds hearing it will take yet, below 0 when not known.
+  remaining: number;
 }
 
 export function onHearing(fn: (h: Hearing) => void): () => void {

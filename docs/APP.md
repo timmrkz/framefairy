@@ -1023,8 +1023,9 @@ by hand wherever the transcript has reached, searched or not:
   How many seconds is **Around In and Out** in the settings, under
   **Speech**.
   Until its words are there the clip is an outline as long as
-  **Shortest**, with a card called **New clip** that says **Transcribing**
-  and fills as the part is heard, the way the row of a search does. What is still
+  **Shortest**, and in the clip list, in its place, the row of a clip on
+  its way, the very row the next clip of a search appears in: the beam
+  and the fill, **Transcribing** and the time left. What is still
   to be heard breathes on the clip timeline, and the waveform fills it in
   chunk by chunk as it is heard, every few seconds of the episode. The
   crop frame waits in the middle of the video preview, breathing too,
@@ -1038,12 +1039,11 @@ by hand wherever the transcript has reached, searched or not:
   transcript in a moment, and everything they decide is shown straight
   away: the clip's frame on the clip timeline, which moves to it, its
   caption blocks coming in one after another along it, its title in the
-  row below, and its card in its place in the clip list, scrolled into
-  view, with the beam round it and **Placing the crop** where its time
-  and length will be. The playhead
+  row below, and its row in the clip list, scrolled into view, saying
+  **Placing the crop** with the beam round it. The playhead
   goes to the start of the frame the moment there is one, and again when
   the sentences move it, as they do for Out. Placing the crop reads the picture and
-  takes a few seconds. When it is done the card becomes the clip's own,
+  takes a few seconds. When it is done the row becomes the clip's card,
   chosen, and the crop frame appears in the video preview.
 - **The new clip is chosen**, and from there it is a clip like any other:
   drag its edges, make cuts, place the crop and the captions, add
