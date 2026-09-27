@@ -381,12 +381,19 @@ const (
 // or at a sentence end once it has some substance. It appears when its first
 // word is spoken. It stays up until the next caption appears, unless a pause
 // comes first, in which case it goes shortly after its last word.
-func Captions(clip Clip, maxChars int) []Caption {
+//
+// A word alone says is too wide for a line gets a caption of its own, which
+// is how it is read as two lines of one caption, hyphenated, rather than
+// as a third line under the words around it. alone may be nil.
+func Captions(clip Clip, maxChars int, alone func(string) bool) []Caption {
 	words := ClipWords(clip)
 	if len(words) == 0 {
 		return nil
 	}
-	type group struct{ words []Cue }
+	type group struct {
+		words []Cue
+		alone bool
+	}
 	var groups []group
 	var current []Cue
 	text := func(ws []Cue) string {
@@ -397,8 +404,16 @@ func Captions(clip Clip, maxChars int) []Caption {
 		return strings.Join(parts, " ")
 	}
 	for i, word := range words {
+		if alone != nil && alone(word.Text) {
+			if len(current) > 0 {
+				groups = append(groups, group{words: current})
+				current = nil
+			}
+			groups = append(groups, group{words: []Cue{word}, alone: true})
+			continue
+		}
 		if len(current) > 0 && runeLen(text(append(current[:len(current):len(current)], word))) > maxChars {
-			groups = append(groups, group{current})
+			groups = append(groups, group{words: current})
 			current = nil
 		}
 		current = append(current, word)
@@ -407,12 +422,15 @@ func Captions(clip Clip, maxChars int) []Caption {
 		sentence := endsWithBreak(word.Text) &&
 			float64(runeLen(text(current))) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
-			groups = append(groups, group{current})
+			groups = append(groups, group{words: current})
 			current = nil
 		}
 	}
 
 	var out []Caption
+	// Whether the caption made last is a word on its own, which nothing
+	// may ride with.
+	lastAlone := false
 	for i, g := range groups {
 		start := g.words[0].Start
 		lastWord := g.words[len(g.words)-1]
@@ -425,7 +443,7 @@ func Captions(clip Clip, maxChars int) []Caption {
 				end = math.Min(end, next)
 			}
 		}
-		if len(out) > 0 && end-start < minCaption {
+		if len(out) > 0 && end-start < minCaption && !g.alone && !lastAlone {
 			// Too brief to read on its own, so it rides with the one before.
 			prev := out[len(out)-1]
 			out[len(out)-1] = Caption{Start: prev.Start, End: end,
@@ -433,6 +451,7 @@ func Captions(clip Clip, maxChars int) []Caption {
 			continue
 		}
 		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words})
+		lastAlone = g.alone
 	}
 	// Held a second past the end. Constant frame rate output usually lands a
 	// frame or two beyond the planned length, and a caption that stops

@@ -36,6 +36,20 @@ type Options struct {
 	KeepPause    float64
 	SilenceDB    *float64
 	Context      string
+	// Recipe is how the model is asked for clips, by name. Empty is
+	// DefaultRecipe. See recipe.go.
+	Recipe string
+	// Compare names recipes to search the same window with, one after the
+	// other, and to write a report on. It is the command line's to act
+	// on, see Engine.Compare. Run itself leaves it alone.
+	Compare []string
+	// Experiment keeps a search apart even with the default recipe: its
+	// plan in a folder of its own, nothing rendered and nothing recorded.
+	// A comparison asks for it. Any other recipe is always an experiment.
+	Experiment bool
+	// Variant is the name a comparison gives this search, stories@1024 say,
+	// and the folder its plan goes in. Empty is the recipe's own name.
+	Variant string
 
 	// Planner is "local", the default, or "api".
 	Planner   string
@@ -46,9 +60,15 @@ type Options struct {
 	MaxTokens int
 	// Think is the most a local model may think, in tokens, negative for
 	// no limit.
-	Think   int
-	Budget  float64
-	Prefill bool
+	Think int
+	// Seed makes a local model's answer the same every time it is given
+	// the same prompt. 0 leaves it to chance, as llama-server does.
+	Seed int
+	// Temperature is how freely a local model picks its words, nil for
+	// llama-server's own, 0.8.
+	Temperature *float64
+	Budget      float64
+	Prefill     bool
 
 	FFmpeg  string
 	FFprobe string
@@ -248,7 +268,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 	planPath := opts.ClipsPath
 	if planPath == "" {
-		planPath = filepath.Join(logsDir, planName)
+		planPath = PlanFor(work, opts.folder(), opts.Experiment, planName)
 	}
 
 	// Plans written by an early version sat in the work directory itself.
@@ -278,8 +298,9 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	// later run without those flags would not find it and would quietly buy
 	// another one. Planning costs money, so an existing plan is looked for
 	// before that happens rather than after.
+	experiment := opts.Experiment || IsExperiment(opts.Recipe)
 	if opts.ClipsPath == "" && !exists(planPath) && !opts.Replan && !opts.TranscribeOnly &&
-		!opts.ExactPlan {
+		!opts.ExactPlan && !experiment {
 		matches, _ := filepath.Glob(filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
@@ -373,14 +394,21 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			return 1
 		}
 		e.SummariseLines(transcript, lines, span)
+		// An experiment writes its own plan and leaves the episode's
+		// captions where they are.
+		planCaptions := captionDir
+		if experiment {
+			planCaptions = ""
+		}
 		plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
 			PlanOptions{
 				Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
 				Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
 				MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
-				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord,
-				PlanPath: planPath, CaptionDir: captionDir,
+				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
+				Recipe:   opts.Recipe,
+				PlanPath: planPath, CaptionDir: planCaptions,
 			})
 		if err != nil {
 			return e.planFailed(ctx, err)
@@ -439,6 +467,13 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 
 	if opts.PlanOnly {
 		log.Info("plan only, nothing rendered. Edit %s and run again.", planPath)
+		return 0
+	}
+	// An experiment is there to be compared, not published. Rendering it
+	// would put its shorts beside the episode's own.
+	if experiment {
+		log.Info("an experiment with the %s recipe, nothing rendered. The plan is %s.",
+			opts.Recipe, planPath)
 		return 0
 	}
 
@@ -544,7 +579,8 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 
 	cueMap := map[string][]Caption{}
 	for _, clip := range clips {
-		cues, err := resolveCues(clip, captionDir, opts.RefreshCaptions, maxChars)
+		cues, err := resolveCues(clip, captionDir, opts.RefreshCaptions, maxChars,
+			TooWide(ResolveStyle(style)))
 		if err != nil {
 			log.Error("caption problem: %s", err)
 			failures++
@@ -624,7 +660,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 // resolveLocal finds the local model and server before anything slow starts.
 func resolveLocal(opts Options) (*LocalModel, error) {
 	m := &LocalModel{Server: opts.LLMServer, Model: opts.LLMModel, URL: opts.LLMURL,
-		Think: opts.Think}
+		Think: opts.Think, Seed: opts.Seed, Temperature: opts.Temperature}
 	if m.URL != "" {
 		return m, nil
 	}
@@ -672,7 +708,8 @@ func trimFloat(v float64) string {
 // resolveCues gives a clip's captions, preferring a file you may have
 // corrected by hand. Once a per-clip file exists it is used as it is, which
 // is what makes a hand correction stick.
-func resolveCues(clip Clip, captionDir string, force bool, maxChars int) ([]Caption, error) {
+func resolveCues(clip Clip, captionDir string, force bool, maxChars int,
+	alone func(string) bool) ([]Caption, error) {
 	perClip, err := SafeChild(captionDir, clip.Basename()+".srt")
 	if err != nil {
 		return nil, err
@@ -683,7 +720,7 @@ func resolveCues(clip Clip, captionDir string, force bool, maxChars int) ([]Capt
 	if exists(perClip) && !force {
 		return LoadCaptions(perClip)
 	}
-	captions := Captions(clip, maxChars)
+	captions := Captions(clip, maxChars, alone)
 	if len(captions) == 0 {
 		return nil, nil
 	}
@@ -706,7 +743,7 @@ func clipStyle(style map[string]any, clip Clip) map[string]any {
 
 // ClipCaptions gives a clip's captions the way the render will draw them,
 // a caption file corrected by hand first, and writes nothing itself.
-func ClipCaptions(clip Clip, captionDir string, maxChars int) ([]Caption, error) {
+func ClipCaptions(clip Clip, captionDir string, maxChars int, alone func(string) bool) ([]Caption, error) {
 	perClip, err := SafeChild(captionDir, clip.Basename()+".srt")
 	if err != nil {
 		return nil, err
@@ -714,7 +751,7 @@ func ClipCaptions(clip Clip, captionDir string, maxChars int) ([]Caption, error)
 	if exists(perClip) {
 		return LoadCaptions(perClip)
 	}
-	return Captions(clip, maxChars), nil
+	return Captions(clip, maxChars, alone), nil
 }
 
 func writeProof(path string, clips []Clip, cueMap map[string][]Caption) error {
@@ -805,4 +842,13 @@ func (e *Engine) planFailed(ctx context.Context, err error) int {
 	}
 	e.Log.Error("planning failed: %s", err)
 	return 1
+}
+
+// folder is what an experiment's plan folder is named after: the name a
+// comparison gave the search, or its recipe.
+func (opts Options) folder() string {
+	if opts.Variant != "" {
+		return opts.Variant
+	}
+	return opts.Recipe
 }

@@ -136,28 +136,179 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 	}
 }
 
-// Nothing may leave the frame, so a word too wide to break brings the size
-// of the whole clip down until it fits.
-func TestAWordTooWideBringsTheSizeDown(t *testing.T) {
+// Nothing may leave the frame, and one long word may not make every caption
+// of the clip smaller either. It is hyphenated at the size that was chosen.
+func TestAWordTooWideIsHyphenated(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitaensmuetze"
-	caption := Caption{Start: 0, End: 2, Text: long, Words: []Cue{{0, 2, long}}}
 	s := ResolveStyle(map[string]any{"size": 96.0})
-	laid, fitted := LayOutCaptions([]Caption{caption}, s)
-	if fitted.Size >= s.Size {
-		t.Errorf("the size stayed at %v", fitted.Size)
-	}
-	if len(laid) != 1 || len(laid[0].Lines) != 1 {
+	short := Caption{Start: 2, End: 3, Text: "und dann", Words: []Cue{{2, 2.4, "und"}, {2.5, 3, "dann"}}}
+	laid := LayOutCaptions([]Caption{
+		{Start: 0, End: 2, Text: "die " + long, Words: []Cue{{0, 0.2, "die"}, {0.2, 2, long}}},
+		short,
+	}, s)
+	if len(laid) != 2 {
 		t.Fatalf("laid out as %v", laid)
 	}
-	width, ok := TextWidth(fitted.Font, long, fitted.Size)
-	if !ok || width > CaptionRoom(fitted) {
-		t.Errorf("%v wide at size %v, the room is %v", width, fitted.Size, CaptionRoom(fitted))
+	var joined string
+	var flat []Cue
+	for _, line := range laid[0].Lines {
+		width, ok := TextWidth(s.Font, cueText(line), s.Size)
+		if !ok || width > CaptionRoom(s) {
+			t.Errorf("%q is %v wide, the room is %v", cueText(line), width, CaptionRoom(s))
+		}
+		flat = append(flat, line...)
 	}
-	// A caption that fits is left at the size it was given.
-	_, kept := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "kurz",
-		Words: []Cue{{0, 2, "kurz"}}}}, s)
-	if kept.Size != s.Size {
-		t.Errorf("a short caption came back at %v", kept.Size)
+	// The render highlights the caption's words against its lines, so the
+	// two have to be the same pieces in the same order.
+	if len(flat) != len(laid[0].Words) {
+		t.Fatalf("%d pieces drawn, %d words", len(flat), len(laid[0].Words))
+	}
+	for i, w := range laid[0].Words {
+		if flat[i] != w {
+			t.Errorf("piece %d is %v in the lines and %v in the words", i, flat[i], w)
+		}
+		if i > 0 {
+			joined += strings.TrimSuffix(w.Text, "-")
+		}
+	}
+	if joined != long || len(laid[0].Words) < 3 {
+		t.Errorf("the word came back as %v", laid[0].Words)
+	}
+	// The pieces share the time the word was spoken in, one after another.
+	pieces := laid[0].Words[1:]
+	if pieces[0].Start != 0.2 || pieces[len(pieces)-1].End != 2 {
+		t.Errorf("the pieces run %v to %v", pieces[0].Start, pieces[len(pieces)-1].End)
+	}
+	for i := 1; i < len(pieces); i++ {
+		if pieces[i].Start != pieces[i-1].End || pieces[i].End <= pieces[i].Start {
+			t.Errorf("piece %d runs %v to %v after %v", i, pieces[i].Start, pieces[i].End, pieces[i-1].End)
+		}
+	}
+	// The other caption is as it was.
+	if len(laid[1].Lines) != 1 || cueText(laid[1].Lines[0]) != "und dann" || len(laid[1].Words) != 2 {
+		t.Errorf("the short caption became %v", laid[1].Lines)
+	}
+}
+
+// A word is broken where TeX would break it in that language, at the last
+// break that still fits.
+func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
+	// A face that cannot be measured, so the room is sixteen characters.
+	room := captionRoom{font: "keine", size: 96, room: 888, wrapChars: 16}
+	de, en := hyphenatorFor("de"), hyphenatorFor("en")
+	if de == nil || en == nil {
+		t.Fatal("no patterns for German or English")
+	}
+	if de.left != 2 || de.right != 2 || en.left != 2 || en.right != 3 {
+		t.Errorf("fewest letters %d/%d in German and %d/%d in English", de.left, de.right, en.left, en.right)
+	}
+	for _, c := range []struct {
+		word string
+		h    *hyphenator
+		want []string
+	}{
+		{"Suchmaschinenoptimierung", de, []string{"Suchmaschinen-", "optimierung"}},
+		{"Persönlichkeitsentwicklung,", de, []string{"Persönlichkeits-", "entwicklung,"}},
+		{"internationalization", en, []string{"international-", "ization"}},
+		{"SEO-Agenturmitarbeiter", de, []string{"SEO-Agenturmit-", "arbeiter"}},
+		// A hyphen the word has is a break, and not doubled.
+		{"Pflanzenpflege-Onlineshop", de, []string{"Pflanzenpflege-", "Onlineshop"}},
+		{"kurz", de, []string{"kurz"}},
+		// With no patterns the word is broken where the line allows.
+		{"abcdefghijklmnopqrstuvwxyz", nil, []string{"abcdefghijklmno-", "pqrstuvwxyz"}},
+	} {
+		got := breakWord(c.word, room, c.h)
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s broke as %q, want %q", c.word, got, c.want)
+		}
+	}
+	// Longer than two lines, each as full as the breaks allow.
+	long := breakWord("Donaudampfschifffahrtsgesellschaftskapitänsmütze", room, de)
+	if len(long) < 3 {
+		t.Errorf("broke as %q", long)
+	}
+	for _, piece := range long {
+		if !room.fits(piece) {
+			t.Errorf("%q does not fit", piece)
+		}
+	}
+	// Every language whose patterns are here has a hyphenator, found by the
+	// file's name alone, and a language without patterns has none.
+	for _, code := range []string{"de", "en", "el", "hr", "hu", "ru", "sv"} {
+		if hyphenatorFor(code) == nil {
+			t.Errorf("no hyphenator for %s", code)
+		}
+	}
+	if hyphenatorFor("cs") != nil || hyphenatorFor("xx") != nil || hyphenatorFor("") != nil {
+		t.Error("patterns where none ship")
+	}
+}
+
+// German breaks where the parts of a compound join when a joint fits, at
+// the size a caption is really drawn at. The last syllable that fits
+// would give Suchmaschinenopti- and mierung.
+func TestAGermanWordBreaksWhereItsPartsJoin(t *testing.T) {
+	r := roomFor(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
+	de := hyphenatorFor("de")
+	if de == nil || de.joints == nil {
+		t.Fatal("no joints for German")
+	}
+	for word, want := range map[string]string{
+		"Suchmaschinenoptimierung":   "Suchmaschinen-|optimierung",
+		"Persönlichkeitsentwicklung": "Persönlichkeits-|entwicklung",
+		"Kindheitserinnerungen":      "Kindheits-|erinnerungen",
+		// Kundenzufriedenheits- is wider than the line, and the one joint
+		// that fits, Kunden-, would take three lines. Two lines win.
+		"Kundenzufriedenheitsumfrage": "Kundenzufrieden-|heitsumfrage",
+	} {
+		if got := strings.Join(breakWord(word, r, de), "|"); got != want {
+			t.Errorf("%s broke as %s, want %s", word, got, want)
+		}
+	}
+	// No other language borrows them.
+	if en := hyphenatorFor("en"); en == nil || en.joints != nil {
+		t.Error("English has joints")
+	}
+}
+
+// The language is read off the words of the captions.
+func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
+	for text, want := range map[string]string{
+		"Wir haben mit Pflanzenpflege und Suchmaschinenoptimierung angefangen und dann gemerkt, dass es läuft": "de",
+		"We started with plant care and search engine optimisation and then noticed that it worked":            "en",
+		"Nous avons commencé avec l'entretien des plantes et ensuite nous avons vu que cela marchait":          "fr",
+	} {
+		var words []Cue
+		for i, w := range fields(text) {
+			words = append(words, Cue{float64(i), float64(i) + 1, w})
+		}
+		if got := languageOf([]Caption{{Words: words}}); got != want {
+			t.Errorf("%q read as %s", text, got)
+		}
+	}
+}
+
+// A word too wide for a line gets a caption of its own, so it is read as
+// two lines of one caption, and the words around it stay where they fit.
+func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
+	clip := Clip{
+		Segments: []Segment{{Start: 0, End: 5}},
+		Words: []Cue{
+			{0.1, 0.3, "mit"}, {0.3, 1.6, "Suchmaschinenoptimierung"}, {1.6, 2.0, "Geld"},
+			{2.0, 2.5, "verdient."},
+		},
+	}
+	alone := TooWide(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
+	var texts []string
+	for _, c := range Captions(clip, 38, alone) {
+		texts = append(texts, c.Text)
+	}
+	if strings.Join(texts, "|") != "mit|Suchmaschinenoptimierung|Geld verdient." {
+		t.Errorf("captions %q", texts)
+	}
+	// Without the rule it rides with the others, as before.
+	if got := Captions(clip, 38, nil); len(got) != 2 || got[0].Text != "mit Suchmaschinenoptimierung Geld" {
+		t.Errorf("captions %v", got)
 	}
 }
 

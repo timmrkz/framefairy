@@ -6,71 +6,70 @@ import (
 	"strings"
 )
 
-// SystemPrompt tells the model how to choose and condense clips.
-const SystemPrompt = `You choose short-form clips from a long-form interview podcast transcript. The ` +
-	`format is a founder portrait, so the payoff is usually a quiet, concrete ` +
-	`moment rather than a loud claim.
-
-A clip must contain its own payoff. The opening buys attention and the payoff ` +
-	`is what that attention was for: the thing that happened, the line that lands, ` +
-	`what it turned out to mean. Stopping before it arrives is the worst outcome ` +
-	`here, worse than running long and worse than no clip at all. If the payoff ` +
-	`comes forty seconds after the setup, take the forty seconds and cut the ` +
-	`middle out.
-
-Use the length you are given. The range in the request is there to be used, ` +
-	`and a clip that reaches the payoff at the top of it beats one that fits ` +
-	`comfortably in the middle without getting there. Do not pad, but do not stop ` +
-	`short to be brief either.
-
-Each clip should also stand alone without the surrounding conversation, open ` +
-	`on something that makes a stranger keep watching, and rest on something ` +
-	`specific the guest saw, did or felt.
-
-Condense by dropping the material between the runs you keep. Cut restarts, ` +
-	`hedging and filler. Never reorder anything, never join two runs so the result ` +
-	`implies something neither of them said, and keep whole clauses. When in doubt, ` +
-	`keep the material.
-
-Pauses are yours to decide. A pause between two lines in one run stays, at ` +
-	`full length. To cut a pause, end a run on the line before it and start the ` +
-	`next run on the line after it. The two runs may follow each other directly, ` +
-	`so [[12, 14], [15, 18]] keeps lines 12 to 18 and cuts only the pause between ` +
-	`14 and 15. To drop material, leave its lines out. To hold a beat before a line ` +
-	`lands, keep both lines in one run.
-
-The transcript shows how long each pause was. A long one before a short line ` +
-	`is often the speaker landing something, and cutting it throws the landing ` +
-	`away. A long one in the middle of someone losing their thread is dead weight. ` +
-	`Only you can tell those apart, so this is not done for you.
+// SystemPrompt tells the model how to choose and condense clips. It is
+// PromptVersion 3, a brief for any video. The one before was written for
+// one podcast and pulled two ways: a founder portrait and the guest,
+// exactly N clips against fewer beat padding, 20 to 30 seconds against the
+// payoff mattering more than being brief, condense against keep when in
+// doubt. And nothing in it said what must never be cut. This one gives one
+// order of what matters, and the request says the task again after the
+// transcript, where a model reading a long document attends to it best.
+// Side by side on Tim's episode, as the recipe lines2, it read better
+// than the brief before it.
+const SystemPrompt = storyBrief + `
+Pauses are yours to decide. A pause between two lines in one run stays, at full ` +
+	`length. To cut a pause, end a run on the line before it and start the next run on ` +
+	`the line after it. The two runs may follow each other directly, so [[12, 14], [15, 18]] ` +
+	`keeps lines 12 to 18 and cuts only the pause between 14 and 15. To leave material out, ` +
+	`leave its lines out. A long pause before a short line is often the speaker landing ` +
+	`something, and cutting it throws the landing away. A long pause in the middle of ` +
+	`someone losing their thread is dead weight.
 
 OUTPUT CONTRACT
 
-Your reply is parsed by a program. It is rejected outright unless every rule ` +
-	`below holds.
+Your reply is parsed by a program. Return exactly one JSON object and nothing else. ` +
+	`No prose, no markdown fences.
 
-Return exactly one JSON object and nothing else. No prose, no markdown fences.
+{"clips": [{"slug": "...", "title": "...", "reason": "...", "keep": [[12, 18], [24, 27]]}]}
 
-{"clips": [{"slug": "...", "title": "...", "reason": "...", "keep": ` +
-	`[[12, 18], [24, 27]]}]}
-
-- "clips": exactly the number asked for. Fewer good ones beats padding.
+- "clips": at most the number asked for.
 - "slug": lowercase ASCII letters, digits and hyphens, at most 64 characters, ` +
 	`different for every clip.
-- "title": a hook line in the language of the transcript, one line, at most ` +
-	`200 characters.
+- "title": a hook line in the language of the transcript, one line, at most 200 characters.
 - "reason": one sentence, at most 300 characters.
-- "keep": a non-empty array of [first, last] line numbers from the transcript. ` +
-	`Each pair is a run of consecutive lines to keep.
+- "keep": runs of lines to keep, as [first, last] line numbers from the transcript, ` +
+	`in ascending order and not overlapping. A run may start on the line right after ` +
+	`the previous one ends, which cuts the pause between them.
+`
 
-Every pair must satisfy all of the following:
+// storyBrief is what lines and stories2 both tell the model about a good
+// clip, for any video.
+const storyBrief = `You find the moments in a long video that work as short vertical videos on ` +
+	`their own, for YouTube Shorts, Instagram Reels and TikTok. You know the video only ` +
+	`from its transcript.
 
-- both numbers name lines that exist in the transcript
-- first is less than or equal to last
-- pairs are in ascending order and do not overlap. A pair may start on the ` +
-	`line right after the previous pair ends, which cuts the pause between them
-- the clip begins and ends on a line that carries meaning, never on one that ` +
-	`is only a hesitation
+A moment works when it is a small, complete story. It has three parts, in this order ` +
+	`of importance:
+
+1. The heart: the part where the speaker actually tells what happened, what they ` +
+	`saw, did or felt. Without it there is no story. It is never cut.
+2. The payoff: the line that lands it, what happened in the end or what it meant. ` +
+	`The clip ends there, on that line, not after it.
+3. The opening: the least a stranger needs to follow, a question or a setup when ` +
+	`there is one. The clip starts there, not in the middle of a sentence and not ` +
+	`earlier than needed.
+
+Each clip should run the length asked for. When the whole story is longer, make it ` +
+	`shorter by leaving out what the story holds without: asides, restarts, repetitions, ` +
+	`a second example. Never shorten it by cutting the heart or the payoff. A story that ` +
+	`cannot be told within the length even so is not a clip.
+
+Prefer moments that are specific, and a mix of kinds: something moving, a surprise, ` +
+	`something funny, a vivid scene, an insight put plainly. Return at most the number ` +
+	`asked for, the strongest first. Fewer strong clips beat padding.
+
+Never reorder anything, never join two runs so that they say something the speaker ` +
+	`did not, and keep whole clauses.
 `
 
 type jsonCandidate struct {
@@ -314,6 +313,22 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	}, problems, true
 }
 
+// readEntry checks one clip of an answer in the units the recipe numbered,
+// and turns its runs into runs of lines, which is what everything after
+// the answer works in.
+func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, bool) {
+	entry, problems, ok := validateEntry(clipAny, index, len(units))
+	if !ok {
+		return entry, problems, false
+	}
+	keep, err := toLines(entry.Keep, units)
+	if err != nil {
+		return PlanEntry{}, append(problems, fmt.Sprintf("clip %d: %s", index, err)), false
+	}
+	entry.Keep = keep
+	return entry, problems, true
+}
+
 // uniqueSlug gives a clip a slug no clip before it has, the position-th
 // usable one. It says what it changed, if anything.
 func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
@@ -329,7 +344,7 @@ func uniqueSlug(seen map[string]bool, entry *PlanEntry, position int) string {
 // ValidatePlan checks the plan is shaped the way we asked, and says precisely
 // what is not. With line numbers there is nothing to interpret, a number
 // either names a line or it does not.
-func ValidatePlan(data map[string]any, lineCount int) ([]PlanEntry, []string, error) {
+func ValidatePlan(data map[string]any, units [][2]int) ([]PlanEntry, []string, error) {
 	// The checks are made one clip at a time, so an answer read as it is
 	// written goes through exactly the same ones as an answer read whole.
 	var problems []string
@@ -344,7 +359,7 @@ func ValidatePlan(data map[string]any, lineCount int) ([]PlanEntry, []string, er
 
 	var good []PlanEntry
 	for i, clipAny := range clips {
-		entry, found, ok := validateEntry(clipAny, i+1, lineCount)
+		entry, found, ok := readEntry(clipAny, i+1, units)
 		problems = append(problems, found...)
 		if ok {
 			good = append(good, entry)

@@ -166,7 +166,11 @@ func (p *Project) SketchClip(at float64, backward bool) (ClipSketch, error) {
 		sketch.Spans[k] = Span{s.Start, s.End}
 		clip.Segments = append(clip.Segments, Segment{Start: s.Start, End: s.End})
 	}
-	sketch.Captions = Captions(clip, 38)
+	// Broken the way the render breaks them in the style a new clip set
+	// starts with, so the blocks shown while the clip is framed are the
+	// ones it arrives with.
+	style := ResolveStyle(nil)
+	sketch.Captions = Captions(clip, max(8, int(style.MaxChars)), TooWide(style))
 	return sketch, nil
 }
 

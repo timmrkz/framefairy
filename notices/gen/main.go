@@ -19,6 +19,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // notice is notice, written again because the package it lives in
@@ -86,7 +89,7 @@ func run() error {
 	if err := os.MkdirAll(texts, 0o755); err != nil {
 		return err
 	}
-	steps := []func() error{goToolchain, goModules, kept, speech, ffmpeg, llama, fonts, npm, downloads}
+	steps := []func() error{goToolchain, goModules, kept, hyphenation, speech, ffmpeg, llama, fonts, npm, downloads}
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return err
@@ -171,13 +174,15 @@ func classify(text string) string {
 		return "BSD-2-Clause"
 	case strings.Contains(t, "Permission to use, copy, modify, and/or distribute"):
 		return "ISC"
+	case strings.Contains(t, "CC0 1.0 Universal"):
+		return "CC0-1.0"
 	}
 	return ""
 }
 
 // licenceFiles are the names a licence goes by at the top of a module or
 // package, in the order they are looked for.
-var licenceFiles = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "COPYING", "LICENSE-MIT"}
+var licenceFiles = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "COPYING", "LICENSE-MIT"}
 
 func licenceIn(dir string) (string, []byte, error) {
 	entries, err := os.ReadDir(dir)
@@ -329,6 +334,212 @@ func kept() error {
 		URL: "https://github.com/nenadmarkus/pico", Part: partApp,
 		Note: "The trained face data is the facefinder cascade from pico."},
 		map[string][]byte{"pico.txt": pico})
+}
+
+// spdxTexts is where the full text of a licence is fetched from when a
+// file names its licence without writing it out: the SPDX licence list,
+// the register of licence texts, at a release so the texts do not move.
+const spdxTexts = "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/"
+
+// patternLicence is one licence a pattern file is offered under.
+type patternLicence struct {
+	// spdx is its SPDX identifier, empty for a file's own terms.
+	spdx string
+	// text is the licence as the file writes it out, if it does.
+	text string
+}
+
+// shippable are the licences a pattern file may be taken under to go into a
+// paid app, the one most wanted first. The permissive ones ask for their
+// notice and nothing else. A file's own terms come next, once they have
+// been read, see ownTerms. The
+// LPPL and MPL 1.1 allow an unchanged file inside a closed program, with
+// their text and where the file comes from. The GPL and the LGPL are not
+// here: they would ask for the program's source, or for a way to relink it.
+var shippable = []string{"MIT", "BSD-3-Clause", "", "LPPL-1.3c", "LPPL-1.0", "MPL-1.1"}
+
+// patternMeta is what hyph-utf8 writes at the top of every pattern file,
+// YAML inside TeX comments, up to a line of equals signs.
+type patternMeta struct {
+	Version  yaml.Node `yaml:"version"`
+	Source   string    `yaml:"source"`
+	Language struct {
+		Name string `yaml:"name"`
+		Tag  string `yaml:"tag"`
+	} `yaml:"language"`
+	Licence yaml.Node `yaml:"licence"`
+}
+
+func readPatternMeta(head []byte) (patternMeta, error) {
+	var lines []string
+	for _, line := range strings.Split(string(head), "\n") {
+		if !strings.HasPrefix(line, "%") || strings.HasPrefix(strings.TrimLeft(line, "% "), "===") {
+			break
+		}
+		lines = append(lines, strings.TrimPrefix(strings.TrimPrefix(line, "%"), " "))
+	}
+	var meta patternMeta
+	err := yaml.Unmarshal([]byte(strings.Join(lines, "\n")), &meta)
+	return meta, err
+}
+
+// licences are the licences the file is offered under. A licence it names
+// but cannot be told apart, and a text of "[None]", are left out, so they
+// can never be chosen.
+func (m patternMeta) licences() []patternLicence {
+	var nodes []*yaml.Node
+	switch m.Licence.Kind {
+	case yaml.MappingNode:
+		nodes = []*yaml.Node{&m.Licence}
+	case yaml.SequenceNode:
+		nodes = m.Licence.Content
+	}
+	var out []patternLicence
+	for _, node := range nodes {
+		var entry struct {
+			Name    string `yaml:"name"`
+			Version string `yaml:"version"`
+			OrLater bool   `yaml:"or_later"`
+			Text    string `yaml:"text"`
+		}
+		if node.Kind != yaml.MappingNode || node.Decode(&entry) != nil {
+			continue
+		}
+		text := strings.TrimSpace(entry.Text)
+		if entry.Name == "" {
+			if text != "" && text != "[None]" {
+				out = append(out, patternLicence{text: text})
+			}
+			continue
+		}
+		if id := spdxOf(entry.Name, entry.Version, entry.OrLater); id != "" {
+			out = append(out, patternLicence{spdx: id, text: text})
+		}
+	}
+	return out
+}
+
+// spdxOf is the SPDX identifier of a licence as a pattern file names it.
+func spdxOf(name, version string, orLater bool) string {
+	switch n := strings.ToUpper(strings.TrimSpace(name)); {
+	case n == "MIT" || n == "MIT/X11":
+		return "MIT"
+	case strings.HasPrefix(n, "BSD 3"):
+		return "BSD-3-Clause"
+	case n == "LPPL" && (version == "" || version == "1.3" || orLater):
+		return "LPPL-1.3c"
+	case n == "LPPL" && version == "1":
+		return "LPPL-1.0"
+	case n == "MPL" && version == "1.1":
+		return "MPL-1.1"
+	case n == "GPL":
+		return "GPL-" + version
+	case n == "LGPL":
+		return "LGPL-" + version
+	}
+	return ""
+}
+
+// ownTerms are licences a pattern file writes out and names nowhere, so no
+// tool can tell what they allow. Each was read once by a person and found
+// to allow the unchanged file in a paid app with its notice, and read a
+// second time by someone else, who came to the same answer. They are kept
+// by the SHA-256 of the text, the way cargo-deny clarifies a licence, so a
+// text that changes, or a new one, is refused until it has been read.
+var ownTerms = map[string]string{
+	"9fb5df34635858528cc5b3cc91180a42d64e849490319ae7447db01880ebd1bd": "Bulgarian: use, copy, distribute and sell, keeping the notice",
+	"8940d49ecfdc619ab795d73e033ace38bf1d01806d39d59cc209f6bc221650f7": "English: copy and distribute in any medium, keeping the notice",
+	"f8f12b3fdcd9afc6ed1353d0ab4c520f5af416b9ea72364473bfff6a9e58014e": "Croatian: deal in the files without restriction, keeping the notice",
+}
+
+// chooseLicence is the licence a file is taken under: the first of those
+// the app may ship, in the order shippable wants them. A file's own terms
+// count only once they have been read, see ownTerms. Nil when there is
+// none.
+func chooseLicence(offered []patternLicence) *patternLicence {
+	for _, want := range shippable {
+		for i := range offered {
+			if offered[i].spdx != want {
+				continue
+			}
+			if want == "" && ownTerms[fmt.Sprintf("%x", sha256.Sum256([]byte(offered[i].text)))] == "" {
+				continue
+			}
+			return &offered[i]
+		}
+	}
+	return nil
+}
+
+// hyphenation is the patterns that break long words in the captions: every
+// file in engine/hyphenation, with what its own metadata says, what
+// language it is, its version, where it came from and the licences it is
+// offered under. The first of those the app may ship is the one it is
+// taken under, and a file offered under none of them stops the notices.
+// The text of each is the top of its file, which names its makers and its
+// copyright, with the licence fetched in full where the file only names it.
+func hyphenation() error {
+	dir := filepath.Join("engine", "hyphenation")
+	heads, err := filepath.Glob(filepath.Join(dir, "hyph-*.head.txt"))
+	if err != nil {
+		return err
+	}
+	patterns, err := filepath.Glob(filepath.Join(dir, "hyph-*.pat.txt"))
+	if err != nil {
+		return err
+	}
+	if len(heads) == 0 || len(heads) != len(patterns) {
+		return fmt.Errorf("%s has %d pattern files and %d headers, one for each", dir,
+			len(patterns), len(heads))
+	}
+	for _, path := range heads {
+		name := strings.TrimSuffix(filepath.Base(path), ".head.txt")
+		if _, err := os.Stat(filepath.Join(dir, name+".pat.txt")); err != nil {
+			return fmt.Errorf("%s has a header and no patterns", name)
+		}
+		head, err := read(path)
+		if err != nil {
+			return err
+		}
+		meta, err := readPatternMeta(head)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		chosen := chooseLicence(meta.licences())
+		if chosen == nil {
+			return fmt.Errorf("%s is not offered under a licence the app may ship. "+
+				"Take it out of %s", name, dir)
+		}
+		licence, text := chosen.spdx, head
+		if licence == "" {
+			licence = "Own terms, in the text"
+		} else if chosen.text == "" {
+			full, err := fetch(spdxTexts + licence + ".txt")
+			if err != nil {
+				return err
+			}
+			text = append(append(append([]byte{}, head...), "\n\n"...), full...)
+		}
+		version := strings.TrimSpace(meta.Version.Value)
+		if version == "" {
+			version = "as shipped"
+		}
+		url := "https://github.com/hyphenation/tex-hyphen"
+		if strings.HasPrefix(meta.Source, "https://") {
+			url = meta.Source
+		}
+		language := meta.Language.Name
+		if language == "" {
+			return fmt.Errorf("%s does not say what language it is", name)
+		}
+		if err := add(notice{Name: "Hyphenation patterns, " + language, Version: version,
+			Licence: licence, URL: url, Part: partApp,
+			Note: "Built into the app. They break a word too long for a caption line."},
+			map[string][]byte{name + ".txt": text}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // speech is what the sherpa-onnx libraries carry besides sherpa-onnx.

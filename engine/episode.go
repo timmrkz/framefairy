@@ -464,8 +464,8 @@ type CaptionStyleView struct {
 	// em size.
 	LineHeight float64 `json:"lineHeight"`
 	// ChosenSize is the size the caption style asks for, which is what the
-	// size control shows. What is drawn can be smaller, when a word would
-	// otherwise not fit inside the frame.
+	// size control shows. It is also the size drawn at: a word too wide for
+	// the frame is hyphenated rather than made smaller.
 	ChosenSize      float64 `json:"chosenSize"`
 	Bold            bool    `json:"bold"`
 	MarginV         float64 `json:"marginV"`
@@ -519,15 +519,15 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 	}
 	s := ResolveStyle(style)
 	work := filepath.Dir(filepath.Dir(planPath))
-	captions, err := ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)))
+	captions, err := ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)),
+		TooWide(s))
 	if err != nil {
 		return nil, err
 	}
 
-	// The lines and the size the render will use, so the picture in the app
-	// breaks the caption in the same places and at the same size.
-	chosen := s.Size
-	laid, s := LayOutCaptions(captions, s)
+	// The lines the render will use, so the picture in the app breaks the
+	// caption in the same places.
+	laid := LayOutCaptions(captions, s)
 
 	// The render authors every measure against a 1920 pixel tall frame and
 	// scales by the real height.
@@ -535,7 +535,7 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 	em := FontScale(s.Font)
 	view := &CaptionsView{Captions: []CaptionView{}, Style: CaptionStyleView{
 		Font: s.Font, Size: s.Size * em / authored, LineHeight: 1 / em,
-		ChosenSize: chosen, Bold: s.Bold != 0,
+		ChosenSize: s.Size, Bold: s.Bold != 0,
 		MarginV: s.MarginV / authored, MarginH: s.MarginH / authored,
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,
 		Radius: s.Radius / authored, Primary: WebColour(s.Primary),

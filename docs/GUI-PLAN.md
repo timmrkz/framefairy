@@ -141,7 +141,8 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.7 | Crop frame shown per shot, moved by hand per camera angle, reset to automatic | `[x]` |
 | 3.10 | The colour of the caption text, of the box behind it and of the highlight, each with how much of it is seen, beside the face and the size. The caption blocks of the clip timeline wear all three with their opacity, over everything else on the track | `[x]` |
 | 3.11 | One frame for what is chosen: the crop, the window and the clip drawn by one rule, with the same line, corners and colour | `[x]` |
-| 3.12 | A clip made by hand, where the model found none, the way an editor marks one: In, the I button and key, starts it at the sentence under the playhead and grows it forward, Out, the O button and key, ends it there and grows it back, as long as Shortest and Longest ask, cut and framed the way the model's clips are, with no model asked. It lands in a clip set of its own, `clips-hand.json`, which marks nothing searched on the range picker, and its clips go with the rest when a part is removed. Where nothing is transcribed yet, the part around the playhead is transcribed first as an island, only what is missing, 30 seconds either side unless Around In and Out in the settings says otherwise, with its waveform, kept until the transcription from the start passes it, and the clip is an outline until its words are there. The clip takes shape on screen the moment the key is pressed: its frame, caption blocks, title and a waiting card, then the crop. While the part is heard, what is still to come breathes on the clip timeline and the waveform fills in chunk by chunk, and the crop frame breathes in the middle of the video preview until the crop is placed. The engine `[x]`, the button and the key `[x]` | `[x]` |
+| 3.12 | Captions stay the size chosen. A word too long for a line gets a caption of its own and is hyphenated with TeX's patterns for the language of the episode, a German compound where its parts join, instead of one long word making every caption of the clip smaller | `[x]` |
+| 3.13 | A clip made by hand, where the model found none, the way an editor marks one: In, the I button and key, starts it at the sentence under the playhead and grows it forward, Out, the O button and key, ends it there and grows it back, as long as Shortest and Longest ask, cut and framed the way the model's clips are, with no model asked. It lands in a clip set of its own, `clips-hand.json`, which marks nothing searched on the range picker, and its clips go with the rest when a part is removed. Where nothing is transcribed yet, the part around the playhead is transcribed first as an island, only what is missing, 30 seconds either side unless Around In and Out in the settings says otherwise, with its waveform, kept until the transcription from the start passes it, and the clip is an outline until its words are there. The clip takes shape on screen the moment the key is pressed: its frame, caption blocks, title and a waiting card, then the crop. While the part is heard, what is still to come breathes on the clip timeline and the waveform fills in chunk by chunk, and the crop frame breathes in the middle of the video preview until the crop is placed. The engine `[x]`, the button and the key `[x]` | `[x]` |
 
 ## Phase 4: caption editor
 
@@ -207,6 +208,25 @@ then makes the code survive it.
 | R.7 | What the person sees when something fails: a reason in words, and a way on | `[ ]` |
 
 ---
+
+## Clip choice track: better stories, better cuts, less waiting
+
+How the model is asked, and what the engine does with its answer. Every
+experiment runs from the command line with `--compare`, see
+[CLI.md](CLI.md#trying-other-ways-of-asking), and is kept or taken out by
+what Tim reads and what the report counts.
+
+| # | Batch | Status |
+|---|---|---|
+| C.1 | Recipes, `--compare` with a report of what each cost, found and got wrong, the same seed on every side | `[x]` |
+| C.2 | The engine around the answer: numbers kept apart from words, every edge on a whole sentence, one clip per moment, clips far off the length asked for again | `[x]` |
+| C.3 | A brief for any video, what must never be cut, the task said again after the transcript. The app's default since prompt version 3 | `[x]` |
+| C.4 | A yardstick: about 40 stories whose first and last sentence and what to leave out Tim has marked, scored by the program over three seeds | `[ ]` |
+| C.5 | Decided with the yardstick, not by one run: 1024 tokens of thinking, the shorter `stories2` transcript, worked examples from Tim's cuts, a close second look at each clip's edges | `[ ]` |
+
+Tried and taken out: asking the model to review its own edges, telling
+the voices apart, cutting an overlong clip automatically. The reasons are
+in [ENGINE.md](ENGINE.md#recipes).
 
 ## Training track, separate from the app
 

@@ -654,9 +654,9 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 // A ceiling spent thinking is spent before a word of the answer is written,
 // so nothing has been heard yet and asking again is safe.
 func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model string,
-	maxTokens int, logDir, tag string, listen *Listener) (string, error) {
+	maxTokens int, logDir, tag, system string, listen *Listener) (string, error) {
 	facts := FactsFor(model)
-	text, err := e.CallClaude(ctx, prompt, model, maxTokens, logDir, tag, "", listen)
+	text, err := e.CallClaude(ctx, prompt, model, maxTokens, logDir, tag, system, listen)
 	if err == nil {
 		return text, nil
 	}
@@ -667,7 +667,7 @@ func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model strin
 	}
 	e.Log.Warn("the model used the whole %s token ceiling thinking and never "+
 		"answered. Asking again with %s.", commas(maxTokens), commas(headroom))
-	return e.CallClaude(ctx, prompt, model, headroom, logDir, tag, "", listen)
+	return e.CallClaude(ctx, prompt, model, headroom, logDir, tag, system, listen)
 }
 
 // RepairJSON asks the model to fix its own output, sending only the broken

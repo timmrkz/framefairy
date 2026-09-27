@@ -333,60 +333,65 @@ type LaidCaption struct {
 	Lines [][]Cue
 }
 
-// LayOutCaptions breaks captions into the lines they are drawn in and gives
-// back the style with a size they all fit at.
+// LayOutCaptions breaks captions into the lines they are drawn in, at the
+// size the style asks for.
 //
 // A line is broken where the text would otherwise run wider than the frame,
 // which is what keeps a caption inside its box whatever face and size are
-// chosen. When even a single word is too wide for the frame, the size comes
-// down until it fits, for the whole clip, so the captions of one short stay
-// one size. A face the program does not carry cannot be measured, and then
-// the style's character count decides the breaks, as it always did.
-func LayOutCaptions(captions []Caption, s Style) ([]LaidCaption, Style) {
-	room := CaptionRoom(s)
-	size := s.Size
+// chosen. A word too wide for a line on its own is hyphenated across two,
+// see breakWord, and each half gets its share of the word's time, so the
+// highlight runs over both. It used to bring the size of the whole clip
+// down instead, and one long word anywhere in a short made every caption in
+// it a third smaller. A face the program does not carry cannot be measured,
+// and then the style's character count decides the breaks, as it always
+// did.
+func LayOutCaptions(captions []Caption, s Style) []LaidCaption {
+	r := roomFor(s)
+	// The language is only worked out when a word needs breaking.
+	var h *hyphenator
+	decided := false
 	laid := make([]LaidCaption, len(captions))
-	for round := 0; round < 4; round++ {
-		widest := 0.0
-		for i, c := range captions {
-			lines := captionLines(c, s.Font, size, room, s.WrapChars)
-			laid[i] = LaidCaption{Caption: c, Lines: lines}
-			for _, line := range lines {
-				if width, ok := TextWidth(s.Font, cueText(line), size); ok {
-					widest = math.Max(widest, width)
-				}
+	for i, c := range captions {
+		if !decided && hasTooWide(c, r) {
+			h, decided = hyphenatorFor(languageOf(captions)), true
+		}
+		c.Words = hyphenate(c.Words, r, h)
+		laid[i] = LaidCaption{Caption: c, Lines: captionLines(c, r, h)}
+	}
+	return laid
+}
+
+func hasTooWide(c Caption, r captionRoom) bool {
+	if len(c.Words) == 0 {
+		for _, w := range fields(c.Text) {
+			if !r.fits(w) {
+				return true
 			}
 		}
-		if widest <= room {
-			break
-		}
-		next := math.Max(12, math.Floor(size*room/widest))
-		if next >= size {
-			break
-		}
-		size = next
+		return false
 	}
-	s.Size = size
-	return laid, s
+	for _, w := range c.Words {
+		if !r.fits(w.Text) {
+			return true
+		}
+	}
+	return false
 }
 
 // CaptionLines splits one caption into the lines the render draws it in.
 func CaptionLines(c Caption, s Style) [][]Cue {
-	return captionLines(c, s.Font, s.Size, CaptionRoom(s), s.WrapChars)
+	return captionLines(c, roomFor(s), nil)
 }
 
-func captionLines(c Caption, font string, size, room float64, wrapChars int) [][]Cue {
-	fits := func(text string) bool {
-		if width, ok := TextWidth(font, text, size); ok {
-			return width <= room
-		}
-		return runeLen(text) <= wrapChars
-	}
+func captionLines(c Caption, r captionRoom, h *hyphenator) [][]Cue {
 	if len(c.Words) == 0 {
 		// A caption that came back from a file without word timings.
-		words := fields(c.Text)
+		var words []string
+		for _, w := range fields(c.Text) {
+			words = append(words, breakWord(w, r, h)...)
+		}
 		var out [][]Cue
-		for _, line := range wrapWords(words, fits) {
+		for _, line := range wrapWords(words, r.fits) {
 			parts := make([]string, len(line))
 			for i, at := range line {
 				parts[i] = words[at]
@@ -400,7 +405,7 @@ func captionLines(c Caption, font string, size, room float64, wrapChars int) [][
 		words[i] = w.Text
 	}
 	var out [][]Cue
-	for _, line := range wrapWords(words, fits) {
+	for _, line := range wrapWords(words, r.fits) {
 		row := make([]Cue, 0, len(line))
 		for _, at := range line {
 			row = append(row, c.Words[at])
@@ -640,9 +645,9 @@ func roundedRect(x0, y0, x1, y1, radius float64) string {
 func (e *Engine) WriteASS(ctx context.Context, captions []Caption, path string,
 	width, height int, overrides map[string]any) error {
 	s := ResolveStyle(overrides)
-	// The lines and the size that fit the frame, worked out once for the
-	// whole clip and used by both tracks.
-	laid, s := LayOutCaptions(captions, s)
+	// The lines that fit the frame, worked out once for the whole clip and
+	// used by both tracks.
+	laid := LayOutCaptions(captions, s)
 	if s.Highlight {
 		done, err := e.writeHighlighted(ctx, laid, path, width, height, s)
 		if done || err != nil {
