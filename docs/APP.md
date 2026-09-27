@@ -1318,6 +1318,20 @@ moment **Save key** is pressed, not with the rest of the settings, because
 it never lands in the settings file. An app opened from Finder has no shell
 environment, so this is the only way to give it a key.
 
+**The settings are not left while clips cannot be found.** A model
+chosen and not downloaded, a model in the cloud without its key, nothing
+chosen, or llama-server missing: going on from any of them is going on to
+an app whose every search fails, far from the one place it can be put
+right. So a move to another page, from the sidebar or the menu, is refused,
+and the card comes into view and shakes, the way the Mac's own password
+field does when it will not let somebody in, with the keyboard on the
+list, where choosing a model that is here or the one with a key puts it
+right. A download on its way does not hold the app, because it is being
+put right, and neither does a page still reading what it has to show. The
+settings hold the app through `nav.hold` in `lib/state.svelte.ts`, which
+every move between pages asks first, and when they hold it is decided in
+`lib/finding.ts`, with its tests.
+
 **Downloaded models** is the last row of the card, folded, with how many
 there are and the room they take. It is only about that room: opened, it
 lists them with their size on disk and a trash can each, quiet until the

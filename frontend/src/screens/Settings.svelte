@@ -11,12 +11,13 @@
   // Mac. There is no Save button, so there is nothing to forget to press.
   import { onMount } from "svelte";
   import { wearColour } from "../lib/colour";
-  import { jobs } from "../lib/state.svelte";
+  import { jobs, nav } from "../lib/state.svelte";
   import {
     cloudModelIn,
     cloudValue,
     finderOptions as finderOptions_,
     finderStanding,
+    holdsTheApp,
     providerOf,
   } from "../lib/finding";
   import {
@@ -400,9 +401,36 @@
 
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+  // The settings are not left while what finds the clips cannot find any:
+  // a model chosen and not downloaded, a key missing, nothing chosen. Going
+  // on from there is going on to an app that fails every search, far from
+  // the one place it can be put right. So a move away is refused, and the
+  // card that needs the answer comes into view and shakes, the way the
+  // Mac's own password field does when it will not let somebody in, with
+  // the keyboard on the list where the answer is. A download on its way
+  // is not held: it is being put right. Nor is a page still reading what
+  // it has to show.
+  let findingCard = $state<HTMLElement>();
+  let shaking = $state(false);
+  let loaded = $state(false);
+  const held = $derived(holdsTheApp(finderState, loaded));
+  function hold(): boolean {
+    if (!held) return false;
+    findingCard?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    findingCard?.querySelector<HTMLElement>("button.pick")?.focus();
+    // Off and on again, so a second try shakes it again.
+    shaking = false;
+    requestAnimationFrame(() => (shaking = true));
+    return true;
+  }
+
   onMount(() => {
     load();
-    return () => clearTimeout(saveTimer);
+    nav.hold = hold;
+    return () => {
+      clearTimeout(saveTimer);
+      if (nav.hold === hold) nav.hold = null;
+    };
   });
 
   async function load() {
@@ -412,6 +440,7 @@
       problem = errorText(err);
     }
     await Promise.all([readTraining(), readModels(), check()]);
+    loaded = true;
   }
 </script>
 
@@ -455,7 +484,12 @@
             </Info>
           </span>
         </div>
-        <div class="card">
+        <div
+          class="card finding"
+          class:shaking
+          bind:this={findingCard}
+          onanimationend={() => (shaking = false)}
+        >
           <!-- The one decision, and under it the rows that depend on it, in
                the same card, the way a pop-up in the Mac's own settings
                changes the rows beneath it. -->
@@ -968,6 +1002,40 @@
   @media (prefers-reduced-motion: reduce) {
     .chevron {
       transition: none;
+    }
+  }
+
+  /* Not yet: the card that needs an answer shakes from side to side and
+     settles, the way the Mac's password field does, a few times and less
+     each time. Without motion it is lit for a moment instead. */
+  .finding.shaking {
+    animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  }
+
+  @keyframes shake {
+    20% {
+      transform: translateX(-8px);
+    }
+    40% {
+      transform: translateX(8px);
+    }
+    60% {
+      transform: translateX(-5px);
+    }
+    80% {
+      transform: translateX(3px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .finding.shaking {
+      animation: lit 0.6s ease;
+    }
+  }
+
+  @keyframes lit {
+    30% {
+      border-color: var(--warn);
     }
   }
 

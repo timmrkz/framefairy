@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { CloudModel, LanguageModel, Provider } from "./api";
-import { cloudModelIn, cloudValue, finderOptions, finderStanding, providerOf } from "./finding";
+import { cloudModelIn, cloudValue, finderOptions, finderStanding, holdsTheApp, providerOf } from "./finding";
 
 const anthropic: Provider = { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "console.anthropic.com" };
 const openai: Provider = { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" };
@@ -150,5 +150,33 @@ describe("how the choice stands", () => {
       }).text,
     ];
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(60);
+  });
+});
+
+describe("when the settings keep the app where it is", () => {
+  const notHere = finderStanding({
+    planner: "local",
+    provider: anthropic,
+    hasKey: true,
+    inUse: model("far", { installed: false, inUse: true }),
+  });
+
+  test("a model chosen and not downloaded holds it, the trap Tim walked into", () => {
+    expect(holdsTheApp(notHere.state, true)).toBe(true);
+  });
+
+  test("a model in the cloud without its key holds it", () => {
+    expect(holdsTheApp(finderStanding({ planner: "api", provider: openai, hasKey: false }).state, true)).toBe(true);
+  });
+
+  test("a download on its way and a working choice let it go", () => {
+    const far = model("far", { installed: false, inUse: true });
+    const downloading = finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: far, fetching: far });
+    expect(holdsTheApp(downloading.state, true)).toBe(false);
+    expect(holdsTheApp(finderStanding({ planner: "api", provider: openai, hasKey: true }).state, true)).toBe(false);
+  });
+
+  test("a page still reading never holds anybody", () => {
+    expect(holdsTheApp(notHere.state, false)).toBe(false);
   });
 });

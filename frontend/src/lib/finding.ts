@@ -130,3 +130,10 @@ export function finderStanding(f: FinderFacts): { text: string; tone: Tone; stat
     state: f.serverMissing ? "err" : "ok",
   };
 }
+
+// Whether the settings keep the app where it is: while what finds the clips
+// cannot find any, and never while a download is putting it right or the
+// page is still reading what it has to show.
+export function holdsTheApp(state: Standing, loaded: boolean): boolean {
+  return loaded && (state === "warn" || state === "err");
+}
