@@ -246,9 +246,24 @@
   // starts the moment it can.
   let wantPlay = false;
 
+  // Whether this play is the chosen clip's, with its cuts jumped and a stop
+  // at its end, or the episode's, straight on from the playhead.
+  let playsClip = false;
+
   function play() {
     if (!video) return;
-    if (clip) {
+    // The clip plays when the playhead stands in it, when it has just played
+    // to its end, which is where the playhead is left, and when it loops.
+    // Anywhere else the playhead was put there to look at that part of the
+    // episode, clip or no clip, so the episode plays on from there. It used
+    // to go back to the start of the chosen clip, and a part of the episode
+    // could not be heard at all while a clip was chosen.
+    playsClip =
+      !!clip &&
+      (looping ||
+        (time >= clipStart - frameOf / 2 && time < clipEnd - 0.05) ||
+        Math.abs(time - clipEnd) <= 0.05 + frameOf);
+    if (clip && playsClip) {
       // A clip plays from the playhead while the playhead stands inside it,
       // otherwise from its start.
       //
@@ -305,7 +320,7 @@
       }
       jumping = false;
     }
-    if (clip && pieces.length) {
+    if (clip && playsClip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
       // jumps every cut and stops where the clip ends.
       // The pieces change under the player whenever a cut is taken out or
