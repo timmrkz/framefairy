@@ -29,6 +29,17 @@ func TestAClipMadeByHand(t *testing.T) {
 		t.Fatalf("transcribe: %v %s", err, p.LastError())
 	}
 
+	// The sketch the app shows while the clip is framed is the clip that
+	// is then made: the same parts, the same title, and captions on it.
+	sketch, err := p.SketchClip(30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sketch.Spans) == 0 || len(sketch.Captions) == 0 || sketch.Title == "" {
+		t.Fatalf("the sketch has %d parts, %d captions and the title %q",
+			len(sketch.Spans), len(sketch.Captions), sketch.Title)
+	}
+
 	// The way the app wraps an edit, so Undo can take the clip away. The
 	// first clip made by hand also makes its clip set.
 	before := TakeSnapshot(p.LogsDir())
@@ -57,6 +68,16 @@ func TestAClipMadeByHand(t *testing.T) {
 		t.Fatalf("the clip set holds %d clips: %v", len(clips), err)
 	}
 	c := clips[0]
+	if c.Title != sketch.Title || len(c.Segments) != len(sketch.Spans) {
+		t.Fatalf("the clip made is not the one sketched: %q in %d parts, sketched %q in %d",
+			c.Title, len(c.Segments), sketch.Title, len(sketch.Spans))
+	}
+	for k, seg := range c.Segments {
+		if math.Abs(seg.Start-sketch.Spans[k].Start) > 0.001 || math.Abs(seg.End-sketch.Spans[k].End) > 0.001 {
+			t.Errorf("part %d is %v to %v, sketched %v to %v", k, seg.Start, seg.End,
+				sketch.Spans[k].Start, sketch.Spans[k].End)
+		}
+	}
 	if start := c.Segments[0].Start; start > 30 || start < 25 {
 		t.Errorf("the clip starts at %v, not at the line the playhead stands in", start)
 	}

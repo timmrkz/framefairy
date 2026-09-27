@@ -29,14 +29,82 @@ func (p *Project) HandPlanPath() string { return filepath.Join(p.LogsDir(), Hand
 // The pauses are cut and the crop is framed exactly as they are for a clip
 // the model found. It answers with the clip set and the new clip's id.
 func (p *Project) MakeClip(ctx context.Context, at float64, backward bool) (string, string, error) {
-	t, err := p.Transcript()
+	sketch, err := p.SketchClip(at, backward)
 	if err != nil {
 		return "", "", err
+	}
+	ranges, spans, said := sketch.ranges, sketch.Spans, sketch.Words
+	o := p.Base
+
+	e := p.engine
+	source, err := e.Probe(ctx, p.Source)
+	if err != nil {
+		return "", "", err
+	}
+	cropW, _ := CropWindow(source, o.Width, o.Height)
+	tight := make([]Span, len(spans))
+	for k, s := range spans {
+		tight[k] = Span{s.Start, s.End}
+	}
+	segments, err := e.ClipSegments(ctx, p.Source, tight, source, cropW, newCropCache())
+	if err != nil {
+		return "", "", err
+	}
+	if len(segments) == 0 {
+		return "", "", renderErr("there is nothing to make a clip of at %s", HMS(at))
+	}
+
+	title := sketch.Title
+	clip := PlanClip{Title: title, Slug: strings.ToLower(SanitiseName(title, "clip")),
+		Keep: ranges, Words: [][3]any{}}
+	for _, w := range said {
+		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
+			PyFloat(roundTo(w.End, 3)), w.Text})
+	}
+	for _, s := range segments {
+		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
+			CropX: "center"}
+		if s.CropX != nil {
+			seg.CropX = *s.CropX
+		}
+		clip.Segments = append(clip.Segments, seg)
+	}
+
+	path := p.HandPlanPath()
+	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
+		return "", "", err
+	}
+	id, err := addHandClip(path, filepath.Base(p.Source), clip)
+	if err != nil {
+		return "", "", err
+	}
+	return path, id, nil
+}
+
+// ClipSketch is a clip made by hand before it is framed: the parts of the
+// episode it keeps, the words said in them, what it is called and where its
+// captions fall on its own clock. It is worked out from the transcript
+// alone, in a moment, so the app can show the clip taking shape while the
+// crop, which reads the picture, is still being placed.
+type ClipSketch struct {
+	Spans    []Span
+	Words    []Cue
+	Title    string
+	Captions []Caption
+	ranges   [][2]int
+}
+
+// SketchClip is the clip MakeClip would make at a moment, without framing
+// it: the same lines, the same pauses cut, the same title and captions.
+func (p *Project) SketchClip(at float64, backward bool) (ClipSketch, error) {
+	t, err := p.Transcript()
+	if err != nil {
+		return ClipSketch{}, err
 	}
 	o := p.Base
 	lines := BuildLines(t.Words, t.Levels(), o.MaxPause)
 	if len(lines) == 0 {
-		return "", "", renderErr("nothing is said in this episode yet")
+		return ClipSketch{}, renderErr("nothing is said in this episode yet")
 	}
 	// The line the moment stands in. In a pause, that is the line after it
 	// for a clip that starts here and the line before it for one that ends
@@ -50,12 +118,12 @@ func (p *Project) MakeClip(ctx context.Context, at float64, backward bool) (stri
 	}
 	switch {
 	case here < 0 && !backward:
-		return "", "", renderErr("nothing is said after %s", HMS(at))
+		return ClipSketch{}, renderErr("nothing is said after %s", HMS(at))
 	case here < 0:
 		here = len(lines) - 1
 	case backward && lines[here].Start() > at:
 		if here == 0 {
-			return "", "", renderErr("nothing is said before %s", HMS(at))
+			return ClipSketch{}, renderErr("nothing is said before %s", HMS(at))
 		}
 		here--
 	}
@@ -85,56 +153,21 @@ func (p *Project) MakeClip(ctx context.Context, at float64, backward bool) (stri
 	ranges := [][2]int{{first + 1, last + 1}}
 	spans := SegmentsFromRanges(ranges, lines, o.KeepPause, o.MaxPause)
 	if len(spans) == 0 {
-		return "", "", renderErr("there is nothing to make a clip of at %s", HMS(at))
-	}
-
-	e := p.engine
-	source, err := e.Probe(ctx, p.Source)
-	if err != nil {
-		return "", "", err
-	}
-	cropW, _ := CropWindow(source, o.Width, o.Height)
-	tight := make([]Span, len(spans))
-	for k, s := range spans {
-		tight[k] = Span{s.Start, s.End}
-	}
-	segments, err := e.ClipSegments(ctx, p.Source, tight, source, cropW, newCropCache())
-	if err != nil {
-		return "", "", err
-	}
-	if len(segments) == 0 {
-		return "", "", renderErr("there is nothing to make a clip of at %s", HMS(at))
+		return ClipSketch{}, renderErr("there is nothing to make a clip of at %s", HMS(at))
 	}
 
 	var said []Cue
 	for n := first; n <= last; n++ {
 		said = append(said, lines[n].Cues...)
 	}
-	title := handTitle(said)
-	clip := PlanClip{Title: title, Slug: strings.ToLower(SanitiseName(title, "clip")),
-		Keep: ranges, Words: [][3]any{}}
-	for _, w := range said {
-		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
-			PyFloat(roundTo(w.End, 3)), w.Text})
+	sketch := ClipSketch{Spans: make([]Span, len(spans)), Words: said, Title: handTitle(said), ranges: ranges}
+	clip := Clip{Words: said}
+	for k, s := range spans {
+		sketch.Spans[k] = Span{s.Start, s.End}
+		clip.Segments = append(clip.Segments, Segment{Start: s.Start, End: s.End})
 	}
-	for _, s := range segments {
-		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
-			CropX: "center"}
-		if s.CropX != nil {
-			seg.CropX = *s.CropX
-		}
-		clip.Segments = append(clip.Segments, seg)
-	}
-
-	path := p.HandPlanPath()
-	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
-		return "", "", err
-	}
-	id, err := addHandClip(path, filepath.Base(p.Source), clip)
-	if err != nil {
-		return "", "", err
-	}
-	return path, id, nil
+	sketch.Captions = Captions(clip, 38)
+	return sketch, nil
 }
 
 // addHandClip puts a clip into the clip set made by hand, under the first

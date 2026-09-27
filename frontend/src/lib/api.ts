@@ -145,6 +145,18 @@ export interface ClipView {
   thumbnails: number[];
 }
 
+// A clip made by hand before its crop is placed: where it lies, what it
+// keeps and where its captions fall, on the clip's clock.
+export interface ClipSketch {
+  title: string;
+  start: number;
+  end: number;
+  duration: number;
+  segments: Segment[];
+  words: Word[];
+  captions: { start: number; end: number }[];
+}
+
 // One line of a caption, the way the render lays it out.
 export interface CaptionLine {
   words: Word[];
@@ -482,6 +494,10 @@ export const api = {
     edge: "start" | "end",
     at: number,
   ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
+  // The clip made by hand at a moment, worked out from the transcript
+  // alone and at once, to be shown while its crop is placed.
+  sketchClip: (path: string, at: number, backward: boolean) =>
+    call<ClipSketch>("SketchClip", path, at, backward),
   // A clip made by hand at a moment of the episode, for a part the model
   // did not pick: from the line the moment stands in forward, or back to
   // it. It is framed the way the model's clips are.

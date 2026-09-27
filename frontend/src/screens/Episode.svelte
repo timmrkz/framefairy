@@ -19,6 +19,7 @@
     intoWord,
     mediaURL,
     snapCaptionY,
+    type CaptionCue,
     type CaptionFont,
     type CaptionsView,
     type ClipEntry,
@@ -917,19 +918,51 @@
   // so the button says it is at work until the clip is there. Then it is
   // chosen, and from there it is a clip like any other.
   let making = $state<"" | "in" | "out">("");
+  // The clip being made, as the transcript alone says it will be, shown on
+  // the clip timeline and in the list while its crop is placed, so the clip
+  // is seen taking shape from the moment the key is pressed.
+  let sketch = $state<ClipEntry | null>(null);
+  let sketchCues = $state<CaptionCue[]>([]);
+  const cards = $derived(
+    sketch ? [...shown, sketch].sort((a, b) => a.start - b.start) : shown,
+  );
   const canMake = $derived(!making && !!source && time < covered);
   async function makeClip(backward: boolean) {
     if (!canMake) return;
     problem = "";
     making = backward ? "out" : "in";
+    const at = time;
     try {
-      const made = await api.makeClip(path, time, backward);
+      const sk = await api.sketchClip(path, at, backward);
+      sketch = {
+        id: "sketch",
+        slug: "",
+        basename: "",
+        title: sk.title,
+        reason: "",
+        duration: sk.duration,
+        start: sk.start,
+        end: sk.end,
+        segments: sk.segments,
+        words: sk.words,
+        rejected: false,
+        captionY: captionY,
+        captionYMoved: false,
+        thumbnails: [],
+        key: "sketch",
+        plan: "",
+        cropLefts: [],
+      };
+      sketchCues = sk.captions.map((c) => ({ start: c.start, end: c.end, lines: [] }));
+      const made = await api.makeClip(path, at, backward);
       clips = [...clips.filter((c) => c.key !== made.key), made].sort((a, b) => a.start - b.start);
       await select(made.key);
       void refreshClips();
     } catch (err) {
       problem = errorText(err);
     } finally {
+      sketch = null;
+      sketchCues = [];
       making = "";
     }
   }
@@ -2195,7 +2228,7 @@
           bind:offers
           {path}
           {source}
-          clip={current}
+          clip={sketch ? null : current}
           bind:time
           {still}
           stillAt={showing}
@@ -2254,8 +2287,9 @@
           </div>
           <div class="scroll list">
             <ClipList
-              clips={shown}
-              {selected}
+              clips={cards}
+              selected={sketch ? sketch.key : selected}
+              making={sketch?.key ?? ""}
               {coming}
               waiting={comingNow}
               next={shownNext}
@@ -2274,13 +2308,14 @@
       <ClipTimeline
         bind:this={timeline}
         {path}
-        clip={current}
+        clip={sketch ?? current}
         {duration}
         {covered}
         heardTo={status && !status.transcribed ? covered : null}
         {time}
         working={!!transcribing}
-        locked={renderingCurrent}
+        locked={renderingCurrent || !!sketch}
+        arriving={!!sketch}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers
@@ -2292,9 +2327,9 @@
         onmovecut={(index, from, to, toWords) =>
           current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
         onwalkclip={walkClip}
-        thumbnails={current?.thumbnails ?? []}
+        thumbnails={sketch ? [] : (current?.thumbnails ?? [])}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
-        captions={captions?.captions ?? []}
+        captions={sketch ? sketchCues : (captions?.captions ?? [])}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,
@@ -2392,10 +2427,10 @@
         >
           <Icon name="locate" />
         </button>
-        {#if current}
+        {#if sketch || current}
           <div class="titles">
-            <h2 class="selectable">{current.title || current.slug}</h2>
-            {#if current.reason}<p class="muted selectable">{current.reason}</p>{/if}
+            <h2 class="selectable">{sketch ? sketch.title : current?.title || current?.slug}</h2>
+            {#if current?.reason && !sketch}<p class="muted selectable">{current.reason}</p>{/if}
           </div>
           <span class="num">{clock(numbers.start)} to {clock(numbers.end)}</span>
           <span class="muted num"
@@ -2419,7 +2454,7 @@
             title="Back to where you had it">Put the crop back</button
           >
         {/if}
-        {#if current}
+        {#if current && !sketch}
           {#if current.rendered}
             <button onclick={() => api.reveal(current.rendered!)}>Show in folder</button>
           {/if}

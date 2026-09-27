@@ -1650,6 +1650,55 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	return ClipEntry{}, os.ErrNotExist
 }
 
+// ClipSketch is a clip made by hand before it is framed, for the interface
+// to show while the crop is placed: where it lies, the parts it keeps, the
+// words said in them, what it is called and where its captions fall on the
+// clip's clock.
+type ClipSketch struct {
+	Title    string               `json:"title"`
+	Start    float64              `json:"start"`
+	End      float64              `json:"end"`
+	Duration float64              `json:"duration"`
+	Segments []engine.SegmentView `json:"segments"`
+	Words    []engine.WordView    `json:"words"`
+	Captions []ClipSketchCaption  `json:"captions"`
+}
+
+// ClipSketchCaption is where a caption of a sketched clip appears and goes,
+// on the clip's clock.
+type ClipSketchCaption struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+}
+
+// SketchClip is the clip MakeClip would make at a moment, worked out from
+// the transcript alone and at once, so the clip can be seen taking shape
+// while the crop, which reads the picture, is placed.
+func (s *FrameFairy) SketchClip(path string, at float64, backward bool) (ClipSketch, error) {
+	if !s.store.Known(path) {
+		return ClipSketch{}, os.ErrNotExist
+	}
+	p := engine.NewProject(nil, path, s.store.Settings().options())
+	sk, err := p.SketchClip(at, backward)
+	if err != nil {
+		return ClipSketch{}, err
+	}
+	out := ClipSketch{Title: sk.Title, Segments: []engine.SegmentView{}, Words: []engine.WordView{},
+		Captions: []ClipSketchCaption{}}
+	for _, sp := range sk.Spans {
+		out.Segments = append(out.Segments, engine.SegmentView{Start: sp.Start, End: sp.End})
+		out.Duration += sp.End - sp.Start
+	}
+	out.Start, out.End = sk.Spans[0].Start, sk.Spans[len(sk.Spans)-1].End
+	for _, w := range sk.Words {
+		out.Words = append(out.Words, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
+	}
+	for _, c := range sk.Captions {
+		out.Captions = append(out.Captions, ClipSketchCaption{Start: c.Start, End: c.End})
+	}
+	return out, nil
+}
+
 // MakeClip makes a clip by hand at a moment of the episode, for a part the
 // model did not pick, and returns it: from the line the moment stands in
 // forward, the way an editor's In mark works, or back to it, the way the

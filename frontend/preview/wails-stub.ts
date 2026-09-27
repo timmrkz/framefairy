@@ -646,6 +646,26 @@ export const Call = {
       // A clip made by hand at the playhead, in the clip set of its own,
       // starting a little before it the way the engine starts one on the
       // line the playhead stands in.
+      // The clip MakeClip is about to make, from the transcript alone and
+      // at once, the way the engine sketches it.
+      case "SketchClip": {
+        const at = Number(args[1]);
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error(`the transcript has not reached ${Math.round(at)} s yet`));
+        }
+        const start = Math.max(0, Math.round(at) - (args[2] ? 25 : 1));
+        const c = handClip(made().length, start);
+        const length = c.segments.reduce((sum: number, p: { start: number; end: number }) => sum + p.end - p.start, 0);
+        return Promise.resolve({
+          title: c.title,
+          start: c.start,
+          end: c.end,
+          duration: length,
+          segments: c.segments.map((p: { start: number; end: number }) => ({ start: p.start, end: p.end, cropX: null, moved: false })),
+          words: c.words,
+          captions: Array.from({ length: Math.floor(length / 4) }, (_, k) => ({ start: k * 4, end: k * 4 + 3.8 })),
+        });
+      }
       case "MakeClip": {
         const at = Number(args[1]);
         if (location.search.includes("refuse")) {
@@ -654,7 +674,8 @@ export const Call = {
         // Forward from the line the playhead stands in, or back to it.
         made().push(Math.max(0, Math.round(at) - (args[2] ? 25 : 1)));
         const i = made().length - 1;
-        return new Promise((done) => setTimeout(() => done(handClip(i, made()[i])), 400));
+        // Framing reads the picture, which takes a while.
+        return new Promise((done) => setTimeout(() => done(handClip(i, made()[i])), 1500));
       }
       case "Coverage":
         if (found) {

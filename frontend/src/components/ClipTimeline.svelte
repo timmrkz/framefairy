@@ -16,6 +16,7 @@
   // words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
+  import { scale } from "svelte/transition";
   import {
     api,
     clock,
@@ -56,6 +57,7 @@
     oncaptiondraft,
     thumbnails = [],
     onthumbnail,
+    arriving = false,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -120,6 +122,9 @@
     // A thumbnail dragged to another frame, from where it was to where it
     // was let go, both in the episode.
     onthumbnail?: (from: number, to: number) => Promise<void>;
+    // A clip made by hand is being framed, and its captions come in one
+    // after another along it, the way they will be said.
+    arriving?: boolean;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -1380,6 +1385,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
             <div
               class="caption"
+              in:scale={{ start: 0.6, delay: arriving ? b.i * 70 : 0, duration: arriving ? 180 : 0 }}
               class:showing={time >= b.from && time < b.to}
               style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
               role="button"

@@ -991,6 +991,14 @@ by hand wherever the transcript has reached, searched or not:
   from the transcript, so the clip is there in the moment it takes to
   frame it. Pauses are cut and the crop is framed the way they are for the
   model's clips, and the beam runs round the button while that happens.
+- **The clip takes shape at once.** The sentences come from the
+  transcript in a moment, and everything they decide is shown straight
+  away: the clip's frame on the clip timeline, which moves to it, its
+  caption blocks coming in one after another along it, its title in the
+  row below, and its card in its place in the clip list, breathing like
+  any place waiting to be filled. Placing the crop reads the picture and
+  takes a few seconds. When it is done the card becomes the clip's own,
+  chosen, and the crop frame appears in the video preview.
 - **The new clip is chosen**, and from there it is a clip like any other:
   drag its edges, make cuts, place the crop and the captions, add
   thumbnails and render. Its title is its first words.

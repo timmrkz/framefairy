@@ -14,6 +14,7 @@
     waiting = true,
     next = null,
     stopped = null,
+    making = "",
     onselect,
     onremove,
     onputback,
@@ -40,6 +41,12 @@
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
     stopped?: { what: string; left: string; full: string } | null;
+    // The card of a clip made by hand while its crop is placed. It stands in
+    // its place already, with its title and length, and breathes like any
+    // place waiting to be filled until the clip is there. It belongs to no
+    // clip set yet, and when the clip lands it hands over to the clip's own
+    // card at once rather than sliding away beside it.
+    making?: string;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -113,7 +120,13 @@
 
 <ol bind:this={list}>
   {#each clips as clip (clip.key)}
-    <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }} data-key={clip.key}>
+    <li
+      animate:flip={{ duration: 180 }}
+      in:slide={{ duration: clip.key === making ? 200 : 0 }}
+      out:slide={{ duration: clip.plan ? 200 : 0 }}
+      data-key={clip.key}
+      class:waiting={clip.key === making}
+    >
       {#if clip.key === removed}
         <div class="gone">
           <Icon name="trash" />
@@ -133,7 +146,7 @@
             {#if clip.rendered}<span class="dot ok" title="This clip is rendered"></span>{/if}
           </span>
         </button>
-        {#if onremove}
+        {#if onremove && clip.key !== making}
           <button
             class="drop quiet danger"
             title="Take this clip out of the list"
