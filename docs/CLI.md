@@ -136,7 +136,7 @@ fits.
 | `--llm-model FILE` | the only `.gguf` in `~/.framefairy/models` | the local model file |
 | `--llm-server PATH` | `llama-server` on PATH | the llama.cpp server program |
 | `--llm-url URL` | none | use a llama-server you already started, which saves loading the model on every run |
-| `--model claude-sonnet-5` | claude-sonnet-5 | the model in the cloud, with `--planner api`. A `claude-` model is Anthropic's and reads `ANTHROPIC_API_KEY`, a `gpt-` model, like `gpt-5.6-terra`, is OpenAI's and reads `OPENAI_API_KEY` |
+| `--model claude-sonnet-5` | claude-sonnet-5 | the model in the cloud, with `--planner api`. A `claude-` model is Anthropic's and reads `ANTHROPIC_API_KEY`, a `gpt-` model, like `gpt-6-sol`, is OpenAI's and reads `OPENAI_API_KEY` |
 | `--budget 2.00` | $2.00 | with `--planner api`, refuse a request estimated to cost more than this |
 | `--max-tokens 48000` | 48000 | ceiling on the reply length |
 | `--think 2048` | 2048 | with `--planner local`, how many tokens the model may think before it answers. `-1` is no limit, `0` is no thinking |

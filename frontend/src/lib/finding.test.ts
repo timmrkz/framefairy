@@ -7,7 +7,7 @@ const openai: Provider = { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY
 const providers = [anthropic, openai];
 const cloud: CloudModel[] = [
   { model: "claude-sonnet-5", title: "Claude Sonnet 5", provider: "anthropic" },
-  { model: "gpt-5.6-terra", title: "GPT-5.6 Terra", provider: "openai" },
+  { model: "gpt-6-sol", title: "GPT-6 Sol", provider: "openai" },
 ];
 
 function model(name: string, over: Partial<LanguageModel> = {}): LanguageModel {
@@ -29,23 +29,23 @@ function model(name: string, over: Partial<LanguageModel> = {}): LanguageModel {
 
 describe("which company a model in the cloud belongs to", () => {
   test("a model the app offers is known by the list", () => {
-    expect(providerOf("gpt-5.6-terra", cloud, providers).name).toBe("openai");
+    expect(providerOf("gpt-6-sol", cloud, providers).name).toBe("openai");
     expect(providerOf("claude-sonnet-5", cloud, providers).name).toBe("anthropic");
   });
 
   test("one written in by hand is what the Go side said, and Anthropic before it says", () => {
-    expect(providerOf("gpt-5.6-luna", cloud, providers, "openai").name).toBe("openai");
+    expect(providerOf("gpt-6-luna", cloud, providers, "openai").name).toBe("openai");
     expect(providerOf("something", cloud, providers).name).toBe("anthropic");
   });
 
   test("a company missing from the list still has a name and a place for keys", () => {
-    const p = providerOf("gpt-5.6-terra", cloud, []);
+    const p = providerOf("gpt-6-sol", cloud, []);
     expect(p.title).toBe("OpenAI");
     expect(p.keysAt).toBe("platform.openai.com");
   });
 
   test("a choice in the cloud is never taken for a file here", () => {
-    expect(cloudModelIn(cloudValue("gpt-5.6-terra"))).toBe("gpt-5.6-terra");
+    expect(cloudModelIn(cloudValue("gpt-6-sol"))).toBe("gpt-6-sol");
     expect(cloudModelIn("gemma-4-26B_q4_0-it.gguf")).toBeNull();
   });
 });
@@ -63,13 +63,13 @@ describe("the list to choose from", () => {
     const inCloud = options.filter((o) => o.group === "In the cloud");
     expect(inCloud.map((o) => [o.label, o.detail])).toEqual([
       ["Claude Sonnet 5", "Anthropic"],
-      ["GPT-5.6 Terra", "OpenAI"],
+      ["GPT-6 Sol", "OpenAI"],
     ]);
   });
 
   test("a model written in by hand is in the list too, so it never names nothing", () => {
-    const options = finderOptions(cloud, providers, language, "gpt-5.6-luna");
-    expect(options.find((o) => o.value === cloudValue("gpt-5.6-luna"))).toBeTruthy();
+    const options = finderOptions(cloud, providers, language, "gpt-6-luna");
+    expect(options.find((o) => o.value === cloudValue("gpt-6-luna"))).toBeTruthy();
   });
 
   test("the models here: those that are here first, the biggest first, each saying its cost", () => {

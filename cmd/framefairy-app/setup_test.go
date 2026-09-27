@@ -319,7 +319,7 @@ func TestTheKeyIsTheCloudModelsProviders(t *testing.T) {
 	// GPT, with only the Anthropic key: not ready, and the check says whose
 	// key is missing.
 	set := s.store.Settings()
-	set.APIModel = "gpt-5.6-terra"
+	set.APIModel = "gpt-6-sol"
 	if err := s.SaveSettings(set); err != nil {
 		t.Fatal(err)
 	}

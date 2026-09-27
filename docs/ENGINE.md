@@ -379,7 +379,7 @@ repair of a broken answer, is one path whoever answered. OpenAI keeps its
 thinking to itself and only counts it, so a reply that thought and never
 answered reads as a thinking block with nothing in it, the way Anthropic's
 does. The app offers one model of each by name, Claude Sonnet 5 and
-GPT-5.6 Terra, two of the same price, so the choice is of company rather
+GPT-6 Sol, two of the same price, so the choice is of company rather
 than budget. Any other model either company has can be named with `--model`.
 The tests stand a fake server in for both, in `engine/provider_test.go`, down
 to a whole search on a GPT model from transcript to plan.

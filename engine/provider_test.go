@@ -17,8 +17,8 @@ func TestProviderFor(t *testing.T) {
 	for model, want := range map[string]string{
 		"claude-sonnet-5":           "anthropic",
 		"claude-haiku-4-5-20251001": "anthropic",
-		"gpt-5.6-terra":             "openai",
-		"gpt-5.6-luna":              "openai",
+		"gpt-6-sol":                 "openai",
+		"gpt-6-luna":                "openai",
 		"o3-mini":                   "openai",
 		// A model nobody has heard of is Anthropic's, which is what every
 		// model was before there was a choice.
@@ -200,7 +200,7 @@ func TestCallAPIAsksEachProviderItsOwnWay(t *testing.T) {
 	var heard strings.Builder
 	listen := &Listener{Text: func(p string) { heard.WriteString(p) }}
 
-	text, err := e.CallAPI(context.Background(), "the transcript", "gpt-5.6-terra", 4000, "", "plan", "", listen)
+	text, err := e.CallAPI(context.Background(), "the transcript", "gpt-6-sol", 4000, "", "plan", "", listen)
 	if err != nil || text != answer || heard.String() != answer {
 		t.Fatalf("openai: %q, heard %q, %v", text, heard.String(), err)
 	}
@@ -221,7 +221,7 @@ func TestCallAPIAsksEachProviderItsOwnWay(t *testing.T) {
 		gpt.headers.Get("x-api-key") != "" {
 		t.Errorf("openai was asked at %s with %v", gpt.path, gpt.headers)
 	}
-	if gpt.body["model"] != "gpt-5.6-terra" || gpt.body["max_completion_tokens"] != float64(4000) ||
+	if gpt.body["model"] != "gpt-6-sol" || gpt.body["max_completion_tokens"] != float64(4000) ||
 		gpt.body["max_tokens"] != nil || gpt.body["stream"] != true {
 		t.Errorf("openai body %v", gpt.body)
 	}
@@ -258,7 +258,7 @@ func TestCallAPIOpenAIRetriesRefusalsAndHeadroom(t *testing.T) {
 		fmt.Fprint(w, `{"error":{"message":"slow down","type":"requests"}}`)
 	}
 	fake, e := cloud(t, busy, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":1}`))
-	if text, err := e.CallAPI(context.Background(), "p", "gpt-5.6-terra", 100, "", "plan", "", nil); err != nil || text != `{"clips": []}` {
+	if text, err := e.CallAPI(context.Background(), "p", "gpt-6-sol", 100, "", "plan", "", nil); err != nil || text != `{"clips": []}` {
 		t.Errorf("after a 429: %q, %v", text, err)
 	}
 	if n := len(fake.seen()); n != 2 {
@@ -270,14 +270,14 @@ func TestCallAPIOpenAIRetriesRefusalsAndHeadroom(t *testing.T) {
 		fmt.Fprint(w, `{"error":{"message":"Incorrect API key provided","type":"invalid_request_error"}}`)
 	}
 	_, e = cloud(t, refused)
-	_, err := e.CallAPI(context.Background(), "p", "gpt-5.6-terra", 100, "", "plan", "", nil)
+	_, err := e.CallAPI(context.Background(), "p", "gpt-6-sol", 100, "", "plan", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "platform.openai.com") {
 		t.Errorf("a refused key: %v", err)
 	}
 
 	spent := openAIStream(nil, "length", `{"prompt_tokens":1,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":100}}`)
 	fake, e = cloud(t, spent, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":150}`))
-	text, err := e.CallAPIWithHeadroom(context.Background(), "p", "gpt-5.6-terra", 100, "", "plan", nil)
+	text, err := e.CallAPIWithHeadroom(context.Background(), "p", "gpt-6-sol", 100, "", "plan", nil)
 	if err != nil || text != `{"clips": []}` {
 		t.Fatalf("after thinking the ceiling away: %q, %v", text, err)
 	}
@@ -294,11 +294,11 @@ func TestRepairJSONAsksOpenAIPlainly(t *testing.T) {
 		fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","content":"{\"clips\": []}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}`)
 	}
 	fake, e := cloud(t, plain)
-	text, err := e.RepairJSON(context.Background(), `{"clips": [`, "gpt-5.6-terra", "")
+	text, err := e.RepairJSON(context.Background(), `{"clips": [`, "gpt-6-sol", "")
 	if err != nil || text != `{"clips": []}` {
 		t.Fatalf("repair: %q, %v", text, err)
 	}
-	if body := fake.seen()[0].body; body["stream"] != nil || body["model"] != "gpt-5.6-terra" {
+	if body := fake.seen()[0].body; body["stream"] != nil || body["model"] != "gpt-6-sol" {
 		t.Errorf("repair body %v", body)
 	}
 }
@@ -335,7 +335,7 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 
 	base := DefaultOptions()
 	base.Planner = "api"
-	base.Model = "gpt-5.6-terra"
+	base.Model = "gpt-6-sol"
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
 	base.Preset = "ultrafast"
@@ -353,7 +353,7 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 		t.Fatalf("the plan from OpenAI's answer: %+v, %v", clips, err)
 	}
 	seen := fake.seen()
-	if len(seen) != 1 || seen[0].path != "/openai" || seen[0].body["model"] != "gpt-5.6-terra" {
+	if len(seen) != 1 || seen[0].path != "/openai" || seen[0].body["model"] != "gpt-6-sol" {
 		t.Fatalf("asked %d times, first at %v", len(seen), seen)
 	}
 	msgs, _ := seen[0].body["messages"].([]any)

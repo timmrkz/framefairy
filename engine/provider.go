@@ -84,11 +84,11 @@ type CloudModel struct {
 
 // cloudModels are one model from each provider, the one that finds clips
 // best for what it costs. Two of the same price, so the choice between
-// them is a choice of company rather than of budget: Claude Sonnet 5 at 2
-// and 10 dollars a million tokens, GPT-5.6 Terra at 2 and 12.
+// them is a choice of company rather than of budget: Claude Sonnet 5 and
+// GPT-6 Sol, both 2 dollars a million tokens in and 10 out.
 var cloudModels = []CloudModel{
 	{Model: "claude-sonnet-5", Title: "Claude Sonnet 5", Provider: "anthropic"},
-	{Model: "gpt-5.6-terra", Title: "GPT-5.6 Terra", Provider: "openai"},
+	{Model: "gpt-6-sol", Title: "GPT-6 Sol", Provider: "openai"},
 }
 
 // CloudModels lists the models in the cloud the app offers by name.

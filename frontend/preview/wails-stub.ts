@@ -637,7 +637,7 @@ export const Call = {
               ],
               cloud: [
                 { model: "claude-sonnet-5", title: "Claude Sonnet 5", provider: "anthropic" },
-                { model: "gpt-5.6-terra", title: "GPT-5.6 Terra", provider: "openai" },
+                { model: "gpt-6-sol", title: "GPT-6 Sol", provider: "openai" },
               ],
               keys,
               hasKey: keys[provider],

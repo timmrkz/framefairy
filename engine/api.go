@@ -44,10 +44,17 @@ var models = map[string]ModelFacts{
 	"claude-opus-5":             {5.0, 25.0, true, 1_000_000, 128_000},
 	"claude-sonnet-5":           {2.0, 10.0, true, 1_000_000, 128_000},
 	"claude-haiku-4-5-20251001": {1.0, 5.0, true, 200_000, 64_000},
-	// The context OpenAI gives for Terra is 1.1 million. The others are
+	// Read off OpenAI's pricing page and the model pages in September
+	// 2026: GPT-6 is the current generation, every one of them with
+	// 1,050,000 tokens of context and 128,000 out.
+	"gpt-6-astra": {10.0, 50.0, true, 1_050_000, 128_000},
+	"gpt-6-sol":   {2.0, 10.0, true, 1_050_000, 128_000},
+	"gpt-6-luna":  {0.1, 0.5, true, 1_050_000, 128_000},
+	// The generation before, still sold. Sol's is its promotional price,
+	// which OpenAI keeps at least until 21 November 2026. The contexts are
 	// held to a million until their own number is checked.
-	"gpt-5.6-sol":   {5.0, 30.0, true, 1_000_000, 128_000},
-	"gpt-5.6-terra": {2.0, 12.0, true, 1_100_000, 128_000},
+	"gpt-5.6-sol":   {4.0, 20.0, true, 1_000_000, 128_000},
+	"gpt-5.6-terra": {2.0, 12.0, true, 1_000_000, 128_000},
 	"gpt-5.6-luna":  {0.2, 1.2, true, 1_000_000, 128_000},
 }
 

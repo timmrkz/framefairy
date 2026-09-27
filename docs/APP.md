@@ -46,8 +46,7 @@ needs the memory to hold it. Either way only the words are read: the video
 and the audio never leave the machine. The answer is saved the moment it is
 given and can be changed later in the settings.
 
-Choosing the cloud opens a choice of model, Claude Sonnet 5 or GPT-5.6
-Terra, and a field for that company's key, which goes in the macOS keychain
+Choosing the cloud opens a choice of model, Claude Sonnet 5 or GPT-6 Sol, and a field for that company's key, which goes in the macOS keychain
 and nowhere else, never in the settings file.
 
 Choosing **On this machine** shows the models that can be installed, each
@@ -1252,7 +1251,7 @@ page to the bottom to find where to fix what it said.
 
 **Finding clips is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
-from Anthropic and GPT-5.6 Terra from OpenAI, with the company beside each,
+from Anthropic and GPT-6 Sol from OpenAI, with the company beside each,
 and under **On this machine** every model that runs here, the way apps that
 offer models list them by where they run. The rows that depend on the
 choice are under it in the same card, the way a pop-up in the Mac's own
