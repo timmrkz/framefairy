@@ -1259,11 +1259,18 @@ Anthropic, or who made the model, the memory it needs and whether it fits.
 Beside each model in the list is what it would cost to fetch, or that it is
 the best here, or that it is too big for this machine. The list holds any
 number of models in the room of one control. Choosing a model that is not
-there yet fetches it and then uses it, because that is what was asked for:
-the line says how far the download has come, **Cancel** beside the list
-carries the beam and the fill, and the list waits until it is done.
-Choosing an installed model uses it at once, and the Go side names it in
-the settings. Its info mark, at the right end of the heading, says what
+there yet does not fetch it: a download of gigabytes starts when
+**Download** is pressed, not as a side effect of looking through a list.
+The line says it is not on this machine yet, what it would cost, and that
+the model before it goes on finding clips until it is. Once **Download**
+is pressed, the line says how far it has come, **Cancel** beside the list
+carries the beam and the fill, the list waits, and when the model is there
+it is the one in use. A download cancelled leaves the choice as it was, and
+**Download** carries on from what arrived. Choosing an installed model uses
+it at once, and the Go side names it in the settings. The page then reads
+the models again, because the list says which one is in use from them:
+reading only the settings once left the list on the model before, so a
+choice looked as if it had done nothing. Its info mark, at the right end of the heading, says what
 each way costs and, with a local model chosen, how much memory this
 machine has and what that decides. The key goes in the keychain the
 moment **Save key** is pressed, not with the rest of the settings, because
@@ -1298,8 +1305,8 @@ check before it once it is there, what it covers and the room it takes.
 Removing the speech model means the app asks for one again the next time it
 starts, because nothing can be transcribed without it.
 
-**Shorts** says where rendered shorts go, next to each episode in its
-`.framefairy` folder unless a folder is chosen with **Choose…**, which
+**Shorts** says where rendered shorts go, next to each episode unless a
+folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to episode** goes back to the
 default.
 

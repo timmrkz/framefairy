@@ -137,9 +137,17 @@
 
   // The one clips are found with is saved by the Go side at once, so the
   // settings are read again rather than saved over it.
+  // The list says which model is in use from the models as the Go side
+  // last reported them, so they are read again too. Reading only the
+  // settings left the list on the model before, and a choice looked as if
+  // it had done nothing.
   async function useModel(name: string) {
-    await api.useLanguageModel(name);
-    await readSettings();
+    try {
+      await api.useLanguageModel(name);
+    } catch (err) {
+      problem = errorText(err);
+    }
+    await Promise.all([readModels(), readSettings()]);
     await check();
   }
 
@@ -236,6 +244,12 @@
   // uses it. So the list holds any number of models in the room of one
   // control.
   const inUse = $derived(language.find((m) => m.inUse));
+  // A model chosen that is not on this machine yet. Choosing it does not
+  // fetch it: a download of several gigabytes starts when Download is
+  // pressed, not as a side effect of looking through a list. Until it is
+  // there, the model before it goes on finding clips.
+  let wanted = $state("");
+  const wantedModel = $derived(language.find((m) => m.name === wanted && !m.installed));
   // The model being fetched because it was chosen here, and what became of
   // the last one.
   let fetching = $state("");
@@ -252,7 +266,9 @@
   );
 
   const finder = $derived(
-    settings?.planner === "api" ? "api" : (fetchingModel?.name ?? inUse?.name ?? ""),
+    settings?.planner === "api"
+      ? "api"
+      : (fetchingModel?.name ?? wantedModel?.name ?? inUse?.name ?? ""),
   );
 
   const finderOptions = $derived([
@@ -261,7 +277,7 @@
       .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
       .map((m) => {
         const { note, warn } = fitNote(m.fit, m.recommended);
-        const fetch = m.installed ? "" : `${size(m.download)} to fetch`;
+        const fetch = m.installed ? "" : `${size(m.download)} download`;
         return {
           value: m.name,
           label: m.title,
@@ -275,6 +291,7 @@
   async function pickFinder(value: string) {
     if (!settings) return;
     fetchFailed = "";
+    wanted = "";
     if (value === "api") {
       settings.planner = "api";
       return;
@@ -286,6 +303,13 @@
       await useModel(model.name);
       return;
     }
+    wanted = model.name;
+  }
+
+  async function download() {
+    const model = wantedModel;
+    if (!model) return;
+    fetchFailed = "";
     // A click shows at once: the row says it is fetching before the first
     // job event arrives.
     fetching = model.name;
@@ -313,11 +337,12 @@
     settled = now;
     if (!job || job.state === "running" || job.state === "queued") return;
     const model = language.find((m) => m.title === job.label);
-    const wanted = model && model.name === fetching;
+    const mine = model && model.name === fetching;
     fetching = "";
-    if (job.state === "failed" && wanted) fetchFailed = job.error ?? "The download stopped.";
-    if (job.state === "done" && wanted) {
-      useModel(model.name).then(readModels);
+    if (job.state === "failed" && mine) fetchFailed = job.error ?? "The download stopped.";
+    if (job.state === "done" && mine) {
+      wanted = "";
+      useModel(model.name);
     } else {
       modelsChanged();
     }
@@ -353,6 +378,13 @@
       return { text: `${fetchingModel?.title ?? "The model"}. ${text}${left}`, bad: false };
     }
     if (fetchFailed) return { text: fetchFailed, bad: true };
+    if (wantedModel) {
+      const until = inUse ? ` Until then, clips are found with ${inUse.title}.` : "";
+      return {
+        text: `Not on this machine yet. ${size(wantedModel.download)} to download.${until}`,
+        bad: false,
+      };
+    }
     if (!inUse) {
       return {
         text: language.some((m) => m.installed)
@@ -370,7 +402,9 @@
     };
   });
   const finderOk = $derived(
-    settings?.planner === "api" ? hasKey : !!inUse && !finderLine.bad && !llmRunning,
+    settings?.planner === "api"
+      ? hasKey
+      : !!inUse && !finderLine.bad && !llmRunning && !wantedModel,
   );
 
   // The models on this machine, which is only about the room they take,
@@ -482,6 +516,12 @@
                 />
                 {cancelling ? "Cancelling" : "Cancel"}
               </button>
+            {:else if wantedModel && !fetching}
+              <button
+                class="act"
+                title="Fetch {wantedModel.title} and find clips with it once it is here"
+                onclick={download}>Download</button
+              >
             {/if}
             <Pick
               value={finder || "Choose a model"}
@@ -604,7 +644,7 @@
             <div class="words">
               <span class="head">Save shorts to</span>
               <span class="small muted selectable path">
-                {settings.outputDir || "Next to each episode, in its .framefairy folder"}
+                {settings.outputDir || "Next to each episode"}
               </span>
             </div>
             {#if settings.outputDir}
