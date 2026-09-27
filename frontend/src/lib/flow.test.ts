@@ -90,11 +90,8 @@ describe("the window moves on when it chooses for itself", () => {
     expect(nextWindow([], searched, hours, half)).toEqual({ from: half, to: hours });
   });
 
-  test("an episode nothing is known of starts where a new one does", () => {
-    // Too short to have free room worth a search: all of it.
-    expect(nextWindow([], [], 20 * 60, half)).toEqual({ from: 0, to: 20 * 60 });
-    // Long, with its coverage not read: the first half hour, never the whole.
-    expect(nextWindow([], [], hours, half)).toEqual({ from: 0, to: half });
+  test("an episode with nothing anywhere takes the whole of it", () => {
+    expect(nextWindow([], [], hours, half)).toEqual({ from: 0, to: hours });
   });
 
   test("a scrap of free room too short to search is passed over", () => {

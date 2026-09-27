@@ -91,18 +91,11 @@ export function nextWindow(
   duration: number,
   firstLook: number,
 ): Span {
-  let room = free.find((w) => w.to - w.from > 0.5);
-  if (!room && searched.length) {
+  const room = free.find((w) => w.to - w.from > 0.5);
+  if (!room) {
     const last = searched[searched.length - 1];
-    return { from: last.from, to: last.to };
+    return { from: last?.from ?? 0, to: last?.to ?? duration };
   }
-  // Nothing free and nothing searched is an episode nobody knows anything
-  // about yet: one too short to have a free part worth a search, or one
-  // whose coverage could not be read. Either way it is where a new episode
-  // starts. It used to be the whole episode, which for a short one is the
-  // same thing and for a four hour one laid the window over the whole of
-  // the range picker, after a read that failed once the app had updated.
-  room ??= { from: 0, to: duration };
   const span = room.to - room.from;
   // A part only a little longer than the half hour is taken whole,
   // rather than leaving a scrap behind that is too short to search.

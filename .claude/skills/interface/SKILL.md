@@ -56,7 +56,6 @@ not the workspace: the first run, the settings, the empty window.
 | `?failed` | a search whose record says it failed, with its reason |
 | `?rendering` | a render running on the first clip, with progress |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
-| `?coverfail` | the episode's coverage cannot be read, the way it could not right after the app updated itself. The window has to open where a new episode's does, not over the whole range picker |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 
 Add a mode when the state you need is not there. A bug that only happens

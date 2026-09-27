@@ -709,10 +709,6 @@ export const Call = {
         ].sort((x, y) => x.start - y.start));
       }
       case "Coverage":
-        // ?coverfail: the episode's coverage cannot be read, the way it
-        // could not once the app had just updated itself and the video
-        // could not be probed yet.
-        if (location.search.includes("coverfail")) return Promise.reject(new Error("could not probe the video"));
         if (fresh) {
           if (!found.length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
           return Promise.resolve({ searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: found.length }], free: [{ from: 1800, to: 14423 }] });
