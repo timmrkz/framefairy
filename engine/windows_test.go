@@ -38,3 +38,22 @@ func TestWhereTheModelHasLooked(t *testing.T) {
 		t.Errorf("all %v", all)
 	}
 }
+
+// Clips made by hand, in the clip set pull request 24 writes, searched
+// nothing. The set has no window, and a set with no window is otherwise a
+// search of the whole episode, which laid the window over the whole range
+// picker and hid every mark under it.
+func TestAClipSetMadeByHandSearchedNothing(t *testing.T) {
+	plans := []PlanSummary{
+		{Path: "/ep.framefairy/logs/clips-0-1800.json", From: 0, To: 1800, Clips: 12},
+		{Path: "/ep.framefairy/logs/clips-hand.json", Clips: 1},
+	}
+	got := SearchedWindows(plans, 14400)
+	if len(got) != 1 || got[0] != (Window{0, 1800}) {
+		t.Errorf("searched %v, want only the first half hour", got)
+	}
+	free := FreeWindows(got, 14400, 600)
+	if len(free) != 1 || free[0] != (Window{1800, 14400}) {
+		t.Errorf("free %v, want the rest of the episode", free)
+	}
+}
