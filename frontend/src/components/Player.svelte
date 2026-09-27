@@ -173,16 +173,26 @@
   // A video that has not read its own index yet drops a seek on the floor,
   // which used to leave the playhead somewhere the picture never went. The
   // moment it knows its length, it is sent there.
+  //
+  // A seek to where the picture already is, or is already on its way to,
+  // is not made again. Making a clip by hand put the playhead on the same
+  // moment three times in a second, while the machine was busy placing
+  // the crop, and every seek that lands late lands on whatever is playing
+  // by then: the first play of a clip just made jumped back to its start,
+  // once for each.
   export function seek(t: number) {
     if (!video) return;
     time = Math.max(0, Math.min(t, source.duration));
     atPiece = pieceAt(time);
+    if (wanted >= 0 && Math.abs(wanted - time) < frameOf / 2) return;
+    if (wanted < 0 && video.readyState > 0 && !video.seeking && Math.abs(video.currentTime - time) < frameOf / 2) return;
     goTo(time);
   }
 
   // Where the picture was asked to go, while it is still on its way there.
   let wanted = -1;
   let tries = 0;
+  let waited = 0;
   let chasing = 0;
 
   function goTo(t: number) {
@@ -197,6 +207,7 @@
     }
     wanted = t;
     tries = 0;
+    waited = 0;
     put(t);
     chase();
   }
@@ -219,8 +230,17 @@
     clearTimeout(chasing);
     chasing = window.setTimeout(() => {
       if (!video) return;
-      if (!shouldChase({ wanted, at: video.currentTime, playing: !video.paused, tries })) {
+      // Asked to play counts as playing: a seek made again now would land
+      // in the middle of the play and take it back. And a seek still on
+      // its way is waited for, a few times over, rather than made again or
+      // the file read afresh, which is what a busy machine needs least.
+      if (!shouldChase({ wanted, at: video.currentTime, playing: wantPlay || !video.paused, tries })) {
         wanted = -1;
+        return;
+      }
+      if (video.seeking && waited < 4) {
+        waited++;
+        chase();
         return;
       }
       tries++;

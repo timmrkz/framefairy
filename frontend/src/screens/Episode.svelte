@@ -737,13 +737,16 @@
     else if (box.bottom > view.bottom - veil) list.scrollTop += box.bottom - view.bottom + veil;
   }
 
-  async function select(key: string) {
+  // move says whether the playhead goes to the clip. It does whenever a
+  // person chooses one. A clip that arrives by itself while the video
+  // plays leaves the playhead where the play has got to.
+  async function select(key: string, move = true) {
     selected = key;
     // The episode remembers what is being worked on, so opening it again
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
-    if (clip) player?.seek(clip.start);
+    if (clip && move) player?.seek(clip.start);
     // Picking a clip puts the clip timeline back on it, the same as the
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
@@ -952,8 +955,9 @@
           plan: "",
           cropLefts: [],
         };
-        // The playhead goes where the clip is, the moment it has a frame.
-        player?.seek(sketch.start);
+        // The playhead goes where the clip is, the moment it has a frame,
+        // unless the video is playing, which is left to play.
+        if (paused) player?.seek(sketch.start);
         makingStep = makingLine("hearing", 0);
         hearing = true;
         try {
@@ -986,7 +990,7 @@
       sketchCues = sk.captions.map((c) => ({ start: c.start, end: c.end, lines: [] }));
       // And again when the sentences move the frame, as they do for Out,
       // which grows the clip back from the playhead.
-      player?.seek(sk.start);
+      if (paused) player?.seek(sk.start);
       // Its sentences are there. What is left is reading the picture to
       // place the crop, which takes a few seconds and says no more than
       // that it is running.
@@ -1008,7 +1012,9 @@
       sketchCues = [];
       makingStep = null;
       await tick();
-      await select(made.key);
+      // Played while it was made, it plays on: choosing it does not take
+      // the playhead back to its start.
+      await select(made.key, paused);
     } catch (err) {
       problem = errorText(err);
     } finally {
