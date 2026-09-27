@@ -397,12 +397,13 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 
 	ax := float64(width) / 2
 	ay := float64(height - marginV)
-	drawBox := s.BorderStyle == 3 || s.BorderStyle == 4
+	drawBox := (s.BorderStyle == 3 || s.BorderStyle == 4) && s.Box
 	boxAlpha := "80"
-	if len(s.BackColour) >= 10 {
-		boxAlpha = s.BackColour[2:4]
+	back := s.boxColour()
+	if len(back) >= 10 {
+		boxAlpha = back[2:4]
 	}
-	boxFill := "&H" + s.BackColour[max(0, len(s.BackColour)-6):] + "&"
+	boxFill := "&H" + back[max(0, len(back)-6):] + "&"
 	padX := float64(pyround(s.BoxPadX * scale))
 	padY := float64(pyround(s.BoxPadY * scale))
 	radius := float64(pyround(s.Radius * scale))

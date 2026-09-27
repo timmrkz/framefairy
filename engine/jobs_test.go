@@ -435,3 +435,26 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	}
 	t.Logf("heard %.1f s, then %.1f s, time left said %v", first, seconds, lefts)
 }
+
+// Captions switched off in the captions column render a short without any:
+// no caption file is made for it, and the short is there.
+func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
+	p, _ := searchProject(t, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCaptionStyle(plan, map[string]any{"text": false}); err != nil {
+		t.Fatal(err)
+	}
+	p.Base.Out = t.TempDir()
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if shorts, _ := filepath.Glob(filepath.Join(p.Base.Out, "*.mp4")); len(shorts) == 0 {
+		t.Fatal("no short")
+	}
+	if made, _ := filepath.Glob(filepath.Join(p.CaptionsDir(), "*.ass")); len(made) != 0 {
+		t.Errorf("captions were made for a short without them: %v", made)
+	}
+}
