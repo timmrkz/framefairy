@@ -15,6 +15,7 @@
     next = null,
     stopped = null,
     making = "",
+    makingStep = null,
     onselect,
     onremove,
     onputback,
@@ -43,12 +44,16 @@
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
     stopped?: { what: string; left: string; full: string } | null;
-    // The card of a clip made by hand while its crop is placed. It stands in
-    // its place already, with its title and length, and breathes like any
-    // place waiting to be filled until the clip is there. It belongs to no
+    // The card of a clip made by hand while it is made. It stands in its
+    // place already, with its title, and says what it is doing, with the
+    // beam round it, until the clip is there. It belongs to no
     // clip set yet, and when the clip lands it hands over to the clip's own
     // card at once rather than sliding away beside it.
     making?: string;
+    // What that card is doing, said where its time and length will be, with
+    // the beam round it and the fill when how far is known, the same as
+    // the row of a search.
+    makingStep?: { text: string; fraction: number } | null;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -135,7 +140,6 @@
       }}
       out:slide={{ duration: clip.plan ? 200 : 0 }}
       data-key={clip.key}
-      class:waiting={clip.key === making}
     >
       {#if clip.key === removed}
         <div class="gone">
@@ -145,6 +149,7 @@
           <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
         </div>
       {:else}
+        {#if clip.key === making && makingStep}<Busy fraction={makingStep.fraction} />{/if}
         <button
           class="pick"
           class:current={clip.key === selected}
@@ -152,7 +157,11 @@
         >
           <span class="title">{clip.title || clip.slug}</span>
           <span class="meta muted num">
-            {clock(clip.start)}, {Math.round(clip.duration)} s
+            {#if clip.key === making && makingStep}
+              {makingStep.text}
+            {:else}
+              {clock(clip.start)}, {Math.round(clip.duration)} s
+            {/if}
             {#if clip.rendered}<span class="dot ok" title="This clip is rendered"></span>{/if}
           </span>
         </button>

@@ -341,7 +341,8 @@ place.
 - **Shift and the arrows up and down walk the clip list**, the way shift
   and left and right walk its words: each step takes the next clip and
   puts the playhead at its start, which is where a short begins and so the
-  one frame worth seeing first. **Shift is what means a clip or a caption
+  one frame worth seeing first. The list goes round: down from the last
+  card is the first, and up from the first is the last. **Shift is what means a clip or a caption
   throughout.** Without it the arrows move the playhead a frame, which is
   the episode and nothing else. With it they move it a word and a clip,
   and the two read as one idea rather than two keys that happen to be
@@ -1017,7 +1018,8 @@ by hand wherever the transcript has reached, searched or not:
   How many seconds is **Around In and Out** in the settings, under
   **Speech**.
   Until its words are there the clip is an outline as long as
-  **Shortest**, with a card that says **Transcribing here**. What is still
+  **Shortest**, with a card called **New clip** that says **Transcribing**
+  and fills as the part is heard, the way the row of a search does. What is still
   to be heard breathes on the clip timeline, and the waveform fills it in
   chunk by chunk as it is heard, every few seconds of the episode. The
   crop frame waits in the middle of the video preview, breathing too,
@@ -1031,8 +1033,9 @@ by hand wherever the transcript has reached, searched or not:
   transcript in a moment, and everything they decide is shown straight
   away: the clip's frame on the clip timeline, which moves to it, its
   caption blocks coming in one after another along it, its title in the
-  row below, and its card in its place in the clip list, breathing like
-  any place waiting to be filled, and scrolled into view. The playhead
+  row below, and its card in its place in the clip list, scrolled into
+  view, with the beam round it and **Placing the crop** where its time
+  and length will be. The playhead
   goes to the start of the frame the moment there is one, and again when
   the sentences move it, as they do for Out. Placing the crop reads the picture and
   takes a few seconds. When it is done the card becomes the clip's own,

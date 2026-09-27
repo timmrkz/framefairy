@@ -749,7 +749,8 @@ export const Call = {
         return new Promise((done) => {
           const timer = setInterval(() => {
             island.covered = Math.min(island.to, island.covered + 18);
-            for (const fn of hearingListeners) fn({ data: { path: args[0], covered: island.covered } });
+            const fraction = (island.covered - island.from) / (island.to - island.from);
+            for (const fn of hearingListeners) fn({ data: { path: args[0], covered: island.covered, fraction } });
             if (island.covered >= island.to) {
               clearInterval(timer);
               done(null);

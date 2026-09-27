@@ -1262,7 +1262,7 @@ func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, ba
 	// is told to read the part again each time and sees it grow.
 	log.SetSink(func(ev engine.Event) {
 		if ev.Kind == engine.EventProgress && ev.Covered > 0 && s.app != nil {
-			s.app.Event.Emit("hearing", Hearing{Path: path, Covered: ev.Covered})
+			s.app.Event.Emit("hearing", Hearing{Path: path, Covered: ev.Covered, Fraction: ev.Fraction})
 		}
 	})
 	e := engine.NewEngine(log)
@@ -1279,6 +1279,8 @@ func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, ba
 type Hearing struct {
 	Path    string  `json:"path"`
 	Covered float64 `json:"covered"`
+	// Fraction is how much of the part being heard is heard, 0 to 1.
+	Fraction float64 `json:"fraction"`
 }
 
 // Unheard says whether a clip made by hand at a moment needs any of the

@@ -904,9 +904,15 @@
   // heard is read again as soon as the Go side says it is saved, so the
   // waveform grows chunk by chunk, and whatever is still to come breathes.
   let hearing = $state(false);
+  // What the card of the clip being made says it is doing, the way the row
+  // of a search says it: the step, and how far it has come when that is
+  // known.
+  let makingStep = $state<{ text: string; fraction: number } | null>(null);
   onMount(() =>
     onHearing((h) => {
-      if (hearing && h.path === path) timeline?.reread();
+      if (!hearing || h.path !== path) return;
+      makingStep = { text: "Transcribing", fraction: h.fraction };
+      timeline?.reread();
     }),
   );
   const cards = $derived(
@@ -932,7 +938,7 @@
           id: "sketch",
           slug: "",
           basename: "",
-          title: "Transcribing here",
+          title: "New clip",
           reason: "",
           duration: to - from,
           start: from,
@@ -949,6 +955,7 @@
         };
         // The playhead goes where the clip is, the moment it has a frame.
         player?.seek(sketch.start);
+        makingStep = { text: "Transcribing", fraction: 0 };
         hearing = true;
         try {
           await api.hearAround(path, at, backward);
@@ -981,6 +988,10 @@
       // And again when the sentences move the frame, as they do for Out,
       // which grows the clip back from the playhead.
       player?.seek(sk.start);
+      // Its sentences are there. What is left is reading the picture to
+      // place the crop, which takes a few seconds and says no more than
+      // that it is running.
+      makingStep = { text: "Placing the crop", fraction: -1 };
       const made = await api.makeClip(path, at, backward);
       clips = [...clips.filter((c) => c.key !== made.key), made].sort((a, b) => a.start - b.start);
       await select(made.key);
@@ -991,6 +1002,7 @@
       sketch = null;
       sketchCues = [];
       making = "";
+      makingStep = null;
     }
   }
 
@@ -1770,9 +1782,11 @@
     event.preventDefault();
     const here = list.findIndex((c) => c.key === selected);
     const step = event.key === "ArrowDown" ? 1 : -1;
-    // With nothing chosen, down takes the first and up the last.
+    // With nothing chosen, down takes the first and up the last. The list
+    // goes round: down from the last card is the first, and up from the
+    // first is the last.
     const next = here < 0 ? (step > 0 ? 0 : list.length - 1) : here + step;
-    const clip = list[Math.max(0, Math.min(next, list.length - 1))];
+    const clip = list[(next + list.length) % list.length];
     if (!clip) return;
     select(clip.key);
     seekTo(clip.start);
@@ -2335,6 +2349,7 @@
               clips={cards}
               selected={sketch ? sketch.key : selected}
               making={sketch?.key ?? ""}
+              {makingStep}
               {coming}
               waiting={comingNow}
               next={shownNext}

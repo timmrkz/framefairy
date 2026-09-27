@@ -594,6 +594,8 @@ export interface JobUpdate {
 export interface Hearing {
   path: string;
   covered: number;
+  // How much of the part being heard is heard, 0 to 1.
+  fraction: number;
 }
 
 export function onHearing(fn: (h: Hearing) => void): () => void {
