@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,7 @@ func emptyMachine(t *testing.T) *FrameFairy {
 	// makes the test about a machine with no key rather than about
 	// whatever is on this one.
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
 	// And nothing here may reach the machine's own keychain. Storing a key
 	// writes to it, macOS puts a box on screen when it is locked, and a box
 	// nobody answers is a test that hangs. That is what happened: the macOS
@@ -265,7 +267,8 @@ func TestInstallingTheSpeechModelIsAJobLikeAnyOther(t *testing.T) {
 func TestTheKeyNeverLandsInTheSettingsFile(t *testing.T) {
 	const secret = "sk-ant-secret-value-here"
 	s := emptyMachine(t)
-	_ = s.SaveAPIKey(secret)
+	_ = s.SaveAPIKey("anthropic", secret)
+	_ = s.SaveAPIKey("openai", secret)
 	_ = s.ChoosePlanner("api")
 
 	body, err := os.ReadFile(filepath.Join(s.store.dir, "settings.json"))
@@ -277,8 +280,94 @@ func TestTheKeyNeverLandsInTheSettingsFile(t *testing.T) {
 	}
 	// And the state the interface reads never carries it either.
 	state := s.Setup(context.Background())
-	if strings.Contains(state.Planner, secret) {
+	if raw, _ := json.Marshal(state); strings.Contains(string(raw), secret) {
 		t.Error("the key came back in the setup state")
+	}
+}
+
+// A model in the cloud belongs to one company, and it is that company's key
+// that decides whether the app is ready, that the check looks for and that
+// the check names. Somebody with only one company's key is not told the
+// other's model works, and a key is saved under the company it is for.
+func TestTheKeyIsTheCloudModelsProviders(t *testing.T) {
+	s := emptyMachine(t)
+	placeSpeechModel(t, engine.SpeechModels()[0].Name)
+	if err := s.ChoosePlanner("api"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-testtesttest")
+
+	keyCheck := func() Check {
+		for _, c := range s.CheckSetup(context.Background()) {
+			if strings.HasSuffix(c.Name, "API key") {
+				return c
+			}
+		}
+		t.Fatal("no check for a key")
+		return Check{}
+	}
+
+	// Claude, with an Anthropic key: ready.
+	state := s.Setup(context.Background())
+	if state.Provider != "anthropic" || !state.HasKey || !state.Ready {
+		t.Errorf("claude with its key: %+v", state)
+	}
+	if c := keyCheck(); c.Name != "Anthropic API key" || !c.OK {
+		t.Errorf("claude's key check: %+v", c)
+	}
+
+	// GPT, with only the Anthropic key: not ready, and the check says whose
+	// key is missing.
+	set := s.store.Settings()
+	set.APIModel = "gpt-5.6-terra"
+	if err := s.SaveSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	state = s.Setup(context.Background())
+	if state.Provider != "openai" || state.HasKey || state.Ready {
+		t.Errorf("gpt without its key: provider %s, has key %v, ready %v",
+			state.Provider, state.HasKey, state.Ready)
+	}
+	if !state.Keys["anthropic"] || state.Keys["openai"] {
+		t.Errorf("keys: %v", state.Keys)
+	}
+	if c := keyCheck(); c.Name != "OpenAI API key" || c.OK || !strings.Contains(c.Detail, "OPENAI_API_KEY") {
+		t.Errorf("gpt's key check: %+v", c)
+	}
+
+	// And with an OpenAI key it is.
+	t.Setenv("OPENAI_API_KEY", "sk-proj-testtesttest")
+	if state = s.Setup(context.Background()); !state.HasKey || !state.Ready {
+		t.Errorf("gpt with its key: has key %v, ready %v", state.HasKey, state.Ready)
+	}
+	if c := keyCheck(); !c.OK {
+		t.Errorf("gpt's key check with the key: %+v", c)
+	}
+
+	// Both companies and their models are offered.
+	names := map[string]bool{}
+	for _, m := range state.Cloud {
+		names[m.Provider] = true
+	}
+	if !names["anthropic"] || !names["openai"] || len(state.Providers) < 2 {
+		t.Errorf("offered: %+v, providers %+v", state.Cloud, state.Providers)
+	}
+
+	// The first run names the model on its own, without the rest of the
+	// settings, and a name that could never be a model's is refused.
+	if err := s.ChooseCloudModel("claude-sonnet-5"); err != nil {
+		t.Fatal(err)
+	}
+	if state = s.Setup(context.Background()); state.Provider != "anthropic" || state.APIModel != "claude-sonnet-5" {
+		t.Errorf("after choosing claude: %s, %s", state.Provider, state.APIModel)
+	}
+	for _, bad := range []string{"", "  ", "gpt 5", "../gpt", "gpt\n5"} {
+		if err := s.ChooseCloudModel(bad); err == nil {
+			t.Errorf("%q was taken as a model", bad)
+		}
+	}
+	if err := s.SaveAPIKey("nobody", "sk-x"); err == nil {
+		t.Error("a key was taken for a company that is not on the list")
 	}
 }
 

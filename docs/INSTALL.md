@@ -126,15 +126,20 @@ Building the app also needs Node.js, for its interface:
 
 ## 6. The API key, only for the API planner
 
-On macOS, store it once in the keychain rather than in a file:
+A model in the cloud is Anthropic's or OpenAI's, and each has its own key.
+On macOS, store the one you use once in the keychain rather than in a file:
 
 ```
 security add-generic-password -a framefairy -s anthropic-api-key -w
+security add-generic-password -a framefairy -s openai-api-key -w
 ```
 
-`ANTHROPIC_API_KEY` works on every system and takes priority. On Windows and
-Linux it is currently the only option. Get the key from the Claude Console at
-console.anthropic.com under Settings, then API keys.
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` work on every system and take
+priority. On Windows and Linux they are currently the only option. Get an
+Anthropic key from the Claude Console at console.anthropic.com under
+Settings, then API keys, and an OpenAI key at platform.openai.com under API
+keys. The app asks for the key of the model it is set to and keeps each in
+the keychain for you.
 
 ## 7. Before the first build
 

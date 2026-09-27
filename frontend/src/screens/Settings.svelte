@@ -13,15 +13,22 @@
   import { wearColour } from "../lib/colour";
   import { jobs } from "../lib/state.svelte";
   import {
+    cloudModelIn,
+    cloudValue,
+    finderOptions as finderOptions_,
+    finderStanding,
+    providerOf,
+  } from "../lib/finding";
+  import {
     api,
     errorText,
-    clock,
-    fitNote,
     languageRow,
     memorySize,
     size,
     speechRow,
     type Check,
+    type CloudModel,
+    type Provider,
     type LanguageModel,
     type Settings,
     type SpeechModel,
@@ -53,12 +60,26 @@
 
   const speechRows = $derived(speech.map((m) => speechRow(m)));
 
-  // The Anthropic key. It is never read back: the Go side only ever says
-  // whether one can be found.
+
+  // The companies in the cloud, the models of theirs the app offers by
+  // name, and whether a key of each can be found. A key is never read
+  // back: the Go side only ever says whether there is one.
+  let providers = $state<Provider[]>([]);
+  let cloud = $state<CloudModel[]>([]);
+  let keys = $state<Record<string, boolean>>({});
+  // The company of the model named, as the Go side last said. A model the
+  // app offers is known here at once; one written in by hand is known once
+  // the settings are saved and read again.
+  let providerSaid = $state("anthropic");
   let key = $state("");
-  let hasKey = $state(false);
   let savingKey = $state(false);
   let savedKey = $state(false);
+
+  // The model in the cloud, its company, and whether that company's key is
+  // here. Which company decides whose key the row asks for.
+  const cloudModel = $derived(settings?.apiModel || cloud[0]?.model || "claude-sonnet-5");
+  const provider = $derived(providerOf(cloudModel, cloud, providers, providerSaid));
+  const hasKey = $derived(!!keys[provider.name]);
 
   // Saving as things change. What was last saved, or last read, is kept as
   // text, and a change is only a change when the settings no longer read
@@ -83,7 +104,7 @@
     problem = "";
     try {
       await api.saveSettings(JSON.parse(text));
-      await Promise.all([readTraining(), check()]);
+      await Promise.all([readTraining(), readModels(), check()]);
     } catch (err) {
       problem = errorText(err);
     }
@@ -124,7 +145,7 @@
     savingKey = true;
     problem = "";
     try {
-      await api.saveAPIKey(key);
+      await api.saveAPIKey(provider.name, key);
       key = "";
       savedKey = true;
       setTimeout(() => (savedKey = false), 1800);
@@ -176,7 +197,10 @@
       speech = state.speech;
       language = state.language;
       memory = state.memory;
-      hasKey = state.hasKey;
+      providers = state.providers ?? [];
+      cloud = state.cloud ?? [];
+      keys = state.keys ?? {};
+      providerSaid = state.provider || "anthropic";
     } catch (err) {
       problem = errorText(err);
     }
@@ -233,12 +257,15 @@
   // is in the way goes unsaid.
   const homeless = $derived(
     failed.filter(
-      (c) => !["ffmpeg", "llama-server", "Speech model", "Claude API key", "Language model"].includes(c.name),
+      (c) =>
+        !["ffmpeg", "llama-server", "Speech model", "Language model"].includes(c.name) &&
+        !c.name.endsWith(" API key"),
     ),
   );
 
-  // What finds the clips, as one choice: the Claude API or one of the
-  // models that run here, in one list, the way the apps that offer models
+  // What finds the clips, as one choice: a model in the cloud, from any of
+  // the companies the app knows, or one of the models that run here, in
+  // one list, the way the apps that offer models
   // put them, grouped by where they run. So the list holds any number of
   // models in the room of one control.
   //
@@ -268,31 +295,18 @@
   );
 
   const finder = $derived(
-    settings?.planner === "api" ? "api" : choosing || (inUse?.name ?? ""),
+    settings?.planner === "api" ? cloudValue(cloudModel) : choosing || (inUse?.name ?? ""),
   );
 
-  const finderOptions = $derived([
-    { value: "api", label: "Claude API", detail: "A few cents an episode", group: "In the cloud" },
-    ...[...language]
-      .sort((a, b) => Number(b.installed) - Number(a.installed) || b.needs - a.needs)
-      .map((m) => {
-        const { note, warn } = fitNote(m.fit, m.recommended);
-        const fetch = m.installed ? "" : `${size(m.download)} download`;
-        return {
-          value: m.name,
-          label: m.title,
-          detail: warn ? note : m.recommended ? [fetch, "best here"].filter(Boolean).join(", ") : fetch,
-          warn,
-          group: "On this machine",
-        };
-      }),
-  ]);
+  const finderOptions = $derived(finderOptions_(cloud, providers, language, cloudModel));
 
   async function pickFinder(value: string) {
     if (!settings) return;
     fetchFailed = "";
-    if (value === "api") {
+    const inCloud = cloudModelIn(value);
+    if (inCloud !== null) {
       settings.planner = "api";
+      settings.apiModel = inCloud;
       return;
     }
     settings.planner = "local";
@@ -351,39 +365,21 @@
   // that wraps when a button arrives beside it moves the whole card. So
   // every wording here is short enough to fit beside the list and a
   // button, and what does not fit is for the info mark.
-  const finderLine = $derived.by((): { text: string; tone: "" | "warn" | "err" } => {
-    if (settings?.planner === "api") {
-      return { text: "Runs at Anthropic. A few cents an episode.", tone: "" };
-    }
-    if (fetchingModel) {
-      const p = llmRunning?.progress;
-      const total = fetchingModel.download;
-      const done = p && p.fraction > 0 ? `${size(p.fraction * total)} of ${size(total)}` : size(total);
-      const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
-      return { text: `Downloading, ${done}${left}`, tone: "" };
-    }
-    if (fetchFailed) return { text: fetchFailed, tone: "err" };
-    if (!inUse) return { text: "Choose a model to find clips with.", tone: "warn" };
-    if (notHere) return { text: `Not downloaded yet. ${size(inUse.download)}.`, tone: "warn" };
-    const lm = broken("Language model");
-    if (lm) return { text: lm.detail, tone: "err" };
-    const { note } = fitNote(inUse.fit, inUse.recommended);
-    return {
-      text: `By ${inUse.maker}. ${memorySize(inUse.needs)} of memory.${note ? ` ${note}.` : ""}`,
-      tone: "",
-    };
-  });
-  // How the choice stands, which the mark before it and the frame round
-  // the list both show: ready, busy downloading, or not able to find clips
-  // yet. The API is ready once it has a key, and the key row says what is
-  // missing when it has not.
-  const finderState = $derived.by((): "ok" | "busy" | "warn" | "err" => {
-    if (settings?.planner === "api") return hasKey ? "ok" : "warn";
-    if (fetchingModel) return "busy";
-    if (finderLine.tone === "err" || broken("llama-server")) return "err";
-    if (finderLine.tone === "warn") return "warn";
-    return "ok";
-  });
+  const finding = $derived(
+    finderStanding({
+      planner: settings?.planner === "api" ? "api" : "local",
+      provider,
+      hasKey,
+      inUse,
+      fetching: fetchingModel,
+      progress: llmRunning?.progress,
+      failed: fetchFailed,
+      modelProblem: broken("Language model")?.detail,
+      serverMissing: !!broken("llama-server"),
+    }),
+  );
+  const finderLine = $derived(finding);
+  const finderState = $derived(finding.state);
 
   // The models on this machine, which is only about the room they take,
   // so it stays folded until somebody wants some of it back.
@@ -443,9 +439,10 @@
           <h2>Finding clips</h2>
           <span class="ask">
             <Info label="About finding clips" side="left">
-              A language model reads the transcript and picks the moments worth clipping. The Claude
-              API works on any machine and costs a few cents an episode. A model on this machine is
-              free to run and needs the memory to hold it. Either way the video and the audio stay
+              A language model reads the transcript and picks the moments worth clipping. A model in
+              the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own from
+              that company, and costs a few cents an episode. A model on this machine is free to run
+              and needs the memory to hold it. Either way the video and the audio stay
               here: only the words are read.
               {#if settings.planner === "local"}
                 <br /><br />
@@ -529,17 +526,17 @@
                 {#if hasKey}<Icon name="check" />{:else}<Icon name="warn" />{/if}
               </span>
               <div class="words">
-                <span class="head">API key</span>
+                <span class="head">{provider.title} API key</span>
                 <span class="small line" class:muted={hasKey} class:warn={!hasKey}>
-                  {savedKey ? "Saved in the keychain." : hasKey ? "In the keychain." : "None yet. Get one at console.anthropic.com."}
+                  {savedKey ? "Saved in the keychain." : hasKey ? "In the keychain." : `None yet. Get one at ${provider.keysAt}.`}
                 </span>
               </div>
               <input
                 class="key"
                 type="password"
                 bind:value={key}
-                placeholder={hasKey ? "Replace the key" : "sk-ant-..."}
-                aria-label="Anthropic API key"
+                placeholder={hasKey ? "Replace the key" : provider.name === "openai" ? "sk-proj-..." : "sk-ant-..."}
+                aria-label="{provider.title} API key"
                 title="It goes in the keychain and nowhere else"
                 autocomplete="off"
                 spellcheck="false"
@@ -560,7 +557,7 @@
                   <span class="head">llama-server</span>
                   <span
                     class="small error line"
-                    title="What runs a model on this machine is missing. Installing the app again brings it back, and until then the Claude API works."
+                    title="What runs a model on this machine is missing. Installing the app again brings it back, and until then a model in the cloud works."
                     >Missing. Installing the app again brings it back.</span
                   >
                 </div>
@@ -748,10 +745,10 @@
             {:else}
               <label class="item field">
                 <span class="words">
-                  <span class="head">Claude model</span>
+                  <span class="head">Model in the cloud</span>
                   <span class="small muted">Which model the API is asked.</span>
                 </span>
-                <input type="text" bind:value={settings.apiModel} placeholder="claude-sonnet-5" spellcheck="false" />
+                <input type="text" bind:value={settings.apiModel} placeholder={cloud[0]?.model ?? "claude-sonnet-5"} spellcheck="false" />
               </label>
             {/if}
             <label class="item field">

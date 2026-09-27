@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"framefairy/engine"
 )
@@ -64,8 +65,19 @@ type SetupState struct {
 	Memory int64 `json:"memory"`
 	// Planner is "api" or "local", as the settings have it.
 	Planner string `json:"planner"`
-	// HasKey is true when an Anthropic key can be found. It never carries
-	// the key itself.
+	// APIModel is the model in the cloud the settings name, and Provider
+	// the company it belongs to.
+	APIModel string `json:"apiModel"`
+	Provider string `json:"provider"`
+	// Providers are the companies whose API can find clips, and Cloud the
+	// models of theirs the app offers by name.
+	Providers []engine.Provider   `json:"providers"`
+	Cloud     []engine.CloudModel `json:"cloud"`
+	// Keys says, for each provider, whether a key of theirs can be found.
+	// It never carries a key itself.
+	Keys map[string]bool `json:"keys"`
+	// HasKey is true when a key can be found for the provider of the model
+	// the settings name.
 	HasKey bool `json:"hasKey"`
 	// HasLocalModel is true when a language model is on the machine.
 	HasLocalModel bool `json:"hasLocalModel"`
@@ -112,9 +124,19 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		}
 		state.Language = append(state.Language, view)
 	}
-	if _, err := engine.ReadAPIKey(ctx); err == nil {
-		state.HasKey = true
+	state.APIModel = settings.APIModel
+	if state.APIModel == "" {
+		state.APIModel = engine.DefaultModel
 	}
+	state.Provider = engine.ProviderFor(state.APIModel).Name
+	state.Providers = engine.Providers()
+	state.Cloud = engine.CloudModels()
+	state.Keys = map[string]bool{}
+	for _, p := range state.Providers {
+		_, err := engine.ReadAPIKey(ctx, p)
+		state.Keys[p.Name] = err == nil
+	}
+	state.HasKey = state.Keys[state.Provider]
 	state.HasServer = engine.HasLlamaServer()
 	// A model put there by hand counts too. The catalogue is a convenience,
 	// not the only way in: somebody who already has a .gguf they like keeps
@@ -220,15 +242,32 @@ func (s *FrameFairy) keepInUse(before string) error {
 	return s.store.SetSettings(settings)
 }
 
-// SaveAPIKey puts a key in the macOS keychain, which is the only place the
-// app ever keeps one. An app opened from Finder has no shell environment,
-// so the variable the command line reads is never set, and until now there
-// was no way to give the app a key except a terminal command in an error
-// message.
+// SaveAPIKey puts a provider's key in the macOS keychain, which is the only
+// place the app ever keeps one. An app opened from Finder has no shell
+// environment, so the variable the command line reads is never set, and
+// until now there was no way to give the app a key except a terminal
+// command in an error message. Each provider's key is kept apart, so
+// trying one never costs the other.
 //
 // An empty key removes the stored one rather than saving nothing.
-func (s *FrameFairy) SaveAPIKey(key string) error {
-	return engine.StoreAPIKey(key)
+func (s *FrameFairy) SaveAPIKey(provider, key string) error {
+	p, ok := engine.ProviderNamed(provider)
+	if !ok {
+		return fmt.Errorf("there is no provider called %s", provider)
+	}
+	return engine.StoreAPIKey(p, key)
+}
+
+// ChooseCloudModel names the model in the cloud clips are found with, and
+// with it the company, whose key is then the one that counts. Any model a
+// company has can be named, not only the ones the app offers by name, so
+// only what could never be a model's name is refused.
+func (s *FrameFairy) ChooseCloudModel(model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" || len(model) > 100 || strings.ContainsAny(model, " \t\r\n/\\\"") {
+		return fmt.Errorf("%q is not the name of a model", model)
+	}
+	return s.store.UpdateSettings(func(set *Settings) { set.APIModel = model })
 }
 
 // ChoosePlanner records the answer to the one question, so the app knows

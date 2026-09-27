@@ -362,6 +362,28 @@ does. An API answer that breaks off before a word of it arrived is asked
 for again. One that breaks off after is not, because what arrived has
 already been used.
 
+**The API is two companies, Anthropic and OpenAI,** in `engine/provider.go`.
+The model asked for says which: a `claude-` model is Anthropic's, a `gpt-`
+model OpenAI's, and a model nobody has heard of is taken to be Anthropic's,
+which is what every model was before there was a choice. Each company has
+its own address, written in the code and never derived from any input, its
+own key, read from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` and then the
+keychain, and its own shape of request: Anthropic's Messages with the key in
+`x-api-key` and an optional prefilled brace, OpenAI's Chat Completions with
+the key as a bearer token, the instructions as a developer message, and
+`max_completion_tokens` for the ceiling, which counts the thinking as well.
+OpenAI's answer, streamed or plain, is put into the shape of Anthropic's as
+it is read, so everything after reading, the retries, the cost, the clips
+taken as they arrive, a ceiling spent thinking and given more room, and the
+repair of a broken answer, is one path whoever answered. OpenAI keeps its
+thinking to itself and only counts it, so a reply that thought and never
+answered reads as a thinking block with nothing in it, the way Anthropic's
+does. The app offers one model of each by name, Claude Sonnet 5 and
+GPT-5.6 Terra, two of the same price, so the choice is of company rather
+than budget. Any other model either company has can be named with `--model`.
+The tests stand a fake server in for both, in `engine/provider_test.go`, down
+to a whole search on a GPT model from transcript to plan.
+
 A search is three kinds of work that no longer wait on each other, in
 `engine/planbuild.go`. The model writes on the graphics side of the
 machine, framing decodes video with ffmpeg on the processor, and writing a
@@ -475,7 +497,9 @@ Everything else is in `engine/`:
   ass.go        the burned-in caption track and its measured boxes
   render.go     filter graph and ffmpeg command per clip
   ffmpeg.go     running ffmpeg, preflight checks, probing
-  api.go        the Anthropic API, costs and usage
+  api.go        the APIs in the cloud, costs and usage
+  provider.go   the companies in the cloud, Anthropic and OpenAI, their
+                addresses, keys and the models the app offers by name
   run.go        the run loop
   log.go        the timestamped terminal log
   events.go     the same log as structured events, for the app. Every

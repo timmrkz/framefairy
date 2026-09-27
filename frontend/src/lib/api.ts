@@ -348,6 +348,24 @@ export interface ModelRow {
   warn?: boolean;
 }
 
+// A company whose API can find clips, and a model of theirs the app offers
+// by name. Which company a model in the cloud belongs to decides whose key
+// it needs.
+export interface Provider {
+  name: string;
+  title: string;
+  // The variable the command line reads the key from.
+  env: string;
+  // Where a person gets a key.
+  keysAt: string;
+}
+
+export interface CloudModel {
+  model: string;
+  title: string;
+  provider: string;
+}
+
 // What a new copy of the app still needs before it can make a short. Two
 // things are needed and only one of them is a question: speech is always
 // local and finding clips is a choice between an API key and a local
@@ -359,7 +377,15 @@ export interface SetupState {
   // What this machine has, in bytes, or zero where it would not say.
   memory: number;
   planner: "local" | "api" | "";
-  // Whether a key can be found. It never carries the key itself.
+  // The model in the cloud the settings name, and the company it belongs
+  // to, as the Go side works it out.
+  apiModel: string;
+  provider: string;
+  providers: Provider[];
+  cloud: CloudModel[];
+  // Whether a key can be found, for each company. Never a key itself.
+  keys: Record<string, boolean>;
+  // Whether a key can be found for the company of the model named.
   hasKey: boolean;
   hasLocalModel: boolean;
   // Whether llama-server can be found. A model without it is a very large
@@ -407,7 +433,10 @@ export const api = {
   // Makes an installed model the one clips are found with, and says the
   // path it is found at.
   useLanguageModel: (name: string) => call<string>("UseLanguageModel", name),
-  saveAPIKey: (key: string) => call<void>("SaveAPIKey", key),
+  // Puts a key in the keychain under the company it is for.
+  saveAPIKey: (provider: string, key: string) => call<void>("SaveAPIKey", provider, key),
+  // Names the model in the cloud, and with it the company.
+  chooseCloudModel: (model: string) => call<void>("ChooseCloudModel", model),
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),

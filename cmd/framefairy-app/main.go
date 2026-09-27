@@ -401,8 +401,10 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	out = append(out, speech)
 
 	if opts.Planner == "api" {
-		key := Check{Name: "Claude API key"}
-		if _, err := engine.ReadAPIKey(ctx); err != nil {
+		// The key of whichever company the model in the settings belongs to.
+		p := engine.ProviderFor(opts.Model)
+		key := Check{Name: p.Title + " API key"}
+		if _, err := engine.ReadAPIKey(ctx, p); err != nil {
 			key.Detail = err.Error()
 		} else {
 			key.OK, key.Detail = true, "found"

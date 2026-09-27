@@ -39,13 +39,15 @@ starts. It is a job like any other, on the transcribe lane, so it shows in
 **Activity** too, and a transcription queued behind it waits for the model
 rather than failing on it.
 
-**Finding clips** is the question. The Claude API works on any machine and
+**Finding clips** is the question. A model in the cloud, Anthropic's or
+OpenAI's with a key of your own, works on any machine and
 costs a few cents an episode. A model on this machine is free to run and
 needs the memory to hold it. Either way only the words are read: the video
 and the audio never leave the machine. The answer is saved the moment it is
 given and can be changed later in the settings.
 
-Choosing the API opens a field for the key, which goes in the macOS keychain
+Choosing the cloud opens a choice of model, Claude Sonnet 5 or GPT-5.6
+Terra, and a field for that company's key, which goes in the macOS keychain
 and nowhere else, never in the settings file.
 
 Choosing **On this machine** shows the models that can be installed, each
@@ -1244,18 +1246,38 @@ said at the top so nothing goes unsaid. The first version had one card at
 the top listing every problem, and a person had to go from the top of the
 page to the bottom to find where to fix what it said.
 
-**Finding clips is one choice**, **Find clips with**, in one list: the
-Claude API under **In the cloud**, and every model that runs here under **On
-this machine**, the way apps that offer models list them by where they
-run. The rows that depend on the choice are under it in the same card, the
-way a pop-up in the Mac's own settings changes the rows beneath it: the
-API key with the Claude API, and with a local model what it needs and, when
-it is missing, llama-server. The first version had a card of two ways and a
-second card of models under it, one deciding the other, and the two read
-as things that had nothing to do with each other.
+**Finding clips is one choice**, **Find clips with**, in one list: under
+**In the cloud** a model from each company the app knows, Claude Sonnet 5
+from Anthropic and GPT-5.6 Terra from OpenAI, with the company beside each,
+and under **On this machine** every model that runs here, the way apps that
+offer models list them by where they run. The rows that depend on the
+choice are under it in the same card, the way a pop-up in the Mac's own
+settings changes the rows beneath it: the key of the company whose model it
+is, and with a local model what it needs and, when it is missing,
+llama-server. The first version had a card of two ways and a second card of
+models under it, one deciding the other, and the two read as things that
+had nothing to do with each other. It also had room for one company only.
+Nobody should need an account with a particular company to use the app,
+so every company is a row of the same list, and a third is an entry in
+`engine/provider.go` and nothing more.
 
-The line under the choice says what it costs: a few cents an episode at
-Anthropic, or who made the model, the memory it needs and whether it fits.
+**Each company's key is its own.** The key row names the company of the
+model chosen, **OpenAI API key** or **Anthropic API key**, and where to get
+one. Keys are kept apart in the keychain, so trying one company never costs
+the other's key, and going back finds it still there. Without its key the
+choice wears the warning like a model not downloaded: the triangle, the
+frame round the list and the line under the key's name. A model written in
+by hand under **Advanced**, **Model in the cloud**, belongs to the company
+its name says, `claude-` or `gpt-`, and is in the list too, so the list
+never names nothing.
+
+The decisions behind the row, which company a model belongs to, what the
+list offers, and what the line says and how it stands in every state, are
+in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
+somebody can click their way into, run by `make interface` and CI.
+
+The line under the choice says what it costs: a few cents an episode and
+which company, or who made the model, the memory it needs and whether it fits.
 Beside each model in the list is what it would cost to fetch, or that it is
 the best here, or that it is too big for this machine. The list holds any
 number of models in the room of one control.
@@ -1379,8 +1401,9 @@ job opens to its log in **Activity**. The list is built into the app from
   language model is one `.gguf` file. Neither is part of the app, so the
   app fetches them: the speech model by itself on the first run, a language
   model when somebody picks one. See [PACKAGING.md](PACKAGING.md).
-- **The Anthropic API key:** in the macOS keychain, under `framefairy` and
-  `anthropic-api-key`. Never in a file. `ANTHROPIC_API_KEY` in the
+- **The API keys:** in the macOS keychain, under `framefairy` and
+  `anthropic-api-key` or `openai-api-key`, one for each company. Never in a
+  file. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the
   environment is read first where there is one, which is how the command
   line gets it.
 - **Settings and the episode list:** plain JSON files in

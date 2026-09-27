@@ -16,9 +16,10 @@ What the product has to be:
   file, no timecodes. Transcription, word timing, clip choice, framing and
   captions happen by themselves.
 - **Local.** Transcription always runs on the user's machine. Choosing clips
-  is the one thing they pick between: an Anthropic API key, which works on
-  any machine and costs per episode, or a local model, which is free per run
-  and needs the machine for it. No language model ships, so the app walks
+  is the one thing they pick between: a model in the cloud, Anthropic's or
+  OpenAI's with the user's own key, which works on any machine and costs
+  per episode, or a local model, which is free per run and needs the
+  machine for it. No language model ships, so the app walks
   them through installing the local one. See
   [docs/PACKAGING.md](docs/PACKAGING.md).
 - **Faithful.** Audio and picture stay as close to the original as possible.

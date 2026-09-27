@@ -25,7 +25,8 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 6. **Time window.** The app offers the command line's `--from` and `--to` as
    a window dragged over the episode waveform.
 7. **Hardware.** Apple silicon, and no Intel Mac. No language model ships.
-   The user picks an Anthropic API key or a local model, and the app walks
+   The user picks a model in the cloud, Anthropic's or OpenAI's with their
+   own key, or a local model, and the app walks
    them through installing the local one, choosing by available memory.
    Tim's machine is an M2 Max with 32 GB. See [PACKAGING.md](PACKAGING.md).
 8. **Licence key.** At the very end.
@@ -82,6 +83,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.17 | One box over the workspace for what cannot be taken back: removing an episode, and finding clips again for a window that already has some | `[x]` |
 | 2.57 | What a search can ask for, worked out and shown where it is chosen: a window no larger than the model can read in one request, and no more clips than the window can hold at their shortest | `[x]` |
 | 2.60 | The settings made presentable: cards in the manner of the Updates page, sharing `.card` with it, **Find clips with** as one list of the Claude API and every local model, grouped by where they run, with the rows that depend on it in the same card, a model not there yet fetched and then used when it is chosen, **Downloaded models** folded, what is in the way said in the row where it is put right, a folder dialog for where shorts go, the Mac's accent colours, the machinery behind **Advanced**, and everything saved as it is changed, with no Save button. Tried first and left: a card of ways and a card of models under it, and a status card at the top | `[x]` |
+| 2.61 | More than one company in the cloud: OpenAI beside Anthropic, the model saying which company, each with its own key in the keychain and the environment, OpenAI's answers read as they are written and put into the same shape as Anthropic's, so the retries, the cost, the clips as they arrive and the repair are one path. **Find clips with** lists a model from each company, the key row names the company, and the first run asks for the key of the model chosen. A fake server stands in for both companies in the engine's tests, down to a whole search on a GPT model, the app tests keys per company, and `finding.test.ts` walks every state of the row | `[x]` |
 | 2.59 | A search that stopped before it found anything says so where its clips would have been, with its reason, after a restart too, and points to **New**. Nothing starts by itself | `[x]` |
 | 2.58 | Models in the settings: an install carries its fill and Cancel in its own button and says how far, how fast and how long, a model that is there can be removed after asking, and with several installed one is chosen with Use. The install of a language model never showed at all, because its row looked for it under a name the job never had | `[x]` |
 | 2.55 | The remove box reads Cancel, Keep, Delete, in plainer words, with what is destructive marked rather than made the answer Enter gives | `[x]` |

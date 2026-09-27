@@ -114,10 +114,12 @@ func (e *streamError) Error() string {
 	return e.kind + ": " + e.message
 }
 
-// transient says whether the API would answer if asked again later.
+// transient says whether the API would answer if asked again later. The
+// first four are Anthropic's names, the last two OpenAI's.
 func (e *streamError) transient() bool {
 	switch e.kind {
-	case "overloaded_error", "api_error", "rate_limit_error", "timeout_error":
+	case "overloaded_error", "api_error", "rate_limit_error", "timeout_error",
+		"server_error", "rate_limit_exceeded":
 		return true
 	}
 	return false
@@ -223,6 +225,148 @@ func readClaudeStream(r io.Reader, listen *Listener) (*apiReply, bool, error) {
 		return nil, heard, renderErr("the API's answer stopped before it was finished")
 	}
 	return &reply, heard, nil
+}
+
+// openAIChunk is one piece of an answer from OpenAI's Chat Completions,
+// which is the shape llama-server copies, and what the whole of a plain
+// answer looks like with the message where the delta is.
+type openAIChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content *string `json:"content"`
+		} `json:"delta"`
+		Message struct {
+			Content *string `json:"content"`
+		} `json:"message"`
+		FinishReason *string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
+	Error *struct {
+		Type    string `json:"type"`
+		Code    any    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// stopReason says why OpenAI stopped in Anthropic's words, which is what
+// everything after reading an answer understands. A ceiling reached is
+// max_tokens on one side and length on the other.
+func stopReason(finish string) string {
+	switch finish {
+	case "length":
+		return "max_tokens"
+	case "stop":
+		return "end_turn"
+	}
+	return finish
+}
+
+// take adds what a piece of OpenAI's answer says to the reply being put
+// together, and says what text it brought.
+func (reply *apiReply) take(chunk *openAIChunk) (string, error) {
+	if chunk.Error != nil {
+		kind := chunk.Error.Type
+		if code, ok := chunk.Error.Code.(string); ok && code != "" {
+			kind = code
+		}
+		return "", &streamError{kind, chunk.Error.Message}
+	}
+	var text strings.Builder
+	for _, choice := range chunk.Choices {
+		for _, c := range []*string{choice.Delta.Content, choice.Message.Content} {
+			if c != nil {
+				text.WriteString(*c)
+			}
+		}
+		if choice.FinishReason != nil && *choice.FinishReason != "" {
+			reply.StopReason = stopReason(*choice.FinishReason)
+		}
+	}
+	if u := chunk.Usage; u != nil {
+		reply.Usage.InputTokens = u.PromptTokens
+		reply.Usage.OutputTokens = u.CompletionTokens
+		reply.Usage.CacheReadInputTokens = u.PromptTokensDetails.CachedTokens
+		if u.CompletionTokensDetails.ReasoningTokens > 0 {
+			reply.thought = true
+		}
+	}
+	return text.String(), nil
+}
+
+// blocks puts the text back as Anthropic's API would have sent it. OpenAI
+// keeps the thinking to itself and only counts it, so a reply that thought
+// and never answered has a thinking block with nothing in it, which is how
+// a ceiling spent on thinking is known whoever answered.
+func (reply *apiReply) blocks(text string) {
+	reply.Content = nil
+	if reply.thought {
+		reply.Content = append(reply.Content, replyBlock{Type: "thinking"})
+	}
+	if text != "" {
+		reply.Content = append(reply.Content, replyBlock{Type: "text", Text: text})
+	}
+}
+
+// readOpenAIStream reads OpenAI's answer as it is written and puts it back
+// together as the reply Anthropic's API would have given, the way
+// readClaudeStream does, and says the same about whether any of it was
+// heard.
+func readOpenAIStream(r io.Reader, listen *Listener) (*apiReply, bool, error) {
+	reply := apiReply{Type: "message"}
+	var text strings.Builder
+	heard, done := false, false
+	err := sseLines(r, func(_, data string) error {
+		if strings.TrimSpace(data) == "[DONE]" {
+			done = true
+			return nil
+		}
+		var chunk openAIChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return renderErr("the API sent a piece of its answer that is not JSON")
+		}
+		piece, err := reply.take(&chunk)
+		if err != nil {
+			return err
+		}
+		if piece != "" {
+			heard = true
+			text.WriteString(piece)
+			listen.text(piece)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, heard, err
+	}
+	if !done {
+		return nil, heard, renderErr("the API's answer stopped before it was finished")
+	}
+	reply.blocks(text.String())
+	return &reply, heard, nil
+}
+
+// readOpenAIReply reads an answer that was not streamed.
+func readOpenAIReply(body []byte) (*apiReply, error) {
+	var chunk openAIChunk
+	if err := json.Unmarshal(body, &chunk); err != nil {
+		return nil, renderErr("the API returned a body that is not JSON")
+	}
+	reply := apiReply{Type: "message"}
+	text, err := reply.take(&chunk)
+	if err != nil {
+		return nil, renderErr("the API reported an error: %s", Scrub(err.Error(), 400))
+	}
+	reply.blocks(text)
+	return &reply, nil
 }
 
 // localChunk is one piece of llama-server's streamed answer.

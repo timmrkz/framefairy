@@ -18,6 +18,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
+  import Pick from "../components/Pick.svelte";
 
   let { ondone }: { ondone: () => void } = $props();
 
@@ -63,11 +64,39 @@
     await reload();
   }
 
+  // The model in the cloud and its company. The company decides whose key
+  // is asked for, and each company's key is kept apart.
+  const setupProvider = $derived(
+    setup?.providers.find((p) => p.name === setup?.provider) ?? {
+      name: "anthropic",
+      title: "Anthropic",
+      env: "ANTHROPIC_API_KEY",
+      keysAt: "console.anthropic.com",
+    },
+  );
+  const cloudOptions = $derived(
+    (setup?.cloud ?? []).map((m) => ({
+      value: m.model,
+      label: m.title,
+      detail: setup?.providers.find((p) => p.name === m.provider)?.title ?? "",
+    })),
+  );
+
+  async function chooseCloud(model: string) {
+    problem = "";
+    try {
+      await api.chooseCloudModel(model);
+    } catch (err) {
+      problem = errorText(err);
+    }
+    await reload();
+  }
+
   async function saveKey() {
     saving = true;
     problem = "";
     try {
-      await api.saveAPIKey(key);
+      await api.saveAPIKey(setupProvider.name, key);
       key = "";
       savedKey = true;
       setTimeout(() => (savedKey = false), 1800);
@@ -151,9 +180,10 @@
         <div class="area asks">
           <span class="ask corner">
             <Info label="About finding clips" side="right">
-              A language model reads the transcript and picks the moments worth clipping. The
-              Claude API works on any machine and costs a few cents an episode. A model on this
-              machine is free to run and needs the memory to hold it. Either way the video and the
+              A language model reads the transcript and picks the moments worth clipping. A model
+              in the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own
+              from that company, and costs a few cents an episode. A model on this machine is free
+              to run and needs the memory to hold it. Either way the video and the
               audio stay here: only the words are read.
             </Info>
           </span>
@@ -162,17 +192,28 @@
           <ul class="ways">
             <li class:on={setup.chosen && setup.planner === "api"}>
               <button class="pick" onclick={() => choose("api")}>
-                <span class="title">Claude API</span>
-                <span class="muted about">Works on any machine. A few cents an episode.</span>
+                <span class="title">In the cloud</span>
+                <span class="muted about">Anthropic or OpenAI. Works on any machine. A few cents an episode.</span>
               </button>
               {#if setup.chosen && setup.planner === "api"}
                 <div class="more">
+                  <!-- Which company's model, and so whose key. -->
+                  <div class="row">
+                    <span class="muted grow">Model</span>
+                    <Pick
+                      value={setup.apiModel}
+                      options={cloudOptions}
+                      onpick={chooseCloud}
+                      label="Model in the cloud"
+                      align="right"
+                    />
+                  </div>
                   {#if setup.hasKey}
-                    <p class="done row"><Icon name="check" />A key is in place.</p>
+                    <p class="done row"><Icon name="check" />The {setupProvider.title} key is in place.</p>
                   {:else if !mac}
                     <p class="warn">
                       This machine has no keychain, so the key comes from
-                      <b>ANTHROPIC_API_KEY</b> in the environment the app starts in.
+                      <b>{setupProvider.env}</b> in the environment the app starts in.
                     </p>
                   {/if}
                   {#if mac}
@@ -180,8 +221,10 @@
                       <input
                         type="password"
                         bind:value={key}
-                        placeholder={setup.hasKey ? "Replace the key" : "sk-ant-..."}
-                        aria-label="Anthropic API key"
+                        placeholder={setup.hasKey
+                          ? "Replace the key"
+                          : `${setupProvider.title} key from ${setupProvider.keysAt}`}
+                        aria-label="{setupProvider.title} API key"
                         autocomplete="off"
                         spellcheck="false"
                       />

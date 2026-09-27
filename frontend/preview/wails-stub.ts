@@ -498,7 +498,29 @@ export const Call = {
           language,
           memory: 34359738368,
           planner: fresh ? planner : "local",
-          hasKey: fresh || location.search.includes("nokey") ? key : true,
+          // Two companies, and a key for each or not. ?nokey is a machine
+          // with none, and a fresh one has none until one is saved.
+          ...(() => {
+            const apiModel: string = (window as any).__settings?.apiModel || (window as any).__apiModel || "claude-sonnet-5";
+            const provider = apiModel.startsWith("gpt-") ? "openai" : "anthropic";
+            const stored: Record<string, boolean> = (window as any).__keys ?? {};
+            const none = fresh || location.search.includes("nokey");
+            const keys = { anthropic: none ? !!stored.anthropic || key : true, openai: !!stored.openai };
+            return {
+              apiModel,
+              provider,
+              providers: [
+                { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "console.anthropic.com" },
+                { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" },
+              ],
+              cloud: [
+                { model: "claude-sonnet-5", title: "Claude Sonnet 5", provider: "anthropic" },
+                { model: "gpt-5.6-terra", title: "GPT-5.6 Terra", provider: "openai" },
+              ],
+              keys,
+              hasKey: keys[provider],
+            };
+          })(),
           hasLocalModel: fresh ? llmDone() : true,
           // ?noserver is the machine with a model and nothing to run it,
           // which is the state the local way has to say something about.
@@ -539,7 +561,11 @@ export const Call = {
         (window as any).__planner = args[0];
         return Promise.resolve(null);
       case "SaveAPIKey":
-        (window as any).__key = !!String(args[0] ?? "").trim();
+        ((window as any).__keys ??= {})[String(args[0])] = !!String(args[1] ?? "").trim();
+        return Promise.resolve(null);
+      case "ChooseCloudModel":
+        (window as any).__apiModel = String(args[0]);
+        if ((window as any).__settings) (window as any).__settings.apiModel = String(args[0]);
         return Promise.resolve(null);
       case "AddEpisodes":
         return Promise.resolve(null);
@@ -715,8 +741,13 @@ export const Call = {
         ];
         // The same key the setup answers about: there on a machine that is
         // set up, and on a fresh one once it is saved. ?nokey takes it away.
-        const key = location.search.includes("nokey") ? !!(window as any).__key : !location.search.includes("setup") || !!(window as any).__key;
-        if (api) out.push({ name: "Claude API key", ok: key, detail: key ? "found" : "no key in the keychain or in ANTHROPIC_API_KEY" });
+        const model: string = (window as any).__settings?.apiModel || (window as any).__apiModel || "claude-sonnet-5";
+        const openai = model.startsWith("gpt-");
+        const stored: Record<string, boolean> = (window as any).__keys ?? {};
+        const none = location.search.includes("nokey") || location.search.includes("setup");
+        const key = openai ? !!stored.openai : !none || !!stored.anthropic;
+        const who = openai ? "OpenAI" : "Anthropic";
+        if (api) out.push({ name: `${who} API key`, ok: key, detail: key ? "found" : `no ${who} API key found. Either set ${openai ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"}, or store it in the keychain` });
         else {
           out.push(broken
             ? { name: "llama-server", ok: false, detail: "llama-server was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path." }
