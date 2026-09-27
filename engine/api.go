@@ -11,16 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// APIURL is the only endpoint this tool contacts. It is hardcoded and never
-// derived from any input.
-const APIURL = "https://api.anthropic.com/v1/messages"
+// The addresses this tool contacts are the providers' in provider.go,
+// written there and never derived from any input.
 
 const apiVersion = "2023-06-01"
 
@@ -29,7 +27,8 @@ const DefaultModel = "claude-sonnet-5"
 
 // ModelFacts are prices in US dollars per million tokens, the context window
 // and the maximum output. From the models overview in Anthropic's docs and
-// the pricing page linked from it. These are the kind of numbers that go
+// the pricing page linked from it, and OpenAI's pricing page and the model
+// pages beside it, in September 2026. These are the kind of numbers that go
 // stale, so check them if a run's estimate looks wrong.
 type ModelFacts struct {
 	PriceIn   float64
@@ -44,6 +43,18 @@ var models = map[string]ModelFacts{
 	"claude-opus-5":             {5.0, 25.0, true, 1_000_000, 128_000},
 	"claude-sonnet-5":           {2.0, 10.0, true, 1_000_000, 128_000},
 	"claude-haiku-4-5-20251001": {1.0, 5.0, true, 200_000, 64_000},
+	// Read off OpenAI's pricing page and the model pages in September
+	// 2026: GPT-6 is the current generation, every one of them with
+	// 1,050,000 tokens of context and 128,000 out.
+	"gpt-6-astra": {10.0, 50.0, true, 1_050_000, 128_000},
+	"gpt-6-sol":   {2.0, 10.0, true, 1_050_000, 128_000},
+	"gpt-6-luna":  {0.1, 0.5, true, 1_050_000, 128_000},
+	// The generation before, still sold. Sol's is its promotional price,
+	// which OpenAI keeps at least until 21 November 2026. The contexts are
+	// held to a million until their own number is checked.
+	"gpt-5.6-sol":   {4.0, 20.0, true, 1_000_000, 128_000},
+	"gpt-5.6-terra": {2.0, 12.0, true, 1_000_000, 128_000},
+	"gpt-5.6-luna":  {0.2, 1.2, true, 1_000_000, 128_000},
 }
 
 // FactsFor gives prices and limits for a model, or conservative defaults for
@@ -132,73 +143,6 @@ func keychain(ctx context.Context, args ...string) (result, bool) {
 	return res, ctx.Err() == nil
 }
 
-// ReadAPIKey takes the key from the environment first, then the macOS
-// keychain. Never from a file on disk.
-func ReadAPIKey(ctx context.Context) (string, error) {
-	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
-	source := "ANTHROPIC_API_KEY"
-	if key == "" {
-		// A keychain that never answers is a keychain with no key in it
-		// as far as this is concerned, and the line below says what to do
-		// about it either way.
-		res, _ := keychain(ctx, "find-generic-password",
-			"-a", "framefairy", "-s", "anthropic-api-key", "-w")
-		if res.Code == 0 && strip(res.Stdout) != "" {
-			key, source = strip(res.Stdout), "the keychain"
-		}
-	}
-	if key == "" {
-		return "", renderErr("no API key found. Either set ANTHROPIC_API_KEY, or store it " +
-			"in the keychain with:\n" +
-			"  security add-generic-password -a framefairy -s anthropic-api-key -w")
-	}
-	if !keyIsSane(key) {
-		return "", renderErr("the API key from %s contains characters that cannot go in "+
-			"an HTTP header. It was probably stored with a stray newline.", source)
-	}
-	return key, nil
-}
-
-// StoreAPIKey puts a key in the macOS keychain, which is the only place the
-// app keeps one. Never a file on disk, and never the settings, which are
-// plain JSON in the config folder and get copied about.
-//
-// An empty key removes the stored one. That is how somebody takes their key
-// off a machine, so it has to be an ordinary thing to do rather than an
-// error.
-//
-// The key is checked before it is stored rather than only when it is used.
-// A key pasted with a newline on the end is the common case, and finding
-// that out at the moment it is typed beats finding out when an episode has
-// already been transcribed.
-func StoreAPIKey(key string) error {
-	key = strings.TrimSpace(key)
-	if runtime.GOOS != "darwin" {
-		return renderErr("this machine has no keychain to put a key in. " +
-			"Set ANTHROPIC_API_KEY instead.")
-	}
-	ctx := context.Background()
-	if key == "" {
-		// Nothing stored is not a failure, so the result is not looked at.
-		keychain(ctx, "delete-generic-password",
-			"-a", "framefairy", "-s", "anthropic-api-key")
-		return nil
-	}
-	if !keyIsSane(key) {
-		return renderErr("that key has characters in it that cannot go in an HTTP header.")
-	}
-	res, answered := keychain(ctx, "add-generic-password",
-		"-U", "-a", "framefairy", "-s", "anthropic-api-key", "-w", key)
-	if !answered {
-		return renderErr("the keychain did not answer. It may be locked, or waiting " +
-			"for an answer in a box somewhere on screen.")
-	}
-	if res.Code != 0 {
-		return renderErr("the keychain refused the key: %s", strip(res.Stderr))
-	}
-	return nil
-}
-
 // writeJSONText writes a JSON string indented, so a log file can be read by
 // a person.
 func writeJSONText(path string, body []byte) {
@@ -218,13 +162,13 @@ var httpClient = &http.Client{
 	},
 }
 
+// apiReply is an answer as Anthropic's API gives it. OpenAI's answers are
+// put into the same shape as they are read, so everything after reading
+// works on one kind of answer whoever gave it.
 type apiReply struct {
-	Type    string `json:"type"`
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	StopReason string `json:"stop_reason"`
+	Type       string       `json:"type"`
+	Content    []replyBlock `json:"content"`
+	StopReason string       `json:"stop_reason"`
 	Usage      struct {
 		InputTokens          int `json:"input_tokens"`
 		OutputTokens         int `json:"output_tokens"`
@@ -233,6 +177,15 @@ type apiReply struct {
 	Error struct {
 		Message string `json:"message"`
 	} `json:"error"`
+	// thought is whether the model thought before it answered, where the
+	// thinking itself is not sent, only counted.
+	thought bool
+}
+
+// replyBlock is one part of an answer: the text, or the thinking before it.
+type replyBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {
@@ -256,7 +209,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 // breaks off before a word of it was heard is asked for again like any
 // other failure. One that breaks off after cannot be, because what was
 // heard has already been acted on.
-func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, error),
+func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) ([]byte, error),
 	logDir, tag string, stream bool, listen *Listener) (*apiReply, []byte, error) {
 	delay := 2.0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -268,18 +221,17 @@ func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, err
 		if err != nil {
 			return nil, nil, err
 		}
-		key, err := ReadAPIKey(ctx)
+		key, source, err := readAPIKey(ctx, p)
 		if err != nil {
 			return nil, nil, err
 		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, APIURL,
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.URL,
 			bytes.NewReader(payload))
 		if err != nil {
 			return nil, nil, err
 		}
 		request.Header.Set("content-type", "application/json")
-		request.Header.Set("anthropic-version", apiVersion)
-		request.Header.Set("x-api-key", key)
+		setKey(request, p, key)
 
 		response, err := httpClient.Do(request)
 		if err != nil {
@@ -307,7 +259,11 @@ func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, err
 			return nil, nil, renderErr("cannot reach the API: %s", Scrub(err.Error(), 200))
 		}
 		if stream && response.StatusCode >= 200 && response.StatusCode <= 299 {
-			data, heard, err := readClaudeStream(response.Body, listen)
+			read := readClaudeStream
+			if p.Name == "openai" {
+				read = readOpenAIStream
+			}
+			data, heard, err := read(response.Body, listen)
 			response.Body.Close()
 			if err == nil {
 				body, _ := json.Marshal(data)
@@ -383,10 +339,14 @@ func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, err
 				delay = min(delay*2, 60)
 				continue
 			}
+			if code == http.StatusUnauthorized {
+				// The provider's own words are kept in logDir, above, and
+				// in the detail lines, and the person is told what to do.
+				e.Log.Detail("the API returned 401: %s", Scrub(detail, 400))
+				return nil, nil, refusedKey(p, source)
+			}
 			hint := ""
 			switch code {
-			case 401:
-				hint = " The key was rejected. Check it in the Console."
 			case 400:
 				hint = " The request itself was refused, so this will not succeed on a retry."
 			}
@@ -400,6 +360,13 @@ func (e *Engine) post(ctx context.Context, build func(prefill bool) ([]byte, err
 			e.Log.OK("the API answered on attempt %d", attempt)
 		}
 		var data apiReply
+		if p.Name == "openai" {
+			reply, err := readOpenAIReply(body)
+			if err != nil {
+				return nil, nil, err
+			}
+			return reply, body, nil
+		}
 		if err := json.Unmarshal(body, &data); err != nil {
 			return nil, nil, renderErr("the API returned a body that is not JSON")
 		}
@@ -555,18 +522,93 @@ type requestBody struct {
 	System    string    `json:"system"`
 	Messages  []message `json:"messages"`
 	Stream    bool      `json:"stream,omitempty"`
+	Thinking  *thinking `json:"thinking,omitempty"`
 }
 
-// CallClaude makes one call. The answer is streamed, and listen hears it as
-// it is written. The whole reply is on disk before anything parses it.
-func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens int,
+// thinking asks a model that decides by itself how long to think to send
+// a summary of it as it goes. These models think either way, and the
+// summary costs nothing more, but without it they send nothing at all
+// until the answer begins, which for a search is a minute or more of
+// silence nobody can tell from a search that hangs.
+type thinking struct {
+	Type    string `json:"type"`
+	Display string `json:"display"`
+}
+
+// adaptiveThinking are Anthropic's models that decide by themselves how
+// long to think, and think unless told not to.
+var adaptiveThinking = map[string]bool{
+	"claude-fable-5-1": true,
+	"claude-opus-5":    true,
+	"claude-sonnet-5":  true,
+}
+
+// openAIRequest is the same request as OpenAI's Chat Completions takes it.
+// The instructions are a message of their own, from the developer, and
+// the ceiling counts the thinking as well as the answer, which is what
+// max_tokens counts on Anthropic's side too.
+type openAIRequest struct {
+	Model               string         `json:"model"`
+	Messages            []message      `json:"messages"`
+	MaxCompletionTokens int            `json:"max_completion_tokens"`
+	Stream              bool           `json:"stream,omitempty"`
+	StreamOptions       *openAIOptions `json:"stream_options,omitempty"`
+}
+
+// openAIOptions asks for what the call cost at the end of a streamed
+// answer, which a stream otherwise leaves out.
+type openAIOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// setKey puts a key on a request the way its provider asks for one.
+func setKey(request *http.Request, p Provider, key string) {
+	switch p.Name {
+	case "openai":
+		request.Header.Set("authorization", "Bearer "+key)
+	default:
+		request.Header.Set("anthropic-version", apiVersion)
+		request.Header.Set("x-api-key", key)
+	}
+}
+
+// bodyFor builds the body of one request to whichever provider the model
+// belongs to. A prefilled brace is Anthropic's alone: OpenAI takes no
+// half-written answer to carry on from.
+func bodyFor(p Provider, model string, maxTokens int, system, prompt string,
+	prefill, stream bool) ([]byte, error) {
+	if p.Name == "openai" {
+		body := openAIRequest{Model: model, MaxCompletionTokens: maxTokens,
+			Messages: []message{{"developer", system}, {"user", prompt}}}
+		if stream {
+			body.Stream = true
+			body.StreamOptions = &openAIOptions{IncludeUsage: true}
+		}
+		return json.Marshal(body)
+	}
+	body := requestBody{Model: model, MaxTokens: maxTokens, System: system,
+		Messages: messages(prompt, prefill), Stream: stream}
+	if adaptiveThinking[model] && !prefill {
+		body.Thinking = &thinking{Type: "adaptive", Display: "summarized"}
+	}
+	return json.Marshal(body)
+}
+
+// CallAPI makes one call to the provider the model belongs to. The answer
+// is streamed, and listen hears it as it is written. The whole reply is on
+// disk before anything parses it.
+func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens int,
 	logDir, tag, system string, listen *Listener) (string, error) {
 	e.Calls.Requests++
 	if system == "" {
 		system = SystemPrompt
 	}
+	p := ProviderFor(model)
+	if p.Name != "anthropic" {
+		e.Prefill = false
+	}
 	build := func(prefill bool) ([]byte, error) {
-		return json.Marshal(requestBody{model, maxTokens, system, messages(prompt, prefill), true})
+		return bodyFor(p, model, maxTokens, system, prompt, prefill, true)
 	}
 	// A prefilled reply begins with the brace that was sent for it, which
 	// the API does not send back. Whoever listens hears it first, so what
@@ -596,11 +638,11 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 		_ = os.WriteFile(filepath.Join(logDir, tag+"-prompt.txt"),
 			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644)
 	}
-	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", APIURL, model,
+	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,
 		maxTokens, commas(runeLen(prompt)))
 	listen.part(partReading)
 	started := time.Now()
-	data, _, err := e.post(ctx, build, logDir, tag, true, heard)
+	data, _, err := e.post(ctx, p, build, logDir, tag, true, heard)
 	if err != nil {
 		return "", err
 	}
@@ -643,7 +685,7 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 	return text, nil
 }
 
-// CallClaudeWithHeadroom asks, and if the model spent the whole ceiling
+// CallAPIWithHeadroom asks, and if the model spent the whole ceiling
 // thinking, gives it more.
 //
 // A reply that is entirely thinking and no answer is not a failure of the
@@ -653,10 +695,10 @@ func (e *Engine) CallClaude(ctx context.Context, prompt, model string, maxTokens
 //
 // A ceiling spent thinking is spent before a word of the answer is written,
 // so nothing has been heard yet and asking again is safe.
-func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model string,
+func (e *Engine) CallAPIWithHeadroom(ctx context.Context, prompt, model string,
 	maxTokens int, logDir, tag, system string, listen *Listener) (string, error) {
 	facts := FactsFor(model)
-	text, err := e.CallClaude(ctx, prompt, model, maxTokens, logDir, tag, system, listen)
+	text, err := e.CallAPI(ctx, prompt, model, maxTokens, logDir, tag, system, listen)
 	if err == nil {
 		return text, nil
 	}
@@ -667,7 +709,7 @@ func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model strin
 	}
 	e.Log.Warn("the model used the whole %s token ceiling thinking and never "+
 		"answered. Asking again with %s.", commas(maxTokens), commas(headroom))
-	return e.CallClaude(ctx, prompt, model, headroom, logDir, tag, system, listen)
+	return e.CallAPI(ctx, prompt, model, headroom, logDir, tag, system, listen)
 }
 
 // RepairJSON asks the model to fix its own output, sending only the broken
@@ -675,15 +717,19 @@ func (e *Engine) CallClaudeWithHeadroom(ctx context.Context, prompt, model strin
 // the whole episode a second time, and the transcript was never the part that
 // was wrong.
 func (e *Engine) RepairJSON(ctx context.Context, broken, model, logDir string) (string, error) {
+	p := ProviderFor(model)
+	if p.Name != "anthropic" {
+		e.Prefill = false
+	}
 	build := func(prefill bool) ([]byte, error) {
-		return json.Marshal(requestBody{model, min(8000, runeLen(broken)/2+2000),
-			repairSystem, messages(Scrub(broken, 60000), prefill), false})
+		return bodyFor(p, model, min(8000, runeLen(broken)/2+2000), repairSystem,
+			Scrub(broken, 60000), prefill, false)
 	}
 	e.Calls.Requests++
 	e.Log.Info("asking for a repair of %s characters (the transcript is not resent)",
 		commas(runeLen(broken)))
 	started := time.Now()
-	data, _, err := e.post(ctx, build, logDir, "repair", false, nil)
+	data, _, err := e.post(ctx, p, build, logDir, "repair", false, nil)
 	if err != nil {
 		return "", err
 	}

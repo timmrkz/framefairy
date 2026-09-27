@@ -94,7 +94,14 @@ export type View =
 
 class Nav {
   view = $state<View>({ name: "empty" });
+  // A page that must not be left yet. It is asked before every move to
+  // another page, and a page that says so keeps the app where it is and
+  // shows what has to be put right first. The settings hold the app while
+  // what finds the clips cannot, because every search after would fail
+  // somewhere far from the one place it can be fixed.
+  hold: ((to: View) => boolean) | null = null;
   go(v: View) {
+    if (this.hold && v.name !== this.view.name && this.hold(v)) return;
     this.view = v;
   }
 }

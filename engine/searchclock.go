@@ -25,8 +25,10 @@ import (
 // A model on this machine that has never been timed here is measured
 // against a search timed on an M2 Max until it has been, which is close
 // enough to say how far it is and is corrected by the first search that
-// finishes. The API has no such stand-in: it says what it is doing without
-// saying how far it is, until it has been timed once.
+// finishes. A model in the cloud the app knows by name is measured against
+// a first guess the same way, so the first search on it moves too rather
+// than showing only that it runs. A model nobody has heard of says what it
+// is doing without saying how far, until it has been timed once.
 // ---------------------------------------------------------------------------
 
 // speedVersion is raised whenever what a record measures changes. A record
@@ -59,6 +61,14 @@ type searchSpeed struct {
 // German, 16,000 tokens.
 var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 1170,
 	Thought: 260, Rate: 47, Clip: 1.1, Tail: 28, Runs: 1}
+
+// measuredCloud stands in for a model in the cloud this machine has not
+// timed yet. It is a guess, not a measurement: a half hour window read in
+// a few seconds, a minute of thought, a few seconds a clip, and the
+// framing on this machine as long as it takes after a local model. The
+// first search that finishes replaces half of it, and the next the rest.
+var measuredCloud = searchSpeed{Version: speedVersion, Load: 0, Read: 20000,
+	Thought: 60, Rate: 0, Clip: 3, Tail: 28, Runs: 1}
 
 var (
 	// speedMu guards where the file is. speedWrite is held while it is
@@ -108,7 +118,8 @@ func readSpeeds(path string) map[string]searchSpeed {
 
 // pastSpeed is what searches with this model took before, and whether
 // there is anything to measure against. A local model never timed here is
-// measured against the stand-in.
+// measured against its stand-in, and a model in the cloud the app knows by
+// name against its own.
 func pastSpeed(model string, local bool) (searchSpeed, bool) {
 	past, ok := readSpeeds(speedFile())[model]
 	if ok && past.usable() {
@@ -116,6 +127,9 @@ func pastSpeed(model string, local bool) (searchSpeed, bool) {
 	}
 	if local {
 		return measuredLocal, true
+	}
+	if _, named := models[model]; named {
+		return measuredCloud, true
 	}
 	return searchSpeed{}, false
 }

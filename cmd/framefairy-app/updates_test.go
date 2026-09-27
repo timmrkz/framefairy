@@ -43,7 +43,9 @@ type channelServer struct {
 	list []byte
 	zips map[string][]byte
 	slow chan struct{}
-	hits atomic.Int32
+	// slowOnly holds back only the builds whose path has this in it.
+	slowOnly string
+	hits     atomic.Int32
 }
 
 func newChannelServer(t *testing.T) *channelServer {
@@ -58,6 +60,9 @@ func newChannelServer(t *testing.T) *channelServer {
 		list, data, ok := cs.list, cs.zips[r.URL.Path], false
 		_, ok = cs.zips[r.URL.Path]
 		slow := cs.slow
+		if cs.slowOnly != "" && !strings.Contains(r.URL.Path, cs.slowOnly) {
+			slow = nil
+		}
 		cs.mu.Unlock()
 		switch {
 		case r.URL.Path == "/channels.json":
@@ -214,15 +219,23 @@ func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 }
 
 // A pull request that was merged leaves the list, and a build that followed
-// it is offered main.
-func TestAMergedPullRequestFollowsMain(t *testing.T) {
+// it downloads nothing: not main, not anything, until another channel is
+// picked. Tim followed pull request 25, it was merged, and the app went on
+// to download main by itself.
+func TestAMergedPullRequestDownloadsNothing(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
 	_ = c.Follow("pr-18")
-	s := waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
-	if s.Follows != "main" || s.Picked != "pr-18" || s.Next != "0.3.0-main.5" {
+	s := waitFor(t, c, "gone", func(s UpdateState) bool { return s.Phase == "gone" })
+	if s.Gone != "pr-18" || s.Follows != "" || s.Next != "" || c.u.DownloadedPath() != "" {
+		t.Errorf("%+v, staged %q", s, c.u.DownloadedPath())
+	}
+	// Picking main is how it goes on.
+	_ = c.Follow("main")
+	s = waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Follows != "main" || s.Gone != "" || s.Next != "0.3.0-main.5" {
 		t.Errorf("%+v", s)
 	}
 }
@@ -263,30 +276,50 @@ func TestRestartWaitsForWork(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
 	c, _ := newTestUpdating(t, cs, true)
 	cleanStaged(t, c)
-	c.check()
-	if c.State().Phase != "ready" {
-		t.Fatalf("%+v", c.State())
-	}
+	_ = c.Follow("main")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
 	if err := c.Restart(); err == nil || !strings.Contains(err.Error(), "still running") {
 		t.Errorf("restarted while work ran: %v", err)
 	}
 }
 
-// A channel picked while a download runs is not lost: the check that is
-// running looks again when it is done, and fetches the new pick.
-func TestAPickDuringADownloadIsFetchedAfter(t *testing.T) {
+// A channel picked while a download runs takes over at once: the download
+// of the channel before is stopped, the state shown is the new channel's
+// from the moment of the pick, and nothing the old download says after it
+// reaches the screen. Tim picked pull request 23 while main downloaded,
+// and watched main's download to the end before anything changed. Here
+// main's download never finishes at all, so the new pick only gets to
+// ready if the old one really was let go of.
+func TestAPickStopsTheDownloadBefore(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
-	cs.slow = make(chan struct{})
-	c, _ := newTestUpdating(t, cs, false)
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = make(chan struct{}), "/main-"
+	cs.mu.Unlock()
+	t.Cleanup(func() { close(cs.slow) })
+	c, sent := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
 	_ = c.Follow("main")
-	waitFor(t, c, "downloading", func(s UpdateState) bool { return s.Phase == "downloading" })
+	waitFor(t, c, "downloading main", func(s UpdateState) bool {
+		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
+	})
+
 	_ = c.Follow("pr-20")
-	close(cs.slow)
-	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-pr20.9" })
-	if s.Follows != "pr-20" {
+	after := len(*sent)
+	// At once, before any check has answered.
+	if s := c.State(); s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
+		t.Errorf("right after the pick: %+v", s)
+	}
+	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	})
+	if s.Follows != "pr-20" || s.Problem != "" {
 		t.Errorf("%+v", s)
+	}
+	for _, st := range (*sent)[after:] {
+		if st.Next == "0.3.0-main.5" || st.Phase == "failed" {
+			t.Errorf("after the pick the screen was told %+v", st)
+		}
 	}
 }
 
@@ -344,7 +377,8 @@ func TestTheSettingsListTheChannelsWithoutDownloading(t *testing.T) {
 	c.refreshList()
 	c.refreshList()
 	s := c.State()
-	if len(s.Channels) != 2 || s.Phase != "" || s.Follows != "main" {
+	// A build made by make follows nothing until a channel is picked.
+	if len(s.Channels) != 2 || s.Phase != "" || s.Follows != "" || s.Gone != "" {
 		t.Errorf("%+v", s)
 	}
 	if n := cs.hits.Load(); n != 1 {

@@ -126,15 +126,22 @@ Building the app also needs Node.js, for its interface:
 
 ## 6. The API key, only for the API planner
 
-On macOS, store it once in the keychain rather than in a file:
+A model in the cloud is Anthropic's or OpenAI's, and each has its own key.
+On macOS, paste it into the app's settings, under **Finding clips**, which
+keeps it in the keychain in an item only Frame Fairy may read. Do not add it
+with the `security` command: an item made that way can be read by anything
+that runs the same command, without being asked. The app moves a key it
+finds kept that way into an item of its own the first time it uses it, and
+removes the old one.
 
-```
-security add-generic-password -a framefairy -s anthropic-api-key -w
-```
-
-`ANTHROPIC_API_KEY` works on every system and takes priority. On Windows and
-Linux it is currently the only option. Get the key from the Claude Console at
-console.anthropic.com under Settings, then API keys.
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` work on every system. The command
+line reads them first, which is how it is given a key. The app reads a key
+saved in its settings first, and the variables only when none is saved. On Windows and
+Linux they are currently the only option. Get an
+Anthropic key from the Claude Platform at platform.claude.com under
+Settings, then API keys, and an OpenAI key at platform.openai.com under API
+keys. The app asks for the key of the model it is set to and keeps each in
+the keychain for you.
 
 ## 7. Before the first build
 
