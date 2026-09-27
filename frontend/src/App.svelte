@@ -371,13 +371,10 @@
             : `Activity, ${jobs.busy} jobs running`
           : "Activity"}
       >
+        <!-- No dot of its own. Work in hand is the dot beside the episode
+             it is for, and a second one here said the same thing twice. -->
         <span class="mark">
           <Icon name="activity" />
-          <!-- Work in hand is one dot on the icon, the same dot as beside
-               an episode in the list and pulsing the same way. It sits
-               over the icon, so nothing on the rail moves when a job
-               starts or ends. -->
-          {#if jobs.busy}<span class="dot busy"></span>{/if}
         </span>
         <span class="label">Activity</span>
       </button>
@@ -896,7 +893,6 @@
     flex: none;
   }
 
-  .mark .busy,
   .mark .ready {
     position: absolute;
     top: -2px;

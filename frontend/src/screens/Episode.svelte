@@ -328,7 +328,14 @@
   // clip was to appear.
   const next = $derived.by(() => {
     if (!busy) return null;
-    if (!working) return { what: "Starting", left: "", fraction: -1 };
+    // Clicked, and the job not there yet: the row already says the step
+    // the search is about to take, so Continue goes from Stopped straight
+    // to Transcribing, with no empty card and no word in between.
+    if (!working) {
+      return heardWindow
+        ? { what: "Finding clips", left: windowText, fraction: -1 }
+        : { what: "Transcribing", left: windowText, fraction: heardShare };
+    }
     const line = stepLine(working, heardShare);
     return { ...line, left: line.left || windowText };
   });
@@ -342,6 +349,19 @@
   // because an effect that reads the job is set up again on every report.
   let shownNext = $state<{ what: string; left: string; fraction: number } | null>(null);
   let shownSince = 0;
+  // Work starting or ending shows in the same frame as the click, not on
+  // the timer's next tick: the row the Stopped note stood in was empty for
+  // up to a quarter of a second after Continue, which read as a flash.
+  // Only the change from one headline to another waits, below.
+  $effect(() => {
+    const want = next;
+    if (want && !shownNext) {
+      shownSince = Date.now();
+      shownNext = { ...want };
+    } else if (!want && shownNext) {
+      shownNext = null;
+    }
+  });
   onMount(() => {
     const timer = window.setInterval(() => {
       const want = next;
@@ -598,7 +618,13 @@
   // ago if it still fits, otherwise wherever a window goes by itself.
   function openWindow() {
     const kept = chosen.of(path, duration);
-    if (kept) {
+    // A window that has been searched all through since is not opened on
+    // again: the search it was drawn for ended while the workspace was not
+    // open, on Activity say, and nothing moved it on then. It lay over the
+    // clips just found and hid their marks.
+    const searchedThrough =
+      !!kept && !busy && coverage.searched.some((w) => w.from <= kept.from + 0.5 && w.to >= kept.to - 0.5);
+    if (kept && !searchedThrough) {
       from = kept.from;
       to = kept.to;
       keepWindow();

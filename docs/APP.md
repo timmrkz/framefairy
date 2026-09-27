@@ -117,9 +117,9 @@ its mark says a newer one is ready. Its page has the build and its commit,
 the channel it follows, where things stand, and Check or Update. See
 [UPDATES.md](UPDATES.md). Every mark is in the same place on the rail as it is in the open
 sidebar, to the pixel, so opening the sidebar never moves the mark out from
-under the pointer that came for it. A dot on the Activity mark says work is
-in hand. It sits over the mark, so nothing on the rail moves when a job
-starts or ends.
+under the pointer that came for it. The Activity mark has no dot of its
+own: work in hand is the lamp of the episode it is for, and a second dot
+said the same thing twice.
 
 The episodes stay on the rail too, as their lamps. **An episode's row is
 one line and the rail's own 36 pixel box**, so shut it is a square around
@@ -696,7 +696,11 @@ place.
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
       again replaces its clips and everything done to them, so it asks
-      first.
+      first. When a search is done the window moves on to the next part
+      nobody has searched, so it never lies over the marks of the clips it
+      just found, and the same when the search ended while the workspace
+      was not open, on Activity say: a window searched all through is not
+      opened on again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
       can, saying **Removed** and offering **Put it back**. Nothing above or
