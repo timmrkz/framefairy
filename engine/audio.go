@@ -73,6 +73,15 @@ type Transcript struct {
 	// Extra are the loudness readings of the islands past the end of the
 	// frames: parts transcribed out of turn, see islands.go.
 	Extra []Reading
+	// IslandFrames are the islands' own loudness, every FrameSeconds, for
+	// the waveform, each only over the part of the episode it is read for.
+	IslandFrames []FrameRun
+}
+
+// FrameRun is loudness in dB every FrameSeconds, starting at Start.
+type FrameRun struct {
+	Start  float64
+	Frames []float32
 }
 
 // Levels are the loudness readings the transcript annotations use, one per

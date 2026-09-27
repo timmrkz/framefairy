@@ -223,7 +223,7 @@ func (t *Transcript) Duration() float64 {
 
 // Peaks gives the loudest reading in each of buckets equal parts of a
 // part, in dB, for drawing a waveform at any zoom. Parts outside the
-// transcript are silent at -90 dB.
+// transcript and its islands are silent at -90 dB.
 //
 // It never gives more parts than it measured. Loudness is read every
 // FrameSeconds and no finer, so five buckets inside one reading are five
@@ -241,27 +241,39 @@ func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
 		return out
 	}
 	step := (to - from) / float64(buckets)
+	runs := append([]FrameRun{{t.Start, t.Frames}}, t.IslandFrames...)
 	for i := range out {
-		first := int(math.Floor((from + float64(i)*step - t.Start) / FrameSeconds))
-		// A hair off the end before rounding up. A bucket exactly one
-		// reading wide works out to a boundary like 7.000000000000001, and
-		// rounding that up takes in the reading after it: every part came
-		// back as the louder of itself and its neighbour, which fattens a
-		// waveform and fills in the dips between words. The hair is far
-		// smaller than any real boundary and far larger than the error.
-		last := int(math.Ceil((from+float64(i+1)*step-t.Start)/FrameSeconds - 1e-9))
-		peak := float32(-90)
-		if last <= 0 || first >= len(t.Frames) {
-			out[i] = peak
-			continue
+		out[i] = -90
+		a, b := from+float64(i)*step, from+float64(i+1)*step
+		for _, run := range runs {
+			if peak, ok := run.peak(a, b); ok {
+				out[i] = max(out[i], peak)
+			}
 		}
-		first, last = max(first, 0), min(max(last, first+1), len(t.Frames))
-		for k := first; k < last; k++ {
-			peak = max(peak, t.Frames[k])
-		}
-		out[i] = peak
 	}
 	return out
+}
+
+// peak is the loudest reading of a run between two moments, and whether
+// the run has any there.
+func (r FrameRun) peak(a, b float64) (float32, bool) {
+	first := int(math.Floor((a - r.Start) / FrameSeconds))
+	// A hair off the end before rounding up. A bucket exactly one reading
+	// wide works out to a boundary like 7.000000000000001, and rounding
+	// that up takes in the reading after it: every part came back as the
+	// louder of itself and its neighbour, which fattens a waveform and
+	// fills in the dips between words. The hair is far smaller than any
+	// real boundary and far larger than the error.
+	last := int(math.Ceil((b-r.Start)/FrameSeconds - 1e-9))
+	if last <= 0 || first >= len(r.Frames) {
+		return 0, false
+	}
+	first, last = max(first, 0), min(max(last, first+1), len(r.Frames))
+	peak := r.Frames[first]
+	for k := first + 1; k < last; k++ {
+		peak = max(peak, r.Frames[k])
+	}
+	return peak, true
 }
 
 // Silences are the parts quieter than the floor that last at least

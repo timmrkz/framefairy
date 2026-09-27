@@ -24,10 +24,25 @@ import (
 
 var islandNameRe = regexp.MustCompile(`^words-(\d+)-(\d+)\.json$`)
 
-// IslandMargin is how much an island reaches past what a clip made by hand
-// needs, on either side: room to find the sentence the playhead stands in,
-// and room to drag the clip's edges further out afterwards.
-const IslandMargin = 60.0
+// An island reaches past what a clip made by hand needs, on either side,
+// by Options.IslandMargin: room to find the sentence the playhead stands
+// in, and room to drag the clip's edges further out afterwards. It is
+// DefaultIslandMargin unless it is set, and never less than
+// MinIslandMargin or more than MaxIslandMargin.
+const (
+	DefaultIslandMargin = 30.0
+	MinIslandMargin     = 10.0
+	MaxIslandMargin     = 300.0
+)
+
+// ClampIslandMargin is a margin the engine will work with: the default for
+// nothing set, and inside the bounds otherwise.
+func ClampIslandMargin(margin float64) float64 {
+	if margin <= 0 || math.IsNaN(margin) {
+		return DefaultIslandMargin
+	}
+	return math.Min(math.Max(margin, MinIslandMargin), MaxIslandMargin)
+}
 
 // IslandSeam is how far an island is heard past the edges of the part it
 // is for, into what is transcribed already. A word the edge of a window
@@ -114,6 +129,7 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 	}
 	var words []Cue
 	var levels []Reading
+	var runs []FrameRun
 	for _, is := range islands {
 		for _, word := range is.t.Words {
 			if mid := (word.Start + word.End) / 2; mid >= is.own.Start && mid < is.own.End &&
@@ -126,6 +142,12 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 				levels = append(levels, r)
 			}
 		}
+		first := max(0, int(math.Ceil((is.own.Start-is.t.Start)/FrameSeconds-1e-9)))
+		last := min(len(is.t.Frames), int(math.Ceil((is.own.End-is.t.Start)/FrameSeconds-1e-9)))
+		if first < last {
+			runs = append(runs, FrameRun{is.t.Start + float64(first)*FrameSeconds,
+				is.t.Frames[first:last]})
+		}
 	}
 	if len(words) == 0 {
 		return t
@@ -137,6 +159,7 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 	sort.SliceStable(all, func(a, b int) bool { return all[a].Start < all[b].Start })
 	t.Words = all
 	t.Extra = append(t.Extra, levels...)
+	t.IslandFrames = append(t.IslandFrames, runs...)
 	return t
 }
 
@@ -164,8 +187,8 @@ func (p *Project) Heard(at float64) bool {
 
 // HearAround transcribes the part of the episode a clip made by hand at a
 // moment needs, when the transcription from the start has not reached it:
-// the clip's longest length on the side it grows to, and IslandMargin on
-// both sides. What is transcribed already, by that transcription or by an
+// the clip's longest length on the side it grows to, and the island
+// margin on both sides. What is transcribed already, by that transcription or by an
 // island, is not heard again: only the gaps are, each a new island
 // reaching IslandSeam into what is there on either side.
 func (p *Project) HearAround(ctx context.Context, at float64, backward bool, duration float64) error {
@@ -192,9 +215,10 @@ func (p *Project) Unheard(at float64, backward bool, duration float64) bool {
 // not transcribed yet, in the order it lies in the episode. A gap shorter
 // than a second is left, a word does not fit in it.
 func (p *Project) unheard(at float64, backward bool, duration float64) []Window {
-	from, to := at-IslandMargin, at+p.Base.Max+IslandMargin
+	margin := ClampIslandMargin(p.Base.IslandMargin)
+	from, to := at-margin, at+p.Base.Max+margin
 	if backward {
-		from, to = at-p.Base.Max-IslandMargin, at+IslandMargin
+		from, to = at-p.Base.Max-margin, at+margin
 	}
 	from = math.Max(0, from)
 	if duration > 0 {

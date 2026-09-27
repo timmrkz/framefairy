@@ -36,6 +36,9 @@ export interface Settings {
   count: number;
   min: number;
   max: number;
+  // How far past what a clip made by hand needs the part transcribed for
+  // it reaches, on either side, in seconds.
+  islandMargin: number;
   // The colour of the pill behind the word being spoken, in the rendered
   // short. It belongs to the short.
   highlightColour: string;

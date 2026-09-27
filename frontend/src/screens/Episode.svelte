@@ -938,6 +938,7 @@
           cropLefts: [],
         };
         await api.hearAround(path, at, backward);
+        timeline?.reread();
       }
       const sk = await api.sketchClip(path, at, backward);
       sketch = {

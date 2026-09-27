@@ -24,15 +24,18 @@ type Options struct {
 	// ASRModel is the speech model folder. Empty means the default location.
 	ASRModel string
 
-	Count     int
-	Min       float64
-	Max       float64
-	From      string
-	To        string
-	MaxPause  *float64
-	KeepPause float64
-	SilenceDB *float64
-	Context   string
+	Count int
+	Min   float64
+	Max   float64
+	// IslandMargin is how far past what a clip made by hand needs, on
+	// either side, the part transcribed for it reaches, see islands.go.
+	IslandMargin float64
+	From         string
+	To           string
+	MaxPause     *float64
+	KeepPause    float64
+	SilenceDB    *float64
+	Context      string
 
 	// Planner is "local", the default, or "api".
 	Planner   string
@@ -82,8 +85,9 @@ type Options struct {
 // DefaultOptions are the defaults the command line documents.
 func DefaultOptions() Options {
 	return Options{
-		Count: 12, Min: 20, Max: 30, KeepPause: 0.10, Planner: "local",
-		Model: DefaultModel, MaxTokens: 48000, Think: DefaultThink, Budget: 2.00,
+		Count: 12, Min: 20, Max: 30, IslandMargin: DefaultIslandMargin, KeepPause: 0.10,
+		Planner: "local",
+		Model:   DefaultModel, MaxTokens: 48000, Think: DefaultThink, Budget: 2.00,
 		Width: 1080, Height: 1920, CRF: 18, Preset: "slow", AudioBitrate: "256k",
 	}
 }

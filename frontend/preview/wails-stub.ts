@@ -835,7 +835,7 @@ export const Call = {
         (window as any).__chosen = args[1];
         return Promise.resolve();
       case "GetSettings":
-        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: "local", apiModel: "", count: 12, min: 20, max: 30, highlightColour: "#b4236f", outputDir: "", captionY: 240, trainingDir: "" });
+        return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: "local", apiModel: "", count: 12, min: 20, max: 30, islandMargin: 30, highlightColour: "#b4236f", outputDir: "", captionY: 240, trainingDir: "" });
       case "RemoveClip": {
         const [, , id, gone] = args as [string, string, string, boolean];
         const n = Number(id);

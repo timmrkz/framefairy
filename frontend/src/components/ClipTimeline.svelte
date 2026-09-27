@@ -602,6 +602,13 @@
     load(from, from + span);
   }
 
+  // Reads what is in view again. A part transcribed out of turn, for a clip
+  // made by hand, brings its words and its waveform without the
+  // transcript's edge moving, so nothing else would read it.
+  export function reread() {
+    if (loaded) load(view.from, view.to);
+  }
+
   // Where the timeline sits when nobody has moved it: the clip with a little
   // room around it, or the minute around the playhead.
   // A double-click fits the clip to the view, unless it lands on a cut, in

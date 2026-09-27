@@ -200,8 +200,8 @@ model is asked.
 
 Where the transcription from the start has not reached yet, `HearAround`
 in `engine/islands.go` first transcribes the part a clip needs: its
-longest length on the side it grows to and `IslandMargin`, a minute, on
-both sides, for the sentence the playhead stands in and for dragging the
+longest length on the side it grows to and `Options.IslandMargin`, 30
+seconds unless the settings say otherwise, from 10 to 300, on both sides, for the sentence the playhead stands in and for dragging the
 edges further out. Only the gaps in that part are heard, what neither the
 transcription from the start nor an earlier island has, so a clip made
 beside an island hears just the rest. Each gap becomes an island, kept as
@@ -211,7 +211,7 @@ into what is there on either side, because a window's edge can cut a word
 in two. `Unheard` says whether there is anything to hear, which the app
 asks before it says it is transcribing.
 
-`Project.Transcript` adds the islands' words and loudness wherever the
+`Project.Transcript` adds the islands' words, loudness and waveform wherever the
 whole-episode transcript has not reached, in time order, and every moment
 is read from one transcript only. Where two islands overlap, the seam is
 the middle of the overlap, away from both edges, and a word belongs to the

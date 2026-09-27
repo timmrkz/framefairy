@@ -1012,16 +1012,17 @@ by hand wherever the transcript has reached, searched or not:
   frame it. Pauses are cut and the crop is framed the way they are for the
   model's clips, and the beam runs round the button while that happens.
 - **Where nothing is transcribed yet**, In and Out work too. The part
-  around the playhead is transcribed first, a minute before it and a
-  minute past the longest clip after it, or the other way round for Out.
+  around the playhead is transcribed first, 30 seconds before it and 30
+  seconds past the longest clip after it, or the other way round for Out.
+  How many seconds is **Around In and Out** in the settings, under
+  **Speech**.
   Until its words are there the clip is an outline as long as
   **Shortest**, with a card that says **Transcribing here**. Then it
   settles onto its sentences. Only what is missing is transcribed: next
   to a part heard before, In and Out hear just the rest, and where
   everything is there already the clip comes at once. That part is kept,
-  and when the
-  transcription from the start gets there, it hears it again and its own
-  words take over.
+  with its waveform on the clip timeline, and when the transcription from
+  the start gets there, it hears it again and its own words take over.
 - **The clip takes shape at once.** The sentences come from the
   transcript in a moment, and everything they decide is shown straight
   away: the clip's frame on the clip timeline, which moves to it, its
@@ -1300,7 +1301,11 @@ processor. Which one a file really went through is in the log of its
 search.
 **Speech** is the same list of models the first run shows, so a model can be
 installed or added later without going through the setup again, and it
-installs the same way, as a job with the same fill. **Finding clips** holds
+installs the same way, as a job with the same fill. **Around In and Out**
+under it is how many seconds In and Out transcribe on either side of the
+clip they make where nothing is transcribed yet, from 10 to 300 and 30
+unless it is changed. More gives more room to drag the edges out, less
+makes the clip come sooner. Its info mark says so. **Finding clips** holds
 the choice between the API and a local model. With the API chosen, the field
 for the key: it goes in the keychain the moment **Save key** is pressed, not
 with the rest of the settings, because it never lands in the settings file.

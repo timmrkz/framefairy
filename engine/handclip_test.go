@@ -215,7 +215,7 @@ func TestAClipMadeByHandWhereNothingIsTranscribed(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, clips, _ := LoadClips(p.HandPlanPath())
-	if len(clips) != 1 || clips[0].ID != id || clips[0].Segments[0].Start < 190 {
+	if len(clips) != 1 || clips[0].ID != id || clips[0].Segments[0].Start < 170 || clips[0].Segments[0].Start > 200 {
 		t.Fatalf("the clip made on the island is %+v", clips)
 	}
 
@@ -263,8 +263,10 @@ func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
 	if !p.Unheard(130, false, 300) {
 		t.Fatal("the part before the island counts as heard")
 	}
-	// I at 130 needs 70 to 220. 135 onwards is there, so only the part
-	// before it is heard, reaching a little into the island.
+	// The island for 200 is 165 to 265: from 30 seconds before it to 30
+	// past the longest clip after it, and five seconds of seam. I at 130
+	// needs 100 to 190, and 165 onwards is there, so only the part before
+	// it is heard, reaching a little into the island.
 	if err := p.HearAround(ctx, 130, false, 300); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +274,7 @@ func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
 	for _, f := range islandFiles(p.LogsDir()) {
 		names = append(names, filepath.Base(f))
 	}
-	if strings.Join(names, " ") != "words-65-140.json words-135-295.json" {
+	if strings.Join(names, " ") != "words-95-170.json words-165-265.json" {
 		t.Fatalf("the islands are %v", names)
 	}
 	if p.Unheard(130, false, 300) {
@@ -283,12 +285,24 @@ func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
 		if words[k].Start < words[k-1].End-0.001 {
 			t.Fatalf("words %d and %d overlap: %+v %+v", k-1, k, words[k-1], words[k])
 		}
-		if words[k].Start > 66 && words[k].End < 294 && words[k].Start-words[k-1].End > 2 {
+		if words[k].Start > 96 && words[k].End < 264 && words[k].Start-words[k-1].End > 2 {
 			t.Fatalf("a hole from %.1f to %.1f", words[k-1].End, words[k].Start)
 		}
 	}
-	if len(words) == 0 || words[0].Start > 66 || words[len(words)-1].End < 290 {
+	if len(words) == 0 || words[0].Start > 96 || words[len(words)-1].End < 260 {
 		t.Fatalf("the words reach from %.1f to %.1f", words[0].Start, words[len(words)-1].End)
+	}
+	// The waveform is there on both islands, and silent where nothing is
+	// transcribed.
+	tr, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peaks := tr.Peaks(0, 300, 300)
+	for s, dB := range peaks {
+		if heard := s >= 95 && s < 265; heard != (dB > -89.5) {
+			t.Fatalf("the waveform at %d s is %.1f dB", s, dB)
+		}
 	}
 	if _, _, err := p.MakeClip(ctx, 130, false); err != nil {
 		t.Fatal(err)

@@ -17,6 +17,7 @@
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
+  import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
   import Pick from "../components/Pick.svelte";
 
@@ -296,6 +297,35 @@
       <div class="grid">
         <label for="asr">Model folder</label>
         <input id="asr" type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" />
+        <!-- How much of the episode In and Out transcribe where nothing is
+             transcribed yet. It is about waiting against room to move, which
+             is the person's to weigh, and the bubble says what it weighs. -->
+        <label for="around">Around In and Out</label>
+        <div class="row asks">
+          <input
+            id="around"
+            class="num seconds"
+            type="number"
+            min="10"
+            max="300"
+            step="5"
+            title="Seconds transcribed on either side of a clip made with In or Out"
+            bind:value={settings.islandMargin}
+          />
+          <span class="muted">seconds</span>
+          <span class="ask">
+            <Info label="What Around In and Out does">
+              <b>In</b> and <b>Out</b> make a clip at the playhead, from the sentences said there.
+              Where the episode is not transcribed yet, that part is transcribed first: as much as
+              the longest clip can be, and this much more on either side of it. The more there is,
+              the more room there is to find where the sentence under the playhead begins and to
+              drag the clip's edges further out afterwards. The less there is, the sooner the clip
+              is there. What is transcribed already is never transcribed again, so a clip made next
+              to one made before only waits for the rest. From 10 to 300 seconds, 30 unless it is
+              changed.
+            </Info>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -470,6 +500,10 @@
 
   .grid label {
     color: var(--muted);
+  }
+
+  .seconds {
+    width: 80px;
   }
 
   input[type="color"] {

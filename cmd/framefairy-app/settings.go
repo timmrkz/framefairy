@@ -25,6 +25,10 @@ type Settings struct {
 	Count     int     `json:"count"`
 	Min       float64 `json:"min"`
 	Max       float64 `json:"max"`
+	// How far past what a clip made by hand needs the part transcribed
+	// for it reaches, on either side, in seconds, where the transcription
+	// from the start has not come yet.
+	IslandMargin float64 `json:"islandMargin"`
 	// The colour of the pill behind the word being spoken, in the framefairy
 	// the engine renders. It belongs to the short, not to the app.
 	HighlightColour string `json:"highlightColour"`
@@ -61,8 +65,9 @@ const wasDefaultColour = "#B4236F"
 func defaultSettings() Settings {
 	d := engine.DefaultOptions()
 	return Settings{Planner: d.Planner, APIModel: d.Model, Count: d.Count, Min: d.Min,
-		Max: d.Max, HighlightColour: defaultColour, AppColour: defaultColour,
-		CaptionY: engine.DefaultCaptionY}
+		Max: d.Max, IslandMargin: d.IslandMargin, HighlightColour: defaultColour,
+		AppColour: defaultColour,
+		CaptionY:  engine.DefaultCaptionY}
 }
 
 // tidy fills in what a settings file written by an earlier version does not
@@ -78,6 +83,7 @@ func (s *Settings) tidy() {
 	if !engine.LooksLikeColour(s.AppColour) {
 		s.AppColour = defaultColour
 	}
+	s.IslandMargin = engine.ClampIslandMargin(s.IslandMargin)
 }
 
 // options turns the settings into what the engine takes.
@@ -102,6 +108,7 @@ func (s Settings) options() engine.Options {
 	if s.Max > 0 {
 		o.Max = s.Max
 	}
+	o.IslandMargin = engine.ClampIslandMargin(s.IslandMargin)
 	o.HighlightColour = s.HighlightColour
 	if s.CaptionY > 0 {
 		y := int(engine.SnapCaptionY(s.CaptionY))
