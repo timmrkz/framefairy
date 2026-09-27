@@ -27,9 +27,11 @@ import (
 // PromptVersion changes whenever the prompt or the line rules change, so
 // training data made with an older prompt can be told apart.
 //
+// Version 3 is the brief for any video, with what must never be cut, and
+// the task said again after the transcript. Its answer is version 2's.
 // Version 2 lets two runs follow each other directly, which cuts only the
 // pause between them. Version 1 could only cut a pause by dropping a line.
-const PromptVersion = 2
+const PromptVersion = 3
 
 // TrainingSchema is the version of the record format.
 const TrainingSchema = 1
@@ -631,6 +633,13 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	prompt, replyKey string, fresh bool, entries []PlanEntry, ids []string,
 	segments map[string][][2]float64, planned string) string {
 	if opts.LogDir == "" || !opts.Record {
+		return ""
+	}
+	// Training records are answers to one way of asking, the one whose
+	// format PromptVersion names. An answer to another recipe is an
+	// experiment, and a record of it would teach the model to answer a
+	// question it is never asked.
+	if IsExperiment(opts.recipe().Name) {
 		return ""
 	}
 	dir := TrainingDir()

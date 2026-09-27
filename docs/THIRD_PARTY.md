@@ -24,6 +24,7 @@ under **Help → Acknowledgements**, which is where apps keep them.
 | ffmpeg | ffmpeg, FreeType, FriBidi, HarfBuzz and libass |
 | llama-server | llama.cpp and the eight small libraries inside the server |
 | Caption fonts | Inter, Anton and Archivo Black, under the SIL Open Font Licence |
+| The app, hyphenation | the hyph-utf8 hyphenation patterns of 20 languages, each under the licence its own header offers that a paid app may ship |
 | Fetched by the app from its maker | the speech model, credited as CC BY 4.0 asks, and the language models |
 
 ## How they are made, and kept complete
@@ -38,6 +39,16 @@ with `notices/gen`, from what the programs are really built from:
   package that went into the bundle, and each package's licence file
 - the source trees in `.build/` that `make` builds ffmpeg and llama-server
   from, at the versions their build scripts pin
+- the hyphenation patterns in `engine/hyphenation/`, from the metadata at
+  the top of each file: its language, version and source, and the first of
+  the licences it is offered under that a paid app may ship, MIT before
+  BSD before the LPPL and the MPL. Its text is the top of the file, with
+  the full licence from the SPDX licence list where the file only names
+  it. Terms a file writes out itself, which no tool can name, count only
+  once two readings, one of them independent, found they allow a paid
+  app, kept by their SHA-256 in `notices/gen`, so
+  a changed text is refused until it is read again. The GPL, the LGPL and
+  no licence at all are refused
 - the few texts nothing on disk holds, fetched from their makers: ONNX
   Runtime's licence and third-party notices at the version the speech
   library carries, and the texts of CC BY 4.0 and Apache 2.0 from the
@@ -47,7 +58,7 @@ It refuses what it cannot place, a package with no licence file or a
 licence it cannot name, rather than write a notice that says less than the
 licence asks.
 
-Three checks say when it is due:
+Four checks say when it is due:
 
 - `TestEveryGoModuleCompiledInHasANotice` fails when a Go module is
   compiled into the app without a notice, or at another version. CI runs it
@@ -56,6 +67,9 @@ Three checks say when it is due:
   four libraries or llama.cpp is pinned to another version than its notice.
 - The interface build fails when it bundles a package without a notice, or
   at another version, see `frontend/vite.config.ts`.
+- `TestEveryHyphenationFileHasANotice` fails when a pattern file is in
+  `engine/hyphenation/` without a notice, or a notice is left for one that
+  is gone.
 
 ## Shipped beside the program: ffmpeg and llama-server
 

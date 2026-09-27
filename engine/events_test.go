@@ -493,7 +493,7 @@ func TestAnAddedWordReachesTheCaptionFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := resolveCues(clips[0], captionDir, false, 40); err != nil {
+		if _, err := resolveCues(clips[0], captionDir, false, 40, nil); err != nil {
 			t.Fatal(err)
 		}
 		srt := filepath.Join(captionDir, clips[0].Basename()+".srt")
@@ -563,7 +563,7 @@ func mustCaptions(t *testing.T, captionDir, planPath string) []Caption {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cues, err := resolveCues(clips[0], captionDir, false, 40)
+	cues, err := resolveCues(clips[0], captionDir, false, 40, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

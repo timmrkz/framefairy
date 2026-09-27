@@ -24,6 +24,9 @@
 #                   pack both of them, with a manifest, for a release
 #   make notices    write the licence notices again, from what the programs
 #                   are built from
+#   make hyphenation
+#                   write the caption hyphenation patterns again, from
+#                   hyph-utf8 and the German word list. Then make notices
 #   make changed    what this branch changed against main, and only that:
 #                   the tests of the Go packages it reaches, the interface,
 #                   the build, before every push
@@ -104,7 +107,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key changed icon motion ffmpeg llama tools-archive notices deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app install update-key changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -274,6 +277,12 @@ tools-archive:
 notices: all
 	@$(GO) run ./notices/gen
 	@printf 'ok  \tnotices\n'
+
+# The patterns that break a word too long for a caption line, in
+# engine/hyphenation, from the commits scripts/hyphenation.sh pins. It
+# needs patgen, and is only run when a pin moves. The notices follow it.
+hyphenation:
+	@sh scripts/hyphenation.sh
 
 # Every way the app says work is in hand, on one page, in a browser. It is
 # preview material and never goes into the app.

@@ -279,7 +279,7 @@ func TestCallAPIOpenAIRetriesRefusalsAndHeadroom(t *testing.T) {
 
 	spent := openAIStream(nil, "length", `{"prompt_tokens":1,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":100}}`)
 	fake, e = cloud(t, spent, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":150}`))
-	text, err := e.CallAPIWithHeadroom(context.Background(), "p", "gpt-6-sol", 100, "", "plan", nil)
+	text, err := e.CallAPIWithHeadroom(context.Background(), "p", "gpt-6-sol", 100, "", "plan", "", nil)
 	if err != nil || text != `{"clips": []}` {
 		t.Fatalf("after thinking the ceiling away: %q, %v", text, err)
 	}

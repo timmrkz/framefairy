@@ -98,6 +98,12 @@ The recogniser's own timings are what gets stored in `words.json`. The
 correction is applied on every load, so improving it never needs a new
 transcription.
 
+`words.json` carries a version. Version 2 keeps a number apart from the
+word before it, where version 1 glued it on, for example "am15." for
+"am 15.". A version 1 file is still read as it is, numbers and all, since
+an update has to read what an older version wrote. Only a new
+transcription splits the numbers.
+
 Transcribing a window that does not start at the beginning, after an
 interrupted run carried on or with `--from`, decodes from the start of the
 file and drops the samples before it, rather than asking ffmpeg to seek. A
@@ -108,6 +114,114 @@ out cannot be noticed afterwards, and every word from there on would be
 wrong by that much. Counting samples is exact everywhere, and audio decodes
 at a few hundred times real time, so winding forward through an hour costs
 about ten seconds.
+
+## Recipes
+
+A recipe is one way of asking the model for clips, in `engine/recipe.go`:
+what it is told, how the transcript is written out for it, what shape its
+answer takes, and how that answer is read back. A recipe may number what
+it likes, lines or sentences or paragraphs, as long as each thing it
+numbers is a run of whole lines. Its answer is turned into runs of lines,
+and everything after that is the same for every recipe: the words and
+their times, the cuts, the framing and the captions. So the precision of
+the captions never depends on what the model was shown, and the model can
+be asked in terms of the story while the engine keeps the milliseconds.
+
+| Recipe | What the model reads | What it answers |
+| --- | --- | --- |
+| `lines` | every line of speech numbered, with its length, the pause before it and its level, see below, and a brief for any video: the heart of a story and its payoff are never cut, the clip starts on the least a stranger needs and ends on the payoff, the length comes after that, at most N clips, and the task said again after the transcript | at most N clips, as runs of lines |
+| `stories2` | the `lines` brief with the transcript as `stories` writes it | at most N clips, as runs of sentences |
+| `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
+| `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
+
+`lines` is what the app uses. The others are tried with `--recipe` and
+compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
+A sentence in `stories` ends where a line ends one, or once it has run
+30 s, and never at a pause alone, since a sentence cut at a pause was a
+place for a clip to end mid-sentence. A pause of a second or more inside
+a sentence shows as three dots. A paragraph ends before a pause of 1.5 s or
+once it has run 45 s. Sentence numbers say nothing of time, and the first
+version of `stories`, which gave only the paragraph times, ran 8 of 10
+clips far past 30 s. The second says the length in words too, from the
+words and seconds of the window: at 2.2 words a second, 20 to 30 s is
+about 43 to 65 words. It left sentences out for the first time, and gave
+every sentence a run of its own, so every pause between two sentences was
+cut and 8 of 12 clips came out short. `stories` leaves the pauses to the
+engine, so since the third version runs that follow each other are one
+run, `Recipe.Joins`, and the brief says a new run starts only where
+something is left out. In `lines` two runs that meet still cut the pause
+between them, because there the pauses are the model's.
+
+**Tried and taken out: who speaks.** A `dialogue` recipe once told the
+voices apart with two small models through the speech library, pyannote's
+segmentation and NVIDIA's TitaNet, and showed the model a paragraph for
+every turn with the speaker's letter. On Tim's episode, at the same
+thinking, it cost 22 s more per 30 minutes (75 against 53) and not one
+clip opened differently: the model began the stories where the guest
+began telling them either way, and never on the question, though told a
+story often starts there. It is in the history of pull request 19.
+
+**Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
+searches cut the same story with three different first words and four
+different last ones, most of them mid-sentence: the line the model
+stopped on ended on a comma and the sentence went on over three more. So
+the start, the end and every cut inside a clip move to the nearer place a
+sentence begins or ends, when that is at most 8 s away, `sentenceReach`.
+Further than that the model's edge stands, since a transcript can go a
+while without a full stop. Runs that overlap once they are whole
+sentences are one. This is done before a clip is measured, so the length
+check sees the clip as it will be cut. An edge moves to the nearer
+boundary unless that takes the clip past the longest length asked for,
+and then it moves the other way: the model stopped the umbrella story on
+the comma of the sentence after its payoff, the nearer boundary ran it to
+35 s, and the length limit then cut the payoff out of its middle. Now it
+ends on the payoff. A filler word at the start of a
+clip goes, unless the line after it goes on in lower case: then it is the
+first word of the sentence, "Und" before "irgendein Typ auf dem Schulhof",
+and without it the clip would start mid-sentence.
+
+Whatever the recipe, the model sometimes gives one moment twice, a line
+apart. A clip that shares more than half the lines of the shorter of the
+two with a clip before it is left out and said in the log, and the clips
+after it move up, so a slot is never spent on the same moment.
+
+**Clips are fitted to the length by measuring them.** Three runs of the
+same prompt gave clips of 10 s on one and of 60 s on another. A model
+cannot tell time from line or sentence numbers, and the engine knows it
+to the millisecond. So with a local model, a clip under 90 % of the
+minimum or over 120 % of the maximum is held back as the answer arrives,
+the bounds the log has always flagged. Once the answer is in, the model is
+asked once more, in the same conversation, `engine/fit.go`: how long each
+held clip runs, how far off it is, and how long each line or sentence six
+either side of it lasts. It gives those clips again, shortened by leaving
+out what lies between the opening and the payoff, or lengthened with what
+belongs to the moment. The model stays loaded for 30 s after its answer,
+`fitKeep`, so the second ask shares the first one's start and llama-server
+reads only the answer and the new question. The log says how many tokens
+of the prompt were new. It answers without thinking: with a thousand
+tokens of thought the second ask took 20 to 26 s, most of it thought, for
+a question the numbers in it already answer.
+
+Whichever of the two is nearer the length becomes the clip, so a clip is
+never lost, and one that ran into another clip keeps its first form.
+Answering without thinking, the model sometimes gives a clip back
+unchanged. Such a clip stays whole, flagged in the log, for a hand to trim
+in the app. An automatic cut was tried and taken out again: the engine
+cannot tell where the heart of a story is, and on Tim's episode it cut
+the setup off the mirror story when it cut from the start, and the payoff
+out of the umbrella story, twice, when it cut from the middle. A complete
+story of 38 s is worth more than one of 19 s without its core.
+
+A recipe with `Edit`, `stories-edit`, holds back every clip, not only
+those off the length, and the second ask is about the edit: where each
+clip opens and where it lands, what it leaves out, and its length. The
+first ask thinks half the budget and the second the other half, so it
+thinks no longer in all. An edit is taken unless it runs further off the
+length. The clips appear once the second answer is in, not one by one. The
+answer to the second ask is saved in the reply file as `fit`, so a search
+that reuses the reply is fitted the same way without asking. The second
+ask is not recorded for training. What the user does with the fitted clip
+is.
 
 ## Lines, cuts and captions
 
@@ -221,9 +335,64 @@ program carries. Kerning and shaping are left out, and since kerning almost
 always pulls letters closer, the measure comes out a shade wider than what
 libass draws, so a line that fits here fits there.
 
-When even a single word is too wide to break, the caption size comes down
-for that clip until it fits, so the captions of one short stay one size. A
-face the program does not carry cannot be measured, and then `wrap_chars`
+A word too wide for a line on its own gets a caption of its own, so it is
+read as two lines of one caption rather than as a third line under the
+words around it. It is hyphenated the way TeX hyphenates: Liang's
+algorithm, from `github.com/speedata/hyphenation`, over the hyph-utf8
+patterns that TeX, LibreOffice and Firefox use, which are in
+`engine/hyphenation/`. Like TeX and every word processor it takes the last
+break that still fits, so each line is as full as it can be.
+
+German also knows where the parts of a compound join. The Trennmuster
+team, who make the German patterns, keep a word list of half a million
+words with every joint marked, and their own build learns patterns from it
+that break a word only at the joints of the highest rank, which their
+documentation names for ragged text. A caption is ragged text, so a joint
+that fits comes first: "Suchmaschinenoptimierung" at size 96 in Inter
+Black becomes "Suchmaschinen-" and "optimierung", not "Suchmaschinenopti-"
+and "mierung". Over the list the joint patterns find 99.7% of the joints
+and put 0.1% in the wrong place. A joint never costs a line: where the
+only joint that fits would leave a word on three lines that two syllable
+breaks fit in two, the two lines win. Those patterns are
+`hyph-de-1996-x-major`, MIT like the list.
+
+Each piece gets its share of the time the word was spoken in, so the
+highlight runs over both, and a correction made on either piece corrects
+the whole word.
+
+Patterns are per language, and the episode's language is written nowhere,
+so it is read off the clip's own words by `github.com/abadojack/whatlanggo`,
+a port of the franc and whatlang detectors. Which languages ship is decided
+by the files in `engine/hyphenation/` and nothing else: a language is found
+by the name of its file. None of them is written by hand, `make
+hyphenation` writes the folder again from the commits
+`scripts/hyphenation.sh` pins. They are the languages the speech model hears
+whose patterns may go into a paid app: Bulgarian, Croatian, Danish, Dutch,
+English, Estonian, French, German, Greek, Hungarian, Italian, Lithuanian,
+Polish, Portuguese, Russian, Slovak, Slovenian, Spanish, Swedish and
+Ukrainian. Czech is under the GPL alone, Latvian under the LGPL or GPL, and
+Romanian has no licence. Finnish says only "Patterns may be freely
+distributed", which grants no more than passing the file on and may mean
+free of charge, so two readings found it unclear for a paid app. A word in
+any of those four is broken where the line ends.
+
+The notices for the patterns come from `make notices` like every other
+notice. It reads the metadata hyph-utf8 writes at the top of each file,
+takes the first licence the app may ship of those the file is offered
+under, MIT before BSD before the LPPL and the MPL, and fetches the full
+text from the SPDX licence list where the file only names it. A file that
+writes out terms of its own, which no tool can recognise, counts only once
+two readings, one of them independent, found those exact terms allow a
+paid app, kept by their SHA-256 in
+`notices/gen`, so a changed text is refused until it is read again. A file
+offered only under the GPL or the LGPL, or under nothing, stops the
+notices, and has to come out of `engine/hyphenation/`.
+
+The size is never changed: it used to come down for the whole clip until
+the widest word fitted, and one long word made every caption of the short
+a third smaller.
+
+A face the program does not carry cannot be measured, and then `wrap_chars`
 decides the breaks, as it always did.
 
 One catch worth knowing: the size in a caption style is not the em square.
@@ -514,6 +683,11 @@ Everything else is in `engine/`:
   transcript.go the transcript cache and the speech model location
   lines.go      lines, cuts and captions, all built from words
   highlight.go  word timings for captions and the bouncing highlight
+  recipe.go     ways of asking for clips, and reading the answer back
+                into lines. recipe_stories.go is the stories recipe
+  compare.go    one window searched with several recipes, and the report
+  fit.go        clips well off the length asked for again, measured
+  edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
   stream.go     answers read as they are written, and each clip taken

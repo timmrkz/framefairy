@@ -199,7 +199,7 @@ func FuzzCaptionsKeepEveryWord(f *testing.F) {
 		segs := SegmentsFromRanges(ranges, lines, 0.1, nil)
 		clip := Clip{ID: "01", Segments: segs, Words: words}
 		spoken := ClipWords(clip)
-		captions := Captions(clip, maxChars)
+		captions := Captions(clip, maxChars, nil)
 		if len(spoken) == 0 {
 			if captions != nil {
 				t.Fatalf("captions without words: %v", captions)

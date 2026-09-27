@@ -1912,8 +1912,8 @@
               <span class="ask">
                 <Info label="What the caption settings do">
                   The face, the size and the colours for every clip of this episode:
-                  the words, the box behind them and the pill behind the word being spoken. A line that will
-                  not fit is drawn smaller. The number beside a colour is how much of it is seen: 100 is
+                  the words, the box behind them and the pill behind the word being spoken. A word too long
+                  for a line is hyphenated onto the next. The number beside a colour is how much of it is seen: 100 is
                   solid, and a box at 0 leaves only the words. <b>Height</b> is how far above the bottom of the short the captions
                   sit, for every episode: drag the caption box in the video preview, or type it here.
                   With the captions any other way than they start out, the mark in this corner turns

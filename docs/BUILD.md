@@ -68,6 +68,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make llama` | the same for the llama-server framefairy ships, which is what runs a local model |
 | `make tools-archive` | packs both of them into one archive with a manifest, for a release. See [PACKAGING.md](PACKAGING.md#the-tools-we-ship) |
 | `make notices` | writes the licence notices in `notices/` again, from the Go modules, the interface's packages and the source trees ffmpeg and llama-server are built from. Run it when a test or the interface build says a notice is missing or out of date. See [THIRD_PARTY.md](THIRD_PARTY.md) |
+| `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check before every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz` and `interface` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
