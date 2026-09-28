@@ -10,6 +10,7 @@
   import { api, errorText, onUpdates, size, type UpdateState } from "../lib/api";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
+  import Info from "../components/Info.svelte";
   import Pick from "../components/Pick.svelte";
 
   // A check that finds nothing is over in a tenth of a second, which is
@@ -183,7 +184,7 @@
   {#if problem}<p class="error selectable">{problem}</p>{/if}
 
   {#if update}
-    <div class="card">
+    <div class="card asks">
       <!-- The build, and where the next one comes from. -->
       <div class="item build">
         <Icon name="update" size={24} />
@@ -198,9 +199,22 @@
           </span>
         </div>
         <span class="grow"></span>
-        <!-- What the list is for is in its title. A word in front of it
-             said nothing the list does not say. -->
+        <!-- A word in front of the list, Follows, said nothing the list
+             does not say. How updates work is behind the mark beside it,
+             which shows while the pointer is on the card. It is not in the
+             card's corner, as a mark usually is, because the list is: a
+             mark there sat on the list's edge. And a title on the list
+             alone was not seen, since macOS shows one only after the
+             pointer has rested a second. -->
         {#if !update.off}
+          <span class="ask">
+            <Info label="How updates work" side="right">
+              The list says where this app updates from: main, or one pull request. Every push to
+              it makes a new build. The app looks when it starts and every ten minutes, and
+              downloads the newest build by itself. <b>Update</b> restarts the app into it. The
+              commit under the version opens on GitHub.
+            </Info>
+          </span>
           <Pick
             value={following}
             options={channelOptions}
@@ -288,6 +302,8 @@
   .grow {
     flex: 1;
   }
+
+
 
   .build .words {
     flex: none;

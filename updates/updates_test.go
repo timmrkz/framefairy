@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -197,6 +198,8 @@ type served struct {
 	list  []byte
 	zip   []byte
 	extra int
+	// zips counts the times the build was asked for.
+	zips atomic.Int32
 }
 
 func serve(t *testing.T, s *served) *httptest.Server {
@@ -206,6 +209,7 @@ func serve(t *testing.T, s *served) *httptest.Server {
 		case "/dev/channels.json":
 			_, _ = w.Write(s.list)
 		case "/dev/app.zip":
+			s.zips.Add(1)
 			_, _ = w.Write(s.zip)
 			if s.extra > 0 {
 				_, _ = w.Write(make([]byte, s.extra))
