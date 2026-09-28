@@ -292,6 +292,17 @@ put the new case through the same markup and the same words, even when
 the data arrives by another road. A new way into an old thing is new
 plumbing, never a new look.
 
+**And the same row has to be fed the same numbers.** The first fix put
+the clip made by hand into the search's row, and it still read as a
+different thing: a search's every step fills from nothing to all of it
+with its time left, and the clip made by hand's steps did not, because
+placing the crop reported nothing and transcribing reported too little to
+see. Looking the same is the markup and the data together. Before calling
+two things the same, list what each step of one reports, the words, the
+fill, the time left, and make the other report every one of them. The
+Go side sends both steps as the `making` event, and `ClipSegments` reports
+its share of the whole as `FramingLabel`.
+
 ## When the window itself looks wrong, measure it against a real one
 
 The app is a native window. Every other native window is on the same

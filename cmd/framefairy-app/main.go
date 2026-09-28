@@ -1279,16 +1279,9 @@ func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, ba
 	if err != nil {
 		return err
 	}
-	log := engine.NewLog(io.Discard, false, false)
 	// Every chunk heard is saved before it is reported, so the interface
 	// is told to read the part again each time and sees it grow.
-	log.SetSink(func(ev engine.Event) {
-		if ev.Kind == engine.EventProgress && ev.Covered > 0 && s.app != nil {
-			s.app.Event.Emit("hearing", Hearing{Path: path, Covered: ev.Covered, Fraction: ev.Fraction,
-				Remaining: ev.Remaining})
-		}
-	})
-	e := engine.NewEngine(log)
+	e := engine.NewEngine(s.makingLog(path, "hearing"))
 	if ff := s.store.Settings().FFmpeg; ff != "" {
 		e.FFmpeg = ff
 	}
@@ -1297,16 +1290,44 @@ func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, ba
 	return p.HearAround(ctx, at, backward, info.Duration)
 }
 
-// Hearing says how far a part heard for a clip made by hand has come, in
-// seconds of the episode.
-type Hearing struct {
-	Path    string  `json:"path"`
+// Making says how far a clip made by hand has come, in the step it is in,
+// the way a job says it for a search: hearing the part around the
+// playhead, then framing, which places the crop.
+type Making struct {
+	Path string `json:"path"`
+	// Step is "hearing" or "framing".
+	Step string `json:"step"`
+	// Covered is how far the part being heard is heard, in seconds of the
+	// episode. Nought while framing.
 	Covered float64 `json:"covered"`
-	// Fraction is how much of the part being heard is heard, 0 to 1.
+	// Fraction is how much of the step is done, 0 to 1.
 	Fraction float64 `json:"fraction"`
-	// Remaining is how many seconds hearing it will take yet, or below 0
+	// Remaining is how many seconds the step will take yet, or below 0
 	// when that is not known.
 	Remaining float64 `json:"remaining"`
+}
+
+// makingLog is the log of one step of making a clip by hand, which tells
+// the interface how far the step has come as the "making" event. Only the
+// step's own progress is passed on: the ffmpeg it runs along the way
+// reports each of its runs from nothing to all of it, which says nothing
+// about the step.
+func (s *FrameFairy) makingLog(path, step string) *engine.Log {
+	log := engine.NewLog(io.Discard, false, false)
+	log.SetSink(func(ev engine.Event) {
+		if ev.Kind != engine.EventProgress || s.app == nil {
+			return
+		}
+		ours := ev.Covered > 0
+		if step == "framing" {
+			ours = ev.Text == engine.FramingLabel
+		}
+		if ours {
+			s.app.Event.Emit("making", Making{Path: path, Step: step, Covered: ev.Covered,
+				Fraction: ev.Fraction, Remaining: ev.Remaining})
+		}
+	})
+	return log
 }
 
 // Unheard says whether a clip made by hand at a moment needs any of the
@@ -1385,7 +1406,7 @@ func (s *FrameFairy) MakeClip(ctx context.Context, path string, at float64, back
 	}
 	// Framing reads the picture, so this needs an engine with the tools the
 	// rest of the app uses.
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	e := engine.NewEngine(s.makingLog(path, "framing"))
 	if ff := s.store.Settings().FFmpeg; ff != "" {
 		e.FFmpeg = ff
 		if guess := filepath.Join(filepath.Dir(ff), "ffprobe"); fileExists(guess) {

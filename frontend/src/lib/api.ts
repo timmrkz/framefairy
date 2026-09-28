@@ -627,19 +627,22 @@ export interface JobUpdate {
   event?: EngineEvent;
 }
 
-// How far a part heard for a clip made by hand has come. Each chunk is
-// saved before it is said, so the part can be read again at once.
-export interface Hearing {
+// How far a clip made by hand has come, in the step it is in: hearing the
+// part around the playhead, then framing, which places the crop. A chunk
+// heard is saved before it is said, so the part can be read again at once.
+export interface Making {
   path: string;
+  step: "hearing" | "framing";
+  // How far the part being heard is heard, in seconds of the episode.
   covered: number;
-  // How much of the part being heard is heard, 0 to 1.
+  // How much of the step is done, 0 to 1.
   fraction: number;
-  // How many seconds hearing it will take yet, below 0 when not known.
+  // How many seconds the step will take yet, below 0 when not known.
   remaining: number;
 }
 
-export function onHearing(fn: (h: Hearing) => void): () => void {
-  return Events.On("hearing", (ev) => fn(ev.data as Hearing));
+export function onMaking(fn: (m: Making) => void): () => void {
+  return Events.On("making", (ev) => fn(ev.data as Making));
 }
 
 export function onJob(fn: (u: JobUpdate) => void): () => void {

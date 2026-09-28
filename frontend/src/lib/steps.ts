@@ -53,11 +53,12 @@ export function leftText(remaining: number): string {
 
 // The line of a clip made by hand, in the row its card will be, said the
 // way a search says its own: it is the same kind of work in the same list.
-// It hears the part around the playhead where nothing has, with the fill
-// and the time left, and then places the crop, which cannot say how far.
-export function makingLine(step: "hearing" | "framing", fraction = -1, remaining = 0): StepLine {
-  if (step === "hearing") return { what: doing.hearing, left: leftText(remaining), fraction };
-  return { what: "Placing the crop", left: "", fraction: -1 };
+// Each step, hearing the part around the playhead and then placing the
+// crop, has its fill from nothing to all of it and its time left, as a
+// search's hearing and finding have.
+export function makingLine(step: "hearing" | "framing", fraction = 0, remaining = 0): StepLine {
+  const what = step === "hearing" ? doing.hearing : "Placing the crop";
+  return { what, left: leftText(remaining), fraction };
 }
 
 // A line of the engine's, where one is shown as it is, as a sentence: the

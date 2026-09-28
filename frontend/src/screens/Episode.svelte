@@ -30,7 +30,7 @@
     type Word,
     type WindowView,
     onUndo,
-    onHearing,
+    onMaking,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
   import {
@@ -911,10 +911,10 @@
   // the row of a search, see makingLine in steps.ts.
   let makingStep = $state<StepLine | null>(null);
   onMount(() =>
-    onHearing((h) => {
-      if (!hearing || h.path !== path) return;
-      makingStep = makingLine("hearing", h.fraction, h.remaining);
-      timeline?.reread();
+    onMaking((m) => {
+      if (!making || m.path !== path) return;
+      makingStep = makingLine(m.step, m.fraction, m.remaining);
+      if (m.step === "hearing" && hearing) timeline?.reread();
     }),
   );
   const cards = $derived(
@@ -994,7 +994,7 @@
       // Its sentences are there. What is left is reading the picture to
       // place the crop, which takes a few seconds and says no more than
       // that it is running.
-      makingStep = makingLine("framing");
+      makingStep = makingLine("framing", 0);
       const made = await api.makeClip(path, at, backward);
       // The clip is chosen the way a click on its card chooses it: the list
       // read first, then the outline taken away and the clip chosen in one

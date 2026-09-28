@@ -372,3 +372,59 @@ func TestAnIslandIsReadWhileItIsHeard(t *testing.T) {
 		t.Fatalf("the island heard again ends at %.1f", words[len(words)-1].End)
 	}
 }
+
+// Making a clip by hand says how far each of its steps has come, the way a
+// search does: hearing the part around the playhead, and then placing the
+// crop, each from nothing to all of it and never going back.
+func TestAClipMadeByHandSaysHowFarItIs(t *testing.T) {
+	source := testEpisode(t, "240")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	var mu sync.Mutex
+	steps := map[string][]float64{}
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case ev.Text == FramingLabel:
+			steps["framing"] = append(steps["framing"], ev.Fraction)
+		case ev.Covered > 0:
+			steps["hearing"] = append(steps["hearing"], ev.Fraction)
+		}
+	})
+	e := NewEngine(log)
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Min, base.Max = 20, 30
+	p := NewProject(e, source, base)
+	ctx := context.Background()
+	if err := p.HearAround(ctx, 120, false, 240); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.MakeClip(ctx, 120, false); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, step := range []string{"hearing", "framing"} {
+		got := steps[step]
+		t.Logf("%s: %v", step, got)
+		if len(got) < 2 {
+			t.Fatalf("%s said how far it was %d times: %v", step, len(got), got)
+		}
+		for k := 1; k < len(got); k++ {
+			if got[k] < got[k-1] {
+				t.Errorf("%s went back from %.2f to %.2f: %v", step, got[k-1], got[k], got)
+			}
+		}
+		if last := got[len(got)-1]; last < 0.99 {
+			t.Errorf("%s ended at %.2f: %v", step, last, got)
+		}
+	}
+}

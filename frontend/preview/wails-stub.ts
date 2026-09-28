@@ -813,7 +813,7 @@ export const Call = {
             island.covered = Math.min(island.to, island.covered + 18);
             const fraction = (island.covered - island.from) / (island.to - island.from);
             const remaining = ((island.to - island.covered) / 18) * 0.5;
-            for (const fn of hearingListeners) fn({ data: { path: args[0], covered: island.covered, fraction, remaining } });
+            for (const fn of makingListeners) fn({ data: { path: args[0], step: "hearing", covered: island.covered, fraction, remaining } });
             if (island.covered >= island.to) {
               clearInterval(timer);
               done(null);
@@ -849,8 +849,20 @@ export const Call = {
         // Forward from the line the playhead stands in, or back to it.
         handMade().push(Math.max(0, Math.round(at) - (args[2] ? 25 : 1)));
         const i = handMade().length - 1;
-        // Framing reads the picture, which takes a while.
-        return new Promise((done) => setTimeout(() => done(handClip(i, handMade()[i])), 1500));
+        // Framing reads the picture, which takes a while, and says how far
+        // it has come every piece, the way ClipSegments does.
+        return new Promise((done) => {
+          let k = 0;
+          const timer = setInterval(() => {
+            k++;
+            const fraction = k / 6;
+            for (const fn of makingListeners) fn({ data: { path: args[0], step: "framing", covered: 0, fraction, remaining: (6 - k) * 0.25 } });
+            if (k >= 6) {
+              clearInterval(timer);
+              done(handClip(i, handMade()[i]));
+            }
+          }, 250);
+        });
       }
       case "Coverage":
         if (fresh) {
@@ -1210,10 +1222,10 @@ export const Call = {
 // Picking a channel checks, downloads over two seconds with the fill, and
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
-// The parts heard out of turn for clips made by hand, and who is told as
-// each chunk of one is heard.
+// The parts heard out of turn for clips made by hand, and who is told how
+// far making one has come, each chunk heard and each piece framed.
 const islands: { from: number; to: number; covered: number }[] = [];
-const hearingListeners = new Set<(ev: unknown) => void>();
+const makingListeners = new Set<(ev: unknown) => void>();
 const updChannels = [
   { id: "main", name: "main", version: "0.3.0-main.40" },
   { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.12" },
@@ -1326,9 +1338,9 @@ export const Events = {
       };
       return () => delete (window as any).__checkForUpdates;
     }
-    if (name === "hearing") {
-      hearingListeners.add(fn);
-      return () => hearingListeners.delete(fn);
+    if (name === "making") {
+      makingListeners.add(fn);
+      return () => makingListeners.delete(fn);
     }
     if (name !== "job") return () => {};
     // Every search reports the way the Go side reports one: about four

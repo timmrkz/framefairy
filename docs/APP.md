@@ -1061,7 +1061,8 @@ by hand wherever the transcript has reached, searched or not:
   away: the clip's frame on the clip timeline, which moves to it, its
   caption blocks coming in one after another along it, its title in the
   row below, and its row in the clip list, scrolled into view, saying
-  **Placing the crop** with the beam round it. The playhead
+  **Placing the crop** with the beam round it, filling from nothing to all
+  of it with the time left, the way every step of a search fills. The playhead
   goes to the start of the frame the moment there is one, and again when
   the sentences move it, as they do for Out. While the video plays it is
   left alone: a clip played while it is made plays on when it is done,

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func tailRunes(s string, n int) string {
@@ -490,6 +491,9 @@ func (c *cropCache) put(key float64, crop *int) {
 	c.crops[key] = crop
 }
 
+// FramingLabel is what ClipSegments reports its progress as.
+const FramingLabel = "placing the crop"
+
 // ClipSegments turns a clip's spans into segments, with one crop per camera
 // angle.
 //
@@ -515,6 +519,28 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
 	e.decoderUsed(ctx, path, ordered[0].Start)
 
+	// How far it has come, as one share of the whole: the switches found in
+	// every piece, then the crop measured in every shot, each weighed by
+	// the seconds it covers. Every ffmpeg it runs reports only its own run,
+	// which goes from nothing to all of it once per piece and once per
+	// shot, and says nothing about the clip.
+	total := 0.0
+	for _, s := range ordered {
+		total += s.End - s.Start
+	}
+	started := time.Now()
+	done := 0.0
+	report := func(seconds float64) {
+		done += seconds
+		share := math.Min(done/math.Max(2*total, 0.001), 1)
+		left := Unknown
+		if share > 0 {
+			left = time.Since(started).Seconds() / share * (1 - share)
+		}
+		e.Log.ProgressTo(FramingLabel, share, left, 0)
+	}
+	e.Log.ProgressTo(FramingLabel, 0, Unknown, 0)
+
 	type shot struct {
 		key   float64
 		parts []Span
@@ -531,6 +557,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		report(span.End - span.Start)
 		bounds := append(append([]float64{span.Start}, cuts...), span.End)
 		for j := 0; j+1 < len(bounds); j++ {
 			part := Span{bounds[j], bounds[j+1]}
@@ -563,9 +590,13 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 			cache.put(s.key, crop)
 		}
 		for _, part := range s.parts {
+			report(part.End - part.Start)
+		}
+		for _, part := range s.parts {
 			segments = append(segments, Segment{Start: part.Start, End: part.End, CropX: crop})
 		}
 	}
 	sort.SliceStable(segments, func(i, j int) bool { return segments[i].Start < segments[j].Start })
+	e.Log.ProgressTo(FramingLabel, 1, 0, 0)
 	return segments, nil
 }
