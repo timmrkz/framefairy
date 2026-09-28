@@ -140,6 +140,16 @@ func main() {
 		go svc.updates.check()
 		app.Event.Emit("show-updates", nil)
 	}))
+	// The commit of the build on the Updates page is a link, so a right
+	// click on it offers what a right click on a link offers in Safari.
+	// It is drawn as a button, and without this the webview would offer
+	// nothing a link needs.
+	if commit := updates.CommitURL(buildCommit); commit != "" {
+		link := app.ContextMenu.New()
+		link.Add("Open Link").OnClick(func(*application.Context) { _ = svc.OpenCommit() })
+		link.Add("Copy Link").OnClick(func(*application.Context) { app.Clipboard.SetText(commit) })
+		app.ContextMenu.Add("commit", link)
+	}
 
 	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Frame Fairy",

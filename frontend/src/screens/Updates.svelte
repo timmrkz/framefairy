@@ -195,6 +195,7 @@
           <span class="muted small num">
             {#if update.commit}Commit <button
                 class="link num"
+                style="--custom-contextmenu: commit"
                 title="Opens this commit on GitHub"
                 onclick={() => api.openCommit().catch((e) => (problem = errorText(e)))}>{short(update.commit)}</button
               >{:else}Built on this Mac{/if}
