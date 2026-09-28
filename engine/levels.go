@@ -66,6 +66,30 @@ type Levels struct {
 // To is how far the levels reach, in seconds.
 func (l Levels) To() float64 { return float64(len(l.Frames)) * FrameSeconds }
 
+// LevelsFiles are the files the loudness of an episode is read from.
+func LevelsFiles(source string) []string {
+	meta, frames := levelsPaths(filepath.Join(WorkDir(source), "logs"))
+	return []string{meta, frames}
+}
+
+// LevelsReach says how far the loudness of an episode has been measured,
+// and whether to the end, from the small json alone. The library asks it
+// for every episode, so it never reads the frames.
+func LevelsReach(source string) (float64, bool) {
+	stamp, err := stampOf(source)
+	if err != nil {
+		return 0, false
+	}
+	meta, _ := levelsPaths(filepath.Join(WorkDir(source), "logs"))
+	var file levelsFile
+	data, err := os.ReadFile(meta)
+	if err != nil || decodeJSON(data, &file) != nil ||
+		file.Version != levelsVersion || file.Source != stamp {
+		return 0, false
+	}
+	return max(float64(file.To), 0), file.Done
+}
+
 // ReadLevels reads what has been measured of an episode's loudness. An
 // episode never measured, or measured before its file changed, has none.
 func ReadLevels(source string) Levels {

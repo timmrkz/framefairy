@@ -77,6 +77,23 @@ heard. A word that runs across the edge is left out of what is saved, the
 transcript says to carry on from before it, `resume` in `words.json`, and
 the next pass hears it whole.
 
+## The loudness of the whole episode
+
+The waveform is the loudness every 10 ms, and the transcription measures it
+as it hears. But the transcription stops at the end of the window the first
+search needs, so for the rest of the episode there was no waveform until a
+search reached it. `engine/levels.go` measures it on its own:
+`MeasureLevels` decodes the audio and takes the same readings from the same
+16 kHz samples, with no speech model, into `logs/levels.frames` and
+`logs/levels.json`. Audio decodes at a few hundred times real time, so an
+hour takes seconds. What it has is written every half second, frames first
+and the json that says how far they reach after, so `ReadLevels` never
+hands out a reading the json does not vouch for, and the waveform grows as
+it runs. Levels of a file that has changed since are none, and a measuring
+cut off starts again from the beginning, since the whole of it is quick.
+The app draws whichever of these and the transcript's readings reaches
+further. They are the same numbers where both exist.
+
 ## How words get their timing
 
 The recogniser gives every word a start and a duration, on an 80 ms grid. It
@@ -724,6 +741,8 @@ Everything else is in `engine/`:
   project.go    one episode driven step by step, as the app does it
   episode.go    status, waveform, silences and plan views for the app,
                 and the note that an episode has been searched once
+  levels.go     the loudness of the whole episode, measured on its own in
+                seconds, which is the waveform before the transcription
   edit.go       plan edits that keep the file as it was written: keep or
                 reject, trimming, correcting words, the caption look, moving
                 the crop and the caption line by hand and back, and letting

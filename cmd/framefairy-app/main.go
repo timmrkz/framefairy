@@ -88,9 +88,15 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
+	svc.levels = newMeasuring(func() string { return st.Settings().FFmpeg }, func(episode string) {
+		if app != nil {
+			app.Event.Emit("levels", episode)
+		}
+	})
 	quit := sync.OnceFunc(func() {
 		engine.CloseModels()
 		svc.jobs.shutDown()
+		svc.levels.shutDown()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
@@ -265,6 +271,9 @@ type FrameFairy struct {
 	chrome *chromeWatch
 	store  *store
 	jobs   *queue
+	// The loudness of each episode, measured from the moment it is
+	// added, which is the waveform, see levels.go.
+	levels *measuring
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	mu      sync.Mutex
@@ -525,6 +534,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	added, err := s.store.AddEpisodes(videos)
 	for _, v := range added {
 		s.jobs.openEpisode(v)
+		s.levels.start(v)
 		s.firstSearch(context.Background(), v)
 	}
 	return added, err
@@ -549,6 +559,10 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	// It stays closed once it is gone, and opens again only if it stays in
 	// the library or when it is added again.
 	reopen := s.jobs.closeEpisode(path)
+	// The loudness stops being measured before anything is deleted, so
+	// nothing writes the work folder back. An episode that stays in the
+	// library is measured again the next time its waveform is asked for.
+	s.levels.stop(path)
 	removed := false
 	defer func() {
 		if !removed {
@@ -820,9 +834,9 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 }
 
 // Waveform returns the loudest level in each of buckets pieces of a part
-// of the episode.
-// An episode waiting for its first transcription has no waveform yet, which
-// is an empty answer and not a failure.
+// of the episode, from its loudness measured on its own or from its
+// transcript, whichever reaches further. An episode not measured yet has no
+// waveform yet, which is an empty answer and not a failure.
 //
 // Peaks never answers with more buckets than it measured, so the interface
 // is told how fine the measurement was and can draw that finely and no
@@ -831,13 +845,25 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	if !s.store.Known(path) {
 		return nil, os.ErrNotExist
 	}
+	// An episode shown is an episode measured: one added before the
+	// loudness had a job of its own is measured the first time it is
+	// opened.
+	s.levels.start(path)
 	p := engine.NewProject(nil, path, s.store.Settings().options())
 	t, err := s.transcript(p)
-	if errors.Is(err, engine.ErrNoTranscript) {
-		return []float32{}, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return nil, err
+	}
+	// The loudness measured on its own and the transcription's are the
+	// same frames from the same samples, so whichever reaches further is
+	// drawn. The measuring runs ahead of the transcription, and a
+	// transcript made before it existed is there before it has run.
+	if l := s.levels.read(path); len(l.Frames) > 0 &&
+		(t == nil || t.Start > 0 || len(l.Frames) > len(t.Frames)) {
+		t = &engine.Transcript{Frames: l.Frames}
+	}
+	if t == nil {
+		return []float32{}, nil
 	}
 	if to <= from {
 		to = t.Duration()

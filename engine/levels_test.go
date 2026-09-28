@@ -144,3 +144,32 @@ func TestMeasureLevelsStops(t *testing.T) {
 		t.Error("levels called off claim to be done")
 	}
 }
+
+// How far the loudness reaches is read from the json alone, and agrees with
+// the frames.
+func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	source := filepath.Join(t.TempDir(), "episode.m4a")
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if to, done := LevelsReach(source); to != 0 || done {
+		t.Fatalf("an episode never measured reaches %.2f, done %v", to, done)
+	}
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.FFmpeg = "ffmpeg"
+	if err := e.MeasureLevels(context.Background(), source, nil); err != nil {
+		t.Fatal(err)
+	}
+	to, done := LevelsReach(source)
+	if !done || math.Abs(to-ReadLevels(source).To()) > 1e-9 {
+		t.Errorf("reach %.2f done %v, frames %.2f", to, done, ReadLevels(source).To())
+	}
+	if st := Status(source, ""); !st.MeasuredAll || st.Measured != to {
+		t.Errorf("the library says %.2f, all %v", st.Measured, st.MeasuredAll)
+	}
+}
