@@ -298,13 +298,14 @@ place.
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
-  found for it. On the clip timeline the part not heard yet wears the
-  grey of a clip card still to come, the whole track before the first
-  waveform arrives, and it breathes while the transcription runs. With
-  nothing running it keeps its grey and stands still, the way paused work
-  does, so a part nobody has heard never reads as silence, which is a flat
-  line. The edge is taken from the waveform itself, so the grey never lies
-  over a waveform that is already drawn. The
+  found for it. On the clip timeline the waveform is there for the whole
+  episode within seconds of adding it, see below, and what is still to
+  come is the captions: the band across the middle of the track where
+  they will stand wears the grey of a clip card still to come from where
+  the transcript stops, and it breathes while the transcription runs.
+  With nothing running it keeps its grey and stands still, the way paused
+  work does, so a part nobody has heard never reads as a part with nothing
+  said in it. The
   range picker carries the reading of the episode in the app's own words:
   what is not transcribed is darker and breathes while the reading runs,
   because it is a place waiting to be filled, and the line where the
@@ -1001,11 +1002,19 @@ place.
       no room inside its padding and the blocks run into one smear over the
       waveform, so zoomed out there are the clips and the waveform and no
       captions, and zoomed in to the clip they come back.
-- **Before the first transcription** there are no words and no waveform.
-  That is where every episode starts, so the track is simply empty. The
-  words and the waveform appear as the transcript grows past them, without
-  anything being clicked. Nothing about this is an error, and nothing about
-  it is logged as one.
+- **The waveform comes first.** The moment an episode is added, the app
+  measures its loudness on its own, without the speech model: the audio
+  decoded and a reading every 10 ms, the same readings the transcription
+  takes. Audio decodes at a few hundred times real time, so an hour is
+  measured in seconds, and the waveform fills in from the start as it
+  goes. An episode added before this was there is measured the first time
+  it is opened. It is not a job: nobody starts it or waits for it, so it
+  has no row in Activity. At most two episodes are measured at a time.
+- **Before the first transcription** there are no words. That is where
+  every episode starts, so the captions band simply waits. The words
+  appear as the transcript grows past them, without anything being
+  clicked. Nothing about this is an error, and nothing about it is logged
+  as one.
 - **The timeline is always there.** With no clip selected it shows the
   minute around the playhead and follows it as the episode plays, so there
   is always something saying where you are. Trimming needs a clip, so it

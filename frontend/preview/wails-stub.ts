@@ -361,6 +361,19 @@ type FakeSearch = {
   said?: string;
 };
 const fullLength = 14423;
+
+// The loudness of the episode, measured on its own the way the Go side
+// measures it when an episode is added. ?measuring measures it from the
+// moment the page opens, the four hours in twelve seconds, and says it got
+// further every half second with a levels event. ?unmeasured never
+// measures it, an episode added before the measuring existed, so the
+// waveform is the transcript's alone. Otherwise it is measured already.
+const levelsStart = Date.now();
+function measuredNow(): number {
+  if (location.search.includes("unmeasured")) return 0;
+  if (!location.search.includes("measuring")) return fullLength;
+  return Math.min(fullLength, ((Date.now() - levelsStart) / 12000) * fullLength);
+}
 // With ?hear=100 it hears a hundred seconds of audio a second instead, so
 // a probe has time to look at the hearing.
 const hearsPerSecond = Number(/hear=(\d+)/.exec(location.search)?.[1] ?? 600);
@@ -718,7 +731,7 @@ export const Call = {
           { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
         ]);
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, measured: measuredNow(), measuredAll: measuredNow() >= fullLength, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number };
@@ -1045,9 +1058,11 @@ export const Call = {
         // carrying the same ten milliseconds and the interface has no way to
         // know it.
         const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
-        // The peaks come from the transcript, so while it is being made
-        // there is a waveform up to where it got to and silence after.
-        const edge = location.search.includes("transcribing") ? 1200 : 14423;
+        // The peaks come from the loudness measured on its own, or from the
+        // transcript where that reaches further, the way the Go side
+        // answers. Only an episode never measured has its waveform stop
+        // where the transcript stops.
+        const edge = Math.max(measuredNow(), location.search.includes("transcribing") ? 1200 : 14423);
         // Loudness is measured every ten milliseconds and no finer, and
         // a bucket is the loudest measurement that falls in it. That is
         // engine.FrameSeconds and Transcript.Peaks, and the stub has to do
@@ -1230,6 +1245,14 @@ export const Events = {
         fn({ data: null });
       };
       return () => delete (window as any).__checkForUpdates;
+    }
+    if (name === "levels") {
+      if (!location.search.includes("measuring")) return () => {};
+      const timer = setInterval(() => {
+        fn({ data: "/eps/ep.mp4" });
+        if (measuredNow() >= fullLength) clearInterval(timer);
+      }, 500);
+      return () => clearInterval(timer);
     }
     if (name !== "job") return () => {};
     // Every search reports the way the Go side reports one: about four

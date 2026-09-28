@@ -29,6 +29,7 @@
     type Word,
     type WindowView,
     onUndo,
+    onLevels,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
   import {
@@ -243,6 +244,24 @@
     api.cancelJob(working.id);
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
+
+  // How far the loudness is measured, which is the waveform. It is measured
+  // on its own from the moment the episode is added, ahead of the
+  // transcript, and the Go side says it got further about twice a second
+  // while it runs, which is when the status is read again.
+  const measured = $derived(status?.measuredAll ? duration : (status?.measured ?? 0));
+  onMount(() =>
+    onLevels((p) => {
+      if (p !== path) return;
+      const ticket = statusRead.send();
+      api
+        .episode(path)
+        .then((now) => {
+          if (statusRead.keep(ticket)) status = now;
+        })
+        .catch(() => {});
+    }),
+  );
 
   // How far the audio has been heard, which is not the same as how far the
   // saved transcript reaches. Saving rewrites the whole transcript, so it
@@ -2235,6 +2254,7 @@
         clip={current}
         {duration}
         {covered}
+        {measured}
         heardTo={status && !status.transcribed ? covered : null}
         {time}
         working={!!transcribing}
