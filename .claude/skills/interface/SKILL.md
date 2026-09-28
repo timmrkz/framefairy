@@ -56,6 +56,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?failed` | a search whose record says it failed, with its reason |
 | `?rendering` | a render running on the first clip, with progress |
 | `?slowpick` | a channel picked on the Updates page is answered a second late, so what the page shows before the Go side's word is seen |
+| `?measuring` | the episode's loudness, the waveform, measured from the moment the page opens, the four hours in twelve seconds, with a levels event every half second. Like the Go side it measures what the clip timeline last asked the waveform of first, then on from there, then from the start. `?unmeasured` never measured, an episode added before the measuring existed, so the waveform is the transcript's alone |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 

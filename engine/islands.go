@@ -130,7 +130,6 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 	}
 	var words []Cue
 	var levels []Reading
-	var runs []FrameRun
 	for _, is := range islands {
 		for _, word := range is.t.Words {
 			if mid := (word.Start + word.End) / 2; mid >= is.own.Start && mid < is.own.End &&
@@ -143,12 +142,6 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 				levels = append(levels, r)
 			}
 		}
-		first := max(0, int(math.Ceil((is.own.Start-is.t.Start)/FrameSeconds-1e-9)))
-		last := min(len(is.t.Frames), int(math.Ceil((is.own.End-is.t.Start)/FrameSeconds-1e-9)))
-		if first < last {
-			runs = append(runs, FrameRun{is.t.Start + float64(first)*FrameSeconds,
-				is.t.Frames[first:last]})
-		}
 	}
 	if len(words) == 0 {
 		return t
@@ -160,7 +153,6 @@ func (p *Project) withIslands(t *Transcript, covered float64) *Transcript {
 	sort.SliceStable(all, func(a, b int) bool { return all[a].Start < all[b].Start })
 	t.Words = all
 	t.Extra = append(t.Extra, levels...)
-	t.IslandFrames = append(t.IslandFrames, runs...)
 	return t
 }
 

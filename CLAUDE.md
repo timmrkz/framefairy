@@ -408,6 +408,11 @@ messages, pull request text, code comments and chat replies.
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has
   cores, see [docs/BUILD.md](docs/BUILD.md).
+- **A table a program prints lines up in the terminal.** Every cell is
+  padded to its column's width and numbers stand to the right, so a column
+  is read straight down and two rows compare at a glance. It can stay a
+  markdown table, which GitHub still draws, but never one whose columns
+  only line up once rendered.
 - `gofmt`, and `go vet` must pass. Log and error helpers take constant format
   strings, pass text as `"%s", text`.
 - The interface is built by make into `cmd/framefairy-app/dist/app/`, which is

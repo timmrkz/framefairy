@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -153,8 +154,10 @@ type savedReply struct {
 	Parsed json.RawMessage `json:"parsed"`
 	Text   *string         `json:"text"`
 	// Fit is the answer to the clips that did not fit the length, asked
-	// for again, so a reused reply is fitted the same way.
-	Fit *string `json:"fit"`
+	// for again, so a reused reply is fitted the same way. Refit is the
+	// answer to asking once more about the ones Fit left out.
+	Fit   *string `json:"fit"`
+	Refit *string `json:"refit"`
 }
 
 // fitKeep is how long the model stays loaded after the answer, for the
@@ -189,7 +192,8 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		cachePath = filepath.Join(opts.LogDir, "reply-"+fingerprint+".json")
 	}
 
-	reply, haveReply, fresh, savedFit := "", false, false, ""
+	reply, haveReply, fresh := "", false, false
+	var savedFits []string
 	var how *localAnswer
 	if cachePath != "" {
 		if _, err := os.Stat(cachePath); err == nil {
@@ -205,7 +209,10 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 						reply, haveReply = *saved.Text, true
 					}
 					if saved.Fit != nil {
-						savedFit = *saved.Fit
+						savedFits = append(savedFits, *saved.Fit)
+						if saved.Refit != nil {
+							savedFits = append(savedFits, *saved.Refit)
+						}
 					}
 				}
 				if haveReply {
@@ -232,7 +239,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	defer build.stop()
 	// A local model can be asked again about the clips that do not fit the
 	// length, and a reused reply brings the answer it had to that.
-	build.fits = opts.Local != nil && (!haveReply || savedFit != "")
+	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0)
 	var scanner clipScanner
 	listen := &Listener{Text: func(piece string) {
 		for _, raw := range scanner.feed(piece) {
@@ -386,9 +393,17 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	if held := build.holding(); len(held) > 0 {
 		var ask func(string, int) (string, error)
 		switch {
-		case savedFit != "":
-			ask = func(string, int) (string, error) { return savedFit, nil }
+		case len(savedFits) > 0:
+			asks := 0
+			ask = func(string, int) (string, error) {
+				if asks == len(savedFits) {
+					return "", errors.New("the saved reply has no answer to asking once more")
+				}
+				asks++
+				return savedFits[asks-1], nil
+			}
 		case fresh && opts.Local != nil:
+			asks := 0
 			ask = func(request string, count int) (string, error) {
 				var answer *localAnswer
 				step := fmt.Sprintf("fitting %d clip(s) to the length", count)
@@ -414,7 +429,12 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 				if err != nil {
 					return "", err
 				}
-				saveFit(cachePath, answer.Content)
+				key := "fit"
+				if asks > 0 {
+					key = "refit"
+				}
+				asks++
+				saveFit(cachePath, key, answer.Content)
 				return answer.Content, nil
 			}
 		}
@@ -484,8 +504,8 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 }
 
 // saveFit adds the answer about the clips that did not fit to the saved
-// reply, where a search that reuses the reply finds it.
-func saveFit(cachePath, fit string) {
+// reply, under key, where a search that reuses the reply finds it.
+func saveFit(cachePath, key, fit string) {
 	if cachePath == "" {
 		return
 	}
@@ -498,7 +518,7 @@ func saveFit(cachePath, fit string) {
 		return
 	}
 	value, _ := json.Marshal(fit)
-	saved["fit"] = value
+	saved[key] = value
 	if body, err := json.MarshalIndent(saved, "", "  "); err == nil {
 		_ = os.WriteFile(cachePath, body, 0o644)
 	}

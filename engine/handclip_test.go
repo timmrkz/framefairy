@@ -293,18 +293,6 @@ func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
 	if len(words) == 0 || words[0].Start > 96 || words[len(words)-1].End < 260 {
 		t.Fatalf("the words reach from %.1f to %.1f", words[0].Start, words[len(words)-1].End)
 	}
-	// The waveform is there on both islands, and silent where nothing is
-	// transcribed.
-	tr, err := p.Transcript()
-	if err != nil {
-		t.Fatal(err)
-	}
-	peaks := tr.Peaks(0, 300, 300)
-	for s, dB := range peaks {
-		if heard := s >= 95 && s < 265; heard != (dB > -89.5) {
-			t.Fatalf("the waveform at %d s is %.1f dB", s, dB)
-		}
-	}
 	if _, _, err := p.MakeClip(ctx, 130, false); err != nil {
 		t.Fatal(err)
 	}
@@ -326,8 +314,8 @@ func (c cancellingRecognizer) Recognize(samples []float32, rate int) []Token {
 	return tokens
 }
 
-// An island is saved as it is heard, so its words and its waveform arrive
-// while it is heard. One cut off part way reads as far as it came and
+// An island is saved as it is heard, so its words arrive while it is
+// heard. One cut off part way reads as far as it came and
 // counts as unheard, so the next In or Out hears it again, whole.
 func TestAnIslandIsReadWhileItIsHeard(t *testing.T) {
 	source := testEpisode(t, "300")
@@ -350,11 +338,6 @@ func TestAnIslandIsReadWhileItIsHeard(t *testing.T) {
 	words := mustWords(t, p)
 	if len(words) == 0 || words[0].Start < 165 || words[len(words)-1].End > 240 {
 		t.Fatalf("the island cut off reads from %v", words)
-	}
-	tr, _ := p.Transcript()
-	peaks := tr.Peaks(165, 175, 10)
-	if peaks[5] < -89.5 {
-		t.Fatalf("the island cut off has no waveform: %v", peaks)
 	}
 	if !p.Unheard(200, false, 300) {
 		t.Fatal("an island cut off counts as heard")

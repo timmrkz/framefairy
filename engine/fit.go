@@ -92,22 +92,70 @@ func (b *planBuilder) fitRequest(held []PlanEntry) string {
 }
 
 // fit asks for the clips held back once more, with ask, and hands to the
-// framers, for each, whichever of the two is nearer the length. Without an
-// ask, or when it fails, the clips go as they came.
+// framers, for each, whichever of the two is nearer the length. An answer
+// that leaves a clip out, or gives another clip in its place, is asked
+// once more about the clips it left out. Without an ask, or when it fails,
+// the clips go as they came.
 func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 	held := b.holding()
 	if len(held) == 0 {
 		return
 	}
-	var again []PlanEntry
-	if ask != nil {
-		reply, err := ask(b.fitRequest(held), len(held))
+	b.mu.Lock()
+	slugs := map[string]bool{}
+	for _, entry := range b.order {
+		slugs[entry.Slug] = true
+	}
+	b.mu.Unlock()
+	answers := make([]*PlanEntry, len(held))
+	for round := 0; ask != nil && round < 2; round++ {
+		var asked []PlanEntry
+		var places []int
+		for i, entry := range held {
+			if answers[i] == nil {
+				asked = append(asked, entry)
+				places = append(places, i)
+			}
+		}
+		if len(asked) == 0 {
+			break
+		}
+		request := b.fitRequest(asked)
+		if round > 0 {
+			request += " Give only " + quotedSlugs(asked) + ", no other clip."
+		}
+		reply, err := ask(request, len(asked))
+		var again []PlanEntry
 		if err == nil {
 			again, err = b.readFit(reply)
+		}
+		for n, i := range places {
+			if found, ok := fitFor(asked[n], n, again, slugs); ok {
+				answers[i] = &found
+			}
 		}
 		if err != nil {
 			b.e.Log.Warn("the clips that do not fit could not be asked for again, so they "+
 				"stay as they are: %s", err)
+			break
+		}
+		for n, i := range places {
+			if answers[i] != nil {
+				continue
+			}
+			var gave []string
+			for _, a := range again {
+				gave = append(gave, fmt.Sprintf("%q", a.Slug))
+			}
+			said := "nothing"
+			if len(gave) > 0 {
+				said = strings.Join(gave, ", ")
+			}
+			next := "so it is asked for once more"
+			if round > 0 {
+				next = "so it stays as it was"
+			}
+			b.e.Log.Info("%s was not in the answer, which gave %s, %s", asked[n].Slug, said, next)
 		}
 	}
 	b.mu.Lock()
@@ -115,10 +163,10 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 	b.held = nil
 	for i, entry := range held {
 		chosen := entry
-		if found, ok := fitFor(entry, i, again); ok {
+		if found := answers[i]; found != nil {
 			was, now := b.seconds(entry.Keep), b.seconds(found.Keep)
 			// Taking in its neighbours may run a clip into another one.
-			_, repeats := sameMomentAs(b.entries, found)
+			_, repeats := sameMomentAs(b.entries, *found)
 			// An edit is taken unless it runs further off the length. A fit
 			// is taken only when it comes nearer.
 			better, done := b.distance(now) < b.distance(was), "fitted"
@@ -145,6 +193,18 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 	}
 }
 
+// quotedSlugs names clips by their slugs, the way the model wrote them.
+func quotedSlugs(entries []PlanEntry) string {
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = fmt.Sprintf("%q", entry.Slug)
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 // readFit reads the model's answer about the clips held back.
 func (b *planBuilder) readFit(reply string) ([]PlanEntry, error) {
 	data, _, err := ExtractJSONObject(reply, "clips")
@@ -159,14 +219,16 @@ func (b *planBuilder) readFit(reply string) ([]PlanEntry, error) {
 }
 
 // fitFor finds the clip given again for entry: the one with its slug, or
-// failing that the one in its place.
-func fitFor(entry PlanEntry, place int, again []PlanEntry) (PlanEntry, bool) {
+// failing that the one in its place, unless that one carries the slug of
+// another clip of the answer. Asked about one clip, a model sometimes gives
+// another from its first answer, and that says nothing about this one.
+func fitFor(entry PlanEntry, place int, again []PlanEntry, slugs map[string]bool) (PlanEntry, bool) {
 	for _, a := range again {
 		if a.Slug == entry.Slug {
 			return a, true
 		}
 	}
-	if place < len(again) {
+	if place < len(again) && !slugs[again[place].Slug] {
 		return again[place], true
 	}
 	return PlanEntry{}, false

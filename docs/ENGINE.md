@@ -63,12 +63,53 @@ parts of one episode, `make speechbench`:
 | on the processor, 8 threads | 46 | 45 | 0.9 s |
 | through CoreML, 8 threads | 24 | 23 | 5.0 s |
 
-The processor with 8 threads is what the app already does, and it is the
-fastest: an hour of episode is heard in about 80 s. The thread count does
-not change a single word. CoreML is half as fast here too, needs 5 s
-before the first piece and changes up to 20 words in three minutes, so it
-stays out even with pieces of one length. Hearing two pieces in one pass
-gains 3 % at most and changes words, so it stays out as well.
+CoreML is half as fast here too, needs 5 s before the first piece and
+changes up to 20 words in three minutes, so it stays out even with pieces
+of one length. Hearing two pieces in one pass gains 3 % at most and changes
+words, so it stays out as well. The thread count does not change a single
+word.
+
+**Several copies hear side by side.** One copy gains little from more
+threads, 38 times real time with 4 and 46 with 8, so most of a big machine
+sat idle while it heard. The app now loads several copies of the model,
+`asr.Pool`, and each hears the next piece as it finishes one. The pieces
+are cut exactly as before, and what they hear is taken in the order it was
+said: a piece that is done early waits for the ones before it, so the
+transcript and every save of it reach only as far as all of it has been
+heard. A stop at the end of a window, a pause and the end of the audio each
+wait for every piece still being heard. Measured on the same M2 Max, over
+ten minutes of an episode, `make speechbench`:
+
+| copies | threads each | real time | an hour takes |
+| -----: | -----------: | --------: | ------------: |
+|      1 |            8 |     47.3x |          76 s |
+|      2 |            4 |     70.1x |          51 s |
+|      3 |            3 |     76.2x |          47 s |
+|      4 |            2 |     82.6x |          44 s |
+|      4 |            3 |     76.5x |          47 s |
+
+The same 1206 words every way. How many copies, with how many threads, is
+decided by the machine the app runs on, `asr.Mix`: the threads in all are
+its performance cores, where macOS tells them apart, or every core where
+the system does not. With 6 or more they go two to a copy, with fewer one
+to a copy, which was fastest on the 3 cores of an M1 and the 4 of a cloud
+machine too. Every copy holds the model once more, about 0.9 GB, so there
+is a copy for every 8 GB of memory, and four at most, the most measured.
+Where memory allows fewer copies, each takes more of the threads. On the
+M2 Max with 32 GB that is four copies of 2 threads, an hour in about 44 s
+where it took 76.
+
+A smaller model was tried against it: NeMo's multilingual FastConformer
+transducer, in the same library, with German among its ten languages and
+about a fifth of Parakeet's size. On 4 cores it heard twice as fast, 23
+times real time where Parakeet heard 11, but it heard "Alles hat ein Ende,
+nur die Wurst hat zwei" as "Alice had an end. No divorce hath thy", where
+Parakeet wrote it down right. A podcast in German needs the German heard,
+so Parakeet stays. Of the other models the library carries, Parakeet v2
+hears English only, and Canary and Whisper were not tried: they are a
+different kind of model, which writes its answer after hearing rather than
+as it hears, and whether they give the word times the captions need, and
+how fast they are here, is still to be measured.
 
 One cut is placed exactly: the end of the window the first search waits
 for. The app gives the transcription that point, `Engine.StopAt`, and the
@@ -76,6 +117,37 @@ piece that reaches it is cut there, so nothing past the window's edge is
 heard. A word that runs across the edge is left out of what is saved, the
 transcript says to carry on from before it, `resume` in `words.json`, and
 the next pass hears it whole.
+
+## The loudness of the whole episode
+
+The waveform is the loudness every 10 ms, and the transcription measures it
+as it hears. But the transcription stops at the end of the window the first
+search needs, so for the rest of the episode there was no waveform until a
+search reached it. `engine/levels.go` measures it on its own:
+`MeasureLevels` decodes the audio and takes the same readings from the same
+16 kHz samples, with no speech model, into `logs/levels.frames` and
+`logs/levels.json`. Audio decodes at a few hundred times real time, so an
+hour takes seconds, but four hours still take the better part of a
+minute, and a playhead put near the end waited for all of it. So
+`MeasureLevels` is told what the clip timeline shows and measures that
+first, then on from there, then from the start. Every half second it asks
+again, and when the view has moved to a part not measured yet, it stops
+ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
+seeks rather than decodes its way there. It starts a fifth of a second
+early and throws that away, `levelsLead`: the first 40 ms after a seek
+came out up to 4 dB off, because a packet of compressed audio is decoded
+together with the one before it. A run ends where it meets a part
+measured already, so nothing is measured twice.
+
+What it has is written every half second, frames first and the json
+after, which gives the parts measured as frame numbers and, once a run
+has reached the end of the audio, how many frames it has. So `ReadLevels`
+never hands out a reading the json does not vouch for, and the waveform
+grows as it runs. Levels of a file that has changed since are none, and a
+measuring cut off carries on with the parts it has. Version 1 of the file
+ran from the start with no gaps and is measured again. `Levels.Over` lays
+these over the transcript's readings, so the waveform has whatever either
+has measured. They are the same numbers where both exist.
 
 ## How words get their timing
 
@@ -221,7 +293,16 @@ tokens of thought the second ask took 20 to 26 s, most of it thought, for
 a question the numbers in it already answer.
 
 Whichever of the two is nearer the length becomes the clip, so a clip is
-never lost, and one that ran into another clip keeps its first form.
+never lost, and one that ran into another clip keeps its first form. An
+answer counts for a clip only when it carries the clip's slug, or stands
+in its place under a slug no other clip has, for a model that renamed it.
+Asked about the mirror story, Gemma once gave the umbrella story back,
+the first clip of its answer. The engine took it for the mirrors by its
+place, found it was the umbrella story again, and kept the mirrors at
+43 s without a word. Now a clip the answer leaves out, or gives another
+clip in place of, is named in the log and asked for once more, alone,
+with the request ending in `Give only "…", no other clip.` so the model
+does not read the same question twice. After that it stays as it was.
 Answering without thinking, the model sometimes gives a clip back
 unchanged. Such a clip stays whole, flagged in the log, for a hand to trim
 in the app. An automatic cut was tried and taken out again: the engine
@@ -236,8 +317,9 @@ clip opens and where it lands, what it leaves out, and its length. The
 first ask thinks half the budget and the second the other half, so it
 thinks no longer in all. An edit is taken unless it runs further off the
 length. The clips appear once the second answer is in, not one by one. The
-answer to the second ask is saved in the reply file as `fit`, so a search
-that reuses the reply is fitted the same way without asking. The second
+answer to the second ask is saved in the reply file as `fit`, and the one
+to asking once more as `refit`, so a search that reuses the reply is
+fitted the same way without asking. The second
 ask is not recorded for training. What the user does with the fitted clip
 is.
 
@@ -359,7 +441,7 @@ takes the progress line with `TakeProgress` when nothing holds it, so the
 ffmpeg runs inside it stay off the line. Inside a search, finding holds
 the line and the framing says nothing.
 
-`Project.Transcript` adds the islands' words, loudness and waveform wherever the
+`Project.Transcript` adds the islands' words and loudness wherever the
 whole-episode transcript has not reached, in time order, and every moment
 is read from one transcript only. Where two islands overlap, the seam is
 the middle of the overlap, away from both edges, and a word belongs to the
@@ -795,6 +877,8 @@ Everything else is in `engine/`:
   project.go    one episode driven step by step, as the app does it
   episode.go    status, waveform, silences and plan views for the app,
                 and the note that an episode has been searched once
+  levels.go     the loudness of the whole episode, measured on its own in
+                seconds, which is the waveform before the transcription
   edit.go       plan edits that keep the file as it was written: keep or
                 reject, trimming, correcting words, the caption look, moving
                 the crop and the caption line by hand and back, and letting

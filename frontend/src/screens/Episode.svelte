@@ -30,6 +30,7 @@
     type Word,
     type WindowView,
     onUndo,
+    onLevels,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
   import {
@@ -259,6 +260,27 @@
     if (handRunning && hand) api.cancelJob(hand.id);
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
+
+  // How far the loudness is measured, which is the waveform. It is measured
+  // on its own from the moment the episode is added, ahead of the
+  // transcript, and the Go side says it got further about twice a second
+  // while it runs, which is when the status is read again.
+  const measured = $derived(status?.measuredAll ? duration : (status?.measured ?? 0));
+  const measuredParts = $derived<[number, number][]>(
+    status?.measuredAll ? [[0, duration]] : (status?.measuredParts ?? []),
+  );
+  onMount(() =>
+    onLevels((p) => {
+      if (p !== path) return;
+      const ticket = statusRead.send();
+      api
+        .episode(path)
+        .then((now) => {
+          if (statusRead.keep(ticket)) status = now;
+        })
+        .catch(() => {});
+    }),
+  );
 
   // How far the audio has been heard, which is not the same as how far the
   // saved transcript reaches. Saving rewrites the whole transcript, so it
@@ -2052,14 +2074,15 @@
             <span class="ask">
               <Info label="What finding clips does">
                 The model reads the window chosen on the <b>range picker</b> and answers with the
-                moments worth clipping. A part it has read is marked there. The window is never
-                longer than the model reads at once, and never shorter than the clips need at their
-                shortest.
+                moments worth clipping. A part it has read is marked there. <b>Target</b> is how
+                many clips it looks for. It gives fewer when fewer moments are strong enough.
+                <b>Shortest</b> and <b>Longest</b> are how long each clip may run, in seconds,
+                once the pauses and asides it leaves out are gone.
               </Info>
             </span>
           </div>
           <label class="setting">
-            <span>Clips</span>
+            <span>Target</span>
             <span class="field"
               ><input
                 class="num"
@@ -2067,8 +2090,8 @@
                 min="1"
                 max={clipsAtMost}
                 title={comingNow
-                  ? "The search on its way asks for this many. Change it for the next one"
-                  : `At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                  ? "The search on its way looks for this many. Change it for the next one"
+                  : `How many clips the model looks for. It gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
                 bind:value={count}
                 onchange={keepCount}
@@ -2437,12 +2460,11 @@
         clip={sketch ?? current}
         {duration}
         {covered}
-        heardTo={status && !status.transcribed ? covered : null}
+        {measured}
+        {measuredParts}
         {time}
-        working={!!transcribing}
         locked={renderingCurrent || !!sketch}
         arriving={!!sketch}
-        {hearing}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers

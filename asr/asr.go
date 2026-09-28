@@ -45,14 +45,135 @@ type Options struct {
 	Threads int
 }
 
-// Open loads the model in dir.
+// Open loads the model in dir the way the app runs it on this machine: as
+// many copies hearing side by side, with as many threads each, as Mix says
+// for its cores and its memory.
 func Open(dir string) (engine.Recognizer, error) {
-	r, err := OpenWith(dir, Options{})
+	copies, threads := Mix(ThisMachine())
+	p, err := OpenCopies(dir, copies, Options{Threads: threads})
 	if err != nil {
-		// A nil *Recognizer in the interface would not read as nil.
+		// A nil *Pool in the interface would not read as nil.
 		return nil, err
 	}
-	return r, nil
+	return p, nil
+}
+
+// Machine is what the pool is sized from.
+type Machine struct {
+	// Cores is every core, and Fast the performance cores where the system
+	// tells them apart, zero where it does not.
+	Cores, Fast int
+	// Memory in bytes, zero when the system does not say.
+	Memory int64
+}
+
+// ThisMachine is the machine the app is running on.
+func ThisMachine() Machine {
+	return Machine{Cores: runtime.NumCPU(), Fast: fastCores(), Memory: engine.MachineMemory()}
+}
+
+// copyMemory is the memory one copy of the model is allowed: it takes about
+// 0.9 GB, and a machine that finds clips with a local model needs most of
+// the rest for that. So a copy for every 8 GB.
+const copyMemory = 8 << 30
+
+// maxCopies is the most copies measured to help.
+const maxCopies = 4
+
+// Mix is how many copies of the model hear side by side on a machine, and
+// with how many threads each. It is decided by the machine the app runs
+// on, from what was measured with make speechbench on three kinds of it:
+//
+//   - The threads in all are the performance cores, or every core where
+//     the system does not tell them apart. One copy with more threads than
+//     that was slower on an M2 Max, whose 8 performance cores heard
+//     fastest, and on a machine that cannot tell, every core is what there
+//     is.
+//   - Those threads go to several copies rather than one, because one copy
+//     does not use them: on the M2 Max, one copy of 8 threads heard 47
+//     times real time and four copies of 2 heard 83. A machine with fewer
+//     than 6 heard best with one thread a copy: 17 times against 16 on the
+//     3 cores of an M1 runner, 15 against 11.5 on 4 cores of a cloud
+//     machine. The words were the same in every mix.
+//   - Every copy holds the model once more, so there is a copy for every
+//     8 GB of memory, and at most four, the most measured. Where memory
+//     allows fewer copies, each takes more of the threads.
+func Mix(m Machine) (copies, threads int) {
+	total := m.Fast
+	if total <= 0 {
+		total = m.Cores
+	}
+	total = max(total, 1)
+	threads = 1
+	if total >= 6 {
+		threads = 2
+	}
+	copies = min(max(total/threads, 1), maxCopies)
+	if m.Memory > 0 {
+		// To the nearest 8 GB: a machine of 16 GB tells Linux a little
+		// less than that, and it is still a machine of 16 GB.
+		copies = min(copies, max(int((m.Memory+copyMemory/2)/copyMemory), 1))
+	}
+	threads = max(threads, total/copies)
+	return copies, threads
+}
+
+// Pool is several copies of the model, each hearing one piece at a time.
+// Recognize may be called from as many goroutines at once as there are
+// copies, and waits for one to be free.
+type Pool struct {
+	all  []*Recognizer
+	free chan *Recognizer
+}
+
+// OpenCopies loads copies of the model in dir, each running the way o says.
+// They load side by side too, since each takes as long as the first.
+func OpenCopies(dir string, copies int, o Options) (*Pool, error) {
+	copies = max(copies, 1)
+	loaded := make([]*Recognizer, copies)
+	errs := make([]error, copies)
+	done := make(chan int, copies)
+	for i := range copies {
+		go func() {
+			loaded[i], errs[i] = OpenWith(dir, o)
+			done <- i
+		}()
+	}
+	for range copies {
+		<-done
+	}
+	p := &Pool{free: make(chan *Recognizer, copies)}
+	for i := range loaded {
+		if errs[i] != nil {
+			p.all = loaded
+			p.Close()
+			return nil, errs[i]
+		}
+	}
+	p.all = loaded
+	for _, r := range loaded {
+		p.free <- r
+	}
+	return p, nil
+}
+
+// Copies says how many pieces can be heard at once, which the engine asks.
+func (p *Pool) Copies() int { return len(p.all) }
+
+// Recognize hears one piece with whichever copy is free.
+func (p *Pool) Recognize(samples []float32, sampleRate int) []engine.Token {
+	r := <-p.free
+	defer func() { p.free <- r }()
+	return r.Recognize(samples, sampleRate)
+}
+
+// Close frees every copy. Nothing may be hearing when it is called.
+func (p *Pool) Close() {
+	for _, r := range p.all {
+		if r != nil {
+			r.Close()
+		}
+	}
 }
 
 // OpenWith loads the model in dir to run the way o says.

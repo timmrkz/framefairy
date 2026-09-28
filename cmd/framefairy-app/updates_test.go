@@ -121,8 +121,10 @@ func (cs *channelServer) publicKey() string {
 	return base64.StdEncoding.EncodeToString(cs.key.Public().(ed25519.PublicKey))
 }
 
-// An updating as the app makes it, reading from the server above.
-func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, *[]UpdateState) {
+// An updating as the app makes it, reading from the server above, and
+// what it has sent so far. The states are sent from the updating's own
+// goroutines, so they are read through sent, under the same lock.
+func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func() []UpdateState) {
 	t.Helper()
 	var mu sync.Mutex
 	var sent []UpdateState
@@ -134,15 +136,28 @@ func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, *[]
 			sent = append(sent, s)
 			mu.Unlock()
 		},
-		load: func() string { return picked },
-		save: func(ch string) error { picked = ch; return nil },
+		load: func() string {
+			mu.Lock()
+			defer mu.Unlock()
+			return picked
+		},
+		save: func(ch string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			picked = ch
+			return nil
+		},
 	}
 	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: cs.srv.Client()}
 	c.setUp(updater.New(quietHost{}), cs.publicKey(), src, inApp, "darwin")
 	if c.state.Off != "" {
 		t.Fatalf("off: %s", c.state.Off)
 	}
-	return c, &sent
+	return c, func() []UpdateState {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]UpdateState(nil), sent...)
+	}
 }
 
 func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) UpdateState {
@@ -205,7 +220,7 @@ func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 		t.Errorf("the fill ended at %d of %d", s.Written, s.Total)
 	}
 	var phases []string
-	for _, st := range *sent {
+	for _, st := range sent() {
 		if st.Phase != "" && (len(phases) == 0 || phases[len(phases)-1] != st.Phase) {
 			phases = append(phases, st.Phase)
 		}
@@ -305,7 +320,7 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 	})
 
 	_ = c.Follow("pr-20")
-	after := len(*sent)
+	after := len(sent())
 	// At once, before any check has answered.
 	if s := c.State(); s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
 		t.Errorf("right after the pick: %+v", s)
@@ -316,7 +331,7 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 	if s.Follows != "pr-20" || s.Problem != "" {
 		t.Errorf("%+v", s)
 	}
-	for _, st := range (*sent)[after:] {
+	for _, st := range sent()[after:] {
 		if st.Next == "0.3.0-main.5" || st.Phase == "failed" {
 			t.Errorf("after the pick the screen was told %+v", st)
 		}
@@ -415,7 +430,7 @@ func TestThePickIsTheLastWord(t *testing.T) {
 		})
 		wg.Wait()
 		picked := -1
-		for i, s := range *sent {
+		for i, s := range sent() {
 			if s.Picked == "pr-20" && picked < 0 {
 				picked = i
 			}
