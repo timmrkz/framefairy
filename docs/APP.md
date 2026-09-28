@@ -615,17 +615,6 @@ place.
       minutes is one window, and the windows are equal, so no scrap is
       left at the end. When the window moves on by itself, after a search,
       it takes the next one. See `engine/suggest.go`.
-    - **The target follows the window.** Target, left empty, shows in
-      grey how many clips the window drawn suggests, one for every twelve
-      clip lengths: 2 for 10 minutes of clips of 20 to 30 seconds, 6 for
-      half an hour, and it changes as the window is dragged. A number typed
-      there is kept, for every episode, until the field is cleared, and
-      then it follows the window again. Twelve because the model, asked
-      for 8 in half an hour, gave 6: it gives fewer when fewer moments are
-      strong enough, and asking for more only asks it to fill places with
-      weaker ones. The local model thinks in proportion to the window too,
-      see [ENGINE.md](ENGINE.md), so a smaller window is also found
-      sooner.
       The search hears the episode to the end of the window and then
       finds. Until it finds, the first row of the clip list says Waiting
       for the transcript, and the window is locked for as long as the
@@ -646,6 +635,20 @@ place.
       the work folder makes the episode new, and then it starts over as a
       new one does. The rule is `firstSearch` in
       `cmd/framefairy-app/search.go`, and the path tests follow it.
+    - **The target follows the window.** Target, left empty, shows in
+      grey how many clips the window drawn suggests, and it changes as the
+      window is dragged: 6 for half an hour of clips of 20 to 30 seconds,
+      one for every twelve clip lengths, and other windows in proportion
+      to the square root of their length, 3 for six or ten minutes, 8 for
+      an hour. A number typed there is kept, for every episode, until the
+      field is cleared, and then it follows the window again. Twelve
+      because the model, asked for 8 in half an hour, gave 6: it gives
+      fewer when fewer moments are strong enough, and asking for more only
+      asks it to fill places with weaker ones. The square root because in
+      proportion to the length, six minutes were asked for one clip, and a
+      short window is still worth a choice. The local model thinks in
+      proportion to the window, see [ENGINE.md](ENGINE.md), so a smaller
+      window is also found sooner.
     - **What a search is doing is in the row its next clip appears in.**
       The first of the rows still to come wears the beam and the fill and
       says two things: Waiting for the transcript with the window it is

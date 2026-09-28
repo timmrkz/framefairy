@@ -40,12 +40,22 @@ func SuggestedWindow(duration float64) float64 {
 	return duration / n
 }
 
-// clipsApart is how many clip lengths of window there are for each clip
-// asked for. The model gives fewer clips when fewer moments are strong
-// enough, and with 8 asked of a half hour it gave 6, so it is asked for 6:
-// one clip for every twelve clip lengths, about 8 % of the window. Longer
-// clips need longer moments, so fewer of them are in the same window.
-const clipsApart = 12
+// clipsApart is how many clip lengths of a half hour window there are for
+// each clip asked for. The model gives fewer clips when fewer moments are
+// strong enough, and with 8 asked of a half hour it gave 6, so a half hour
+// is asked for 6: one clip for every twelve clip lengths. Longer clips need
+// longer moments, so fewer of them are in the same window.
+//
+// Other windows are asked for in proportion to the square root of their
+// length, as the windows themselves grow. In proportion to the length
+// itself, six minutes were asked for one clip, which Tim found far too
+// few: a short window is still worth a choice, and it holds a dozen clips
+// of 25 seconds. With the square root it is asked for 3, ten minutes for
+// 3 and an hour for 8.
+const (
+	clipsApart = 12
+	clipsFor   = 30 * 60
+)
 
 // SuggestedCount is how many clips a search looks for in a window of the
 // given length, in seconds, with clips from least to most seconds long.
@@ -55,7 +65,7 @@ func SuggestedCount(window, least, most float64) int {
 	if clip <= 0 || window <= 0 {
 		return 1
 	}
-	return max(int(math.Round(window/(clipsApart*clip))), 1)
+	return max(int(math.Round(math.Sqrt(window*clipsFor)/(clipsApart*clip))), 1)
 }
 
 // ThinkForWindow asks for the thinking budget that fits the window, see

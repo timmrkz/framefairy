@@ -1933,7 +1933,7 @@
                 placeholder={String(suggested)}
                 title={comingNow
                   ? "The search on its way looks for this many. Change it for the next one"
-                  : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, one for every twelve clip lengths. Type a number to set your own, and clear it to follow the window again. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                  : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own, and clear it to follow the window again. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
                 value={target > 0 ? target : ""}
                 onchange={keepTarget}

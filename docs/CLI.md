@@ -94,7 +94,7 @@ fits.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--count 6` | one for every twelve clip lengths of the window, at least 1 | how many clips to look for. 6 for half an hour of clips of 20 to 30 seconds, 2 for 10 minutes. The model gives fewer when fewer moments are strong enough |
+| `--count 6` | one for every twelve clip lengths of a half hour window, other windows by the square root of their length, at least 1 | how many clips to look for. 6 for half an hour of clips of 20 to 30 seconds, 3 for 10 minutes, 8 for an hour. The model gives fewer when fewer moments are strong enough |
 | `--min 20` | 20 s | shortest acceptable clip |
 | `--max 30` | 30 s | target ceiling. A clip that runs a little over is fine |
 | `--from 1:00:00 --to 2:00:00` | whole episode | only work on this part of it, see below |

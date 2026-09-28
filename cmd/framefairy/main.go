@@ -92,8 +92,8 @@ func specs() []flagSpec {
 		{[]string{"--training-dir"}, kString, "DIR", "folder for the training records of every " +
 			"episode (default ~/.framefairy/training, or FRAMEFAIRY_TRAINING)",
 			func(o *engine.Options, v string) error { o.TrainingDir = v; return nil }},
-		{[]string{"--count"}, kInt, "COUNT", "how many clips to look for (default: one for every twelve clip lengths of the " +
-			"window, at least one)",
+		{[]string{"--count"}, kInt, "COUNT", "how many clips to look for (default: one for every twelve clip lengths of a " +
+			"half hour window, and by the square root of their length for others, at least one)",
 			intValue("--count", func(o *engine.Options, v int) { o.Count = v })},
 		{[]string{"--min"}, kFloat, "MIN", "shortest acceptable clip, in seconds (default 20)",
 			floatValue("--min", func(o *engine.Options, v float64) { o.Min = v })},

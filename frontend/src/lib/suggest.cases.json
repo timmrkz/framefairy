@@ -13,15 +13,15 @@
     { "duration": 14400, "window": 1800 }
   ],
   "counts": [
-    { "window": 300, "least": 20, "most": 30, "count": 1 },
-    { "window": 600, "least": 20, "most": 30, "count": 2 },
-    { "window": 900, "least": 20, "most": 30, "count": 3 },
-    { "window": 1080, "least": 20, "most": 30, "count": 4 },
-    { "window": 1200, "least": 20, "most": 30, "count": 4 },
+    { "window": 60, "least": 20, "most": 30, "count": 1 },
+    { "window": 300, "least": 20, "most": 30, "count": 2 },
+    { "window": 350, "least": 20, "most": 30, "count": 3 },
+    { "window": 600, "least": 20, "most": 30, "count": 3 },
+    { "window": 900, "least": 20, "most": 30, "count": 4 },
+    { "window": 1200, "least": 20, "most": 30, "count": 5 },
     { "window": 1800, "least": 20, "most": 30, "count": 6 },
-    { "window": 2700, "least": 20, "most": 30, "count": 9 },
-    { "window": 1800, "least": 45, "most": 60, "count": 3 },
-    { "window": 60, "least": 20, "most": 30, "count": 1 }
+    { "window": 3600, "least": 20, "most": 30, "count": 8 },
+    { "window": 1800, "least": 45, "most": 60, "count": 3 }
   ],
   "thinks": [
     { "window": 60, "think": 512 },

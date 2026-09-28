@@ -11,8 +11,10 @@ const windowFactor = 3.75;
 // No window is cut shorter than this, and an episode this short or shorter
 // is one window.
 const leastWindow = 10 * 60;
-// One clip is asked for every twelve clip lengths of window.
+// One clip is asked for every twelve clip lengths of a half hour window,
+// and other windows in proportion to the square root of their length.
 const clipsApart = 12;
+const clipsFor = 30 * 60;
 
 // How long each window of an episode is, in seconds: equal windows as close
 // to the square root rule as divide the episode evenly, none shorter than
@@ -30,7 +32,7 @@ export function suggestedWindow(duration: number): number {
 export function suggestedCount(window: number, least: number, most: number): number {
   const clip = (least + most) / 2;
   if (clip <= 0 || window <= 0) return 1;
-  return Math.max(roundHalfAway(window / (clipsApart * clip)), 1);
+  return Math.max(roundHalfAway(Math.sqrt(window * clipsFor) / (clipsApart * clip)), 1);
 }
 
 // Go's math.Round rounds a half away from zero, and Math.round rounds it

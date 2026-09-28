@@ -758,8 +758,9 @@ tokens as it is of half an hour, never less than 512 and never more than
 4,096. A 10 minute window thinks about 680 tokens, some 15 seconds, and
 its first clip comes about half a minute sooner. `--think` gives a number
 instead, `-1` is no limit and `0` is no thinking. How many clips a search
-looks for follows the window the same way, one for every twelve clip
-lengths, unless `--count` says. Both are in `engine/suggest.go`, with
+looks for follows the window too, one for every twelve clip lengths
+of a half hour and in proportion to the square root of other windows,
+unless `--count` says. Both are in `engine/suggest.go`, with
 their cases in `frontend/src/lib/suggest.cases.json`, which the workspace
 is tested against too.
 
