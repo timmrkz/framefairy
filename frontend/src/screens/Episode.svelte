@@ -1704,9 +1704,11 @@
     event.preventDefault();
     const here = list.findIndex((c) => c.key === selected);
     const step = event.key === "ArrowDown" ? 1 : -1;
-    // With nothing chosen, down takes the first and up the last.
+    // With nothing chosen, down takes the first and up the last. The list
+    // goes round: down from the last card is the first, and up from the
+    // first is the last.
     const next = here < 0 ? (step > 0 ? 0 : list.length - 1) : here + step;
-    const clip = list[Math.max(0, Math.min(next, list.length - 1))];
+    const clip = list[(next + list.length) % list.length];
     if (!clip) return;
     select(clip.key);
     seekTo(clip.start);
