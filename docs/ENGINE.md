@@ -70,6 +70,17 @@ before the first piece and changes up to 20 words in three minutes, so it
 stays out even with pieces of one length. Hearing two pieces in one pass
 gains 3 % at most and changes words, so it stays out as well.
 
+A smaller model was tried against it: NeMo's multilingual FastConformer
+transducer, in the same library, with German among its ten languages and
+about a fifth of Parakeet's size. On 4 cores it heard twice as fast, 23
+times real time where Parakeet heard 11, but it heard "Alles hat ein Ende,
+nur die Wurst hat zwei" as "Alice had an end. No divorce hath thy", where
+Parakeet wrote it down right. A podcast in German needs the German heard,
+so Parakeet stays. The other models the library carries either give no
+word times, which the captions need, or are slower on the processor:
+Canary gives no word times, Whisper is several times slower, and
+Parakeet v2 hears English only.
+
 One cut is placed exactly: the end of the window the first search waits
 for. The app gives the transcription that point, `Engine.StopAt`, and the
 piece that reaches it is cut there, so nothing past the window's edge is
