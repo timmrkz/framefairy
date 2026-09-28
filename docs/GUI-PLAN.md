@@ -90,6 +90,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.67 | A key the company refuses is found where it was typed: Save key shows it to the company first and says in the key's own row when it is refused. A key refused during a search says so in words and where the key came from, not the company's JSON. The app uses the key saved in its settings before one in the environment. Tim had saved the key's ID, apikey_..., which the check on saving now refuses at once. The app also uses the key saved in its settings before one in the environment, so a key left in a terminal's environment never wins over the one just saved | `[x]` |
 | 2.68 | A search in the cloud shows how far it is from its first search: a model the app knows is measured against a first guess until it has been timed, and Anthropic's thinking models send a summary of their thought as it goes, where before the stream was silent until the answer began and the row showed only the beam for minutes. Found by Tim | `[x]` |
 | 2.69 | The key row as the consoles show keys: a saved key in short, `sk-ant-api03...MwAA`, read from the keychain item without the key, a narrower field, a refusal in one short line that also covers a key's ID, and a trash can that removes the saved key after asking. A refused key is taken the way the Mac's password fields take a wrong password: the field shakes, keeps what was typed, selected, with the keyboard in it, so the next paste replaces it, and Save waits for something new. Without a key, the row links to the page where keys are made, at platform.claude.com, where Anthropic keeps them now, or platform.openai.com. Asked for by Tim | `[x]` |
+| 2.70 | Clip edges land on the frame like the edges of a cut, with alt for whole words, so a clip can be trimmed a frame at a time | `[x]` |
 | 2.61 | Text and Box in the captions column are switches like Highlight: a short can be rendered without the box, or without captions at all | `[x]` |
 | 2.60 | Jobs as one thing each, see [JOBS.md](JOBS.md): the design `[x]`, the path tests `[x]`, the records and `Project.Search` in the engine `[x]`, the app running jobs in three lanes `[x]`, the interface switched over `[x]`, the old parts gone `[x]` | `[~]` |
 | 2.59 | A search that stopped before it found anything says so where its clips would have been, with its reason, after a restart too, and points to **New**. Nothing starts by itself | `[x]` |
@@ -141,7 +142,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.1 | Detail timeline under the overview, zoomed to the selected clip, with waveform and words | `[x]` |
 | 3.2 | Word track and segment track, cuts shown between pieces | `[x]` |
 | 3.3 | Playhead, kept in step with the player, and a timeline that is there even with no clip selected | `[x]` |
-| 3.4 | Drag clip edges, snapping to words, saved to the plan | `[x]` |
+| 3.4 | Drag clip edges, on the frame or with alt on words, saved to the plan | `[x]` |
 | 3.5 | Cut or restore a pause between two kept words with one click | dropped |
 | 3.5b | Lengthen or shorten a pause | dropped |
 | 3.8 | Drag the playhead through the timeline, and a click anywhere hands the keyboard over | `[x]` |

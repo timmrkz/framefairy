@@ -790,10 +790,10 @@
     }
   }
 
-  async function trim(clip: ClipEntry, start: number, end: number) {
+  async function trim(clip: ClipEntry, start: number, end: number, toWords: boolean) {
     problem = "";
     try {
-      const updated = await api.trimClip(path, clip.plan, clip.id, start, end);
+      const updated = await api.trimClip(path, clip.plan, clip.id, start, end, toWords);
       putClip(updated);
     } catch (err) {
       problem = errorText(err);
@@ -2243,7 +2243,8 @@
         {lit}
         bind:numbers
         onseek={(t) => player?.seek(t)}
-        ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}
+        ontrim={(start, end, toWords) =>
+          current ? trim(current, start, end, toWords) : Promise.resolve()}
         oncut={(from, to, toWords) =>
           current ? cut(current, from, to, toWords) : Promise.resolve()}
         onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}

@@ -1280,8 +1280,9 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 }
 
 // TrimClip moves the first and last edge of a clip and returns it as it is
-// now.
-func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, start, end float64) (ClipEntry, error) {
+// now. With toWords the edges land on the nearest words, without it they
+// stay exactly where the hand put them, a frame at a time.
+func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, start, end float64, toWords bool) (ClipEntry, error) {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
@@ -1291,7 +1292,7 @@ func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, st
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause)
+		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause, engine.Snap(toWords))
 	}); err != nil {
 		return ClipEntry{}, err
 	}

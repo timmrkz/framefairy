@@ -12,8 +12,8 @@
 <script lang="ts">
   // The episode up close, always: the waveform and where the playhead
   // stands. With a clip selected it is that clip, with its pieces and the
-  // cuts between them, and either edge can be dragged to trim. Edges snap to
-  // words the way the render cuts them. Two fingers move along the episode
+  // cuts between them, and either edge can be dragged to trim. Edges land
+  // on the frame, and with alt on words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
   import {
@@ -86,7 +86,7 @@
     // in the transcript and never in this one.
     lit?: Word[];
     onseek: (t: number) => void;
-    ontrim?: (start: number, end: number) => Promise<void>;
+    ontrim?: (start: number, end: number, toWords: boolean) => Promise<void>;
     // The cuts inside the clip: taking a part out, putting one back, and
     // moving the edges of one that is already there.
     // toWords says whether the engine should put the edges on the words
@@ -939,7 +939,9 @@
   });
 
   // An edge is dragged to trim. Clicking one without dragging puts the
-  // playhead exactly on it, which is how you start a clip over.
+  // playhead exactly on it, which is how you start a clip over. It lands
+  // on the frame, the same as the edge of a cut, and alt puts it on the
+  // nearest word instead. Alt is read on every move, like a cut's.
   function grab(edge: "start" | "end", event: PointerEvent) {
     if (!clip || locked || saving) return;
     event.preventDefault();
@@ -949,15 +951,22 @@
     const from = event.clientX;
     draft = { start, end };
     let moved = false;
+    let toWords = event.altKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) {
         moved = true;
         if (ontrim) dragging = edge;
       }
       if (!moved || !dragging) return;
+      toWords = e.altKey;
       const t = timeAt(e.clientX);
-      if (edge === "start") draft.start = Math.min(snapStart(words, t, keepPause), draft.end - 1);
-      else draft.end = Math.max(snapEnd(words, t, keepPause), draft.start + 1);
+      if (edge === "start") {
+        const at = toWords ? snapStart(words, t, keepPause) : Math.max(0, onFrame(t));
+        draft.start = Math.min(at, draft.end - 1);
+      } else {
+        const at = toWords ? snapEnd(words, t, keepPause) : onFrame(t);
+        draft.end = Math.max(at, draft.start + 1);
+      }
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
@@ -975,7 +984,7 @@
         // A clip whose edges have moved is not the clip the part was
         // taken out of, so there is nothing to put back any more.
         undone = null;
-        await ontrim?.(draft.start, draft.end);
+        await ontrim?.(draft.start, draft.end, toWords);
         onseek(draft.start);
       } finally {
         saving = false;

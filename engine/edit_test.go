@@ -60,7 +60,7 @@ func TestAFailedEditLeavesThePlanAlone(t *testing.T) {
 	}{
 		{"a clip that is not there", func() error { return SetRejected(path, "99", true) }},
 		{"a reason nobody knows", func() error { return SetRejected(path, "01", true, "langweilig") }},
-		{"a clip under a second", func() error { return TrimClip(path, "01", 12, 12.2, tr, 0.1) }},
+		{"a clip under a second", func() error { return TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords) }},
 		{"a crop to the left of the frame", func() error { return SetCrop(path, "01", 10.5, -4) }},
 	}
 	for _, c := range failures {
@@ -100,7 +100,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 	}
 	steps := []func() error{
 		func() error { return SetRejected(path, "02", true) },
-		func() error { return TrimClip(path, "01", 10, 12.4, tr, 0.1) },
+		func() error { return TrimClip(path, "01", 10, 12.4, tr, 0.1, ToWords) },
 		func() error { return SetCrop(path, "01", 10.5, 200) },
 		func() error { return ResetCrop(path, "01", 10.5) },
 	}
@@ -368,7 +368,7 @@ func FuzzPlanEdits(f *testing.F) {
 				_ = MoveCut(path, clip, int(script[i+1])%4,
 					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
-				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1)
+				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))
 			case 1:
 				_ = SetCaptionStyle(path, map[string]any{"size": float64(24 + int(script[i+2])%176)})
 			case 2:
@@ -790,11 +790,11 @@ func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
 	}
 	// A trim that leaves one outside hides it, and it comes back with the
 	// piece it was in.
-	must(TrimClip(path, "01", 10.5, 13.1, tr, 0.1))
+	must(TrimClip(path, "01", 10.5, 13.1, tr, 0.1, ToWords))
 	if got := thumbs(); len(got) != 1 || got[0] != 10.75 {
 		t.Fatalf("after the trim the thumbnails are %v", got)
 	}
-	must(TrimClip(path, "01", 10.0, 13.1, tr, 0.1))
+	must(TrimClip(path, "01", 10.0, 13.1, tr, 0.1, ToWords))
 	if got := thumbs(); len(got) != 2 {
 		t.Fatalf("after the trim back the thumbnails are %v", got)
 	}

@@ -872,7 +872,11 @@ place.
         playhead just put at a clip's start is outside it, so the keys
         walked the transcript instead and the first press after picking a
         clip landed wherever the word before the clip happened to be.
-    - Drag an edge to trim. Edges snap to words the way the render cuts them.
+    - Drag an edge to trim. The edge lands on the frame, the same as the
+      edge of a cut, and alt puts it on the nearest word instead, the way
+      the render cuts a clip the engine proposes. It used to snap to words
+      always, which left no way to take a breath off the end of a clip or
+      keep the first frame of a gesture before the first word.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.
     - **Nothing on the playhead but the playhead.** It carried a magnifier

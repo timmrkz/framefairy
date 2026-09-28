@@ -492,8 +492,10 @@ export const api = {
   still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
   words: (path: string, from: number, to: number) =>
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
-  trimClip: (path: string, plan: string, clip: string, start: number, end: number) =>
-    call<ClipEntry>("TrimClip", path, plan, clip, start, end),
+  // toWords puts the edges on the nearest words. Without it they stay
+  // where the hand put them, a frame at a time, like the edges of a cut.
+  trimClip: (path: string, plan: string, clip: string, start: number, end: number, toWords: boolean) =>
+    call<ClipEntry>("TrimClip", path, plan, clip, start, end, toWords),
   // The cuts inside a clip: the parts it leaves out. Making one, moving
   // one and putting one back. The edges land on words, so what comes back
   // is what to draw, never what was asked for.
