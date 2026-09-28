@@ -29,7 +29,15 @@
     type Word,
     type CaptionCue,
   } from "../lib/api";
-  import { draftCaptions, inClip, inEpisode, insideClip, type CaptionDraft } from "../lib/flow";
+  import {
+    draftCaptions,
+    heardIn,
+    inClip,
+    inEpisode,
+    insideClip,
+    type CaptionDraft,
+    type Parts,
+  } from "../lib/flow";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
 
@@ -37,7 +45,7 @@
     path,
     clip,
     duration,
-    covered = duration,
+    heard = [[0, duration]],
     measured = 0,
     measuredParts = [],
     time,
@@ -64,9 +72,9 @@
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
     duration: number;
-    // How far the transcript has come. The words arrive with it, so the
-    // view is taken again as it grows.
-    covered?: number;
+    // What the transcript has heard, in parts. The words arrive with it,
+    // so the view is taken again as more of it is heard.
+    heard?: Parts;
     // How much of the loudness is measured, which is the waveform, and
     // which parts, from and to. It is measured on its own from the moment
     // the episode is added, ahead of the transcript and where this
@@ -162,9 +170,9 @@
   let saving = $state(false);
   let viewFor = "";
   let loaded = false;
-  // How far the transcript had come when this view was read, how much of
-  // the loudness was measured, and whether all of what was read.
-  let loadedTo = $state(-1);
+  // How much of the view the transcript had heard when it was read, how
+  // much of the loudness was measured, and whether all of what was read.
+  let loadedHeard = $state(-1);
   let loadedMeasured = $state(0);
   let loadedWhole = $state(false);
   // The part the words and the waveform were read for. It is wider than
@@ -516,7 +524,7 @@
   async function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
-    loadedTo = covered;
+    loadedHeard = heardIn(heard, from, to);
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
@@ -813,9 +821,9 @@
   // it jumped to fills in before the rest.
   $effect(() => {
     if (!loaded) return;
-    const heard = covered > loadedTo + 0.5 && loadedTo < view.to;
+    const more = heardIn(heard, view.from, view.to) > loadedHeard + 0.5;
     const grew = measured > loadedMeasured + 0.05 && !loadedWhole;
-    if (heard || grew) load(view.from, view.to);
+    if (more || grew) load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the

@@ -81,7 +81,10 @@ export interface EpisodeStatus {
   modified: string;
   missing: boolean;
   transcribed: boolean;
+  // How far the transcript reaches from the start without a gap, and every
+  // part it has heard, which need not start at the start or meet.
   covered: number;
+  heard: [number, number][];
   // How many seconds of the loudness are measured, which is the waveform,
   // which parts, from and to, and whether all of it. It runs ahead of the
   // transcript, from the moment an episode is added, where the clip
@@ -231,8 +234,10 @@ export interface EngineEvent {
   fraction: number;
   remaining: number;
   // The second of the episode the work has reached, where that means
-  // anything. A transcription sets it on every chunk it hears.
+  // anything, and where the part of the episode it covers began. A
+  // transcription sets them on every chunk it hears.
   covered?: number;
+  from?: number;
   // How many clips a search has written to its plan so far.
   found?: number;
   duration?: number;

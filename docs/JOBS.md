@@ -85,12 +85,12 @@ left, however it stops. So Cancel is the one way to stop work, and nothing
 done is done again:
 
 - A search called off while hearing keeps the transcript it heard. The
-  next search goes on from where the transcript ends.
+  next search hears only what of its window is not heard yet.
 - A search called off while finding keeps the clips that landed.
 - A render called off keeps the shorts it finished.
 
-Continue carries a job on from what it left. Hearing carries on from the
-end of the transcript. Finding asks the model again for the whole window
+Continue carries a job on from what it left. Hearing hears what of the
+job's part of the episode is still not heard. Finding asks the model again for the whole window
 and replaces the clips that landed, because an answer cannot be taken up
 halfway. Rendering renders the clips that are not finished yet.
 
@@ -114,6 +114,16 @@ them. A search that comes to finding takes the lane of hearing back from a
 search that hears, which saves what it heard, waits its turn and carries
 on after. Work that is not a step of a search, a model being installed, is
 neither taken back nor held up.
+
+And a clip made by hand hears first. Somebody pressed I or O and is
+looking at its card, and it hears the minute around the playhead where a
+search may hear an hour. So it goes ahead of every search waiting to hear,
+takes the lane back from one that hears, the way finding does, and does not
+wait for a search that finds: a minute of audio is heard in a second or
+two. Clips made by hand hear in the order they were asked for, and the
+search carries on after them. That is a kind of turn of its own,
+`handHearingTurn`, and nothing else about a clip made by hand is special
+in the queue.
 
 Model installs share the lane of the step that needs them: the speech
 model the lane of hearing, the language model the lane of finding.
@@ -289,16 +299,17 @@ changes to clips, and making one is work, see `LeaveOutNewClips`. A clip
 made by hand is taken away the way every clip is, with its trash can, and
 put back from there.
 
-**Heard in order.** Where the transcript does not reach, the one
-transcription hears on to where the clip needs it, held there the way a
-search holds it at the end of its window. An earlier attempt heard the part
-around the playhead out of turn into files of its own, islands, and read
-them into the transcript wherever the transcription from the start had not
-come. That was a second transcript with seams, heard again once the first
-arrived, and a second speech model loaded beside the pool. Hearing where it
-is needed first is worth having for a search too, and when it comes it
-comes to the one transcript, the way the loudness does since the waveform
-went where the clip timeline looks.
+**Heard where it is needed.** The transcript is heard in parts, see
+[ENGINE.md](ENGINE.md), and a clip made by hand has the part around the
+playhead heard, `ClipRequest.reach`, wherever the rest of the transcript
+has got to. A search has its window heard the same way, and nothing before
+it. An earlier attempt heard the part around the playhead out of turn into
+files of its own, islands, and read them into the transcript wherever the
+transcription from the start had not come. That was a second transcript
+with seams, heard again once the first arrived, and a second speech model
+loaded beside the pool. The parts are the one transcript, the way the
+loudness is one file with parts since the waveform went where the clip
+timeline looks.
 
 ## What went away
 

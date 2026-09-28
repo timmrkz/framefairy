@@ -47,8 +47,12 @@ type EpisodeStatus struct {
 	// Transcribed means a whole-episode transcript matches the file as it
 	// is now. Stale means one exists but the file has changed since.
 	Transcribed bool `json:"transcribed"`
-	// Covered is how far the transcript reaches, in seconds, finished or not.
-	Covered float64 `json:"covered"`
+	// Covered is how far the transcript reaches from the start without a
+	// gap, in seconds, finished or not, and Heard every part it has heard,
+	// from and to, which need not start at the beginning or meet: a clip
+	// made by hand has the part it needs heard first.
+	Covered float64      `json:"covered"`
+	Heard   [][2]float64 `json:"heard"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -89,8 +93,11 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	whole := filepath.Join(logs, TranscriptName(nil))
 	if stamp, err := stampOf(source); err == nil {
 		if file, _, _, ok := readTranscriptFile(whole, stamp, model); ok {
-			st.Transcribed = !file.Partial
-			st.Covered = float64(file.To)
+			st.Transcribed = file.done()
+			st.Heard = file.heard()
+			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
+				st.Covered = st.Heard[0][1]
+			}
 		} else if exists(whole) {
 			st.TranscriptStale = true
 		}
@@ -236,6 +243,7 @@ func (p *Project) Transcript() (*Transcript, error) {
 		return nil, ErrNoTranscript
 	}
 	t := fromStored(words, frames, float64(file.From), float64(file.Mean), p.Base.SilenceDB)
+	t.Heard = file.heard()
 	// Corrected words show corrected, in the app and in every clip made or
 	// changed from here on.
 	ApplyCorrections(t.Words, LoadCorrections(p.LogsDir()))

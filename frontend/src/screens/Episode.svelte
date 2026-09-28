@@ -37,6 +37,9 @@
     frameStart,
     waitShare,
     Heard,
+    covers,
+    heardIn,
+    type Parts,
     inEpisode,
     Newest,
     nextWindow,
@@ -150,7 +153,6 @@
   // up again that often. A timer that watches one never fires at all,
   // which is what stopped the transcript from being read again while it
   // grew, and with it the first search.
-  const isTranscribing = $derived(!!transcribing);
   const isFinding = $derived(!!finding);
   // A render is shown by the Render button it was started from, which
   // fills up and becomes Cancel. The head of the clip list is about
@@ -165,6 +167,11 @@
   const handWork = $derived(jobs.clips(path));
   const handRunning = $derived(handWork.filter((j) => j.state === "running" || j.state === "queued"));
   const handStopped = $derived(handWork.filter((j) => j.state === "interrupted" || j.state === "failed"));
+  // Whatever hears the episode now, the search or a clip made by hand, one
+  // at a time. Its progress says which part it hears and how far it has
+  // come in it.
+  const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing"));
+  const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
   // Whether anything of the clip list runs, the search or a clip made by
   // hand, which is what the head's Cancel stops.
@@ -224,7 +231,7 @@
       off: duration <= 0 || to <= 0,
       primary: true,
       title: !heardWindow
-        ? `Look for clips in the window. The episode is transcribed up to ${clock(to)} first, it is at ${clock(heard)}`
+        ? "Look for clips in the window. What of it is not transcribed yet is transcribed first"
         : covering
           ? "Look at the window again, removing the clips it has"
           : "Look for clips in the window",
@@ -252,7 +259,7 @@
   function stopWork() {
     if (!working && !handRunning.length) return;
     stopping = true;
-    if (transcribing) stoppedAt = heard;
+    if (isTranscribing) stoppedAt = heard;
     if (working) api.cancelJob(working.id);
     for (const job of handRunning) api.cancelJob(job.id);
   }
@@ -262,7 +269,8 @@
     for (const job of handStopped) void api.continueJob(job.id).then((j) => jobs.apply(j));
     if (stopped) void carryOnSearch();
   }
-  const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
+  // What the transcript on disk has heard.
+  const saved = $derived<Parts>(status?.transcribed ? [[0, duration]] : (status?.heard ?? []));
 
   // How far the loudness is measured, which is the waveform. It is measured
   // on its own from the moment the episode is added, ahead of the
@@ -285,14 +293,12 @@
     }),
   );
 
-  // How far the audio has been heard, which is not the same as how far the
-  // saved transcript reaches. Saving rewrites the whole transcript, so it
+  // What of the audio has been heard, which is not the same as what the
+  // saved transcript holds. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
   // chunk the recogniser finishes says where it got to. The range picker
   // draws this one, so its edge moves with the work. Everything that reads
-  // the transcript keeps to covered, because that is what is on disk: a
-  // search that started on this number would read a transcript that stops
-  // short of the window it was asked for.
+  // the transcript keeps to saved, because that is what is on disk.
   // The mark the edge is drawn from. It only ever grows, because it says
   // how much of the episode has been read and reading does not unhappen.
   // Pausing showed that plainly: the live number disappears at the one
@@ -304,18 +310,22 @@
   // will be read again, or a work folder that is no longer there. Not while
   // the episode is still loading, when nothing is known yet.
   const restarted = $derived(!!status && (status.transcriptStale || !status.work));
-  const heard = $derived(
-    mark.seen(path, covered, transcribing?.progress?.covered ?? null, restarted),
-  );
+  // The part being heard, from where it began to where it has got.
+  const live = $derived.by((): [number, number] | null => {
+    const p = hearing?.progress;
+    if (!p?.covered) return null;
+    return [p.from ?? 0, p.covered];
+  });
+  const heard = $derived(mark.seen(path, saved, live, restarted));
   // Where the edge was when pause was pressed, or null while it is free to
   // move. Held rather than followed, because what the work reports after
   // the press is work nobody asked for any more.
-  let stoppedAt = $state<number | null>(null);
+  let stoppedAt = $state<Parts | null>(null);
   const shownHeard = $derived(stoppedAt ?? heard);
 
   // Whether the episode has been heard to the end of the window. A search
   // of a window not heard yet hears it first, which New's title says.
-  const heardWindow = $derived(duration > 0 && to > 0 && heard >= to - 0.5);
+  const heardWindow = $derived(duration > 0 && to > 0 && covers(heard, from, to));
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -446,8 +456,8 @@
       ? `The episode is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
       : heardWindow
         ? "The search waits while another one finds its clips."
-        : "The episode is not transcribed to the end of the window yet.";
-    return `${first} Clips are found by themselves once the transcript reaches ${clock(to)}.`;
+        : "The window is not all transcribed yet.";
+    return `${first} Clips are found by themselves once the window is transcribed.`;
   });
   // The window stays with the episode while the app runs, so leaving the
   // workspace and coming back does not throw away what was chosen.
@@ -548,15 +558,14 @@
     const what = byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue";
     const how = byHand ? "Cancel stopped the search" : "The app was closed";
     // Stopped before it had heard its window, which is the first half of
-    // every search on an episode heard only part way: Continue hears on
-    // from where it stopped and then finds.
-    const reached = Math.min(covered, end);
-    if (reached < end - 0.5) {
+    // every search of a window not heard yet: Continue hears the rest of
+    // it and then finds.
+    if (!covers(saved, start, end)) {
       return {
         ...span,
         what,
-        left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
-        full: `${window}. ${how} while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
+        left: `${clock(heardIn(saved, start, end))} of ${clock(end - start)} transcribed`,
+        full: `${window}. ${how} while the window was transcribed for it. Continue transcribes the rest of it and then finds the clips`,
       };
     }
     return {
@@ -1877,7 +1886,8 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    covered={shownHeard}
+    heard={shownHeard}
+    live={stoppedAt ? null : live}
     bind:from
     bind:to
     {marks}
@@ -2358,7 +2368,7 @@
         {path}
         clip={current}
         {duration}
-        {covered}
+        heard={saved}
         {measured}
         {measuredParts}
         {time}

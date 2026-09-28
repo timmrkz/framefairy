@@ -70,6 +70,10 @@ type Event struct {
 	// finishes, which is far more often than it saves what it has, so the
 	// range picker can follow the transcript as it grows.
 	Covered float64 `json:"covered,omitempty"`
+	// From is where the part of the episode the work covers began, so what
+	// it has reached is From to Covered. A transcription hears in parts,
+	// wherever a search or a clip made by hand needs them first.
+	From float64 `json:"from,omitempty"`
 	// Found is how many clips a search has written to its plan so far. The
 	// app reads the list again when it changes, rather than on a timer
 	// that is always a little late.
@@ -115,6 +119,9 @@ func (l *Log) send(ev Event) {
 	ev.Remaining = sane(ev.Remaining)
 	if ev.Covered = sane(ev.Covered); ev.Covered == Unknown {
 		ev.Covered = 0
+	}
+	if ev.From = sane(ev.From); ev.From == Unknown {
+		ev.From = 0
 	}
 	if ev.Duration = sane(ev.Duration); ev.Duration == Unknown {
 		ev.Duration = 0

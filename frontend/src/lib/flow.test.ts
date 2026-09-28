@@ -3,6 +3,11 @@ import {
   frameStart,
   waitShare,
   Heard,
+  heardIn,
+  joinParts,
+  gapsIn,
+  covers,
+  type Parts,
   Newest,
   mergeJob,
   nextWindow,
@@ -162,52 +167,70 @@ describe("only the newest answer counts", () => {
   });
 });
 
-describe("the transcript's edge only ever moves forward", () => {
-  // The edge says how much of the episode has been read. Reading does not
-  // unhappen, so no ordering of what the Go side reports may walk it back.
+describe("what is heard only ever grows", () => {
+  // It says how much of the episode has been read. Reading does not
+  // unhappen, so no ordering of what the Go side reports may take any of
+  // it back.
   const ep = "/eps/ep.mp4";
+  const upTo = (at: number): Parts => (at > 0 ? [[0, at]] : []);
 
   test("it follows the work while the transcription runs", () => {
     const h = new Heard();
-    expect(h.seen(ep, 0, 12, false)).toBe(12);
-    expect(h.seen(ep, 0, 30, false)).toBe(30);
+    expect(h.seen(ep, [], [0, 12], false)).toEqual([[0, 12]]);
+    expect(h.seen(ep, [], [0, 30], false)).toEqual([[0, 30]]);
     // The save lands, far behind the work, and changes nothing.
-    expect(h.seen(ep, 24, 42, false)).toBe(42);
+    expect(h.seen(ep, upTo(24), [0, 42], false)).toEqual([[0, 42]]);
   });
 
-  test("pausing does not rewind it", () => {
+  test("pausing does not take any of it back", () => {
     // This is the bug as it was seen. The job reported 300 seconds, the
     // transcript on disk had only been written at 240, and the moment the
     // job stopped the live number was gone.
     const h = new Heard();
-    expect(h.seen(ep, 240, 300, false)).toBe(300);
-    expect(h.seen(ep, 240, null, false)).toBe(300);
+    expect(h.seen(ep, upTo(240), [0, 300], false)).toEqual([[0, 300]]);
+    expect(h.seen(ep, upTo(240), null, false)).toEqual([[0, 300]]);
   });
 
-  test("carrying on from a pause does not rewind it either", () => {
+  test("carrying on from a pause does not either", () => {
     // A transcription that carries on starts again from the end of the
     // saved transcript, which is behind where the work had got to. Those
     // seconds were heard, so the edge stands still until the work passes
     // them rather than jumping back and climbing twice.
     const h = new Heard();
-    h.seen(ep, 240, 300, false);
-    expect(h.seen(ep, 240, 240, false)).toBe(300);
-    expect(h.seen(ep, 240, 280, false)).toBe(300);
-    expect(h.seen(ep, 240, 310, false)).toBe(310);
+    h.seen(ep, upTo(240), [0, 300], false);
+    expect(h.seen(ep, upTo(240), [240, 240], false)).toEqual([[0, 300]]);
+    expect(h.seen(ep, upTo(240), [240, 280], false)).toEqual([[0, 300]]);
+    expect(h.seen(ep, upTo(240), [240, 310], false)).toEqual([[0, 310]]);
   });
 
-  test("an older answer landing after a newer one does not rewind it", () => {
+  test("an older answer landing after a newer one does not take any back", () => {
     // Every refresh is a call of its own and nothing says they come back in
     // the order they went out.
     const h = new Heard();
-    expect(h.seen(ep, 600, null, false)).toBe(600);
-    expect(h.seen(ep, 120, null, false)).toBe(600);
+    expect(h.seen(ep, upTo(600), null, false)).toEqual([[0, 600]]);
+    expect(h.seen(ep, upTo(120), null, false)).toEqual([[0, 600]]);
   });
 
-  test("whatever order the two numbers arrive in, the answer is the same", () => {
+  test("a part heard where a clip made by hand needs it stands apart", () => {
+    const h = new Heard();
+    expect(h.seen(ep, upTo(600), [5000, 5030], false)).toEqual([
+      [0, 600],
+      [5000, 5030],
+    ]);
+    // And when the gap between is heard, they are one.
+    expect(h.seen(ep, [[0, 5030]], null, false)).toEqual([[0, 5030]]);
+  });
+
+  test("the same parts are the same answer", () => {
+    const h = new Heard();
+    const first = h.seen(ep, upTo(60), null, false);
+    expect(h.seen(ep, upTo(60), [10, 20], false)).toBe(first);
+  });
+
+  test("whatever order the two arrive in, the answer is the same", () => {
     // The job and the episode refresh land independently, so this walks
     // every interleaving of a plausible run and insists the result never
-    // decreases and always ends at the furthest either of them reached.
+    // shrinks and always ends at the furthest either of them reached.
     const saved = [0, 0, 60, 60, 120, 180, 180];
     const running = [10, 45, 45, 90, 150, 150, 200];
     for (let shift = 0; shift < saved.length; shift++) {
@@ -220,7 +243,7 @@ describe("the transcript's edge only ever moves forward", () => {
         const s = saved[Math.max(0, i - shift)];
         const r = running[i];
         most = Math.max(most, s, r);
-        const got = h.seen(ep, s, r, false);
+        const got = heardIn(h.seen(ep, upTo(s), [0, r], false), 0, 1e9);
         expect(got, `shift ${shift} step ${i}`).toBeGreaterThanOrEqual(last);
         last = got;
       }
@@ -230,25 +253,48 @@ describe("the transcript's edge only ever moves forward", () => {
 
   test("another episode starts the mark over", () => {
     const h = new Heard();
-    h.seen(ep, 0, 900, false);
-    expect(h.seen("/eps/zwei.mp4", 0, 5, false)).toBe(5);
+    h.seen(ep, [], [0, 900], false);
+    expect(h.seen("/eps/zwei.mp4", [], [0, 5], false)).toEqual([[0, 5]]);
     // And going back does not bring the first one's mark with it.
-    expect(h.seen(ep, 0, 3, false)).toBe(3);
+    expect(h.seen(ep, [], [0, 3], false)).toEqual([[0, 3]]);
   });
 
   test("a transcript being read again starts the mark over", () => {
     // The file changed, so the old mark is about a transcript that no
     // longer exists.
     const h = new Heard();
-    h.seen(ep, 600, null, false);
-    expect(h.seen(ep, 0, 10, true)).toBe(10);
-    expect(h.seen(ep, 0, 20, false)).toBe(20);
+    h.seen(ep, upTo(600), null, false);
+    expect(h.seen(ep, [], [0, 10], true)).toEqual([[0, 10]]);
+    expect(h.seen(ep, [], [0, 20], false)).toEqual([[0, 20]]);
   });
 
   test("a work folder that is gone starts the mark over", () => {
     const h = new Heard();
-    h.seen(ep, 600, null, false);
-    expect(h.seen(ep, 0, null, true)).toBe(0);
+    h.seen(ep, upTo(600), null, false);
+    expect(h.seen(ep, [], null, true)).toEqual([]);
+  });
+});
+
+describe("parts", () => {
+  test("joined in order, touching ones made one", () => {
+    expect(joinParts([[40, 50], [0, 10], [10, 20], [45, 60]])).toEqual([
+      [0, 20],
+      [40, 60],
+    ]);
+  });
+
+  test("what they hold of a span, and what they leave", () => {
+    const parts: Parts = [
+      [0, 10],
+      [40, 60],
+    ];
+    expect(heardIn(parts, 5, 50)).toBe(15);
+    expect(gapsIn(parts, 5, 70)).toEqual([
+      [10, 40],
+      [60, 70],
+    ]);
+    expect(covers(parts, 42, 59)).toBe(true);
+    expect(covers(parts, 5, 50)).toBe(false);
   });
 });
 
@@ -717,18 +763,20 @@ describe("frameStart", () => {
 // the range picker: how much of the window is transcribed. Measured from the
 // start of the episode, a window two hours in began nearly full.
 describe("waitShare", () => {
-  it("is empty until the transcript reaches the window", () => {
-    expect(waitShare(7200, 0, 9000)).toBe(0);
-    expect(waitShare(7200, 7200, 9000)).toBe(0);
+  it("is empty while nothing of the window is heard", () => {
+    expect(waitShare(7200, [], 9000)).toBe(0);
+    expect(waitShare(7200, [[0, 7200]], 9000)).toBe(0);
   });
 
   it("is how much of the window is transcribed", () => {
-    expect(waitShare(7200, 8100, 9000)).toBe(0.5);
-    expect(waitShare(1800, 2500, 3600)).toBeCloseTo(700 / 1800, 9);
+    expect(waitShare(7200, [[0, 8100]], 9000)).toBe(0.5);
+    expect(waitShare(1800, [[0, 2500]], 3600)).toBeCloseTo(700 / 1800, 9);
+    // Wherever in the window it was heard.
+    expect(waitShare(1800, [[3000, 3600]], 3600)).toBeCloseTo(600 / 1800, 9);
   });
 
-  it("is full at the end of the window and never past it", () => {
-    expect(waitShare(1800, 3600, 3600)).toBe(1);
-    expect(waitShare(1800, 4000, 3600)).toBe(1);
+  it("is full when all of the window is heard and never past it", () => {
+    expect(waitShare(1800, [[0, 3600]], 3600)).toBe(1);
+    expect(waitShare(1800, [[0, 4000]], 3600)).toBe(1);
   });
 });

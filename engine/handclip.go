@@ -38,13 +38,18 @@ func NewClipID() string {
 	return fmt.Sprintf("clip-%d", time.Now().UnixNano())
 }
 
-// reach is how far past the playhead the words have to be heard for the
-// clip: a sentence's reach, and Longest more for a clip that grows forward.
-func (r ClipRequest) reach(longest float64) float64 {
+// reach is what of the episode has to be heard for the clip: Longest from
+// the playhead the way the clip grows, and on both sides the line the
+// playhead stands in and a sentence's reach from it, where the clip's
+// edges are put.
+func (r ClipRequest) reach(longest, duration float64) Window {
+	before, after := 2*sentenceReach, 2*sentenceReach
 	if r.Backward {
-		return r.At + sentenceReach
+		before += longest
+	} else {
+		after += longest
 	}
-	return r.At + longest + sentenceReach
+	return Window{max(0, r.At-before), min(duration, r.At+after)}
 }
 
 // MakeClip makes a clip at a moment as a job, with a record, so it is cut
@@ -99,8 +104,7 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn
 		return "", err
 	}
 	o := p.Base
-	end := min(req.reach(o.Max), source.Duration)
-	if err := p.hear(ctx, stepOf, end, end >= source.Duration-0.05); err != nil {
+	if err := p.hear(ctx, stepOf, req.reach(o.Max, source.Duration)); err != nil {
 		return "", err
 	}
 	stepCtx, release, err := stepOf(ctx, StepFraming)

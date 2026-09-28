@@ -5,13 +5,15 @@
   // preview.
   import { onMount } from "svelte";
   import { clock, type WindowView } from "../lib/api";
+  import { gapsIn, type Parts } from "../lib/flow";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
 
   let {
     duration,
-    covered = duration,
+    heard = [[0, duration]],
+    live = null,
     from = $bindable(0),
     to = $bindable(0),
     onmoved,
@@ -31,7 +33,11 @@
     reachSays = "",
   }: {
     duration: number;
-    covered?: number;
+    // What of the episode is heard, in parts, the part being heard among
+    // them, and that part itself, from where it began to where it has got,
+    // or null while nothing is being heard.
+    heard?: Parts;
+    live?: [number, number] | null;
     from: number;
     to: number;
     onmoved?: (edge: "from" | "to") => void;
@@ -165,8 +171,40 @@
   }
 
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
-  const pending = $derived(duration > 0 && covered < duration - 0.5);
-
+  // What is not heard yet. A gap too short to see is no gap.
+  const gaps = $derived(duration > 0 ? gapsIn(heard, 0, duration).filter(([a, b]) => b - a > 0.5) : []);
+  const pending = $derived(gaps.length > 0);
+  // The part being heard runs into the gap that starts where it has got.
+  // Its stretch of the track is from where it began to the end of that
+  // gap, which stays put while it is heard, so its shade and its fill are
+  // laid out once and only slide.
+  const liveGap = $derived(live ? gaps.find(([a]) => Math.abs(a - live[1]) < 0.05) : undefined);
+  const liveSpan = $derived<[number, number] | null>(
+    live && liveGap ? [Math.min(live[0], liveGap[0]), liveGap[1]] : null,
+  );
+  // Each gap in the dark, with the edge its shade starts from.
+  const shades = $derived(
+    gaps.map(([a, b]) => ({
+      from: liveSpan && liveGap && a === liveGap[0] ? liveSpan[0] : a,
+      to: b,
+      edge: a,
+      live: !!liveGap && a === liveGap[0],
+      // A fill ends where it starts, and its head is the line there.
+      waiting: heard.some(([, end]) => Math.abs(end - a) < 0.05),
+    })),
+  );
+  // What is heard wears the fill, standing still, but for the part being
+  // heard, which fills its own stretch as it goes.
+  const heardFills = $derived.by((): Parts => {
+    if (!pending) return [];
+    if (!liveSpan) return heard;
+    const out: Parts = [];
+    for (const [a, b] of heard) {
+      if (a < liveSpan[0]) out.push([a, Math.min(b, liveSpan[0])]);
+      if (b > liveSpan[1]) out.push([Math.max(a, liveSpan[1]), b]);
+    }
+    return out.filter(([a, b]) => b - a > 0.01);
+  });
   // Whether the edge of the transcript may glide to where it is going. It
   // is off for the first frame, so the edge is simply where it is when the
   // track appears, and on from then on, so every step after that reads as
@@ -370,22 +408,38 @@
        its fill and stands still, the way Busy draws any work that is not
        moving, so what has been read never disappears from the track and
        comes back. -->
-  {#if pending && covered > 0}
+  {#each heardFills as [a, b] (a)}
+    <span class="busyhost" style="left: {at(a)}px; width: {at(b) - at(a)}px"
+      ><Busy fraction={1} rim={false} still /></span
+    >
+  {/each}
+  {#if liveSpan && live}
     <span
       class="busyhost"
       class:glide={glide && !holding}
       class:held={holding}
-    ><Busy fraction={duration > 0 ? covered / duration : 0} rim={false} still={!transcribing} /></span>
+      style="left: {at(liveSpan[0])}px; width: {at(liveSpan[1]) - at(liveSpan[0])}px"
+      ><Busy
+        fraction={(live[1] - liveSpan[0]) / Math.max(liveSpan[1] - liveSpan[0], 0.001)}
+        rim={false}
+        still={!transcribing}
+      /></span
+    >
   {/if}
-  {#if pending}
-    <div
-      class="pending"
-      class:waiting={covered > 0}
-      class:glide={glide && !holding}
-      class:held={holding}
-      style="transform: translateX({at(covered)}px)"
-    ></div>
-  {/if}
+  <!-- Each stretch not heard yet is dark from its edge on. The dark is as
+       wide as the stretch and slides by transform, so the edge of the part
+       being heard is only ever moved, never laid out again. -->
+  {#each shades as g (g.from)}
+    <div class="gap" style="left: {at(g.from)}px; width: {at(g.to) - at(g.from)}px">
+      <div
+        class="pending"
+        class:waiting={g.waiting}
+        class:glide={g.live && glide && !holding}
+        class:held={holding}
+        style="transform: translateX({at(g.edge) - at(g.from)}px)"
+      ></div>
+    </div>
+  {/each}
   {#each searched as w, i (i)}
     <div
       class="done"
@@ -477,9 +531,9 @@
          reads. -->
     <Info label="What the range picker is" side="right">
       {#if pending}
-        The whole episode. The dark part is not read yet, and the line is how far it has got. A
-        search reads as far as its window, and while another one finds its clips the reading waits
-        and carries on after.
+        The whole episode. The dark parts are not read yet. A search reads its window and a clip
+        made by hand the minute around it, first, and while another one finds its clips the reading
+        waits and carries on after.
       {:else}
         The whole episode. Drag to draw the window the model will search, or drag the window and
         its edges. Double-click for all of it. A window is at most as long as the model can read at
@@ -677,6 +731,15 @@
      two varied by 1.80 pixels. A transform is carried by the compositor,
      like the mark's, so the two move as one thing.
      The track clips what runs past its right edge. */
+  /* A stretch not heard yet. It clips the dark sliding inside it. */
+  .gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   .pending {
     position: absolute;
     top: 0;
@@ -716,13 +779,16 @@
      it was going, which is a second of an edge still sliding after the
      press. Saying none outright ends it, and the edge lands on the second
      the work really reached. */
-  /* The host of the work in hand drawn over the track. It lies under the
-     window, the searched parts and the marks, like the track's own shade,
-     and it glides the way the shade's edge does. */
+  /* The host of the work in hand drawn over a part of the track. It lies
+     under the window, the searched parts and the marks, like the track's
+     own shade, and it glides the way the shade's edge does. Square, since
+     a part meets the next one inside the track, and the track clips its
+     own corners. */
   .busyhost {
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
+    top: 0;
+    bottom: 0;
+    border-radius: 0;
     pointer-events: none;
     --fill-glide: 0s;
   }

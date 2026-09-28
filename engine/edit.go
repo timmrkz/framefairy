@@ -144,20 +144,22 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // step. The file is replaced atomically, so a crash never leaves half a
 // plan. The result is checked with the same loader a render uses before it
 // is written.
-// Edits of one plan happen one at a time. Every edit reads the file, changes
-// it and writes it back, and the app has no save button, so an edit that
-// lands while another is being written must not be the one that disappears.
-var planLocks sync.Map
+//
+// Edits of one file happen one at a time, a plan's or a transcript's. Every
+// edit reads the file, changes it and writes it back, and the app has no
+// save button, so an edit that lands while another is being written must
+// not be the one that disappears.
+var fileLocks sync.Map
 
-func lockPlan(path string) func() {
-	held, _ := planLocks.LoadOrStore(resolvePath(path), &sync.Mutex{})
+func lockFile(path string) func() {
+	held, _ := fileLocks.LoadOrStore(resolvePath(path), &sync.Mutex{})
 	mu := held.(*sync.Mutex)
 	mu.Lock()
 	return mu.Unlock
 }
 
 func editPlan(path string, change func(top *object, clips []*object) error) error {
-	defer lockPlan(path)()
+	defer lockFile(path)()
 	return editPlanLocked(path, change)
 }
 
@@ -210,7 +212,7 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 // Without the lock a search can land in the middle of an edit reading the
 // file, changing it and writing it back.
 func writePlanFile(path string, body []byte) error {
-	defer lockPlan(path)()
+	defer lockFile(path)()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -266,7 +268,7 @@ var errNotAdded = errors.New("the part this clip lies in was removed")
 // would bring back what was just taken away. A plan that is gone
 // altogether is reported as the missing file it is.
 func appendClip(path string, clip PlanClip) error {
-	defer lockPlan(path)()
+	defer lockFile(path)()
 	return appendClipLocked(path, clip)
 }
 
@@ -327,7 +329,7 @@ func appendClipLocked(path string, clip PlanClip) error {
 // set's lock, so two clips made at the same moment never take the same
 // one. It answers with the clip as it went in.
 func addClip(path string, set PlanFile, clip PlanClip, prefix string) (PlanClip, error) {
-	defer lockPlan(path)()
+	defer lockFile(path)()
 	clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(path, prefix)+1)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return clip, appendClipLocked(path, clip)
@@ -1158,7 +1160,7 @@ func RemovePlan(planPath, captionsDir string) error {
 		return renderErr("%s is not a plan", filepath.Base(planPath))
 	}
 	// An edit of this plan may be halfway through writing it.
-	defer lockPlan(planPath)()
+	defer lockFile(planPath)()
 	_, clips, err := LoadClips(planPath)
 	if err != nil && !os.IsNotExist(err) {
 		return err

@@ -40,8 +40,15 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 		// search has nothing to wait for once it comes to finding.
 		// A window to the end of the episode, To 0, is never heard before
 		// the transcript is finished.
-		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done &&
-			(req.To <= 0 || covered < req.To-0.05) {
+		model := s.store.Settings().ASRModel
+		unheard := false
+		if req.To <= 0 {
+			_, done := engine.Coverage(p.Source, model)
+			unheard = !done
+		} else {
+			unheard = len(engine.Unheard(p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
+		}
+		if unheard {
 			go func() {
 				defer func() { _ = recover() }()
 				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {

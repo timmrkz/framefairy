@@ -817,15 +817,19 @@ place.
       marked or not. A press that wobbles a few pixels is still a click, so
       nothing is drawn by accident.
     - Double-click it for the whole episode.
-    - The part not yet transcribed is darker, with a line at the edge where
+    - What is not transcribed yet is darker, with a line at the edge where
       the transcript has got to, and a light passing over it while the
-      transcription runs.
+      transcription runs. The transcript is heard in parts, where a search
+      or a clip made by hand needs it first, so there can be more than one
+      dark stretch, each with its edge. What is heard wears the fill,
+      still, and the part being heard fills as it goes, from where it
+      began.
     - The window is locked while clips are being found.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
   tall as the video preview and the range picker need. If the transcript has
-  not reached the end of the chosen window yet, a search waits for it and
-  starts by itself.
+  not heard all of the chosen window yet, a search has what is missing
+  heard first and then finds its clips by itself.
 - **One mark explains one thing, where that thing is.** The video preview,
   the range picker and the clip timeline each carry their own info mark in
   their top right corner, and a mark only appears while the pointer is on

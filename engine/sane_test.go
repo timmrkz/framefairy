@@ -43,7 +43,7 @@ func TestAnEventTheWindowCannotBeToldAboutIsNeverSent(t *testing.T) {
 			got = append(got, ev)
 			mu.Unlock()
 		})
-		l.ProgressTo("transcribing", c.fraction, c.remaining, c.covered)
+		l.ProgressTo("transcribing", c.fraction, c.remaining, c.covered, c.covered)
 		if len(got) != 1 {
 			t.Fatalf("%s: %d events", c.what, len(got))
 		}
@@ -92,7 +92,7 @@ func TestNothingThatLeavesTheLogCanFailToEncode(t *testing.T) {
 	awkward := []float64{math.NaN(), math.Inf(1), math.Inf(-1), 0, 1, -7, math.MaxFloat64}
 	for _, f := range awkward {
 		for _, r := range awkward {
-			l.ProgressTo("working", f, r, f)
+			l.ProgressTo("working", f, r, f, f)
 			l.ProgressOf("working", f, r)
 		}
 	}

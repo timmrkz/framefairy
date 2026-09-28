@@ -420,14 +420,14 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan})
 	defer j.end(&err)
 
-	end, whole, err := p.windowEnd(ctx, req)
+	end, err := p.windowEnd(ctx, req)
 	if err != nil {
 		return "", err
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, turn, step)
 	}
-	if err := p.hear(ctx, stepOf, end, whole); err != nil {
+	if err := p.hear(ctx, stepOf, Window{req.From, end}); err != nil {
 		return "", err
 	}
 	stepCtx, release, err := j.turn(ctx, turn, StepFinding)
@@ -438,57 +438,51 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	return p.Plan(stepCtx, req)
 }
 
-// hear makes the one transcript reach end, heard in order from where it
-// stands and held there, the way every job that needs words has it heard.
-// It takes a turn in the lane of hearing, through turn, for as long as
-// there is anything to hear. whole hears to the end of the episode, which
-// finishes the transcript rather than holding it.
+// hear has the one transcript hear a span of the episode, the way every job
+// that needs words has it heard: only what of the span it has not heard
+// yet, wherever that is. It takes a turn in the lane of hearing, through
+// turn, for as long as there is anything to hear.
 func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (context.Context, func(), error),
-	end float64, whole bool) error {
-	if !whole {
-		p.StopAt(func() float64 { return end })
-		defer p.StopAt(nil)
-	}
+	span Window) error {
 	for {
-		covered, done := Coverage(p.Source, p.Base.ASRModel)
-		if done || covered >= end-0.05 {
+		if len(Unheard(p.Source, p.Base.ASRModel, span)) == 0 {
 			return nil
 		}
 		stepCtx, release, err := turn(ctx, StepHearing)
 		if err != nil {
 			return err
 		}
-		err = p.Transcribe(stepCtx)
+		err = p.Hear(stepCtx, span)
 		release()
 		if errors.Is(err, ErrCancelled) && ctx.Err() == nil {
 			// The lane was taken back, by a search that finds while this
-			// job hears. What was heard is saved, and the job waits for
-			// its turn to carry on.
+			// job hears, or a clip made by hand that needs words sooner.
+			// What was heard is saved, and the job waits for its turn to
+			// carry on.
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		if covered, done := Coverage(p.Source, p.Base.ASRModel); !done && covered < end-0.05 {
-			return fmt.Errorf("the transcription stopped at %s, before %s", HMS(covered), HMS(end))
+		if gaps := Unheard(p.Source, p.Base.ASRModel, span); len(gaps) > 0 {
+			return fmt.Errorf("the transcription left %s to %s unheard", HMS(gaps[0].Start), HMS(gaps[0].End))
 		}
 	}
 }
 
-// windowEnd is where a search's window ends, and whether that is the end
-// of the episode.
-func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, bool, error) {
+// windowEnd is where a search's window ends.
+func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, error) {
 	info, err := p.engine.Probe(ctx, p.Source)
 	if err != nil {
 		if ctx.Err() != nil {
-			return 0, false, ErrCancelled
+			return 0, ErrCancelled
 		}
-		return 0, false, err
+		return 0, err
 	}
 	if req.To <= 0 || req.To >= info.Duration-0.05 {
-		return info.Duration, true, nil
+		return info.Duration, nil
 	}
-	return req.To, false, nil
+	return req.To, nil
 }
 
 // RenderJob renders clips of a plan, one at a time, and keeps a record of

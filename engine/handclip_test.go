@@ -62,17 +62,23 @@ func TestAClipMadeByHand(t *testing.T) {
 	if key != HandPlanName+"/h01" {
 		t.Fatalf("made %q", key)
 	}
-	covered, _ := Coverage(source, p.Base.ASRModel)
-	if covered < 20+30 {
-		t.Errorf("heard to %.1f s, not as far as the clip can reach", covered)
+	// Heard where the clip can reach, and not from the start.
+	reach := ClipRequest{At: 20}.reach(30, 70)
+	if gaps := Unheard(source, p.Base.ASRModel, reach); len(gaps) != 0 {
+		t.Errorf("%v not heard, of the %v the clip can reach", gaps, reach)
+	}
+	if covered, _ := Coverage(source, p.Base.ASRModel); covered != 0 {
+		t.Errorf("heard from the start to %.1f s", covered)
 	}
 	view, err := ReadPlan(p.HandPlanPath())
 	if err != nil || len(view.Clips) != 1 {
 		t.Fatalf("%v %+v", err, view)
 	}
 	c := view.Clips[0]
-	if c.Start > 20 || c.Duration < 20 || c.Duration > 30.5 {
-		t.Errorf("the clip runs %.1f s from %.1f s, want 20 to 30 s from the line at 20 s", c.Duration, c.Start)
+	// How long it grows is TestWhatThePlayheadProposes. Here it holds the
+	// playhead and is no longer than Longest.
+	if c.Start > 20 || c.Start+c.Duration < 20 || c.Duration > 30.5 {
+		t.Errorf("the clip runs %.1f s from %.1f s, want at most 30 s from the line at 20 s", c.Duration, c.Start)
 	}
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)

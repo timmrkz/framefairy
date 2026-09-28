@@ -306,7 +306,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 // came is not how far this one is, so the progress starts again with it.
 func (q *queue) turn(job *Job) engine.Turn {
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
-		lane, kind := laneOfStep(step)
+		lane, kind := laneOfStep(job.Kind, step)
 		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
 		if err != nil {

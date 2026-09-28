@@ -21,10 +21,10 @@ import (
 // The loudness of the whole episode
 //
 // The waveform used to come from the transcription, which measures the
-// loudness as it hears. The transcription stops at the end of the window
-// the first search needs, so the rest of the clip timeline stayed bare
-// until a search reached it, and the first minutes stayed bare until the
-// speech model had loaded.
+// loudness as it hears. The transcription hears only what a search or a
+// clip made by hand needs, so the rest of the clip timeline stayed bare
+// until one reached it, and the first minutes stayed bare until the speech
+// model had loaded.
 //
 // Measuring the loudness needs no speech model. It is the audio decoded and
 // a sum of squares every 10 ms, the same frames the transcription measures,
@@ -341,19 +341,7 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	focus func() (float64, float64), tell func()) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
-	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
-	// The first few hundredths of a second after a seek come out of the
-	// decoder wrong, up to 4 dB off at the join, because a packet of
-	// compressed audio is decoded together with the one before it. So it
-	// starts a little early and throws that away.
-	lead := min(start, levelsLead)
-	if start > 0 {
-		// Before the input, so ffmpeg seeks rather than decodes its way
-		// there, and to the sample, since it trims what it decoded before.
-		args = append(args, "-ss", strconv.FormatFloat(float64(start-lead)*FrameSeconds, 'f', 2, 64))
-	}
-	args = append(args, "-i", source,
-		"-map", "0:a:0", "-ac", "1", "-ar", itoa(SampleRate), "-f", "f32le", "-")
+	args, lead := audioFrom(source, start)
 	cmd := exec.CommandContext(run, e.FFmpeg, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -417,9 +405,30 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	return nil
 }
 
-// levelsLead is how many frames before where it starts a measuring decodes
+// levelsLead is how many frames before where it starts a reading decodes
 // and throws away, a fifth of a second.
 const levelsLead = 20
+
+// audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
+// from frame start on, for the loudness and for the transcription alike,
+// and how many frames before start come first, to be thrown away.
+//
+// The first few hundredths of a second after a seek come out of the
+// decoder wrong, up to 4 dB off at the join, because a packet of compressed
+// audio is decoded together with the one before it. So it starts a little
+// early and throws that away. The seek goes before the input, so ffmpeg
+// seeks rather than decodes its way there, and it lands on the sample,
+// since ffmpeg trims what it decoded before it. A frame is 10 ms, so two
+// decimals are exact.
+func audioFrom(source string, start int) ([]string, int) {
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
+	lead := min(start, levelsLead)
+	if start > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(float64(start-lead)*FrameSeconds, 'f', 2, 64))
+	}
+	return append(args, "-i", source,
+		"-map", "0:a:0", "-ac", "1", "-ar", itoa(SampleRate), "-f", "f32le", "-"), lead
+}
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
 // hands each to put, which says whether to go on. Every levelsEvery it asks

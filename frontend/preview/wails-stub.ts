@@ -506,7 +506,7 @@ function searchJob(s: FakeSearch) {
     const end = s.to > 0 ? s.to : fullLength;
     const share = Math.min(Math.max((covered - s.heardFrom) / Math.max(end - s.heardFrom, 1), 0), 1);
     const remaining = Math.max(end - covered, 0) / hearsPerSecond;
-    return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, covered, elapsed: 1, time: "" } };
+    return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, from: s.heardFrom, covered, elapsed: 1, time: "" } };
   }
   const lasts = findFor();
   const text = now.found ? `${now.found} of 12 found` : "Finding clips";
@@ -579,8 +579,42 @@ function handAt(h: FakeHand, now = Date.now()) {
   }
   return { state: "done", step: "", start, end: start + 25, since, share: 1 };
 }
+// The part a clip made by hand has the engine hear, the minute around the
+// playhead, see ClipRequest.reach, and what of it is heard so far.
+function handReach(h: FakeHand): [number, number] {
+  const r = 16;
+  return h.backward
+    ? [Math.max(0, h.at - 30 - r), Math.min(fullLength, h.at + r)]
+    : [Math.max(0, h.at - r), Math.min(fullLength, h.at + 30 + r)];
+}
+function handHeard(h: FakeHand): [number, number] | null {
+  if (!h.hears) return null;
+  const now = handAt(h);
+  const [a, b] = handReach(h);
+  if (now.step === "hearing") return [a, a + (b - a) * now.share];
+  if (now.state === "running" || now.state === "done") return [a, b];
+  return null;
+}
+// What the transcript on disk has heard: from the start as far as the
+// searches got, and the parts the clips made by hand had heard.
+function heardParts(): [number, number][] {
+  const parts: [number, number][] = [[0, savedCovered()]];
+  for (const h of hands()) {
+    const p = handHeard(h);
+    if (p && p[1] > p[0]) parts.push(p);
+  }
+  parts.sort((x, y) => x[0] - y[0]);
+  const out: [number, number][] = [];
+  for (const [a, b] of parts) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else if (b > a) out.push([a, b]);
+  }
+  return out;
+}
 function handJob(h: FakeHand) {
   const now = handAt(h);
+  const reach = handReach(h);
   const running = now.state === "running";
   return {
     id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
@@ -588,7 +622,7 @@ function handJob(h: FakeHand) {
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
     underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step }] : undefined,
-    progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, elapsed: 1, time: "" } : undefined,
+    progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" } : undefined,
   };
 }
 // The clips made by hand that have landed.
@@ -842,11 +876,11 @@ export const Call = {
         return Promise.resolve(null);
       case "Library":
         return Promise.resolve([
-          { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
-          { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
+          { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, heard: [[0, 14423]], transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
+          { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
         ]);
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number };
@@ -856,7 +890,9 @@ export const Call = {
       case "MakeClip": {
         const at = Number(args[1]);
         const list = hands();
-        const made = { id: `h${list.length + 1}`, n: list.length + 1, at, backward: !!args[2], wall: Date.now(), hears: at > savedCovered() };
+        const made = { id: `h${list.length + 1}`, n: list.length + 1, at, backward: !!args[2], wall: Date.now(), hears: false };
+        const reach = handReach(made);
+        made.hears = !heardParts().some(([a, b]) => a <= reach[0] && b >= reach[1]);
         list.push(made);
         return Promise.resolve(handJob(made));
       }
@@ -929,7 +965,7 @@ export const Call = {
         if (location.search.includes("uneven")) {
           const lines = [];
           for (let at = 0; at + 3 <= 3600; at += 4) lines.push({ start: at, end: at + 3, chars: 80 });
-          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: 3600, rate: 30 });
+          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: [[0, 3600]], rate: 30 });
         }
         // A model that reads everything, or with ?small one that reads
         // about 35 minutes at a time, the way Qwen3 14B does, and with
@@ -938,7 +974,7 @@ export const Call = {
           chars: location.search.includes("small") ? 52000 : location.search.includes("memory") ? 117000 : 600000,
           by: location.search.includes("memory") ? "memory" : "context",
           lines: [],
-          heard: 0,
+          heard: [],
           rate: 25,
         });
       case "Captions":
