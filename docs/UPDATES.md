@@ -262,8 +262,11 @@ How it would work:
   repository is public, so the runner costs nothing.
 - **Each pull request is a channel**, `pr-18`, and main is one too. All
   their builds are files of one pre-release, `dev`. A version reads like
-  `0.3.0-pr18.7`, where 7 is the workflow's run number, so a newer commit
-  is a newer version.
+  `0.3.0-pr18.a1b2c3d`, where `a1b2c3d` is the commit it was built from,
+  shortened the way git and GitHub shorten it. It used to end in the
+  workflow's run number, which said nothing about what was in the build.
+  Nothing orders builds by their version: the app installs whatever build
+  its channel has when it is not the one running.
 - **Only a development build sees them.** A build made for Tim shows, next
   to Check for Updates, which channel it follows: main or one of the open
   pull requests, by number and title. A customer's build is made without
@@ -356,9 +359,9 @@ with its newest build, so one fetch is the whole check:
     {
       "channel": "pr-18",
       "name": "#18 How the app updates itself",
-      "version": "0.3.0-pr18.51",
+      "version": "0.3.0-pr18.a1b2c3d",
       "commit": "a1b2c3d4e5f6",
-      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-18-0.3.0-pr18.51.zip",
+      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-18-0.3.0-pr18.a1b2c3d.zip",
       "size": 187000000,
       "sha256": "…",
       "signature": "…",
@@ -396,15 +399,15 @@ with its newest build, so one fetch is the whole check:
    it to `/Applications`. Built on the Mac, it carries no quarantine mark,
    so macOS opens it. From then on it is started like any other app, not
    from the terminal.
-3. **Tim picks #18** under Updates, Follows. Updates is the last row of
+3. **Tim picks #18** in the list on the Updates page. Updates is the last row of
    the sidebar, and it says which build is running. The app reads the
    channel list, downloads #18's build with the fill on the Check button,
    checks it against the key, and says it is ready. Updates on the rail
    gets a dot. Tim clicks **Update**, and the app comes back as pull
-   request 18. The sidebar says `0.3.0-pr18.3`, and the page adds the
-   commit.
+   request 18. The sidebar says `0.3.0-pr18.a1b2c3d`, and the page adds
+   the commit, which opens on GitHub.
 4. **Claude pushes to pull request 18.** A few minutes later the workflow
-   has built `0.3.0-pr18.52`, signed it, and put it in the channel list.
+   has built `0.3.0-pr18.e4f5a6b`, signed it, and put it in the channel list.
    The app looks by itself the moment it starts and every ten minutes
    after, downloads it quietly and puts the dot on Updates. One click,
    one restart. Check looks at once.
@@ -433,7 +436,7 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, and Follows, which names the channel and nothing more, Branch main or Pull request #18, and opens from its right edge. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Update, which restarts into the new build. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Update, which restarts into the new build. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The workflow | `.github/workflows/builds.yml` | builds main and every pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list. A push that only changes docs gets no build |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |

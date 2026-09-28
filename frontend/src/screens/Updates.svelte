@@ -112,9 +112,8 @@
   }
 
   const short = (commit: string) => commit.slice(0, 7);
-  const next = $derived(
-    update ? `${update.next}${update.nextCommit ? `, commit ${short(update.nextCommit)}` : ""}` : "",
-  );
+  // A build's version ends in its commit, so the version says it all.
+  const next = $derived(update?.next ?? "");
 
   // Where things stand, in the words of the line under the build: what it
   // is in a few words, then what that means.
@@ -159,7 +158,7 @@
         more: "It follows no channel. Pick one, and it downloads that channel's newest build.",
       };
     }
-    return { mark: "idle", head: "Not checked yet", more: "It looks by itself every ten minutes." };
+    return { mark: "idle", head: "Not checked yet", more: "It looks when the app starts and every ten minutes." };
   });
 
   const looking = $derived(update?.phase === "checking");
@@ -190,13 +189,18 @@
         <Icon name="update" size={24} />
         <div class="words">
           <span class="version num selectable">{update.version}</span>
-          <span class="muted small num selectable">
-            {update.commit ? `Commit ${short(update.commit)}` : "Built on this Mac"}
+          <span class="muted small num">
+            {#if update.commit}Commit <button
+                class="link num"
+                title="Opens this commit on GitHub"
+                onclick={() => api.openCommit().catch((e) => (problem = errorText(e)))}>{short(update.commit)}</button
+              >{:else}Built on this Mac{/if}
           </span>
         </div>
         <span class="grow"></span>
+        <!-- What the list is for is in its title. A word in front of it
+             said nothing the list does not say. -->
         {#if !update.off}
-          <label for="channel" class="muted">Follows</label>
           <Pick
             value={following}
             options={channelOptions}
@@ -204,7 +208,7 @@
             id="channel"
             label="Channel"
             align="right"
-            title="Where the next build comes from: main, or one pull request"
+            title="Where this app updates from: main, or one pull request. It looks when the app starts and every ten minutes, and downloads the newest build by itself"
             tone={update.phase === "gone" ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />

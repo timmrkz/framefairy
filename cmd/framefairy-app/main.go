@@ -27,6 +27,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/notices"
+	"framefairy/updates"
 )
 
 // dist/app/ holds the interface that make builds from frontend/. It is not
@@ -292,6 +293,19 @@ func (s *FrameFairy) FollowChannel(channel string) error { return s.updates.Foll
 
 // CheckForUpdates looks for a newer build now, and downloads it.
 func (s *FrameFairy) CheckForUpdates() { go s.updates.check() }
+
+// OpenCommit opens the commit the running build was made from, on
+// GitHub, in the browser. Only that commit, never one the interface names.
+func (s *FrameFairy) OpenCommit() error {
+	u := updates.CommitURL(buildCommit)
+	if u == "" {
+		return errors.New("this build was made on this Mac and has no commit")
+	}
+	if s.app == nil {
+		return errors.New("there is no app to open it from")
+	}
+	return s.app.Browser.OpenURL(u)
+}
 
 // RestartToUpdate quits into the build that is ready.
 func (s *FrameFairy) RestartToUpdate() error { return s.updates.Restart() }

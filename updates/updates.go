@@ -34,10 +34,22 @@ import (
 	"time"
 )
 
+// Repository is where the app's code and its builds live.
+const Repository = "https://github.com/timmrkz/framefairy"
+
 // ListURL is where every development build looks for the channel list: a
 // file of the release called dev in this repository, which the build
 // workflow writes again whenever a channel gets a new build.
-const ListURL = "https://github.com/timmrkz/framefairy/releases/download/dev/channels.json"
+const ListURL = Repository + "/releases/download/dev/channels.json"
+
+// CommitURL is the page of a commit of this repository, or empty when
+// what it is given is not a commit.
+func CommitURL(commit string) string {
+	if !commitPattern.MatchString(commit) {
+		return ""
+	}
+	return Repository + "/commit/" + commit
+}
 
 // MaxList is the most a channel list may weigh. A few hundred bytes a
 // channel, so this is room for thousands.

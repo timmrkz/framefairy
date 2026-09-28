@@ -511,6 +511,9 @@ export const Call = {
       case "RestartToUpdate":
         (window as any).__restarted = true;
         return Promise.resolve(null);
+      case "OpenCommit":
+        (window as any).__openedCommit = true;
+        return Promise.resolve(null);
       case "Platform":
         return Promise.resolve(location.search.includes("linux") ? "linux" : "darwin");
       // The real notices, the ones the app builds in, so the page is looked
@@ -1120,9 +1123,9 @@ export const Call = {
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
 const updChannels = [
-  { id: "main", name: "main", version: "0.3.0-main.40" },
-  { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.12" },
-  { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr18.51" },
+  { id: "main", name: "main", version: "0.3.0-main.9f8e7d6" },
+  { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.c0ffee1" },
+  { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr18.a1b2c3d" },
 ];
 let upd: any = null;
 // The download in hand, stopped when another channel is picked, the way
@@ -1133,7 +1136,7 @@ const updNow = () => {
   const local = location.search.includes("makebuild");
   const gone = location.search.includes("prgone");
   upd = {
-    version: local ? "0.3.0-local" : "0.3.0-pr18.51",
+    version: local ? "0.3.0-local" : "0.3.0-pr18.a1b2c3d",
     commit: local ? "" : "a1b2c3d4e5f6",
     channel: local ? "" : "pr-18",
     off: location.search.includes("updatesoff")

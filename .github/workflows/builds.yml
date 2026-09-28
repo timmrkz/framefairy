@@ -97,18 +97,23 @@ jobs:
         env:
           NUMBER: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title }}
-          RUN: ${{ github.run_number }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        # A build is named by the commit it was made from, the way git and
+        # GitHub shorten it, so its version says what is in it. Nothing
+        # orders builds by their version: the app installs whatever build
+        # its channel has when it is not the one running, and the list
+        # keeps a channel's newest by when it was published.
         run: |
           engine=$(awk -F'"' '/^const Version = /{ print $2; exit }' engine/log.go)
+          short=$(echo "$SHA" | cut -c1-7)
           if [ -n "$NUMBER" ]; then
             channel="pr-$NUMBER"
             name="#$NUMBER $TITLE"
-            version="$engine-pr$NUMBER.$RUN"
+            version="$engine-pr$NUMBER.$short"
           else
             channel=main
             name=main
-            version="$engine-main.$RUN"
+            version="$engine-main.$short"
           fi
           {
             echo "channel=$channel"

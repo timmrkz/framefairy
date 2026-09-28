@@ -400,3 +400,14 @@ func FuzzParse(f *testing.F) {
 }
 
 func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+func TestCommitURLOnlyNamesACommit(t *testing.T) {
+	if got := CommitURL("a1b2c3d4e5f6"); got != "https://github.com/timmrkz/framefairy/commit/a1b2c3d4e5f6" {
+		t.Errorf("got %q", got)
+	}
+	for _, c := range []string{"", "abc", "../../evil", "A1B2C3D", "a1b2c3d?x=1", "a1b2c3d/../x"} {
+		if got := CommitURL(c); got != "" {
+			t.Errorf("%q gave %q", c, got)
+		}
+	}
+}
