@@ -205,7 +205,7 @@ What the common apps do, bent to [the interface rules](../CLAUDE.md#interface-ru
 - **Clicking it says what is new**, from the release notes, with **Update**
   and **Later**. Update downloads with the fill every download in the app
   already wears, in the control it was started from.
-- **It installs when the app quits**, or at once with **Update** if the
+- **It installs when the app quits**, or at once with **Relaunch** if the
   person asks. Never while a search, a render or a transcription runs.
 - **Check for Updates** in the app menu, where every Mac app has it.
 - **A setting** to turn the daily check off, for someone who wants to be
@@ -262,8 +262,11 @@ How it would work:
   repository is public, so the runner costs nothing.
 - **Each pull request is a channel**, `pr-18`, and main is one too. All
   their builds are files of one pre-release, `dev`. A version reads like
-  `0.3.0-pr18.7`, where 7 is the workflow's run number, so a newer commit
-  is a newer version.
+  `0.3.0-pr18.a1b2c3d`, where `a1b2c3d` is the commit it was built from,
+  shortened the way git and GitHub shorten it. It used to end in the
+  workflow's run number, which said nothing about what was in the build.
+  Nothing orders builds by their version: the app installs whatever build
+  its channel has when it is not the one running.
 - **Only a development build sees them.** A build made for Tim shows, next
   to Check for Updates, which channel it follows: main or one of the open
   pull requests, by number and title. A customer's build is made without
@@ -356,9 +359,9 @@ with its newest build, so one fetch is the whole check:
     {
       "channel": "pr-18",
       "name": "#18 How the app updates itself",
-      "version": "0.3.0-pr18.51",
+      "version": "0.3.0-pr18.a1b2c3d",
       "commit": "a1b2c3d4e5f6",
-      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-18-0.3.0-pr18.51.zip",
+      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-18-0.3.0-pr18.a1b2c3d.zip",
       "size": 187000000,
       "sha256": "…",
       "signature": "…",
@@ -396,30 +399,60 @@ with its newest build, so one fetch is the whole check:
    it to `/Applications`. Built on the Mac, it carries no quarantine mark,
    so macOS opens it. From then on it is started like any other app, not
    from the terminal.
-3. **Tim picks #18** under Updates, Follows. Updates is the last row of
+3. **Tim picks #18** in the list on the Updates page. Updates is the last row of
    the sidebar, and it says which build is running. The app reads the
    channel list, downloads #18's build with the fill on the Check button,
    checks it against the key, and says it is ready. Updates on the rail
-   gets a dot. Tim clicks **Update**, and the app comes back as pull
-   request 18. The sidebar says `0.3.0-pr18.3`, and the page adds the
-   commit.
+   gets a dot. Tim clicks **Relaunch**, and the app comes back as pull
+   request 18. The sidebar says `0.3.0-pr18.a1b2c3d`, and the page adds
+   the commit, which opens on GitHub.
 4. **Claude pushes to pull request 18.** A few minutes later the workflow
-   has built `0.3.0-pr18.52`, signed it, and put it in the channel list.
-   The app looks by itself every ten minutes, downloads it quietly and
-   puts the dot on Updates. One click, one restart. Check looks at once.
+   has built `0.3.0-pr18.e4f5a6b`, signed it, and put it in the channel list.
+   The app looks by itself the moment it starts and every ten minutes
+   after, downloads it quietly and puts the dot on Updates. One click,
+   one restart. Check looks at once.
 5. **Tim picks #20**, or main. The app downloads that channel's newest
    build, sideways, and says it is ready. A pick while another channel's
    build is downloading stops that download at once, and the page shows
    the new channel from the moment of the pick. Whatever the download
    before says after that, its progress or that it finished, is thrown
    away rather than shown: every pick starts a round of its own, and a
-   check only speaks for the round it began in.
+   check only speaks for the round it began in. Going back to a channel
+   whose build was downloaded before does not download it again: every
+   build that arrives whole is kept, under its SHA-256, in
+   `~/Library/Caches/FrameFairy/builds`, and a pick that comes back to it
+   has it ready in the time it takes to unpack. A kept build is used only
+   while it still hashes to what the list says, and the updater checks it
+   again, checksum and signature, as it checks a download.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
    it downloads nothing. The page says **Pull request #18 is closed**,
    the list names it, closed, in the colour of a warning, and nothing
-   downloads until another channel is picked. It used to follow main by
-   itself, and Tim, meaning to pick another pull request, watched main
-   download without having asked for it.
+   downloads until another channel is picked. The build kept for it is
+   removed the next time the list is read, and so is any build a newer
+   push has replaced: nothing is kept that the list does not name. It
+   used to follow main by itself, and Tim, meaning to pick another pull
+   request, watched main download without having asked for it.
+
+**Quitting with a build ready puts it in place**, the way Chrome does:
+the next start is the new build, and nothing opens by itself in between.
+Relaunch does the same at once, through Wails' updater, whose own step
+always opens the app again. So quitting starts a step of our own,
+`install.go`: the same program, started again with three variables in its
+environment, which waits up to a minute for the app to be gone, moves the
+app aside, moves the new build into its place, and only then removes the
+old one. When the new build does not go in whole, the old app is put
+back. It only ever replaces a `.app`, only with a build the updater
+unpacked, and never an app that is still running. When it goes wrong, why
+is in `$TMPDIR/framefairy-install-<pid>.log`. When it goes right, it
+leaves no log.
+
+**The app clears what updating left in the temporary folder** when it
+starts. macOS clears that folder by itself only of what has not been
+touched for days, so every app is meant to tidy up after itself. Removed:
+a log of a step on quit that went wrong, after a week, and after a day
+Wails' log of a Relaunch and a build Wails unpacked and never used.
+Wails names those the same for every app made with it, so only the ones
+about Frame Fairy go.
 
 A build made by `make`, and `make run` is one, follows nothing until a
 channel is picked, and looks only when it is picked or Check is clicked.
@@ -429,10 +462,10 @@ Otherwise every `make run` would fetch a build to replace itself with.
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself |
+| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. The builds downloaded are kept in the user's caches, so a channel picked again has its build at once, and whatever the list stops naming is removed each time it is read |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
-| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check every ten minutes for a build from a channel, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, and Follows, which names the channel and nothing more, Branch main or Pull request #18, and opens from its right edge. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Update, which restarts into the new build. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The workflow | `.github/workflows/builds.yml` | builds main and every pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list. A push that only changes docs gets no build |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
@@ -454,8 +487,8 @@ Still to come, in the order they are needed:
   knows the app by its bundle identifier and the certificate, and asks
   once for good. Developer ID, batch 5.5, ends it. Until then a new build
   asks once. Tim accepted that for now.
-- **Installing when the app quits.** Today a build that is ready waits for
-  Update. Quitting throws it away, and the next start downloads it again.
+- **Installing when the app quits, tried on the Mac.** Built, see below,
+  and not yet seen working on Tim's Mac.
 - **Customers.** The stable channel, Apple's signing and notarisation, the
   release key, and a release build that knows no channel list.
 

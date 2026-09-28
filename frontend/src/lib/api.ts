@@ -594,6 +594,8 @@ export const api = {
   followChannel: (channel: string) => call<void>("FollowChannel", channel),
   checkForUpdates: () => call<void>("CheckForUpdates"),
   restartToUpdate: () => call<void>("RestartToUpdate"),
+  // Opens the commit the running build was made from, on GitHub.
+  openCommit: () => call<void>("OpenCommit"),
 };
 
 export interface JobUpdate {

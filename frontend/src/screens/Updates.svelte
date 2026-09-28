@@ -3,13 +3,16 @@
   // one, in one card: the build and the channel it follows on top, and
   // under it one line that says where things stand, with the one thing to
   // do about it at its end. A newer build downloads by itself, so that
-  // thing is Update once it is here, and Check the rest of the time.
+  // thing is Relaunch once it is here, and Check the rest of the time.
+  // Relaunch is Chrome's word for it: a newer version downloads by itself,
+  // the mark on Updates says it is here, and one click relaunches into it.
   // Reached from Updates at the foot of the sidebar and from Check for
   // Updates in the app menu. See docs/UPDATES.md.
   import { onMount } from "svelte";
   import { api, errorText, onUpdates, size, type UpdateState } from "../lib/api";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
+  import Info from "../components/Info.svelte";
   import Pick from "../components/Pick.svelte";
 
   // A check that finds nothing is over in a tenth of a second, which is
@@ -112,9 +115,8 @@
   }
 
   const short = (commit: string) => commit.slice(0, 7);
-  const next = $derived(
-    update ? `${update.next}${update.nextCommit ? `, commit ${short(update.nextCommit)}` : ""}` : "",
-  );
+  // A build's version ends in its commit, so the version says it all.
+  const next = $derived(update?.next ?? "");
 
   // Where things stand, in the words of the line under the build: what it
   // is in a few words, then what that means.
@@ -133,7 +135,7 @@
         return {
           mark: "new",
           head: "A newer build is ready",
-          more: `${next}. Update restarts the app into it.`,
+          more: `${next}. Relaunch to finish updating, or it goes in when you quit.`,
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
@@ -159,7 +161,7 @@
         more: "It follows no channel. Pick one, and it downloads that channel's newest build.",
       };
     }
-    return { mark: "idle", head: "Not checked yet", more: "It looks by itself every ten minutes." };
+    return { mark: "idle", head: "Not checked yet", more: "It looks when the app starts and every ten minutes." };
   });
 
   const looking = $derived(update?.phase === "checking");
@@ -184,19 +186,38 @@
   {#if problem}<p class="error selectable">{problem}</p>{/if}
 
   {#if update}
-    <div class="card">
+    <div class="card asks">
       <!-- The build, and where the next one comes from. -->
       <div class="item build">
         <Icon name="update" size={24} />
         <div class="words">
           <span class="version num selectable">{update.version}</span>
-          <span class="muted small num selectable">
-            {update.commit ? `Commit ${short(update.commit)}` : "Built on this Mac"}
+          <span class="muted small num">
+            {#if update.commit}Commit <button
+                class="link num"
+                style="--custom-contextmenu: commit"
+                title="Opens this commit on GitHub"
+                onclick={() => api.openCommit().catch((e) => (problem = errorText(e)))}>{short(update.commit)}</button
+              >{:else}Built on this Mac{/if}
           </span>
         </div>
         <span class="grow"></span>
+        <!-- A word in front of the list, Follows, said nothing the list
+             does not say. How updates work is behind the mark beside it,
+             which shows while the pointer is on the card. It is not in the
+             card's corner, as a mark usually is, because the list is: a
+             mark there sat on the list's edge. And a title on the list
+             alone was not seen, since macOS shows one only after the
+             pointer has rested a second. -->
         {#if !update.off}
-          <label for="channel" class="muted">Follows</label>
+          <span class="ask">
+            <Info label="How updates work" side="right">
+              The list says where this app updates from: main, or one pull request. Every push to
+              it makes a new build. The app looks when it starts and every ten minutes, and
+              downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on the way out. The
+              commit under the version opens on GitHub.
+            </Info>
+          </span>
           <Pick
             value={following}
             options={channelOptions}
@@ -204,7 +225,7 @@
             id="channel"
             label="Channel"
             align="right"
-            title="Where the next build comes from: main, or one pull request"
+            title="Where this app updates from: main, or one pull request. It looks when the app starts and every ten minutes, and downloads the newest build by itself"
             tone={update.phase === "gone" ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />
@@ -236,7 +257,7 @@
             onclick={install}
             disabled={restarting}
             title="Quits and comes back as the new build. Waits while work runs"
-            >{#if restarting}<Busy />{/if}{restarting ? "Updating" : "Update"}</button
+            >{#if restarting}<Busy />{/if}{restarting ? "Relaunching" : "Relaunch"}</button
           >
         {:else if !update.off}
           <button
@@ -284,6 +305,8 @@
   .grow {
     flex: 1;
   }
+
+
 
   .build .words {
     flex: none;
