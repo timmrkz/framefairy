@@ -187,6 +187,40 @@ func TestDraftCaptionsAreTheCaptionsTheEditLeaves(t *testing.T) {
 	}
 }
 
+// A word an edge cuts into is captioned exactly while it is said: while the
+// clip holds its middle. It used to need the whole word inside the clip,
+// so a word the clip said had no caption until the edge passed its start.
+func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
+	tr := editableTranscript()
+	for _, c := range []struct {
+		name  string
+		start float64
+		said  bool
+	}{
+		// "eins" runs 10 to 10.5, so its middle is at 10.25.
+		{"edge before the middle", 10.24, true},
+		{"edge after the middle", 10.3, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := editablePlanPath(t)
+			if err := TrimClip(path, "01", c.start, 13.1, tr, 0.1, ToFrames); err != nil {
+				t.Fatal(err)
+			}
+			view, err := ClipCaptionsView(path, "01", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(fmt.Sprint(view.Captions), "eins"); got != c.said {
+				t.Errorf("eins is captioned: %v, said: %v\n%+v", got, c.said, view.Captions)
+			}
+			if c.said && view.Captions[0].Lines[0].Words[0].Start != 0 {
+				t.Errorf("a word cut into starts at %v on the clip's clock, not at its first frame",
+					view.Captions[0].Lines[0].Words[0].Start)
+			}
+		})
+	}
+}
+
 func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	path := editablePlanPath(t)
 	view, err := ClipCaptionsView(path, "01", nil)

@@ -357,7 +357,11 @@ characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next
 caption appears, or until shortly after its last word when a pause follows.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
-estimated.
+estimated. A word is captioned when the clip holds its middle, the same
+rule that decides which words a clip says, so a word an edge cuts into is
+shown from the clip's first frame. It used to have to lie wholly inside
+the clip, and a word the clip said had no caption until an edge had passed
+its first sound.
 
 A corrected word may hold more than one word. The recogniser sometimes hears
 one word where two were said, so a correction like "Und da" for "Und" turns

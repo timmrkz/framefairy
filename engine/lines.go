@@ -346,12 +346,20 @@ func clipLength(clip Clip) float64 {
 // because every word knows where it was spoken. A word corrected into
 // several words becomes one cue per word, so captions break and highlight
 // them one by one.
+//
+// A word belongs to the piece that holds its middle, the same rule that
+// decides which words a clip says, so a word an edge cuts into is captioned
+// as long as it is said, from the edge on. It used to have to lie wholly
+// inside the piece, so a word said in the clip had no caption until the
+// edge had passed its first sound, which an edge put on a frame does all
+// the time.
 func ClipWords(clip Clip) []Cue {
 	var out []Cue
 	offset := 0.0
 	for _, segment := range clip.Segments {
 		for _, word := range clip.Words {
-			if word.Start < segment.Start-0.02 || word.End > segment.End+0.02 {
+			mid := (word.Start + word.End) / 2
+			if mid < segment.Start || mid >= segment.End {
 				continue
 			}
 			start := math.Max(word.Start, segment.Start)
