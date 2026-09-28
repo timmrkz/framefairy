@@ -275,6 +275,10 @@
   // Whether this play is the chosen clip's, with its cuts jumped and a stop
   // at its end, or the episode's, straight on from the playhead.
   let playsClip = false;
+  // The clip a play was decided for. The chosen clip can change while the
+  // video plays, a clip made by hand arriving or a card clicked, and the
+  // play is then decided again for the new one, see tick.
+  let playsFor = "";
 
   function play() {
     if (!video) return;
@@ -284,6 +288,7 @@
     // episode, clip or no clip, so the episode plays on from there. It used
     // to go back to the start of the chosen clip, and a part of the episode
     // could not be heard at all while a clip was chosen.
+    playsFor = clip?.key ?? "";
     playsClip =
       !!clip &&
       (looping ||
@@ -345,6 +350,17 @@
         return;
       }
       jumping = false;
+    }
+    // Another clip chosen while the video plays. The play becomes that
+    // clip's when the playhead stands in it, with its cuts and its stop,
+    // and stays the episode's otherwise. A clip made by hand while the
+    // episode played used to be played through and past its end, because
+    // the play had been decided before there was a clip at all.
+    if ((clip?.key ?? "") !== playsFor) {
+      playsFor = clip?.key ?? "";
+      const at = video.currentTime;
+      playsClip = !!clip && at >= clipStart - frameOf / 2 && at < clipEnd - 0.05;
+      if (playsClip) atPiece = pieceAt(at);
     }
     if (clip && playsClip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead

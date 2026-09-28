@@ -1065,7 +1065,10 @@ by hand wherever the transcript has reached, searched or not:
   goes to the start of the frame the moment there is one, and again when
   the sentences move it, as they do for Out. While the video plays it is
   left alone: a clip played while it is made plays on when it is done,
-  and is not taken back to its start. Placing the crop reads the picture and
+  and is not taken back to its start. From the moment it is there the
+  play is the clip's, with its cuts jumped and a stop at its end, the
+  same as for any clip chosen while the video plays with the playhead
+  inside it. Placing the crop reads the picture and
   takes a few seconds. When it is done the row becomes the clip's card,
   chosen, and the crop frame appears in the video preview.
 - **The new clip is chosen**, and from there it is a clip like any other:
