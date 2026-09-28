@@ -70,6 +70,10 @@ type Transcript struct {
 	Floor float64
 	// Mean level in dB over the whole window.
 	Mean float64
+	// Heard are the parts of the episode the words are for, in seconds, in
+	// order and apart. The frames outside them read -90. Only the
+	// episode's transcript as a whole has them, see Project.Transcript.
+	Heard [][2]float64
 }
 
 // Levels are the loudness readings the transcript annotations use, one per
@@ -268,7 +272,7 @@ func NoiseFloor(mean float64) float64 {
 // Transcribe reads the audio once and returns the words with their timings.
 func (e *Engine) Transcribe(ctx context.Context, path string, window Window,
 	rec Recognizer, silenceDB *float64) (*Transcript, error) {
-	return e.transcribe(ctx, path, window, rec, silenceDB, nil)
+	return e.transcribe(ctx, path, window, rec, silenceDB, nil, hearingShare{window, 0, window.End - window.Start})
 }
 
 // checkpointEvery is how often, in wall time, a long transcription saves what
@@ -276,29 +280,28 @@ func (e *Engine) Transcribe(ctx context.Context, path string, window Window,
 var checkpointEvery = 8 * time.Second
 
 // checkpoint receives the words and loudness frames of everything up to
-// covered, which always falls on a chunk boundary. resume is where carrying
-// on starts, the same as covered unless a word ran across it.
-type checkpoint func(raw []Cue, frames []float32, covered, resume float64)
+// covered, which always falls on a chunk boundary.
+type checkpoint func(raw []Cue, frames []float32, covered float64)
 
-// ErrHeld is a transcription that stopped where it was asked to, at the end
-// of the window the first search is waiting for. It is not finished and
-// carries on when it is asked again.
-var ErrHeld = errors.New("the transcription stopped at the end of the window")
+// hearingShare is the part of the episode a reading of the audio is for,
+// which is less than it reads, see hearingPad, how much of the hearing was
+// heard before this part of it, and how much there is in all, in seconds of
+// audio, so what shows how far it has come reads the parts as one piece of
+// work.
+type hearingShare struct {
+	part          Window
+	before, total float64
+}
 
+// transcribe hears a window of the episode, which starts on a frame. It
+// reads the audio from there the way the loudness does, see audioFrom, and
+// stops reading at the window's end.
 func (e *Engine) transcribe(ctx context.Context, path string, window Window,
-	rec Recognizer, silenceDB *float64, save checkpoint) (*Transcript, error) {
-	// Starting part way in is done by dropping samples here, not by asking
-	// ffmpeg to seek. A seek into a compressed stream lands on the packet,
-	// and whether the build decodes that packet and trims it or begins at
-	// the next one differs between builds, by up to 23 ms for AAC. Every
-	// word after the start would carry a time that is out by that much, and
-	// raw samples arrive without timestamps, so there is no way to notice
-	// afterwards. Counting samples is exact everywhere, and audio decodes at
-	// a few hundred times real time.
-	skip := int(math.Round(window.Start * SampleRate))
-	args := []string{"-hide_banner", "-loglevel", "error", "-nostats",
-		"-to", fixed(window.End, 3), "-i", path,
-		"-map", "0:a:0", "-ac", "1", "-ar", itoa(SampleRate), "-f", "f32le", "-"}
+	rec Recognizer, silenceDB *float64, save checkpoint, share hearingShare) (*Transcript, error) {
+	first := int(math.Round(window.Start / FrameSeconds))
+	window.Start = float64(first) * FrameSeconds
+	args, lead := audioFrom(path, first)
+	skip := lead * frameSamples
 	e.Log.Detail("ffmpeg %s", strings.Join(args, " "))
 	// Its own context, so stopping at the end of the window can end ffmpeg
 	// without the job being stopped.
@@ -315,15 +318,11 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		return nil, renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
 	reader := bufio.NewReaderSize(stdout, 1<<20)
-	if skip > 0 {
-		e.Log.Progress("winding forward to " + HMS(window.Start))
-	}
 
 	t := &Transcript{Start: window.Start}
 	var pending []float32
 	var raw []Cue
 	chunkStart := window.Start
-	total := window.End - window.Start
 	started := time.Now()
 	sumSquares, count := 0.0, 0
 	buf := make([]byte, frameSamples*4*50)
@@ -331,11 +330,11 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	lastSave := time.Now()
 	// How far the audio has been heard and how far of it is written down.
 	heardTo, savedTo := window.Start, window.Start
-	keep := func(covered, resume float64) {
+	keep := func(covered float64) {
 		frames := int(math.Round((covered - window.Start) / FrameSeconds))
 		words := append([]Cue(nil), raw...)
 		sort.SliceStable(words, func(i, j int) bool { return words[i].Start < words[j].Start })
-		save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered, resume)
+		save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered)
 		savedTo = covered
 	}
 	// A piece heard, by one copy of the speech model or another.
@@ -420,31 +419,33 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		heardTo = covered
 		if save != nil && time.Since(lastSave) >= checkpointEvery {
 			lastSave = time.Now()
-			keep(covered, covered)
+			keep(covered)
 		}
-		// How far it has come, and how long is left, towards where it will
-		// stop: the end of the window a search is hearing for, when there
-		// is one, and not the end of the episode. A search of a half hour
-		// said almost six minutes left, the time to hear the four hours of
-		// the whole episode.
-		goal := total
-		if stop := e.stopAt(); stop > window.Start && stop < window.End {
-			goal = stop - window.Start
-		}
-		done := covered - window.Start
+		// How far it has come, and how long is left, over all that this
+		// hearing hears and not only this part of it. The rest of the
+		// episode is not in it: a search of a half hour once said almost
+		// six minutes left, the time to hear the four hours of all of it.
+		done := max(covered-share.part.Start, 0)
 		elapsed := time.Since(started).Seconds()
 		left := 0.0
 		if done > 0 {
-			left = elapsed / done * math.Max(goal-done, 0)
+			left = elapsed / done * math.Max(share.total-share.before-done, 0)
 		}
-		share := math.Min(done/math.Max(goal, 1), 1)
+		part := math.Min((share.before+done)/math.Max(share.total, 1), 1)
 		// Every chunk says how far the audio has been heard, not only
 		// every save, so what shows it moves with the work.
-		e.Log.ProgressTo("transcribing", share, left, covered)
+		e.Log.ProgressTo("transcribing", part, left, share.part.Start,
+			min(max(covered, share.part.Start), share.part.End))
 	}
 
+	// Where the window ends, in samples from its start. The chunk is cut
+	// exactly there, so what is heard ends on the window's edge and not a
+	// chunk past it.
+	endAt := int(math.Round((window.End - window.Start) * SampleRate))
+	read := 0
+	reachedEnd := false
 	carry := []byte{}
-	for {
+	for !reachedEnd {
 		if ctx.Err() != nil {
 			break
 		}
@@ -456,7 +457,12 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 				skip--
 				continue
 			}
+			if read == endAt {
+				reachedEnd = true
+				break
+			}
 			pending = append(pending, math.Float32frombits(binary.LittleEndian.Uint32(data[i:])))
+			read++
 		}
 		carry = append([]byte{}, data[whole:]...)
 
@@ -473,37 +479,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 			count += frameSamples
 		}
 
-		// The end of the window the first search waits for. The chunk is cut
-		// exactly there, so the transcription stops on the window's edge
-		// and not a chunk past it. A word that runs across the edge is not
-		// in the window and is not kept, because half a word is heard as
-		// another word: carrying on starts before it and hears it whole.
-		if stop := e.stopAt(); save != nil && stop > chunkStart &&
-			chunkStart+float64(len(pending))/SampleRate >= stop {
-			cut := min(int(math.Round((stop-chunkStart)*SampleRate)), len(pending))
-			// Every piece before this one is heard first, so what is saved
-			// reaches the window's edge with nothing missing on the way.
-			drain()
-			resume := stop
-			last := chunkStart
-			for _, w := range TokensToWords(rec.Recognize(pending[:cut], SampleRate), chunkStart) {
-				if w.End >= stop-0.001 {
-					resume = min(resume, max((last+w.Start)/2, chunkStart))
-					continue
-				}
-				raw = append(raw, w)
-				last = w.End
-			}
-			heardTo = stop
-			// All the way to where it was to stop, see recognise.
-			e.Log.ProgressTo("transcribing", 1, 0, stop)
-			keep(stop, resume)
-			stopReading()
-			_ = cmd.Wait()
-			e.Log.ClearProgress()
-			return nil, ErrHeld
-		}
-
 		for float64(len(pending))/SampleRate >= chunkMax {
 			first := int(math.Round((chunkStart - window.Start) / FrameSeconds))
 			cut := quietestCut(t.Frames[first:]) * frameSamples
@@ -518,7 +493,15 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 			break
 		}
 	}
+	if reachedEnd {
+		// ffmpeg is still writing, and is told to stop rather than left to
+		// write into a pipe nobody reads.
+		stopReading()
+	}
 	waitErr := cmd.Wait()
+	if reachedEnd && ctx.Err() == nil {
+		waitErr = nil
+	}
 	// What is still being heard is taken in before anything is saved or
 	// said, whichever way the reading ended.
 	drain()
@@ -530,7 +513,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		// at the speed the recogniser runs, and the range picker's edge
 		// stood still for all of them after it carried on.
 		if save != nil && heardTo > savedTo {
-			keep(heardTo, heardTo)
+			keep(heardTo)
 		}
 		e.Log.ClearProgress()
 		return nil, ctx.Err()

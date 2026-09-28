@@ -336,7 +336,7 @@ func fieldsOf(p *planParts) map[string]any {
 }
 
 func applyPlan(path string, from, to fileState, dryRun bool) error {
-	defer lockPlan(path)()
+	defer lockFile(path)()
 	src, err := splitPlan(from)
 	if err != nil {
 		return err

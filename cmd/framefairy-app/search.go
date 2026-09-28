@@ -21,7 +21,7 @@ import (
 // the one that runs.
 func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	if !s.store.Known(path) {
-		return s.jobs.refuse(path, engine.JobSearch, "Find clips", notInLibrary)
+		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary)
 	}
 	// A search called off a moment ago may still be on its way out, and it
 	// writes the same record as it goes, so this one waits for it.
@@ -33,15 +33,22 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	// A search that stopped is taken up by this one, which writes a record
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
-	return s.jobs.addSteps(path, engine.JobSearch, "Find clips", true, func(j *Job) {
+	return s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
 		j.Record, j.From, j.To = engine.SearchID, req.From, req.To
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.
 		// A window to the end of the episode, To 0, is never heard before
 		// the transcript is finished.
-		if covered, done := engine.Coverage(p.Source, s.store.Settings().ASRModel); !done &&
-			(req.To <= 0 || covered < req.To-0.05) {
+		model := s.store.Settings().ASRModel
+		unheard := false
+		if req.To <= 0 {
+			_, done := engine.Coverage(p.Source, model)
+			unheard = !done
+		} else {
+			unheard = len(engine.Unheard(p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
+		}
+		if unheard {
 			go func() {
 				defer func() { _ = recover() }()
 				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {
@@ -87,17 +94,17 @@ func (s *FrameFairy) Continue(id string) Job {
 		}
 	}
 	if carry == nil {
-		return s.jobs.refuse(path, engine.JobRender, stopped.Label, "the render left nothing to carry on")
+		return s.jobs.refuse(path, stopped.Kind, stopped.Label, "there is nothing left to carry on")
+	}
+	if carry.Kind == engine.JobClip {
+		return s.makeClip(path, carry.Clip(), carry.ID)
 	}
 	return s.render(path, carry.Render(), carry)
 }
 
 // render queues a render, carrying on the one the record is of, if any.
 func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine.JobRecord) Job {
-	label := "Render"
-	if req.Preview {
-		label = "Preview"
-	}
+	label := jobLabel(engine.JobRender, req.Preview)
 	// The plan is a path of its own, read and written to, so it is checked
 	// the same way the episode is.
 	if !s.store.Known(path) || (req.Plan != "" && !s.store.Known(req.Plan)) {
@@ -132,6 +139,40 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 			}
 		}
 		return req.Plan, nil
+	})
+}
+
+// MakeClip makes a clip by hand at a moment of the episode, I or O, as a job
+// like any: it has the transcript heard as far as the clip can reach, and
+// the one plan builder frames and writes the clip, see engine.MakeClip.
+// Any number can be made at a time, beside a search and beside each other,
+// so I and O never wait for the work before them to be asked for. Its
+// result is the key of the clip it made. Its card is in the list from the
+// moment it is asked for, at the playhead.
+func (s *FrameFairy) MakeClip(path string, at float64, backward bool) Job {
+	return s.makeClip(path, engine.ClipRequest{At: at, Backward: backward}, "")
+}
+
+// makeClip queues a clip made by hand, carrying on the one the record id
+// is of, if any.
+func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry string) Job {
+	label := jobLabel(engine.JobClip, false)
+	if !s.store.Known(path) {
+		return s.jobs.refuse(path, engine.JobClip, label, notInLibrary)
+	}
+	if math.IsNaN(req.At) || math.IsInf(req.At, 0) || req.At < 0 || req.At > engine.MaxEpisodeSeconds {
+		return s.jobs.refuse(path, engine.JobClip, label, "there is no such moment in the episode")
+	}
+	id := engine.NewClipID()
+	if carry != "" {
+		id = carry
+		s.jobs.settle(path, engine.JobClip, id)
+	}
+	return s.jobs.addSteps(path, engine.JobClip, label, false, func(j *Job) {
+		j.Record, j.At, j.Backward = id, req.At, req.Backward
+		j.Underway = engine.JobRecord{Kind: engine.JobClip, At: req.At, Step: engine.StepWaiting}.Underway()
+	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+		return p.MakeClip(ctx, id, req, turn)
 	})
 }
 
@@ -195,7 +236,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
-		if j.Kind == engine.JobSearch {
+		if makesClips(j.Kind) {
 			// Its record says stopped as it ends, see runJob.
 			s.jobs.stopByHand(id)
 			return true

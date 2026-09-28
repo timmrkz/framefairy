@@ -138,7 +138,8 @@
     const parts: string[] = [];
     if (ep.transcribed) parts.push("Transcribed");
     else if (ep.transcriptStale) parts.push("Changed since transcription");
-    else if (ep.covered > 0) parts.push(`Transcribed to ${clock(ep.covered)}`);
+    else if (ep.heard?.length === 1 && ep.covered > 0) parts.push(`Transcribed to ${clock(ep.covered)}`);
+    else if (ep.heard?.length) parts.push("Transcribed in parts");
     else parts.push("Not transcribed");
     const plans = ep.plans?.length ?? 0;
     if (plans) parts.push(plans === 1 ? "1 plan" : `${plans} plans`);

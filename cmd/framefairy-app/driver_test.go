@@ -202,6 +202,10 @@ func (d *desk) cancel(path string) {
 	d.svc.CancelJob(j.ID)
 }
 
+// in presses I with the playhead at a moment, and out presses O.
+func (d *desk) in(path string, at float64) Job  { return d.svc.MakeClip(path, at, false) }
+func (d *desk) out(path string, at float64) Job { return d.svc.MakeClip(path, at, true) }
+
 // render presses Render on every clip of a plan.
 func (d *desk) render(path, plan string) {
 	d.svc.Render(path, engine.RenderRequest{Plan: plan})

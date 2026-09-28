@@ -2,12 +2,14 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
+  import type { Arriving } from "../lib/arriving";
 
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
 
   let {
     clips,
+    arriving = [],
     selected,
     removed = "",
     coming = 0,
@@ -19,6 +21,13 @@
     onputback,
   }: {
     clips: ClipEntry[];
+    // The clips on their way, whoever proposed them, each in its place in
+    // the episode among the clips that are there, wearing the work that is
+    // being done to it. A clip made by hand is one from the moment I or O
+    // is pressed, and a clip the model named is one from the moment it is
+    // named. Each hands over to the clip itself, in the same place, when
+    // it is written.
+    arriving?: Arriving[];
     selected: string;
     // How many clips are on the way: the number the search was asked for,
     // while the transcript is still coming or the search is running. That
@@ -57,9 +66,33 @@
   // one row at a time and the rows still to come shrink as it does. What
   // is handed in already counts the clips that are there.
   const ghosts = $derived.by(() => {
-    const n = Math.max(0, coming - clips.length);
+    const n = Math.max(0, coming - clips.length - arriving.length);
     return Array.from({ length: n }, (_, i) => i);
   });
+
+  // The clips there are and the clips on the way, in the order they are
+  // spoken, which is the order of the range picker and the clip timeline.
+  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: Arriving };
+  const rows = $derived.by((): Row[] => {
+    const all: Row[] = [
+      ...clips.map((clip) => ({ key: clip.key, start: clip.start, clip })),
+      ...arriving.map((a) => ({ key: a.key, start: a.start, arriving: a })),
+    ];
+    return all.sort((a, b) => a.start - b.start);
+  });
+
+  // A clip taken out slides away. A clip on the way does not: it becomes
+  // the clip itself, in the same place and the same frame, so the list
+  // never shows the two of them at once.
+  function leave(node: Element, row: Row) {
+    return row.clip ? slide(node, { duration: 200 }) : { duration: 0 };
+  }
+
+  // A clip on the way comes in the way a clip that is taken out goes, so a
+  // card appearing among the others is seen appearing.
+  function enter(node: Element, row: Row) {
+    return row.arriving ? slide(node, { duration: 200 }) : { duration: 0 };
+  }
 
   // The rows still to come are after the clips there are, so in a list
   // longer than its column a search began out of sight: all anyone saw
@@ -114,16 +147,38 @@
 </script>
 
 <ol bind:this={list}>
-  {#each clips as clip (clip.key)}
-    <li animate:flip={{ duration: 180 }} out:slide={{ duration: 200 }} data-key={clip.key}>
-      {#if clip.key === removed}
+  {#each rows as row (row.key)}
+    {@const clip = row.clip}
+    {@const a = row.arriving}
+    <li
+      animate:flip={{ duration: 180 }}
+      in:enter={row}
+      out:leave={row}
+      data-key={row.key}
+      class:next={!!a}
+      class:current={!!a && row.key === selected}
+      class:stopped={!!a?.stopped}
+      aria-live={a ? "polite" : undefined}
+    >
+      {#if a}
+        {#if a.stopped}
+          <button class="pick carry" title={a.full} onclick={() => a.oncontinue?.()}>
+            <span class="title">{a.what}</span>
+            <span class="meta muted num">{a.left}</span>
+          </button>
+        {:else}
+          <Busy fraction={a.fraction} still={a.still} />
+          <span class="title">{a.title || a.what}</span>
+          <span class="meta muted num">{a.title ? a.what : clock(a.start)}{a.left ? `, ${a.left}` : ""}</span>
+        {/if}
+      {:else if clip && clip.key === removed}
         <div class="gone">
           <Icon name="trash" />
           <span class="what">Removed</span>
           <span class="grow"></span>
           <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
         </div>
-      {:else}
+      {:else if clip}
         <button
           class="pick"
           class:current={clip.key === selected}
@@ -258,7 +313,8 @@
      with the app's own colour down its edge so it is plain which card it
      is without reading any of them. */
   .pick.current,
-  li:hover .pick.current {
+  li:hover .pick.current,
+  .next.current {
     background: var(--ink-3);
     box-shadow: inset 3px 0 var(--accent);
   }
@@ -344,6 +400,9 @@
   /* The row the next clip will appear in, saying what it is waiting on,
      laid out as a clip's row is, a line of what and a line of how long. */
   .next {
+    /* As tall as a clip, whatever it says, so a clip on its way and the
+       clip it becomes are the same card. */
+    height: 56px;
     /* Part of the row after it shows below it when it is brought into
        view: a third of a row, past the veil over the foot of the list. */
     scroll-margin-bottom: calc(var(--veil, 16px) + var(--gap) + 20px);
@@ -363,6 +422,16 @@
      nothing was lost: New looks again. */
   .stopped .title {
     color: var(--warn);
+  }
+
+  /* A clip on the way that stopped is carried on with a click, the one
+     thing it offers, laid out as the row it would have been. */
+  .carry {
+    padding: 0;
+  }
+
+  .carry:hover {
+    background: transparent;
   }
 
   /* One line, as tall as every other row, whatever the reason says. The

@@ -35,8 +35,8 @@ const sentenceReach = 8.0
 // limit then cut the payoff out of its middle. seconds measures a clip.
 // Without it, the nearer boundary is always taken.
 func wholeSentences(lines []Line, keep [][2]int, longest float64, seconds func([][2]int) float64) [][2]int {
-	ends := func(n int) bool { return endsSentence(strings.TrimSpace(lines[n-1].Text())) }
-	starts := func(n int) bool { return n == 1 || ends(n-1) }
+	ends := func(n int) bool { return finishesSentence(lines, n) }
+	starts := func(n int) bool { return beginsSentence(lines, n) }
 	total := 0.0
 	if seconds != nil {
 		total = seconds(keep)
@@ -112,4 +112,15 @@ func nearer(at, back, forward int, time func(int) float64) int {
 		return back
 	}
 	return forward
+}
+
+// beginsSentence says whether line n, counted from 1, begins a sentence:
+// the first line does, and every line after one that ends a sentence.
+func beginsSentence(lines []Line, n int) bool {
+	return n == 1 || finishesSentence(lines, n-1)
+}
+
+// finishesSentence says whether line n, counted from 1, ends a sentence.
+func finishesSentence(lines []Line, n int) bool {
+	return endsSentence(strings.TrimSpace(lines[n-1].Text()))
 }

@@ -162,7 +162,7 @@ func (l *Log) Progress(text string) {
 // ProgressOf reports how far a task is, as a share from 0 to 1 and the
 // seconds left. Either may be Unknown. The terminal shows a bar.
 func (l *Log) ProgressOf(label string, fraction, remaining float64) {
-	l.ProgressTo(label, fraction, remaining, 0)
+	l.ProgressTo(label, fraction, remaining, 0, 0)
 }
 
 // ProgressTo reports the same and adds the second of the episode the work
@@ -170,14 +170,14 @@ func (l *Log) ProgressOf(label string, fraction, remaining float64) {
 // what it has every few seconds, so what is on disk lags a long way behind
 // what the machine has already heard, and the app, if it followed the file
 // alone, would step rather than move.
-func (l *Log) ProgressTo(label string, fraction, remaining, covered float64) {
-	l.progress(label, fraction, remaining, covered, 0)
+func (l *Log) ProgressTo(label string, fraction, remaining, from, covered float64) {
+	l.progress(label, fraction, remaining, from, covered, 0)
 }
 
 // ProgressFound reports how far a search is, with how many clips it has
 // written to its plan so far.
 func (l *Log) ProgressFound(label string, fraction, remaining float64, found int) {
-	l.report(label, fraction, remaining, 0, found)
+	l.report(label, fraction, remaining, 0, 0, found)
 }
 
 // HoldProgress gives the progress line to whoever reports through
@@ -187,14 +187,14 @@ func (l *Log) HoldProgress(hold bool) {
 	l.held.Store(hold)
 }
 
-func (l *Log) progress(label string, fraction, remaining, covered float64, found int) {
+func (l *Log) progress(label string, fraction, remaining, from, covered float64, found int) {
 	if l.held.Load() {
 		return
 	}
-	l.report(label, fraction, remaining, covered, found)
+	l.report(label, fraction, remaining, from, covered, found)
 }
 
-func (l *Log) report(label string, fraction, remaining, covered float64, found int) {
+func (l *Log) report(label string, fraction, remaining, from, covered float64, found int) {
 	// math.Min and math.Max hand a NaN straight back, so a share that is
 	// not a number has to be caught before it is held to 0 and 1.
 	fraction = sane(fraction)
@@ -212,7 +212,7 @@ func (l *Log) report(label string, fraction, remaining, covered float64, found i
 	}
 	l.showProgress(text)
 	l.send(Event{Kind: EventProgress, Text: label, Fraction: roundTo(fraction, 4),
-		Remaining: roundTo(remaining, 1), Covered: roundTo(covered, 3), Found: found})
+		Remaining: roundTo(remaining, 1), From: roundTo(from, 3), Covered: roundTo(covered, 3), Found: found})
 }
 
 func (l *Log) showProgress(text string) {
@@ -226,6 +226,13 @@ func (l *Log) showProgress(text string) {
 }
 
 // ClearProgress removes a progress line if one is showing. A sink is told
+// Underway says which clips the work has on the way, all of them, each
+// time that changes. It goes to the app only, since the command line says
+// each clip as it is written.
+func (l *Log) Underway(list []Underway) {
+	l.send(Event{Kind: EventUnderway, Underway: append([]Underway{}, list...)})
+}
+
 // that nothing is in progress any more.
 func (l *Log) ClearProgress() {
 	l.mu.Lock()

@@ -365,14 +365,8 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		if modelDir == "" {
 			modelDir = DefaultModelDir()
 		}
-		transcript, err := e.LoadTranscript(ctx, opts.Source, span, logsDir, modelDir,
-			opts.SilenceDB, window != nil)
-		if errors.Is(err, ErrHeld) {
-			// Stopped where it was asked to, for the search waiting on it.
-			// It is not finished, and it is not a failure.
-			log.Info("%s", err.Error())
-			return 0
-		}
+		transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, modelDir,
+			opts.SilenceDB)
 		if err != nil {
 			if ctx.Err() != nil {
 				return e.fail(ctx, err)
