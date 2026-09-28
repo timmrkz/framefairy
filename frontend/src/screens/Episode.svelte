@@ -1875,9 +1875,10 @@
             <span class="ask">
               <Info label="What finding clips does">
                 The model reads the window chosen on the <b>range picker</b> and answers with the
-                moments worth clipping. A part it has read is marked there. The window is never
-                longer than the model reads at once, and never shorter than the clips need at their
-                shortest.
+                moments worth clipping. A part it has read is marked there. <b>Target</b> is how
+                many clips it looks for. It gives fewer when fewer moments are strong enough.
+                <b>Shortest</b> and <b>Longest</b> are how long each clip may run, in seconds,
+                once the pauses and asides it leaves out are gone.
               </Info>
             </span>
           </div>
