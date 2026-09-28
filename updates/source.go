@@ -33,6 +33,10 @@ type Source struct {
 	Seen func(List)
 	// Progress is told how far a download has come.
 	Progress func(written, total int64)
+	// Cache is the folder the builds already downloaded are kept in, so
+	// a channel picked again has its build at once. Empty keeps nothing.
+	// See cache.go.
+	Cache string
 }
 
 // Name implements updater.Provider.
@@ -63,6 +67,7 @@ func (s *Source) Fetch(ctx context.Context) (List, error) {
 	if err != nil {
 		return List{}, err
 	}
+	s.prune(list)
 	if s.Seen != nil {
 		s.Seen(list)
 	}
@@ -124,11 +129,26 @@ func Release(b Build) (*updater.Release, error) {
 // Download implements updater.Provider. It refuses more bytes than the
 // list said there would be, so a server that never stops sending fills
 // nothing.
-func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
+func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer, onProgress func(written, total int64)) (err error) {
 	where, _ := r.Metadata["url"].(string)
 	if where == "" {
 		return errors.New("the build has no address")
 	}
+	report := func(written, total int64) {
+		onProgress(written, total)
+		if s.Progress != nil {
+			s.Progress(written, total)
+		}
+	}
+	sum := ""
+	if r.Verification != nil {
+		sum = hex.EncodeToString(r.Verification.Digest)
+	}
+	if found, err := s.fromCache(sum, r.Artifact.Size, dst, report); found {
+		return err
+	}
+	k := s.keep(sum)
+	defer func() { k.done(err == nil) }()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, where, nil)
 	if err != nil {
 		return err
@@ -154,11 +174,9 @@ func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer
 			if _, err := dst.Write(buf[:n]); err != nil {
 				return err
 			}
+			k.write(buf[:n])
 			written += int64(n)
-			onProgress(written, total)
-			if s.Progress != nil {
-				s.Progress(written, total)
-			}
+			report(written, total)
 		}
 		if rerr == io.EOF {
 			break

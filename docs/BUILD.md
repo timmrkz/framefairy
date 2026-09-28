@@ -286,13 +286,21 @@ The commands make runs, for building by hand:
 go mod tidy
 (cd frontend && npm ci && npm run build)
 go build -o bin/framefairy ./cmd/framefairy
-go build -o bin/framefairy-app ./cmd/framefairy-app
+go build -tags production -o bin/framefairy-app ./cmd/framefairy-app
 go build -o bin/framefairy-train ./cmd/framefairy-train
 sh scripts/carry-libs.sh bin/framefairy bin/lib
 sh scripts/carry-libs.sh bin/framefairy-app bin/lib
 ```
 
-The last two matter. Without them the two programs look for the speech
+The app is built with the `production` tag, which is what makes it a
+release build to Wails. Without it, it is a debug build, where the
+webview offers its own menu on every right click, with Reload, which
+reloads the interface under the work in hand, and Inspect Element. A
+release build offers that menu only where the Mac would, on text that is
+selected or typed in. The app's own menus, like Open Link and Copy Link on
+the commit on the Updates page, come either way.
+
+The two carry-libs lines matter. Without them the two programs look for the speech
 library in the Go module cache of the machine that built them, because
 that is where the cgo directive points, and they run nowhere else. It goes
 unnoticed as long as everyone who runs the app also built it. See

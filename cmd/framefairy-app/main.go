@@ -21,12 +21,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"framefairy/engine"
 	"framefairy/notices"
+	"framefairy/updates"
 )
 
 // dist/app/ holds the interface that make builds from frontend/. It is not
@@ -61,6 +63,9 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 </main></body></html>`
 
 func main() {
+	// Started again to put a new build in place once the app has quit.
+	installIfAsked()
+	go tidyTemp(os.TempDir(), time.Now())
 	widenPath()
 	engine.PreferSavedKeys()
 	st := openStore()
@@ -97,6 +102,8 @@ func main() {
 		engine.CloseModels()
 		svc.jobs.shutDown()
 		svc.levels.shutDown()
+		// A build that is ready goes in place once the app is gone.
+		svc.updates.installOnQuit()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
@@ -133,6 +140,16 @@ func main() {
 		go svc.updates.check()
 		app.Event.Emit("show-updates", nil)
 	}))
+	// The commit of the build on the Updates page is a link, so a right
+	// click on it offers what a right click on a link offers in Safari.
+	// It is drawn as a button, and without this the webview would offer
+	// nothing a link needs.
+	if commit := updates.CommitURL(buildCommit); commit != "" {
+		link := app.ContextMenu.New()
+		link.Add("Open Link").OnClick(func(*application.Context) { _ = svc.OpenCommit() })
+		link.Add("Copy Link").OnClick(func(*application.Context) { app.Clipboard.SetText(commit) })
+		app.ContextMenu.Add("commit", link)
+	}
 
 	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Frame Fairy",
@@ -301,6 +318,19 @@ func (s *FrameFairy) FollowChannel(channel string) error { return s.updates.Foll
 
 // CheckForUpdates looks for a newer build now, and downloads it.
 func (s *FrameFairy) CheckForUpdates() { go s.updates.check() }
+
+// OpenCommit opens the commit the running build was made from, on
+// GitHub, in the browser. Only that commit, never one the interface names.
+func (s *FrameFairy) OpenCommit() error {
+	u := updates.CommitURL(buildCommit)
+	if u == "" {
+		return errors.New("this build was made on this Mac and has no commit")
+	}
+	if s.app == nil {
+		return errors.New("there is no app to open it from")
+	}
+	return s.app.Browser.OpenURL(u)
+}
 
 // RestartToUpdate quits into the build that is ready.
 func (s *FrameFairy) RestartToUpdate() error { return s.updates.Restart() }
