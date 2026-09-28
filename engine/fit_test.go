@@ -159,3 +159,107 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 		t.Errorf("the edit was not taken:\n%s", said.String())
 	}
 }
+
+// Asked about one clip, a model can answer with another clip of its first
+// answer, the way Gemma gave the umbrella story when asked about the
+// mirrors. That is no answer about the clip asked for, so it is asked for
+// once more, alone. A reused reply replays both answers and asks nothing.
+func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
+	source := testEpisode(t, "70")
+	SetTrainingDir(t.TempDir())
+	var mu sync.Mutex
+	var asks [][]chatMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct{ Messages []chatMessage }
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		mu.Lock()
+		asks = append(asks, request.Messages)
+		mu.Unlock()
+		// A line of the test episode is about 14 seconds. "kurz" is too
+		// short, "andere" fits.
+		answer := `{"clips": [{"slug": "kurz", "title": "Kurz", "reason": "r", "keep": [[1, 1]]}, ` +
+			`{"slug": "andere", "title": "Andere", "reason": "r", "keep": [[3, 4]]}]}`
+		if n := len(request.Messages); n > 2 {
+			answer = `{"clips": [{"slug": "andere", "title": "Andere", "reason": "r", "keep": [[2, 4]]}]}`
+			if strings.Contains(request.Messages[n-1].Content, `Give only "kurz", no other clip.`) {
+				answer = `{"clips": [{"slug": "kurz", "title": "Kurz", "reason": "r", "keep": [[1, 2]]}]}`
+			}
+		}
+		writeLocalStream(w, answer, 11)
+	}))
+	defer server.Close()
+	var heard int32
+	var said bytes.Buffer
+	e := NewEngine(NewLog(&said, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.LLMURL = server.URL
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	p := NewProject(e, source, base)
+	ctx := context.Background()
+
+	path, err := p.Plan(ctx, PlanRequest{Count: 2})
+	if err != nil {
+		t.Fatalf("plan: %v %s", err, p.LastError())
+	}
+	if len(asks) != 3 {
+		t.Fatalf("the model was asked %d times, want the search, the fit and once more", len(asks))
+	}
+	if !strings.Contains(said.String(), `kurz was not in the answer, which gave "andere", so it is asked for once more`) {
+		t.Errorf("the other clip in the answer was not said:\n%s", said.String())
+	}
+	check := func(path string) {
+		t.Helper()
+		_, clips, err := LoadClips(path)
+		if err != nil || len(clips) != 2 {
+			t.Fatalf("clips %v %v", clips, err)
+		}
+		for _, c := range clips {
+			if n := c.Duration(); n < 20 || n > 30 {
+				t.Errorf("%s runs %.1f seconds", c.ID, n)
+			}
+		}
+	}
+	check(path)
+
+	// The same search again, the plan gone, reuses the reply and both of
+	// its fits.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	path, err = p.Plan(ctx, PlanRequest{Count: 2})
+	if err != nil {
+		t.Fatalf("plan again: %v %s", err, p.LastError())
+	}
+	if len(asks) != 3 {
+		t.Errorf("a reused reply asked the model %d more times", len(asks)-3)
+	}
+	check(path)
+}
+
+// An answer about a clip is the one with its slug, or the one in its place
+// when the model renamed it, but never one that carries another clip's slug.
+func TestFitForTakesOnlyAnAnswerAboutTheClip(t *testing.T) {
+	slugs := map[string]bool{"spiegel": true, "regenschirm": true}
+	asked := PlanEntry{Slug: "spiegel"}
+	for _, c := range []struct {
+		name  string
+		again []string
+		want  string
+	}{
+		{"its own slug", []string{"regenschirm", "spiegel"}, "spiegel"},
+		{"renamed, in its place", []string{"spiegel-flur"}, "spiegel-flur"},
+		{"another clip in its place", []string{"regenschirm"}, ""},
+		{"nothing", nil, ""},
+	} {
+		var again []PlanEntry
+		for _, slug := range c.again {
+			again = append(again, PlanEntry{Slug: slug})
+		}
+		got, ok := fitFor(asked, 0, again, slugs)
+		if ok != (c.want != "") || got.Slug != c.want {
+			t.Errorf("%s: took %q (%v), want %q", c.name, got.Slug, ok, c.want)
+		}
+	}
+}

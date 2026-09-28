@@ -298,13 +298,11 @@ place.
   timeline the transcript has not reached and the rows the clip list will
   have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
-  found for it. On the clip timeline the part not heard yet wears the
-  grey of a clip card still to come, the whole track before the first
-  waveform arrives, and it breathes while the transcription runs. With
-  nothing running it keeps its grey and stands still, the way paused work
-  does, so a part nobody has heard never reads as silence, which is a flat
-  line. The edge is taken from the waveform itself, so the grey never lies
-  over a waveform that is already drawn. The
+  found for it. On the clip timeline the waveform is there for the whole
+  episode within seconds of adding it, see below, and nothing is drawn
+  over it for the part not heard yet: a grey band across the middle,
+  where the captions stand, looked like a hole in the sound rather than
+  words still to come, and said nothing the range picker does not. The
   range picker carries the reading of the episode in the app's own words:
   what is not transcribed is darker and breathes while the reading runs,
   because it is a place waiting to be filled, and the line where the
@@ -399,10 +397,16 @@ place.
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
-  never more than a window can hold: **Clips** and **Shortest** go no
+  never more than a window can hold: **Target** and **Shortest** go no
   higher than fits, one clip after another at the shortest length, in the
   longest window that can be drawn anywhere on the episode. A number typed
   past that is taken back to it, and its `title` says what the most is.
+  Target is how many clips the model looks for, not how many it must
+  give: the prompt asks for up to that many and says fewer strong clips
+  beat padding, so an episode with six strong moments gives six when
+  eight were the target. Its `title` says so. It was called Clips, which
+  read as a promise, and asking the model once more for the ones missing
+  was turned down: two short of eight is a judgement, not a fault.
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
@@ -682,14 +686,14 @@ place.
       spoken, which is the order of the range picker and the clip
       timeline, so a new clip lands where it belongs in the episode rather
       than on top.
-    - **What a search was asked for is held while it runs.** Clips,
+    - **What a search was asked for is held while it runs.** Target,
       Shortest and Longest go to the model with the prompt, so they are
-      locked from New until the search has run, and dimmed. Changing Clips
+      locked from New until the search has run, and dimmed. Changing Target
       used to change the rows still to come while the model looked for the
       number it had been given.
     - **An empty list is never empty.** With nothing in the list and no
       search on its way, the rows New will fill stand there as many as
-      Clips says, following it as it changes, and still, because nothing
+      Target says, following it as it changes, and still, because nothing
       is filling them yet. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
     - **A search that stopped before it was done says so** in the row its
@@ -1001,11 +1005,24 @@ place.
       no room inside its padding and the blocks run into one smear over the
       waveform, so zoomed out there are the clips and the waveform and no
       captions, and zoomed in to the clip they come back.
-- **Before the first transcription** there are no words and no waveform.
-  That is where every episode starts, so the track is simply empty. The
-  words and the waveform appear as the transcript grows past them, without
-  anything being clicked. Nothing about this is an error, and nothing about
-  it is logged as one.
+- **The waveform comes first.** The moment an episode is added, the app
+  measures its loudness on its own, without the speech model: the audio
+  decoded and a reading every 10 ms, the same readings the transcription
+  takes. Audio decodes at a few hundred times real time, so an hour is
+  measured in seconds, and the waveform fills in as it goes, first where
+  the clip timeline looks. Every time the clip timeline asks for the
+  waveform it says what it shows, and the measuring goes there next: a
+  playhead put near the end of a four hour episode has its waveform
+  within a second rather than after everything before it. The clip
+  timeline reads its view again while what it read had a gap in it and
+  more has been measured. An episode added before this was there is measured the first time
+  it is opened. It is not a job: nobody starts it or waits for it, so it
+  has no row in Activity. At most two episodes are measured at a time.
+- **Before the first transcription** there are no words. That is where
+  every episode starts, so the captions band simply waits. The words
+  appear as the transcript grows past them, without anything being
+  clicked. Nothing about this is an error, and nothing about it is logged
+  as one.
 - **The timeline is always there.** With no clip selected it shows the
   minute around the playhead and follows it as the episode plays, so there
   is always something saying where you are. Trimming needs a clip, so it

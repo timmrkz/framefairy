@@ -82,6 +82,13 @@ export interface EpisodeStatus {
   missing: boolean;
   transcribed: boolean;
   covered: number;
+  // How many seconds of the loudness are measured, which is the waveform,
+  // which parts, from and to, and whether all of it. It runs ahead of the
+  // transcript, from the moment an episode is added, where the clip
+  // timeline looks first.
+  measured?: number;
+  measuredParts?: [number, number][] | null;
+  measuredAll?: boolean;
   transcriptStale: boolean;
   plans: PlanSummary[] | null;
   rendered: number;
@@ -645,6 +652,12 @@ export function onAcknowledgements(fn: () => void): () => void {
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
+}
+
+// The loudness of an episode was measured further, about twice a second
+// while it is measured, so the waveform can grow.
+export function onLevels(fn: (path: string) => void): () => void {
+  return Events.On("levels", (ev) => fn(ev.data as string));
 }
 
 export function mediaURL(path: string): string {

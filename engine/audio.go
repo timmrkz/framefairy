@@ -330,9 +330,85 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		save(words, append([]float32(nil), t.Frames[:min(frames, len(t.Frames))]...), covered, resume)
 		savedTo = covered
 	}
+	// A piece heard, by one copy of the speech model or another.
+	type heardPiece struct {
+		at      float64
+		samples int
+		words   []Cue
+		// A copy that panicked, handed back so the job fails the way it
+		// does when the one copy panics, rather than taking the app down
+		// from a goroutine of its own.
+		panicked any
+	}
+	// Several copies of the speech model hear side by side, each its own
+	// piece, when the recogniser has more than one. One copy does not use
+	// the cores of a big machine: on an M2 Max, one with 8 threads heard 47
+	// times real time and four with 2 threads each 83, with the same words.
+	// The pieces are cut as they always are, and what is heard is taken in
+	// the order it was said: a piece that is done early waits for the ones
+	// before it, so the transcript and every save of it only ever reach as
+	// far as all of it has been heard.
+	copies := 1
+	if many, ok := rec.(interface{ Copies() int }); ok {
+		copies = max(many.Copies(), 1)
+	}
+	results := make(chan heardPiece, copies)
+	var order []float64
+	done := map[float64]heardPiece{}
+	inflight := 0
+	// Nothing returns while a copy is still hearing: the caller closes the
+	// model the moment this returns, under a copy that is using it.
+	defer func() {
+		for ; inflight > 0; inflight-- {
+			<-results
+		}
+	}()
+	var advance func(p heardPiece)
+	collect := func() {
+		p := <-results
+		inflight--
+		if p.panicked != nil {
+			panic(p.panicked)
+		}
+		done[p.at] = p
+		for len(order) > 0 {
+			next, ok := done[order[0]]
+			if !ok {
+				break
+			}
+			delete(done, order[0])
+			order = order[1:]
+			advance(next)
+		}
+	}
+	drain := func() {
+		for inflight > 0 {
+			collect()
+		}
+	}
 	recognise := func(samples []float32, at float64) {
-		raw = append(raw, TokensToWords(rec.Recognize(samples, SampleRate), at)...)
-		covered := at + float64(len(samples))/SampleRate
+		if copies == 1 {
+			advance(heardPiece{at: at, samples: len(samples),
+				words: TokensToWords(rec.Recognize(samples, SampleRate), at)})
+			return
+		}
+		for inflight >= copies {
+			collect()
+		}
+		inflight++
+		order = append(order, at)
+		go func() {
+			p := heardPiece{at: at, samples: len(samples)}
+			defer func() {
+				p.panicked = recover()
+				results <- p
+			}()
+			p.words = TokensToWords(rec.Recognize(samples, SampleRate), at)
+		}()
+	}
+	advance = func(p heardPiece) {
+		raw = append(raw, p.words...)
+		covered := p.at + float64(p.samples)/SampleRate
 		heardTo = covered
 		if save != nil && time.Since(lastSave) >= checkpointEvery {
 			lastSave = time.Now()
@@ -397,6 +473,9 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		if stop := e.stopAt(); save != nil && stop > chunkStart &&
 			chunkStart+float64(len(pending))/SampleRate >= stop {
 			cut := min(int(math.Round((stop-chunkStart)*SampleRate)), len(pending))
+			// Every piece before this one is heard first, so what is saved
+			// reaches the window's edge with nothing missing on the way.
+			drain()
 			resume := stop
 			last := chunkStart
 			for _, w := range TokensToWords(rec.Recognize(pending[:cut], SampleRate), chunkStart) {
@@ -432,6 +511,9 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		}
 	}
 	waitErr := cmd.Wait()
+	// What is still being heard is taken in before anything is saved or
+	// said, whichever way the reading ended.
+	drain()
 	if ctx.Err() != nil {
 		// Stopped, by pause or by a search that wants the machine. What was
 		// heard since the last save is written down before it goes, so
@@ -452,6 +534,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	}
 	if float64(len(pending))/SampleRate >= 0.2 {
 		recognise(pending, chunkStart)
+		drain()
 	}
 	e.Log.ClearProgress()
 	if count == 0 {

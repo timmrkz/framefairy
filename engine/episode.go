@@ -40,7 +40,14 @@ type EpisodeStatus struct {
 	// is now. Stale means one exists but the file has changed since.
 	Transcribed bool `json:"transcribed"`
 	// Covered is how far the transcript reaches, in seconds, finished or not.
-	Covered         float64       `json:"covered"`
+	Covered float64 `json:"covered"`
+	// Measured is how many seconds of the loudness are measured, which is
+	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
+	// all of it. It runs ahead of the transcript, where the clip timeline
+	// looks first, see levels.go.
+	Measured        float64       `json:"measured"`
+	MeasuredParts   [][2]float64  `json:"measuredParts"`
+	MeasuredAll     bool          `json:"measuredAll"`
 	TranscriptStale bool          `json:"transcriptStale"`
 	Plans           []PlanSummary `json:"plans"`
 	Rendered        int           `json:"rendered"`
@@ -79,6 +86,10 @@ func Status(source, asrModelDir string) EpisodeStatus {
 		} else if exists(whole) {
 			st.TranscriptStale = true
 		}
+	}
+	st.MeasuredParts, st.MeasuredAll = LevelsReach(source)
+	for _, p := range st.MeasuredParts {
+		st.Measured += p[1] - p[0]
 	}
 	st.Plans = PlanSummaries(logs)
 	st.Rendered = countFiles(filepath.Join(work, "out"), ".mp4")
