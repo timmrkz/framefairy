@@ -340,8 +340,9 @@ place.
 - **Shift and the arrows up and down walk the clip list**, the way shift
   and left and right walk its words: each step takes the next clip and
   puts the playhead at its start, which is where a short begins and so the
-  one frame worth seeing first. **Shift is what means a clip or a caption
-  throughout.** Without it the arrows move the playhead a frame, which is
+  one frame worth seeing first. The list goes round: down from the last
+  card is the first, and up from the first is the last. **Shift is what
+  means a clip or a caption throughout.** Without it the arrows move the playhead a frame, which is
   the episode and nothing else. With it they move it a word and a clip,
   and the two read as one idea rather than two keys that happen to be
   next to each other.
