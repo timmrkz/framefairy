@@ -33,42 +33,22 @@ func (p *Project) MakeClip(ctx context.Context, at float64, backward bool) (stri
 	if err != nil {
 		return "", "", err
 	}
-	ranges, spans, said := sketch.ranges, sketch.Spans, sketch.Words
 	o := p.Base
-
 	e := p.engine
 	source, err := e.Probe(ctx, p.Source)
 	if err != nil {
 		return "", "", err
 	}
 	cropW, _ := CropWindow(source, o.Width, o.Height)
-	tight := make([]Span, len(spans))
-	for k, s := range spans {
-		tight[k] = Span{s.Start, s.End}
-	}
-	segments, err := e.ClipSegments(ctx, p.Source, tight, source, cropW, newCropCache())
+	segments, err := e.ClipSegments(ctx, p.Source, sketch.cut.spans, source, cropW, newCropCache())
 	if err != nil {
 		return "", "", err
 	}
 	if len(segments) == 0 {
 		return "", "", renderErr("there is nothing to make a clip of at %s", HMS(at))
 	}
-
 	title := sketch.Title
-	clip := PlanClip{Title: title, Slug: strings.ToLower(SanitiseName(title, "clip")),
-		Keep: ranges, Words: [][3]any{}}
-	for _, w := range said {
-		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
-			PyFloat(roundTo(w.End, 3)), w.Text})
-	}
-	for _, s := range segments {
-		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
-			CropX: "center"}
-		if s.CropX != nil {
-			seg.CropX = *s.CropX
-		}
-		clip.Segments = append(clip.Segments, seg)
-	}
+	clip := planClipOf("", strings.ToLower(SanitiseName(title, "clip")), title, "", sketch.cut, segments)
 
 	path := p.HandPlanPath()
 	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
@@ -91,7 +71,7 @@ type ClipSketch struct {
 	Words    []Cue
 	Title    string
 	Captions []Caption
-	ranges   [][2]int
+	cut      cutClip
 }
 
 // SketchClip is the clip MakeClip would make at a moment, without framing
@@ -127,43 +107,16 @@ func (p *Project) SketchClip(at float64, backward bool) (ClipSketch, error) {
 		}
 		here--
 	}
-	length := func(first, last int) float64 {
-		total := 0.0
-		for _, s := range SegmentsFromRanges([][2]int{{first + 1, last + 1}}, lines, o.KeepPause, o.MaxPause) {
-			total += s.Duration()
-		}
-		return total
-	}
-	first, last := here, here
-	if backward {
-		for first > 0 && length(first, last) < o.Min {
-			if length(first-1, last) > o.Max {
-				break
-			}
-			first--
-		}
-	} else {
-		for last+1 < len(lines) && length(first, last) < o.Min {
-			if length(first, last+1) > o.Max {
-				break
-			}
-			last++
-		}
-	}
-	ranges := [][2]int{{first + 1, last + 1}}
-	spans := SegmentsFromRanges(ranges, lines, o.KeepPause, o.MaxPause)
-	if len(spans) == 0 {
+	// The lines come from the playhead, where a search takes them from the
+	// model's answer. From there the clip is cut the one way every clip is:
+	// its edges on sentences, filler off its ends, long pauses out.
+	cut := cutKeep(lines, handKeep(lines, here, at, backward, o), o.KeepPause, o.MaxPause)
+	if len(cut.spans) == 0 {
 		return ClipSketch{}, renderErr("there is nothing to make a clip of at %s", HMS(at))
 	}
-
-	var said []Cue
-	for n := first; n <= last; n++ {
-		said = append(said, lines[n].Cues...)
-	}
-	sketch := ClipSketch{Spans: make([]Span, len(spans)), Words: said, Title: handTitle(said), ranges: ranges}
-	clip := Clip{Words: said}
-	for k, s := range spans {
-		sketch.Spans[k] = Span{s.Start, s.End}
+	sketch := ClipSketch{Spans: cut.spans, Words: cut.words, Title: handTitle(cut.words), cut: cut}
+	clip := Clip{Words: cut.words}
+	for _, s := range cut.spans {
 		clip.Segments = append(clip.Segments, Segment{Start: s.Start, End: s.End})
 	}
 	// Broken the way the render breaks them in the style a new clip set
@@ -172,6 +125,87 @@ func (p *Project) SketchClip(at float64, backward bool) (ClipSketch, error) {
 	style := ResolveStyle(nil)
 	sketch.Captions = Captions(clip, max(8, int(style.MaxChars)), TooWide(style))
 	return sketch, nil
+}
+
+// handKeep is the lines, counted from 1 the way a plan keeps them, a clip
+// made by hand at line here keeps: the lines handRange picks, shaped the
+// way every clip's are.
+func handKeep(lines []Line, here int, at float64, backward bool, o Options) [][2]int {
+	length := func(first, last int) float64 {
+		return keepSeconds(lines, [][2]int{{first + 1, last + 1}}, o.KeepPause, o.MaxPause)
+	}
+	first, last := handRange(lines, here, at, backward, o.Min, o.Max, length)
+	held := holdStart
+	if backward {
+		held = holdEnd
+	}
+	return shapeKeep(lines, [][2]int{{first + 1, last + 1}}, o.Max, o.KeepPause, o.MaxPause, false, held)
+}
+
+// handRange is the lines, counted from 0, a clip made by hand at line here
+// keeps, and length is how long lines first to last come out once cut.
+func handRange(lines []Line, here int, at float64, backward bool, shortest, longest float64,
+	length func(first, last int) float64) (first, last int) {
+	// In marks where the clip starts, so it takes the sentence the playhead
+	// stands in from its beginning, even a few seconds before the playhead.
+	// Out marks where it ends, so it takes that sentence to its end. From
+	// there it grows to Shortest, and shapeKeep puts the other edge on a
+	// sentence the way it does for the model's clips. A line ends at a pause
+	// or a length and not at a sentence, and a clip that began at the line
+	// the playhead stood in began in the middle of what was being said.
+	// Where sentences begin and end is decided once, for every clip, see
+	// sentenceStart and sentenceEnd in edges.go.
+	// The sentence the playhead stands in begins at or before it and ends at
+	// or after it, so a beginning later in its line, or an end earlier in
+	// it, belongs to another sentence.
+	starts := func(i int) bool {
+		k := sentenceStart(lines, i)
+		return k >= 0 && (i != here || lines[i].Cues[k].Start <= at)
+	}
+	ends := func(i int) bool {
+		k := sentenceEnd(lines, i)
+		return k >= 0 && (i != here || lines[i].Cues[k].End >= at)
+	}
+	// Where the sentence of line i begins and ends, no further off than
+	// sentenceReach, the same reach every clip's edges have. A transcript
+	// without punctuation for that long has no sentence to go to, and the
+	// line itself stands.
+	startOf := func(i int) int {
+		for n := i; n >= 0 && lines[i].Start()-lines[n].Start() <= sentenceReach; n-- {
+			if starts(n) {
+				return n
+			}
+		}
+		return i
+	}
+	endOf := func(i int) int {
+		for n := i; n < len(lines) && lines[n].End()-lines[i].End() <= sentenceReach; n++ {
+			if ends(n) {
+				return n
+			}
+		}
+		return i
+	}
+	first, last = here, here
+	if backward {
+		last = endOf(here)
+		first = startOf(last)
+		for first > 0 && length(first, last) < shortest {
+			if length(first-1, last) > longest {
+				break
+			}
+			first--
+		}
+	} else {
+		first = startOf(here)
+		for last+1 < len(lines) && length(first, last) < shortest {
+			if length(first, last+1) > longest {
+				break
+			}
+			last++
+		}
+	}
+	return first, last
 }
 
 // addHandClip puts a clip into the clip set made by hand, under the first

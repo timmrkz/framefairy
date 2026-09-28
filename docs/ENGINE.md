@@ -175,7 +175,25 @@ boundary unless that takes the clip past the longest length asked for,
 and then it moves the other way: the model stopped the umbrella story on
 the comma of the sentence after its payoff, the nearer boundary ran it to
 35 s, and the length limit then cut the payoff out of its middle. Now it
-ends on the payoff. A filler word at the start of a
+ends on the payoff.
+
+A boundary is found to the word, not only at the edges of lines. A line
+is laid out at pauses and lengths, so a sentence can begin or end in its
+middle: "wie schnell sie das aufnehmen. Auf einer" is one line of Tim's
+episode, and the sentence about the school begins at "Auf". A line with a
+sentence beginning or ending inside it is a boundary at that word,
+`sentenceStart` and `sentenceEnd`, weighed by the time of that word, and
+`cutKeep` cuts the clip there: the lines a plan keeps stay whole lines,
+and the words and the pieces begin at the sentence's first word and end
+at its last. So the umbrella story, stopped on the comma of line 10, now
+ends on "ne?" inside that line, nearer than "echt wenig." three lines on.
+An edge can be held where it was put, `hold`: In and Out hold theirs.
+
+These steps are the one way a clip is cut, whoever chose its lines.
+`shapeKeep` puts its edges on sentences, `cutKeep` drops filler off its
+ends and cuts its pauses, `ClipSegments` frames it and `planClipOf`
+writes it. A search's clips and clips made by hand both go through them,
+and only the choice of lines is each one's own. A filler word at the start of a
 clip goes, unless the line after it goes on in lower case: then it is the
 first word of the sentence, "Und" before "irgendein Typ auf dem Schulhof",
 and without it the clip would start mid-sentence.
@@ -305,12 +323,14 @@ searched, and the command line never takes it for a search, so it is
 rendered with `--clips`. But its clips are clips: `RemoveRange` takes those
 in the part given back, without making a hole in a window it does not have.
 `MakeClip` in `engine/handclip.go` makes one at a moment, the way an
-editor's In and Out marks do. Forward, it starts at the line the moment
-stands in and takes the lines after it. Backward, it ends at that line and
-takes the lines before it. Either way it grows until the clip is as long as
-`--min` asks, never past `--max` for a line more, and cuts and frames it
-through the same `SegmentsFromRanges` and `ClipSegments` a search uses. No
-model is asked.
+editor's In and Out marks do. Its own part is only the choice of lines,
+`handRange`: forward, from the beginning of the sentence the moment
+stands in, even a few seconds before it, and on through the lines after
+it. Backward, to the end of that sentence, and back through the lines
+before it. Either way it grows until the clip is as long as `--min` asks,
+never past `--max` for a line more. From there it is cut the one way
+every clip is, `shapeKeep`, `cutKeep`, `ClipSegments` and `planClipOf`,
+holding the edge In or Out put on the sentence. No model is asked.
 
 Where the transcription from the start has not reached yet, `HearAround`
 in `engine/islands.go` first transcribes the part a clip needs: its

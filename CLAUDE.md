@@ -326,6 +326,21 @@ messages, pull request text, code comments and chat replies.
 
 ## Engineering rules
 
+- **One way to do each thing, used everywhere.** Before building anything,
+  find what already does that job, in the engine, the app, the interface,
+  the build, and use it. What is new about the case goes in as a
+  parameter of that one thing, never as a second thing beside it that does
+  nearly the same. The test is what the thing is, not how this case
+  reaches it: a clip made by hand is a clip, so its lines go through the
+  same shaping, cutting and framing as the model's, and only the choice of
+  lines is its own. A progress row is a progress row, so a clip made by
+  hand fills the same row with the same numbers a search does. A copy
+  misses whatever the original learns next: clips made by hand began
+  mid-sentence because they were cut beside `wholeSentences` rather than
+  through it. When the one thing falls short of the new case, it is
+  improved, for every user of it, with its own tests still passing or
+  changed on purpose. If it is not clear what already exists, look before
+  writing, and say in the report which existing piece was used.
 - **Go, latest version.** One module, `go 1.27` in `go.mod`, no per-part
   version exceptions. Upgrade with Go releases.
 - **One command, and the programs still install nothing.** `make` is the

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -171,11 +172,23 @@ func (b *planBuilder) take(raw string) {
 // and runs that follow each other one run when the recipe leaves the
 // pauses to the engine.
 func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
-	entry.Keep = wholeSentences(b.lines, entry.Keep, b.opts.MaxLen, b.seconds)
-	if b.opts.recipe().Joins {
-		entry.Keep = joinRuns(entry.Keep)
-	}
+	entry.Keep = shapeKeep(b.lines, entry.Keep, b.opts.MaxLen, b.opts.KeepPause, b.opts.MaxPause,
+		b.opts.recipe().Joins, holdNeither)
 	return entry
+}
+
+// shapeKeep is how the lines a clip keeps are cut, whoever chose them, the
+// model or a person with In and Out: every edge on a sentence, see
+// edges.go, and runs that follow each other one run when joins asks.
+func shapeKeep(lines []Line, keep [][2]int, longest, keepPause float64, maxPause *float64,
+	joins bool, held hold) [][2]int {
+	keep = wholeSentences(lines, keep, longest, func(k [][2]int) float64 {
+		return keepSeconds(lines, k, keepPause, maxPause)
+	}, held)
+	if joins {
+		keep = joinRuns(keep)
+	}
+	return keep
 }
 
 // acceptLocked takes a clip of the answer. One that does not fit the length
@@ -193,11 +206,117 @@ func (b *planBuilder) acceptLocked(entry PlanEntry) {
 // seconds is how long a clip that keeps these lines runs, the way it is
 // framed: filler at its edges dropped and long pauses inside it cut.
 func (b *planBuilder) seconds(keep [][2]int) float64 {
+	return keepSeconds(b.lines, keep, b.opts.KeepPause, b.opts.MaxPause)
+}
+
+// keepSeconds is how long a clip that keeps these lines runs, the way it is
+// cut, see cutKeep.
+func keepSeconds(lines []Line, keep [][2]int, keepPause float64, maxPause *float64) float64 {
 	total := 0.0
-	for _, s := range SegmentsFromRanges(trimFiller(b.lines, keep), b.lines, b.opts.KeepPause, b.opts.MaxPause) {
-		total += s.Duration()
+	for _, s := range cutKeep(lines, keep, keepPause, maxPause).spans {
+		total += s.End - s.Start
 	}
 	return total
+}
+
+// cutClip is the lines a clip keeps, cut: filler dropped off its ends, the
+// words said in what is left, and the pieces of the episode it plays with
+// the long pauses cut out.
+type cutClip struct {
+	ranges [][2]int
+	words  []Cue
+	spans  []Span
+}
+
+// cutKeep cuts the lines a clip keeps, whoever chose them. It is the one
+// way a clip is cut, for the model's clips and for clips made by hand.
+//
+// Each run begins at the first word of a sentence and ends at the last word
+// of one, when its first or last line has a sentence beginning or ending
+// inside it rather than at its edge, see sentenceStart and sentenceEnd. The
+// lines a plan keeps stay whole lines. The words and the pieces are cut to
+// the word, the way a trimmed edge is.
+func cutKeep(lines []Line, keep [][2]int, keepPause float64, maxPause *float64) cutClip {
+	c := cutClip{ranges: trimFiller(lines, keep)}
+	spans := SegmentsFromRanges(c.ranges, lines, keepPause, maxPause)
+	type cutOff struct{ from, to float64 }
+	var off []cutOff
+	for _, pair := range c.ranges {
+		first, last := pair[0]-1, pair[1]-1
+		from, to := 0, len(lines[last].Cues)-1
+		if k := sentenceStart(lines, first); k > 0 && (first < last || k <= sentenceEnd(lines, last)) {
+			from = k
+			cues := lines[first].Cues
+			start := math.Max(cues[k-1].End, cues[k].Start-keepPause)
+			off = append(off, cutOff{cues[0].Start - keepPause - 1, start})
+		}
+		if k := sentenceEnd(lines, last); k >= 0 && k < to && (first < last || k >= from) {
+			to = k
+			cues := lines[last].Cues
+			end := math.Min(cues[k+1].Start, cues[k].End+keepPause)
+			off = append(off, cutOff{end, cues[len(cues)-1].End + keepPause + 1})
+		}
+		for number := first; number <= last; number++ {
+			cues := lines[number].Cues
+			lo, hi := 0, len(cues)
+			if number == first {
+				lo = from
+			}
+			if number == last {
+				hi = to + 1
+			}
+			if lo < hi {
+				c.words = append(c.words, cues[lo:hi]...)
+			}
+		}
+	}
+	sort.SliceStable(c.words, func(a, b int) bool { return c.words[a].Start < c.words[b].Start })
+	for _, s := range spans {
+		pieces := []Span{{s.Start, s.End}}
+		for _, o := range off {
+			var kept []Span
+			for _, p := range pieces {
+				if o.to <= p.Start || o.from >= p.End {
+					kept = append(kept, p)
+					continue
+				}
+				if o.from > p.Start {
+					kept = append(kept, Span{p.Start, o.from})
+				}
+				if o.to < p.End {
+					kept = append(kept, Span{o.to, p.End})
+				}
+			}
+			pieces = kept
+		}
+		for _, p := range pieces {
+			if p.End-p.Start > 0.05 {
+				c.spans = append(c.spans, p)
+			}
+		}
+	}
+	return c
+}
+
+// planClipOf is a clip as it goes into a plan: its words and its pieces
+// with their framing, as the model's clips and clips made by hand are
+// both written.
+func planClipOf(id, slug, title, reason string, c cutClip, segments []Segment) PlanClip {
+	clip := PlanClip{ID: id, Slug: slug, Title: title, Reason: reason, Keep: c.ranges,
+		Words: [][3]any{}}
+	for _, w := range c.words {
+		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
+			PyFloat(roundTo(w.End, 3)), w.Text})
+	}
+	for _, s := range segments {
+		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
+			CropX: "center"}
+		if s.CropX != nil {
+			seg.CropX = *s.CropX
+		}
+		clip.Segments = append(clip.Segments, seg)
+	}
+	return clip
 }
 
 // outside says whether a clip is well off the length asked for. Both
@@ -475,36 +594,24 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	e, lines, opts, index := b.e, b.lines, b.opts, job.index
 	// Drop a leading or trailing line that carries nothing. Whole lines,
 	// never part of one.
-	ranges := trimFiller(lines, job.entry.Keep)
+	c := cutKeep(lines, job.entry.Keep, opts.KeepPause, opts.MaxPause)
+	ranges, chosen, tightSpans := c.ranges, c.words, c.spans
 	if len(ranges) == 0 {
 		e.Log.Warn("   %02d: every line in it was filler, skipped", index)
 		return PlanClip{}, false, nil
 	}
 
-	var chosen []Cue
-	for _, pair := range ranges {
-		for number := pair[0]; number <= pair[1]; number++ {
-			chosen = append(chosen, lines[number-1].Cues...)
-		}
-	}
-	sort.SliceStable(chosen, func(a, b int) bool { return chosen[a].Start < chosen[b].Start })
-
 	loose := 0.0
 	if len(chosen) > 0 {
 		loose = chosen[len(chosen)-1].End - chosen[0].Start
 	}
-	spans := SegmentsFromRanges(ranges, lines, opts.KeepPause, opts.MaxPause)
-	durations := make([]float64, len(spans))
-	for k, s := range spans {
-		durations[k] = s.Duration()
+	durations := make([]float64, len(tightSpans))
+	for k, s := range tightSpans {
+		durations[k] = s.End - s.Start
 	}
 	if tight := pysum(durations); loose-tight > 0.3 {
 		e.Log.Detail("clip %d: %ss dropped between the %d run(s) it kept",
 			index, fixed(loose-tight, 1), len(ranges))
-	}
-	tightSpans := make([]Span, len(spans))
-	for k, s := range spans {
-		tightSpans[k] = Span{s.Start, s.End}
 	}
 
 	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache)
@@ -532,26 +639,11 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		return PlanClip{}, false, nil
 	}
 
-	clip := PlanClip{
-		ID:     job.id,
-		Slug:   strings.ToLower(SanitiseName(job.entry.Slug, fmt.Sprintf("clip%d", index))),
-		Title:  job.entry.Title,
-		Reason: job.entry.Reason,
-		Keep:   ranges,
-		Words:  [][3]any{},
-	}
-	for _, w := range chosen {
-		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
-			PyFloat(roundTo(w.End, 3)), w.Text})
-	}
+	clip := planClipOf(job.id,
+		strings.ToLower(SanitiseName(job.entry.Slug, fmt.Sprintf("clip%d", index))),
+		job.entry.Title, job.entry.Reason, c, segments)
 	lengths := make([]float64, len(segments))
 	for k, s := range segments {
-		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
-			CropX: "center"}
-		if s.CropX != nil {
-			seg.CropX = *s.CropX
-		}
-		clip.Segments = append(clip.Segments, seg)
 		lengths[k] = s.Duration()
 	}
 

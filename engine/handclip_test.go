@@ -428,3 +428,66 @@ func TestAClipMadeByHandSaysHowFarItIs(t *testing.T) {
 		}
 	}
 }
+
+// A clip made by hand begins where a sentence begins and ends where one
+// ends, whatever line the playhead stands in, to the word. On Tim's episode
+// In started a clip at "bekommen hat und", in the middle of "Auf einer
+// Schule in Amerika, wo man das Buch bekommen hat". That sentence begins
+// in the middle of a line, "wie schnell sie das aufnehmen. Auf einer", so
+// the clip has to begin at a word, not at a line.
+func TestAClipMadeByHandIsWholeSentences(t *testing.T) {
+	lines := said(
+		0.0, 4.0, "Das ist der Anfang von allem und es geht noch weiter so.",
+		0.6, 1.5, "Und die Auswahlmöglichkeiten,",
+		1.9, 8.5, "die die Kinder und Jugendlichen haben, welche Inhalte sie konsumieren und wie tief sie da reingehen,",
+		0.5, 2.9, "wie schnell sie das aufnehmen. Auf einer",
+		1.9, 6.3, "Schule in Amerika, wo man das Buch bekommen hat und wenn man damit fertig war, war man mit dem Schuljahr fertig.",
+		0.6, 3.4, "Und dann konntest du sagen, willst du das nächste Schuljahr anfangen?",
+		2.2, 3.2, "Ich war mit dem Matheunterricht in zwei Wochen fertig. Wenn ja.",
+		0.5, 3.6, "So, aber ich war interessiert. Und du machst ständig diese standardisierten Tests.",
+		0.1, 5.6, "Das würde ich mir auch hier wünschen. Nicht um Tests zu machen, sondern um",
+		0.4, 2.0, "deine Talente zu entdecken.",
+	)
+	o := DefaultOptions()
+	o.Min, o.Max = 20, 30
+	here, at := 4, lines[4].Cues[8].Start // "bekommen"
+	for _, backward := range []bool{false, true} {
+		cut := cutKeep(lines, handKeep(lines, here, at, backward, o), o.KeepPause, o.MaxPause)
+		words := cut.words
+		first, last := words[0], words[len(words)-1]
+		before := ""
+		for _, l := range lines {
+			for _, w := range l.Cues {
+				if w.End <= first.Start {
+					before = w.Text
+				}
+			}
+		}
+		if before != "" && !endsSentence(before) {
+			t.Errorf("backward %v begins in the middle of a sentence, at %q after %q", backward, first.Text, before)
+		}
+		if !endsSentence(last.Text) {
+			t.Errorf("backward %v ends in the middle of a sentence, at %q", backward, last.Text)
+		}
+		if first.Start > at || last.End < at {
+			t.Errorf("backward %v leaves the playhead out: %v to %v, playhead %v", backward, first.Start, last.End, at)
+		}
+		if !backward && first.Text != "Auf" {
+			t.Errorf("In begins at %q", first.Text)
+		}
+		if backward && last.Text != "fertig." {
+			t.Errorf("Out ends at %q", last.Text)
+		}
+		if cut.spans[0].Start > first.Start || cut.spans[0].Start < first.Start-0.2 {
+			t.Errorf("backward %v plays from %v, its first word is at %v", backward, cut.spans[0].Start, first.Start)
+		}
+	}
+}
+
+func texts(lines []Line) []string {
+	var out []string
+	for _, l := range lines {
+		out = append(out, l.Text())
+	}
+	return out
+}

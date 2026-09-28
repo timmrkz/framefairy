@@ -47,9 +47,10 @@ func TestAClipStartsAndEndsOnASentence(t *testing.T) {
 	)
 	for _, c := range []struct{ keep, want string }{
 		// It started on "irgendein Typ" and ended on a comma: the sentence
-		// before it is a second back, and the one it stopped in ends seven
-		// seconds on.
-		{"[[3 10]]", "[[2 13]]"},
+		// before it is a second back, and a sentence ends at "ne?", inside
+		// the line it stopped in, three and a half seconds back, nearer than
+		// "echt wenig." seven seconds on. cutKeep ends the clip at "ne?".
+		{"[[3 10]]", "[[2 10]]"},
 		// It stopped on "aber davor": two seconds to the end of the sentence.
 		{"[[2 11]]", "[[2 13]]"},
 		// Started mid-sentence on "zum Typen": the sentence began at 5.
@@ -65,7 +66,7 @@ func TestAClipStartsAndEndsOnASentence(t *testing.T) {
 		{"[[2 3] [3 9]]", "[[2 9]]"},
 	} {
 		keep := parseRuns(t, c.keep)
-		if got := fmt.Sprint(wholeSentences(lines, keep, 0, nil)); got != c.want {
+		if got := fmt.Sprint(wholeSentences(lines, keep, 0, nil, holdNeither)); got != c.want {
 			t.Errorf("%s became %s, not %s", c.keep, got, c.want)
 		}
 	}
@@ -97,14 +98,31 @@ func TestAnEdgeMovesTheWayThatFits(t *testing.T) {
 		}
 		return total
 	}
-	// The model stopped on the comma of line 10. Forward to "echt wenig"
-	// is nearer, and runs past 30 seconds. Back to the payoff fits.
-	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 10}}, 30, seconds)); got != "[[2 9]]" {
+	// The model stopped on the comma of line 10. The nearest end is "ne?"
+	// inside that line, which fits either way.
+	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 10}}, 30, seconds, holdNeither)); got != "[[2 10]]" {
 		t.Errorf("got %s", got)
 	}
-	// With room enough, the nearer boundary is taken as before.
-	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 10}}, 40, seconds)); got != "[[2 13]]" {
+	// It stopped on "aber davor". Back to "ne?" is nearer, and fits.
+	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 11}}, 30, seconds, holdNeither)); got != "[[2 10]]" {
 		t.Errorf("got %s", got)
+	}
+	// With "ne?" out of the running, the nearer boundary forward runs past
+	// 30 seconds and the payoff back fits, which is the choice the rule is
+	// for: the umbrella story ends on its payoff.
+	plain := append([]Line(nil), lines...)
+	plain[9] = said(0.0, 7.2, "Also hat sich einfach zerlegt, ne, das war eine der ersten Erinnerungen,")[0]
+	plain[9].Cues = shift(plain[9].Cues, lines[9].Start())
+	if got := fmt.Sprint(wholeSentences(plain, [][2]int{{2, 10}}, 30, seconds, holdNeither)); got != "[[2 9]]" {
+		t.Errorf("got %s", got)
+	}
+	if got := fmt.Sprint(wholeSentences(plain, [][2]int{{2, 10}}, 40, seconds, holdNeither)); got != "[[2 13]]" {
+		t.Errorf("got %s", got)
+	}
+	// And the clip that keeps lines 2 to 10 ends at "ne?", to the word.
+	c := cutKeep(lines, [][2]int{{2, 10}}, 0.1, nil)
+	if last := c.words[len(c.words)-1].Text; last != "ne?" {
+		t.Errorf("the clip ends at %q", last)
 	}
 }
 
@@ -114,7 +132,7 @@ func TestAnEdgeFarFromASentenceStands(t *testing.T) {
 	lines := said(
 		0.0, 2.0, "Das war so", 0.5, 9.0, "und dann kam noch einer und noch einer und dann",
 		0.5, 9.0, "ging es immer weiter so ohne Ende und wieder", 0.5, 2.0, "vorbei.")
-	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 2}}, 0, nil)); got != "[[1 2]]" {
+	if got := fmt.Sprint(wholeSentences(lines, [][2]int{{2, 2}}, 0, nil, holdNeither)); got != "[[1 2]]" {
 		t.Errorf("got %s", got)
 	}
 }
@@ -162,4 +180,13 @@ func TestTheReportCountsFaults(t *testing.T) {
 	if s, e, o := clipFaults(clips, 20, 30); s != 1 || e != 1 || o != 2 {
 		t.Errorf("counted %d starts, %d ends, %d off", s, e, o)
 	}
+}
+
+// shift moves words to begin at a moment.
+func shift(cues []Cue, at float64) []Cue {
+	out := make([]Cue, len(cues))
+	for i, c := range cues {
+		out[i] = Cue{c.Start + at, c.End + at, c.Text}
+	}
+	return out
 }
