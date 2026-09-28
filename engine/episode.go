@@ -551,9 +551,8 @@ func clipCaptionsView(planPath, clipID string, overrides map[string]any,
 		}
 		draft.Words = nil
 		for _, w := range t.Words {
-			mid := (w.Start + w.End) / 2
 			for _, p := range pieces {
-				if mid >= p[0] && mid < p[1] {
+				if HoldsWord(p[0], p[1], w) {
 					draft.Words = append(draft.Words, Cue{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
 					break
 				}

@@ -98,7 +98,8 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.75 | Clip edges land on the frame like the edges of a cut, with shift for whole words, so a clip can be trimmed a frame at a time | `[x]` |
 | 2.76 | The caption blocks on the clip timeline follow an edge or a cut while it is dragged, made by the engine from the pieces as they are drawn | `[x]` |
 | 2.77 | The playhead goes with a dragged clip edge and the video preview shows the clip as it is dragged. With shift the word the edge snapped to is always lit. The clip edge lies over the caption handles | `[x]` |
-| 2.78 | A word an edge cuts into is captioned while the clip holds its middle, the rule that decides which words a clip says. It used to need the whole word inside, so a word the clip said had no caption until the edge passed its start | `[x]` |
+| 2.78 | A word is said and captioned while a clip holds any of its sound, one rule for the words a clip keeps, its captions and a drag, so dragging an edge back over a word brings its caption in at the word's last sound. A word a cut parts is captioned once | `[x]` |
+| 2.79 | A word the recogniser heard as one keeps its end across a breath inside it: "sweet-grundschulliebe" was cut off before "liebe", which had no caption and was never lit | `[x]` |
 | 2.61 | Text and Box in the captions column are switches like Highlight: a short can be rendered without the box, or without captions at all | `[x]` |
 | 2.60 | Jobs as one thing each, see [JOBS.md](JOBS.md): the design `[x]`, the path tests `[x]`, the records and `Project.Search` in the engine `[x]`, the app running jobs in three lanes `[x]`, the interface switched over `[x]`, the old parts gone `[x]` | `[~]` |
 | 2.59 | A search that stopped before it found anything says so where its clips would have been, with its reason, after a restart too, and points to **New**. Nothing starts by itself | `[x]` |

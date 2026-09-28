@@ -489,17 +489,16 @@ func TrimClip(planPath, clipID string, start, end float64, t *Transcript,
 }
 
 // refreshWords takes a clip's words again from the transcript: every word
-// whose middle lies inside one of its pieces.
+// some of whose sound one of its pieces holds, see HoldsWord.
 func refreshWords(c *object, pieces []any, t *Transcript) {
 	spoken := []any{}
 	for _, w := range t.Words {
-		mid := (w.Start + w.End) / 2
 		for _, item := range pieces {
 			seg, ok := item.(*object)
 			if !ok {
 				continue
 			}
-			if mid >= number(seg.values["start"]) && mid < number(seg.values["end"]) {
+			if HoldsWord(number(seg.values["start"]), number(seg.values["end"]), w) {
 				spoken = append(spoken, []any{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
 				break
 			}

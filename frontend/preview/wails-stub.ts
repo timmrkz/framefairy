@@ -37,6 +37,11 @@ const allWords = () => {
   return list;
 };
 
+// Whether a piece holds some of a word's sound, the engine's HoldsWord:
+// more than a frame of it.
+const holds = (p: { start: number; end: number }, w: { start: number; end: number }) =>
+  Math.min(p.end, w.end) - Math.max(p.start, w.start) > 0.02;
+
 const words = (from: number, to: number) =>
   allWords().filter((w) => w.end > from && w.start < to);
 
@@ -117,7 +122,7 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     segments,
     words: allWords()
       .filter((w) =>
-        segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
+        segments.some((p) => holds(p, w)),
       )
       .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
     rejected: false,
@@ -189,29 +194,41 @@ const captionCues = (id: string, draft?: { start: number; end: number }[]) => {
         ...saved,
         segments: draft,
         words: allWords()
-          .filter((w) => draft.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end))
+          .filter((w) => draft.some((p) => holds(p, w)))
           .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
       }
     : saved;
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
   const onClipClock: { start: number; end: number; text: string; said: number }[] = [];
-  let offset = 0;
+  // The engine's ClipWords: a word is captioned in the piece that holds
+  // the most of it, from the edge on when an edge cuts into it.
+  const offsets: number[] = [];
+  let sum = 0;
   for (const p of c.segments) {
-    for (const w of c.words) {
-      // A word is in the piece that holds its middle, the way the engine
-      // takes it, so a word an edge cuts into is still said.
-      const mid = (w.start + w.end) / 2;
-      if (mid < p.start || mid >= p.end) continue;
-      onClipClock.push({
-        start: offset + (w.start - p.start),
-        end: offset + (w.end - p.start),
-        text: w.text,
-        said: w.start,
-      });
-    }
-    offset += p.end - p.start;
+    offsets.push(sum);
+    sum += p.end - p.start;
   }
+  for (const w of c.words) {
+    let best = -1;
+    let most = 0;
+    c.segments.forEach((p, i) => {
+      const held = Math.min(p.end, w.end) - Math.max(p.start, w.start);
+      if (holds(p, w) && held > most) {
+        best = i;
+        most = held;
+      }
+    });
+    if (best < 0) continue;
+    const p = c.segments[best];
+    onClipClock.push({
+      start: offsets[best] + (Math.max(w.start, p.start) - p.start),
+      end: offsets[best] + (Math.min(w.end, p.end) - p.start),
+      text: w.text,
+      said: w.start,
+    });
+  }
+  onClipClock.sort((x, y) => x.start - y.start);
   const drawn: typeof onClipClock = [];
   for (const w of onClipClock) {
     const parts = w.text.split(" ").filter(Boolean);

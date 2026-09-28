@@ -188,8 +188,9 @@ func TestDraftCaptionsAreTheCaptionsTheEditLeaves(t *testing.T) {
 }
 
 // A word an edge cuts into is captioned exactly while it is said: while the
-// clip holds its middle. It used to need the whole word inside the clip,
-// so a word the clip said had no caption until the edge passed its start.
+// clip holds some of its sound. It used to need the whole word inside the
+// clip, so a word the clip said had no caption until the edge passed its
+// start.
 func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 	tr := editableTranscript()
 	for _, c := range []struct {
@@ -197,9 +198,10 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 		start float64
 		said  bool
 	}{
-		// "eins" runs 10 to 10.5, so its middle is at 10.25.
-		{"edge before the middle", 10.24, true},
-		{"edge after the middle", 10.3, false},
+		// "eins" runs 10 to 10.5.
+		{"edge inside the word", 10.24, true},
+		{"edge at its last sound", 10.45, true},
+		{"edge past it", 10.49, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			path := editablePlanPath(t)
