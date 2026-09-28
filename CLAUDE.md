@@ -64,7 +64,12 @@ Start with [README.md](README.md). In short:
 
 - He uses Claude through claude.ai, in chat and in cloud sessions at
   claude.ai/code. He does not run Claude Code on his Mac. Changes reach him as
-  pull requests on GitHub. After a merge he runs `git pull && make run`.
+  pull requests on GitHub. He brings a change into the app through its own
+  Updates page, at the foot of the sidebar, which follows main, a branch or
+  a pull request. So a test step says to update from there, to main or to
+  the pull request, and never `git pull && make run`, unless the test
+  really needs a build made from the checkout, like the command line or a
+  change to `make` itself.
   Never hand him zip files or ask him to copy files around.
 - **Every piece of work becomes a pull request, always.** A branch he has to
   find himself is work he cannot see. Work with no pull request is work that
