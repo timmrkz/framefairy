@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +132,58 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	}
 	if left := engine.ReadJobs(ep); len(left) != 0 {
 		t.Errorf("records left: %+v", left)
+	}
+}
+
+// An edit to a clip made by hand is undone and redone like an edit to any
+// clip, and a clip made by hand after it, which goes into the same set,
+// is not an edit and does not stand in the way.
+func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
+	d := open(t)
+	ep := d.episode("undo", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
+		t.Fatal(err)
+	}
+	if done := d.waitFor(d.in(ep, 30).ID); done.State != JobDone {
+		t.Fatalf("made %+v", done)
+	}
+	made := d.madeByHand(ep)
+	if len(made) != 1 {
+		t.Fatalf("%d clips", len(made))
+	}
+	c := made[0]
+	ctx := context.Background()
+	if _, err := d.svc.TrimClip(ctx, ep, c.Plan, c.ID, c.Start+2, c.End); err != nil {
+		t.Fatal(err)
+	}
+	if done := d.waitFor(d.in(ep, 150).ID); done.State != JobDone {
+		t.Fatalf("made %+v", done)
+	}
+	start := func() float64 {
+		for _, m := range d.madeByHand(ep) {
+			if m.Key == c.Key {
+				return m.Start
+			}
+		}
+		t.Fatalf("%s is gone", c.Key)
+		return 0
+	}
+	if math.Abs(start()-(c.Start+2)) > 0.5 {
+		t.Fatalf("trimmed to %.2f, from %.2f", start(), c.Start)
+	}
+	if done, err := d.svc.Undo(ep); err != nil || !done.Done {
+		t.Fatalf("undo %+v %v", done, err)
+	}
+	if math.Abs(start()-c.Start) > 0.05 {
+		t.Errorf("undone to %.2f, want %.2f", start(), c.Start)
+	}
+	if done, err := d.svc.Redo(ep); err != nil || !done.Done {
+		t.Fatalf("redo %+v %v", done, err)
+	}
+	if math.Abs(start()-(c.Start+2)) > 0.5 {
+		t.Errorf("redone to %.2f", start())
+	}
+	if n := len(d.madeByHand(ep)); n != 2 {
+		t.Errorf("%d clips made by hand after undo and redo, want both", n)
 	}
 }

@@ -557,10 +557,17 @@ const clock = (t: number) => {
   const s = Math.floor(t);
   return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 };
-type FakeHand = { id: string; n: number; at: number; backward: boolean; wall: number; hears: boolean };
+type FakeHand = { id: string; n: number; at: number; backward: boolean; wall: number; hears: boolean; cancelledAt?: number; settled?: boolean };
 const hands = (): FakeHand[] => ((window as any).__hands ??= []);
 const handTakes = () => (location.search.includes("slowhand") ? 4000 : 1200);
 function handAt(h: FakeHand, now = Date.now()) {
+  // Called off, it says so where its clip would have been, the way a
+  // search does, after the moment the real one takes to stop.
+  if (h.settled) return { state: "cancelled", step: "", start: h.at, end: h.at, since: 0, share: -1 };
+  if (h.cancelledAt !== undefined && now - h.cancelledAt >= 400) {
+    return { state: "interrupted", step: "stopped", start: h.at, end: h.at, since: 0, share: -1 };
+  }
+  now = Math.min(now, h.cancelledAt ?? now);
   const since = now - h.wall;
   const hearFor = h.hears ? handTakes() : 0;
   const start = h.backward ? h.at - 25 : h.at - 2;
@@ -579,8 +586,8 @@ function handJob(h: FakeHand) {
     id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
     step: now.step, record: `clip-${h.n}`, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
-    result: running ? undefined : `clips-hand.json/h0${h.n}`,
-    underway: running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step }] : undefined,
+    result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
+    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step }] : undefined,
     progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, elapsed: 1, time: "" } : undefined,
   };
 }
@@ -854,6 +861,14 @@ export const Call = {
         return Promise.resolve(handJob(made));
       }
       case "Continue": {
+        const hand = hands().find((h) => h.id === args[0] && handAt(h).state === "interrupted");
+        if (hand) {
+          hand.settled = true;
+          const list = hands();
+          const again = { id: `h${list.length + 1}`, n: list.length + 1, at: hand.at, backward: hand.backward, wall: Date.now(), hears: false };
+          list.push(again);
+          return Promise.resolve(handJob(again));
+        }
         const was = fakeSearches().find((s) => s.id === args[0] && (s.stopped || s.cancelledAt !== undefined) && !s.settled);
         if (!was) return Promise.resolve({ id: "x", episode: "", kind: "continue", label: "Continue", state: "failed", queued: "", lane: "finding" });
         return Promise.resolve(searchJob(askSearch(was.from, was.to)));
@@ -1241,6 +1256,9 @@ export const Call = {
         (window as any).__stopped = true;
         ((window as any).__cancels ??= []).push(args[0]);
         if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
+        const hand = hands().find((h) => h.id === args[0]);
+        if (hand && handAt(hand).state === "interrupted") hand.settled = true;
+        else if (hand && hand.cancelledAt === undefined) hand.cancelledAt = Date.now();
         const s = fakeSearches().find((f) => f.id === args[0]);
         if (s?.stopped) s.settled = true;
         else if (s && s.cancelledAt === undefined) s.cancelledAt = Date.now();

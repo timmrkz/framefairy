@@ -56,13 +56,15 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
   test("a clip whose job was cut off or failed stays, still, and carries on with a click", () => {
     let carried = "";
     const cut = job({ id: "c", kind: "clip", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "hearing" }] });
+    const called = job({ id: "s", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const failed = job({ id: "f", kind: "clip", state: "failed", error: "nothing is said after 1:00:00", underway: [{ n: 1, start: 3600, end: 3600, step: "failed" }] });
-    const rows = arriving([cut, failed], never, (j) => (carried = j.id));
+    const rows = arriving([cut, called, failed], never, (j) => (carried = j.id));
     expect(rows.map((r) => [r.key, r.stopped, r.what])).toEqual([
-      ["c/1", true, "Interrupted. Click to carry on"],
-      ["f/1", true, "Failed. Click to try again"],
+      ["c/1", true, "Interrupted. Click Continue"],
+      ["s/1", true, "Stopped. Click Continue"],
+      ["f/1", true, "Failed. Click Continue"],
     ]);
-    expect(rows[1].left).toBe("nothing is said after 1:00:00");
+    expect(rows[2].left).toBe("nothing is said after 1:00:00");
     rows[0].oncontinue?.();
     expect(carried).toBe("c");
   });

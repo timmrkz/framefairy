@@ -163,8 +163,9 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 	}
 }
 
-// A clip made by hand called off leaves no clip, says nothing is on the
-// way any more, and keeps its record, to be carried on like any job.
+// A clip made by hand called off leaves no clip, keeps its card where the
+// clip would have appeared, saying it stopped, and keeps its record, to be
+// carried on like any job.
 func TestAClipMadeByHandCalledOff(t *testing.T) {
 	source := testEpisode(t, "70")
 	log, told := underwayLog()
@@ -178,8 +179,11 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 		t.Errorf("%d clips made", len(clips))
 	}
 	lists := told()
-	if len(lists) == 0 || len(lists[len(lists)-1]) != 0 {
-		t.Errorf("still on the way: %v", lists)
+	if len(lists) == 0 {
+		t.Fatal("never on the way")
+	}
+	if last := lists[len(lists)-1]; len(last) != 1 || last[0].Step != StepStopped || last[0].Start != 30 {
+		t.Errorf("last on the way %+v, want it stopped at the playhead", last)
 	}
 	recs := ReadJobs(source)
 	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30}) || !recs[0].Interrupted() {

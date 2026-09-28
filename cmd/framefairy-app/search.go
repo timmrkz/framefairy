@@ -221,7 +221,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
-		if j.Kind == engine.JobSearch {
+		if makesClips(j.Kind) {
 			// Its record says stopped as it ends, see runJob.
 			s.jobs.stopByHand(id)
 			return true

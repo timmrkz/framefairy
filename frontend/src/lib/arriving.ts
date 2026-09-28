@@ -19,9 +19,10 @@ export type Arriving = {
   left: string;
   fraction: number;
   still?: boolean;
-  // A clip on the way whose job stopped before it was written: cut off by
-  // the app closing, or failed. It stays where it would have appeared and
-  // says so there, and a click carries it on.
+  // A clip on the way whose job stopped before it was written: called off
+  // with Cancel, cut off by the app closing, or failed. It stays where it
+  // would have appeared and says so there, and a click on it, or Continue
+  // at the head of the list, carries it on.
   stopped?: boolean;
   full?: string;
   oncontinue?: () => void;
@@ -50,7 +51,12 @@ export function arriving(
           key,
           start: clip.start,
           title: clip.title ?? "",
-          what: failed ? "Failed. Click to try again" : "Interrupted. Click to carry on",
+          // In the words a search that stopped uses, in its row.
+          what: failed
+            ? "Failed. Click Continue"
+            : job.step === "stopped"
+              ? "Stopped. Click Continue"
+              : "Interrupted. Click Continue",
           left: failed && job.error ? job.error : clock(clip.start),
           fraction: -1,
           stopped: true,

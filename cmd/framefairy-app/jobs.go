@@ -317,6 +317,14 @@ func (q *queue) turn(job *Job) engine.Turn {
 	}
 }
 
+// makesClips says whether a kind of job makes clips: a search and a clip
+// made by hand. Called off by hand, such a job keeps its record and says
+// Stopped with Continue, because what it did stays and can be carried on,
+// and the clip list's Cancel and Continue take all of them at once.
+func makesClips(kind string) bool {
+	return kind == engine.JobSearch || kind == engine.JobClip
+}
+
 // jobLabel is what a job is called in Activity, by what it does.
 func jobLabel(kind string, preview bool) string {
 	switch {
@@ -536,12 +544,12 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
-// stopByHand calls off a search with Cancel. It ends as a search that
-// stopped, not as one that is gone, see runJob.
+// stopByHand calls off a job that makes clips with Cancel, see makesClips.
+// It ends as work that stopped, not as work that is gone, see runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && j.Kind == engine.JobSearch && j.Record != "" {
+		if j.ID == id && makesClips(j.Kind) && j.Record != "" {
 			j.byHand = true
 		}
 	}

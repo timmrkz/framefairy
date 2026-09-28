@@ -61,14 +61,18 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn
 	j := p.startJob(JobRecord{ID: id, Kind: JobClip, At: req.At, Backward: req.Backward})
 	defer j.end(&err)
 	log := p.engine.Log
-	// Made or called off, it is on the way no more. Failed, it stays where
-	// it would have appeared, and says why there.
+	// Made, it is on the way no more. Called off or failed, it stays where
+	// it would have appeared, and says so there, until it is carried on
+	// or put away.
 	defer func() {
-		if err == nil || errors.Is(err, ErrCancelled) {
+		switch {
+		case err == nil:
 			log.Underway(nil)
-			return
+		case errors.Is(err, ErrCancelled):
+			log.Underway([]Underway{{N: 1, Start: req.At, End: req.At, Step: StepStopped}})
+		default:
+			log.Underway([]Underway{{N: 1, Start: req.At, End: req.At, Step: StepFailed}})
 		}
-		log.Underway([]Underway{{N: 1, Start: req.At, End: req.At, Step: StepFailed}})
 	}()
 	// Whatever a job called off runs into on its way out, ffmpeg ended
 	// or a step not begun, it was called off. This runs before the two

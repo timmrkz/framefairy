@@ -160,7 +160,15 @@
   // While a search runs, the head of the clip list carries it: New becomes
   // Cancel and the line under the head fills up. Nothing is added to the
   // column and nothing moves.
+  // The clips made by hand are work of the clip list too: its Cancel stops
+  // them with the search, and its Continue carries them all on.
+  const handWork = $derived(jobs.clips(path));
+  const handRunning = $derived(handWork.filter((j) => j.state === "running" || j.state === "queued"));
+  const handStopped = $derived(handWork.filter((j) => j.state === "interrupted" || j.state === "failed"));
   const busy = $derived(searching || starting);
+  // Whether anything of the clip list runs, the search or a clip made by
+  // hand, which is what the head's Cancel stops.
+  const listBusy = $derived(busy || handRunning.length > 0);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -183,27 +191,30 @@
   // which is how it came to say Transcribing over a list of clips.
   const lane = $derived({ word: "Clips", count: true, job: working ?? null });
   const action = $derived.by(() => {
-    if (busy) {
+    if (listBusy) {
       return {
         label: stopping ? "Cancelling" : "Cancel",
         icon: "close",
         run: stopWork,
-        off: stopping || (starting && !working),
+        off: stopping || (starting && !working && !handRunning.length),
         primary: false,
-        title: "Stop looking for clips. What was heard of the episode is kept",
+        title: "Stop the work on the clips. What was heard and made is kept",
       };
     }
-    // A search that was cut off or failed is carried on, not started anew:
-    // the button says Continue and takes up the window the search was
-    // about, wherever the window on the range picker is now.
-    if (stopped) {
+    // Work that was cut off or failed is carried on, not started anew: the
+    // button says Continue and takes up the window the search was about,
+    // wherever the window on the range picker is now, and every clip made
+    // by hand that stopped.
+    if (stopped || handStopped.length) {
       return {
         label: "Continue",
         icon: "play",
-        run: carryOnSearch,
+        run: carryOn,
         off: duration <= 0,
         primary: true,
-        title: `Carry on the search of ${stopped.window.toLowerCase()}`,
+        title: stopped
+          ? `Carry on the search of ${stopped.window.toLowerCase()}${handStopped.length ? ", and the clips made by hand" : ""}`
+          : "Carry on the clips made by hand",
       };
     }
     return {
@@ -230,7 +241,7 @@
   );
 
   $effect(() => {
-    if (!working) stopping = false;
+    if (!working && !handRunning.length) stopping = false;
   });
 
   // Cancel: the search stops, and what it heard of the episode stays, so
@@ -239,10 +250,17 @@
   // chunk and keeps reporting until it hears the stop, and without this
   // the edge carries on for a second or two and the click looks missed.
   function stopWork() {
-    if (!working) return;
+    if (!working && !handRunning.length) return;
     stopping = true;
     if (transcribing) stoppedAt = heard;
-    api.cancelJob(working.id);
+    if (working) api.cancelJob(working.id);
+    for (const job of handRunning) api.cancelJob(job.id);
+  }
+
+  // Continue, on everything of the clip list that stopped.
+  function carryOn() {
+    for (const job of handStopped) void api.continueJob(job.id).then((j) => jobs.apply(j));
+    if (stopped) void carryOnSearch();
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
 
@@ -569,7 +587,7 @@
   const arrivingNow = $derived(
     arriving(
       jobs.forEpisode(path),
-      (job) => stopping && job.id === working?.id,
+      () => stopping,
       (job) => void api.continueJob(job.id).then((j) => jobs.apply(j)),
     ),
   );

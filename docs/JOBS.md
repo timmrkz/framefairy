@@ -275,8 +275,13 @@ search's first clip is chosen by: unless another has been chosen since the
 key was pressed, or the video plays, when it lands in the list one click
 away rather than take the picture from the hand.
 
-A clip whose job was cut off by the app closing, or failed, stays where it
-would have appeared, still, saying so, and a click carries it on. Its
+A clip whose job was called off with Cancel, cut off by the app closing,
+or failed, stays where it would have appeared, still, saying so, and a
+click carries it on. Cancel at the head of the clip list stops all the
+work that makes clips, the search and every clip made by hand, and each
+says Stopped where it is. Continue carries all of them on. That is one
+property, `makesClips`: a job that makes clips keeps its record when it is
+called off, and a render called off goes. Its
 record gives the card back after a restart, `JobRecord.Underway`.
 
 **Not undone by Cmd+Z.** A search's clips are not either: undo takes back
