@@ -375,8 +375,21 @@ func ClipWords(clip Clip) []Cue {
 			continue
 		}
 		segment := clip.Segments[best]
-		start := math.Max(word.Start, segment.Start)
-		end := math.Min(word.End, segment.End)
+		// A word keeps its own time at the clip's first and last edge, even
+		// where that lies outside the clip, and a caption shows from the
+		// first frame whatever its first word says. Clamped there, a word an
+		// edge cut into was squeezed into what was left of it, and the
+		// halves of a hyphenated word, which share its time by their
+		// letters, moved with the edge: "liebe" was lit where "grundschul"
+		// was still being said. At a cut the word is clamped, because the
+		// clock of the piece before runs on the other side of it.
+		start, end := word.Start, word.End
+		if best > 0 {
+			start = math.Max(start, segment.Start)
+		}
+		if best < len(clip.Segments)-1 {
+			end = math.Min(end, segment.End)
+		}
 		out = append(out, Cue{offsets[best] + (start - segment.Start),
 			offsets[best] + (end - segment.Start), word.Text})
 	}

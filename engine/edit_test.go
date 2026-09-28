@@ -215,9 +215,17 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 			if got := strings.Contains(fmt.Sprint(view.Captions), "eins"); got != c.said {
 				t.Errorf("eins is captioned: %v, said: %v\n%+v", got, c.said, view.Captions)
 			}
-			if c.said && view.Captions[0].Lines[0].Words[0].Start != 0 {
-				t.Errorf("a word cut into starts at %v on the clip's clock, not at its first frame",
-					view.Captions[0].Lines[0].Words[0].Start)
+			// The caption shows from the clip's first frame, and the word in
+			// it keeps its own time, before that frame, so the parts of a
+			// hyphenated word stay where they are said wherever the edge is.
+			if c.said {
+				first := view.Captions[0]
+				if first.Start != 0 {
+					t.Errorf("the caption appears at %v, not at the clip's first frame", first.Start)
+				}
+				if got := first.Lines[0].Words[0].Start; math.Abs(got-(10-c.start)) > 0.002 {
+					t.Errorf("eins starts at %v on the clip's clock, want %v", got, 10-c.start)
+				}
 			}
 		})
 	}
@@ -932,6 +940,50 @@ func TestThumbnailsInAPlanAreChecked(t *testing.T) {
 	for k := 1; k < len(got); k++ {
 		if got[k] <= got[k-1] {
 			t.Fatalf("thumbnail %d is not after the one before: %v", k, got)
+		}
+	}
+}
+
+// The stops an edge lands on with shift are the words the captions light
+// up. A word too wide for a line is two stops, at the same times as its two
+// halves in the captions, and a correction that reads as two words is two.
+func TestWordStopsAreTheWordsTheCaptionsLight(t *testing.T) {
+	long := "Donaudampfschifffahrtsgesellschaftskapitänsmütze"
+	dir := filepath.Join(t.TempDir(), "ep.framefairy", "logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "clips.json")
+	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
+	  "segments": [{"start": 10.0, "end": 14.0}],
+	  "words": [[10.2, 12.2, "` + long + `"], [12.5, 13.0, "Und da"]]}]}`
+	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	words := []Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und da"}}
+	stops, err := WordStops(path, "01", words, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := ClipCaptionsView(path, "01", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lit []Cue
+	for _, c := range view.Captions {
+		for _, line := range c.Lines {
+			for _, w := range line.Words {
+				lit = append(lit, Cue{roundTo(10+w.Start, 3), roundTo(10+w.End, 3), w.Text})
+			}
+		}
+	}
+	if len(stops) < 4 || len(stops) != len(lit) {
+		t.Fatalf("stops %+v\nlit %+v", stops, lit)
+	}
+	for i := range stops {
+		if math.Abs(stops[i].Start-lit[i].Start) > 0.002 || math.Abs(stops[i].End-lit[i].End) > 0.002 ||
+			stops[i].Text != lit[i].Text {
+			t.Errorf("stop %d is %+v, the captions light %+v", i, stops[i], lit[i])
 		}
 	}
 }

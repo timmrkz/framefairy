@@ -366,6 +366,14 @@ that holds the most of it. It used to take the whole word inside the clip
 for a caption and the word's middle for the words a clip keeps, and a long
 word stayed uncaptioned for half its length while it was plainly heard.
 
+A word keeps its own time at the clip's first and last edge, even where
+that lies outside the clip, and is clamped only at a cut. The halves of a
+hyphenated word share its time by their letters, so clamped to what an
+edge left of it they moved with the edge, and "liebe" was lit while
+"grundschul" was still being said. `WordStops` in `engine/episode.go`
+splits words the same way for the clip timeline, so the halves are where
+an edge dragged with shift stops.
+
 The recogniser's word timings are moved onto the sound when a transcript
 is read, `SnapWords` in `engine/audio.go`. A word ends where its last
 sound does, when 120 ms or more of silence follow it before the

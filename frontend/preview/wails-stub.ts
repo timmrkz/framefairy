@@ -42,6 +42,10 @@ const allWords = () => {
 const holds = (p: { start: number; end: number }, w: { start: number; end: number }) =>
   Math.min(p.end, w.end) - Math.max(p.start, w.start) > 0.02;
 
+// The words of the episode, for a probe that has to name one by when it is
+// said, to correct it or to find it on the clip timeline.
+(window as any).__allWords = () => allWords();
+
 const words = (from: number, to: number) =>
   allWords().filter((w) => w.end > from && w.start < to);
 
@@ -220,10 +224,14 @@ const captionCues = (id: string, draft?: { start: number; end: number }[]) => {
       }
     });
     if (best < 0) continue;
+    // Clamped only at a cut, never at the clip's first or last edge, the
+    // way the engine keeps it.
     const p = c.segments[best];
+    const from = best > 0 ? Math.max(w.start, p.start) : w.start;
+    const to = best < c.segments.length - 1 ? Math.min(w.end, p.end) : w.end;
     onClipClock.push({
-      start: offsets[best] + (Math.max(w.start, p.start) - p.start),
-      end: offsets[best] + (Math.min(w.end, p.end) - p.start),
+      start: offsets[best] + (from - p.start),
+      end: offsets[best] + (to - p.start),
       text: w.text,
       said: w.start,
     });
@@ -1207,6 +1215,24 @@ export const Call = {
             return peak;
           }),
         );
+      }
+      // The words as the captions split them: a correction that reads as
+      // two words is two, sharing its time by letters, the way captionCues
+      // draws it.
+      case "WordStops": {
+        const out: { start: number; end: number; text: string }[] = [];
+        for (const w of words(Number(args[3]) - 5, Number(args[4]) + 5)) {
+          const text = fixed()[said(w.start)] ?? w.text;
+          const parts = text.split(" ").filter(Boolean);
+          const letters = parts.reduce((n, part) => n + part.length, 0);
+          let from = w.start;
+          parts.forEach((part, i) => {
+            const to = i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
+            out.push({ start: from, end: to, text: part });
+            from = to;
+          });
+        }
+        return Promise.resolve(out);
       }
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });

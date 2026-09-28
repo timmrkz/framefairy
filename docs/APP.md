@@ -892,6 +892,14 @@ place.
       word, and the playhead used to go to the clip's start after a trim,
       so the word was lit only when the pause happened to be none, which
       looked random. After letting go the playhead stays where it was.
+    - **Shift stops at the words that light up.** An edge dragged with
+      shift lands on the words the way the clip's captions split them, so
+      the halves of a hyphenated word, or a correction that reads as two
+      words, are two stops, the same words the arrow keys walk. The engine
+      splits them, `WordStops`, from the clip's caption style, for the
+      words around the clip as well, so a half is a stop before the edge
+      has reached its word. An edge let go between two halves lies inside
+      the word the engine knows, so it is saved as the frame it is on.
     - **The clip edge is over the caption handles.** The first caption is
       on screen from the clip's first frame, so its handle stood on the
       clip's start edge, and a hand that reached for the clip in the band

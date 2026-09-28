@@ -527,6 +527,48 @@ func saneDraft(pieces [][2]float64) error {
 	return nil
 }
 
+// WordStops gives words the way a clip's captions split them: a correction
+// that reads as two words is two, and a word too wide for a line is its
+// hyphenated halves, each with its share of the word's time, the same share
+// LayOutCaptions gives them. They are the words that light up one by one,
+// so they are where an edge dragged with shift stops, and they are known
+// before the edge reaches a word, not only once it is in the clip.
+func WordStops(planPath, clipID string, words []Cue, overrides map[string]any) ([]Cue, error) {
+	plan, clips, err := LoadClips(planPath)
+	if err != nil {
+		return nil, err
+	}
+	var clip *Clip
+	for i := range clips {
+		if clips[i].ID == clipID || clips[i].Basename() == clipID {
+			clip = &clips[i]
+			break
+		}
+	}
+	if clip == nil {
+		return nil, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
+	}
+	style := clipStyle(plan.CaptionStyle(), *clip)
+	for key, value := range overrides {
+		if text, ok := value.(string); ok && text == "" {
+			continue
+		}
+		style[key] = value
+	}
+	r := roomFor(ResolveStyle(style))
+	split := SplitCorrected(words)
+	var h *hyphenator
+	for _, w := range split {
+		if !r.fits(w.Text) {
+			// The language the clip's captions are read in, as LayOutCaptions
+			// reads it off them.
+			h = hyphenatorFor(languageOf([]Caption{{Words: SplitCorrected(clip.Words)}}))
+			break
+		}
+	}
+	return hyphenate(split, r, h), nil
+}
+
 func clipCaptionsView(planPath, clipID string, overrides map[string]any,
 	pieces [][2]float64, t *Transcript) (*CaptionsView, error) {
 	plan, clips, err := LoadClips(planPath)

@@ -505,6 +505,10 @@ export const api = {
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
   // toWords puts the edges on the nearest words. Without it they stay
   // where the hand put them, a frame at a time, like the edges of a cut.
+  // The words of a part the way a clip's captions split them, halves of a
+  // hyphenated word and all. Where an edge dragged with shift stops.
+  wordStops: (path: string, plan: string, clip: string, from: number, to: number) =>
+    call<Word[] | null>("WordStops", path, plan, clip, from, to),
   trimClip: (path: string, plan: string, clip: string, start: number, end: number, toWords: boolean) =>
     call<ClipEntry>("TrimClip", path, plan, clip, start, end, toWords),
   // The cuts inside a clip: the parts it leaves out. Making one, moving

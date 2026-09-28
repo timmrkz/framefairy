@@ -161,6 +161,11 @@
   let width = $state(0);
   let view = $state({ from: 0, to: 1 });
   let words = $state<Word[]>([]);
+  // The same words the way the chosen clip's captions split them, see
+  // stops below. Asked for with the words, and again when the captions
+  // change, because a new size can hyphenate a word the old one did not.
+  let wordStops = $state<Word[]>([]);
+  let saidAt = { from: 0, to: 0 };
   let keepPause = $state(0.1);
   let peaks = $state<number[]>([]);
   let dragging = $state<null | "start" | "end">(null);
@@ -543,10 +548,12 @@
       to: Math.min(outer.to, middle + spoken / 2),
     };
     const mine = ++latest;
+    saidAt = said;
     try {
       const [w, p] = await Promise.all([
         api.words(path, said.from, said.to),
         api.waveform(path, outer.from, outer.to, buckets),
+        askStops(),
       ]);
       if (mine !== latest) return;
       words = w.words ?? [];
@@ -560,6 +567,28 @@
       data = outer;
     }
   }
+
+  let stopsAsked = 0;
+  async function askStops() {
+    const mine = ++stopsAsked;
+    const c = clip;
+    if (!c) {
+      wordStops = [];
+      return;
+    }
+    try {
+      const got = await api.wordStops(path, c.plan, c.id, saidAt.from, saidAt.to);
+      if (mine === stopsAsked) wordStops = got ?? [];
+    } catch {
+      if (mine === stopsAsked) wordStops = [];
+    }
+  }
+  $effect(() => {
+    // Captions that came back changed may break a word somewhere else.
+    void captions;
+    void clipKey;
+    askStops();
+  });
 
   // Brings a moment into the view without changing how much of the episode
   // the view shows. How close the timeline stands is the hand's: a pinch
@@ -950,10 +979,10 @@
       toWords = e.shiftKey;
       const t = timeAt(e.clientX);
       if (edge === "start") {
-        const at = toWords ? snapStart(words, t, keepPause) : Math.max(0, onFrame(t));
+        const at = toWords ? snapStart(stops, t, keepPause) : Math.max(0, onFrame(t));
         draft.start = Math.min(at, draft.end - 1);
       } else {
-        const at = toWords ? snapEnd(words, t, keepPause) : onFrame(t);
+        const at = toWords ? snapEnd(stops, t, keepPause) : onFrame(t);
         draft.end = Math.max(at, draft.start + 1);
       }
       // The playhead goes with the edge, so the video preview shows the
@@ -977,7 +1006,11 @@
         // A clip whose edges have moved is not the clip the part was
         // taken out of, so there is nothing to put back any more.
         undone = null;
-        await ontrim?.(draft.start, draft.end, toWords);
+        // An edge on the line between the halves of a word lies inside the
+        // word the engine knows, which would snap it to the whole word, so
+        // it is sent as the frame it is on.
+        const between = (x: number) => words.some((w) => w.start < x - 0.001 && w.end > x + 0.001);
+        await ontrim?.(draft.start, draft.end, toWords && !between(draft.start) && !between(draft.end));
         onseek(playAt);
       } finally {
         saving = false;
@@ -999,14 +1032,14 @@
   function edgePlayhead(edge: "start" | "end", toWords: boolean): number {
     if (edge === "start") {
       if (toWords) {
-        const word = words.find((w) => w.start >= draft.start - 0.0005);
+        const word = stops.find((w) => w.start >= draft.start - 0.0005);
         if (word && word.end <= draft.end) return intoWord(word, frame);
       }
       return draft.start;
     }
     if (toWords) {
       let word: Word | undefined;
-      for (const w of words) if (w.end <= draft.end + 0.0005) word = w;
+      for (const w of stops) if (w.end <= draft.end + 0.0005) word = w;
       if (word && word.start >= draft.start) return Math.max(word.end - frame, (word.start + word.end) / 2);
     }
     return Math.max(draft.end - frame, draft.start);
@@ -1110,6 +1143,14 @@
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);
+
+  // The words an edge stops at with shift: the words of the episode, each
+  // split the way the clip's captions split it, so a word the captions
+  // hyphenate or a correction that reads as two is two stops, the same
+  // words the arrow keys walk and the video preview lights. The engine
+  // splits them, from the clip's caption style, for the words around the
+  // clip too, so a half is a stop before the edge has reached the word.
+  const stops = $derived(clip && wordStops.length ? wordStops : words);
   const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
 
   const captionBlocks = $derived.by(() => {

@@ -739,3 +739,25 @@ func TestAWordACutPartsIsCaptionedOnce(t *testing.T) {
 		t.Errorf("drei is captioned as %+v", drei)
 	}
 }
+
+// A hyphenated word's halves share its time by their letters. The share is
+// of the word as it is said, not of the part of it an edge left, so the
+// second half stays where it is heard wherever the clip starts.
+func TestTheHalvesOfAWordStayPutAsAnEdgeMoves(t *testing.T) {
+	word := Cue{Start: 10, End: 12, Text: "sweet-grundschulliebe."}
+	var at []float64
+	for _, edge := range []float64{9.5, 10.5, 11.2} {
+		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}, Words: []Cue{word}}
+		words := ClipWords(clip)
+		if len(words) != 1 {
+			t.Fatalf("edge %v gives %+v", edge, words)
+		}
+		// Where the word starts in the episode, read back through the edge.
+		at = append(at, edge+words[0].Start)
+	}
+	for _, a := range at {
+		if !near(a, 10) {
+			t.Errorf("the word starts at %v in the episode as the edge moves, want 10: %v", a, at)
+		}
+	}
+}

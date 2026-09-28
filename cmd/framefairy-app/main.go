@@ -984,6 +984,31 @@ func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
 	return out, nil
 }
 
+// WordStops returns the words spoken in a part the way a clip's captions
+// split them, see engine.WordStops. They are where an edge dragged with
+// shift stops on the clip timeline, the same words the arrow keys walk.
+func (s *FrameFairy) WordStops(path, planPath, clipID string, from, to float64) ([]engine.WordView, error) {
+	if !s.store.Known(path) || !s.store.Known(planPath) {
+		return nil, os.ErrNotExist
+	}
+	out := []engine.WordView{}
+	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	if errors.Is(err, engine.ErrNoTranscript) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	stops, err := engine.WordStops(planPath, clipID, t.WordsBetween(from-5, to+5), s.captionOverrides(planPath))
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range stops {
+		out = append(out, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
+	}
+	return out, nil
+}
+
 func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, start float64, text string) (ClipEntry, error) {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
