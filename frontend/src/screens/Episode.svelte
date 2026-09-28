@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     captionFontDefault,
@@ -53,6 +53,7 @@
   } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { arriving, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -314,13 +315,9 @@
   // text in it. What is going on is in the info mark at the head.
   //
   // A search writes each clip the moment it is found, so while it runs the
-  // rows still to come are what it was asked for less what it has found so
-  // far. The clips from earlier searches are in the list too and are not
-  // counted against it.
-  const foundSoFar = $derived.by(() => {
-    const known = listedBefore;
-    return known ? clips.filter((c) => !known.has(c.key)).length : 0;
-  });
+  // rows still to come are what it was asked for less what it has taken so
+  // far, see searchTook. The clips from earlier searches are in the list
+  // too and are not counted against it.
   //
   // With nothing on its way and nothing in the list, the rows stand there
   // all the same, as many as Clips says and following it as it changes,
@@ -566,16 +563,50 @@
       starting = false;
     }
   }
+  // The clips on their way, from every job of the episode alike: the
+  // search's, from the moment the model names each, and the ones made with
+  // I and O, from the moment the key is pressed. See lib/arriving.ts.
+  const arrivingNow = $derived(
+    arriving(
+      jobs.forEpisode(path),
+      (job) => stopping && job.id === working?.id,
+      (job) => void api.continueJob(job.id).then((j) => jobs.apply(j)),
+    ),
+  );
+  // A clip that has just been written keeps its card until the list has
+  // read it, so the card becomes the clip in one step: never a gap where
+  // it was, and never the two of them at once.
+  let landing = $state<Arriving[]>([]);
+  let arrivedBefore: Arriving[] = [];
+  $effect(() => {
+    const now = arrivingNow;
+    const here = new Set(now.map((a) => a.key));
+    const gone = arrivedBefore.filter((a) => !here.has(a.key) && !a.stopped);
+    arrivedBefore = now;
+    if (!gone.length) return;
+    landing = [...untrack(() => landing), ...gone];
+    const done = new Set(gone.map((a) => a.key));
+    void refreshClips().finally(() => (landing = landing.filter((a) => !done.has(a.key))));
+  });
+  const onTheWay = $derived([...arrivingNow, ...landing]);
+  // How many clips the search has written and has on the way. It says so
+  // itself, so a clip made by hand while it runs is not counted as one of
+  // its own.
+  const searchTook = $derived(
+    (finding ? (working?.progress?.found ?? 0) : 0) + (working?.underway?.length ?? 0),
+  );
   const coming = $derived(
-    busy
-      ? shown.length + Math.max(0, count - foundSoFar)
-      : shown.length === 0
+    shown.length +
+      onTheWay.length +
+      (busy
+        ? Math.max(0, count - searchTook)
+        : shown.length === 0 && onTheWay.length === 0
           ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
             stopped
-            ? shown.length + 1
-            : 0,
+            ? 1
+            : 0),
   );
   // What the window lies over. A window may be drawn anywhere, so looking
   // again at material that was searched is allowed, it only asks first and
@@ -907,6 +938,55 @@
       // which frame it is whichever way either rounds.
       void setThumbnail(current, -1, (Math.floor(time / frameLen) + 0.5) * frameLen);
     }
+  }
+
+  // I and O make a clip at the playhead, the way In and Out mark a clip in
+  // every video editor: I starts it with the sentence the playhead stands
+  // in, O ends it there, for a moment noticed once it has passed. It is a
+  // job like a search, and any number can be on their way at once, beside
+  // a search too. Its card is in the list from the moment it is asked for,
+  // see lib/arriving.ts, and the clip is chosen when it is written, by the
+  // rule a search's first clip is: unless another has been chosen since,
+  // or the video plays.
+  const madeHere = new Map<string, string>();
+  async function makeClip(backward: boolean) {
+    if (duration <= 0) return;
+    try {
+      const job = await api.makeClip(path, time, backward);
+      jobs.apply(job);
+      if (job.state === "failed") {
+        problem = job.error ?? "The clip could not be made";
+        return;
+      }
+      madeHere.set(job.id, selected);
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+  $effect(() => {
+    for (const job of jobs.forEpisode(path)) {
+      const before = madeHere.get(job.id);
+      if (before === undefined || job.state === "running" || job.state === "queued") continue;
+      madeHere.delete(job.id);
+      const key = job.result;
+      if (job.state !== "done" || !key) continue;
+      void refreshClips().then(() => {
+        if (selected === before && paused && clips.some((c) => c.key === key)) select(key);
+      });
+    }
+  });
+
+  function inOutKey(event: KeyboardEvent) {
+    const out = event.key === "o" || event.key === "O";
+    if (!out && event.key !== "i" && event.key !== "I") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    event.preventDefault();
+    void makeClip(out);
   }
 
   function thumbnailKey(event: KeyboardEvent) {
@@ -1720,9 +1800,11 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", inOutKey);
     };
   });
 
@@ -2236,6 +2318,7 @@
           <div class="scroll list">
             <ClipList
               clips={shown}
+              arriving={onTheWay}
               {selected}
               {coming}
               waiting={comingNow}
@@ -2340,6 +2423,24 @@
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
         {/if}
+        <!-- In and Out, the way every editor marks a clip, with the keys of
+             the same letters. Each makes a clip at the playhead. -->
+        <button
+          class="glyph letter"
+          disabled={duration <= 0}
+          onclick={() => makeClip(false)}
+          aria-label="Start a clip at the playhead"
+          title="Start a clip with the sentence under the playhead, as long as Shortest. I does the same"
+          >I</button
+        >
+        <button
+          class="glyph letter"
+          disabled={duration <= 0}
+          onclick={() => makeClip(true)}
+          aria-label="End a clip at the playhead"
+          title="End a clip with the sentence under the playhead, grown back to Shortest. O does the same"
+          >O</button
+        >
         <!-- One job, whatever is chosen: go to the playhead. Going back to
              the clip is what clicking it in the list does. -->
         <button
@@ -2491,6 +2592,12 @@
     justify-content: center;
     width: var(--control-h);
     padding: 0;
+  }
+
+  /* I and O are their letters, the keys they stand for, the way an editor
+     labels In and Out. */
+  .detail .row .glyph.letter {
+    font-weight: 600;
   }
 
   h2 {

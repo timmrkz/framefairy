@@ -757,6 +757,26 @@ transcript as far as it was heard, the clips as they landed, the shorts
 that were finished. The command line does not keep records. The design is
 in [JOBS.md](JOBS.md).
 
+A clip made by hand is `Project.MakeClip` in `handclip.go`, a job of its
+own kind that shares everything but what makes it one. It hears through
+`hear`, the step a search takes, pulled out of `Search`, as far as the
+clip can reach: `Longest` and a sentence past the playhead for I, a
+sentence past it for O. The playhead proposes the clip, `handEntry`, from
+the sentence the playhead stands in, grown a line at a time to
+`Shortest`, and hands it to the plan builder's `propose`, the intake the
+model's scanner uses too. The builder shapes, frames and writes it into
+`clips-hand.json`, a set that grows, `PlanOptions.Grows`, whose clips each
+take the next number under the set's lock as they are written. The set
+says it was made by hand, `planned_with.by`, and `madeOver` reads that as
+made over no part of the episode, so it marks nothing searched and giving
+a part back leaves it alone.
+
+Every job that makes clips says which it has on the way, `Log.Underway`,
+the whole list each time it changes: the builder from the moment a clip is
+queued to be framed until it is written or let go, and a clip made by hand
+from the moment it is asked for, at the playhead. The app puts the list on
+the job, and a record gives it back after a restart.
+
 ## The code
 
 `asr/` wraps the speech recogniser and is the only package with native code.
@@ -777,7 +797,8 @@ Everything else is in `engine/`:
   stream.go     answers read as they are written, and each clip taken
                 the moment it is whole
   plan.go       building the plan: the prompt, the call, the whole answer
-  planbuild.go  clips framed and written as the answer arrives
+  planbuild.go  clips framed and written as they are proposed
+  handclip.go   clips made by hand with I and O
   searchclock.go how far a search has come, against how long it took before
   jobs.go       a search and a render as one job each, with their records
                 and timings

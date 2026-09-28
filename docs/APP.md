@@ -667,6 +667,15 @@ place.
       one shown a little later. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
       search keeps the clips it had found.
+    - **A clip on its way is a card in its place.** A clip the model has
+      named is in the list, among the clips of the episode where it lies,
+      from the moment it is named until it is written: the card of a clip
+      with the beam round it, its title and "Placing the crop". It hands
+      over to the clip itself in one step, holding its place until the
+      list has read the clip, so there is never a gap and never two cards.
+      A clip made with I or O comes in the same way, see below, because
+      every job says which clips it has on the way the same way, see
+      [JOBS.md](JOBS.md).
     - **A search starts in sight.** The rows still to come are after the
       clips there are, so in a long list a search began out of sight and
       all anyone saw was New turning into Cancel. The row the next clip
@@ -1047,6 +1056,31 @@ and on. There is no way to render the pictures alone: a change to them is a
 change to the clip, and the next render writes the whole of it again. The
 reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 
+- **I and O make a clip at the playhead**, the way In and Out mark a clip in
+  every video editor, for a moment the model did not pick. **I** starts
+  the clip with the sentence the playhead stands in, from where that
+  sentence begins, and grows it forward. **O** ends it with that sentence,
+  for a moment noticed only once it has passed, and grows it back. Either
+  grows a line at a time until it is as long as **Shortest**, never past
+  **Longest**, and then its far edge goes onto a sentence the way every
+  clip's does. The two letters are buttons in the row under the clip
+  timeline too. No model is asked: the pauses are cut and the crop placed
+  exactly as for a clip a search found, and after that it is an ordinary
+  clip.
+  - **Its card is in the list at once**, in its place in the episode,
+    wearing the beam, before a word of it is known. Where the transcript
+    does not reach far enough yet it says Transcribing and fills as the
+    episode is heard up to where the clip can reach, then Placing the
+    crop. Any number can be on their way at once, beside a search too,
+    and none waits for a search to finish finding.
+  - **It is chosen when it lands**, by the rule a search's first clip is:
+    unless another clip has been chosen since the key was pressed, or the
+    video plays, when it lands in the list one click away.
+  - **It searched nothing**: the range picker marks nothing, and giving a
+    searched part back leaves it where it is. It goes the way every clip
+    goes, with its trash can.
+  - **Cut off by the app closing, or failed**, its card stays where the
+    clip would have appeared, still, and a click carries it on.
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a

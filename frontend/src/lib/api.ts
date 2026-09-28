@@ -248,12 +248,33 @@ export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | 
 // Where a search or a render is: waiting for its turn, hearing the
 // episode, finding clips, or rendering them. A search called off with
 // Cancel is "stopped", and says so the way one cut off does.
-export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed" | "stopped";
+export type JobStep =
+  | "waiting"
+  | "hearing"
+  | "finding"
+  | "framing"
+  | "rendering"
+  | "failed"
+  | "stopped";
+
+// A clip on its way into the list: proposed, by the model or at the
+// playhead with I or O, and not written yet. Every job that makes clips
+// says which it has on the way the same way, so every clip comes in the
+// same way. n is which of its job's clips it is, and stays while its step
+// and its edges change. A clip made by hand is at the playhead, start and
+// end the same, until the words there are known.
+export interface Underway {
+  n: number;
+  start: number;
+  end: number;
+  title?: string;
+  step: JobStep;
+}
 
 export interface Job {
   id: string;
   episode: string;
-  kind: "search" | "render" | "model" | "llm";
+  kind: "search" | "render" | "clip" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -272,14 +293,21 @@ export interface Job {
   // The window of a search. To is 0 for the end of the episode.
   from?: number;
   to?: number;
+  // A clip made by hand: the moment I or O was pressed at, and whether it
+  // was O.
+  at?: number;
+  backward?: boolean;
+  // The clips the job has on the way.
+  underway?: Underway[];
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
 }
 
 // The lanes the Go side runs work in, one job at a time in each: the
-// speech model, the language model and ffmpeg.
-export type Lane = "hearing" | "finding" | "rendering";
+// speech model, the language model, ffmpeg rendering, and ffmpeg placing
+// the crop of a clip made by hand.
+export type Lane = "hearing" | "finding" | "rendering" | "framing";
 
 export interface PlanRequest {
   From: number;
@@ -496,6 +524,7 @@ export const api = {
   search: (path: string, req: PlanRequest) => call<Job>("Search", path, req),
   // Continue: carries on a search or a render that stopped.
   continueJob: (id: string) => call<Job>("Continue", id),
+  makeClip: (path: string, at: number, backward: boolean) => call<Job>("MakeClip", path, at, backward),
   still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
   words: (path: string, from: number, to: number) =>
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
