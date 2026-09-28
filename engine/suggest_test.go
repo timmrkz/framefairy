@@ -1,9 +1,14 @@
 package engine
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -79,5 +84,54 @@ func TestSuggestedThink(t *testing.T) {
 		if got := SuggestedThink(c.Window); got != c.Think {
 			t.Errorf("%s: %d tokens, want %d", HMS(c.Window), got, c.Think)
 		}
+	}
+}
+
+// A search given no count and no thinking budget looks for the clips its
+// window suggests and thinks what its window suggests, and says so in its
+// plan.
+func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
+	source := testEpisode(t, "40")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	var mu sync.Mutex
+	var budgets []float64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if b, ok := request["reasoning_budget_tokens"].(float64); ok {
+			mu.Lock()
+			budgets = append(budgets, b)
+			mu.Unlock()
+		}
+		writeLocalStream(w, `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`, 7)
+	}))
+	defer server.Close()
+
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	if base.Count != 0 || base.Think != ThinkForWindow {
+		t.Fatalf("the defaults are %d clips and %d tokens", base.Count, base.Think)
+	}
+	base.LLMURL = server.URL
+	base.ASRModel = t.TempDir()
+	base.Min, base.Max = 5, 10
+	p := NewProject(e, source, base)
+	path, err := p.Plan(context.Background(), PlanRequest{From: 0, To: 30})
+	if err != nil {
+		t.Fatalf("plan: %v %s", err, p.LastError())
+	}
+	plan, _, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := toFloat(plan.PlannedWith()["count"]); int(got) != SuggestedCount(30, 5, 10) {
+		t.Errorf("the plan asked for %v clips", plan.PlannedWith()["count"])
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(budgets) == 0 || int(budgets[0]) != SuggestedThink(30) {
+		t.Errorf("the model was given %v tokens to think, want %d", budgets, SuggestedThink(30))
 	}
 }

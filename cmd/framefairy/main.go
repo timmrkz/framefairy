@@ -92,7 +92,8 @@ func specs() []flagSpec {
 		{[]string{"--training-dir"}, kString, "DIR", "folder for the training records of every " +
 			"episode (default ~/.framefairy/training, or FRAMEFAIRY_TRAINING)",
 			func(o *engine.Options, v string) error { o.TrainingDir = v; return nil }},
-		{[]string{"--count"}, kInt, "COUNT", fmt.Sprintf("how many clips to look for (default %d)", d.Count),
+		{[]string{"--count"}, kInt, "COUNT", "how many clips to look for (default: one for every twelve clip lengths of the " +
+			"window, at least one)",
 			intValue("--count", func(o *engine.Options, v int) { o.Count = v })},
 		{[]string{"--min"}, kFloat, "MIN", "shortest acceptable clip, in seconds (default 20)",
 			floatValue("--min", func(o *engine.Options, v float64) { o.Min = v })},
@@ -159,7 +160,8 @@ func specs() []flagSpec {
 			"out of the same ceiling, so it needs headroom (default 48000)",
 			intValue("--max-tokens", func(o *engine.Options, v int) { o.MaxTokens = v })},
 		{[]string{"--think"}, kInt, "TOKENS", "how long the local model may think before it " +
-			"answers, in tokens. -1 is no limit, 0 is no thinking (default 2048)",
+			"answers, in tokens. -1 is no limit, 0 is no thinking (default: 2048 for half an hour of " +
+			"window and in proportion, at least 512 and at most 4096)",
 			intValue("--think", func(o *engine.Options, v int) { o.Think = v })},
 		{[]string{"--seed"}, kInt, "N", "makes the local model answer the same prompt the same way " +
 			"every time. 0 leaves it to chance (default 0, and 1 in a comparison)",
