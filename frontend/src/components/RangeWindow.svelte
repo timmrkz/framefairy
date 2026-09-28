@@ -264,6 +264,12 @@
     event.stopPropagation();
     const startX = timeAt(event.clientX);
     const target = event.currentTarget as HTMLElement;
+    // Keeping the press from selecting text also keeps it from taking the
+    // focus away, which every other click in the app does. A field that
+    // kept it, Target say, took the I and O meant for the playhead just
+    // put here.
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused && focused !== target && focused !== document.body) focused.blur();
     target.setPointerCapture(event.pointerId);
     const startClientX = event.clientX;
     const startFrom = from;
