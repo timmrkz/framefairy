@@ -877,8 +877,9 @@ place.
         walked the transcript instead and the first press after picking a
         clip landed wherever the word before the clip happened to be.
     - Drag an edge to trim. The edge lands on the frame, the same as the
-      edge of a cut, and alt puts it on the nearest word instead, the way
-      the render cuts a clip the engine proposes. It used to snap to words
+      edge of a cut, and shift puts it on the nearest word instead, the way
+      the render cuts a clip the engine proposes. Shift and not alt,
+      because it is the key Tim reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
     - **The captions follow the drag.** While an edge of the clip or of a
@@ -944,8 +945,9 @@ place.
       double-click and a drag both say where exactly and moving the edges
       somewhere else is not what was asked. A cut made this way may stop
       inside a word, which is the point of it.
-    - **Alt lands on whole words instead.** Holding alt while dragging, on a
-      handle or across the clip, puts the edges where the render would cut
+    - **Shift lands on whole words instead.** Holding shift while dragging a
+      handle of a cut, or alt as well as shift while drawing one across the
+      clip, where shift already draws, puts the edges where the render would cut
       them, so a cut dragged over a pause takes the whole pause and a cut
       dragged over speech takes whole words, and it can never stop half way
       through a word. That is the right thing when a whole phrase is to go
@@ -953,7 +955,7 @@ place.
       silence came out as the whole silence, which is why this is the
       modifier now and not the default. The key is
       read while the hand moves rather than when it goes down, so letting
-      go of alt part way through goes back to frames and the block says
+      go of it part way through goes back to frames and the block says
       so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and that is the one place they are

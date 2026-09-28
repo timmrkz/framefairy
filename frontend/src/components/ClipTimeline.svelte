@@ -13,7 +13,7 @@
   // The episode up close, always: the waveform and where the playhead
   // stands. With a clip selected it is that clip, with its pieces and the
   // cuts between them, and either edge can be dragged to trim. Edges land
-  // on the frame, and with alt on words the way the render cuts them. Two fingers move along the episode
+  // on the frame, and with shift on words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
   import {
@@ -90,8 +90,9 @@
     // The cuts inside the clip: taking a part out, putting one back, and
     // moving the edges of one that is already there.
     // toWords says whether the engine should put the edges on the words
-    // around them. Alt held while dragging says no: the edges land on the
-    // frame they were let go on and stay there.
+    // around them. Without it the edges land on the frame they were let go
+    // on and stay there. Shift asks for words on an edge, and alt with
+    // shift on a cut being drawn, because there shift already draws.
     oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
     onjoincut?: (at: number) => Promise<void>;
     onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
@@ -336,15 +337,16 @@
     const startX = event.clientX;
     let moved = false;
     // A cut lands on the frame, because a drag says where and growing it
-    // out to the words either side puts it somewhere else. Alt asks for
-    // words instead, and it is read on every move rather than at the
-    // press, so taking alt back part way through a drag goes back to
-    // frames and the block says so before the hand lets go.
-    let toWords = event.altKey;
+    // out to the words either side puts it somewhere else. Shift asks for
+    // words instead, the same as on a clip edge, and it is read on every
+    // move rather than at the press, so letting go of shift part way
+    // through a drag goes back to frames and the block says so before the
+    // hand lets go.
+    let toWords = event.shiftKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      toWords = e.altKey;
+      toWords = e.shiftKey;
       const t = Math.min(Math.max(timeAt(e.clientX), wall.least), wall.most);
       const from = side === "from" ? Math.min(t, held.to - leastCut) : held.from;
       const to = side === "to" ? Math.max(t, held.from + leastCut) : held.to;
@@ -921,8 +923,8 @@
 
   // An edge is dragged to trim. Clicking one without dragging puts the
   // playhead exactly on it, which is how you start a clip over. It lands
-  // on the frame, the same as the edge of a cut, and alt puts it on the
-  // nearest word instead. Alt is read on every move, like a cut's.
+  // on the frame, the same as the edge of a cut, and shift puts it on the
+  // nearest word instead. Shift is read on every move, like a cut's.
   function grab(edge: "start" | "end", event: PointerEvent) {
     if (!clip || locked || saving) return;
     event.preventDefault();
@@ -932,14 +934,14 @@
     const from = event.clientX;
     draft = { start, end };
     let moved = false;
-    let toWords = event.altKey;
+    let toWords = event.shiftKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) {
         moved = true;
         if (ontrim) dragging = edge;
       }
       if (!moved || !dragging) return;
-      toWords = e.altKey;
+      toWords = e.shiftKey;
       const t = timeAt(e.clientX);
       if (edge === "start") {
         const at = toWords ? snapStart(words, t, keepPause) : Math.max(0, onFrame(t));
@@ -1334,13 +1336,13 @@
         word, so the caption in the picture lights up the next one, and past the last word of a
         clip they carry on into the one beside it. Shift with the arrows up and down takes the
         next clip and starts it from the top. Drag
-        a clip edge to trim it. The words are in the picture, in the caption box, which is where
+        a clip edge to trim it, frame by frame, or with shift held from word to word. The words are in the picture, in the caption box, which is where
         they are read and where they are corrected. A hatched block inside a clip is
-        a part it leaves out. Drag either edge of one to change it, double-click one to put it
+        a part it leaves out. Drag either edge of one to change it, with shift for whole words, double-click one to put it
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
         and drag across the clip to take out the part you drag over, or hold it and double-click
-        to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
-        words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
+        to take one out where you click. Cuts land on the frame. Hold alt as well as shift to land
+        on whole words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
