@@ -235,9 +235,9 @@ func TestACutToFramesMayStopInsideAWord(t *testing.T) {
 	if cuts[0].From != 14.35 {
 		t.Errorf("the cut starts at %v, so it did not stop inside drei", cuts[0].From)
 	}
-	// A word is in the clip when the clip holds the moment it is spoken,
-	// which is the middle of it. That rule does not change because the cut
-	// was made to frames: drei is mostly still there, so it is still said.
+	// A word is in the clip while the clip holds some of its sound. That
+	// rule does not change because the cut was made to frames: drei is
+	// mostly still there, so it is still said.
 	var said []string
 	for _, w := range clipByID(t, path, "01").Words {
 		said = append(said, w.Text)
@@ -247,18 +247,19 @@ func TestACutToFramesMayStopInsideAWord(t *testing.T) {
 	}
 }
 
-// Where a clipped word stops being said is the middle of it, because that is
-// the moment the clip either holds or does not. It is worth pinning: it is
-// what decides whether a caption shows a word the render only half plays.
-func TestAWordIsSaidWhileItsMiddleIsKept(t *testing.T) {
-	// "drei" runs 14 to 14.5, so its middle is at 14.25.
+// A clipped word is said while any of its sound is kept, more than a frame
+// of it. It is worth pinning: it is what decides whether a caption shows a
+// word the render only partly plays.
+func TestAWordIsSaidWhileAnyOfItIsKept(t *testing.T) {
+	// "drei" runs 14 to 14.5.
 	for _, c := range []struct {
 		name string
 		from float64
 		said bool
 	}{
-		{"cut after the middle", 14.3, true},
-		{"cut before the middle", 14.2, false},
+		{"most of it kept", 14.3, true},
+		{"a little of it kept", 14.1, true},
+		{"less than a frame of it kept", 14.01, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			path := cutsPlanPath(t)
@@ -717,4 +718,46 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 			t.Errorf("an untouched clip reads as changed: %+v", d.Changes)
 		}
 	})
+}
+
+// A word a cut parts is heard on both sides of it, and it is captioned
+// once, in the piece that holds the most of it. Two captions of one word
+// would show it twice.
+func TestAWordACutPartsIsCaptionedOnce(t *testing.T) {
+	clip := Clip{
+		Segments: []Segment{{Start: 10, End: 14.2}, {Start: 14.35, End: 16}},
+		Words:    []Cue{{13, 13.5, "zwei"}, {14, 14.5, "drei"}, {15, 15.5, "vier"}},
+	}
+	var drei []Cue
+	for _, w := range ClipWords(clip) {
+		if w.Text == "drei" {
+			drei = append(drei, w)
+		}
+	}
+	// 14 to 14.2 is more of it than 14.35 to 14.5, so it stays before the cut.
+	if len(drei) != 1 || !near(drei[0].Start, 4) || !near(drei[0].End, 4.2) {
+		t.Errorf("drei is captioned as %+v", drei)
+	}
+}
+
+// A hyphenated word's halves share its time by their letters. The share is
+// of the word as it is said, not of the part of it an edge left, so the
+// second half stays where it is heard wherever the clip starts.
+func TestTheHalvesOfAWordStayPutAsAnEdgeMoves(t *testing.T) {
+	word := Cue{Start: 10, End: 12, Text: "sweet-grundschulliebe."}
+	var at []float64
+	for _, edge := range []float64{9.5, 10.5, 11.2} {
+		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}, Words: []Cue{word}}
+		words := ClipWords(clip)
+		if len(words) != 1 {
+			t.Fatalf("edge %v gives %+v", edge, words)
+		}
+		// Where the word starts in the episode, read back through the edge.
+		at = append(at, edge+words[0].Start)
+	}
+	for _, a := range at {
+		if !near(a, 10) {
+			t.Errorf("the word starts at %v in the episode as the edge moves, want 10: %v", a, at)
+		}
+	}
 }

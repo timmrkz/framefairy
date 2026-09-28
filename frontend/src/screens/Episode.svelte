@@ -820,10 +820,10 @@
     }
   }
 
-  async function trim(clip: ClipEntry, start: number, end: number) {
+  async function trim(clip: ClipEntry, start: number, end: number, toWords: boolean) {
     problem = "";
     try {
-      const updated = await api.trimClip(path, clip.plan, clip.id, start, end);
+      const updated = await api.trimClip(path, clip.plan, clip.id, start, end, toWords);
       putClip(updated);
     } catch (err) {
       problem = errorText(err);
@@ -1004,9 +1004,38 @@
   $effect(() => {
     if (colourDraft && !colourSaving && captions !== colourHeld) colourDraft = null;
   });
+  // The clip as a drag on the clip timeline is shaping it: its pieces and
+  // the captions the engine made for them. The video preview shows that
+  // clip while the hand moves, the same one the timeline shows.
+  let reshaped = $state<{
+    cues: NonNullable<CaptionsView["captions"]>;
+    pieces: { start: number; end: number }[];
+  } | null>(null);
+  // Each piece keeps the framing of the piece it came from, the way the
+  // engine keeps it when the edit lands.
+  const shownClip = $derived.by(() => {
+    if (!current || !reshaped) return current;
+    const old = current.segments;
+    const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) =>
+      Math.min(a.end, b.end) - Math.max(a.start, b.start);
+    const from = reshaped.pieces.map((p) => {
+      let best = 0;
+      old.forEach((o, i) => {
+        if (overlap(p, o) > overlap(p, old[best])) best = i;
+      });
+      return best;
+    });
+    const lefts = current.cropLefts;
+    return {
+      ...current,
+      segments: reshaped.pieces.map((p, i) => ({ ...old[from[i]], start: p.start, end: p.end })),
+      cropLefts: from.map((i) => lefts[i]),
+    };
+  });
   const shownCaptions = $derived.by(() => {
     if (!captions) return captions;
     let view = captions;
+    if (reshaped) view = { ...view, captions: reshaped.cues };
     if (captionDraft) view = { ...view, captions: draftCaptions(view.captions ?? [], captionDraft) };
     if (colourDraft) {
       view = {
@@ -2188,7 +2217,7 @@
           bind:offers
           {path}
           {source}
-          clip={current}
+          clip={shownClip}
           bind:time
           {still}
           stillAt={showing}
@@ -2278,7 +2307,8 @@
         {lit}
         bind:numbers
         onseek={(t) => player?.seek(t)}
-        ontrim={(start, end) => (current ? trim(current, start, end) : Promise.resolve())}
+        ontrim={(start, end, toWords) =>
+          current ? trim(current, start, end, toWords) : Promise.resolve()}
         oncut={(from, to, toWords) =>
           current ? cut(current, from, to, toWords) : Promise.resolve()}
         onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
@@ -2302,6 +2332,7 @@
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         oncaptiondraft={(draft) => (captionDraft = draft)}
+        onshape={(next) => (reshaped = next)}
       />
       <!-- One row under the clip up close, so the range picker and the
            waveform stand together: what plays on the left, what the

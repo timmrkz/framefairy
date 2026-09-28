@@ -412,13 +412,19 @@ func SnapEnd(words []Cue, at, keepPause float64) float64 {
 // MaxClipSpan keeps a trimmed clip to a sensible length.
 const MaxClipSpan = 600.0
 
-// TrimClip moves a clip's first and last edge, snapped to the nearest words.
-// Pieces that end up outside are dropped, the first and last piece keep
-// their framing, and the clip's words are taken again from the transcript.
-// The change is recorded as an edit for training.
-func TrimClip(planPath, clipID string, start, end float64, t *Transcript, keepPause float64) error {
-	start = SnapStart(t.Words, start, keepPause)
-	end = SnapEnd(t.Words, end, keepPause)
+// TrimClip moves a clip's first and last edge. With ToWords they move onto
+// the nearest words, with ToFrames they stay where they were put, the same
+// as the edges of a cut. Pieces that end up outside are dropped, the first
+// and last piece keep their framing, and the clip's words are taken again
+// from the transcript. The change is recorded as an edit for training.
+func TrimClip(planPath, clipID string, start, end float64, t *Transcript,
+	keepPause float64, snap Snap) error {
+	if snap == ToWords {
+		start = SnapStart(t.Words, start, keepPause)
+		end = SnapEnd(t.Words, end, keepPause)
+	} else {
+		start, end = roundTo(math.Max(0, start), 3), roundTo(end, 3)
+	}
 	if end-start < 1 {
 		return renderErr("a clip needs at least one second")
 	}
@@ -483,17 +489,16 @@ func TrimClip(planPath, clipID string, start, end float64, t *Transcript, keepPa
 }
 
 // refreshWords takes a clip's words again from the transcript: every word
-// whose middle lies inside one of its pieces.
+// some of whose sound one of its pieces holds, see HoldsWord.
 func refreshWords(c *object, pieces []any, t *Transcript) {
 	spoken := []any{}
 	for _, w := range t.Words {
-		mid := (w.Start + w.End) / 2
 		for _, item := range pieces {
 			seg, ok := item.(*object)
 			if !ok {
 				continue
 			}
-			if mid >= number(seg.values["start"]) && mid < number(seg.values["end"]) {
+			if HoldsWord(number(seg.values["start"]), number(seg.values["end"]), w) {
 				spoken = append(spoken, []any{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
 				break
 			}
@@ -628,13 +633,13 @@ func editPieces(planPath, clipID string, t *Transcript,
 
 // Snap says whether a cut's edges are moved onto the words around them.
 //
-// ToWords is what the engine proposes and what a first drag does, because a
-// cut that lands between words is right nearly every time and nobody wants
-// to place one by hand. ToFrames leaves the edges exactly where they were
-// put, for the times when a word has to be clipped a little or a breath
-// kept, and then the picture is the only thing that says where the cut
-// belongs. A cut made to frames may stop inside a word, which is the whole
-// point of it.
+// ToWords is what the engine proposes, because a cut that lands between
+// words is right nearly every time, and it is what a drag with alt asks
+// for. ToFrames is what a drag does by itself: it leaves the edges exactly
+// where they were put, because a drag says where, and the picture is then
+// the only thing that says where the edge belongs. An edge put on a frame
+// may stop inside a word, which is the whole point of it. Clip edges and
+// the edges of a cut follow the same rule.
 type Snap bool
 
 const (

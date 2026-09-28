@@ -42,7 +42,7 @@ func TestAnEditIsUndoneAndDoneAgain(t *testing.T) {
 	logs := filepath.Dir(path)
 	original, _ := os.ReadFile(path)
 	change := edited(t, logs, func() error {
-		return TrimClip(path, "01", 10.6, 13.1, editableTranscript(), 0.1)
+		return TrimClip(path, "01", 10.6, 13.1, editableTranscript(), 0.1, ToWords)
 	})
 	trimmed := clipsOf(t, path)["01"]
 
@@ -153,7 +153,7 @@ func TestUndoRefusesWhatChangedSince(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
 	change := edited(t, logs, func() error {
-		return TrimClip(path, "01", 10.6, 13.1, editableTranscript(), 0.1)
+		return TrimClip(path, "01", 10.6, 13.1, editableTranscript(), 0.1, ToWords)
 	})
 	if err := SetCaptionY(path, "01", 300); err != nil {
 		t.Fatal(err)

@@ -326,7 +326,7 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Start moved earlier onto "eins", end moved later onto "vier".
-	if err := TrimClip(path, "01", 9.9, 13.4, tr, 0.1); err != nil {
+	if err := TrimClip(path, "01", 9.9, 13.4, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, err := LoadClips(path)
@@ -342,15 +342,52 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 	}
 	// Trimming the end back past the second piece drops it. "zwei" ends at
 	// 11 and the next word starts at 12, so the edge is 11.1.
-	if err := TrimClip(path, "01", 10, 11.2, tr, 0.1); err != nil {
+	if err := TrimClip(path, "01", 10, 11.2, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, _ = LoadClips(path)
 	if segs := clips[0].Segments; len(segs) != 1 || segs[0].Start != 9.9 || segs[0].End != 11.1 {
 		t.Errorf("after trimming in %+v", segs)
 	}
-	if err := TrimClip(path, "01", 12, 12.2, tr, 0.1); err == nil {
+	if err := TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords); err == nil {
 		t.Errorf("a clip under a second was accepted")
+	}
+}
+
+// A clip edge dragged by itself stays where it was put, a frame at a time,
+// the same as the edge of a cut. It may stop inside a word, which is what
+// taking a breath off the end of a clip needs. The checks still hold.
+func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
+	words := []Cue{{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"}}
+	tr := &Transcript{Words: words}
+	path := filepath.Join(t.TempDir(), "clips.json")
+	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
+		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 300}]}]}`
+	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 10.24 is inside "eins" and 12.84 is in the pause before "vier", so
+	// snapping would move both.
+	if err := TrimClip(path, "01", 10.24, 12.84, tr, 0.1, ToFrames); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segs := clips[0].Segments
+	if len(segs) != 2 || segs[0].Start != 10.24 || segs[1].End != 12.84 {
+		t.Errorf("segments %+v", segs)
+	}
+	if err := TrimClip(path, "01", 12, 12.5, tr, 0.1, ToFrames); err == nil {
+		t.Errorf("a clip under a second was accepted")
+	}
+	if err := TrimClip(path, "01", -3, 12.5, tr, 0.1, ToFrames); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, _ = LoadClips(path)
+	if clips[0].Segments[0].Start != 0 {
+		t.Errorf("a clip starts before the episode: %+v", clips[0].Segments)
 	}
 }
 
@@ -414,7 +451,7 @@ func TestWordCorrections(t *testing.T) {
 		t.Errorf("corrections %v", fresh)
 	}
 	// A trim takes the words again from the transcript and keeps the fix.
-	if err := TrimClip(path, "01", 10, 12.4, &Transcript{Words: fresh}, 0.1); err != nil {
+	if err := TrimClip(path, "01", 10, 12.4, &Transcript{Words: fresh}, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, _ = LoadClips(path)
