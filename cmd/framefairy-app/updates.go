@@ -180,15 +180,19 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	c.u, c.src = u, src
 }
 
-// start looks now and then, for a build from a channel. A build made by make
-// only looks when asked: it is somebody working on the app, and it would
-// otherwise fetch a build to replace itself with every time it started.
+// start looks at once, and then now and then, for a build from a channel.
+// At once, because the moment the app is opened is when a newer build is
+// wanted: it used to wait five seconds first, and a person who opened the
+// app to try a change sat on the Updates page waiting for it to start.
+// The first answer reaches the interface when it asks, since nothing is
+// on screen yet to hear the event. A build made by make only looks when
+// asked: it is somebody working on the app, and it would otherwise fetch a
+// build to replace itself with every time it started.
 func (c *updating) start() {
 	if c.u == nil || buildChannel == "" {
 		return
 	}
 	go func() {
-		time.Sleep(5 * time.Second)
 		for {
 			c.check()
 			time.Sleep(checkEvery)
