@@ -139,7 +139,8 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 		t.Fatalf("the model was asked %d times", len(asks))
 	}
 	for i, ask := range asks {
-		if got := ask["reasoning_budget_tokens"]; got != float64(DefaultThink/2) {
+		// Half of what the whole 40 s episode, its window, may think.
+		if got := ask["reasoning_budget_tokens"]; got != float64(SuggestedThink(40)/2) {
 			t.Errorf("ask %d may think %v tokens", i+1, got)
 		}
 	}

@@ -102,8 +102,8 @@ type Options struct {
 // DefaultOptions are the defaults the command line documents.
 func DefaultOptions() Options {
 	return Options{
-		Count: 12, Min: 20, Max: 30, KeepPause: 0.10, Planner: "local",
-		Model: DefaultModel, MaxTokens: 48000, Think: DefaultThink, Budget: 2.00,
+		Min: 20, Max: 30, KeepPause: 0.10, Planner: "local",
+		Model: DefaultModel, MaxTokens: 48000, Think: ThinkForWindow, Budget: 2.00,
 		Width: 1080, Height: 1920, CRF: 18, Preset: "slow", AudioBitrate: "256k",
 	}
 }
@@ -163,7 +163,8 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			trimFloat(opts.Min), trimFloat(opts.Max))
 		return 1
 	}
-	if opts.Count < 1 {
+	// No count is the count the window suggests, see SuggestedCount.
+	if opts.Count < 0 {
 		log.Error("a search has to look for at least one clip")
 		return 1
 	}
@@ -251,6 +252,14 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	if span.End <= span.Start {
 		log.Error("%s reports no duration, so there is no audio to work with", opts.Source)
 		return 1
+	}
+	// How many clips to look for and how long to think follow the window,
+	// unless they were given. See suggest.go.
+	if opts.Count == 0 {
+		opts.Count = SuggestedCount(span.End-span.Start, opts.Min, opts.Max)
+	}
+	if opts.Think == ThinkForWindow {
+		opts.Think = SuggestedThink(span.End - span.Start)
 	}
 
 	// The clip plan is something the tool produces, not something you

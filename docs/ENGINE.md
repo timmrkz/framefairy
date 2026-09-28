@@ -748,10 +748,21 @@ the whole context for it.
 about a half hour window for 12,000 tokens or more before it writes a
 word of the answer. On an M2 Max that is four of the five and a half
 minutes a search takes, while loading is 24 seconds and reading the
-transcript 30. So the request carries `reasoning_budget_tokens`, 2,048 by
-default, which is about 45 seconds: when it runs out, llama-server closes
-the thought with a line telling the model to write its answer, and it
-does. `--think` changes it, `-1` is no limit and `0` is no thinking.
+transcript 30. So the request carries `reasoning_budget_tokens`, 2,048 for
+a half hour window, which is about 45 seconds: when it runs out,
+llama-server closes the thought with a line telling the model to write its
+answer, and it does. **The budget follows the window**: weighing a
+transcript is work that grows with how much of it there is, not with how
+many clips are picked from it, so a window gets the same share of 2,048
+tokens as it is of half an hour, never less than 512 and never more than
+4,096. A 10 minute window thinks about 680 tokens, some 15 seconds, and
+its first clip comes about half a minute sooner. `--think` gives a number
+instead, `-1` is no limit and `0` is no thinking. How many clips a search
+looks for follows the window too, one for every twelve clip lengths
+of a half hour and in proportion to the square root of other windows,
+unless `--count` says. Both are in `engine/suggest.go`, with
+their cases in `frontend/src/lib/suggest.cases.json`, which the workspace
+is tested against too.
 
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when

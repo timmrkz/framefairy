@@ -179,7 +179,7 @@ When it starts, it reads the records of the episodes in its library: a
 record in a running step is a job in the list in the state `interrupted`,
 a failed one a job that `failed`, with its reason. Clearing the finished
 jobs leaves them, because they are not finished. Adding a video asks for
-its first search, of the first half hour or all of a shorter episode, and
+its first search, of its first window, see `engine.SuggestedWindow`, and
 no longer than the model can read at once, see `firstSearch` in
 `cmd/framefairy-app/search.go`. Cancel on a search that runs marks its
 record stopped as it ends. Cancel on one that stopped, which only Activity

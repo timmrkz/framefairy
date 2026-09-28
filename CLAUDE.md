@@ -42,7 +42,9 @@ What the product has to be:
 - **Improving over time.** Recorded decisions train our own local selection
   model. See [docs/TRAINING.md](docs/TRAINING.md).
 
-Defaults that were chosen on purpose: 12 clip candidates per search, 20 to 30
+Defaults that were chosen on purpose: windows that grow with the square root of
+the episode, one clip asked for every twelve clip lengths of a half hour window
+and by the square root for other windows, 20 to 30
 seconds per clip, a bouncing word highlight in purple `#942192`,
 Gemma 4 26B A4B as the local model, Parakeet TDT 0.6B v3 for speech.
 

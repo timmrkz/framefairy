@@ -363,7 +363,8 @@ func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 		want string
 	}{
 		{"shortest over longest", Options{Min: 30, Max: 20, Count: 12}, "shortest clip cannot be longer"},
-		{"no clips at all", Options{Min: 20, Max: 30, Count: 0}, "at least one clip"},
+		// No count follows the window, so only a count below none is refused.
+		{"no clips at all", Options{Min: 20, Max: 30, Count: -1}, "at least one clip"},
 	} {
 		var said bytes.Buffer
 		e := NewEngine(NewLog(&said, false, false))

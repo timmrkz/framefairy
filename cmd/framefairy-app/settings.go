@@ -16,15 +16,19 @@ import (
 // Settings are what the settings screen edits. Empty paths mean the same
 // defaults the command line uses.
 type Settings struct {
-	FFmpeg    string  `json:"ffmpeg"`
-	LLMServer string  `json:"llmServer"`
-	LLMModel  string  `json:"llmModel"`
-	ASRModel  string  `json:"asrModel"`
-	Planner   string  `json:"planner"`
-	APIModel  string  `json:"apiModel"`
-	Count     int     `json:"count"`
-	Min       float64 `json:"min"`
-	Max       float64 `json:"max"`
+	FFmpeg    string `json:"ffmpeg"`
+	LLMServer string `json:"llmServer"`
+	LLMModel  string `json:"llmModel"`
+	ASRModel  string `json:"asrModel"`
+	Planner   string `json:"planner"`
+	APIModel  string `json:"apiModel"`
+	// Target is how many clips a search looks for when a number was typed
+	// for it, and 0 when it follows the window, see engine.SuggestedCount.
+	// It was count, a number every search took whatever its window: a
+	// file that still has it is read as following the window.
+	Target int     `json:"target"`
+	Min    float64 `json:"min"`
+	Max    float64 `json:"max"`
 	// The colour of the pill behind the word being spoken, in the framefairy
 	// the engine renders. It belongs to the short, not to the app.
 	HighlightColour string `json:"highlightColour"`
@@ -60,7 +64,7 @@ const wasDefaultColour = "#B4236F"
 
 func defaultSettings() Settings {
 	d := engine.DefaultOptions()
-	return Settings{Planner: d.Planner, APIModel: d.Model, Count: d.Count, Min: d.Min,
+	return Settings{Planner: d.Planner, APIModel: d.Model, Min: d.Min,
 		Max: d.Max, HighlightColour: defaultColour, AppColour: defaultColour,
 		CaptionY: engine.DefaultCaptionY}
 }
@@ -93,8 +97,8 @@ func (s Settings) options() engine.Options {
 	if s.APIModel != "" {
 		o.Model = s.APIModel
 	}
-	if s.Count > 0 {
-		o.Count = s.Count
+	if s.Target > 0 {
+		o.Count = s.Target
 	}
 	if s.Min > 0 {
 		o.Min = s.Min
