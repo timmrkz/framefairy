@@ -115,7 +115,7 @@ which is exactly what it covers when it opens. **Add episode**, **Activity**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
 its mark says a newer one is ready. Its page has the build and its commit,
-the channel it follows, where things stand, and Check or Update. See
+the channel it follows, where things stand, and Check or Relaunch. See
 [UPDATES.md](UPDATES.md). Every mark is in the same place on the rail as it is in the open
 sidebar, to the pixel, so opening the sidebar never moves the mark out from
 under the pointer that came for it. The Activity mark has no dot of its

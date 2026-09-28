@@ -395,7 +395,7 @@
         class:current={nav.view.name === "updates"}
         onclick={() => nav.go({ name: "updates" })}
         title={updateReady
-          ? `Updates. ${update?.nextName || update?.next} is ready, restart to use it`
+          ? `Updates. ${update?.nextName || update?.next} is ready, relaunch to finish updating`
           : `Updates. This is ${update?.version ?? "the app"}`}
       >
         <span class="mark">

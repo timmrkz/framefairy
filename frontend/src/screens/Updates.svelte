@@ -3,7 +3,9 @@
   // one, in one card: the build and the channel it follows on top, and
   // under it one line that says where things stand, with the one thing to
   // do about it at its end. A newer build downloads by itself, so that
-  // thing is Update once it is here, and Check the rest of the time.
+  // thing is Relaunch once it is here, and Check the rest of the time.
+  // Relaunch is Chrome's word for it: a newer version downloads by itself,
+  // the mark on Updates says it is here, and one click relaunches into it.
   // Reached from Updates at the foot of the sidebar and from Check for
   // Updates in the app menu. See docs/UPDATES.md.
   import { onMount } from "svelte";
@@ -133,7 +135,7 @@
         return {
           mark: "new",
           head: "A newer build is ready",
-          more: `${next}. Update restarts the app into it.`,
+          more: `${next}. Relaunch to finish updating.`,
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
@@ -211,7 +213,7 @@
             <Info label="How updates work" side="right">
               The list says where this app updates from: main, or one pull request. Every push to
               it makes a new build. The app looks when it starts and every ten minutes, and
-              downloads the newest build by itself. <b>Update</b> restarts the app into it. The
+              downloads the newest build by itself. <b>Relaunch</b> restarts the app into it. The
               commit under the version opens on GitHub.
             </Info>
           </span>
@@ -254,7 +256,7 @@
             onclick={install}
             disabled={restarting}
             title="Quits and comes back as the new build. Waits while work runs"
-            >{#if restarting}<Busy />{/if}{restarting ? "Updating" : "Update"}</button
+            >{#if restarting}<Busy />{/if}{restarting ? "Relaunching" : "Relaunch"}</button
           >
         {:else if !update.off}
           <button
