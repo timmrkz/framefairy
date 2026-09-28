@@ -322,9 +322,11 @@
     const steps = [60, 300, 600, 900, 1800, 3600, 7200];
     const room = Math.max(1, Math.floor(width / 72));
     const step = steps.find((s) => duration / s <= room) ?? 7200;
-    const out: { t: number; label: boolean }[] = [];
+    // on says the line lies on a searched part, where it is drawn lighter.
+    const out: { t: number; label: boolean; on: boolean }[] = [];
     for (let t = step; t < duration; t += step) {
-      out.push({ t, label: (t / duration) * width < width - 56 });
+      const on = searched.some((w) => w.from <= t && t <= w.to);
+      out.push({ t, label: (t / duration) * width < width - 56, on });
     }
     return out;
   });
@@ -399,7 +401,6 @@
     class:waiting={locked}
     class:whole
     class:lit={grip}
-    class:xray={covering}
     class:knock-a={knock === "a"}
     class:knock-b={knock === "b"}
     style="left: {at(from)}px; width: {at(to) - at(from)}px"
@@ -429,11 +430,13 @@
       <Icon name="trash" size={12} />
     </button>
   {/if}
-  <!-- A clip the window lies over is on its way out, so it is not drawn:
-       what the window shows is what the range picker would look like with
-       that part given back. -->
+  <!-- Every clip is drawn, the ones a window lies over too, above it, the
+       way an editor keeps what is in a selection in sight. The window over
+       a part searched already once hid them, to show what the part would
+       be with them removed, and Tim found a range picker with nothing on
+       it: a window over the whole of a short episode hid every clip it had
+       just found. What the trash can does is in its title. -->
   {#each marks as m (m.key)}
-    {#if !(covering && m.end > from && m.start < to)}
     <button
       class="clipmark"
       class:rendered={m.rendered}
@@ -443,7 +446,6 @@
       onpointerdown={(e) => e.stopPropagation()}
       onclick={() => onmark?.(m.key)}
     ></button>
-    {/if}
   {/each}
   <!-- The ruler, in two layers, and they have to be two.
 
@@ -457,7 +459,7 @@
        line's level however high its own is, and a window drawn over a
        part already searched would swallow it. -->
   {#each ticks as tick (tick.t)}
-    <div class="tick" style="left: {at(tick.t)}px"></div>
+    <div class="tick" class:on={tick.on} style="left: {at(tick.t)}px"></div>
   {/each}
   {#each ticks as tick (tick.t)}
     {#if tick.label}
@@ -631,6 +633,15 @@
     border-left: 1px solid var(--ink-3);
     pointer-events: none;
     z-index: 2;
+  }
+
+  /* A searched part is shaded in the ruler's own colour, so a line on it
+     was 7 levels above what it lay on, where on the plain track it is 19,
+     and a short episode searched whole showed its minutes with no lines
+     under them. On a searched part the line is a step lighter, the same
+     step above the shade as it is above the track. */
+  .tick.on {
+    border-left-color: var(--line);
   }
 
   /* The same place and the same colour as the times on the clip
@@ -833,14 +844,6 @@
     }
   }
 
-  /* A window drawn over material that was searched already is a window
-     onto what that part would be without it: the track as it looks
-     where nobody has looked yet, with the clips inside it gone. So what
-     the button in its corner does is plain before it is pressed. */
-  .window.xray {
-    background: var(--ink-1);
-  }
-
   /* An edge under the pointer lights the whole box, which is the edge you
      are about to take hold of, the way the frame in app.css is lit. A
      window over the whole episode draws no frame until then. */
@@ -861,6 +864,13 @@
   }
 
 
+
+  /* Over the window, which is 3, so a clip the window lies over is seen
+     and can be picked. app.css draws a mark at 2, which is right on the
+     clip timeline, where nothing lies over the track. */
+  .clipmark {
+    z-index: 4;
+  }
 
   /* The box the playhead is drawn over, exactly the track and nothing
      more, so a position worked out for the track is right here too. */
