@@ -18,6 +18,12 @@ type Project struct {
 	Source string
 	// Base holds the settings every step starts from.
 	Base Options
+	// Edit wraps a change a person made to a plan, so whoever holds the
+	// history of the episode can take it back: the app's Undo. It wraps
+	// only the moment the plan is written, never the work before it, so a
+	// clip made by hand does not hold every other edit back while it hears
+	// and frames. Nil writes at once, which is what the command line does.
+	Edit func(write func() error) error
 
 	engine *Engine
 	mu     sync.Mutex

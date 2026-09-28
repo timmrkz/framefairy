@@ -60,7 +60,17 @@ class JobStore {
   // something to say, cut off or failed. One called off by hand or done
   // has nothing to say, and is not it.
   search(path: string): Job | undefined {
-    const last = this.list.findLast((j) => j.episode === path && j.kind === "search");
+    return this.latest(path, "search");
+  }
+
+  // The same for the episode's clip made by hand: running, or stopped with
+  // Continue.
+  hand(path: string): Job | undefined {
+    return this.latest(path, "hand");
+  }
+
+  private latest(path: string, kind: Job["kind"]): Job | undefined {
+    const last = this.list.findLast((j) => j.episode === path && j.kind === kind);
     if (!last || last.state === "done" || last.state === "cancelled") return undefined;
     return last;
   }

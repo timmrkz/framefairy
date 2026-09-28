@@ -53,8 +53,43 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	})
 }
 
-// Continue carries on a search or a render that was cut off or failed,
-// from what it left.
+// MakeClip makes a clip by hand at a moment, In or Out, as a job like a
+// search: it hears the part the clip needs where nothing has, frames the
+// clip and writes it into the clip set made by hand, and Cancel, the app
+// closing and Continue treat it the way they treat a search. An episode
+// makes one at a time, so asking again while one runs gives the one that
+// runs. Its result is the key of the clip it made. Its steps take no turn
+// in a lane, see engine.MakeClipJob. Only writing the clip goes through
+// the history, so Undo takes it back and no other edit waits for it.
+func (s *FrameFairy) MakeClip(path string, at float64, backward bool) Job {
+	const label = "Make a clip"
+	if !s.store.Known(path) {
+		return s.jobs.refuse(path, engine.JobHand, label, notInLibrary)
+	}
+	for _, j := range s.jobs.list() {
+		if j.Episode == path && j.Kind == engine.JobHand && j.State == JobRunning && j.ctx.Err() != nil {
+			s.jobs.waitJob(j.ID)
+		}
+	}
+	s.jobs.settle(path, engine.JobHand, "")
+	return s.jobs.addSteps(path, engine.JobHand, label, true, func(j *Job) {
+		j.Record, j.At, j.Backward, j.free = engine.HandID, at, backward, true
+	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+		info, err := s.probe(ctx, path)
+		if err != nil {
+			return "", err
+		}
+		p.Edit = func(write func() error) error { return s.edit(path, write) }
+		plan, id, err := p.MakeClipJob(ctx, at, backward, info.Duration, turn)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Base(plan) + "/" + id, nil
+	})
+}
+
+// Continue carries on a search, a clip made by hand or a render that was
+// cut off or failed, from what it left.
 func (s *FrameFairy) Continue(id string) Job {
 	var stopped *Job
 	for _, j := range s.jobs.list() {
@@ -69,6 +104,11 @@ func (s *FrameFairy) Continue(id string) Job {
 		return s.jobs.refuse("", "continue", "Continue", "there is nothing to carry on")
 	}
 	path := stopped.Episode
+	if stopped.Kind == engine.JobHand {
+		// Made again at the same moment: what it heard is kept, so only
+		// what it had not heard yet is heard.
+		return s.MakeClip(path, stopped.At, stopped.Backward)
+	}
 	if stopped.Kind == engine.JobSearch {
 		req := engine.PlanRequest{From: stopped.From, To: stopped.To}
 		if rec := engine.ReadSearch(path); rec != nil {
@@ -187,7 +227,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
-		if j.Kind == engine.JobSearch {
+		if j.Kind == engine.JobSearch || j.Kind == engine.JobHand {
 			// Its record says stopped as it ends, see runJob.
 			s.jobs.stopByHand(id)
 			return true

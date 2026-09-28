@@ -51,20 +51,23 @@ Cancel, because nothing could tell the two apart.
 ## What a job is
 
 A job is one piece of work a person started, or the app started for them:
-a **search** or a **render**. It is owned by the Go side. It has what it
-was asked for and a step it is in. An episode has at most one search at a
-time, and any number of renders.
+a **search**, a **clip made by hand** with In or Out, or a **render**. It
+is owned by the Go side. It has what it was asked for and a step it is in.
+An episode has at most one search and one clip made by hand at a time, and
+any number of renders.
 
 A search goes **waiting**, **hearing**, **finding**, **done**. A render
 goes **waiting**, **rendering**, **done**. Waiting is its turn behind
 other work. A search whose window has been heard already goes straight
-from waiting to finding.
+from waiting to finding. A clip made by hand goes **hearing**, when the
+part around the playhead is not heard yet, then **framing**, **done**.
+Its result is the key of the clip it made, which is then chosen.
 
 Every job can stop before done in one of two ways:
 
 - **Failed**, with the reason.
-- **Stopped**, by Cancel. A search says so where its work was, with
-  **Continue**, the same way as one the app was closed on: what it heard
+- **Stopped**, by Cancel. A search or a clip made by hand says so where
+  its work was, with **Continue**, the same way as one the app was closed on: what it heard
   stays and it can be carried on, and an empty column after Cancel read as
   work that had vanished. A render called off goes, and its Render button
   carries it on.
@@ -86,11 +89,20 @@ done is done again:
   next search goes on from where the transcript ends.
 - A search called off while finding keeps the clips that landed.
 - A render called off keeps the shorts it finished.
+- A clip made by hand called off keeps what it heard.
+
+Cancel at the head of the clip list stops everything the list has
+running, the search and the clip made by hand together, and Continue
+there carries on everything in it that stopped. The head stands for the
+list's work, so there is one button, the way there is one Cancel for a
+search's two steps.
 
 Continue carries a job on from what it left. Hearing carries on from the
 end of the transcript. Finding asks the model again for the whole window
 and replaces the clips that landed, because an answer cannot be taken up
-halfway. Rendering renders the clips that are not finished yet.
+halfway. Rendering renders the clips that are not finished yet. A clip made by
+hand is made again at the same moment, In or Out, hearing only what it had
+not heard.
 
 If using the app shows a pause is missed after all, it is a step that
 stops without being called off, and adding it is small.
@@ -113,6 +125,11 @@ neither taken back nor held up.
 
 Model installs share the lane of the step that needs them: the speech
 model the lane of hearing, the language model the lane of finding.
+
+A clip made by hand takes no turn in any lane. It hears a minute or two
+beside a transcription of the whole episode that may hold the hearing lane
+for hours, and In and Out that waited for it would not be In and Out. Its
+turn only says which step it is in, see `free` in `jobs.go`.
 
 ## The record
 
@@ -194,7 +211,8 @@ is no logic about jobs in TypeScript.
 | --- | --- |
 | New | `Search(path, request)` |
 | Render | `Render(path, request)` |
-| Continue, on a search or a render that stopped | `Continue(job)` |
+| In and Out | `MakeClip(path, at, backward)` |
+| Continue, on a search, a clip made by hand or a render that stopped | `Continue(job)` |
 | Cancel, on one that runs or one that stopped | `CancelJob(job)` |
 
 It gets the state of every job in one event, `job`, whenever it changes,

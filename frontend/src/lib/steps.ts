@@ -19,6 +19,8 @@ const doing: Record<string, string> = {
   hearing: "Transcribing",
   finding: "Finding clips",
   rendering: "Rendering",
+  // A clip made by hand, once it has heard what it needs.
+  framing: "Placing the crop",
 };
 
 export type StepLine = {
@@ -42,23 +44,16 @@ export function stepLine(job: Job, hearing = -1): StepLine {
     return { what: waitingTo[job.lane] ?? "Waiting", left: "", fraction: -1 };
   }
   const what = doing[job.step] ?? sentence(job.label);
-  if (job.step === "hearing") return { what, left, fraction: hearing };
+  // A search's hearing is how far the episode is heard towards its window,
+  // given. Every other step, a clip made by hand's hearing included, is
+  // how far the step itself has come.
+  if (job.step === "hearing" && hearing >= 0) return { what, left, fraction: hearing };
   return { what, left, fraction: p && p.fraction >= 0 ? p.fraction : -1 };
 }
 
 // The time left, the way every row says it, or nothing when it is not known.
 export function leftText(remaining: number): string {
   return remaining > 0 ? `About ${clock(Math.ceil(remaining / 5) * 5)} left` : "";
-}
-
-// The line of a clip made by hand, in the row its card will be, said the
-// way a search says its own: it is the same kind of work in the same list.
-// Each step, hearing the part around the playhead and then placing the
-// crop, has its fill from nothing to all of it and its time left, as a
-// search's hearing and finding have.
-export function makingLine(step: "hearing" | "framing", fraction = 0, remaining = 0): StepLine {
-  const what = step === "hearing" ? doing.hearing : "Placing the crop";
-  return { what, left: leftText(remaining), fraction };
 }
 
 // A line of the engine's, where one is shown as it is, as a sentence: the

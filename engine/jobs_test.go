@@ -300,6 +300,8 @@ func FuzzReadJob(f *testing.F) {
 	f.Add([]byte(`{"id": "search", "kind": "search", "to": 60, "count": 12, "step": "hearing"}`))
 	f.Add([]byte(`{"id": "render-1", "kind": "render", "plan": "x", "step": "failed", "error": "` + strings.Repeat("é", 600) + `"}`))
 	f.Add([]byte(`{"id": "search", "kind": "search", "from": 1e400, "step": "finding"}`))
+	f.Add([]byte(`{"id": "hand", "kind": "hand", "at": 8542.1, "backward": true, "step": "framing"}`))
+	f.Add([]byte(`{"id": "hand", "kind": "hand", "at": -3, "step": "finding"}`))
 	dir := f.TempDir()
 	source := filepath.Join(dir, "ep.mp4")
 	f.Fuzz(func(t *testing.T, body []byte) {
@@ -316,6 +318,9 @@ func FuzzReadJob(f *testing.F) {
 		}
 		if rec.Kind == JobRender && filepath.Dir(rec.Plan) != filepath.Join(WorkDir(source), "logs") {
 			t.Errorf("a render of %s", rec.Plan)
+		}
+		if rec.Kind == JobHand && (rec.ID != HandID || rec.At < 0 || rec.At > MaxEpisodeSeconds) {
+			t.Errorf("a clip made by hand %+v", rec)
 		}
 	})
 }

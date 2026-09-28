@@ -187,6 +187,24 @@ func (l *Log) HoldProgress(hold bool) {
 	l.held.Store(hold)
 }
 
+// TakeProgress gives the progress line to whoever asks, unless it is held
+// already, and says whether it did. What owns it reports through
+// ProgressOwned, and everything else it runs, every ffmpeg with its own
+// progress, stays off the line until release is called. Placing the crop
+// takes it when it runs as the job of a clip made by hand, and leaves it
+// alone inside a search, whose finding holds it for the search.
+func (l *Log) TakeProgress() (release func(), ok bool) {
+	if !l.held.CompareAndSwap(false, true) {
+		return func() {}, false
+	}
+	return func() { l.held.Store(false) }, true
+}
+
+// ProgressOwned reports how far work that took the progress line is.
+func (l *Log) ProgressOwned(label string, fraction, remaining float64) {
+	l.report(label, fraction, remaining, 0, 0)
+}
+
 func (l *Log) progress(label string, fraction, remaining, covered float64, found int) {
 	if l.held.Load() {
 		return

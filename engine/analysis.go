@@ -528,18 +528,28 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 	for _, s := range ordered {
 		total += s.End - s.Start
 	}
+	// Its own share, and not the ffmpeg runs', is what the progress line
+	// says, when nothing else holds the line. Inside a search, finding
+	// holds it for the search, and the framing says nothing.
+	release, owned := e.Log.TakeProgress()
+	defer release()
 	started := time.Now()
 	done := 0.0
 	report := func(seconds float64) {
+		if !owned {
+			return
+		}
 		done += seconds
 		share := math.Min(done/math.Max(2*total, 0.001), 1)
 		left := Unknown
 		if share > 0 {
 			left = time.Since(started).Seconds() / share * (1 - share)
 		}
-		e.Log.ProgressTo(FramingLabel, share, left, 0)
+		e.Log.ProgressOwned(FramingLabel, share, left)
 	}
-	e.Log.ProgressTo(FramingLabel, 0, Unknown, 0)
+	if owned {
+		e.Log.ProgressOwned(FramingLabel, 0, Unknown)
+	}
 
 	type shot struct {
 		key   float64
@@ -597,6 +607,8 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 		}
 	}
 	sort.SliceStable(segments, func(i, j int) bool { return segments[i].Start < segments[j].Start })
-	e.Log.ProgressTo(FramingLabel, 1, 0, 0)
+	if owned {
+		e.Log.ProgressOwned(FramingLabel, 1, 0)
+	}
 	return segments, nil
 }

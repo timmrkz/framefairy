@@ -256,12 +256,12 @@ export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | 
 // Where a search or a render is: waiting for its turn, hearing the
 // episode, finding clips, or rendering them. A search called off with
 // Cancel is "stopped", and says so the way one cut off does.
-export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed" | "stopped";
+export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "framing" | "failed" | "stopped";
 
 export interface Job {
   id: string;
   episode: string;
-  kind: "search" | "render" | "model" | "llm";
+  kind: "search" | "render" | "model" | "llm" | "hand";
   label: string;
   state: JobState;
   error?: string;
@@ -280,6 +280,10 @@ export interface Job {
   // The window of a search. To is 0 for the end of the episode.
   from?: number;
   to?: number;
+  // What a clip made by hand is made of: the moment In or Out was pressed
+  // at, and whether it was Out. Its result is the key of the clip made.
+  at?: number;
+  backward?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
@@ -542,24 +546,16 @@ export const api = {
     edge: "start" | "end",
     at: number,
   ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
-  // Transcribes the part a clip made by hand at a moment needs, where the
-  // transcription from the start has not reached it yet. Where the words
-  // are there already it answers at once.
-  hearAround: (path: string, at: number, backward: boolean) =>
-    call<void>("HearAround", path, at, backward),
-  // Whether a clip made by hand at a moment needs any of the episode
-  // transcribed first, where nothing has heard it yet.
-  unheard: (path: string, at: number, backward: boolean) =>
-    call<boolean>("Unheard", path, at, backward),
   // The clip made by hand at a moment, worked out from the transcript
   // alone and at once, to be shown while its crop is placed.
   sketchClip: (path: string, at: number, backward: boolean) =>
     call<ClipSketch>("SketchClip", path, at, backward),
-  // A clip made by hand at a moment of the episode, for a part the model
-  // did not pick: from the line the moment stands in forward, or back to
-  // it. It is framed the way the model's clips are.
+  // A clip made by hand at a moment of the episode, In or Out, as a job
+  // like a search: it hears what it needs, frames the clip, and is called
+  // off and carried on the way a search is. The job's result is the key of
+  // the clip it made.
   makeClip: (path: string, at: number, backward: boolean) =>
-    call<ClipEntry>("MakeClip", path, at, backward),
+    call<Job>("MakeClip", path, at, backward),
   // A thumbnail added, moved or removed. A from below nought adds one at
   // to, and a to below nought removes the one at from.
   setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>
@@ -625,24 +621,6 @@ export const api = {
 export interface JobUpdate {
   job: Job;
   event?: EngineEvent;
-}
-
-// How far a clip made by hand has come, in the step it is in: hearing the
-// part around the playhead, then framing, which places the crop. A chunk
-// heard is saved before it is said, so the part can be read again at once.
-export interface Making {
-  path: string;
-  step: "hearing" | "framing";
-  // How far the part being heard is heard, in seconds of the episode.
-  covered: number;
-  // How much of the step is done, 0 to 1.
-  fraction: number;
-  // How many seconds the step will take yet, below 0 when not known.
-  remaining: number;
-}
-
-export function onMaking(fn: (m: Making) => void): () => void {
-  return Events.On("making", (ev) => fn(ev.data as Making));
 }
 
 export function onJob(fn: (u: JobUpdate) => void): () => void {

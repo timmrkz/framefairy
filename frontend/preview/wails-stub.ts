@@ -503,6 +503,51 @@ function askSearch(from: number, to: number): FakeSearch {
   return made;
 }
 
+// Clips made by hand, as jobs: hearing for two and a half seconds when the
+// playhead is past what is heard, which fills the island a chunk at a time,
+// then framing for a second and a half, then done with the clip's key.
+// Called off, it says Stopped after the moment the Go side takes.
+type FakeHand = { id: string; at: number; backward: boolean; wall: number; hears: boolean; island?: { from: number; to: number; covered: number }; cancelledAt?: number; settled?: boolean; made?: string };
+const fakeHands = (): FakeHand[] => ((window as any).__hands ??= []);
+function askHand(at: number, backward: boolean): FakeHand {
+  const list = fakeHands();
+  for (const h of list) if (h.cancelledAt !== undefined) h.settled = true;
+  const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
+  const hears = at >= heardTo && !islands.some((i) => i.from <= at - 30 && i.to >= at + 60);
+  const made: FakeHand = { id: `h${list.length + 1}`, at, backward, wall: Date.now(), hears };
+  if (hears) {
+    made.island = { from: at - 30, to: at + 60, covered: at - 30 };
+    islands.push(made.island);
+  }
+  list.push(made);
+  return made;
+}
+function handJob(h: FakeHand) {
+  const now = Math.min(Date.now(), h.cancelledAt ?? Date.now());
+  const since = now - h.wall;
+  const hearFor = h.hears ? 2500 : 0;
+  const frameFor = 1500;
+  const base = { id: h.id, episode: "/eps/ep.mp4", kind: "hand", label: "Make a clip", record: "hand", at: h.at, backward: h.backward, queued: "", lane: "finding" };
+  if (h.cancelledAt !== undefined && Date.now() - h.cancelledAt >= 300) {
+    return { ...base, state: h.settled ? "cancelled" : "interrupted", step: "stopped" };
+  }
+  if (since < hearFor) {
+    const fraction = since / hearFor;
+    if (h.island) h.island.covered = h.island.from + fraction * (h.island.to - h.island.from);
+    return { ...base, state: "running", step: "hearing", progress: { kind: "progress", text: "transcribing", fraction, remaining: (hearFor - since) / 1000, covered: h.island?.covered ?? 0, elapsed: 1, time: "" } };
+  }
+  if (h.island) h.island.covered = h.island.to;
+  if (since < hearFor + frameFor) {
+    const fraction = (since - hearFor) / frameFor;
+    return { ...base, state: "running", step: "framing", progress: { kind: "progress", text: "placing the crop", fraction, remaining: (hearFor + frameFor - since) / 1000, elapsed: 1, time: "" } };
+  }
+  if (!h.made) {
+    handMade().push(Math.max(0, Math.round(h.at) - (h.backward ? 25 : 1)));
+    h.made = `clips-hand.json/h0${handMade().length}`;
+  }
+  return { ...base, state: "done", step: "", result: h.made };
+}
+
 export const Call = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const method = name.split(".").pop();
@@ -752,6 +797,8 @@ export const Call = {
         return Promise.resolve(searchJob(made));
       }
       case "Continue": {
+        const stoppedHand = fakeHands().find((h) => h.id === args[0] && h.cancelledAt !== undefined && !h.settled);
+        if (stoppedHand) return Promise.resolve(handJob(askHand(stoppedHand.at, stoppedHand.backward)));
         const was = fakeSearches().find((s) => s.id === args[0] && (s.stopped || s.cancelledAt !== undefined) && !s.settled);
         if (!was) return Promise.resolve({ id: "x", episode: "", kind: "continue", label: "Continue", state: "failed", queued: "", lane: "finding" });
         return Promise.resolve(searchJob(askSearch(was.from, was.to)));
@@ -788,39 +835,6 @@ export const Call = {
           ...handMade().map((at, i) => handClip(i, at)),
         ].sort((x, y) => x.start - y.start));
       }
-      // A clip made by hand at the playhead, in the clip set of its own,
-      // starting a little before it the way the engine starts one on the
-      // line the playhead stands in.
-      // Past the transcript, the part around the playhead is heard first,
-      // which takes a while. Before it, it answers at once.
-      case "Unheard": {
-        const at = Number(args[1]);
-        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
-        return Promise.resolve(at >= heardTo && !islands.some((i) => i.from <= at - 30 && i.to >= at + 60));
-      }
-      // Past the transcript, the part around the playhead is heard as an
-      // island, a chunk at a time, saved and said after each, the way the
-      // Go side hears one: 30 seconds before the playhead to 30 past the
-      // longest clip, a chunk of 18 seconds every half second.
-      case "HearAround": {
-        const at = Number(args[1]);
-        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
-        if (at < heardTo) return Promise.resolve(null);
-        const island = { from: at - 30, to: at + 60, covered: at - 30 };
-        islands.push(island);
-        return new Promise((done) => {
-          const timer = setInterval(() => {
-            island.covered = Math.min(island.to, island.covered + 18);
-            const fraction = (island.covered - island.from) / (island.to - island.from);
-            const remaining = ((island.to - island.covered) / 18) * 0.5;
-            for (const fn of makingListeners) fn({ data: { path: args[0], step: "hearing", covered: island.covered, fraction, remaining } });
-            if (island.covered >= island.to) {
-              clearInterval(timer);
-              done(null);
-            }
-          }, 500);
-        });
-      }
       // The clip MakeClip is about to make, from the transcript alone and
       // at once, the way the engine sketches it.
       case "SketchClip": {
@@ -841,28 +855,14 @@ export const Call = {
           captions: Array.from({ length: Math.floor(length / 4) }, (_, k) => ({ start: k * 4, end: k * 4 + 3.8 })),
         });
       }
+      // A clip made by hand, a job the way the Go side makes it one: it
+      // hears the part around the playhead where nothing has, then frames
+      // the clip, and reports both steps as a search reports its own.
       case "MakeClip": {
-        const at = Number(args[1]);
         if (location.search.includes("refuse")) {
-          return Promise.reject(new Error(`the transcript has not reached ${Math.round(at)} s yet`));
+          return Promise.resolve({ id: "x", episode: args[0], kind: "hand", label: "Make a clip", state: "failed", error: "the transcript has not reached this part yet", queued: "", lane: "finding" });
         }
-        // Forward from the line the playhead stands in, or back to it.
-        handMade().push(Math.max(0, Math.round(at) - (args[2] ? 25 : 1)));
-        const i = handMade().length - 1;
-        // Framing reads the picture, which takes a while, and says how far
-        // it has come every piece, the way ClipSegments does.
-        return new Promise((done) => {
-          let k = 0;
-          const timer = setInterval(() => {
-            k++;
-            const fraction = k / 6;
-            for (const fn of makingListeners) fn({ data: { path: args[0], step: "framing", covered: 0, fraction, remaining: (6 - k) * 0.25 } });
-            if (k >= 6) {
-              clearInterval(timer);
-              done(handClip(i, handMade()[i]));
-            }
-          }, 250);
-        });
+        return Promise.resolve(handJob(askHand(Number(args[1]), !!args[2])));
       }
       case "Coverage":
         if (fresh) {
@@ -1063,7 +1063,7 @@ export const Call = {
         );
       }
       case "Jobs": {
-        const searches = fakeSearches().map(searchJob);
+        const searches = [...fakeSearches().map(searchJob), ...fakeHands().map(handJob)];
         // A render running on the first clip, so the Render button has
         // work of its own to show.
         if (q.includes("rendering")) {
@@ -1202,6 +1202,9 @@ export const Call = {
         (window as any).__stopped = true;
         ((window as any).__cancels ??= []).push(args[0]);
         if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
+        const h = fakeHands().find((f) => f.id === args[0]);
+        if (h && h.cancelledAt !== undefined) h.settled = true;
+        else if (h) h.cancelledAt = Date.now();
         const s = fakeSearches().find((f) => f.id === args[0]);
         if (s?.stopped) s.settled = true;
         else if (s && s.cancelledAt === undefined) s.cancelledAt = Date.now();
@@ -1222,10 +1225,8 @@ export const Call = {
 // Picking a channel checks, downloads over two seconds with the fill, and
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
-// The parts heard out of turn for clips made by hand, and who is told how
-// far making one has come, each chunk heard and each piece framed.
+// The parts heard out of turn for clips made by hand.
 const islands: { from: number; to: number; covered: number }[] = [];
-const makingListeners = new Set<(ev: unknown) => void>();
 const updChannels = [
   { id: "main", name: "main", version: "0.3.0-main.40" },
   { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.12" },
@@ -1338,10 +1339,6 @@ export const Events = {
       };
       return () => delete (window as any).__checkForUpdates;
     }
-    if (name === "making") {
-      makingListeners.add(fn);
-      return () => makingListeners.delete(fn);
-    }
     if (name !== "job") return () => {};
     // Every search reports the way the Go side reports one: about four
     // times a second while it runs, and once more when it ends. The job list
@@ -1349,11 +1346,10 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
-      for (const s of fakeSearches()) {
-        const job = searchJob(s);
+      for (const job of [...fakeSearches().map(searchJob), ...fakeHands().map(handJob)]) {
         const key = `${job.state}`;
-        if (job.state !== "running" && told.get(s.id) === key) continue;
-        told.set(s.id, key);
+        if (job.state !== "running" && told.get(job.id) === key) continue;
+        told.set(job.id, key);
         if (job.progress) {
           ((window as any).__heardSent ??= []).push({ at: Date.now() - ((window as any).__started ?? Date.now()), covered: job.progress.covered });
         }

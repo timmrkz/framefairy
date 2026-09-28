@@ -25,7 +25,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"framefairy/asr"
 	"framefairy/engine"
 	"framefairy/notices"
 )
@@ -1267,85 +1266,6 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	return ClipEntry{}, os.ErrNotExist
 }
 
-// HearAround transcribes the part of the episode a clip made by hand at a
-// moment needs, where the transcription from the start has not reached it
-// yet: an island around the playhead, kept until that transcription passes
-// it. Where the words are there already it answers at once.
-func (s *FrameFairy) HearAround(ctx context.Context, path string, at float64, backward bool) error {
-	if !s.store.Known(path) {
-		return os.ErrNotExist
-	}
-	info, err := s.probe(ctx, path)
-	if err != nil {
-		return err
-	}
-	// Every chunk heard is saved before it is reported, so the interface
-	// is told to read the part again each time and sees it grow.
-	e := engine.NewEngine(s.makingLog(path, "hearing"))
-	if ff := s.store.Settings().FFmpeg; ff != "" {
-		e.FFmpeg = ff
-	}
-	e.OpenRecognizer = asr.Open
-	p := engine.NewProject(e, path, s.store.Settings().options())
-	return p.HearAround(ctx, at, backward, info.Duration)
-}
-
-// Making says how far a clip made by hand has come, in the step it is in,
-// the way a job says it for a search: hearing the part around the
-// playhead, then framing, which places the crop.
-type Making struct {
-	Path string `json:"path"`
-	// Step is "hearing" or "framing".
-	Step string `json:"step"`
-	// Covered is how far the part being heard is heard, in seconds of the
-	// episode. Nought while framing.
-	Covered float64 `json:"covered"`
-	// Fraction is how much of the step is done, 0 to 1.
-	Fraction float64 `json:"fraction"`
-	// Remaining is how many seconds the step will take yet, or below 0
-	// when that is not known.
-	Remaining float64 `json:"remaining"`
-}
-
-// makingLog is the log of one step of making a clip by hand, which tells
-// the interface how far the step has come as the "making" event. Only the
-// step's own progress is passed on: the ffmpeg it runs along the way
-// reports each of its runs from nothing to all of it, which says nothing
-// about the step.
-func (s *FrameFairy) makingLog(path, step string) *engine.Log {
-	log := engine.NewLog(io.Discard, false, false)
-	log.SetSink(func(ev engine.Event) {
-		if ev.Kind != engine.EventProgress || s.app == nil {
-			return
-		}
-		ours := ev.Covered > 0
-		if step == "framing" {
-			ours = ev.Text == engine.FramingLabel
-		}
-		if ours {
-			s.app.Event.Emit("making", Making{Path: path, Step: step, Covered: ev.Covered,
-				Fraction: ev.Fraction, Remaining: ev.Remaining})
-		}
-	})
-	return log
-}
-
-// Unheard says whether a clip made by hand at a moment needs any of the
-// episode transcribed first, by the transcription from the start or by an
-// island, so the interface says it is transcribing only when it is.
-func (s *FrameFairy) Unheard(ctx context.Context, path string, at float64, backward bool) (bool, error) {
-	if !s.store.Known(path) {
-		return false, os.ErrNotExist
-	}
-	info, err := s.probe(ctx, path)
-	if err != nil {
-		return false, err
-	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	p := engine.NewProject(e, path, s.store.Settings().options())
-	return p.Unheard(at, backward, info.Duration), nil
-}
-
 // ClipSketch is a clip made by hand before it is framed, for the interface
 // to show while the crop is placed: where it lies, the parts it keeps, the
 // words said in them, what it is called and where its captions fall on the
@@ -1393,36 +1313,6 @@ func (s *FrameFairy) SketchClip(path string, at float64, backward bool) (ClipSke
 		out.Captions = append(out.Captions, ClipSketchCaption{Start: c.Start, End: c.End})
 	}
 	return out, nil
-}
-
-// MakeClip makes a clip by hand at a moment of the episode, for a part the
-// model did not pick, and returns it: from the line the moment stands in
-// forward, the way an editor's In mark works, or back to it, the way the
-// Out mark does. It is framed the way the model's clips are, so it can
-// take a moment, and Undo takes it away again.
-func (s *FrameFairy) MakeClip(ctx context.Context, path string, at float64, backward bool) (ClipEntry, error) {
-	if !s.store.Known(path) {
-		return ClipEntry{}, os.ErrNotExist
-	}
-	// Framing reads the picture, so this needs an engine with the tools the
-	// rest of the app uses.
-	e := engine.NewEngine(s.makingLog(path, "framing"))
-	if ff := s.store.Settings().FFmpeg; ff != "" {
-		e.FFmpeg = ff
-		if guess := filepath.Join(filepath.Dir(ff), "ffprobe"); fileExists(guess) {
-			e.FFprobe = guess
-		}
-	}
-	p := engine.NewProject(e, path, s.store.Settings().options())
-	var plan, id string
-	if err := s.edit(path, func() error {
-		var err error
-		plan, id, err = p.MakeClip(ctx, at, backward)
-		return err
-	}); err != nil {
-		return ClipEntry{}, err
-	}
-	return s.clipEntry(ctx, path, plan, id)
 }
 
 // RemoveClip takes a clip out of the list, or puts it back. The clip stays

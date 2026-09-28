@@ -63,6 +63,10 @@ type Job struct {
 	// episode.
 	From float64 `json:"from,omitempty"`
 	To   float64 `json:"to,omitempty"`
+	// At and Backward are what a clip made by hand is made of: the moment
+	// In or Out was pressed at, and whether it was Out.
+	At       float64 `json:"at,omitempty"`
+	Backward bool    `json:"backward,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -81,6 +85,10 @@ type Job struct {
 	// byHand is a search called off with Cancel, which says so where its
 	// work was the way one cut off by the app closing does, see stopByHand.
 	byHand bool
+	// free is a job whose steps take no turn in a lane: a clip made by
+	// hand, which hears a minute or two beside a transcription that may
+	// hold the hearing lane for hours. Its steps are said all the same.
+	free bool
 }
 
 // JobUpdate is what the interface receives on the "job" event.
@@ -293,6 +301,10 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 // came is not how far this one is, so the progress starts again with it.
 func (q *queue) turn(job *Job) engine.Turn {
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
+		if job.free {
+			q.update(job, nil, func(j *Job) { j.Step, j.Progress = step, nil })
+			return ctx, func() {}, nil
+		}
 		lane, kind := laneOfStep(step)
 		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
@@ -315,6 +327,9 @@ func (q *queue) restore(episodes []string) {
 				state = JobFailed
 			}
 			label := "Find clips"
+			if rec.Kind == engine.JobHand {
+				label = "Make a clip"
+			}
 			if rec.Kind == engine.JobRender {
 				label = "Render"
 				if rec.Preview {
@@ -325,7 +340,8 @@ func (q *queue) restore(episodes []string) {
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
 				Label: label, State: state, Error: rec.Error, Queued: rec.Asked, Lane: laneFor(rec.Kind),
-				Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Plan: rec.Plan,
+				Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, At: rec.At,
+				Backward: rec.Backward, Plan: rec.Plan,
 				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
@@ -516,12 +532,12 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
-// stopByHand calls off a search with Cancel. It ends as a search that
-// stopped, not as one that is gone, see runJob.
+// stopByHand calls off a search or a clip made by hand with Cancel. It
+// ends as one that stopped, not as one that is gone, see runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && j.Kind == engine.JobSearch && j.Record != "" {
+		if j.ID == id && (j.Kind == engine.JobSearch || j.Kind == engine.JobHand) && j.Record != "" {
 			j.byHand = true
 		}
 	}

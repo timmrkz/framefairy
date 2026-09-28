@@ -491,3 +491,49 @@ func texts(lines []Line) []string {
 	}
 	return out
 }
+
+// A clip made by hand is a job with a record, like a search. Cut off while
+// it hears, its record stays, says where it was and what it was making,
+// and reads as one to carry on. Made again from the record, the clip is
+// made and the record goes.
+func TestAClipMadeByHandIsAJob(t *testing.T) {
+	source := testEpisode(t, "240")
+	SetTrainingDir(t.TempDir())
+	var heard int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) {
+		return cancellingRecognizer{fakeRecognizer{&heard}, 2, cancel}, nil
+	}
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Min, base.Max = 20, 30
+	p := NewProject(e, source, base)
+
+	if _, _, err := p.MakeClipJob(ctx, 120, true, 240, nil); err == nil {
+		t.Fatal("the clip was made although it was stopped")
+	}
+	var rec *JobRecord
+	for _, r := range ReadJobs(source) {
+		if r.Kind == JobHand {
+			rec = &r
+		}
+	}
+	if rec == nil || rec.ID != HandID || rec.Step != StepHearing || rec.At != 120 || !rec.Backward ||
+		!rec.Interrupted() {
+		t.Fatalf("the record of the clip cut off is %+v", rec)
+	}
+
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	plan, id, err := p.MakeClipJob(context.Background(), rec.At, rec.Backward, 240, nil)
+	if err != nil || !IsHandPlan(plan) || id == "" {
+		t.Fatalf("carried on, it made %s in %s: %v", id, plan, err)
+	}
+	for _, r := range ReadJobs(source) {
+		if r.Kind == JobHand {
+			t.Fatalf("the record stays after the clip is made: %+v", r)
+		}
+	}
+}

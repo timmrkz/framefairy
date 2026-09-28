@@ -54,7 +54,17 @@ func (p *Project) MakeClip(ctx context.Context, at float64, backward bool) (stri
 	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
 		return "", "", err
 	}
-	id, err := addHandClip(path, filepath.Base(p.Source), clip)
+	var id string
+	write := func() error {
+		var err error
+		id, err = addHandClip(path, filepath.Base(p.Source), clip)
+		return err
+	}
+	if p.Edit != nil {
+		err = p.Edit(write)
+	} else {
+		err = write()
+	}
 	if err != nil {
 		return "", "", err
 	}

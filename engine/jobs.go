@@ -19,7 +19,8 @@ import (
 // Jobs and their records
 //
 // A job is one piece of work a person started, or the app started for
-// them: a search, which is hearing and then finding, or a render. Each keeps
+// them: a search, which is hearing and then finding, a clip made by hand,
+// which is hearing the part it needs and then framing, or a render. Each keeps
 // one record in the episode's work folder, in jobs/, written every time it
 // goes from one step to the next. The record is the only place the job's
 // state is kept, so an app that starts reads what every job was doing when
@@ -42,7 +43,9 @@ const (
 	StepHearing   = "hearing"
 	StepFinding   = "finding"
 	StepRendering = "rendering"
-	StepFailed    = "failed"
+	// StepFraming is a clip made by hand having its crop placed.
+	StepFraming = "framing"
+	StepFailed  = "failed"
 	// StepStopped is a job called off by hand, see StopJob.
 	StepStopped = "stopped"
 )
@@ -51,7 +54,12 @@ const (
 const (
 	JobSearch = "search"
 	JobRender = "render"
+	JobHand   = "hand"
 )
+
+// HandID is the id of an episode's clip made by hand. An episode makes one
+// at a time, and a new one takes the place of one that stopped.
+const HandID = "hand"
 
 // SearchID is the id of an episode's search. An episode has one search at
 // a time, and a new one takes the place of the last.
@@ -77,6 +85,11 @@ type JobRecord struct {
 	Clips   []string `json:"clips,omitempty"`
 	Preview bool     `json:"preview,omitempty"`
 	Done    []string `json:"done,omitempty"`
+
+	// A clip made by hand: the moment In or Out was pressed at, and
+	// whether it was Out.
+	At       float64 `json:"at,omitempty"`
+	Backward bool    `json:"backward,omitempty"`
 
 	Step  string    `json:"step"`
 	Error string    `json:"error,omitempty"`
@@ -242,7 +255,7 @@ func saneJob(source string, r *JobRecord) bool {
 		return false
 	}
 	switch r.Step {
-	case StepWaiting, StepHearing, StepFinding, StepRendering, StepFailed, StepStopped:
+	case StepWaiting, StepHearing, StepFinding, StepRendering, StepFraming, StepFailed, StepStopped:
 	default:
 		return false
 	}
@@ -250,14 +263,20 @@ func saneJob(source string, r *JobRecord) bool {
 	switch r.Kind {
 	case JobSearch:
 		if r.ID != SearchID || !finite(r.From) || !finite(r.To) || (r.To > 0 && r.To <= r.From) ||
-			r.Count < 0 || r.Count > 1000 || !finite(r.Min) || !finite(r.Max) || r.Step == StepRendering {
+			r.Count < 0 || r.Count > 1000 || !finite(r.Min) || !finite(r.Max) || r.Step == StepRendering ||
+			r.Step == StepFraming {
 			return false
 		}
 	case JobRender:
 		// The plan is one of this episode's, by name and by where it is.
 		if r.ID == SearchID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
 			!planFile.MatchString(filepath.Base(r.Plan)) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
-			r.Step == StepHearing || r.Step == StepFinding {
+			r.Step == StepHearing || r.Step == StepFinding || r.Step == StepFraming {
+			return false
+		}
+	case JobHand:
+		if r.ID != HandID || !finite(r.At) || r.At > MaxEpisodeSeconds || r.Step == StepFinding ||
+			r.Step == StepRendering {
 			return false
 		}
 	default:
@@ -449,6 +468,45 @@ func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, bool
 		return info.Duration, true, nil
 	}
 	return req.To, false, nil
+}
+
+// MakeClipJob makes a clip by hand at a moment as a job, with a record, so
+// it is called off, cut off and carried on the way a search is: it hears
+// the part of the episode the clip needs where nothing has, and frames the
+// clip. It answers with the clip set and the new clip's id. See MakeClip.
+//
+// The app's turn for it takes no lane, it only says which step the job is
+// in: the part it hears is a minute or two beside a transcription of the
+// whole episode that may hold the hearing lane for hours, and In and Out
+// waiting for that would not be In and Out.
+func (p *Project) MakeClipJob(ctx context.Context, at float64, backward bool, duration float64,
+	turn Turn) (plan, id string, err error) {
+	j := p.startJob(JobRecord{ID: HandID, Kind: JobHand, At: at, Backward: backward})
+	defer j.end(&err)
+	if p.Unheard(at, backward, duration) {
+		stepCtx, release, err := j.turn(ctx, turn, StepHearing)
+		if err != nil {
+			return "", "", err
+		}
+		err = p.HearAround(stepCtx, at, backward, duration)
+		release()
+		if err != nil {
+			if ctx.Err() != nil {
+				return "", "", ErrCancelled
+			}
+			return "", "", err
+		}
+	}
+	stepCtx, release, err := j.turn(ctx, turn, StepFraming)
+	if err != nil {
+		return "", "", err
+	}
+	defer release()
+	plan, id, err = p.MakeClip(stepCtx, at, backward)
+	if err != nil && ctx.Err() != nil {
+		return "", "", ErrCancelled
+	}
+	return plan, id, err
 }
 
 // RenderJob renders clips of a plan, one at a time, and keeps a record of

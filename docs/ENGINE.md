@@ -348,12 +348,16 @@ asks before it says it is transcribing.
 An island is saved after every chunk while it is heard, marked as not
 finished, and read as far as it has come, so its words and its waveform
 arrive while it is heard. One cut off part way counts as unheard and is
-heard again whole. The app says `making` after each chunk, with how far
-it has come, so the clip timeline reads it again at once, and the row of
-the clip fills as a search's does. Placing the crop, `ClipSegments`, says
-how far it has come too, as `FramingLabel`: the camera switches found in
-each piece and then the crop measured in each shot, weighed by the
-seconds each covers, from nothing to all of it.
+heard again whole. The app runs a clip made by hand as a job,
+`MakeClipJob` with a record like a search's, see [JOBS.md](JOBS.md), and
+its progress reaches the interface the way a search's does: each chunk
+heard, so the clip timeline reads it again at once, and then placing the
+crop. `ClipSegments` says how far it has come as `FramingLabel`: the
+camera switches found in each piece and then the crop measured in each
+shot, weighed by the seconds each covers, from nothing to all of it. It
+takes the progress line with `TakeProgress` when nothing holds it, so the
+ffmpeg runs inside it stay off the line. Inside a search, finding holds
+the line and the framing says nothing.
 
 `Project.Transcript` adds the islands' words, loudness and waveform wherever the
 whole-episode transcript has not reached, in time order, and every moment

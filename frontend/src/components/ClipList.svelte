@@ -53,7 +53,7 @@
     // What that card is doing, said where its time and length will be, with
     // the beam round it and the fill when how far is known, the same as
     // the row of a search.
-    makingStep?: { what: string; left: string; fraction: number } | null;
+    makingStep?: { what: string; left: string; fraction: number; still?: boolean; stopped?: boolean } | null;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -129,8 +129,8 @@
      it is doing and how long it has left. The row the next clip of a search
      will appear in and the row of a clip made by hand are the same kind of
      thing, a clip on its way, so they are this one row, drawn once. -->
-{#snippet work(line: { what: string; left: string; fraction: number; still?: boolean })}
-  <Busy fraction={line.fraction} still={line.still} />
+{#snippet work(line: { what: string; left: string; fraction: number; still?: boolean; stopped?: boolean })}
+  {#if !line.stopped}<Busy fraction={line.fraction} still={line.still} />{/if}
   <span class="title">{line.what}</span>
   <span class="meta muted num">{line.left}</span>
 {/snippet}
@@ -152,6 +152,7 @@
       data-key={clip.key}
       class:ghost={clip.key === making}
       class:next={clip.key === making}
+      class:stopped={clip.key === making && !!makingStep?.stopped}
       aria-live={clip.key === making ? "polite" : undefined}
     >
       {#if clip.key === making}
@@ -159,9 +160,8 @@
              episode it stands at, the way a search's row falls back on
              its window. -->
         {@render work({
-          what: makingStep?.what ?? "Placing the crop",
+          ...(makingStep ?? { what: "Starting", fraction: -1 }),
           left: makingStep?.left || clock(clip.start),
-          fraction: makingStep?.fraction ?? -1,
         })}
       {:else if clip.key === removed}
         <div class="gone">

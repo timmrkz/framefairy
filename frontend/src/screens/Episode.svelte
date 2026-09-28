@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     captionFontDefault,
@@ -30,7 +30,6 @@
     type Word,
     type WindowView,
     onUndo,
-    onMaking,
   } from "../lib/api";
   import { chosen, jobs } from "../lib/state.svelte";
   import {
@@ -53,7 +52,7 @@
     type RoomView,
   } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
-  import { makingLine, stepLine, type StepLine } from "../lib/steps";
+  import { stepLine } from "../lib/steps";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -137,6 +136,11 @@
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
+  // The episode's clip made by hand, In or Out, a job of the clip list like
+  // the search: running, or stopped with Continue. See makeClip.
+  const hand = $derived(jobs.hand(path));
+  const handRunning = $derived(!!hand && (hand.state === "running" || hand.state === "queued"));
+  const handStopped = $derived(!!hand && (hand.state === "interrupted" || hand.state === "failed"));
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
@@ -160,7 +164,10 @@
   // While a search runs, the head of the clip list carries it: New becomes
   // Cancel and the line under the head fills up. Nothing is added to the
   // column and nothing moves.
-  const busy = $derived(searching || starting);
+  // And while a clip made by hand is made, which is work of the clip list
+  // too: Cancel stops everything the list has running, and Continue
+  // carries on everything in it that stopped.
+  const busy = $derived(searching || starting || handRunning);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -190,20 +197,24 @@
         run: stopWork,
         off: stopping || (starting && !working),
         primary: false,
-        title: "Stop looking for clips. What was heard of the episode is kept",
+        title: handRunning && !searching
+          ? "Stop making the clip. What was heard of the episode is kept"
+          : "Stop looking for clips. What was heard of the episode is kept",
       };
     }
     // A search that was cut off or failed is carried on, not started anew:
     // the button says Continue and takes up the window the search was
     // about, wherever the window on the range picker is now.
-    if (stopped) {
+    if (stopped || handStopped) {
       return {
         label: "Continue",
         icon: "play",
-        run: carryOnSearch,
+        run: carryOn,
         off: duration <= 0,
         primary: true,
-        title: `Carry on the search of ${stopped.window.toLowerCase()}`,
+        title: stopped
+          ? `Carry on the search of ${stopped.window.toLowerCase()}`
+          : `Carry on making the clip at ${clock(hand?.at ?? 0)}`,
       };
     }
     return {
@@ -230,7 +241,7 @@
   );
 
   $effect(() => {
-    if (!working) stopping = false;
+    if (!working && !handRunning) stopping = false;
   });
 
   // Cancel: the search stops, and what it heard of the episode stays, so
@@ -239,10 +250,13 @@
   // chunk and keeps reporting until it hears the stop, and without this
   // the edge carries on for a second or two and the click looks missed.
   function stopWork() {
-    if (!working) return;
+    if (!working && !handRunning) return;
     stopping = true;
-    if (transcribing) stoppedAt = heard;
-    api.cancelJob(working.id);
+    if (working) {
+      if (transcribing) stoppedAt = heard;
+      api.cancelJob(working.id);
+    }
+    if (handRunning && hand) api.cancelJob(hand.id);
   }
   const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
 
@@ -531,6 +545,19 @@
       full: `${window}. ${how} while the clips were found. Continue looks again`,
     };
   });
+
+  // Continue carries on everything of the list that stopped: the search,
+  // and the clip made by hand, which is made again at the same moment and
+  // hears only what it had not heard yet.
+  function carryOn() {
+    if (handStopped && hand) {
+      api
+        .continueJob(hand.id)
+        .then((job) => jobs.apply(job))
+        .catch((err) => (problem = errorText(err)));
+    }
+    if (stopped) void carryOnSearch();
+  }
 
   // Continue: the search carries on from what it left, on the window it
   // was about, which the range picker shows again.
@@ -893,135 +920,151 @@
   }
 
   // A clip made by hand at the playhead, for a part the model did not
-  // pick. The engine starts it on the line the playhead stands in and
-  // frames it the way it frames the model's clips, which takes a moment,
-  // so the button says it is at work until the clip is there. Then it is
-  // chosen, and from there it is a clip like any other.
-  let making = $state<"" | "in" | "out">("");
-  // The clip being made, as the transcript alone says it will be, shown on
-  // the clip timeline and in the list while its crop is placed, so the clip
-  // is seen taking shape from the moment the key is pressed.
-  let sketch = $state<ClipEntry | null>(null);
-  let sketchCues = $state<CaptionCue[]>([]);
-  // True while the part around the playhead is heard for it. Each chunk
-  // heard is read again as soon as the Go side says it is saved, so the
-  // waveform grows chunk by chunk, and whatever is still to come breathes.
-  let hearing = $state(false);
-  // What the row of the clip being made says, made by the same rules as
-  // the row of a search, see makingLine in steps.ts.
-  let makingStep = $state<StepLine | null>(null);
-  onMount(() =>
-    onMaking((m) => {
-      if (!making || m.path !== path) return;
-      makingStep = makingLine(m.step, m.fraction, m.remaining);
-      if (m.step === "hearing" && hearing) timeline?.reread();
-    }),
+  // pick, In or Out. It is a job like a search, see MakeClip on the Go
+  // side: it hears the part around the playhead where nothing has, frames
+  // the clip, and is called off with Cancel and carried on with Continue
+  // the way a search is. Everything here is read from that job.
+  // In or Out pressed, from the click until the job says it runs, so the
+  // button answers in the frame it is pressed in.
+  let asked = $state<"" | "in" | "out">("");
+  const making = $derived(asked || (handRunning ? (hand!.backward ? "out" : "in") : ""));
+  const hearing = $derived(handRunning && hand!.step === "hearing");
+  $effect(() => {
+    if (handRunning) asked = "";
+  });
+  // Where the clip will be before its sentences are known: as long as
+  // Shortest, from the playhead or up to it.
+  function outlineOf(at: number, backward: boolean): ClipEntry {
+    const from = backward ? Math.max(0, at - min) : at;
+    const to = backward ? at : Math.min(duration, at + min);
+    return {
+      id: "sketch",
+      slug: "",
+      basename: "",
+      title: "New clip",
+      reason: "",
+      duration: to - from,
+      start: from,
+      end: to,
+      segments: [{ start: from, end: to, cropX: null, moved: false }],
+      words: [],
+      rejected: false,
+      captionY: captionY,
+      captionYMoved: false,
+      thumbnails: [],
+      key: "sketch",
+      plan: "",
+      cropLefts: [],
+    };
+  }
+  const outline = $derived(hand ? outlineOf(hand.at ?? 0, !!hand.backward) : null);
+  // The clip as its sentences say it will be, once the job has heard them
+  // and places the crop, with its caption blocks.
+  let sketched = $state<{ id: string; clip: ClipEntry; cues: CaptionCue[] } | null>(null);
+  let sketchAsked = "";
+  $effect(() => {
+    const job = hand;
+    if (!job || !handRunning || job.step !== "framing" || sketchAsked === job.id) return;
+    sketchAsked = job.id;
+    void api
+      .sketchClip(path, job.at ?? 0, !!job.backward)
+      .then((sk) => {
+        sketched = {
+          id: job.id,
+          clip: {
+            ...outlineOf(job.at ?? 0, !!job.backward),
+            title: sk.title,
+            duration: sk.duration,
+            start: sk.start,
+            end: sk.end,
+            segments: sk.segments,
+            words: sk.words,
+          },
+          cues: sk.captions.map((c) => ({ start: c.start, end: c.end, lines: [] })),
+        };
+        // The playhead goes to the frame again when the sentences move it,
+        // as they do for Out, unless the video is playing.
+        if (paused) player?.seek(sk.start);
+      })
+      .catch(() => {});
+  });
+  // What the clip timeline, the video preview and the list show while the
+  // clip is made: the outline, then the clip as its sentences say.
+  const sketch = $derived(
+    handRunning && hand ? (sketched?.id === hand.id ? sketched.clip : outline) : null,
   );
+  const sketchCues = $derived(handRunning && hand && sketched?.id === hand.id ? sketched.cues : []);
+  // The playhead goes where the clip is the moment there is a frame, unless
+  // the video is playing, which is left to play.
+  let framedFor = "";
+  $effect(() => {
+    if (!handRunning || !hand || !outline || framedFor === hand.id) return;
+    framedFor = hand.id;
+    if (paused) player?.seek(outline.start);
+  });
+  // Each chunk heard is read again, so the waveform grows as it is heard.
+  // Untracked: reading the timeline again reads and writes its own view,
+  // which this effect must not come to depend on.
+  $effect(() => {
+    void hand?.progress?.covered;
+    if (hearing) untrack(() => timeline?.reread());
+  });
+  // The row in the list: the row of work in hand while it runs, said by
+  // stepLine the way a search's row is, and where it stopped, Stopped with
+  // Continue, the way a stopped search says it.
+  const handCard = $derived(handRunning ? sketch : handStopped ? outline : null);
+  const makingStep = $derived.by(() => {
+    if (!hand || !handCard) return null;
+    if (handRunning) {
+      const line =
+        !hand.step || hand.step === "waiting" ? { what: "Starting", left: "", fraction: -1 } : stepLine(hand);
+      // Cancel pressed: the row says so in the same frame, and stands still.
+      return stopping ? { ...line, what: "Stopping", still: true } : line;
+    }
+    const where = `At ${clock(hand.at ?? 0)}`;
+    if (hand.state === "failed") {
+      const said = hand.error?.trim() ?? "";
+      return { what: "Failed. Click Continue", left: said ? said[0].toUpperCase() + said.slice(1) : where, fraction: -1, stopped: true };
+    }
+    const byHand = hand.step === "stopped";
+    return { what: byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue", left: where, fraction: -1, stopped: true };
+  });
   const cards = $derived(
-    sketch ? [...shown, sketch].sort((a, b) => a.start - b.start) : shown,
+    handCard ? [...shown, handCard].sort((a, b) => a.start - b.start) : shown,
   );
+  // Done, the clip is chosen the way a click on its card chooses it: the
+  // list read first, then chosen with the video preview holding it. A clip
+  // played while it was made plays on, see select.
+  let watching = "";
+  $effect(() => {
+    if (handRunning && hand) watching = hand.id;
+  });
+  $effect(() => {
+    const done = jobs.forEpisode(path).findLast((j) => j.kind === "hand" && j.id === watching);
+    if (!done || done.state !== "done" || !done.result) return;
+    watching = "";
+    const key = done.result;
+    void (async () => {
+      await refreshClips();
+      await tick();
+      if (clips.some((c) => c.key === key)) await select(key, paused);
+    })();
+  });
   const canMake = $derived(!making && !!source);
   async function makeClip(backward: boolean) {
     if (!canMake) return;
     problem = "";
-    making = backward ? "out" : "in";
-    const at = time;
+    asked = backward ? "out" : "in";
     try {
-      // Where part of what the clip needs has not been transcribed yet, by
-      // the transcription from the start or out of turn, that part is
-      // heard first, and only that part. Until its words are there the
-      // clip is an outline as long as Shortest, from the playhead or up to
-      // it, with a card saying what is going on, so the press is answered
-      // at once and the clip is seen settling onto its sentences after.
-      if (await api.unheard(path, at, backward)) {
-        const from = backward ? Math.max(0, at - min) : at;
-        const to = backward ? at : Math.min(duration, at + min);
-        sketch = {
-          id: "sketch",
-          slug: "",
-          basename: "",
-          title: "New clip",
-          reason: "",
-          duration: to - from,
-          start: from,
-          end: to,
-          segments: [{ start: from, end: to, cropX: null, moved: false }],
-          words: [],
-          rejected: false,
-          captionY: captionY,
-          captionYMoved: false,
-          thumbnails: [],
-          key: "sketch",
-          plan: "",
-          cropLefts: [],
-        };
-        // The playhead goes where the clip is, the moment it has a frame,
-        // unless the video is playing, which is left to play.
-        if (paused) player?.seek(sketch.start);
-        makingStep = makingLine("hearing", 0);
-        hearing = true;
-        try {
-          await api.hearAround(path, at, backward);
-        } finally {
-          hearing = false;
-        }
-        timeline?.reread();
+      const job = await api.makeClip(path, time, backward);
+      jobs.apply(job);
+      if (job.state === "failed") {
+        problem = job.error ?? "";
+        asked = "";
       }
-      const sk = await api.sketchClip(path, at, backward);
-      sketch = {
-        id: "sketch",
-        slug: "",
-        basename: "",
-        title: sk.title,
-        reason: "",
-        duration: sk.duration,
-        start: sk.start,
-        end: sk.end,
-        segments: sk.segments,
-        words: sk.words,
-        rejected: false,
-        captionY: captionY,
-        captionYMoved: false,
-        thumbnails: [],
-        key: "sketch",
-        plan: "",
-        cropLefts: [],
-      };
-      sketchCues = sk.captions.map((c) => ({ start: c.start, end: c.end, lines: [] }));
-      // And again when the sentences move the frame, as they do for Out,
-      // which grows the clip back from the playhead.
-      if (paused) player?.seek(sk.start);
-      // Its sentences are there. What is left is reading the picture to
-      // place the crop, which takes a few seconds and says no more than
-      // that it is running.
-      makingStep = makingLine("framing", 0);
-      const made = await api.makeClip(path, at, backward);
-      // The clip is chosen the way a click on its card chooses it: the list
-      // read first, then the outline taken away and the clip chosen in one
-      // step, with the video preview holding the clip when it is sent to
-      // it. It used to be chosen while the outline still stood, so the
-      // video preview was sent there holding no clip, and the list was
-      // read again after it, which could change the clip under a play
-      // already started. The first play of a clip just made was jumpy,
-      // and a play after clicking its card was not.
-      await refreshClips();
-      if (!clips.some((c) => c.key === made.key)) {
-        clips = [...clips, made].sort((a, b) => a.start - b.start);
-      }
-      sketch = null;
-      sketchCues = [];
-      makingStep = null;
-      await tick();
-      // Played while it was made, it plays on: choosing it does not take
-      // the playhead back to its start.
-      await select(made.key, paused);
     } catch (err) {
       problem = errorText(err);
-    } finally {
-      sketch = null;
-      sketchCues = [];
-      making = "";
-      makingStep = null;
+      asked = "";
     }
   }
 
@@ -2371,7 +2414,7 @@
             <ClipList
               clips={cards}
               selected={sketch ? sketch.key : selected}
-              making={sketch?.key ?? ""}
+              making={handCard?.key ?? ""}
               {makingStep}
               {coming}
               waiting={comingNow}

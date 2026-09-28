@@ -715,6 +715,16 @@ place.
       after them. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed.
+    - **A clip made by hand is work of the list like a search**, a job
+      of its own, see [JOBS.md](JOBS.md). While it is made its row is the
+      same row a search's next clip appears in, and the head says
+      **Cancel**. **Cancel** stops everything the list has running, a
+      search and a clip made by hand together, and each row says
+      *Stopping* at once and then *Stopped. Click Continue*, the clip's
+      with the moment it was made at. **Continue** carries on everything
+      that stopped: the clip is made again at the same moment, In or Out,
+      and hears only what it had not heard yet. After a restart it says
+      *Interrupted. Click Continue* the way a search does.
     - **New**, above the list, finds clips in the window chosen on the
       track, and says so while it looks. The clips it finds join the ones
       already there. Choosing a window that was searched before and asking
