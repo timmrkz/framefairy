@@ -23,6 +23,7 @@
     type CaptionsView,
     type CaptionSwitch,
     type ClipEntry,
+    type Gesture,
     type CoverageView,
     type EpisodeStatus,
     type SourceView,
@@ -812,49 +813,13 @@
     }
   }
 
-  async function trim(clip: ClipEntry, start: number, end: number, toWords: boolean) {
+  // A gesture on the clip timeline let go of: an edge trimmed, a part taken
+  // out or put back, a cut moved. The engine makes the change it showed
+  // while the hand moved, and answers with the clip as it is now.
+  async function reshape(clip: ClipEntry, g: Gesture) {
     problem = "";
     try {
-      const updated = await api.trimClip(path, clip.plan, clip.id, start, end, toWords);
-      putClip(updated);
-    } catch (err) {
-      problem = errorText(err);
-    }
-  }
-
-  // The cuts inside a clip. All three answer with the clip as it is now,
-  // because the engine puts the edges on words and the timeline has to draw
-  // where they landed, not where the hand let go.
-  async function cut(clip: ClipEntry, from: number, to: number, toWords: boolean) {
-    problem = "";
-    try {
-      const updated = await api.cutClip(path, clip.plan, clip.id, from, to, toWords);
-      putClip(updated);
-    } catch (err) {
-      problem = errorText(err);
-    }
-  }
-
-  async function joinCut(clip: ClipEntry, at: number) {
-    problem = "";
-    try {
-      const updated = await api.joinCut(path, clip.plan, clip.id, at);
-      putClip(updated);
-    } catch (err) {
-      problem = errorText(err);
-    }
-  }
-
-  async function moveCut(
-    clip: ClipEntry,
-    index: number,
-    from: number,
-    to: number,
-    toWords: boolean,
-  ) {
-    problem = "";
-    try {
-      const updated = await api.moveCut(path, clip.plan, clip.id, index, from, to, toWords);
+      const updated = await api.reshape(path, clip.plan, clip.id, g);
       putClip(updated);
     } catch (err) {
       problem = errorText(err);
@@ -1584,7 +1549,7 @@
     }
     let dropped = false;
     api
-      .captions(clip.plan, clip.id)
+      .captions(path, clip.plan, clip.id)
       .then((view) => {
         if (!dropped) captions = view;
       })
@@ -2295,13 +2260,7 @@
         {lit}
         bind:numbers
         onseek={(t) => player?.seek(t)}
-        ontrim={(start, end, toWords) =>
-          current ? trim(current, start, end, toWords) : Promise.resolve()}
-        oncut={(from, to, toWords) =>
-          current ? cut(current, from, to, toWords) : Promise.resolve()}
-        onjoincut={(at) => (current ? joinCut(current, at) : Promise.resolve())}
-        onmovecut={(index, from, to, toWords) =>
-          current ? moveCut(current, index, from, to, toWords) : Promise.resolve()}
+        onreshape={(g) => (current ? reshape(current, g) : Promise.resolve())}
         onwalkclip={walkClip}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}

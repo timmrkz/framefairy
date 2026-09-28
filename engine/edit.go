@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 )
 
 // object is a JSON object that remembers its key order, so an edit made by
@@ -477,34 +476,13 @@ func TrimClip(planPath, clipID string, start, end float64, t *Transcript,
 		last.set("end", roundTo(end, 3))
 		c.set("segments", kept)
 
-		refreshWords(c, kept, t)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	dropCaptionFile(planPath, clipID)
 	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
 	return nil
-}
-
-// refreshWords takes a clip's words again from the transcript: every word
-// some of whose sound one of its pieces holds, see HoldsWord.
-func refreshWords(c *object, pieces []any, t *Transcript) {
-	spoken := []any{}
-	for _, w := range t.Words {
-		for _, item := range pieces {
-			seg, ok := item.(*object)
-			if !ok {
-				continue
-			}
-			if HoldsWord(number(seg.values["start"]), number(seg.values["end"]), w) {
-				spoken = append(spoken, []any{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
-				break
-			}
-		}
-	}
-	c.set("words", spoken)
 }
 
 func copyObject(o *object) *object {
@@ -620,13 +598,11 @@ func editPieces(planPath, clipID string, t *Transcript,
 			kept[i] = seg
 		}
 		c.set("segments", kept)
-		refreshWords(c, kept, t)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	dropCaptionFile(planPath, clipID)
 	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
 	return nil
 }
@@ -925,7 +901,7 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 // It is kept against the word rather than the caption, because captions
 // break in other places when the face or the size changes, and a word stays
 // what it is.
-func SetCaptionTime(planPath, clipID string, word float64, edge string, at float64) error {
+func SetCaptionTime(planPath, clipID string, word float64, edge string, at float64, t *Transcript) error {
 	if edge != "start" && edge != "end" {
 		return renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
 	}
@@ -934,23 +910,26 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 		return renderErr("a caption cannot be moved to %s", fixed(at, 3))
 	}
 	key := wordKey(word)
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
+	// Only a word the clip says. A caption is made of its words and of
+	// nothing else.
+	_, clip, err := planClip(planPath, clipID)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, w := range Said(clip, t.Words) {
+		if wordKey(w.Start) == key {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return renderErr("the clip has no word at %s", HMS(word))
+	}
+	err = editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
-		}
-		// Only a word of this clip. A caption is made of its words and of
-		// nothing else.
-		found := false
-		list, _ := c.values["words"].([]any)
-		for _, item := range list {
-			if triple, ok := item.([]any); ok && len(triple) == 3 && wordKey(number(triple[0])) == key {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return renderErr("the clip has no word at %s", HMS(word))
 		}
 		times, _ := c.values["caption_times"].(*object)
 		if times == nil {
@@ -980,7 +959,6 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 	if err != nil {
 		return err
 	}
-	dropCaptionFile(planPath, clipID)
 	return nil
 }
 
@@ -1121,58 +1099,15 @@ var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
 // with it the clips it held. The part it covered is free to be searched
-// again afterwards.
-//
-// The caption files of its clips are moved aside rather than deleted,
-// because they may hold corrections made by hand, and because a later plan
-// could otherwise inherit the caption text of a clip it has nothing to do
-// with. Rendered files are finished work and are left alone.
-func RemovePlan(planPath, captionsDir string) error {
+// again afterwards. Rendered files are finished work and are left alone.
+func RemovePlan(planPath string) error {
 	if !IsPlanFile(planPath) {
 		return renderErr("%s is not a plan", filepath.Base(planPath))
 	}
 	// An edit of this plan may be halfway through writing it.
 	defer lockPlan(planPath)()
-	_, clips, err := LoadClips(planPath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := setCaptionsAside(captionsDir, clips); err != nil {
-		return err
-	}
 	if err := os.Remove(planPath); err != nil && !os.IsNotExist(err) {
 		return err
-	}
-	return nil
-}
-
-// setCaptionsAside moves the caption files of clips that are going away
-// into a folder of their own, dated, rather than deleting them.
-func setCaptionsAside(captionsDir string, clips []Clip) error {
-	var files []string
-	for _, clip := range clips {
-		for _, ext := range []string{".srt", ".ass"} {
-			// The basename comes out of a plan file, which is untrusted.
-			name, err := SafeChild(captionsDir, clip.Basename()+ext)
-			if err != nil {
-				return err
-			}
-			if isFile(name) {
-				files = append(files, name)
-			}
-		}
-	}
-	if len(files) == 0 {
-		return nil
-	}
-	attic := filepath.Join(captionsDir, "superseded-"+time.Now().Format("20060102-150405"))
-	if err := os.MkdirAll(attic, 0o755); err != nil {
-		return err
-	}
-	for _, old := range files {
-		if err := os.Rename(old, filepath.Join(attic, filepath.Base(old))); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -1191,9 +1126,8 @@ func ClipSpan(c Clip) (float64, float64) {
 // model may read again, so the range picker shows it as free. A plan whose
 // whole window is given back goes altogether.
 //
-// It answers with how many clips went. Caption files are moved aside, as
-// they are when a whole plan goes.
-func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int, error) {
+// It answers with how many clips went.
+func RemoveRange(planPath string, from, to, duration float64) (int, error) {
 	if !IsPlanFile(planPath) {
 		return 0, renderErr("%s is not a plan", filepath.Base(planPath))
 	}
@@ -1221,10 +1155,7 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 	}
 	// Nothing of the window is left, so the plan itself goes.
 	if len(Without(window, append(readWindows(plan.PlannedWith()["removed"]), Window{start, end}))) == 0 {
-		return len(going), RemovePlan(planPath, captionsDir)
-	}
-	if err := setCaptionsAside(captionsDir, going); err != nil {
-		return 0, err
+		return len(going), RemovePlan(planPath)
 	}
 	gone := map[string]bool{}
 	for _, clip := range going {

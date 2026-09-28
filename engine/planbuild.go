@@ -538,11 +538,6 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		Title:  job.entry.Title,
 		Reason: job.entry.Reason,
 		Keep:   ranges,
-		Words:  [][3]any{},
-	}
-	for _, w := range chosen {
-		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
-			PyFloat(roundTo(w.End, 3)), w.Text})
 	}
 	lengths := make([]float64, len(segments))
 	for k, s := range segments {
@@ -592,9 +587,6 @@ func (b *planBuilder) land(clip PlanClip) error {
 	}
 	if path := b.opts.PlanPath; path != "" {
 		if !b.written {
-			if b.opts.CaptionDir != "" {
-				setStaleCaptionsAside(b.e.Log, b.opts.CaptionDir)
-			}
 			body, err := MarshalPlan(PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID,
 				PlannedWith: b.stamp, Clips: []PlanClip{clip}})
 			if err != nil {

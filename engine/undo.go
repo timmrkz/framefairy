@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -363,7 +362,6 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 			return nil
 		}
 		if dst == nil {
-			dropCaptionFiles(path, src.ids, src)
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				return err
 			}
@@ -372,7 +370,6 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 		if err := replacePlan(path, to.body); err != nil {
 			return err
 		}
-		dropCaptionFiles(path, dst.ids, dst)
 		return nil
 	}
 
@@ -428,7 +425,6 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	dropCaptionFiles(path, ids, src)
 	recordRestored(path, ids, src, dst)
 	return nil
 }
@@ -495,31 +491,6 @@ func putClip(list []any, id string, to *planParts) []any {
 		list[place] = want
 	}
 	return list
-}
-
-// dropCaptionFiles removes the caption files of clips an undo changed, as
-// any edit does, so the next render builds them from the plan again.
-func dropCaptionFiles(planPath string, ids []string, parts *planParts) {
-	if parts == nil {
-		return
-	}
-	dir := filepath.Join(filepath.Dir(filepath.Dir(planPath)), "captions")
-	for _, id := range ids {
-		c := parts.clips[id]
-		if c == nil {
-			continue
-		}
-		slug := ""
-		if raw, ok := c.get("slug"); ok {
-			slug = pyStr(raw)
-		}
-		clip := Clip{ID: id, Slug: SanitiseName(slug, "")}
-		for _, ext := range []string{".srt", ".ass"} {
-			if path, err := SafeChild(dir, clip.Basename()+ext); err == nil {
-				_ = os.Remove(path)
-			}
-		}
-	}
 }
 
 // recordRestored records what an undo did to a clip the way the edit it

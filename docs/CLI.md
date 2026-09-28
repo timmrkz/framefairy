@@ -72,21 +72,18 @@ result is reused until the video file changes.
 
 ## Correcting captions
 
-Edit the per-clip file in `captions/`, for instance `01_werkstatt.srt`. It is
-timed to the cut clip, so change the text and leave the timestamps alone. Then
-run the same command again, without `--replan` and with the same `--from` and
-`--to` if you used them. The saved plan is reused, no API call is made, and
-the clips are rendered again with your text. Add `--clip 01` to render only
-that one.
+Captions are always made from the episode's words, see
+[WORDS.md](WORDS.md), and words are corrected in the app, in the caption
+box over the picture. A correction is kept for the episode in
+`logs/corrections.json`, and every clip that says the word says it
+corrected, from the command line too. Run the same command again, without
+`--replan`, and the clips are rendered with the corrected words. Add
+`--clip 01` to render only that one.
 
-The app corrects words in the plan instead. Any change the app makes to a
-clip, a trim or a corrected word, removes that clip's caption
-file, so the next render builds it from the plan again.
-
-`--refresh-captions` throws your edits away and rebuilds the files from the
-words in the plan. `--replan` makes a new plan with new cuts and moves the old
-caption files into a `superseded-…` folder, because their timing no longer
-fits.
+The caption files the render writes into `captions/` are output, made
+afresh every time and never read back. `--refresh-captions` is kept so a
+script that passes it still runs, and it does nothing, because there is
+nothing left to refresh.
 
 ## Flags
 
@@ -128,7 +125,7 @@ fits.
 | `--margin-v 300` | 300 | caption distance from the bottom edge, same scale |
 | `--highlight-colour "#942192"` | purple | colour of the pill behind the word being spoken, for a plan that was not given one in the app |
 | `--no-highlight` | off | plain captions, without the bouncing word |
-| `--refresh-captions` | off | rebuild per-clip captions, discarding manual corrections |
+| `--refresh-captions` | off | does nothing: captions are always made from the words |
 
 **Choosing the language model**
 

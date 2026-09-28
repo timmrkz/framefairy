@@ -59,10 +59,20 @@ const (
 
 // Transcript is everything one pass over the audio produced.
 type Transcript struct {
-	// Words on the episode clock, snapped to the sound.
+	// Words is what the episode says, see engine/words.go: the words on
+	// the episode clock, snapped to the sound, with the corrections applied
+	// and split. It is the one list of them.
 	Words []Cue
-	// RawWords are the same words as the recogniser timed them.
+	// RawWords are the words as the recogniser timed them, which is what
+	// is stored.
 	RawWords []Cue
+	// Heard are the recogniser's words snapped to the sound, with the
+	// corrections applied but not split: one for each word the recogniser
+	// heard, which is what a correction is kept against.
+	Heard []Cue
+	// Language is what the words are in, as ISO 639-1, read off them once.
+	Language string
+	snapped  []Cue
 	// Loudness in dB every FrameSeconds, starting at Start.
 	Frames []float32
 	Start  float64
@@ -556,8 +566,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		t.Floor = NoiseFloor(t.Mean)
 	}
 	sort.SliceStable(raw, func(i, j int) bool { return raw[i].Start < raw[j].Start })
-	t.RawWords = raw
-	t.Words = SnapWords(raw, t.Frames, t.Start, t.Floor)
+	t.hear(raw)
 	e.Log.Detail("mean level %s dB, treating below %s dB as silence",
 		fixed(t.Mean, 1), fixed(t.Floor, 0))
 	return t, nil

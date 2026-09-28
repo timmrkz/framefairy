@@ -105,6 +105,34 @@ export interface Word {
   start: number;
   end: number;
   text: string;
+  // In a caption, the word of the episode it stands for: when that word
+  // starts, and all of it, for a word shown in halves or a correction that
+  // reads as several words. It is what a correction is kept against.
+  said?: number;
+  whole?: string;
+}
+
+// What a hand does to a clip on the clip timeline, see engine/shape.go:
+// "trim" moves an edge of the clip, "cut" takes a part out, "move" moves the
+// edges of a cut, "join" puts a cut back, "restore" takes a part out again
+// exactly as it was. From and To are where the hand is, on the episode's
+// clock. toWords puts edges on words, and frame is one frame of the episode.
+export interface Gesture {
+  kind: "trim" | "cut" | "move" | "join" | "restore";
+  edge: "start" | "end" | "both" | "";
+  index: number;
+  from: number;
+  to: number;
+  toWords: boolean;
+  frame: number;
+}
+
+// What a gesture makes of a clip: its pieces, where the playhead goes while
+// an edge is dragged, below nought when it stays, and its captions.
+export interface Shaped {
+  pieces: { start: number; end: number }[];
+  playhead: number;
+  captions: CaptionsView;
 }
 
 export interface Segment {
@@ -124,7 +152,6 @@ export interface ClipView {
   start: number;
   end: number;
   segments: Segment[];
-  words: Word[] | null;
   rejected: boolean;
   rendered?: string;
   preview?: string;
@@ -487,11 +514,14 @@ export const api = {
   // may read it again. It answers with how many clips went.
   removeSearch: (path: string, from: number, to: number) =>
     call<number>("RemoveSearch", path, from, to),
-  captions: (plan: string, clip: string) => call<CaptionsView>("Captions", plan, clip),
-  // The captions a clip would have with the pieces being dragged on the
-  // clip timeline, so the caption blocks follow the hand. Nothing is saved.
-  draftClipCaptions: (path: string, plan: string, clip: string, pieces: [number, number][]) =>
-    call<CaptionsView>("DraftCaptions", path, plan, clip, pieces),
+  captions: (path: string, plan: string, clip: string) => call<CaptionsView>("Captions", path, plan, clip),
+  // What a gesture on the clip timeline makes of a clip, worked out by
+  // the engine while the hand moves and saved by reshape when it lets go,
+  // so what is drawn is what is saved. See engine/shape.go.
+  shape: (path: string, plan: string, clip: string, g: Gesture) =>
+    call<Shaped>("Shape", path, plan, clip, g),
+  reshape: (path: string, plan: string, clip: string, g: Gesture) =>
+    call<ClipEntry>("Reshape", path, plan, clip, g),
   fonts: () => call<CaptionFont[]>("Fonts"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
@@ -501,35 +531,9 @@ export const api = {
   // Continue: carries on a search or a render that stopped.
   continueJob: (id: string) => call<Job>("Continue", id),
   still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
-  words: (path: string, from: number, to: number) =>
-    call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
-  // toWords puts the edges on the nearest words. Without it they stay
-  // where the hand put them, a frame at a time, like the edges of a cut.
-  // The words of a part the way a clip's captions split them, halves of a
-  // hyphenated word and all. Where an edge dragged with shift stops.
-  wordStops: (path: string, plan: string, clip: string, from: number, to: number) =>
-    call<Word[] | null>("WordStops", path, plan, clip, from, to),
-  trimClip: (path: string, plan: string, clip: string, start: number, end: number, toWords: boolean) =>
-    call<ClipEntry>("TrimClip", path, plan, clip, start, end, toWords),
-  // The cuts inside a clip: the parts it leaves out. Making one, moving
-  // one and putting one back. The edges land on words, so what comes back
-  // is what to draw, never what was asked for.
-  // toWords puts the edges on the words around them, which is what nearly
-  // every cut wants. Without it they stay exactly where the hand put them,
-  // a frame at a time, and a cut may then stop inside a word.
-  cutClip: (path: string, plan: string, clip: string, from: number, to: number, toWords: boolean) =>
-    call<ClipEntry>("CutClip", path, plan, clip, from, to, toWords),
-  joinCut: (path: string, plan: string, clip: string, at: number) =>
-    call<ClipEntry>("JoinCut", path, plan, clip, at),
-  moveCut: (
-    path: string,
-    plan: string,
-    clip: string,
-    index: number,
-    from: number,
-    to: number,
-    toWords: boolean,
-  ) => call<ClipEntry>("MoveCut", path, plan, clip, index, from, to, toWords),
+  // The words said in a part of the episode, for walking the playhead
+  // from word to word.
+  words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   // When a caption appears or goes, where the words are a little off from
@@ -810,121 +814,6 @@ export function snapCaptionY(y: number): number {
   return Math.max(captionYMin, Math.min(step, captionYMax));
 }
 
-// The same snapping the engine applies when a clip edge is moved: a little
-// before the nearest word, never into the word before it.
-export function snapStart(words: Word[], at: number, keepPause: number): number {
-  if (!words.length) return at;
-  let best = 0;
-  words.forEach((w, i) => {
-    if (Math.abs(w.start - at) < Math.abs(words[best].start - at)) best = i;
-  });
-  let edge = words[best].start - keepPause;
-  if (best > 0) edge = Math.max(edge, words[best - 1].end);
-  return Math.max(0, edge);
-}
-
-export function snapEnd(words: Word[], at: number, keepPause: number): number {
-  if (!words.length) return at;
-  let best = 0;
-  words.forEach((w, i) => {
-    if (Math.abs(w.end - at) < Math.abs(words[best].end - at)) best = i;
-  });
-  let edge = words[best].end + keepPause;
-  if (best + 1 < words.length) edge = Math.min(edge, words[best + 1].start);
-  return edge;
-}
-
-// The same snapping the engine applies to a cut, so the block the hand
-// draws is the block the render will leave out. It is not the trim's
-// snapping: a cut takes words away, so it swallows every word it touches
-// and then leaves keepPause of air on each side that stays. A cut over a
-// pause takes the whole pause, a cut over speech takes whole words.
-// Where a cut goes when a double-click says take one out here. Three
-// things decide it.
-//
-// It lands on frames. A double-click says where, exactly, and growing it
-// out to the words either side would put it somewhere else, which is the
-// whole complaint about cuts landing on words.
-//
-// It is as wide as it is asked to be, and what asks is the timeline, which
-// works that width out from a fixed number of pixels at whatever zoom it
-// is on. A cut nobody can see is a cut nobody can change. Below the least
-// a cut may be it is held open at that, so a timeline zoomed in far enough
-// that those pixels are worth less than the least still takes a part
-// out rather than doing nothing.
-//
-// And it stays inside the piece it falls in, with room left on both sides,
-// because a piece squeezed to nothing is a clip the engine refuses. A
-// click outside every piece, or in a piece with no room to spare, makes no
-// cut at all rather than a cut somewhere else.
-export function cutAt(
-  pieces: { start: number; end: number }[],
-  at: number,
-  wide: number,
-  least: number,
-  frame: number,
-): [number, number] | null {
-  const on = (t: number) => (frame > 0 ? Math.round(t / frame) * frame : t);
-  const piece = pieces.find((p) => at >= p.start && at < p.end);
-  if (!piece) return null;
-  const low = piece.start + least;
-  const high = piece.end - least;
-  if (high - low < least) return null;
-  // As wide as it was asked to be, never less than the least a cut may be,
-  // never more than the piece has room for.
-  let width = Math.min(Math.max(wide, least), high - low);
-  // And a whole number of frames wide, rounded up. Rounding the two ends
-  // on their own instead brings them closer than they were asked to be,
-  // and at 25 frames a second a frame is 40 milliseconds against a least
-  // of 50, so two ends far enough apart came back 40 apart and the engine
-  // refused the cut: a double-click that did nothing at all, at some zooms
-  // and not others.
-  if (frame > 0) width = Math.min(Math.ceil(width / frame) * frame, high - low);
-  let a = on(at - width / 2);
-  let b = a + width;
-  // Inside the piece, keeping the width. An end held at the piece's own
-  // edge is no longer on a frame, which is right: that edge is where the
-  // engine put it.
-  if (a < low) {
-    a = low;
-    b = a + width;
-  }
-  if (b > high) {
-    b = high;
-    a = Math.max(b - width, low);
-  }
-  if (b - a < least) return null;
-  return [a, b];
-}
-
-export function snapCut(
-  words: Word[],
-  from: number,
-  to: number,
-  keepPause: number,
-): [number, number] {
-  let swallowedFrom = Infinity;
-  let swallowedTo = -Infinity;
-  for (const w of words) {
-    if (w.end > from && w.start < to) {
-      swallowedFrom = Math.min(swallowedFrom, w.start);
-      swallowedTo = Math.max(swallowedTo, w.end);
-    }
-  }
-  let start = Math.min(from, swallowedFrom);
-  let end = Math.max(to, swallowedTo);
-
-  let before = -Infinity;
-  let after = Infinity;
-  for (const w of words) {
-    if (w.end <= start) before = Math.max(before, w.end);
-    if (w.start >= end) after = Math.min(after, w.start);
-  }
-  if (before !== -Infinity) start = Math.min(before + keepPause, swallowedFrom);
-  if (after !== Infinity) end = Math.max(after - keepPause, swallowedTo);
-  return [Math.max(0, start), end];
-}
-
 // Where the playhead lands when it is stepped by words, which is what
 // shift and an arrow key do.
 //
@@ -981,7 +870,6 @@ export function wordStep(words: Word[], at: number, back: boolean, frame: number
   const word = words[target];
   return word ? intoWord(word, frame) : null;
 }
-
 
 // Which build of the app is running, which channel it follows and how far a
 // newer build has come. See docs/UPDATES.md.

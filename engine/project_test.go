@@ -225,8 +225,12 @@ func TestProjectSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(view.Clips) != 1 || view.Clips[0].Reason != "Test" || view.Clips[0].Preview == "" ||
-		view.Summary.From != 10 || len(view.Clips[0].Words) == 0 {
+		view.Summary.From != 10 {
 		t.Errorf("plan view %+v", view)
+	}
+	// The clip's words are read off the transcript.
+	if captions, err := ClipCaptionsView(plan, "t10-01", tr, nil); err != nil || len(captions.Captions) == 0 {
+		t.Errorf("the clip says nothing: %v %+v", err, captions)
 	}
 
 	frame, err := e.Still(ctx, source, 12.7, 25, 320)

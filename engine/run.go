@@ -388,12 +388,6 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			return 1
 		}
 		e.SummariseLines(transcript, lines, span)
-		// An experiment writes its own plan and leaves the episode's
-		// captions where they are.
-		planCaptions := captionDir
-		if experiment {
-			planCaptions = ""
-		}
 		plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
 			PlanOptions{
 				Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
@@ -402,7 +396,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
 				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
 				Recipe:   opts.Recipe,
-				PlanPath: planPath, CaptionDir: planCaptions,
+				PlanPath: planPath,
 			})
 		if err != nil {
 			return e.planFailed(ctx, err)
@@ -564,26 +558,21 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		return 1
 	}
 
-	maxChars := 38
-	if raw, present := style["max_chars"]; present {
-		if n, ok := toInt(raw); ok {
-			maxChars = n
+	// The captions are made from the words the episode says, the same words
+	// the app shows, see ClipCaptions. Without a transcript there are none.
+	heard := &Transcript{}
+	if !opts.NoCaptions {
+		t, err := SavedTranscript(opts.Source, logsDir, opts.ASRModel, window, opts.SilenceDB)
+		if err != nil {
+			log.Warn("there is no transcript to make captions from, so the clips get none")
+		} else {
+			heard = t
 		}
 	}
 
-	cueMap := map[string][]Caption{}
+	cueMap := map[string][]LaidCaption{}
 	for _, clip := range clips {
-		cues, err := resolveCues(clip, captionDir, opts.RefreshCaptions, maxChars,
-			TooWide(ResolveStyle(style)))
-		if err != nil {
-			log.Error("caption problem: %s", err)
-			failures++
-			continue
-		}
-		if len(cues) == 0 && len(clip.Words) == 0 && !opts.NoCaptions {
-			log.Warn("%s has no word timings, so it gets no captions. The plan was "+
-				"made by an earlier version. Add --replan to make a new one.", clip.Basename())
-		}
+		cues := ClipCaptions(clip, heard, ResolveStyle(clipStyle(style, clip)))
 		cueMap[clip.Basename()] = cues
 		started := time.Now()
 		log.Info("%s: %ss, %d segment(s), %d cues", clip.Basename(),
@@ -631,7 +620,6 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			log.Warn("could not write %s: %s", proof, err)
 		}
 		log.Info("proof: %s", proof)
-		log.Info("captions to correct: %s", captionDir)
 
 		made := len(clips) - failures
 		cost := ""
@@ -699,28 +687,6 @@ func trimFloat(v float64) string {
 	return fmt.Sprintf("%g", v)
 }
 
-// resolveCues gives a clip's captions, preferring a file you may have
-// corrected by hand. Once a per-clip file exists it is used as it is, which
-// is what makes a hand correction stick.
-func resolveCues(clip Clip, captionDir string, force bool, maxChars int,
-	alone func(string) bool) ([]Caption, error) {
-	perClip, err := SafeChild(captionDir, clip.Basename()+".srt")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(captionDir, 0o755); err != nil {
-		return nil, err
-	}
-	if exists(perClip) && !force {
-		return LoadCaptions(perClip)
-	}
-	captions := Captions(clip, maxChars, alone)
-	if len(captions) == 0 {
-		return nil, nil
-	}
-	return captions, WriteCaptions(captions, perClip)
-}
-
 // clipStyle is the caption look for one clip: the plan's look, with the
 // caption line moved when it was placed by hand on that clip.
 func clipStyle(style map[string]any, clip Clip) map[string]any {
@@ -735,20 +701,7 @@ func clipStyle(style map[string]any, clip Clip) map[string]any {
 	return out
 }
 
-// ClipCaptions gives a clip's captions the way the render will draw them,
-// a caption file corrected by hand first, and writes nothing itself.
-func ClipCaptions(clip Clip, captionDir string, maxChars int, alone func(string) bool) ([]Caption, error) {
-	perClip, err := SafeChild(captionDir, clip.Basename()+".srt")
-	if err != nil {
-		return nil, err
-	}
-	if exists(perClip) {
-		return LoadCaptions(perClip)
-	}
-	return Captions(clip, maxChars, alone), nil
-}
-
-func writeProof(path string, clips []Clip, cueMap map[string][]Caption) error {
+func writeProof(path string, clips []Clip, cueMap map[string][]LaidCaption) error {
 	lines := []string{"Render proof", strings.Repeat("=", 60), ""}
 	for _, clip := range clips {
 		lines = append(lines, fmt.Sprintf("[%s]  %ss  %d segment(s)", clip.Basename(),
@@ -777,38 +730,6 @@ func writeProof(path string, clips []Clip, cueMap map[string][]Caption) error {
 		lines = append(lines, "")
 	}
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
-}
-
-// setStaleCaptionsAside moves every caption file out of the way of a new
-// plan. A new plan means new cut points, so captions derived from the old one
-// are timed to a timeline that no longer exists. They may still contain
-// hand corrections, so they are moved aside rather than deleted. Nothing
-// this tool does removes your work.
-func setStaleCaptionsAside(log *Log, captionDir string) {
-	stale, _ := filepath.Glob(filepath.Join(captionDir, "*.srt"))
-	var files []string
-	for _, f := range stale {
-		if isFile(f) {
-			files = append(files, f)
-		}
-	}
-	if len(files) == 0 {
-		return
-	}
-	attic := filepath.Join(captionDir, "superseded-"+time.Now().Format("20060102-150405"))
-	if err := os.MkdirAll(attic, 0o755); err != nil {
-		return
-	}
-	for _, old := range files {
-		_ = os.Rename(old, filepath.Join(attic, filepath.Base(old)))
-	}
-	generated, _ := filepath.Glob(filepath.Join(captionDir, "*.ass"))
-	for _, old := range generated {
-		if isFile(old) {
-			_ = os.Remove(old) // regenerated every render, not yours
-		}
-	}
-	log.Info("previous captions moved to %s", attic)
 }
 
 // Interrupted is the message shown when a run is stopped with ctrl-c.

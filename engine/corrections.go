@@ -92,98 +92,31 @@ func CleanWordText(text string) (string, error) {
 	return text, nil
 }
 
-// dropCaptionFile removes a clip's caption file, so the next render builds
-// the captions again from the plan. A caption file left over from an
-// earlier cut would otherwise be reused with the wrong timing.
-func dropCaptionFile(planPath, clipID string) {
-	_, clips, err := LoadClips(planPath)
-	if err != nil {
-		return
-	}
-	dir := filepath.Join(filepath.Dir(filepath.Dir(planPath)), "captions")
-	for _, c := range clips {
-		if c.ID != clipID {
-			continue
-		}
-		if path, err := SafeChild(dir, c.Basename()+".srt"); err == nil {
-			_ = os.Remove(path)
-		}
-	}
-}
-
-// SetWordText corrects one word of an episode. The correction is stored
-// for the episode and applied to every clip of every clip set that contains
-// the word. It returns how many clips changed.
-func SetWordText(logsDir string, start float64, text string, t *Transcript) (int, error) {
+// SetWordText corrects one word of an episode, the word heard at a moment.
+// The correction is kept for the episode, against the word the recogniser
+// heard, and the words are made again with it, see Transcript.Correct. No
+// clip keeps words of its own, so every clip that says the word says it
+// corrected from here on.
+func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 	text, err := CleanWordText(text)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	var word *Cue
-	for i := range t.Words {
-		if math.Abs(t.Words[i].Start-start) < 0.0015 {
-			word = &t.Words[i]
-			break
-		}
+	word, ok := t.HeardAt(at)
+	if !ok {
+		return renderErr("there is no word at %s", HMS(at))
 	}
-	if word == nil {
-		return 0, renderErr("there is no word at %s", HMS(start))
-	}
-	key := wordKey(word.Start)
-
 	trainingMu.Lock()
 	corrections := LoadCorrections(logsDir)
-	corrections[key] = text
+	corrections[wordKey(word.Start)] = text
 	body, err := marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
 	if err == nil {
 		err = writeAtomic(correctionsPath(logsDir), append(body, '\n'))
 	}
 	trainingMu.Unlock()
 	if err != nil {
-		return 0, err
+		return err
 	}
-	word.Text = text
-
-	changed := 0
-	for _, plan := range PlanSummaries(logsDir) {
-		var ids []string
-		err := editPlan(plan.Path, func(_ *object, clips []*object) error {
-			for i, c := range clips {
-				list, _ := c.values["words"].([]any)
-				hit := false
-				for _, item := range list {
-					triple, ok := item.([]any)
-					if ok && len(triple) == 3 && wordKey(number(triple[0])) == key {
-						triple[2] = text
-						hit = true
-					}
-				}
-				if hit {
-					fallback := twoDigits(i + 1)
-					id := fallback
-					if raw, ok := c.get("id"); ok {
-						id = pyStr(raw)
-					}
-					ids = append(ids, SanitiseName(id, fallback))
-				}
-			}
-			if len(ids) == 0 {
-				return errNothingToEdit
-			}
-			return nil
-		})
-		if err == errNothingToEdit {
-			continue
-		}
-		if err != nil {
-			return changed, err
-		}
-		for _, id := range ids {
-			dropCaptionFile(plan.Path, id)
-		}
-		changed += len(ids)
-	}
-	return changed, nil
+	t.Correct(corrections)
+	return nil
 }
-
-var errNothingToEdit = renderErr("nothing to edit")

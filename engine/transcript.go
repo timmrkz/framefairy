@@ -234,12 +234,12 @@ func storedForm(t *Transcript) ([][3]any, float64) {
 }
 
 func fromStored(words []Cue, frames []float32, start, mean float64, silenceDB *float64) *Transcript {
-	t := &Transcript{Frames: frames, Start: start, Mean: mean, RawWords: words}
+	t := &Transcript{Frames: frames, Start: start, Mean: mean}
 	t.Floor = NoiseFloor(mean)
 	if silenceDB != nil {
 		t.Floor = *silenceDB
 	}
-	t.Words = SnapWords(words, frames, start, t.Floor)
+	t.hear(words)
 	return t
 }
 
@@ -260,8 +260,19 @@ func DefaultModelDir() string {
 const ModelName = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 
 // LoadTranscript returns the words for a window of the episode, from the
-// cache when it is still valid and from the recogniser otherwise.
+// cache when it is still valid and from the recogniser otherwise, with the
+// episode's corrections applied, the same words the app reads.
 func (e *Engine) LoadTranscript(ctx context.Context, source string, window Window,
+	logsDir, modelDir string, silenceDB *float64, windowed bool) (*Transcript, error) {
+	t, err := e.loadTranscript(ctx, source, window, logsDir, modelDir, silenceDB, windowed)
+	if err != nil {
+		return nil, err
+	}
+	t.Correct(LoadCorrections(logsDir))
+	return t, nil
+}
+
+func (e *Engine) loadTranscript(ctx context.Context, source string, window Window,
 	logsDir, modelDir string, silenceDB *float64, windowed bool) (*Transcript, error) {
 	stamp, err := stampOf(source)
 	if err != nil {

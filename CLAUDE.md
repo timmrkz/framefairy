@@ -351,7 +351,11 @@ messages, pull request text, code comments and chat replies.
   config folder, everything about an episode in `<episode>.framefairy/`.
 - **Plan edits** go through `editPlan` in `engine/edit.go`, which keeps key
   order and unknown fields, writes atomically and validates with `LoadClips`.
-  An edit to a clip removes its caption file, so the next render rebuilds it.
+- **One word model.** What an episode says is `Transcript.Words` and what a
+  clip shows is made from it, see [docs/WORDS.md](docs/WORDS.md). A clip
+  keeps no words, captions are never read back from a file, and the
+  interface keeps no rules about where an edge lands: `Shape` and
+  `Reshape` in `engine/shape.go` answer for every gesture.
 - **Untrusted input.** Model answers, plan files and caption text are
   untrusted. Keep the checks in `ReadPlan`, `LoadClips` and `SafeChild`.
 - **Every path is checked against the library.** The app reads, writes,

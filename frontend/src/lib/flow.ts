@@ -198,9 +198,6 @@ export class Heard {
   }
 }
 
-// A word as the engine hands it over: a moment and what was said.
-export type Spoken = { start: number; end: number; text: string };
-
 // Where a moment of a clip falls in the episode.
 //
 // A clip runs on its own clock, with the cuts taken out, and that is the
@@ -233,49 +230,6 @@ export function inClip(pieces: Piece[], at: number): number {
   return sum;
 }
 
-// The word of the episode a caption word came from.
-//
-// A caption word is not always one word of the episode. A correction that
-// reads as two words is drawn as two, in the captions and in the render
-// alike, but what the engine keeps is still the one word it corrected, at
-// the one moment. Both halves have to find that one word, and they do,
-// because both lie inside it.
-//
-// The match is made on the middle of the caption word rather than on
-// either edge. An edge would do in every case there is, and that is the
-// reason not to use one: an edge has no room on one side, so anything
-// that moves a moment by a hair moves it out of the word. Walking two
-// clocks adds and subtracts the same offsets in a different order, and
-// that alone is enough to land a thousandth of a millisecond short. A cut
-// that falls on a frame rather than on a word clips an edge outright. The
-// middle is the one point in a caption word that is furthest from both
-// edges of the word it came from.
-//
-// Nothing else is close enough to be meant. A middle that falls in no word
-// at all and is not within a hair of one is no word, rather than the
-// nearest one, because correcting a word nobody pointed at is worse than
-// correcting none.
-export function saidWord(pieces: Piece[], words: Spoken[], word: Piece): Spoken | null {
-  // With no pieces there is no clip, and with no clip the two clocks are
-  // not the same clock, they are one clock and one guess. A caption word
-  // would then be read as a moment of the episode it has nothing to do
-  // with and point at whatever word happened to be there.
-  if (!pieces.length) return null;
-  const when = inEpisode(pieces, (word.start + word.end) / 2);
-  let near: Spoken | null = null;
-  let off = Infinity;
-  for (const w of words) {
-    if (when >= w.start && when < w.end) return w;
-    const away = when < w.start ? w.start - when : when - w.end;
-    if (away < off) {
-      off = away;
-      near = w;
-    }
-  }
-  // The same hair the engine allows itself when it decides which words
-  // belong to a piece.
-  return off <= 0.02 ? near : null;
-}
 
 // Whether the playhead is inside a clip, and so whether the crop frame is
 // drawn solid or dashed.

@@ -794,7 +794,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 			if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
 				continue
 			}
-			n, err := engine.RemoveRange(plan.Path, p.CaptionsDir(), from, to, duration)
+			n, err := engine.RemoveRange(plan.Path, from, to, duration)
 			if err != nil {
 				return err
 			}
@@ -808,11 +808,15 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 // Captions gives the captions of one clip, on the clip's own clock and in
 // the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.
-func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, error) {
-	if !s.store.Known(planPath) {
+func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsView, error) {
+	if !s.store.Known(path) || !s.store.Known(planPath) {
 		return nil, os.ErrNotExist
 	}
-	return engine.ClipCaptionsView(planPath, clipID, s.captionOverrides(planPath))
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
+	return engine.ClipCaptionsView(planPath, clipID, t, s.captionOverrides(planPath))
 }
 
 // DraftCaptions gives the captions a clip would have with the pieces an
@@ -822,7 +826,7 @@ func (s *FrameFairy) DraftCaptions(path, planPath, clipID string, pieces [][2]fl
 	if !s.store.Known(path) || !s.store.Known(planPath) {
 		return nil, os.ErrNotExist
 	}
-	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	t, err := s.words(path)
 	if err != nil {
 		return nil, err
 	}
@@ -879,6 +883,17 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	s.said, s.saidBy = t, stamp
 	s.mu.Unlock()
 	return t, nil
+}
+
+// words is what an episode says, see engine/words.go, from the transcript
+// read once and kept. An episode not transcribed yet says nothing, which
+// is an empty answer and not a failure.
+func (s *FrameFairy) words(path string) (*engine.Transcript, error) {
+	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	if errors.Is(err, engine.ErrNoTranscript) {
+		return &engine.Transcript{}, nil
+	}
+	return t, err
 }
 
 // Waveform returns the loudest level in each of buckets pieces of a part
@@ -992,14 +1007,11 @@ func (s *FrameFairy) WordStops(path, planPath, clipID string, from, to float64) 
 		return nil, os.ErrNotExist
 	}
 	out := []engine.WordView{}
-	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
-	if errors.Is(err, engine.ErrNoTranscript) {
-		return out, nil
-	}
+	t, err := s.words(path)
 	if err != nil {
 		return nil, err
 	}
-	stops, err := engine.WordStops(planPath, clipID, t.WordsBetween(from-5, to+5), s.captionOverrides(planPath))
+	stops, err := engine.WordStops(planPath, clipID, t, from-5, to+5, s.captionOverrides(planPath))
 	if err != nil {
 		return nil, err
 	}
@@ -1021,8 +1033,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		_, err := engine.SetWordText(p.LogsDir(), start, text, t)
-		return err
+		return engine.SetWordText(p.LogsDir(), start, text, t)
 	}); err != nil {
 		return ClipEntry{}, err
 	}
@@ -1221,8 +1232,12 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if at < 0 {
 		at = math.NaN()
 	}
+	t, err := s.words(path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
 	if err := s.edit(path, func() error {
-		return engine.SetCaptionTime(plan, clipID, word, edge, at)
+		return engine.SetCaptionTime(plan, clipID, word, edge, at, t)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

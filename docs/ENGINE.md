@@ -325,11 +325,11 @@ trimmed off.
 
 What comes out of that is a proposal, not the last word. Every cut a clip
 carries is a gap between two of its pieces, and the app can move one, put
-one back or make one, through `CutClip`, `JoinCut` and `MoveCut` in
-`engine/edit.go`. They go through `editPlan` like every other edit, so the
-plan keeps its shape and its unknown fields, the clip's words are taken
-again from the transcript, and the caption file goes so the next render
-builds it afresh. A piece a cut is made inside becomes two, and both keep
+one back or make one, through `Reshape` in `engine/shape.go`, which
+takes a gesture and makes the same change `Shape` shows while the hand
+moves. It goes through `editPlan` like every other edit, so the plan keeps
+its shape and its unknown fields. A clip keeps no words, see
+[WORDS.md](WORDS.md), so there is nothing else to bring up to date. A piece a cut is made inside becomes two, and both keep
 the framing of the piece they came from, so cutting never moves the
 picture. A cut swallows any word it touches and then leaves `--keep-pause`
 of air on each side that stays, which is why a cut dragged over a pause
@@ -370,9 +370,9 @@ A word keeps its own time at the clip's first and last edge, even where
 that lies outside the clip, and is clamped only at a cut. The halves of a
 hyphenated word share its time by their letters, so clamped to what an
 edge left of it they moved with the edge, and "liebe" was lit while
-"grundschul" was still being said. `WordStops` in `engine/episode.go`
-splits words the same way for the clip timeline, so the halves are where
-an edge dragged with shift stops.
+"grundschul" was still being said. `ShowWords` in `engine/hyphenate.go`
+is the one place a word is split for showing, so the halves the captions
+light are the halves an edge dragged with shift lands on.
 
 The recogniser's word timings are moved onto the sound when a transcript
 is read, `SnapWords` in `engine/audio.go`. A word ends where its last
@@ -402,7 +402,7 @@ app therefore lets a window be drawn only where nobody has looked yet, which
 carries the window it was made over in `planned_with`, and the parts of
 it that were given back again in `planned_with.removed`, so a search is a
 window with holes in it. `RemoveRange` makes a hole: the clips inside the
-part go, their caption files are moved aside, and a plan with nothing
+part go, and a plan with nothing
 left of its window goes altogether.
 
 ## The bouncing word

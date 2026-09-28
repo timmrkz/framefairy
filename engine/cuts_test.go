@@ -133,7 +133,7 @@ func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 	}
 	c := clipByID(t, path, "01")
 	var said []string
-	for _, w := range c.Words {
+	for _, w := range Said(c, cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	got := strings.Join(said, " ")
@@ -146,7 +146,7 @@ func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	said = nil
-	for _, w := range clipByID(t, path, "01").Words {
+	for _, w := range Said(clipByID(t, path, "01"), cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	if got := strings.Join(said, " "); got != "eins zwei" {
@@ -185,7 +185,7 @@ func TestACutOverSpeechTakesWholeWords(t *testing.T) {
 	}
 	c := clipByID(t, path, "01")
 	var said []string
-	for _, w := range c.Words {
+	for _, w := range Said(c, cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	if got := strings.Join(said, " "); got != "eins zwei" {
@@ -239,7 +239,7 @@ func TestACutToFramesMayStopInsideAWord(t *testing.T) {
 	// rule does not change because the cut was made to frames: drei is
 	// mostly still there, so it is still said.
 	var said []string
-	for _, w := range clipByID(t, path, "01").Words {
+	for _, w := range Said(clipByID(t, path, "01"), cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	if got := strings.Join(said, " "); got != "eins zwei drei vier" {
@@ -267,7 +267,7 @@ func TestAWordIsSaidWhileAnyOfItIsKept(t *testing.T) {
 				t.Fatal(err)
 			}
 			has := false
-			for _, w := range clipByID(t, path, "01").Words {
+			for _, w := range Said(clipByID(t, path, "01"), cutsTranscript().Words) {
 				if w.Text == "drei" {
 					has = true
 				}
@@ -724,12 +724,10 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 // once, in the piece that holds the most of it. Two captions of one word
 // would show it twice.
 func TestAWordACutPartsIsCaptionedOnce(t *testing.T) {
-	clip := Clip{
-		Segments: []Segment{{Start: 10, End: 14.2}, {Start: 14.35, End: 16}},
-		Words:    []Cue{{13, 13.5, "zwei"}, {14, 14.5, "drei"}, {15, 15.5, "vier"}},
-	}
+	clip := Clip{Segments: []Segment{{Start: 10, End: 14.2}, {Start: 14.35, End: 16}}}
+	said := []Cue{{13, 13.5, "zwei"}, {14, 14.5, "drei"}, {15, 15.5, "vier"}}
 	var drei []Cue
-	for _, w := range ClipWords(clip) {
+	for _, w := range ClipWords(clip, said) {
 		if w.Text == "drei" {
 			drei = append(drei, w)
 		}
@@ -747,8 +745,8 @@ func TestTheHalvesOfAWordStayPutAsAnEdgeMoves(t *testing.T) {
 	word := Cue{Start: 10, End: 12, Text: "sweet-grundschulliebe."}
 	var at []float64
 	for _, edge := range []float64{9.5, 10.5, 11.2} {
-		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}, Words: []Cue{word}}
-		words := ClipWords(clip)
+		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}}
+		words := ClipWords(clip, []Cue{word})
 		if len(words) != 1 {
 			t.Fatalf("edge %v gives %+v", edge, words)
 		}

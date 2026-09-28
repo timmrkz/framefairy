@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
 // Caption files are the one part of a clip a person edits by hand, in
@@ -126,62 +125,6 @@ func FuzzLoadSRT(f *testing.F) {
 			if cue.Text == "" || strings.ContainsFunc(cue.Text, isControl) ||
 				strings.ContainsAny(cue.Text, "\n\r") {
 				t.Fatalf("cue %d carries %q", i, cue.Text)
-			}
-		}
-	})
-}
-
-// FuzzCaptionFileRoundTrip writes captions and reads them back with their
-// word timings, which is what the app does around every caption edit.
-func FuzzCaptionFileRoundTrip(f *testing.F) {
-	f.Add("Als Kind stand ich da", 0.0, 2.0)
-	f.Add("  mehrere   leerzeichen  ", 1.0, 1.4)
-	f.Add("<i>markup</i> und &amp;", 0.0, 5.0)
-	f.Add("&amp;amp;", 0.0, 5.0)
-	f.Add("ein\nzeilenumbruch", 0.0, 3.0)
-	f.Fuzz(func(t *testing.T, text string, start, length float64) {
-		if !isFinite(start) || !isFinite(length) || start < 0 || length <= 0 ||
-			start > 10_000 || length > 10_000 {
-			t.Skip()
-		}
-		// Text that is not valid UTF-8 comes back as replacement characters,
-		// on purpose. Nothing else may change.
-		if !utf8.ValidString(text) {
-			t.Skip()
-		}
-		words := fields(cleanCaption(text))
-		if len(words) == 0 {
-			t.Skip()
-		}
-		share := length / float64(len(words))
-		caption := Caption{Start: start, End: start + length, Text: strings.Join(words, " ")}
-		for i, w := range words {
-			caption.Words = append(caption.Words,
-				Cue{start + float64(i)*share, start + float64(i+1)*share, w})
-		}
-		path := filepath.Join(t.TempDir(), "01_a.srt")
-		if err := WriteCaptions([]Caption{caption}, path); err != nil {
-			t.Fatalf("writing: %v", err)
-		}
-		got, err := LoadCaptions(path)
-		if err != nil {
-			t.Fatalf("reading back: %v", err)
-		}
-		if len(got) != 1 {
-			t.Fatalf("%d captions came back", len(got))
-		}
-		if got[0].Text != caption.Text {
-			t.Fatalf("text came back as %q, was %q", got[0].Text, caption.Text)
-		}
-		if len(got[0].Words) != len(words) {
-			t.Fatalf("%d word timings for %d words", len(got[0].Words), len(words))
-		}
-		for i, w := range got[0].Words {
-			if w.Text != words[i] {
-				t.Fatalf("word %d came back as %q, was %q", i, w.Text, words[i])
-			}
-			if !isFinite(w.Start) || w.End < w.Start {
-				t.Fatalf("word %d is timed %v-%v", i, w.Start, w.End)
 			}
 		}
 	})

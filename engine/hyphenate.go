@@ -157,16 +157,16 @@ var spokenLanguages = map[whatlanggo.Lang]bool{
 
 // languageOf says which language captions are in, as ISO 639-1, read off
 // all their words together.
-func languageOf(captions []Caption) string {
+// wordsLanguage says which language words are in, as ISO 639-1. An
+// episode is read once, off its first few thousand words, which is plenty
+// to tell and quick enough to do every time a transcript is read.
+func wordsLanguage(words []Cue) string {
 	var text strings.Builder
-	for _, c := range captions {
-		if len(c.Words) == 0 {
-			text.WriteString(c.Text + " ")
-			continue
+	for i, w := range words {
+		if i == 3000 {
+			break
 		}
-		for _, w := range c.Words {
-			text.WriteString(w.Text + " ")
-		}
+		text.WriteString(w.Text + " ")
 	}
 	return whatlanggo.DetectLangWithOptions(text.String(),
 		whatlanggo.Options{Whitelist: spokenLanguages}).Iso6391()
@@ -316,6 +316,24 @@ func breakPoints(runes []rune, h *hyphenator, joints bool) []int {
 		}
 	}
 	return out
+}
+
+// ShowWords gives words the way a caption in this style shows them: a word
+// too wide for a line is its hyphenated halves, each with its share of the
+// word's time by its letters. It is the one place a word is split for
+// showing, used by the captions and by the clip timeline, so the halves the
+// highlight lights are the halves an edge dragged with shift stops at.
+func ShowWords(words []Cue, s Style, language string) []Cue {
+	return showWords(words, roomFor(s), language)
+}
+
+func showWords(words []Cue, r captionRoom, language string) []Cue {
+	for _, w := range words {
+		if !r.fits(w.Text) {
+			return hyphenate(words, r, hyphenatorFor(language))
+		}
+	}
+	return words
 }
 
 // hyphenate splits every word too wide for a line into pieces that fit.

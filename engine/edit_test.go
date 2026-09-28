@@ -30,11 +30,13 @@ const editablePlan = `{
   ]
 }`
 
+// editableTranscript is the episode behind editablePlan, made the way a
+// transcript is read, so a word of it can be corrected.
 func editableTranscript() *Transcript {
-	return &Transcript{Words: []Cue{
+	return fromStored([]Cue{
 		{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"},
 		{20.1, 20.6, "fünf"}, {21, 21.5, "sechs"},
-	}}
+	}, nil, 0, 0, nil)
 }
 
 func editablePlanPath(t *testing.T) string {
@@ -153,7 +155,7 @@ func TestDraftCaptionsAreTheCaptionsTheEditLeaves(t *testing.T) {
 			if err := TrimClip(path, "01", c.start, c.end, tr, 0.1, c.snap); err != nil {
 				t.Fatal(err)
 			}
-			landed, err := ClipCaptionsView(path, "01", nil)
+			landed, err := ClipCaptionsView(path, "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -208,7 +210,7 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 			if err := TrimClip(path, "01", c.start, 13.1, tr, 0.1, ToFrames); err != nil {
 				t.Fatal(err)
 			}
-			view, err := ClipCaptionsView(path, "01", nil)
+			view, err := ClipCaptionsView(path, "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -233,7 +235,8 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 
 func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	path := editablePlanPath(t)
-	view, err := ClipCaptionsView(path, "01", nil)
+	tr := editableTranscript()
+	view, err := ClipCaptionsView(path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,17 +247,20 @@ func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	if caption.Start != 0 || caption.End <= caption.Start {
 		t.Errorf("caption runs %v to %v", caption.Start, caption.End)
 	}
-	if len(caption.Lines) != 1 || len(caption.Lines[0].Words) != 3 {
+	// The clip says four words: the second piece ends a tenth into vier,
+	// and a word is said while the clip holds some of its sound.
+	if len(caption.Lines) != 1 || len(caption.Lines[0].Words) != 4 {
 		t.Fatalf("lines %+v", caption.Lines)
 	}
 	words := caption.Lines[0].Words
-	if words[0].Text != "eins" || words[2].Text != "drei" || words[2].Start <= words[0].Start {
+	if words[0].Text != "eins" || words[2].Text != "drei" || words[3].Text != "vier" ||
+		words[2].Start <= words[0].Start {
 		t.Errorf("words %+v", words)
 	}
-	// The cut between the two pieces is gone from the clock, so the last
+	// The cut between the two pieces is gone from the clock, so the third
 	// word sits a good deal earlier than in the episode.
 	if words[2].Start > 2 {
-		t.Errorf("the last word starts at %v, so the cut is still in", words[2].Start)
+		t.Errorf("drei starts at %v, so the cut is still in", words[2].Start)
 	}
 
 	// The look comes as shares of the frame height and as web colours.
@@ -266,7 +272,7 @@ func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 		t.Errorf("colours %+v", s)
 	}
 
-	if _, err := ClipCaptionsView(path, "99", nil); err == nil {
+	if _, err := ClipCaptionsView(path, "99", tr, nil); err == nil {
 		t.Error("a clip that is not in the plan was accepted")
 	}
 }
@@ -404,7 +410,7 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 	}
 
 	// What the app draws sits in the same place.
-	view, err := ClipCaptionsView(editedPlan, "01", nil)
+	view, err := ClipCaptionsView(editedPlan, "01", editableTranscript(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,11 +533,6 @@ func FuzzPlanEdits(f *testing.F) {
 				if c.Duration() <= 0 {
 					t.Fatalf("clip %s is %v long", c.ID, c.Duration())
 				}
-				for _, w := range c.Words {
-					if w.End < w.Start || !isFinite(w.Start) {
-						t.Fatalf("clip %s carries the word %+v", c.ID, w)
-					}
-				}
 				if y := c.CaptionY; y != nil && (*y < CaptionYMin || *y > CaptionYMax) {
 					t.Fatalf("clip %s draws its captions at %v", c.ID, *y)
 				}
@@ -551,49 +552,22 @@ func FuzzPlanEdits(f *testing.F) {
 func TestRemovingAPlanKeepsTheWorkItLeavesBehind(t *testing.T) {
 	plan := editablePlanPath(t)
 	work := filepath.Dir(filepath.Dir(plan))
-	captions := filepath.Join(work, "captions")
-	if err := os.MkdirAll(captions, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mine := filepath.Join(captions, "01_eins.srt")
-	if err := os.WriteFile(mine, []byte("corrected by hand"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	other := filepath.Join(captions, "07_anderes.srt")
-	if err := os.WriteFile(other, []byte("another plan"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	rendered := filepath.Join(work, "01_eins.mp4")
 	if err := os.WriteFile(rendered, []byte("finished"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := RemovePlan(plan, captions); err != nil {
+	if err := RemovePlan(plan); err != nil {
 		t.Fatal(err)
 	}
 	if isFile(plan) {
 		t.Error("the plan file is still there")
 	}
-	if isFile(mine) {
-		t.Error("the captions of its clips were left where a later plan would find them")
-	}
-	if !isFile(other) {
-		t.Error("the captions of another plan were taken away")
-	}
 	if !isFile(rendered) {
 		t.Error("a rendered clip was taken away")
 	}
-	// Moved aside, not deleted: it may hold corrections made by hand.
-	found, _ := filepath.Glob(filepath.Join(captions, "superseded-*", "01_eins.srt"))
-	if len(found) != 1 {
-		t.Fatalf("the corrected captions are nowhere: %v", found)
-	}
-	body, err := os.ReadFile(found[0])
-	if err != nil || string(body) != "corrected by hand" {
-		t.Errorf("moved aside as %q, %v", body, err)
-	}
 	// Doing it twice is not an error, because the part is gone either way.
-	if err := RemovePlan(plan, captions); err != nil {
+	if err := RemovePlan(plan); err != nil {
 		t.Errorf("second removal: %s", err)
 	}
 }
@@ -671,14 +645,6 @@ func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
 // again, which is what leaves a hole in what was searched.
 func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 	path := editablePlanPath(t)
-	captions := filepath.Join(filepath.Dir(filepath.Dir(path)), "captions")
-	if err := os.MkdirAll(captions, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mine := filepath.Join(captions, "01_eins.srt")
-	if err := os.WriteFile(mine, []byte("corrected by hand"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	// The plan was made over the first minute.
 	if err := editPlan(path, func(top *object, _ []*object) error {
 		made := newObject()
@@ -690,7 +656,7 @@ func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gone, err := RemoveRange(path, captions, 9, 15, 3600)
+	gone, err := RemoveRange(path, 9, 15, 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,9 +676,6 @@ func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 	if kept, _ := plan.Raw["custom"].(map[string]any); kept["kept"] != "yes" {
 		t.Error("an edit threw away what it did not understand")
 	}
-	if isFile(mine) {
-		t.Error("the captions of the clip that went were left behind")
-	}
 
 	// What is left of the window: everything but the part given back.
 	summary := PlanSummaries(filepath.Dir(path))
@@ -724,7 +687,7 @@ func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
 		t.Fatalf("searched %v", looked)
 	}
 	// Giving back the rest takes the plan itself.
-	if _, err := RemoveRange(path, captions, 0, 60, 3600); err != nil {
+	if _, err := RemoveRange(path, 0, 60, 3600); err != nil {
 		t.Fatal(err)
 	}
 	if isFile(path) {
@@ -757,6 +720,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	}
 
 	path := editablePlanPath(t)
+	tr := editableTranscript()
 	if err := SetCaptionStyle(path, map[string]any{"primary": text, "back_colour": box}); err != nil {
 		t.Fatal(err)
 	}
@@ -770,7 +734,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "#00aa00"}); err != nil {
 		t.Fatal(err)
 	}
-	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
+	if view, _ := ClipCaptionsView(path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
 	// A highlight with an opacity is kept whole, and the pill is as clear
@@ -778,7 +742,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "&H6600AA00"}); err != nil {
 		t.Fatal(err)
 	}
-	if view, _ := ClipCaptionsView(path, "01", nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
+	if view, _ := ClipCaptionsView(path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
 	if plan, _, err := LoadClips(path); err != nil {
@@ -786,7 +750,7 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 	} else if s := ResolveStyle(plan.CaptionStyle()); s.HighlightColour != "&H00AA00&" || s.HighlightAlpha != "66" {
 		t.Errorf("the render would draw the pill %s at %s", s.HighlightColour, s.HighlightAlpha)
 	}
-	view, err := ClipCaptionsView(path, "01", nil)
+	view, err := ClipCaptionsView(path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -960,12 +924,13 @@ func TestWordStopsAreTheWordsTheCaptionsLight(t *testing.T) {
 	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	words := []Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und da"}}
-	stops, err := WordStops(path, "01", words, nil)
+	tr := fromStored([]Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und"}}, nil, 0, 0, nil)
+	tr.Correct(map[string]string{wordKey(12.5): "Und da"})
+	stops, err := WordStops(path, "01", tr, 10, 14, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := ClipCaptionsView(path, "01", nil)
+	view, err := ClipCaptionsView(path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -178,7 +178,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 	}
 	// The video preview shows the plan's own highlight, not the one of the
 	// settings, which is only for a plan without one.
-	if view, err := svc.Captions(plan, "01"); err != nil || view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
+	if view, err := svc.Captions(mine, plan, "01"); err != nil || view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
 		t.Errorf("the preview's pill: %v %v", view, err)
 	}
 	if _, err := svc.Undo(mine); err != nil {
@@ -231,7 +231,7 @@ func TestCaptionSwitchesAreSwitchedAndUndone(t *testing.T) {
 	if on() {
 		t.Error("the render would still draw the highlight")
 	}
-	if view, err := svc.Captions(plan, "01"); err != nil || view.Style.Highlight {
+	if view, err := svc.Captions(mine, plan, "01"); err != nil || view.Style.Highlight {
 		t.Errorf("the video preview would still draw the highlight: %v", err)
 	}
 	if _, err := svc.Undo(mine); err != nil {
@@ -247,7 +247,7 @@ func TestCaptionSwitchesAreSwitchedAndUndone(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if view, err := svc.Captions(plan, "01"); err != nil || view.Style.Text || view.Style.BoxOn {
+	if view, err := svc.Captions(mine, plan, "01"); err != nil || view.Style.Text || view.Style.BoxOn {
 		t.Errorf("the video preview would still draw the text or the box: %v %+v", err, view.Style)
 	}
 	if err := svc.SetCaptionSwitch(ctx, mine, plan, "font", false); err == nil {
