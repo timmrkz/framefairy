@@ -1193,7 +1193,7 @@ const updListeners = new Set<(ev: unknown) => void>();
 const updChannels = [
   { id: "main", name: "main", version: "0.3.0-main.9f8e7d6" },
   { id: "pr-20", name: "#20 Captions follow whoever speaks", version: "0.3.0-pr20.c0ffee1" },
-  { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr18.a1b2c3d" },
+  { id: "pr-18", name: "#18 How the app updates itself", version: "0.3.0-pr29.db33a28" },
 ];
 let upd: any = null;
 // The download in hand, stopped when another channel is picked, the way
@@ -1204,7 +1204,7 @@ const updNow = () => {
   const local = location.search.includes("makebuild");
   const gone = location.search.includes("prgone");
   upd = {
-    version: local ? "0.3.0-local" : "0.3.0-pr18.a1b2c3d",
+    version: local ? "0.3.0-local" : "0.3.0-pr29.db33a28",
     commit: local ? "" : "a1b2c3d4e5f6",
     channel: local ? "" : "pr-18",
     off: location.search.includes("updatesoff")
