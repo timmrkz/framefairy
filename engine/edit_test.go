@@ -124,6 +124,69 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 // The picture in the app draws the captions of the selected clip itself, so
 // it asks the engine for them, on the clip's own clock and already broken
 // into lines.
+// The captions drawn while an edge is dragged are the captions the clip
+// has once it is let go of. If the two differ, the blocks jump as the hand
+// lets go, which is the thing the draft is there to stop.
+func TestDraftCaptionsAreTheCaptionsTheEditLeaves(t *testing.T) {
+	path := editablePlanPath(t)
+	tr := editableTranscript()
+	for _, c := range []struct {
+		name       string
+		start, end float64
+		snap       Snap
+	}{
+		{"longer, to words", 10, 13.6, ToWords},
+		{"shorter, to frames", 10.24, 12.2, ToFrames},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := editablePlanPath(t)
+			// The timeline snaps the edges as it draws them, the same way.
+			start, end := c.start, c.end
+			if c.snap == ToWords {
+				start, end = SnapStart(tr.Words, start, 0.1), SnapEnd(tr.Words, end, 0.1)
+			}
+			draft, err := DraftCaptionsView(path, "01",
+				[][2]float64{{start, 11.1}, {11.9, end}}, tr, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := TrimClip(path, "01", c.start, c.end, tr, 0.1, c.snap); err != nil {
+				t.Fatal(err)
+			}
+			landed, err := ClipCaptionsView(path, "01", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(draft.Captions) != fmt.Sprint(landed.Captions) {
+				t.Errorf("drawn while dragged %+v\nafter %+v", draft.Captions, landed.Captions)
+			}
+		})
+	}
+	// Words the saved clip does not hold yet are in the draft.
+	draft, err := DraftCaptionsView(path, "01", [][2]float64{{10, 11.1}, {11.9, 13.6}}, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprint(draft.Captions), "vier") {
+		t.Errorf("the word the drag reached is not in %+v", draft.Captions)
+	}
+	before, _ := os.ReadFile(path)
+	for _, bad := range [][][2]float64{
+		nil,
+		{{11, 10}},
+		{{10, 12}, {11, 13}},
+		{{math.NaN(), 12}},
+		{{0, MaxClipSpan + 1}},
+	} {
+		if _, err := DraftCaptionsView(path, "01", bad, tr, nil); err == nil {
+			t.Errorf("pieces %v were accepted", bad)
+		}
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Error("a draft changed the plan")
+	}
+}
+
 func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	path := editablePlanPath(t)
 	view, err := ClipCaptionsView(path, "01", nil)

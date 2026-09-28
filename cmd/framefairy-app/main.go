@@ -768,8 +768,26 @@ func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, er
 	if !s.store.Known(planPath) {
 		return nil, os.ErrNotExist
 	}
-	// The same overrides the render puts on top of the plan, so the picture
-	// shows what the file will hold.
+	return engine.ClipCaptionsView(planPath, clipID, s.captionOverrides(planPath))
+}
+
+// DraftCaptions gives the captions a clip would have with the pieces an
+// edge being dragged on the clip timeline draws, so the caption blocks
+// follow the hand. Nothing is saved.
+func (s *FrameFairy) DraftCaptions(path, planPath, clipID string, pieces [][2]float64) (*engine.CaptionsView, error) {
+	if !s.store.Known(path) || !s.store.Known(planPath) {
+		return nil, os.ErrNotExist
+	}
+	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	if err != nil {
+		return nil, err
+	}
+	return engine.DraftCaptionsView(planPath, clipID, pieces, t, s.captionOverrides(planPath))
+}
+
+// captionOverrides are the settings the render puts on top of a plan's
+// caption style, so the picture shows what the file will hold.
+func (s *FrameFairy) captionOverrides(planPath string) map[string]any {
 	set := s.store.Settings()
 	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
 	// The highlight colour of the settings is for a plan that was not given
@@ -779,7 +797,7 @@ func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, er
 			overrides["highlight_colour"] = set.HighlightColour
 		}
 	}
-	return engine.ClipCaptionsView(planPath, clipID, overrides)
+	return overrides
 }
 
 // Fonts are the faces the captions can be written in. They travel with the

@@ -81,6 +81,12 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if job := svc.Render(mine, engine.RenderRequest{Plan: elsewhere}); job.State != JobFailed {
 		t.Errorf("Render used a plan outside the library: %s", job.State)
 	}
+	if _, err := svc.DraftCaptions(other, elsewhere, "01", [][2]float64{{0, 10}}); err == nil {
+		t.Error("DraftCaptions answered for a file that is not in the library")
+	}
+	if _, err := svc.DraftCaptions(mine, elsewhere, "01", [][2]float64{{0, 10}}); err == nil {
+		t.Error("DraftCaptions read a plan outside the library")
+	}
 	if _, err := svc.RemoveSearch(ctx, other, 0, 10); err == nil {
 		t.Error("RemoveSearch answered for a file that is not in the library")
 	}

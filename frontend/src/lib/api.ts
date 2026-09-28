@@ -481,6 +481,10 @@ export const api = {
   removeSearch: (path: string, from: number, to: number) =>
     call<number>("RemoveSearch", path, from, to),
   captions: (plan: string, clip: string) => call<CaptionsView>("Captions", plan, clip),
+  // The captions a clip would have with the pieces being dragged on the
+  // clip timeline, so the caption blocks follow the hand. Nothing is saved.
+  draftClipCaptions: (path: string, plan: string, clip: string, pieces: [number, number][]) =>
+    call<CaptionsView>("DraftCaptions", path, plan, clip, pieces),
   fonts: () => call<CaptionFont[]>("Fonts"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),

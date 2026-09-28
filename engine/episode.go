@@ -473,6 +473,51 @@ type CaptionsView struct {
 // draws over the picture, so that nothing about captions has to be decided
 // twice.
 func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*CaptionsView, error) {
+	return clipCaptionsView(planPath, clipID, overrides, nil, nil)
+}
+
+// DraftCaptionsView gives the captions a clip would have with other pieces,
+// while an edge of it or of a cut is being dragged, so the clip timeline
+// draws them under the hand rather than when it lets go. Nothing is
+// written. The pieces are where the edges are drawn, already snapped, and
+// the words are taken from the transcript the way an edit takes them. A
+// caption file written by hand is not read, because the edit that lands
+// removes it.
+func DraftCaptionsView(planPath, clipID string, pieces [][2]float64, t *Transcript,
+	overrides map[string]any) (*CaptionsView, error) {
+	if err := saneDraft(pieces); err != nil {
+		return nil, err
+	}
+	if t == nil {
+		t = &Transcript{}
+	}
+	return clipCaptionsView(planPath, clipID, overrides, pieces, t)
+}
+
+// maxDraftPieces is more pieces than any clip is cut into by hand.
+const maxDraftPieces = 256
+
+// saneDraft checks pieces that came from the interface: in order, apart,
+// and no longer than a trim may make a clip.
+func saneDraft(pieces [][2]float64) error {
+	if len(pieces) == 0 || len(pieces) > maxDraftPieces {
+		return renderErr("a clip needs between 1 and %d pieces", maxDraftPieces)
+	}
+	prev := 0.0
+	for _, p := range pieces {
+		if !isFinite(p[0]) || !isFinite(p[1]) || p[0] < prev || p[1] <= p[0] {
+			return renderErr("the pieces of a clip have to be in order and apart")
+		}
+		prev = p[1]
+	}
+	if pieces[len(pieces)-1][1]-pieces[0][0] > MaxClipSpan {
+		return renderErr("a clip can span at most %s minutes of the episode", fixed(MaxClipSpan/60, 0))
+	}
+	return nil
+}
+
+func clipCaptionsView(planPath, clipID string, overrides map[string]any,
+	pieces [][2]float64, t *Transcript) (*CaptionsView, error) {
 	plan, clips, err := LoadClips(planPath)
 	if err != nil {
 		return nil, err
@@ -487,6 +532,24 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 	if clip == nil {
 		return nil, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
 	}
+	if pieces != nil {
+		draft := *clip
+		draft.Segments = make([]Segment, len(pieces))
+		for i, p := range pieces {
+			draft.Segments[i] = Segment{Start: p[0], End: p[1]}
+		}
+		draft.Words = nil
+		for _, w := range t.Words {
+			mid := (w.Start + w.End) / 2
+			for _, p := range pieces {
+				if mid >= p[0] && mid < p[1] {
+					draft.Words = append(draft.Words, Cue{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
+					break
+				}
+			}
+		}
+		clip = &draft
+	}
 
 	style := clipStyle(plan.CaptionStyle(), *clip)
 	for key, value := range overrides {
@@ -497,10 +560,15 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 	}
 	s := ResolveStyle(style)
 	work := filepath.Dir(filepath.Dir(planPath))
-	captions, err := ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)),
-		TooWide(s))
-	if err != nil {
-		return nil, err
+	var captions []Caption
+	if pieces != nil {
+		captions = Captions(*clip, max(8, int(s.MaxChars)), TooWide(s))
+	} else {
+		captions, err = ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)),
+			TooWide(s))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// The lines the render will use, so the picture in the app breaks the

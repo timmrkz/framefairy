@@ -1009,15 +1009,97 @@
   // they come back changed, so the block never jumps back to where it was
   // while the saved captions are on their way.
   let capHeld: CaptionCue[] | undefined;
-  const clipLength = $derived(segments.reduce((sum, p) => sum + p.end - p.start, 0));
+
+  // The captions while an edge of the clip or of a cut is dragged. What a
+  // drag reshapes, the engine captions afresh, and the blocks are drawn
+  // from its answer on the pieces as they are drawn, so a word the edge
+  // reaches has its caption under the hand and not when it lets go. What is
+  // happening is shown while it happens. After the hand lets go the draft
+  // stays until the captions of the saved clip come back, so the blocks do
+  // not jump back to where they were on the way. An edit that is refused
+  // leaves the pieces as they were, and then the draft is not what is
+  // there any more.
+  let shaped = $state<null | {
+    cues: CaptionCue[];
+    pieces: { start: number; end: number }[];
+    held: CaptionCue[];
+  }>(null);
+  const reshaping = $derived(!!dragging || saving || !!movingCut || !!drawnCut || cutSaving);
+  let shapeAsked = "";
+  let shapeWanted: [number, number][] | null = null;
+  let shapeBusy = false;
+
+  const samePieces = (a: { start: number; end: number }[], b: { start: number; end: number }[]) =>
+    a.length === b.length &&
+    a.every((p, i) => Math.abs(p.start - b[i].start) < 0.002 && Math.abs(p.end - b[i].end) < 0.002);
+
+  $effect(() => {
+    if (!clip || !reshaping || !path) return;
+    const list = drawnPieces.map((p) => [p.start, p.end] as [number, number]);
+    const key = JSON.stringify(list);
+    if (key === shapeAsked) return;
+    shapeAsked = key;
+    shapeWanted = list;
+    askShape();
+  });
+
+  // One question at a time, and always about where the hand is now: a
+  // drag moves faster than the answers come, and the ones in between are
+  // of pieces that are no longer drawn.
+  async function askShape() {
+    if (shapeBusy || !shapeWanted || !clip) return;
+    const list = shapeWanted;
+    const asked = clip;
+    const held = captions;
+    shapeWanted = null;
+    shapeBusy = true;
+    try {
+      const view = await api.draftClipCaptions(path, asked.plan, asked.id, list);
+      if (clip?.key === asked.key) {
+        shaped = {
+          cues: view?.captions ?? [],
+          pieces: list.map(([start, end]) => ({ start, end })),
+          held,
+        };
+      }
+    } catch {
+      // A draft is only a picture of the drag. Without it the blocks stay
+      // where the saved clip has them, and letting go says what is wrong.
+    } finally {
+      shapeBusy = false;
+      askShape();
+    }
+  }
+
+  $effect(() => {
+    if (shaped && !reshaping && (captions !== shaped.held || !samePieces(segments, shaped.pieces))) {
+      shaped = null;
+      shapeAsked = "";
+    }
+  });
+  // Another clip chosen is another clip's captions. The key and not the
+  // clip, because an edit hands back the same clip as a new object, and
+  // that must not let go of the draft while its captions are on their way.
+  const clipKey = $derived(clip?.key);
+  $effect(() => {
+    void clipKey;
+    shaped = null;
+    shapeAsked = "";
+  });
+
+  const shapedShown = $derived(!!shaped && (reshaping || captions === shaped.held));
+  const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
+  const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);
+  const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
 
   const captionBlocks = $derived.by(() => {
-    if (!clip || !captions?.length || !segments.length) return [];
-    return draftCaptions(captions, capDraft).map((c, i) => ({
+    if (!clip || !shownCues?.length || !cuePieces.length) return [];
+    const list = shapedShown ? shownCues : draftCaptions(shownCues, capDraft);
+    return list.map((c, i) => ({
       i,
-      c: captions[i],
-      from: inEpisode(segments, c.start),
-      to: inEpisode(segments, Math.min(c.end, clipLength)),
+      c: shownCues[i],
+      from: inEpisode(cuePieces, c.start),
+      to: inEpisode(cuePieces, Math.min(c.end, clipLength)),
     }));
   });
 
@@ -1047,7 +1129,7 @@
   // the video preview, where each word lights up in turn, and not again in
   // the pause after a word. Walking the words with shift and the arrow
   // keys pops both at once.
-  const spokenAt = $derived(clip && segments.length ? inClip(segments, time) : -1);
+  const spokenAt = $derived(clip && cuePieces.length ? inClip(cuePieces, time) : -1);
   function wordNow(c: CaptionCue): number {
     let k = -1;
     let n = 0;
@@ -1066,8 +1148,8 @@
   // moment read back through the episode can land a hair before it.
   function firstWordOf(c: CaptionCue): number | null {
     const word = c.lines?.[0]?.words?.[0];
-    if (!word || !segments.length) return null;
-    return inEpisode(segments, intoWord(word, frame));
+    if (!word || !cuePieces.length) return null;
+    return inEpisode(cuePieces, intoWord(word, frame));
   }
 
   $effect(() => {
@@ -1440,7 +1522,7 @@
           {/key}
         {/each}
       </div>
-      {#if !locked && oncaptiontime}
+      {#if !locked && oncaptiontime && !shapedShown}
         {#each captionBlocks as b (b.i)}
           <div
             class="capedge start"

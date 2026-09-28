@@ -877,6 +877,15 @@ place.
       the render cuts a clip the engine proposes. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
+    - **The captions follow the drag.** While an edge of the clip or of a
+      cut is dragged, the caption blocks are drawn for the clip as the hand
+      has it: a word the edge reaches gets its caption under the hand, and
+      a word it leaves loses it. The engine makes them, through
+      `DraftCaptions`, from the pieces as they are drawn, and saves
+      nothing. They used to wait for the hand to let go, so a drag showed
+      the old captions over the new clip. After letting go they stay until
+      the saved clip's captions come back, which are the same, so nothing
+      jumps.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.
     - **Nothing on the playhead but the playhead.** It carried a magnifier
