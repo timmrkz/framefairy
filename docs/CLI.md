@@ -94,7 +94,7 @@ fits.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--count 12` | 12 | how many clips to look for. Candidates cost little extra, so the default asks for plenty to choose from |
+| `--count 6` | one for every twelve clip lengths of the window, at least 1 | how many clips to look for. 6 for half an hour of clips of 20 to 30 seconds, 2 for 10 minutes. The model gives fewer when fewer moments are strong enough |
 | `--min 20` | 20 s | shortest acceptable clip |
 | `--max 30` | 30 s | target ceiling. A clip that runs a little over is fine |
 | `--from 1:00:00 --to 2:00:00` | whole episode | only work on this part of it, see below |
@@ -141,7 +141,7 @@ fits.
 | `--model claude-sonnet-5` | claude-sonnet-5 | the model in the cloud, with `--planner api`. A `claude-` model is Anthropic's and reads `ANTHROPIC_API_KEY`, a `gpt-` model, like `gpt-6-sol`, is OpenAI's and reads `OPENAI_API_KEY` |
 | `--budget 2.00` | $2.00 | with `--planner api`, refuse a request estimated to cost more than this |
 | `--max-tokens 48000` | 48000 | ceiling on the reply length |
-| `--think 2048` | 2048 | with `--planner local`, how many tokens the model may think before it answers. `-1` is no limit, `0` is no thinking |
+| `--think 2048` | 2,048 for half an hour of window, in proportion, at least 512 and at most 4,096 | with `--planner local`, how many tokens the model may think before it answers. `-1` is no limit, `0` is no thinking |
 | `--seed N` | 0, and 1 in a comparison | with `--planner local`, makes the model answer the same prompt the same way every time. 0 leaves it to chance |
 | `--temperature T` | llama-server's own, 0.8 | with `--planner local`, how freely the model picks its words, 0 always the likeliest |
 | `--prefill` | off | with `--planner api`, start the reply with an opening brace |

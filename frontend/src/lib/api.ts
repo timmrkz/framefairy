@@ -33,7 +33,9 @@ export interface Settings {
   asrModel: string;
   planner: "local" | "api";
   apiModel: string;
-  count: number;
+  // How many clips a search looks for when a number was typed, 0 while it
+  // follows the window.
+  target: number;
   min: number;
   max: number;
   // The colour of the pill behind the word being spoken, in the rendered
@@ -439,8 +441,9 @@ export const api = {
   // How many clips a search looks for and how long they may be. They are
   // set in the workspace, beside the episode they are about, and kept for
   // the next one.
-  setSearch: (count: number, min: number, max: number) =>
-    call<void>("SetSearch", count, min, max),
+  // A target of 0 follows the window.
+  setSearch: (target: number, min: number, max: number) =>
+    call<void>("SetSearch", target, min, max),
   checkSetup: () => call<Check[]>("CheckSetup"),
   // What a new copy of the app still needs, and the three ways to answer
   // it. Setup only reads, the other three change something.

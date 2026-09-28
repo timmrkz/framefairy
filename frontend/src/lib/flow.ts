@@ -76,7 +76,8 @@ export function waitShare(from: number, heard: number, to: number): number {
 export type Span = { from: number; to: number };
 
 // Where the window goes when it has to choose for itself: the first
-// part nobody has looked at, and at most the first half hour of it.
+// part nobody has looked at, and at most one window of it, as long as the
+// episode's windows are, see suggestedWindow in suggest.ts.
 // With the whole episode searched there is no free room left, so it rests
 // on the last part that was searched, which is the one whose clips are
 // on screen.
@@ -89,7 +90,7 @@ export function nextWindow(
   free: Span[],
   searched: Span[],
   duration: number,
-  firstLook: number,
+  size: number,
 ): Span {
   const room = free.find((w) => w.to - w.from > 0.5);
   if (!room) {
@@ -97,9 +98,9 @@ export function nextWindow(
     return { from: last?.from ?? 0, to: last?.to ?? duration };
   }
   const span = room.to - room.from;
-  // A part only a little longer than the half hour is taken whole,
-  // rather than leaving a scrap behind that is too short to search.
-  return { from: room.from, to: room.from + (span > firstLook * 1.5 ? firstLook : span) };
+  // A part only a little longer than a window is taken whole, rather than
+  // leaving a scrap behind that is too short to search.
+  return { from: room.from, to: room.from + (span > size * 1.5 ? size : span) };
 }
 
 // A run of asks where only the newest answer counts.
