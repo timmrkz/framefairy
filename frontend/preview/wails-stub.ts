@@ -199,7 +199,10 @@ const captionCues = (id: string, draft?: { start: number; end: number }[]) => {
   let offset = 0;
   for (const p of c.segments) {
     for (const w of c.words) {
-      if (w.start < p.start - 0.02 || w.end > p.end + 0.02) continue;
+      // A word is in the piece that holds its middle, the way the engine
+      // takes it, so a word an edge cuts into is still said.
+      const mid = (w.start + w.end) / 2;
+      if (mid < p.start || mid >= p.end) continue;
       onClipClock.push({
         start: offset + (w.start - p.start),
         end: offset + (w.end - p.start),

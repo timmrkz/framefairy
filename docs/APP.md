@@ -882,6 +882,20 @@ place.
       because it is the key Tim reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
+    - **The playhead goes with the edge.** While either edge of a clip is
+      dragged, the playhead stands on it and the video preview shows that
+      frame, the clip as it is being dragged, with its captions. On frames
+      it is the clip's first frame, or its last, a frame before the end.
+      With shift it is inside the word the edge snapped to, a frame into
+      the first word or a frame before the end of the last, so that word is
+      always the one lit. The edge itself stands a pause away from the
+      word, and the playhead used to go to the clip's start after a trim,
+      so the word was lit only when the pause happened to be none, which
+      looked random. After letting go the playhead stays where it was.
+    - **The clip edge is over the caption handles.** The first caption is
+      on screen from the clip's first frame, so its handle stood on the
+      clip's start edge, and a hand that reached for the clip in the band
+      of the captions moved the caption instead.
     - **The captions follow the drag.** While an edge of the clip or of a
       cut is dragged, the caption blocks are drawn for the clip as the hand
       has it: a word the edge reaches gets its caption under the hand, and

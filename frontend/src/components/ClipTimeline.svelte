@@ -54,6 +54,7 @@
     captionLook = null,
     oncaptiontime,
     oncaptiondraft,
+    onshape,
     thumbnails = [],
     onthumbnail,
     marks = [],
@@ -117,6 +118,10 @@
     // the caption box in the video preview can follow it. Null once the
     // captions have come back with it saved.
     oncaptiondraft?: (draft: CaptionDraft | null) => void;
+    // The clip as a drag of an edge or a cut has it, its pieces and the
+    // captions the engine made for them, or null when no drag is shaping
+    // it. The video preview shows the same clip as the timeline on the way.
+    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[] } | null) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
     thumbnails?: number[];
@@ -935,6 +940,7 @@
     draft = { start, end };
     let moved = false;
     let toWords = event.shiftKey;
+    let playAt = edge === "start" ? start : end;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) {
         moved = true;
@@ -950,6 +956,10 @@
         const at = toWords ? snapEnd(words, t, keepPause) : onFrame(t);
         draft.end = Math.max(at, draft.start + 1);
       }
+      // The playhead goes with the edge, so the video preview shows the
+      // frame the clip now starts or ends on while the hand moves.
+      playAt = edgePlayhead(edge, toWords);
+      seekSoon(playAt);
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
@@ -968,7 +978,7 @@
         // taken out of, so there is nothing to put back any more.
         undone = null;
         await ontrim?.(draft.start, draft.end, toWords);
-        onseek(draft.start);
+        onseek(playAt);
       } finally {
         saving = false;
       }
@@ -976,6 +986,30 @@
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  // Where the playhead stands while an edge is dragged. On frames it is the
+  // frame at the edge: the first frame of the clip, or its last, one frame
+  // before the end, because the end is where the clip is already over. On
+  // words it is inside the word the edge snapped to, a frame into the first
+  // word or a frame before the end of the last, so that word is always the
+  // one lit. The edge itself stands a pause away from the word, and a
+  // playhead put there lit the word only when the pause happened to be
+  // none, which is what looked random.
+  function edgePlayhead(edge: "start" | "end", toWords: boolean): number {
+    if (edge === "start") {
+      if (toWords) {
+        const word = words.find((w) => w.start >= draft.start - 0.0005);
+        if (word && word.end <= draft.end) return intoWord(word, frame);
+      }
+      return draft.start;
+    }
+    if (toWords) {
+      let word: Word | undefined;
+      for (const w of words) if (w.end <= draft.end + 0.0005) word = w;
+      if (word && word.start >= draft.start) return Math.max(word.end - frame, (word.start + word.end) / 2);
+    }
+    return Math.max(draft.end - frame, draft.start);
   }
 
   // The captions along the foot of the track. A caption appears when its
@@ -1071,6 +1105,9 @@
   });
 
   const shapedShown = $derived(!!shaped && (reshaping || captions === shaped.held));
+  $effect(() => {
+    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces } : null);
+  });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);
   const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
@@ -1924,7 +1961,12 @@
     width: 12px;
     margin-left: -6px;
     cursor: ew-resize;
-    z-index: 2;
+    /* Over the handles of the captions. The first caption is on screen
+       from the clip's first frame, so its handle stood on the clip's start
+       edge, and a hand that reached for the clip in the band of the
+       captions moved the caption instead. The clip edge is the one a hand
+       there means. */
+    z-index: 7;
   }
 
   /* The frame draws the clip's sides, so the edge only shows itself when
