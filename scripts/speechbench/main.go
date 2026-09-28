@@ -17,8 +17,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"framefairy/asr"
@@ -33,6 +35,9 @@ func main() {
 	threads := flag.String("threads", "4,8", "threads for the model")
 	pieces := flag.String("pieces", "15,30", "piece lengths in seconds")
 	batches := flag.String("batch", "1,2", "pieces heard in one pass")
+	copies := flag.String("copies", "1,2,3,4", "copies of the model hearing side by side, each its own pieces")
+	each := flag.String("each", "1,2,3,4,6,8", "threads for each copy, side by side")
+	piece := flag.Float64("piece", 20, "piece length in seconds, side by side")
 	flag.Parse()
 	*model = home(*model)
 	samples, err := load(home(*audio))
@@ -43,7 +48,8 @@ func main() {
 	n := min(int(*seconds*16000), len(samples))
 	samples = samples[:n]
 	length := float64(n) / 16000
-	fmt.Printf("%.0f s of speech, hearing it in fixed pieces\n\n", length)
+	fmt.Printf("%.0f s of speech, hearing it in fixed pieces, on a machine with %d cores\n\n",
+		length, runtime.NumCPU())
 	fmt.Println("| provider | threads | piece | at once | first piece | time | real time | words | words unlike cpu |")
 	fmt.Println("|---|---|---|---|---|---|---|---|---|")
 	reference := map[string][]string{}
@@ -92,6 +98,87 @@ func main() {
 				}
 			}
 			rec.Close()
+		}
+	}
+	sideBySide(*model, samples[:n], length, *piece, list(*copies), list(*each), reference)
+}
+
+// sideBySide hears the same speech with several copies of the model at
+// once, each taking the next piece as it finishes one, the way the app
+// would hear an episode with more than one. One copy with the most threads
+// is what the app does today. A mix that asks for more threads than the
+// machine has cores is left out: that was measured to be more than twice
+// as slow, and the app would never ask for it.
+func sideBySide(model string, samples []float32, length, piece float64,
+	copies, each []string, reference map[string][]string) {
+	var parts [][]float32
+	step := int(piece * 16000)
+	for at := 0; at < len(samples); at += step {
+		parts = append(parts, samples[at:min(at+step, len(samples))])
+	}
+	cores := runtime.NumCPU()
+	fmt.Printf("\nSide by side, in pieces of %.0f s. Today the app runs 1 copy with %d threads.\n\n",
+		piece, min(cores, 8))
+	fmt.Println("| copies | threads each | threads in all | time | real time | an hour takes | words | words unlike cpu |")
+	fmt.Println("|---|---|---|---|---|---|---|---|")
+	key := strconv.FormatFloat(piece, 'f', -1, 64)
+	for _, c := range copies {
+		count, _ := strconv.Atoi(c)
+		for _, t := range each {
+			threads, _ := strconv.Atoi(t)
+			if count < 1 || threads < 1 || count*threads > cores {
+				continue
+			}
+			recs := make([]*asr.Recognizer, 0, count)
+			for range count {
+				rec, err := asr.OpenWith(model, asr.Options{Provider: "cpu", Threads: threads})
+				if err != nil {
+					fmt.Printf("| %d | %d | cannot load: %v |\n", count, threads, err)
+					break
+				}
+				// The first piece pays for setting the copy up.
+				rec.Recognize(samples[:min(5*16000, len(samples))], 16000)
+				recs = append(recs, rec)
+			}
+			if len(recs) == count {
+				heard := make([][]string, len(parts))
+				next := make(chan int)
+				var wg sync.WaitGroup
+				began := time.Now()
+				for _, rec := range recs {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						for i := range next {
+							for _, w := range engine.TokensToWords(rec.Recognize(parts[i], 16000), 0) {
+								heard[i] = append(heard[i], strings.ToLower(strings.Trim(w.Text, ".,!?;:\"'")))
+							}
+						}
+					}()
+				}
+				for i := range parts {
+					next <- i
+				}
+				close(next)
+				wg.Wait()
+				took := time.Since(began)
+				var words []string
+				for _, h := range heard {
+					words = append(words, h...)
+				}
+				unlike := "-"
+				if ref, ok := reference[key]; ok {
+					unlike = strconv.Itoa(distance(ref, words))
+				} else {
+					reference[key] = words
+				}
+				speed := length / took.Seconds()
+				fmt.Printf("| %d | %d | %d | %.1f s | %.1fx | %.0f s | %d | %s |\n",
+					count, threads, count*threads, took.Seconds(), speed, 3600/speed, len(words), unlike)
+			}
+			for _, rec := range recs {
+				rec.Close()
+			}
 		}
 	}
 }
