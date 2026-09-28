@@ -31,7 +31,7 @@
     onUndo,
     onLevels,
   } from "../lib/api";
-  import { chosen, jobs } from "../lib/state.svelte";
+  import { jobs } from "../lib/state.svelte";
   import {
     draftCaptions,
     frameStart,
@@ -217,13 +217,11 @@
       label: "New",
       icon: "plus",
       run: newClips,
-      off: duration <= 0 || to <= 0,
+      off: duration <= 0 || to <= 0 || !roomLeft,
       primary: true,
-      title: !heardWindow
-        ? `Look for clips in the window. The episode is transcribed up to ${clock(to)} first, it is at ${clock(heard)}`
-        : covering
-          ? "Look at the window again, removing the clips it has"
-          : "Look for clips in the window",
+      title: !roomLeft
+        ? "Every part of the episode has been searched"
+        : `Look for clips from ${clock(from)} to ${clock(to)}, the next part nobody has looked at`,
     };
   });
 
@@ -442,11 +440,6 @@
         : "The episode is not transcribed to the end of the window yet.";
     return `${first} Clips are found by themselves once the transcript reaches ${clock(to)}.`;
   });
-  // The window stays with the episode while the app runs, so leaving the
-  // workspace and coming back does not throw away what was chosen.
-  $effect(() => {
-    if (duration > 0 && to > from) chosen.keep(path, from, to);
-  });
   // The whole layout is worked out by the browser, in the stylesheet at
   // the foot of this file, from the size of the app and two numbers that
   // have nothing to do with it: the shape of the episode and how tall
@@ -585,13 +578,9 @@
             ? shown.length + 1
             : 0,
   );
-  // What the window lies over. A window may be drawn anywhere, so looking
-  // again at material that was searched is allowed, it only asks first and
-  // takes the clips it finds there with it.
-  const covering = $derived(coverage.searched.some((w) => w.to > from && w.from < to));
-  const inWindow = $derived(
-    clips.filter((c) => !c.rejected && c.end > from && c.start < to).length,
-  );
+  // Whether any part of the episode is still to be searched. New takes
+  // the next one, and when there is none, it has nothing to do.
+  const roomLeft = $derived(coverage.free.some((w) => w.to - w.from > 0.5));
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
   const marks = $derived(
@@ -655,22 +644,10 @@
     keepWindow();
   }
 
-  // The window the workspace opens with: the one this episode had a moment
-  // ago if it still fits, otherwise wherever a window goes by itself.
+  // The window the workspace opens with: the next one a search would
+  // read. Nobody chooses it: it is the next part nobody has looked at, as
+  // long as the episode's windows are, see engine/suggest.go.
   function openWindow() {
-    const kept = chosen.of(path, duration);
-    // A window that has been searched all through since is not opened on
-    // again: the search it was drawn for ended while the workspace was not
-    // open, on Activity say, and nothing moved it on then. It lay over the
-    // clips just found and hid their marks.
-    const searchedThrough =
-      !!kept && !busy && coverage.searched.some((w) => w.from <= kept.from + 0.5 && w.to >= kept.to - 0.5);
-    if (kept && !searchedThrough) {
-      from = kept.from;
-      to = kept.to;
-      keepWindow();
-      return;
-    }
     moveWindowOn();
   }
 
@@ -1410,40 +1387,8 @@
     saveSearch();
   }
 
-  // Clips for a window that already has some are asked for again, which
-  // replaces what is there. That is not something to do by accident.
-  let confirmReplace = $state(false);
-
-  // Removing what the window covers: the clips in it go and the
-  // model may read it again. Also not something to do by accident.
-  let removingSearch = $state<{ from: number; to: number } | null>(null);
-
-  async function removeRange(span: { from: number; to: number }, thenSearch: boolean) {
-    removingSearch = null;
-    confirmReplace = false;
-    problem = "";
-    try {
-      await api.removeSearch(path, span.from, span.to);
-      removed = null;
-      await load();
-      if (!clips.some((c) => c.key === selected)) selected = "";
-      await refreshCoverage();
-      onchange();
-      // A search of its own follows when the window was given back in
-      // order to look at it again. The window stays where it is then.
-      if (thenSearch) await findClips(true);
-      else openWindow();
-    } catch (err) {
-      problem = errorText(err);
-    }
-  }
-
   function newClips() {
-    if (covering) {
-      confirmReplace = true;
-      return;
-    }
-    findClips(false);
+    if (roomLeft) findClips(false);
   }
 
   // A click shows at once: the list opens its rows and the head says
@@ -1820,25 +1765,15 @@
   <RangeWindow
     {duration}
     covered={shownHeard}
-    bind:from
-    bind:to
+    from={stopped && !busy ? stopped.from : from}
+    to={stopped && !busy ? stopped.to : to}
+    shown={busy || !!stopped}
     {marks}
     {selected}
     onmark={select}
     playhead={time}
     onseek={seekTo}
-    searched={coverage.searched}
-    onremove={(span) => (removingSearch = span)}
     locked={busy}
-    least={leastLong}
-    leastSays={target > 0 ? `room for ${target} clips of ${min} s` : `room for a clip of ${min} s`}
-    most={reachAnywhere}
-    reachSays={roomView?.by === "budget"
-      ? "all the budget pays for"
-      : roomView?.by === "memory"
-        ? "all this computer's memory holds"
-        : "all the model reads at once"}
-    onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
     transcribing={isTranscribing}
     holding={stoppedAt !== null}
   />
@@ -1853,45 +1788,6 @@
 <section
   style="--ar: {ratio}; --above: {aboveH > 0 ? `calc(${Math.ceil(aboveH)}px + var(--gap))` : '0px'}"
 >
-  {#if confirmReplace}
-    <Confirm
-      title="Look at {clock(from)} to {clock(to)} again?"
-      oncancel={() => (confirmReplace = false)}
-    >
-      <p>
-        Part of this window has been searched already. The
-        {inWindow}
-        {inWindow === 1 ? "clip" : "clips"} in it are removed first, with every trim, crop and
-        caption place you gave them, and the model reads the window as if for the first time.
-        Clips outside it stay as they are, and clips you have rendered stay as files on disk.
-      </p>
-      {#snippet actions()}
-        <button onclick={() => (confirmReplace = false)}>Cancel</button>
-        <button class="danger" onclick={() => removeRange({ from, to }, true)}>Look again</button>
-      {/snippet}
-    </Confirm>
-  {/if}
-
-  {#if removingSearch}
-    {@const span = removingSearch}
-    <Confirm
-      title="Remove the clips in {clock(span.from)} to {clock(span.to)}?"
-      oncancel={() => (removingSearch = null)}
-    >
-      <p>
-        The {inWindow}
-        {inWindow === 1 ? "clip" : "clips"} in this part leave the list, with every trim, crop
-        and caption place you gave them. Clips you have rendered stay as files on disk. Afterwards
-        the part is free again, and the model will read it as if for the first time. What was
-        searched outside it stays searched.
-      </p>
-      {#snippet actions()}
-        <button onclick={() => (removingSearch = null)}>Cancel</button>
-        <button class="danger" onclick={() => removeRange(span, false)}>Remove</button>
-      {/snippet}
-    </Confirm>
-  {/if}
-
   <!-- Everything that stands above the workspace, together, so its height
        is one number the layout can take off the app. It is not there at
        all most of the time, and an empty row would still cost a space. -->
@@ -2267,7 +2163,6 @@
               onclick={action.run}
               disabled={action.off}
               title={`${action.title}${busy && leftOfWork ? `, ${leftOfWork}` : ""}`}
-              aria-haspopup={action.label === "New" && covering ? "dialog" : undefined}
             >
               <!-- A search says how it is going in the row its next clip
                    will appear in, where it can say what it is doing as

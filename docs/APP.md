@@ -271,9 +271,7 @@ error line above the workspace, and neither changes because the app was
 resized. So dragging the edge of the app costs no JavaScript at all and the
 workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
-nothing is laid out from the answer. The window chosen on the range picker stays with the episode
-while the app runs, so leaving the workspace and coming back does not throw
-it away.
+nothing is laid out from the answer.
 
 Two things are called what they are, here and everywhere else. The slim strip
 under the video preview, the whole episode at a glance, is the **range
@@ -357,7 +355,7 @@ place.
   edge it moves. A head that carried both is how it came to say
   **Transcribing** over a list of clips.
 - **New works whether the window is transcribed or not.** Pressed before
-  the episode has been heard to the end of the chosen window, the search
+  the episode has been heard to the end of the window, the search
   hears it first: the first row of the clip list says Waiting for the
   transcript with the window, the window is locked, and the search finds
   the moment the episode is heard to the window's edge. The transcription is the first step of the search as far as
@@ -405,7 +403,7 @@ place.
   **New clips** holds how many clips to find and how long they may be, and
   never more than a window can hold: **Target** and **Shortest** go no
   higher than fits, one clip after another at the shortest length, in the
-  longest window that can be drawn anywhere on the episode. A number typed
+  longest window the model can read anywhere on the episode. A number typed
   past that is taken back to it, and its `title` says what the most is.
   Target is how many clips the model looks for, not how many it must
   give: the prompt asks for up to that many and says fewer strong clips
@@ -642,8 +640,7 @@ place.
       new one does. The rule is `firstSearch` in
       `cmd/framefairy-app/search.go`, and the path tests follow it.
     - **The target follows the window.** Target, left empty, shows in
-      grey how many clips the window drawn suggests, and it changes as the
-      window is dragged: 6 for half an hour of clips of 20 to 30 seconds,
+      grey how many clips the next window suggests: 6 for half an hour of clips of 20 to 30 seconds,
       one for every twelve clip lengths, and other windows in proportion
       to the square root of their length, 3 for six or ten minutes, 8 for
       an hour. A number typed there is kept, for every episode, until the
@@ -746,15 +743,11 @@ place.
       after them. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed.
-    - **New**, above the list, finds clips in the window chosen on the
-      track, and says so while it looks. The clips it finds join the ones
-      already there. Choosing a window that was searched before and asking
-      again replaces its clips and everything done to them, so it asks
-      first. When a search is done the window moves on to the next part
-      nobody has searched, so it never lies over the marks of the clips it
-      just found, and the same when the search ended while the workspace
-      was not open, on Activity say: a window searched all through is not
-      opened on again.
+    - **New**, above the list, finds clips in the next part of the
+      episode nobody has searched, as long as the episode's windows are,
+      and says so while it looks. The clips it finds join the ones already
+      there. Nobody chooses the part: it is the app's to decide. When every
+      part has been searched New is off, and says so in its title.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
       can, saying **Removed** and offering **Put it back**. Nothing above or
@@ -762,89 +755,36 @@ place.
       over it. The clip stays in the plan with everything done to it, and a
       render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
-  preview and exactly as wide as it. It is where the window to search is
-  chosen, and it shows what has been searched, where the clips are, how far
-  the transcript has come and where the playhead stands.
-    - Drag across it to choose the window to search, or drag the window or
-      its edges. Long episodes open with the first 30 minutes chosen. The
-      window is a box on all four sides, placed in whole pixels, so every
-      edge of it is drawn the same. The border of the box is the edge, and
-      there is nothing drawn beside it: the room to take hold of an edge is
-      there but not seen, and the whole box brightens when an edge is under
-      the pointer or holds the keyboard focus.
-    - **Edges land on a round step**, the smallest one that is still about
-      eight pixels wide: ten seconds for a short episode, five minutes for a
-      four hour one. A wall wins over the step, so a window that runs into
-      a searched one ends exactly at it. While a window is drawn or moved
-      it says what it is, in a pill over the track.
-    - **A window is what one search can do.** It is sent to the model in
-      one request and never split behind anybody's back, so it reaches no
-      further than the model reads at once, and no shorter than the clips
-      asked for need at their shortest. Both are walls: an edge stops
-      exactly there, the border of the window flashes twice in the red of
-      a warning the moment it runs in, once for each time and not for as
-      long as the hand keeps pulling, and the pill says by what, *all the model reads at
-      once*, *all this computer's memory holds*, *all the budget pays for* or
-      *room for 12 clips of 20 s*, which only a target typed can say. How
-      far the model reads is the engine's to say, from the model chosen in
-      the settings, and the range picker adds up the lines a window covers
-      as it is dragged, see [ENGINE.md](ENGINE.md#how-much-one-search-can-read).
-      The window has one longest length for the whole episode, the length
-      that fits wherever it is drawn, so a window that fits somewhere fits
-      everywhere and is never held back as it is moved. Speech is denser in
-      some places than in others, and what is not transcribed yet is
-      weighed with room to spare, so the longest window that fits changes
-      along the episode, and a window that fitted at the start and not at
-      the end at the same length was a limit nobody could see a reason
-      for. The pill is over everything on the track while it is there. When the clips ask for more than the window
-      has, the window grows to hold them, from its end.
-    - While clips are being found for it, the window cannot be moved and a
-      soft light passes through it every couple of seconds, which is the
-      track saying work is in hand. How far the search has come is on the
-      line under the head of the clip list, so the window only has to say
-      that something is running.
-    - A window drawn over a part that was searched already is a window
-      onto what that part would be without it: the plain track, as it
-      looks where nobody has looked yet, and the clips inside it are not
-      drawn. So what the trash can in its corner does is plain before it is
-      pressed. The trash can waits until the window is under the pointer,
-      and the times are drawn over everything, so nothing laid on the track
-      ever hides where you are.
-    - A part that has been searched is marked. **The window may be drawn
-      anywhere**, over a mark, part of one or none at all: the window is the
-      window you mean, and what happens to it is decided by the button you
-      press. The model still never gets the same material twice by
-      accident, because a window that lies over a mark says so before
-      anything is searched.
-    - **Looking again.** **New** over material that was searched asks
-      first. It names the window and how many clips are in it, and on Look
-      again those clips are removed and the model reads the window as if
-      for the first time. Clips outside the window stay as they are.
-    - **Removing what the window covers.** A window that lies over a mark
-      wears a trash can in its top right corner, just outside it when the
-      window is too narrow to hold it. It asks first, because the clips in
-      the window leave the list along with every trim, crop and caption
-      place. Clips already rendered stay as files on disk, and the caption
-      files of the clips are moved aside rather than deleted. Afterwards
-      that part is free again, even when it is the middle of a longer
-      search: the plan keeps the rest of its window and notes the part it
-      gave back.
+  preview and exactly as wide as it. It shows where the clips are and
+  where the playhead stands, and while clips are being found, the part
+  being searched.
+    - **There is no window at rest.** Which part of the episode a search
+      reads is the app's to decide, see `engine/suggest.go`, and what has
+      been searched or transcribed so far is the engine's to know, so none
+      of it is drawn. The window is drawn only while its clips are found,
+      or while its search stands stopped with Continue, and it goes when
+      the search is done. Until then the range picker had a window at rest
+      that could be drawn, dragged and resized, over searched parts that
+      were shaded, with a trash can that gave a searched part back. Tim
+      found it a leftover that got in the way: after a search of the whole
+      of a short episode the window lay over all of it and hid every clip
+      just found. A clip is removed from its row in the list.
+    - While clips are being found for it, a soft light passes through the
+      window every couple of seconds, which is the track saying work is in
+      hand. How far the search has come is on the line under the head of
+      the clip list. The part of the episode not yet transcribed is darker,
+      with a line at the edge where the transcript has got to, and a light
+      passing over it while the transcription runs. A press on the window
+      is a press on the track.
     - A mark for every clip runs across the middle of the track, green once
       rendered, and the chosen clip is a frame round the wash, the way the
       clip timeline draws it. Click a mark to select that clip.
-    - A click without dragging moves the player there, wherever it lands,
-      marked or not. A press that wobbles a few pixels is still a click, so
-      nothing is drawn by accident.
-    - Double-click it for the whole episode.
-    - The part not yet transcribed is darker, with a line at the edge where
-      the transcript has got to, and a light passing over it while the
-      transcription runs.
-    - The window is locked while clips are being found.
+    - A press anywhere else takes hold of the playhead, see above.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
   tall as the video preview and the range picker need. If the transcript has
-  not reached the end of the chosen window yet, a search waits for it and
-  starts by itself.
+  not reached the end of the window yet, a search waits for it and starts by
+  itself.
 - **One mark explains one thing, where that thing is.** The video preview,
   the range picker and the clip timeline each carry their own info mark in
   their top right corner, and a mark only appears while the pointer is on

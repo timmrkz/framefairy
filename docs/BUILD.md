@@ -145,7 +145,7 @@ framing spends nearly all its time, so the detector's bookkeeping made every
 test that frames a clip six times slower. Those cover
 the rules the app follows by itself, in `frontend/src/lib/flow.ts`: that a
 new episode transcribes itself and that the first clips are found as soon as
-the transcript covers the chosen window. Both have broken before, so they
+the transcript covers the window. Both have broken before, so they
 are written as plain functions with tests beside them. It all needs no
 model, no network and no API key. Speech comes from a fake recogniser and
 planning from a fake llama-server, both in `engine/project_test.go`. The

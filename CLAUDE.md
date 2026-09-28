@@ -147,7 +147,7 @@ messages, pull request text, code comments and chat replies.
 - **One name per thing.** The area the episode plays in is the **video
   preview**, never the picture or the player. The slim strip under it, the
   whole episode at a glance, is the **range picker**, and the part of the
-  episode chosen on it is the **window**, never a stretch. In the
+  episode a search reads is the **window**, never a stretch. In the
   interface and in the code comments, where the app's own window is meant,
   it is the app. The waveform below the workspace, the episode up close,
   is the **clip timeline**. The key is

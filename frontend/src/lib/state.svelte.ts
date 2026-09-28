@@ -132,27 +132,3 @@ function read(): boolean {
 }
 
 export const shell = new Shell();
-
-// The window chosen on the range picker, for as long as the app runs.
-// Going to the activity page and coming back is no reason to lose it, and
-// neither is looking at another episode in between.
-class Chosen {
-  windows = $state<Record<string, { from: number; to: number }>>({});
-
-  keep(path: string, from: number, to: number) {
-    this.windows[path] = { from, to };
-  }
-
-  // Forgets an episode that was removed.
-  forget(path: string) {
-    delete this.windows[path];
-  }
-
-  of(path: string, duration: number): { from: number; to: number } | null {
-    const w = this.windows[path];
-    if (!w || w.to <= w.from || w.to > duration + 0.5) return null;
-    return w;
-  }
-}
-
-export const chosen = new Chosen();
