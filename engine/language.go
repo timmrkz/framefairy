@@ -95,8 +95,9 @@ type Shape struct {
 // judgedContext is the context a model is judged at when a machine is
 // asked whether it can hold it. 65536 tokens is what contextFor gives a
 // search of up to about an hour and a half of episode, which covers the
-// first search, the first half hour taken whole up to 45 minutes, with a
-// lot to spare. A search longer than that asks for more.
+// first window of any episode up to many hours long, half an hour for
+// four hours, with a lot to spare. A search longer than that asks for
+// more.
 const judgedContext = 65536
 
 // windowSpare is how many cells llama.cpp keeps beyond the window in a

@@ -570,11 +570,6 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	return added, err
 }
 
-// firstLook is where every episode's first window ends at the latest, in
-// seconds, see firstWindowEnd. The workspace's own is firstLook in
-// Episode.svelte.
-const firstLook = 30 * 60
-
 // RemoveEpisode takes an episode out of the library. With deleteWork, it
 // also deletes everything made for it, so adding it again starts from
 // nothing. The episode file itself always stays.
@@ -1154,11 +1149,15 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 // SetSearch keeps how many clips a search looks for and how long they may
 // be. They are set in the workspace, where the episode they are about is,
 // and kept for the next episode as well, because a person who wants short
-// clips wants them everywhere. The numbers are held to the same range the
-// controls offer, because what arrives here is not to be trusted.
-func (s *FrameFairy) SetSearch(count int, min, max float64) error {
+// clips wants them everywhere. A target of 0 follows the window. The
+// numbers are held to the same range the controls offer, because what
+// arrives here is not to be trusted.
+func (s *FrameFairy) SetSearch(target int, min, max float64) error {
 	return s.store.UpdateSettings(func(set *Settings) {
-		set.Count = int(hold(float64(count), 1, 30))
+		set.Target = 0
+		if target > 0 {
+			set.Target = int(hold(float64(target), 1, 30))
+		}
 		set.Min = hold(min, 5, 180)
 		set.Max = hold(max, 5, 180)
 		if set.Min > set.Max {

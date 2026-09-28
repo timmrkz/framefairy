@@ -287,7 +287,7 @@ place.
   A search is one job on the Go side, see [JOBS.md](JOBS.md): it hears the
   episode from where the transcript ends to the end of its window, stops
   exactly on its edge, and then finds. Adding a video asks for its first
-  search, of the first half hour, so the Go side starts it and the
+  search, of its first window, so the Go side starts it and the
   workspace only shows it. Nothing carries the transcription on through
   the rest of the episode afterwards. So there is nothing to control about
   it but the search: **New** starts it and **Cancel** stops it, and what
@@ -605,8 +605,16 @@ place.
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the Go side asks for its first search, of the first
-      half hour or the whole of a shorter episode, and no longer than the
+      of the equal windows the episode is cut into, and no longer than the
       model can read at once, and the range picker goes to that window.
+      **The windows grow with the episode**, as the square root of its
+      length, so a short episode shows its first clips soon and a long one
+      is not cut into dozens: half an hour makes three windows of 10
+      minutes, an hour four of 15, two hours six of 20 and four hours
+      eight of 30. None is shorter than 10 minutes, so a video of 15
+      minutes is one window, and the windows are equal, so no scrap is
+      left at the end. When the window moves on by itself, after a search,
+      it takes the next one. See `engine/suggest.go`.
       The search hears the episode to the end of the window and then
       finds. Until it finds, the first row of the clip list says Waiting
       for the transcript, and the window is locked for as long as the
@@ -627,6 +635,20 @@ place.
       the work folder makes the episode new, and then it starts over as a
       new one does. The rule is `firstSearch` in
       `cmd/framefairy-app/search.go`, and the path tests follow it.
+    - **The target follows the window.** Target, left empty, shows in
+      grey how many clips the window drawn suggests, and it changes as the
+      window is dragged: 6 for half an hour of clips of 20 to 30 seconds,
+      one for every twelve clip lengths, and other windows in proportion
+      to the square root of their length, 3 for six or ten minutes, 8 for
+      an hour. A number typed there is kept, for every episode, until the
+      field is cleared, and then it follows the window again. Twelve
+      because the model, asked for 8 in half an hour, gave 6: it gives
+      fewer when fewer moments are strong enough, and asking for more only
+      asks it to fill places with weaker ones. The square root because in
+      proportion to the length, six minutes were asked for one clip, and a
+      short window is still worth a choice. The local model thinks in
+      proportion to the window, see [ENGINE.md](ENGINE.md), so a smaller
+      window is also found sooner.
     - **What a search is doing is in the row its next clip appears in.**
       The first of the rows still to come wears the beam and the fill and
       says two things: Waiting for the transcript with the window it is
@@ -757,7 +779,7 @@ place.
       a warning the moment it runs in, once for each time and not for as
       long as the hand keeps pulling, and the pill says by what, *all the model reads at
       once*, *all this computer's memory holds*, *all the budget pays for* or
-      *room for 12 clips of 20 s*. How
+      *room for 12 clips of 20 s*, which only a target typed can say. How
       far the model reads is the engine's to say, from the model chosen in
       the settings, and the range picker adds up the lines a window covers
       as it is dragged, see [ENGINE.md](ENGINE.md#how-much-one-search-can-read).

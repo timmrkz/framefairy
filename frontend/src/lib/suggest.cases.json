@@ -1,0 +1,35 @@
+{
+  "windows": [
+    { "duration": 300, "window": 300 },
+    { "duration": 600, "window": 600 },
+    { "duration": 900, "window": 900 },
+    { "duration": 1200, "window": 600 },
+    { "duration": 1500, "window": 750 },
+    { "duration": 1800, "window": 600 },
+    { "duration": 2700, "window": 900 },
+    { "duration": 3600, "window": 900 },
+    { "duration": 5400, "window": 1080 },
+    { "duration": 7200, "window": 1200 },
+    { "duration": 14400, "window": 1800 }
+  ],
+  "counts": [
+    { "window": 60, "least": 20, "most": 30, "count": 1 },
+    { "window": 300, "least": 20, "most": 30, "count": 2 },
+    { "window": 350, "least": 20, "most": 30, "count": 3 },
+    { "window": 600, "least": 20, "most": 30, "count": 3 },
+    { "window": 900, "least": 20, "most": 30, "count": 4 },
+    { "window": 1200, "least": 20, "most": 30, "count": 5 },
+    { "window": 1800, "least": 20, "most": 30, "count": 6 },
+    { "window": 3600, "least": 20, "most": 30, "count": 8 },
+    { "window": 1800, "least": 45, "most": 60, "count": 3 }
+  ],
+  "thinks": [
+    { "window": 60, "think": 512 },
+    { "window": 600, "think": 683 },
+    { "window": 900, "think": 1024 },
+    { "window": 1200, "think": 1365 },
+    { "window": 1800, "think": 2048 },
+    { "window": 3600, "think": 4096 },
+    { "window": 14400, "think": 4096 }
+  ]
+}
