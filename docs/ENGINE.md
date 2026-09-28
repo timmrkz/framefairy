@@ -261,7 +261,16 @@ tokens of thought the second ask took 20 to 26 s, most of it thought, for
 a question the numbers in it already answer.
 
 Whichever of the two is nearer the length becomes the clip, so a clip is
-never lost, and one that ran into another clip keeps its first form.
+never lost, and one that ran into another clip keeps its first form. An
+answer counts for a clip only when it carries the clip's slug, or stands
+in its place under a slug no other clip has, for a model that renamed it.
+Asked about the mirror story, Gemma once gave the umbrella story back,
+the first clip of its answer. The engine took it for the mirrors by its
+place, found it was the umbrella story again, and kept the mirrors at
+43 s without a word. Now a clip the answer leaves out, or gives another
+clip in place of, is named in the log and asked for once more, alone,
+with the request ending in `Give only "…", no other clip.` so the model
+does not read the same question twice. After that it stays as it was.
 Answering without thinking, the model sometimes gives a clip back
 unchanged. Such a clip stays whole, flagged in the log, for a hand to trim
 in the app. An automatic cut was tried and taken out again: the engine
@@ -276,8 +285,9 @@ clip opens and where it lands, what it leaves out, and its length. The
 first ask thinks half the budget and the second the other half, so it
 thinks no longer in all. An edit is taken unless it runs further off the
 length. The clips appear once the second answer is in, not one by one. The
-answer to the second ask is saved in the reply file as `fit`, so a search
-that reuses the reply is fitted the same way without asking. The second
+answer to the second ask is saved in the reply file as `fit`, and the one
+to asking once more as `refit`, so a search that reuses the reply is
+fitted the same way without asking. The second
 ask is not recorded for training. What the user does with the fitted clip
 is.
 

@@ -397,10 +397,16 @@ place.
   what is happening is in the info mark at the head.
 - **Settings column:** what the model looks for and how the captions look.
   **New clips** holds how many clips to find and how long they may be, and
-  never more than a window can hold: **Clips** and **Shortest** go no
+  never more than a window can hold: **Target** and **Shortest** go no
   higher than fits, one clip after another at the shortest length, in the
   longest window that can be drawn anywhere on the episode. A number typed
   past that is taken back to it, and its `title` says what the most is.
+  Target is how many clips the model looks for, not how many it must
+  give: the prompt asks for up to that many and says fewer strong clips
+  beat padding, so an episode with six strong moments gives six when
+  eight were the target. Its `title` says so. It was called Clips, which
+  read as a promise, and asking the model once more for the ones missing
+  was turned down: two short of eight is a judgement, not a fault.
   **Captions** holds the face, the size and the colours for every clip of
   the episode, and the height the captions sit at, which is kept for every
   episode. **Text** is the colour the words are written in, **Box** the
@@ -680,14 +686,14 @@ place.
       spoken, which is the order of the range picker and the clip
       timeline, so a new clip lands where it belongs in the episode rather
       than on top.
-    - **What a search was asked for is held while it runs.** Clips,
+    - **What a search was asked for is held while it runs.** Target,
       Shortest and Longest go to the model with the prompt, so they are
-      locked from New until the search has run, and dimmed. Changing Clips
+      locked from New until the search has run, and dimmed. Changing Target
       used to change the rows still to come while the model looked for the
       number it had been given.
     - **An empty list is never empty.** With nothing in the list and no
       search on its way, the rows New will fill stand there as many as
-      Clips says, following it as it changes, and still, because nothing
+      Target says, following it as it changes, and still, because nothing
       is filling them yet. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
     - **A search that stopped before it was done says so** in the row its

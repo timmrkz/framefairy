@@ -1879,7 +1879,7 @@
             </span>
           </div>
           <label class="setting">
-            <span>Clips</span>
+            <span>Target</span>
             <span class="field"
               ><input
                 class="num"
@@ -1887,8 +1887,8 @@
                 min="1"
                 max={clipsAtMost}
                 title={comingNow
-                  ? "The search on its way asks for this many. Change it for the next one"
-                  : `At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                  ? "The search on its way looks for this many. Change it for the next one"
+                  : `How many clips the model looks for. It gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
                 bind:value={count}
                 onchange={keepCount}
