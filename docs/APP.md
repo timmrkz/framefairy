@@ -240,7 +240,12 @@ folder goes.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
-the view by hand, and the view stays where it was put.
+the view by hand, and the view stays where it was put. **The playhead is
+dragged the same way on both**: a press anywhere on the track or on the
+playhead's head takes hold of it, and the video preview follows the hand,
+one seek a frame, until it lets go. The range picker only went there once
+the hand let go, and Tim asked for it to behave like the clip timeline. It
+is one function, `scrub` in `frontend/src/lib/scrub.ts`, used by both.
 
 The **crosshair** in the row under the timeline goes to the playhead, always,
 clip or no clip, and puts it in the middle of the view, because the reason to

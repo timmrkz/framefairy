@@ -8,6 +8,7 @@
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
+  import { scrub as scrubPlayhead } from "../lib/scrub";
 
   let {
     duration,
@@ -208,6 +209,17 @@
     return Math.max(0, Math.min(t, duration));
   }
 
+  // Dragging the playhead, the same way as on the clip timeline, see
+  // lib/scrub.ts. A press anywhere on the track takes hold of it, and so
+  // does its head, and the video preview follows the hand.
+  let scrubbing = $state(false);
+
+  function scrub(event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    scrubPlayhead(event, timeAt, (t) => onseek?.(t), (held) => (scrubbing = held));
+  }
+
   function timeAt(clientX: number): number {
     const box = track.getBoundingClientRect();
     const share = Math.max(0, Math.min(1, (clientX - box.left) / box.width));
@@ -342,8 +354,9 @@
 <div
   class="track asks"
   class:locked
+  class:scrubbing
   bind:this={track}
-  onpointerdown={(e) => drag("new", e)}
+  onpointerdown={scrub}
   ondblclick={reset}
   aria-label="The range picker"
 >
@@ -531,7 +544,13 @@
     ></div>
 </div>
 {#if playhead >= 0}
-  <div class="playhead" style="left: {at(playhead)}px"></div>
+  <div class="playhead" class:scrubbing style="left: {at(playhead)}px">
+    <!-- The head is its own element, the way it is on the clip timeline,
+         because it stands above the track and a head the hand goes
+         straight through is not a handle. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="head" onpointerdown={scrub} title="Drag to move the playhead"></div>
+  </div>
 {/if}
 </div>
 
@@ -546,8 +565,12 @@
     border: 1px solid var(--line);
     border-radius: var(--radius-m);
     overflow: hidden;
-    cursor: crosshair;
+    cursor: pointer;
     touch-action: none;
+  }
+
+  .track.scrubbing {
+    cursor: grabbing;
   }
 
   .track.locked,
@@ -883,8 +906,7 @@
     z-index: 6;
   }
 
-  .playhead::before {
-    content: "";
+  .head {
     position: absolute;
     top: 0;
     left: -4px;
@@ -892,6 +914,19 @@
     height: 9px;
     border-radius: 2px 2px 1px 1px;
     background: var(--accent-hi);
+    pointer-events: auto;
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  /* Held, the playhead goes white, as it does on the clip timeline. */
+  .playhead.scrubbing,
+  .playhead.scrubbing .head {
+    background: #fff;
+  }
+
+  .playhead.scrubbing .head {
+    cursor: grabbing;
   }
 
   /* Room to take hold of an edge, and nothing to look at. What you see is

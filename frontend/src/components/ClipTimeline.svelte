@@ -30,6 +30,7 @@
     type CaptionCue,
   } from "../lib/api";
   import { draftCaptions, inClip, inEpisode, insideClip, type CaptionDraft } from "../lib/flow";
+  import { scrub as scrubPlayhead } from "../lib/scrub";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
 
@@ -205,10 +206,12 @@
     return view.from + ((clientX - box.left) / box.width) * span;
   }
 
-  // Dragging the playhead. The video preview follows the finger, which is
-  // the quickest way to find a moment. One seek per frame is enough, and it
-  // keeps a four hour episode moving.
+  // Dragging the playhead, the same way as on the range picker, see
+  // lib/scrub.ts.
   let scrubbing = $state(false);
+
+  // One seek a frame while an edge is dragged, for the playhead that goes
+  // with it, the same pace the playhead itself is dragged at.
   let wanted = 0;
   let queued = 0;
 
@@ -230,23 +233,7 @@
       drawCut(event);
       return;
     }
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    scrubbing = true;
-    seekSoon(timeAt(event.clientX));
-    const move = (e: PointerEvent) => seekSoon(timeAt(e.clientX));
-    const up = () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      scrubbing = false;
-      cancelAnimationFrame(queued);
-      queued = 0;
-      onseek(wanted);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
+    scrubPlayhead(event, timeAt, onseek, (held) => (scrubbing = held));
   }
 
   // Pieces as the render will play them, with the edges of a drag applied.
