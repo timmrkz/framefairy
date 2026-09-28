@@ -812,13 +812,25 @@ func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, er
 	if !s.store.Known(planPath) {
 		return nil, os.ErrNotExist
 	}
-	// The same overrides the render puts on top of the plan, so the picture
-	// shows what the file will hold.
 	return engine.ClipCaptionsView(planPath, clipID, s.captionOverrides(planPath))
 }
 
-// captionOverrides are what the render puts on top of a plan's caption
-// style, so the picture shows what the file will hold.
+// DraftCaptions gives the captions a clip would have with the pieces an
+// edge being dragged on the clip timeline draws, so the caption blocks
+// follow the hand. Nothing is saved.
+func (s *FrameFairy) DraftCaptions(path, planPath, clipID string, pieces [][2]float64) (*engine.CaptionsView, error) {
+	if !s.store.Known(path) || !s.store.Known(planPath) {
+		return nil, os.ErrNotExist
+	}
+	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	if err != nil {
+		return nil, err
+	}
+	return engine.DraftCaptionsView(planPath, clipID, pieces, t, s.captionOverrides(planPath))
+}
+
+// captionOverrides are the settings the render puts on top of a plan's
+// caption style, so the picture shows what the file will hold.
 func (s *FrameFairy) captionOverrides(planPath string) map[string]any {
 	set := s.store.Settings()
 	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
@@ -1000,6 +1012,31 @@ func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
 	words := t.WordsBetween(from-5, to+5)
 	for _, w := range words {
 		out.Words = append(out.Words, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
+	}
+	return out, nil
+}
+
+// WordStops returns the words spoken in a part the way a clip's captions
+// split them, see engine.WordStops. They are where an edge dragged with
+// shift stops on the clip timeline, the same words the arrow keys walk.
+func (s *FrameFairy) WordStops(path, planPath, clipID string, from, to float64) ([]engine.WordView, error) {
+	if !s.store.Known(path) || !s.store.Known(planPath) {
+		return nil, os.ErrNotExist
+	}
+	out := []engine.WordView{}
+	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	if errors.Is(err, engine.ErrNoTranscript) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	stops, err := engine.WordStops(planPath, clipID, t.WordsBetween(from-5, to+5), s.captionOverrides(planPath))
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range stops {
+		out = append(out, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
 	}
 	return out, nil
 }
@@ -1373,8 +1410,9 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 }
 
 // TrimClip moves the first and last edge of a clip and returns it as it is
-// now.
-func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, start, end float64) (ClipEntry, error) {
+// now. With toWords the edges land on the nearest words, without it they
+// stay exactly where the hand put them, a frame at a time.
+func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, start, end float64, toWords bool) (ClipEntry, error) {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
@@ -1384,7 +1422,7 @@ func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, st
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause)
+		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause, engine.Snap(toWords))
 	}); err != nil {
 		return ClipEntry{}, err
 	}

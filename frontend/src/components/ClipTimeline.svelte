@@ -12,8 +12,8 @@
 <script lang="ts">
   // The episode up close, always: the waveform and where the playhead
   // stands. With a clip selected it is that clip, with its pieces and the
-  // cuts between them, and either edge can be dragged to trim. Edges snap to
-  // words the way the render cuts them. Two fingers move along the episode
+  // cuts between them, and either edge can be dragged to trim. Edges land
+  // on the frame, and with shift on words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
   import { onMount } from "svelte";
   import {
@@ -63,6 +63,7 @@
     captionLook = null,
     oncaptiontime,
     oncaptiondraft,
+    onshape,
     thumbnails = [],
     onthumbnail,
     marks = [],
@@ -95,12 +96,13 @@
     // in the transcript and never in this one.
     lit?: Word[];
     onseek: (t: number) => void;
-    ontrim?: (start: number, end: number) => Promise<void>;
+    ontrim?: (start: number, end: number, toWords: boolean) => Promise<void>;
     // The cuts inside the clip: taking a part out, putting one back, and
     // moving the edges of one that is already there.
     // toWords says whether the engine should put the edges on the words
-    // around them. Alt held while dragging says no: the edges land on the
-    // frame they were let go on and stay there.
+    // around them. Without it the edges land on the frame they were let go
+    // on and stay there. Shift asks for words on an edge, and alt with
+    // shift on a cut being drawn, because there shift already draws.
     oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
     onjoincut?: (at: number) => Promise<void>;
     onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
@@ -129,6 +131,10 @@
     // the caption box in the video preview can follow it. Null once the
     // captions have come back with it saved.
     oncaptiondraft?: (draft: CaptionDraft | null) => void;
+    // The clip as a drag of an edge or a cut has it, its pieces and the
+    // captions the engine made for them, or null when no drag is shaping
+    // it. The video preview shows the same clip as the timeline on the way.
+    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[] } | null) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
     thumbnails?: number[];
@@ -168,6 +174,11 @@
   let width = $state(0);
   let view = $state({ from: 0, to: 1 });
   let words = $state<Word[]>([]);
+  // The same words the way the chosen clip's captions split them, see
+  // stops below. Asked for with the words, and again when the captions
+  // change, because a new size can hyphenate a word the old one did not.
+  let wordStops = $state<Word[]>([]);
+  let saidAt = { from: 0, to: 0 };
   let keepPause = $state(0.1);
   let peaks = $state<number[]>([]);
   let dragging = $state<null | "start" | "end">(null);
@@ -349,15 +360,16 @@
     const startX = event.clientX;
     let moved = false;
     // A cut lands on the frame, because a drag says where and growing it
-    // out to the words either side puts it somewhere else. Alt asks for
-    // words instead, and it is read on every move rather than at the
-    // press, so taking alt back part way through a drag goes back to
-    // frames and the block says so before the hand lets go.
-    let toWords = event.altKey;
+    // out to the words either side puts it somewhere else. Shift asks for
+    // words instead, the same as on a clip edge, and it is read on every
+    // move rather than at the press, so letting go of shift part way
+    // through a drag goes back to frames and the block says so before the
+    // hand lets go.
+    let toWords = event.shiftKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      toWords = e.altKey;
+      toWords = e.shiftKey;
       const t = Math.min(Math.max(timeAt(e.clientX), wall.least), wall.most);
       const from = side === "from" ? Math.min(t, held.to - leastCut) : held.from;
       const to = side === "to" ? Math.max(t, held.from + leastCut) : held.to;
@@ -549,10 +561,12 @@
       to: Math.min(outer.to, middle + spoken / 2),
     };
     const mine = ++latest;
+    saidAt = said;
     try {
       const [w, p] = await Promise.all([
         api.words(path, said.from, said.to),
         api.waveform(path, outer.from, outer.to, buckets),
+        askStops(),
       ]);
       if (mine !== latest) return;
       words = w.words ?? [];
@@ -566,6 +580,28 @@
       data = outer;
     }
   }
+
+  let stopsAsked = 0;
+  async function askStops() {
+    const mine = ++stopsAsked;
+    const c = clip;
+    if (!c) {
+      wordStops = [];
+      return;
+    }
+    try {
+      const got = await api.wordStops(path, c.plan, c.id, saidAt.from, saidAt.to);
+      if (mine === stopsAsked) wordStops = got ?? [];
+    } catch {
+      if (mine === stopsAsked) wordStops = [];
+    }
+  }
+  $effect(() => {
+    // Captions that came back changed may break a word somewhere else.
+    void captions;
+    void clipKey;
+    askStops();
+  });
 
   // Brings a moment into the view without changing how much of the episode
   // the view shows. How close the timeline stands is the hand's: a pinch
@@ -936,7 +972,9 @@
   });
 
   // An edge is dragged to trim. Clicking one without dragging puts the
-  // playhead exactly on it, which is how you start a clip over.
+  // playhead exactly on it, which is how you start a clip over. It lands
+  // on the frame, the same as the edge of a cut, and shift puts it on the
+  // nearest word instead. Shift is read on every move, like a cut's.
   function grab(edge: "start" | "end", event: PointerEvent) {
     if (!clip || locked || saving) return;
     event.preventDefault();
@@ -946,15 +984,27 @@
     const from = event.clientX;
     draft = { start, end };
     let moved = false;
+    let toWords = event.shiftKey;
+    let playAt = edge === "start" ? start : end;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) {
         moved = true;
         if (ontrim) dragging = edge;
       }
       if (!moved || !dragging) return;
+      toWords = e.shiftKey;
       const t = timeAt(e.clientX);
-      if (edge === "start") draft.start = Math.min(snapStart(words, t, keepPause), draft.end - 1);
-      else draft.end = Math.max(snapEnd(words, t, keepPause), draft.start + 1);
+      if (edge === "start") {
+        const at = toWords ? snapStart(stops, t, keepPause) : Math.max(0, onFrame(t));
+        draft.start = Math.min(at, draft.end - 1);
+      } else {
+        const at = toWords ? snapEnd(stops, t, keepPause) : onFrame(t);
+        draft.end = Math.max(at, draft.start + 1);
+      }
+      // The playhead goes with the edge, so the video preview shows the
+      // frame the clip now starts or ends on while the hand moves.
+      playAt = edgePlayhead(edge, toWords);
+      seekSoon(playAt);
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
@@ -972,8 +1022,12 @@
         // A clip whose edges have moved is not the clip the part was
         // taken out of, so there is nothing to put back any more.
         undone = null;
-        await ontrim?.(draft.start, draft.end);
-        onseek(draft.start);
+        // An edge on the line between the halves of a word lies inside the
+        // word the engine knows, which would snap it to the whole word, so
+        // it is sent as the frame it is on.
+        const between = (x: number) => words.some((w) => w.start < x - 0.001 && w.end > x + 0.001);
+        await ontrim?.(draft.start, draft.end, toWords && !between(draft.start) && !between(draft.end));
+        onseek(playAt);
       } finally {
         saving = false;
       }
@@ -981,6 +1035,30 @@
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  // Where the playhead stands while an edge is dragged. On frames it is the
+  // frame at the edge: the first frame of the clip, or its last, one frame
+  // before the end, because the end is where the clip is already over. On
+  // words it is inside the word the edge snapped to, a frame into the first
+  // word or a frame before the end of the last, so that word is always the
+  // one lit. The edge itself stands a pause away from the word, and a
+  // playhead put there lit the word only when the pause happened to be
+  // none, which is what looked random.
+  function edgePlayhead(edge: "start" | "end", toWords: boolean): number {
+    if (edge === "start") {
+      if (toWords) {
+        const word = stops.find((w) => w.start >= draft.start - 0.0005);
+        if (word && word.end <= draft.end) return intoWord(word, frame);
+      }
+      return draft.start;
+    }
+    if (toWords) {
+      let word: Word | undefined;
+      for (const w of stops) if (w.end <= draft.end + 0.0005) word = w;
+      if (word && word.start >= draft.start) return Math.max(word.end - frame, (word.start + word.end) / 2);
+    }
+    return Math.max(draft.end - frame, draft.start);
   }
 
   // The captions along the foot of the track. A caption appears when its
@@ -997,15 +1075,108 @@
   // they come back changed, so the block never jumps back to where it was
   // while the saved captions are on their way.
   let capHeld: CaptionCue[] | undefined;
-  const clipLength = $derived(segments.reduce((sum, p) => sum + p.end - p.start, 0));
+
+  // The captions while an edge of the clip or of a cut is dragged. What a
+  // drag reshapes, the engine captions afresh, and the blocks are drawn
+  // from its answer on the pieces as they are drawn, so a word the edge
+  // reaches has its caption under the hand and not when it lets go. What is
+  // happening is shown while it happens. After the hand lets go the draft
+  // stays until the captions of the saved clip come back, so the blocks do
+  // not jump back to where they were on the way. An edit that is refused
+  // leaves the pieces as they were, and then the draft is not what is
+  // there any more.
+  let shaped = $state<null | {
+    cues: CaptionCue[];
+    pieces: { start: number; end: number }[];
+    held: CaptionCue[];
+  }>(null);
+  const reshaping = $derived(!!dragging || saving || !!movingCut || !!drawnCut || cutSaving);
+  let shapeAsked = "";
+  let shapeWanted: [number, number][] | null = null;
+  let shapeBusy = false;
+
+  const samePieces = (a: { start: number; end: number }[], b: { start: number; end: number }[]) =>
+    a.length === b.length &&
+    a.every((p, i) => Math.abs(p.start - b[i].start) < 0.002 && Math.abs(p.end - b[i].end) < 0.002);
+
+  $effect(() => {
+    if (!clip || !reshaping || !path) return;
+    const list = drawnPieces.map((p) => [p.start, p.end] as [number, number]);
+    const key = JSON.stringify(list);
+    if (key === shapeAsked) return;
+    shapeAsked = key;
+    shapeWanted = list;
+    askShape();
+  });
+
+  // One question at a time, and always about where the hand is now: a
+  // drag moves faster than the answers come, and the ones in between are
+  // of pieces that are no longer drawn.
+  async function askShape() {
+    if (shapeBusy || !shapeWanted || !clip) return;
+    const list = shapeWanted;
+    const asked = clip;
+    const held = captions;
+    shapeWanted = null;
+    shapeBusy = true;
+    try {
+      const view = await api.draftClipCaptions(path, asked.plan, asked.id, list);
+      if (clip?.key === asked.key) {
+        shaped = {
+          cues: view?.captions ?? [],
+          pieces: list.map(([start, end]) => ({ start, end })),
+          held,
+        };
+      }
+    } catch {
+      // A draft is only a picture of the drag. Without it the blocks stay
+      // where the saved clip has them, and letting go says what is wrong.
+    } finally {
+      shapeBusy = false;
+      askShape();
+    }
+  }
+
+  $effect(() => {
+    if (shaped && !reshaping && (captions !== shaped.held || !samePieces(segments, shaped.pieces))) {
+      shaped = null;
+      shapeAsked = "";
+    }
+  });
+  // Another clip chosen is another clip's captions. The key and not the
+  // clip, because an edit hands back the same clip as a new object, and
+  // that must not let go of the draft while its captions are on their way.
+  const clipKey = $derived(clip?.key);
+  $effect(() => {
+    void clipKey;
+    shaped = null;
+    shapeAsked = "";
+  });
+
+  const shapedShown = $derived(!!shaped && (reshaping || captions === shaped.held));
+  $effect(() => {
+    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces } : null);
+  });
+  const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
+  const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);
+
+  // The words an edge stops at with shift: the words of the episode, each
+  // split the way the clip's captions split it, so a word the captions
+  // hyphenate or a correction that reads as two is two stops, the same
+  // words the arrow keys walk and the video preview lights. The engine
+  // splits them, from the clip's caption style, for the words around the
+  // clip too, so a half is a stop before the edge has reached the word.
+  const stops = $derived(clip && wordStops.length ? wordStops : words);
+  const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
 
   const captionBlocks = $derived.by(() => {
-    if (!clip || !captions?.length || !segments.length) return [];
-    return draftCaptions(captions, capDraft).map((c, i) => ({
+    if (!clip || !shownCues?.length || !cuePieces.length) return [];
+    const list = shapedShown ? shownCues : draftCaptions(shownCues, capDraft);
+    return list.map((c, i) => ({
       i,
-      c: captions[i],
-      from: inEpisode(segments, c.start),
-      to: inEpisode(segments, Math.min(c.end, clipLength)),
+      c: shownCues[i],
+      from: inEpisode(cuePieces, c.start),
+      to: inEpisode(cuePieces, Math.min(c.end, clipLength)),
     }));
   });
 
@@ -1035,7 +1206,7 @@
   // the video preview, where each word lights up in turn, and not again in
   // the pause after a word. Walking the words with shift and the arrow
   // keys pops both at once.
-  const spokenAt = $derived(clip && segments.length ? inClip(segments, time) : -1);
+  const spokenAt = $derived(clip && cuePieces.length ? inClip(cuePieces, time) : -1);
   function wordNow(c: CaptionCue): number {
     let k = -1;
     let n = 0;
@@ -1054,8 +1225,8 @@
   // moment read back through the episode can land a hair before it.
   function firstWordOf(c: CaptionCue): number | null {
     const word = c.lines?.[0]?.words?.[0];
-    if (!word || !segments.length) return null;
-    return inEpisode(segments, intoWord(word, frame));
+    if (!word || !cuePieces.length) return null;
+    return inEpisode(cuePieces, intoWord(word, frame));
   }
 
   $effect(() => {
@@ -1259,13 +1430,13 @@
         word, so the caption in the picture lights up the next one, and past the last word of a
         clip they carry on into the one beside it. Shift with the arrows up and down takes the
         next clip and starts it from the top. Drag
-        a clip edge to trim it. The words are in the picture, in the caption box, which is where
+        a clip edge to trim it, frame by frame, or with shift held from word to word. The words are in the picture, in the caption box, which is where
         they are read and where they are corrected. A hatched block inside a clip is
-        a part it leaves out. Drag either edge of one to change it, double-click one to put it
+        a part it leaves out. Drag either edge of one to change it, with shift for whole words, double-click one to put it
         back, and double-click again to take it out once more. Shift is the cutting hand: hold it
         and drag across the clip to take out the part you drag over, or hold it and double-click
-        to take one out where you click. Cuts land on the frame. Hold alt as well to land on whole
-        words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
+        to take one out where you click. Cuts land on the frame. Hold alt as well as shift to land
+        on whole words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
@@ -1415,7 +1586,7 @@
           {/key}
         {/each}
       </div>
-      {#if !locked && oncaptiontime}
+      {#if !locked && oncaptiontime && !shapedShown}
         {#each captionBlocks as b (b.i)}
           <div
             class="capedge start"
@@ -1848,7 +2019,12 @@
     width: 12px;
     margin-left: -6px;
     cursor: ew-resize;
-    z-index: 2;
+    /* Over the handles of the captions. The first caption is on screen
+       from the clip's first frame, so its handle stood on the clip's start
+       edge, and a hand that reached for the clip in the band of the
+       captions moved the caption instead. The clip edge is the one a hand
+       there means. */
+    z-index: 7;
   }
 
   /* The frame draws the clip's sides, so the edge only shows itself when

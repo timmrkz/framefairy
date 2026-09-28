@@ -623,6 +623,26 @@ at once, so the second the real one spends saving could not be seen at
 all, and the probe passed against broken code until the stub waited
 800 ms the way the engine does.
 
+## A drag reshapes everything drawn from it
+
+The same rule as a click, over the length of a drag. Dragging a clip edge
+moved the edge and the wash under the hand, and the caption blocks stayed
+where the saved clip had them until the hand let go. Every test was green,
+because every test looked at the end. Tim found it by looking at the
+middle.
+
+So when a drag changes a thing, list everything that is drawn from that
+thing, and make each one follow the draft, not the saved state. When what
+follows is the engine's to work out, like the captions of a clip, ask the
+engine on the way, one question at a time and always about where the hand
+is now, and keep the last answer until the saved state comes back, so
+nothing jumps as the hand lets go. `DraftCaptions` is the example.
+
+How to catch it: hold the mouse down with `page.mouse.down()`, move in
+steps, and read the thing after each step, before `page.mouse.up()`. A
+number that only changes after the up is the bug. Then read every frame
+across the up, the way the probe above does for a click.
+
 ## Work a click starts is built in front of the person
 
 Answering the click is not enough when the work takes seconds. Tim pressed

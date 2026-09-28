@@ -383,7 +383,32 @@ characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next
 caption appears, or until shortly after its last word when a pause follows.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
-estimated.
+estimated. A clip says a word, and captions it, when it holds more than a
+frame of the word's sound, `HoldsWord` in `engine/lines.go`. So dragging an
+edge back over a word brings its caption in at the word's last sound, the
+first of it the edge reaches, and a word an edge cuts into is shown from
+the clip's first frame. A word a cut parts is captioned once, in the piece
+that holds the most of it. It used to take the whole word inside the clip
+for a caption and the word's middle for the words a clip keeps, and a long
+word stayed uncaptioned for half its length while it was plainly heard.
+
+A word keeps its own time at the clip's first and last edge, even where
+that lies outside the clip, and is clamped only at a cut. The halves of a
+hyphenated word share its time by their letters, so clamped to what an
+edge left of it they moved with the edge, and "liebe" was lit while
+"grundschul" was still being said. `WordStops` in `engine/episode.go`
+splits words the same way for the clip timeline, so the halves are where
+an edge dragged with shift stops.
+
+The recogniser's word timings are moved onto the sound when a transcript
+is read, `SnapWords` in `engine/audio.go`. A word ends where its last
+sound does, when 120 ms or more of silence follow it before the
+recogniser's end. A silence with more of the word after it is not the
+end: the recogniser hears a compound, or words said as one, as one word,
+and "sweet-grundschulliebe" used to be cut off at the breath before
+"liebe", which then had no caption and was never lit. The raw timings are
+what is saved, so a transcript read again is snapped by the rule of the
+day.
 
 A corrected word may hold more than one word. The recogniser sometimes hears
 one word where two were said, so a correction like "Und da" for "Und" turns

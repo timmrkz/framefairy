@@ -528,6 +528,10 @@ export const api = {
   // written, or null until its job knows what it keeps.
   arrivingCaptions: (job: string, n: number) =>
     call<CaptionsView | null>("ArrivingCaptions", job, n),
+  // The captions a clip would have with the pieces being dragged on the
+  // clip timeline, so the caption blocks follow the hand. Nothing is saved.
+  draftClipCaptions: (path: string, plan: string, clip: string, pieces: [number, number][]) =>
+    call<CaptionsView>("DraftCaptions", path, plan, clip, pieces),
   fonts: () => call<CaptionFont[]>("Fonts"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
@@ -540,8 +544,14 @@ export const api = {
   still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
   words: (path: string, from: number, to: number) =>
     call<{ words: Word[] | null; keepPause: number }>("Words", path, from, to),
-  trimClip: (path: string, plan: string, clip: string, start: number, end: number) =>
-    call<ClipEntry>("TrimClip", path, plan, clip, start, end),
+  // toWords puts the edges on the nearest words. Without it they stay
+  // where the hand put them, a frame at a time, like the edges of a cut.
+  // The words of a part the way a clip's captions split them, halves of a
+  // hyphenated word and all. Where an edge dragged with shift stops.
+  wordStops: (path: string, plan: string, clip: string, from: number, to: number) =>
+    call<Word[] | null>("WordStops", path, plan, clip, from, to),
+  trimClip: (path: string, plan: string, clip: string, start: number, end: number, toWords: boolean) =>
+    call<ClipEntry>("TrimClip", path, plan, clip, start, end, toWords),
   // The cuts inside a clip: the parts it leaves out. Making one, moving
   // one and putting one back. The edges land on words, so what comes back
   // is what to draw, never what was asked for.

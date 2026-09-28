@@ -60,7 +60,7 @@ func TestAFailedEditLeavesThePlanAlone(t *testing.T) {
 	}{
 		{"a clip that is not there", func() error { return SetRejected(path, "99", true) }},
 		{"a reason nobody knows", func() error { return SetRejected(path, "01", true, "langweilig") }},
-		{"a clip under a second", func() error { return TrimClip(path, "01", 12, 12.2, tr, 0.1) }},
+		{"a clip under a second", func() error { return TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords) }},
 		{"a crop to the left of the frame", func() error { return SetCrop(path, "01", 10.5, -4) }},
 	}
 	for _, c := range failures {
@@ -100,7 +100,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 	}
 	steps := []func() error{
 		func() error { return SetRejected(path, "02", true) },
-		func() error { return TrimClip(path, "01", 10, 12.4, tr, 0.1) },
+		func() error { return TrimClip(path, "01", 10, 12.4, tr, 0.1, ToWords) },
 		func() error { return SetCrop(path, "01", 10.5, 200) },
 		func() error { return ResetCrop(path, "01", 10.5) },
 	}
@@ -124,6 +124,113 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 // The picture in the app draws the captions of the selected clip itself, so
 // it asks the engine for them, on the clip's own clock and already broken
 // into lines.
+// The captions drawn while an edge is dragged are the captions the clip
+// has once it is let go of. If the two differ, the blocks jump as the hand
+// lets go, which is the thing the draft is there to stop.
+func TestDraftCaptionsAreTheCaptionsTheEditLeaves(t *testing.T) {
+	path := editablePlanPath(t)
+	tr := editableTranscript()
+	for _, c := range []struct {
+		name       string
+		start, end float64
+		snap       Snap
+	}{
+		{"longer, to words", 10, 13.6, ToWords},
+		{"shorter, to frames", 10.24, 12.2, ToFrames},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := editablePlanPath(t)
+			// The timeline snaps the edges as it draws them, the same way.
+			start, end := c.start, c.end
+			if c.snap == ToWords {
+				start, end = SnapStart(tr.Words, start, 0.1), SnapEnd(tr.Words, end, 0.1)
+			}
+			draft, err := DraftCaptionsView(path, "01",
+				[][2]float64{{start, 11.1}, {11.9, end}}, tr, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := TrimClip(path, "01", c.start, c.end, tr, 0.1, c.snap); err != nil {
+				t.Fatal(err)
+			}
+			landed, err := ClipCaptionsView(path, "01", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(draft.Captions) != fmt.Sprint(landed.Captions) {
+				t.Errorf("drawn while dragged %+v\nafter %+v", draft.Captions, landed.Captions)
+			}
+		})
+	}
+	// Words the saved clip does not hold yet are in the draft.
+	draft, err := DraftCaptionsView(path, "01", [][2]float64{{10, 11.1}, {11.9, 13.6}}, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprint(draft.Captions), "vier") {
+		t.Errorf("the word the drag reached is not in %+v", draft.Captions)
+	}
+	before, _ := os.ReadFile(path)
+	for _, bad := range [][][2]float64{
+		nil,
+		{{11, 10}},
+		{{10, 12}, {11, 13}},
+		{{math.NaN(), 12}},
+		{{0, MaxClipSpan + 1}},
+	} {
+		if _, err := DraftCaptionsView(path, "01", bad, tr, nil); err == nil {
+			t.Errorf("pieces %v were accepted", bad)
+		}
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Error("a draft changed the plan")
+	}
+}
+
+// A word an edge cuts into is captioned exactly while it is said: while the
+// clip holds some of its sound. It used to need the whole word inside the
+// clip, so a word the clip said had no caption until the edge passed its
+// start.
+func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
+	tr := editableTranscript()
+	for _, c := range []struct {
+		name  string
+		start float64
+		said  bool
+	}{
+		// "eins" runs 10 to 10.5.
+		{"edge inside the word", 10.24, true},
+		{"edge at its last sound", 10.45, true},
+		{"edge past it", 10.49, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := editablePlanPath(t)
+			if err := TrimClip(path, "01", c.start, 13.1, tr, 0.1, ToFrames); err != nil {
+				t.Fatal(err)
+			}
+			view, err := ClipCaptionsView(path, "01", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(fmt.Sprint(view.Captions), "eins"); got != c.said {
+				t.Errorf("eins is captioned: %v, said: %v\n%+v", got, c.said, view.Captions)
+			}
+			// The caption shows from the clip's first frame, and the word in
+			// it keeps its own time, before that frame, so the parts of a
+			// hyphenated word stay where they are said wherever the edge is.
+			if c.said {
+				first := view.Captions[0]
+				if first.Start != 0 {
+					t.Errorf("the caption appears at %v, not at the clip's first frame", first.Start)
+				}
+				if got := first.Lines[0].Words[0].Start; math.Abs(got-(10-c.start)) > 0.002 {
+					t.Errorf("eins starts at %v on the clip's clock, want %v", got, 10-c.start)
+				}
+			}
+		})
+	}
+}
+
 func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	path := editablePlanPath(t)
 	view, err := ClipCaptionsView(path, "01", nil)
@@ -368,7 +475,7 @@ func FuzzPlanEdits(f *testing.F) {
 				_ = MoveCut(path, clip, int(script[i+1])%4,
 					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
-				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1)
+				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))
 			case 1:
 				_ = SetCaptionStyle(path, map[string]any{"size": float64(24 + int(script[i+2])%176)})
 			case 2:
@@ -790,11 +897,11 @@ func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
 	}
 	// A trim that leaves one outside hides it, and it comes back with the
 	// piece it was in.
-	must(TrimClip(path, "01", 10.5, 13.1, tr, 0.1))
+	must(TrimClip(path, "01", 10.5, 13.1, tr, 0.1, ToWords))
 	if got := thumbs(); len(got) != 1 || got[0] != 10.75 {
 		t.Fatalf("after the trim the thumbnails are %v", got)
 	}
-	must(TrimClip(path, "01", 10.0, 13.1, tr, 0.1))
+	must(TrimClip(path, "01", 10.0, 13.1, tr, 0.1, ToWords))
 	if got := thumbs(); len(got) != 2 {
 		t.Fatalf("after the trim back the thumbnails are %v", got)
 	}
@@ -833,6 +940,50 @@ func TestThumbnailsInAPlanAreChecked(t *testing.T) {
 	for k := 1; k < len(got); k++ {
 		if got[k] <= got[k-1] {
 			t.Fatalf("thumbnail %d is not after the one before: %v", k, got)
+		}
+	}
+}
+
+// The stops an edge lands on with shift are the words the captions light
+// up. A word too wide for a line is two stops, at the same times as its two
+// halves in the captions, and a correction that reads as two words is two.
+func TestWordStopsAreTheWordsTheCaptionsLight(t *testing.T) {
+	long := "Donaudampfschifffahrtsgesellschaftskapitänsmütze"
+	dir := filepath.Join(t.TempDir(), "ep.framefairy", "logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "clips.json")
+	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
+	  "segments": [{"start": 10.0, "end": 14.0}],
+	  "words": [[10.2, 12.2, "` + long + `"], [12.5, 13.0, "Und da"]]}]}`
+	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	words := []Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und da"}}
+	stops, err := WordStops(path, "01", words, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := ClipCaptionsView(path, "01", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lit []Cue
+	for _, c := range view.Captions {
+		for _, line := range c.Lines {
+			for _, w := range line.Words {
+				lit = append(lit, Cue{roundTo(10+w.Start, 3), roundTo(10+w.End, 3), w.Text})
+			}
+		}
+	}
+	if len(stops) < 4 || len(stops) != len(lit) {
+		t.Fatalf("stops %+v\nlit %+v", stops, lit)
+	}
+	for i := range stops {
+		if math.Abs(stops[i].Start-lit[i].Start) > 0.002 || math.Abs(stops[i].End-lit[i].End) > 0.002 ||
+			stops[i].Text != lit[i].Text {
+			t.Errorf("stop %d is %+v, the captions light %+v", i, stops[i], lit[i])
 		}
 	}
 }
