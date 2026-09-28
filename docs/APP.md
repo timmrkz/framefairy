@@ -1082,7 +1082,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     search to finish finding.
   - **Its frame is on the clip timeline at once**, fitted, first as long
     as **Shortest** from the playhead, or up to it for **O**, then on its
-    sentences as soon as they are known, with its title over it. It
+    sentences as soon as they are known, with its title over it. While
+    its crop is placed its pieces are drawn, and its caption blocks come
+    in one after another, laid out as the render will draw them. It
     cannot be edited until it is written.
   - **The card becomes the clip** when it lands, still chosen, unless
     another clip has been chosen since. While the video plays it stays

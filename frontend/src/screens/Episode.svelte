@@ -1044,6 +1044,14 @@
   const making = $derived.by((): ClipEntry | null => {
     const a = onTheWay.find((x) => x.key === selected);
     if (!a) return null;
+    // Its pieces, once its pauses are cut, which is before its crop is
+    // placed.
+    if (a.pieces?.length) {
+      return {
+        key: a.key,
+        segments: a.pieces.map(([start, end]) => ({ start, end })),
+      } as unknown as ClipEntry;
+    }
     let from = a.start;
     let to = a.end;
     if (to - from < 0.5) {
@@ -1706,11 +1714,29 @@
     }
   }
 
+  // The captions of the clip on its way that is chosen, laid out as they
+  // will be once it is written, from the moment its pieces are known. Asked
+  // for once for every change of its pieces, not on every job event.
+  const makingCaptions = $derived.by(() => {
+    const a = making ? onTheWay.find((x) => x.key === making.key) : undefined;
+    return a?.pieces?.length ? `${a.job}\n${a.n}\n${JSON.stringify(a.pieces)}` : "";
+  });
   $effect(() => {
     const clip = current;
     if (!clip) {
-      captions = null;
-      return;
+      const [job, n] = makingCaptions.split("\n");
+      if (!makingCaptions) {
+        captions = null;
+        return;
+      }
+      let dropped = false;
+      api
+        .arrivingCaptions(job, Number(n))
+        .then((view) => {
+          if (!dropped && view) captions = view;
+        })
+        .catch(() => {});
+      return () => (dropped = true);
     }
     let dropped = false;
     api
@@ -2425,6 +2451,7 @@
         {measuredParts}
         {time}
         locked={renderingCurrent || (!current && !!making)}
+        arriving={!current && !!making}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers

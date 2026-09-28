@@ -59,6 +59,7 @@
     onmovecut,
     onwalkclip,
     captions = [],
+    arriving = false,
     captionLook = null,
     oncaptiontime,
     oncaptiondraft,
@@ -111,6 +112,10 @@
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
     captions?: CaptionCue[];
+    // The clip is on its way, being made: its caption blocks come in one
+    // after another as they arrive, so the clip is built in front of the
+    // person rather than appearing whole.
+    arriving?: boolean;
     // The colours the captions are burned in, as the video preview draws
     // them: the words, the box behind them and the pill behind the word
     // being spoken. A block wears all three, so a colour picked for the
@@ -1380,6 +1385,7 @@
            where it appears to where it goes. -->
       <div
         class="captions"
+        class:arriving
         style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
           'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
       >
@@ -1400,7 +1406,7 @@
             <div
               class="caption"
               class:showing={time >= b.from && time < b.to}
-              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
+              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px); --i: {b.i}"
               role="button"
               title="Put the playhead where this caption appears"
               onpointerdown={(e) => e.stopPropagation()}
@@ -1904,5 +1910,19 @@
 
   .over.scrubbing .head {
     cursor: grabbing;
+  }
+
+  /* The caption blocks of a clip on its way come in one after another, in
+     the order they are said, the way a clip is built. */
+  .captions.arriving .caption {
+    animation: arrive 180ms ease-out both;
+    animation-delay: calc(var(--i) * 70ms);
+  }
+
+  @keyframes arrive {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
   }
 </style>

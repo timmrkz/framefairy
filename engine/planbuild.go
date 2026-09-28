@@ -350,6 +350,25 @@ func (b *planBuilder) arrived(job planJob) {
 	}
 }
 
+// cutDown says what a clip on the way keeps, once its pauses are cut and
+// before its crop is placed, which is the slow part.
+func (b *planBuilder) cutDown(index int, spans []Span, words []Cue) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := range b.underway {
+		if b.underway[i].N != index {
+			continue
+		}
+		pieces := make([][2]float64, len(spans))
+		for k, s := range spans {
+			pieces[k] = [2]float64{roundTo(s.Start, 3), roundTo(s.End, 3)}
+		}
+		b.underway[i].Pieces, b.underway[i].Words = pieces, words
+		b.e.Log.Underway(b.underway)
+		return
+	}
+}
+
 // answered is the model done writing. What is still being framed is the
 // last part of the search.
 func (b *planBuilder) answered() {
@@ -550,6 +569,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	for k, s := range spans {
 		tightSpans[k] = Span{s.Start, s.End}
 	}
+	b.cutDown(index, tightSpans, chosen)
 
 	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache)
 	if err != nil {

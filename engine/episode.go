@@ -532,21 +532,54 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 		return nil, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
 	}
 
-	style := clipStyle(plan.CaptionStyle(), *clip)
-	for key, value := range overrides {
-		if text, ok := value.(string); ok && text == "" {
-			continue
-		}
-		style[key] = value
-	}
-	s := ResolveStyle(style)
+	s := captionStyleOf(plan.CaptionStyle(), *clip, overrides)
 	work := filepath.Dir(filepath.Dir(planPath))
 	captions, err := ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)),
 		TooWide(s))
 	if err != nil {
 		return nil, err
 	}
+	return captionsView(*clip, captions, s), nil
+}
 
+// ArrivingCaptionsView is the captions of a clip on its way, from the
+// pieces and words the plan builder says it keeps, laid out the way a
+// written clip's are, in the style of the clip set it goes into. It is
+// nil until the builder has them.
+func ArrivingCaptionsView(planPath string, u Underway, overrides map[string]any) *CaptionsView {
+	if len(u.Pieces) == 0 || len(u.Words) == 0 {
+		return nil
+	}
+	clip := Clip{Words: u.Words}
+	for _, p := range u.Pieces {
+		clip.Segments = append(clip.Segments, Segment{Start: p[0], End: p[1]})
+	}
+	var style map[string]any
+	if plan, _, err := LoadClips(planPath); err == nil {
+		style = plan.CaptionStyle()
+	}
+	s := captionStyleOf(style, clip, overrides)
+	return captionsView(clip, Captions(clip, max(8, int(s.MaxChars)), TooWide(s)), s)
+}
+
+// captionStyleOf is the style a clip's captions are drawn in: the plan's,
+// the clip's own place for them, and what the app puts over both.
+func captionStyleOf(planStyle map[string]any, clip Clip, overrides map[string]any) Style {
+	style := map[string]any{}
+	for key, value := range clipStyle(planStyle, clip) {
+		style[key] = value
+	}
+	for key, value := range overrides {
+		if text, ok := value.(string); ok && text == "" {
+			continue
+		}
+		style[key] = value
+	}
+	return ResolveStyle(style)
+}
+
+// captionsView lays a clip's captions out for the app.
+func captionsView(clip Clip, captions []Caption, s Style) *CaptionsView {
 	// The lines the render will use, so the picture in the app breaks the
 	// caption in the same places.
 	laid := LayOutCaptions(captions, s)
@@ -571,11 +604,11 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			first, last := c.Words[0], c.Words[len(c.Words)-1]
-			if w, ok := SaidWord(*clip, (first.Start+first.End)/2); ok {
+			if w, ok := SaidWord(clip, (first.Start+first.End)/2); ok {
 				item.First = w.Start
 				item.StartMoved = clip.CaptionTimes[wordKey(w.Start)].Start != nil
 			}
-			if w, ok := SaidWord(*clip, (last.Start+last.End)/2); ok {
+			if w, ok := SaidWord(clip, (last.Start+last.End)/2); ok {
 				item.Last = w.Start
 				item.EndMoved = clip.CaptionTimes[wordKey(w.Start)].End != nil
 			}
@@ -589,7 +622,7 @@ func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*Capti
 		}
 		view.Captions = append(view.Captions, item)
 	}
-	return view, nil
+	return view
 }
 
 func twoDigits(n int) string {

@@ -278,12 +278,22 @@ words of `arrivalLine`, see `frontend/src/lib/arriving.ts`. So a clip the
 model named and a clip made by hand come in the same way, and a search no
 longer shows its clips only once their crops are placed.
 
+Placing the crop is the slow part, seconds a clip, and what a clip keeps
+is known before it: the builder cuts the pauses first. So the list says
+what it keeps, `Pieces` and the words said in them, the moment the pauses
+are cut, and the app lays its captions out from them with the code a
+written clip's captions go through, `ArrivingCaptionsView`. A clip on its
+way that is chosen is drawn on the clip timeline the way a clip is: its
+frame, then its pieces, then its caption blocks coming in one after
+another. When it is written, the same blocks stay.
+
 A card hands over to the clip it becomes in one step: it keeps its place
 until the list has read the clip, so there is never a gap where it was and
-never the two of them at once. The clip made is chosen by the rule a
-search's first clip is chosen by: unless another has been chosen since the
-key was pressed, or the video plays, when it lands in the list one click
-away rather than take the picture from the hand.
+never the two of them at once. A clip made by hand is chosen the moment
+the key is pressed, as its card, and the card that is chosen stays chosen
+as the clip, unless another has been chosen since. It was chosen only once
+it landed, so for the seconds it took nothing on the clip timeline said
+anything was happening.
 
 A clip whose job was called off with Cancel, cut off by the app closing,
 or failed, stays where it would have appeared, still, saying so, and a

@@ -10,6 +10,11 @@ export type Arriving = {
   // The job's id and which of its clips this is, so it keeps its place
   // while its step and its edges change.
   key: string;
+  // The job it is on the way from and which of its clips it is.
+  job: string;
+  n: number;
+  // What of it is kept, once its pauses are cut.
+  pieces?: [number, number][];
   // Where it lies, which is where it goes in the list, and where it ends.
   // Until its sentences are known the two are the same moment.
   start: number;
@@ -51,6 +56,8 @@ export function arriving(
         const failed = job.state === "failed";
         out.push({
           key,
+          job: job.id,
+          n: clip.n,
           start: clip.start,
           end: clip.end,
           title: clip.title ?? "",
@@ -71,6 +78,9 @@ export function arriving(
       const line = arrivalLine(job, clip);
       out.push({
         key,
+        job: job.id,
+        n: clip.n,
+        pieces: clip.pieces,
         start: clip.start,
         end: clip.end,
         title: clip.title ?? "",

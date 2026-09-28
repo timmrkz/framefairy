@@ -623,6 +623,29 @@ at once, so the second the real one spends saving could not be seen at
 all, and the probe passed against broken code until the stub waited
 800 ms the way the engine does.
 
+## Work a click starts is built in front of the person
+
+Answering the click is not enough when the work takes seconds. Tim pressed
+I to make a clip, and for ten seconds nothing he could see changed: the
+card was made, but in its place far down the list, the button showed
+nothing, and the clip timeline waited for the finished clip. Then
+everything changed at once. Every test was green, and the stub made the
+clip in a second, where the list was already looking.
+
+The rule: **what a click asks for is shown where it will live from the
+moment it is asked for, and filled in as each part of it becomes known.**
+The control it was started from wears the beam. What it makes is chosen
+and brought into view. What is known already, where it lies, how long it
+will be, its pieces, its captions, is drawn where the finished thing is
+drawn, the clip timeline above all, as the engine learns it. The finished
+thing replaces what was built with no jump. Nothing appears whole after
+seconds of nothing.
+
+Check it by making the thing somewhere the screen is not looking: far
+down the episode, with the list scrolled elsewhere. And make the stub as
+slow as the app, the speech model loading included, or the gap it hides
+is exactly the one Tim sees.
+
 ## Before saying it is done
 
 - `make interface`, which is the type check and the interface's own tests.

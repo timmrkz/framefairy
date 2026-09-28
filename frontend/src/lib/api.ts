@@ -269,6 +269,9 @@ export type JobStep =
 // and its edges change. A clip made by hand is at the playhead, start and
 // end the same, until the words there are known.
 export interface Underway {
+  // What of it is kept, from and to, once its pauses are cut, before its
+  // crop is placed.
+  pieces?: [number, number][];
   n: number;
   start: number;
   end: number;
@@ -521,6 +524,10 @@ export const api = {
   removeSearch: (path: string, from: number, to: number) =>
     call<number>("RemoveSearch", path, from, to),
   captions: (plan: string, clip: string) => call<CaptionsView>("Captions", plan, clip),
+  // The captions of a clip on its way, laid out as they will be once it is
+  // written, or null until its job knows what it keeps.
+  arrivingCaptions: (job: string, n: number) =>
+    call<CaptionsView | null>("ArrivingCaptions", job, n),
   fonts: () => call<CaptionFont[]>("Fonts"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),

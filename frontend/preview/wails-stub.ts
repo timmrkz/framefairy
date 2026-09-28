@@ -180,8 +180,8 @@ const clipOf = (id: string) => {
 // the clip's own clock, with the cuts taken out of it, and a correction
 // that reads as two words is drawn as two, each taking its share of the
 // one moment they both came from.
-const captionCues = (id: string) => {
-  const c = clipOf(id);
+const captionCues = (id: string) => cuesOf(clipOf(id), id);
+const cuesOf = (c: ReturnType<typeof clipOf>, id = "") => {
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
   const onClipClock: { start: number; end: number; text: string; said: number }[] = [];
@@ -624,9 +624,17 @@ function handJob(h: FakeHand) {
     step: now.step, record: `clip-${h.n}`, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
-    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step }] : undefined,
+    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined }] : undefined,
     progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" } : undefined,
   };
+}
+// What a clip made by hand keeps once its pauses are cut, a moment into
+// placing its crop: the pieces of the clip it lands as.
+function handMade(h: FakeHand, start: number) {
+  return clip(20 + h.n, start, `Von ${clock(start)} an`, false);
+}
+function handPieces(h: FakeHand, start: number): [number, number][] {
+  return handMade(h, start).segments.map((p: { start: number; end: number }) => [p.start, p.end]);
 }
 // The clips made by hand that have landed.
 function handClips() {
@@ -634,7 +642,7 @@ function handClips() {
     .filter((h) => handAt(h).state === "done")
     .map((h) => {
       const at = handAt(h);
-      const made = clip(20 + h.n, at.start, `Von ${clock(at.start)} an`, false);
+      const made = handMade(h, at.start);
       return { ...made, id: `h0${h.n}`, slug: `hand-${h.n}`, key: `clips-hand.json/h0${h.n}`, plan: "/eps/ep.framefairy/logs/clips-hand.json" };
     });
 }
@@ -980,6 +988,15 @@ export const Call = {
           heard: [],
           rate: 25,
         });
+      case "ArrivingCaptions": {
+        const h = hands().find((x) => x.id === args[0]);
+        const now = h && handAt(h);
+        if (!h || !now || now.step !== "framing" || now.start === now.end) return Promise.resolve(null);
+        return Promise.resolve({
+          captions: cuesOf(handMade(h, now.start)),
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
+        });
+      }
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[1])),

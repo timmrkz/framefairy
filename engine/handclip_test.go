@@ -114,6 +114,27 @@ func TestAClipMadeByHand(t *testing.T) {
 	if last := lists[len(lists)-1]; len(last) != 0 {
 		t.Errorf("still on the way once written: %+v", last)
 	}
+	// Before its crop is placed it says what it keeps, and its captions are
+	// laid out from that the way the written clip's are.
+	var cut *Underway
+	for _, list := range lists {
+		if len(list) == 1 && len(list[0].Pieces) > 0 {
+			cut = &list[0]
+			break
+		}
+	}
+	if cut == nil || len(cut.Words) == 0 {
+		t.Fatalf("never said what it keeps: %v", lists)
+	}
+	if first, last := cut.Pieces[0][0], cut.Pieces[len(cut.Pieces)-1][1]; math.Abs(first-c.Start) > 0.01 ||
+		math.Abs(last-(c.Start+c.Duration)) > 0.5 {
+		t.Errorf("on the way it keeps %v, it was written from %.2f for %.2f s", cut.Pieces, c.Start, c.Duration)
+	}
+	arriving := ArrivingCaptionsView(p.HandPlanPath(), *cut, nil)
+	written, err := ClipCaptionsView(p.HandPlanPath(), c.ID, nil)
+	if arriving == nil || err != nil || len(arriving.Captions) == 0 || len(arriving.Captions) != len(written.Captions) {
+		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
+	}
 
 	// O at 60 s ends a clip there and grows it back, into the same set.
 	key, err = p.MakeClip(ctx, "clip-2", ClipRequest{At: 60, Backward: true}, nil)
