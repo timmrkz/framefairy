@@ -395,7 +395,7 @@
         class:current={nav.view.name === "updates"}
         onclick={() => nav.go({ name: "updates" })}
         title={updateReady
-          ? `Updates. ${update?.nextName || update?.next} is ready, restart to use it`
+          ? `Updates. ${update?.nextName || update?.next} is ready, relaunch to finish updating`
           : `Updates. This is ${update?.version ?? "the app"}`}
       >
         <span class="mark">
@@ -902,8 +902,11 @@
   }
 
   /* The build stands at the far end of its row, where a count stands in
-     a list. */
+     a list, and whole: it names what is being tested, so it keeps its own
+     width and Updates has what is left. Shared out evenly, the two had
+     half the row each, and 0.3.0-pr29.db33a28 lost its last letters. */
   .nav .build {
+    flex: none;
     margin-left: auto;
   }
 

@@ -118,6 +118,11 @@ type updating struct {
 	// what it read, and would put back a channel picked since.
 	load func() string
 	save func(string) error
+	// install starts the step that puts a ready build in place once the
+	// app has quit, see install.go. relaunching is set once Relaunch has
+	// begun, which puts the build in place by itself.
+	install     func(target, from string) error
+	relaunching bool
 }
 
 type updatesFile struct {
@@ -133,10 +138,18 @@ func newUpdating(u *updater.Updater, st *store, busy func() bool, emit func(Upda
 			st.load("updates.json", &f)
 			return f.Follow
 		},
-		save: func(ch string) error { return st.save("updates.json", updatesFile{Follow: ch}) },
+		save:    func(ch string) error { return st.save("updates.json", updatesFile{Follow: ch}) },
+		install: startInstall,
 	}
 	exe, _ := os.Executable()
-	c.setUp(u, updateKeyText, &updates.Source{URL: updates.ListURL, Client: &http.Client{}}, exe, runtime.GOOS)
+	src := &updates.Source{URL: updates.ListURL, Client: &http.Client{}}
+	// The builds already downloaded, so going back to a channel has its
+	// build at once. In the user's caches, which is where macOS expects a
+	// file that can always be fetched again.
+	if dir, err := os.UserCacheDir(); err == nil {
+		src.Cache = filepath.Join(dir, "FrameFairy", "builds")
+	}
+	c.setUp(u, updateKeyText, src, exe, runtime.GOOS)
 	return c
 }
 
@@ -180,15 +193,19 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	c.u, c.src = u, src
 }
 
-// start looks now and then, for a build from a channel. A build made by make
-// only looks when asked: it is somebody working on the app, and it would
-// otherwise fetch a build to replace itself with every time it started.
+// start looks at once, and then now and then, for a build from a channel.
+// At once, because the moment the app is opened is when a newer build is
+// wanted: it used to wait five seconds first, and a person who opened the
+// app to try a change sat on the Updates page waiting for it to start.
+// The first answer reaches the interface when it asks, since nothing is
+// on screen yet to hear the event. A build made by make only looks when
+// asked: it is somebody working on the app, and it would otherwise fetch a
+// build to replace itself with every time it started.
 func (c *updating) start() {
 	if c.u == nil || buildChannel == "" {
 		return
 	}
 	go func() {
-		time.Sleep(5 * time.Second)
 		for {
 			c.check()
 			time.Sleep(checkEvery)
@@ -449,7 +466,42 @@ func (c *updating) Restart() error {
 	if c.busy != nil && c.busy() {
 		return errors.New("work is still running. Restart when it is done")
 	}
-	return c.u.Restart(context.Background())
+	c.mu.Lock()
+	c.relaunching = true
+	c.mu.Unlock()
+	if err := c.u.Restart(context.Background()); err != nil {
+		c.mu.Lock()
+		c.relaunching = false
+		c.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// installOnQuit puts a build that is ready in place once the app has
+// quit, the way Chrome does, so the next start is the new build and
+// nothing opens by itself in between. Nothing is done when no build is
+// ready, or when Relaunch is already putting it in place.
+func (c *updating) installOnQuit() {
+	if c == nil || c.u == nil || c.install == nil {
+		return
+	}
+	c.mu.Lock()
+	ready := c.state.Phase == "ready" && !c.relaunching
+	c.mu.Unlock()
+	if !ready {
+		return
+	}
+	staged := c.u.DownloadedPath()
+	target := runningApp()
+	if staged == "" || target == "" {
+		return
+	}
+	if err := c.install(target, staged); err != nil {
+		log.Printf("install on quit: %v", err)
+		return
+	}
+	log.Printf("install on quit: %s goes in place of %s once the app has quit", staged, target)
 }
 
 // plainUpdateError takes the updater's prefixes off an error, which say

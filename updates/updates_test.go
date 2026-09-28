@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -197,6 +198,8 @@ type served struct {
 	list  []byte
 	zip   []byte
 	extra int
+	// zips counts the times the build was asked for.
+	zips atomic.Int32
 }
 
 func serve(t *testing.T, s *served) *httptest.Server {
@@ -206,6 +209,7 @@ func serve(t *testing.T, s *served) *httptest.Server {
 		case "/dev/channels.json":
 			_, _ = w.Write(s.list)
 		case "/dev/app.zip":
+			s.zips.Add(1)
 			_, _ = w.Write(s.zip)
 			if s.extra > 0 {
 				_, _ = w.Write(make([]byte, s.extra))
@@ -400,3 +404,14 @@ func FuzzParse(f *testing.F) {
 }
 
 func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+func TestCommitURLOnlyNamesACommit(t *testing.T) {
+	if got := CommitURL("a1b2c3d4e5f6"); got != "https://github.com/timmrkz/framefairy/commit/a1b2c3d4e5f6" {
+		t.Errorf("got %q", got)
+	}
+	for _, c := range []string{"", "abc", "../../evil", "A1B2C3D", "a1b2c3d?x=1", "a1b2c3d/../x"} {
+		if got := CommitURL(c); got != "" {
+			t.Errorf("%q gave %q", c, got)
+		}
+	}
+}

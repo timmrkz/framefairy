@@ -194,7 +194,7 @@ $(BIN)/framefairy$(EXE): modules
 
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
 	@echo "Building $@"
-	@$(GO) build -trimpath -ldflags '$(APP_LDFLAGS)' -o $@ ./cmd/framefairy-app
+	@$(GO) build -trimpath -tags production -ldflags '$(APP_LDFLAGS)' -o $@ ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
