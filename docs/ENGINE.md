@@ -76,10 +76,11 @@ about a fifth of Parakeet's size. On 4 cores it heard twice as fast, 23
 times real time where Parakeet heard 11, but it heard "Alles hat ein Ende,
 nur die Wurst hat zwei" as "Alice had an end. No divorce hath thy", where
 Parakeet wrote it down right. A podcast in German needs the German heard,
-so Parakeet stays. The other models the library carries either give no
-word times, which the captions need, or are slower on the processor:
-Canary gives no word times, Whisper is several times slower, and
-Parakeet v2 hears English only.
+so Parakeet stays. Of the other models the library carries, Parakeet v2
+hears English only, and Canary and Whisper were not tried: they are a
+different kind of model, which writes its answer after hearing rather than
+as it hears, and whether they give the word times the captions need, and
+how fast they are here, is still to be measured.
 
 One cut is placed exactly: the end of the window the first search waits
 for. The app gives the transcription that point, `Engine.StopAt`, and the
