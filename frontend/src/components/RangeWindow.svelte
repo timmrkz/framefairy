@@ -482,8 +482,9 @@
         and carries on after.
       {:else}
         The whole episode. Drag to draw the window the model will search, or drag the window and
-        its edges. Double-click for all of it. A shaded part has been searched, and the marks in it
-        are its clips.
+        its edges. Double-click for all of it. A window is at most as long as the model can read at
+        once, and at least as long as the shortest clip. A shaded part has been searched, and the
+        marks in it are its clips.
       {/if}
     </Info>
   </span>

@@ -36,10 +36,10 @@
   let {
     path,
     clip,
-    working = false,
     duration,
     covered = duration,
-    heardTo = null,
+    measured = 0,
+    measuredParts = [],
     time,
     locked = false,
     frame = 1 / 30,
@@ -63,17 +63,17 @@
     path: string;
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
-    // True while the transcript is growing. With nothing to draw yet, the
-    // track is a place waiting to be filled.
-    working?: boolean;
     duration: number;
-    // How far the transcript has come. The words and the waveform arrive
-    // with it, so the view is taken again as it grows.
+    // How far the transcript has come. The words arrive with it, so the
+    // view is taken again as it grows.
     covered?: number;
-    // Where the part nobody has heard yet begins, while no transcription
-    // runs. null when all of it has been heard, or before the workspace
-    // knows.
-    heardTo?: number | null;
+    // How much of the loudness is measured, which is the waveform, and
+    // which parts, from and to. It is measured on its own from the moment
+    // the episode is added, ahead of the transcript and where this
+    // timeline looks first, so a view with a gap in it is taken again as
+    // it grows.
+    measured?: number;
+    measuredParts?: [number, number][];
     time: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
@@ -162,8 +162,11 @@
   let saving = $state(false);
   let viewFor = "";
   let loaded = false;
-  // How far the transcript had come when this view was read.
+  // How far the transcript had come when this view was read, how much of
+  // the loudness was measured, and whether all of what was read.
   let loadedTo = $state(-1);
+  let loadedMeasured = $state(0);
+  let loadedWhole = $state(false);
   // The part the words and the waveform were read for. It is wider than
   // the view, so a swipe has somewhere to go before anything is read again.
   let data = $state({ from: 0, to: 1 });
@@ -517,6 +520,10 @@
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
+    loadedMeasured = measured;
+    loadedWhole = measuredParts.some(
+      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
+    );
     const wide = (outer.to - outer.from) / shown;
     const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
     // The words are wanted around the playhead, for snapping an edge to
@@ -798,43 +805,17 @@
     fitView();
   });
 
-  // An episode being transcribed for the first time has no words and no
-  // waveform yet. They arrive piece by piece, so a view that was read before
-  // the transcript reached it is read again.
+  // A new episode's waveform arrives in seconds and its words as it is
+  // heard, both piece by piece, so a view read before either reached it is
+  // read again: the words when the transcript grows past where it stood,
+  // the waveform when more is measured and what was read had a gap in it.
+  // The waveform is measured where this timeline looks first, so a view
+  // it jumped to fills in before the rest.
   $effect(() => {
-    if (!loaded || covered <= loadedTo + 0.5 || loadedTo >= view.to) return;
-    load(view.from, view.to);
-  });
-
-  // Where the waveform stops. The readings come from the transcript, so
-  // what comes after it is exactly silent. Taking the edge from the same
-  // readings the waveform is drawn from means the part that waits can
-  // never lie over a waveform that is already there, and never leave a
-  // part with neither.
-  const soundEdge = $derived.by(() => {
-    if (!peaks.length) return data.from;
-    let last = -1;
-    for (let i = peaks.length - 1; i >= 0; i--) {
-      if (peaks[i] > -89.5) {
-        last = i;
-        break;
-      }
-    }
-    if (last < 0) return data.from;
-    return data.from + ((last + 1) * (data.to - data.from)) / peaks.length;
-  });
-
-  // Where the part that has not been heard begins, so it can wait there.
-  // While the transcription runs, it is where the waveform ends, and the
-  // whole track before the first readings arrive. With nothing running it
-  // is where the transcript stopped, never over a waveform already drawn.
-  // null when there is nothing waiting in view.
-  const waitsFrom = $derived.by((): number | null => {
-    let from: number;
-    if (working) from = peaks.length ? soundEdge : view.from;
-    else if (heardTo === null) return null;
-    else from = peaks.length ? Math.max(heardTo, soundEdge) : heardTo;
-    return from < view.to ? from : null;
+    if (!loaded) return;
+    const heard = covered > loadedTo + 0.5 && loadedTo < view.to;
+    const grew = measured > loadedMeasured + 0.05 && !loadedWhole;
+    if (heard || grew) load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
@@ -1272,26 +1253,12 @@
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
-        one after appears. A double-click on an edge moved by hand puts it back. A grey part is
-        one the transcription has not reached yet. It breathes while the transcription runs. The
+        one after appears. A double-click on an edge moved by hand puts it back. The
         small pictures along the bottom are the thumbnails, the frames Render writes beside the
         short. The thumbnail button under the timeline, or T, makes the frame under the playhead
         one, and takes it away again. Drag one to another frame.
       </Info>
     </span>
-    <!-- What the transcript has not reached yet is a place waiting to be
-         filled, the same as a clip card still to come: the same grey,
-         breathing while the transcription runs. With nothing running it
-         keeps its grey and stands still, the way paused work does, so a
-         part nobody has heard never reads as silence. It starts where the
-         waveform ends, so the two never lie over each other. -->
-    {#if waitsFrom !== null}
-      <div
-        class="asleep"
-        class:waiting={working}
-        style="left: {Math.max(x(waitsFrom), 0)}%; right: 0"
-      ></div>
-    {/if}
     <!-- The ruler in two layers, the same as on the range picker: the line
          under what is drawn on the track, the time over it. A time written
          inside its own line is held at the line's level, because an element
@@ -1527,24 +1494,6 @@
      more, so a position worked out for the track is right here too. */
   .over {
     position: relative;
-  }
-
-  /* Only there once the timeline was moved by hand, which is the one moment
-     a way back is worth a control. It lies over the track, the way the
-     transcription note lies over the range picker, so no row changes
-     height as it comes and goes. */
-  .asleep {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    /* The grey of a clip card that is not there yet, .ghost in
-       ClipList.svelte. A white wash of 3 % was here, and breathing it moved
-       the track by five levels out of 255, which nobody could see. */
-    background: var(--ink-2);
-    pointer-events: none;
-    z-index: 1;
   }
 
   .track {
