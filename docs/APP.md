@@ -797,18 +797,13 @@ place.
       track saying work is in hand. How far the search has come is on the
       line under the head of the clip list, so the window only has to say
       that something is running.
-    - A window drawn over a part that was searched already looks like any
-      window, and the clips inside it stay on the range picker, above it,
-      where they can be seen and picked, the way an editor keeps what is
-      in a selection in sight. It used to be a window onto what the part
-      would be without them, the plain track with its clips not drawn, and
-      Tim found a range picker with nothing on it: after a search of the
-      whole of a short episode the window rests on all of it, and it hid
-      every clip just found. What the trash can in its corner does is in
-      its title. The trash can waits until the window is under the
-      pointer. The window's wash lets the lines of the minutes through,
-      and the times are drawn over everything, so nothing laid on the
-      track ever hides where you are.
+    - A window drawn over a part that was searched already is a window
+      onto what that part would be without it: the plain track, as it
+      looks where nobody has looked yet, and the clips inside it are not
+      drawn. So what the trash can in its corner does is plain before it is
+      pressed. The trash can waits until the window is under the pointer,
+      and the times are drawn over everything, so nothing laid on the track
+      ever hides where you are.
     - A part that has been searched is marked. **The window may be drawn
       anywhere**, over a mark, part of one or none at all: the window is the
       window you mean, and what happens to it is decided by the button you

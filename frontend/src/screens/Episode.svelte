@@ -1649,7 +1649,8 @@
       }
       // The window just searched is a wall now, so the window moves on to
       // the next one nobody has looked at. It would otherwise sit on the
-      // clips it just found, offering to throw them away.
+      // clips it just found, lying over their marks as an X-ray and
+      // offering to throw them away.
       moveWindowOn();
       // A clip was shown while the search ran, and whatever has been
       // picked since is where the hand is now. Otherwise the search's

@@ -82,10 +82,10 @@ export type Span = { from: number; to: number };
 // on the last part that was searched, which is the one whose clips are
 // on screen.
 //
-// A window is never left lying on material that has just been searched
-// while there is somewhere else to go: its trash can would offer to throw
-// away the clips that were only just found, which is the opposite of what
-// the search was for.
+// A window is never left lying on material that has just been searched. It
+// reads as an X-ray there, it hides the clip marks under it, and its trash
+// can offers to throw away the clips that were only just found, which is
+// the opposite of what the search was for.
 export function nextWindow(
   free: Span[],
   searched: Span[],
