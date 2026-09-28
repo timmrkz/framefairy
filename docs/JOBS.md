@@ -51,12 +51,14 @@ Cancel, because nothing could tell the two apart.
 ## What a job is
 
 A job is one piece of work a person started, or the app started for them:
-a **search** or a **render**. It is owned by the Go side. It has what it
-was asked for and a step it is in. An episode has at most one search at a
-time, and any number of renders.
+a **search**, a **clip** made by hand, or a **render**. It is owned by the
+Go side. It has what it was asked for and a step it is in. An episode has
+at most one search at a time, and any number of clips and renders.
 
-A search goes **waiting**, **hearing**, **finding**, **done**. A render
-goes **waiting**, **rendering**, **done**. Waiting is its turn behind
+A search goes **waiting**, **hearing**, **finding**, **done**. A clip made
+by hand goes **waiting**, **hearing** where the transcript does not reach
+far enough yet, **framing**, **done**. A render goes **waiting**,
+**rendering**, **done**. Waiting is its turn behind
 other work. A search whose window has been heard already goes straight
 from waiting to finding.
 
@@ -83,25 +85,27 @@ left, however it stops. So Cancel is the one way to stop work, and nothing
 done is done again:
 
 - A search called off while hearing keeps the transcript it heard. The
-  next search goes on from where the transcript ends.
+  next search hears only what of its window is not heard yet.
 - A search called off while finding keeps the clips that landed.
 - A render called off keeps the shorts it finished.
 
-Continue carries a job on from what it left. Hearing carries on from the
-end of the transcript. Finding asks the model again for the whole window
+Continue carries a job on from what it left. Hearing hears what of the
+job's part of the episode is still not heard. Finding asks the model again for the whole window
 and replaces the clips that landed, because an answer cannot be taken up
 halfway. Rendering renders the clips that are not finished yet.
 
 If using the app shows a pause is missed after all, it is a step that
 stops without being called off, and adding it is small.
 
-## Three lanes
+## Four lanes
 
-The queue has a lane for each step's machinery: **hearing**, **finding**
-and **rendering**. Each runs one job at a time, and `lanes.go` hands out
-the turns in the order they were asked for. A search asks for a turn in
-the lane of each step as it comes to it, and lets the last one go. A
-render is in the lane of rendering and waits for no search.
+The queue has a lane for each step's machinery: **hearing**, **finding**,
+**rendering** and **framing**. Each runs one job at a time, and `lanes.go`
+hands out the turns in the order they were asked for. A search asks for a
+turn in the lane of each step as it comes to it, and lets the last one go.
+A render is in the lane of rendering and waits for no search. A clip made
+by hand places its crop in the lane of framing, so it waits for no search
+either: a search places its own clips' crops in its turn of finding.
 
 One rule is kept in `lanes.go`, where it can be seen: while a search finds,
 no search hears, because the speech model and the language model want the
@@ -111,6 +115,16 @@ search that hears, which saves what it heard, waits its turn and carries
 on after. Work that is not a step of a search, a model being installed, is
 neither taken back nor held up.
 
+And a clip made by hand hears first. Somebody pressed I or O and is
+looking at its card, and it hears the minute around the playhead where a
+search may hear an hour. So it goes ahead of every search waiting to hear,
+takes the lane back from one that hears, the way finding does, and does not
+wait for a search that finds: a minute of audio is heard in a second or
+two. Clips made by hand hear in the order they were asked for, and the
+search carries on after them. That is a kind of turn of its own,
+`handHearingTurn`, and nothing else about a clip made by hand is special
+in the queue.
+
 Model installs share the lane of the step that needs them: the speech
 model the lane of hearing, the language model the lane of finding.
 
@@ -118,8 +132,9 @@ model the lane of hearing, the language model the lane of finding.
 
 Every job keeps one record in its episode's work folder, in `jobs/`,
 written atomically on every change of step. The search is
-`jobs/search.json`, because an episode has one at a time, and a render is
-`jobs/render-<id>.json`. The code is `engine/jobs.go`.
+`jobs/search.json`, because an episode has one at a time, a clip made by
+hand is `jobs/clip-<id>.json` and a render is `jobs/render-<id>.json`. The
+code is `engine/jobs.go`.
 
 ```json
 {
@@ -139,8 +154,8 @@ written atomically on every change of step. The search is
 A render has the plan and the clips instead of the window and the
 numbers, and `done`, the clips it has finished, written as each one is.
 
-- `step` is one of `waiting`, `hearing`, `finding`, `rendering`,
-  `stopped` and `failed`, with `error` beside a failed one. A search
+- `step` is one of `waiting`, `hearing`, `finding`, `framing`,
+  `rendering`, `stopped` and `failed`, with `error` beside a failed one. A search
   called off says `stopped`, written as it ends. A job that is done, and a
   render called off, has no record: the transcript, the plans and the
   shorts say what it made.
@@ -202,6 +217,109 @@ and reads the list once as it starts. Everything it shows about work comes
 from that: the row the next clip will appear in, New, Continue and Cancel,
 the fill on the range picker, the Render button of a clip, the note of a
 job that stopped. While a search runs, the range picker shows its window.
+
+## Clips made by hand
+
+The model is probabilistic and sometimes misses the moment a person wants.
+**I** and **O** make a clip at the playhead, the way In and Out mark one in
+every video editor: **I** starts it with the sentence the playhead stands
+in and grows it forward, **O** ends it with that sentence and grows it
+back, for a moment noticed once it has passed. It grows a whole sentence at
+a time until it is as long as **Shortest**, never past **Longest** for one
+sentence more.
+
+A clip made by hand is not a second kind of clip. It is made by the same
+parts, in the same order, as a clip a search makes, and only what differs
+between the two is its own:
+
+| part | a search | a clip made by hand |
+| --- | --- | --- |
+| **hearing** | the transcript up to the end of the window | the transcript up to where the clip can reach, `Longest` and a sentence past the playhead |
+| **proposing** | the model names clips | the playhead names one, see `handEntry` |
+| **making** | the plan builder shapes each onto sentences, places its crop, gives it an id and writes it | the same |
+| **its clip set** | the window's, made anew by each search of it | the episode's clips made by hand, `clips-hand.json`, which grows |
+| **searched** | the window is marked searched | nothing is, since no model looked |
+
+So there is one transcript, heard from the start the one way it always
+is, and one plan builder, which takes entries from whatever proposed them.
+The builder's intake is `propose`: the scanner of the model's answer calls
+it for every clip it reads, and a clip made by hand calls it once. The
+hearing is `hear`, the step both jobs take, pulled out of the search.
+Where a clip came from is a field of its clip set, `planned_with.by`, and
+one place reads it: `madeOver`, the part of the episode a set was made
+over, which for the clips made by hand is none. That is what keeps them
+from marking anything searched and from going when a searched part is
+given back, and it replaced a check on the file's name.
+
+A clip set that grows is a builder option, `Grows`, with the ids after the
+ones it has, `h01`, `h02`, and so on. Each clip takes its number under the
+set's lock as it is written, `addClip`, so two clips made at the same
+moment never take the same one.
+
+**It is a job**, like a search and a render: `clip` in `jobs/clip-<id>.json`,
+going **waiting**, **hearing** when the transcript does not reach far
+enough yet, **framing**, **done**. An episode can make any number at a time,
+the way it can render any number, so I and O can be pressed while a search
+runs and while other clips are still being made. Framing has a lane of its
+own, the fourth, because placing a crop decodes the picture and waits for
+neither model: a clip made by hand never waits for a search to finish
+finding. A search frames its clips in its own finding turn, as it always
+did.
+
+**A clip is on the list from the moment it is on its way.** Every job says
+which clips it has on the way, `EventUnderway`, and the job carries the
+list as `underway`: where each lies, what it is called once that is known,
+and the step it is in. The plan builder keeps it for every job alike, from
+the moment a clip is queued to be framed until it is written or let go,
+and a clip made by hand is in it from the moment the key is pressed, at
+the playhead, before a word of it is known. The clip list shows every clip
+on the way in its place in the episode, with the beam round it, in the
+words of `arrivalLine`, see `frontend/src/lib/arriving.ts`. So a clip the
+model named and a clip made by hand come in the same way, and a search no
+longer shows its clips only once their crops are placed.
+
+Placing the crop is the slow part, seconds a clip, and what a clip keeps
+is known before it: the builder cuts the pauses first. So the list says
+what it keeps, `Pieces` and the words said in them, the moment the pauses
+are cut, and the app lays its captions out from them with the code a
+written clip's captions go through, `ArrivingCaptionsView`. A clip on its
+way that is chosen is drawn on the clip timeline the way a clip is: its
+frame, then its pieces, then its caption blocks coming in one after
+another. When it is written, the same blocks stay.
+
+A card hands over to the clip it becomes in one step: it keeps its place
+until the list has read the clip, so there is never a gap where it was and
+never the two of them at once. A clip made by hand is chosen the moment
+the key is pressed, as its card, and the card that is chosen stays chosen
+as the clip, unless another has been chosen since. It was chosen only once
+it landed, so for the seconds it took nothing on the clip timeline said
+anything was happening.
+
+A clip whose job was called off with Cancel, cut off by the app closing,
+or failed, stays where it would have appeared, still, saying so, and a
+click carries it on. Cancel at the head of the clip list stops all the
+work that makes clips, the search and every clip made by hand, and each
+says Stopped where it is. Continue carries all of them on. That is one
+property, `makesClips`: a job that makes clips keeps its record when it is
+called off, and a render called off goes. Its
+record gives the card back after a restart, `JobRecord.Underway`.
+
+**Not undone by Cmd+Z.** A search's clips are not either: undo takes back
+changes to clips, and making one is work, see `LeaveOutNewClips`. A clip
+made by hand is taken away the way every clip is, with its trash can, and
+put back from there.
+
+**Heard where it is needed.** The transcript is heard in parts, see
+[ENGINE.md](ENGINE.md), and a clip made by hand has the part around the
+playhead heard, `ClipRequest.reach`, wherever the rest of the transcript
+has got to. A search has its window heard the same way, and nothing before
+it. An earlier attempt heard the part around the playhead out of turn into
+files of its own, islands, and read them into the transcript wherever the
+transcription from the start had not come. That was a second transcript
+with seams, heard again once the first arrived, and a second speech model
+loaded beside the pool. The parts are the one transcript, the way the
+loudness is one file with parts since the waveform went where the clip
+timeline looks.
 
 ## What went away
 

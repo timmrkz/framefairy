@@ -6,7 +6,7 @@ import { Reach, fitWindow, leastWindow, longestShortest, mostClips, type RoomVie
 function room(chars: number, heardTo: number, rate = 25): RoomView {
   const lines = [];
   for (let at = 0; at + 3 <= heardTo; at += 4) lines.push({ start: at, end: at + 3, chars: 100 });
-  return { chars, by: "context", lines, heard: heardTo, rate };
+  return { chars, by: "context", lines, heard: heardTo > 0 ? [[0, heardTo]] : [], rate };
 }
 
 describe("how far a window may reach", () => {

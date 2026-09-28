@@ -56,10 +56,9 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if strings.Join(turns, " ") != "hearing finding" {
 		t.Errorf("turns asked for: %v", turns)
 	}
-	// Heard to the end of the window and no further.
-	covered, done := Coverage(p.Source, p.Base.ASRModel)
-	if done || covered < 24.9 || covered > 25.1 {
-		t.Errorf("heard to %.2f, done %v", covered, done)
+	// Heard the window and nothing else.
+	if parts := HeardParts(p.Source, p.Base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{5, 25} {
+		t.Errorf("heard %v", parts)
 	}
 	if rec := ReadSearch(p.Source); rec != nil {
 		t.Errorf("a search that found its clips keeps %+v", rec)
@@ -403,10 +402,11 @@ func (c counting) Recognize(samples []float32, rate int) []Token {
 	return c.fakeRecognizer.Recognize(samples, rate)
 }
 
-// A search of a later window hears on from where the transcript ends, not
-// from the start of the episode, and says how long is left until the end
-// of its window, not until the end of the episode. Tim saw a search of the
-// half hour after a half hour already heard say almost six minutes left.
+// A search of a later window hears its window, not the episode from the
+// start or from where the transcript ends, and says how long is left until
+// the end of what it hears, not until the end of the episode. Tim saw a
+// search of the half hour after a half hour already heard say almost six
+// minutes left.
 func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	var heard int32
 	seconds := 0.0
@@ -417,7 +417,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	first := seconds
-	if first > 16 {
+	if first > 15+hearingPad+0.1 {
 		t.Errorf("the first window of 15 s heard %.1f s", first)
 	}
 	var lefts []float64
@@ -430,8 +430,11 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	if _, err := p.Search(context.Background(), PlanRequest{From: 20, To: 30, Count: 1, Min: 5}, nil); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if seconds > 16 {
-		t.Errorf("a window from 20 to 30, with 15 s heard, heard %.1f s again", seconds)
+	if seconds > 10+2*hearingPad+0.1 {
+		t.Errorf("a window from 20 to 30 heard %.1f s", seconds)
+	}
+	if gaps := Unheard(p.Source, p.Base.ASRModel, Window{0, 30}); len(gaps) != 1 || gaps[0] != (Window{15, 20}) {
+		t.Errorf("unheard %v, want only what no search asked for", gaps)
 	}
 	t.Logf("heard %.1f s, then %.1f s, time left said %v", first, seconds, lefts)
 }

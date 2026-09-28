@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     captionFontDefault,
@@ -38,6 +38,9 @@
     frameStart,
     waitShare,
     Heard,
+    covers,
+    heardIn,
+    type Parts,
     inEpisode,
     Newest,
     nextWindow,
@@ -55,6 +58,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { arriving, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -158,7 +162,6 @@
   // up again that often. A timer that watches one never fires at all,
   // which is what stopped the transcript from being read again while it
   // grew, and with it the first search.
-  const isTranscribing = $derived(!!transcribing);
   const isFinding = $derived(!!finding);
   // A render is shown by the Render button it was started from, which
   // fills up and becomes Cancel. The head of the clip list is about
@@ -168,6 +171,16 @@
   // While a search runs, the head of the clip list carries it: New becomes
   // Cancel and the line under the head fills up. Nothing is added to the
   // column and nothing moves.
+  // The clips made by hand are work of the clip list too: its Cancel stops
+  // them with the search, and its Continue carries them all on.
+  const handWork = $derived(jobs.clips(path));
+  const handRunning = $derived(handWork.filter((j) => j.state === "running" || j.state === "queued"));
+  const handStopped = $derived(handWork.filter((j) => j.state === "interrupted" || j.state === "failed"));
+  // Whatever hears the episode now, the search or a clip made by hand, one
+  // at a time. Its progress says which part it hears and how far it has
+  // come in it.
+  const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing"));
+  const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
@@ -191,27 +204,35 @@
   // which is how it came to say Transcribing over a list of clips.
   const lane = $derived({ word: "Clips", count: true, job: working ?? null });
   const action = $derived.by(() => {
+    // New is the search's button, so it turns into Cancel for a search and
+    // for nothing else: a clip made by hand wears the beam on I or O, which
+    // it was started from. It turned into Cancel for those too, under a
+    // hand that had only pressed I, and a click there stopped the clip
+    // nobody meant to stop. Cancel stops all the work on the clips, the
+    // search and every clip on its way, and Continue carries all of it on.
     if (busy) {
       return {
         label: stopping ? "Cancelling" : "Cancel",
         icon: "close",
         run: stopWork,
-        off: stopping || (starting && !working),
+        off: stopping || (starting && !working && !handRunning.length),
         primary: false,
-        title: "Stop looking for clips. What was heard of the episode is kept",
+        title: "Stop the work on the clips. What was heard and made is kept",
       };
     }
-    // A search that was cut off or failed is carried on, not started anew:
-    // the button says Continue and takes up the window the search was
-    // about, wherever the window on the range picker is now.
+    // Work that was cut off or failed is carried on, not started anew: the
+    // button says Continue and takes up the window the search was about,
+    // wherever the window on the range picker is now, and every clip made
+    // by hand that stopped with it. A clip made by hand that stopped alone
+    // is carried on from its own card.
     if (stopped) {
       return {
         label: "Continue",
         icon: "play",
-        run: carryOnSearch,
+        run: carryOn,
         off: duration <= 0,
         primary: true,
-        title: `Carry on the search of ${stopped.window.toLowerCase()}`,
+        title: `Carry on the search of ${stopped.window.toLowerCase()}${handStopped.length ? ", and the clips made by hand" : ""}`,
       };
     }
     return {
@@ -221,7 +242,7 @@
       off: duration <= 0 || to <= 0,
       primary: true,
       title: !heardWindow
-        ? `Look for clips in the window. The episode is transcribed up to ${clock(to)} first, it is at ${clock(heard)}`
+        ? "Look for clips in the window. What of it is not transcribed yet is transcribed first"
         : covering
           ? "Look at the window again, removing the clips it has"
           : "Look for clips in the window",
@@ -238,7 +259,7 @@
   );
 
   $effect(() => {
-    if (!working) stopping = false;
+    if (!working && !handRunning.length) stopping = false;
   });
 
   // Cancel: the search stops, and what it heard of the episode stays, so
@@ -247,12 +268,33 @@
   // chunk and keeps reporting until it hears the stop, and without this
   // the edge carries on for a second or two and the click looks missed.
   function stopWork() {
-    if (!working) return;
+    if (!working && !handRunning.length) return;
     stopping = true;
-    if (transcribing) stoppedAt = heard;
-    api.cancelJob(working.id);
+    if (isTranscribing) stoppedAt = heard;
+    if (working) api.cancelJob(working.id);
+    for (const job of handRunning) api.cancelJob(job.id);
   }
-  const covered = $derived(status?.transcribed ? duration : (status?.covered ?? 0));
+
+  // The Render button's Cancel stops the render and nothing else. It
+  // called the clip list's Cancel, which stopped the search and every
+  // clip on its way, and left the render running.
+  let renderStopping = $state(false);
+  function stopRender() {
+    if (!renderingJob) return;
+    renderStopping = true;
+    api.cancelJob(renderingJob.id);
+  }
+  $effect(() => {
+    if (!renderingJob) renderStopping = false;
+  });
+
+  // Continue, on everything of the clip list that stopped.
+  function carryOn() {
+    for (const job of handStopped) void api.continueJob(job.id).then((j) => jobs.apply(j));
+    if (stopped) void carryOnSearch();
+  }
+  // What the transcript on disk has heard.
+  const saved = $derived<Parts>(status?.transcribed ? [[0, duration]] : (status?.heard ?? []));
 
   // How far the loudness is measured, which is the waveform. It is measured
   // on its own from the moment the episode is added, ahead of the
@@ -275,14 +317,12 @@
     }),
   );
 
-  // How far the audio has been heard, which is not the same as how far the
-  // saved transcript reaches. Saving rewrites the whole transcript, so it
+  // What of the audio has been heard, which is not the same as what the
+  // saved transcript holds. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
   // chunk the recogniser finishes says where it got to. The range picker
   // draws this one, so its edge moves with the work. Everything that reads
-  // the transcript keeps to covered, because that is what is on disk: a
-  // search that started on this number would read a transcript that stops
-  // short of the window it was asked for.
+  // the transcript keeps to saved, because that is what is on disk.
   // The mark the edge is drawn from. It only ever grows, because it says
   // how much of the episode has been read and reading does not unhappen.
   // Pausing showed that plainly: the live number disappears at the one
@@ -294,18 +334,22 @@
   // will be read again, or a work folder that is no longer there. Not while
   // the episode is still loading, when nothing is known yet.
   const restarted = $derived(!!status && (status.transcriptStale || !status.work));
-  const heard = $derived(
-    mark.seen(path, covered, transcribing?.progress?.covered ?? null, restarted),
-  );
+  // The part being heard, from where it began to where it has got.
+  const live = $derived.by((): [number, number] | null => {
+    const p = hearing?.progress;
+    if (!p?.covered) return null;
+    return [p.from ?? 0, p.covered];
+  });
+  const heard = $derived(mark.seen(path, saved, live, restarted));
   // Where the edge was when pause was pressed, or null while it is free to
   // move. Held rather than followed, because what the work reports after
   // the press is work nobody asked for any more.
-  let stoppedAt = $state<number | null>(null);
+  let stoppedAt = $state<Parts | null>(null);
   const shownHeard = $derived(stoppedAt ?? heard);
 
   // Whether the episode has been heard to the end of the window. A search
   // of a window not heard yet hears it first, which New's title says.
-  const heardWindow = $derived(duration > 0 && to > 0 && heard >= to - 0.5);
+  const heardWindow = $derived(duration > 0 && to > 0 && covers(heard, from, to));
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -323,13 +367,9 @@
   // text in it. What is going on is in the info mark at the head.
   //
   // A search writes each clip the moment it is found, so while it runs the
-  // rows still to come are what it was asked for less what it has found so
-  // far. The clips from earlier searches are in the list too and are not
-  // counted against it.
-  const foundSoFar = $derived.by(() => {
-    const known = listedBefore;
-    return known ? clips.filter((c) => !known.has(c.key)).length : 0;
-  });
+  // rows still to come are what it was asked for less what it has taken so
+  // far, see searchTook. The clips from earlier searches are in the list
+  // too and are not counted against it.
   //
   // With nothing on its way and nothing in the list, the rows stand there
   // all the same, as many as Clips says and following it as it changes,
@@ -440,8 +480,8 @@
       ? `The episode is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
       : heardWindow
         ? "The search waits while another one finds its clips."
-        : "The episode is not transcribed to the end of the window yet.";
-    return `${first} Clips are found by themselves once the transcript reaches ${clock(to)}.`;
+        : "The window is not all transcribed yet.";
+    return `${first} Clips are found by themselves once the window is transcribed.`;
   });
   // The window stays with the episode while the app runs, so leaving the
   // workspace and coming back does not throw away what was chosen.
@@ -542,15 +582,14 @@
     const what = byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue";
     const how = byHand ? "Cancel stopped the search" : "The app was closed";
     // Stopped before it had heard its window, which is the first half of
-    // every search on an episode heard only part way: Continue hears on
-    // from where it stopped and then finds.
-    const reached = Math.min(covered, end);
-    if (reached < end - 0.5) {
+    // every search of a window not heard yet: Continue hears the rest of
+    // it and then finds.
+    if (!covers(saved, start, end)) {
       return {
         ...span,
         what,
-        left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
-        full: `${window}. ${how} while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
+        left: `${clock(heardIn(saved, start, end))} of ${clock(end - start)} transcribed`,
+        full: `${window}. ${how} while the window was transcribed for it. Continue transcribes the rest of it and then finds the clips`,
       };
     }
     return {
@@ -575,16 +614,50 @@
       starting = false;
     }
   }
+  // The clips on their way, from every job of the episode alike: the
+  // search's, from the moment the model names each, and the ones made with
+  // I and O, from the moment the key is pressed. See lib/arriving.ts.
+  const arrivingNow = $derived(
+    arriving(
+      jobs.forEpisode(path),
+      () => stopping,
+      (job) => void api.continueJob(job.id).then((j) => jobs.apply(j)),
+    ),
+  );
+  // A clip that has just been written keeps its card until the list has
+  // read it, so the card becomes the clip in one step: never a gap where
+  // it was, and never the two of them at once.
+  let landing = $state<Arriving[]>([]);
+  let arrivedBefore: Arriving[] = [];
+  $effect(() => {
+    const now = arrivingNow;
+    const here = new Set(now.map((a) => a.key));
+    const gone = arrivedBefore.filter((a) => !here.has(a.key) && !a.stopped);
+    arrivedBefore = now;
+    if (!gone.length) return;
+    landing = [...untrack(() => landing), ...gone];
+    const done = new Set(gone.map((a) => a.key));
+    void refreshClips().finally(() => (landing = landing.filter((a) => !done.has(a.key))));
+  });
+  const onTheWay = $derived([...arrivingNow, ...landing]);
+  // How many clips the search has written and has on the way. It says so
+  // itself, so a clip made by hand while it runs is not counted as one of
+  // its own.
+  const searchTook = $derived(
+    (finding ? (working?.progress?.found ?? 0) : 0) + (working?.underway?.length ?? 0),
+  );
   const coming = $derived(
-    busy
-      ? shown.length + Math.max(0, count - foundSoFar)
-      : shown.length === 0
+    shown.length +
+      onTheWay.length +
+      (busy
+        ? Math.max(0, count - searchTook)
+        : shown.length === 0 && onTheWay.length === 0
           ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
             stopped
-            ? shown.length + 1
-            : 0,
+            ? 1
+            : 0),
   );
   // What the window lies over. A window may be drawn anywhere, so looking
   // again at material that was searched is allowed, it only asks first and
@@ -756,7 +829,7 @@
   // list is a card half faded away.
   function showChosen() {
     const list = document.querySelector<HTMLElement>(".pane .list");
-    const card = list?.querySelector<HTMLElement>(".pick.current")?.closest("li");
+    const card = list?.querySelector<HTMLElement>(".pick.current, li.next.current")?.closest("li");
     if (!list || !card) return;
     // The same veil the list fades its ends with, from the stylesheet.
     const veil = 16;
@@ -766,13 +839,15 @@
     else if (box.bottom > view.bottom - veil) list.scrollTop += box.bottom - view.bottom + veil;
   }
 
-  async function select(key: string) {
+  // seek is off for a clip chosen while the video plays, which carries on
+  // where it is.
+  async function select(key: string, seek = true) {
     selected = key;
     // The episode remembers what is being worked on, so opening it again
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
-    if (clip) player?.seek(clip.start);
+    if (clip && seek) player?.seek(clip.start);
     // Picking a clip puts the clip timeline back on it, the same as the
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
@@ -880,6 +955,120 @@
       // which frame it is whichever way either rounds.
       void setThumbnail(current, -1, (Math.floor(time / frameLen) + 0.5) * frameLen);
     }
+  }
+
+  // I and O make a clip at the playhead, the way In and Out mark a clip in
+  // every video editor: I starts it with the sentence the playhead stands
+  // in, O ends it there, for a moment noticed once it has passed. It is a
+  // job like a search, and any number can be on their way at once, beside
+  // a search too. Its card is in the list from the moment it is asked for,
+  // see lib/arriving.ts, and the clip is chosen when it is written, by the
+  // rule a search's first clip is: unless another has been chosen since,
+  // or the video plays.
+  //
+  // Everything the press changes shows in the frame it lands in: the key's
+  // button wears the beam at once, and the clip on its way is chosen, so
+  // its card is brought into view with the beam on it and its frame is on
+  // the clip timeline, first as long as Shortest from the playhead, then
+  // on its sentences as soon as the engine has them. When it is written,
+  // the chosen card becomes the clip, if nothing else has been chosen
+  // since. Any number can be asked for at once, so the buttons never wait.
+  const madeHere = new Map<string, string>();
+  let pressed = $state<"in" | "out" | null>(null);
+  const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
+  const makingOut = $derived(pressed === "out" || handRunning.some((j) => !!j.backward));
+  async function makeClip(backward: boolean) {
+    if (duration <= 0) return;
+    pressed = backward ? "out" : "in";
+    try {
+      const job = await api.makeClip(path, time, backward);
+      jobs.apply(job);
+      if (job.state === "failed") {
+        problem = job.error ?? "The clip could not be made";
+        return;
+      }
+      const key = `${job.id}/1`;
+      madeHere.set(job.id, key);
+      selected = key;
+      await tick();
+      showChosen();
+    } catch (err) {
+      problem = errorText(err);
+    } finally {
+      pressed = null;
+    }
+  }
+  $effect(() => {
+    for (const job of jobs.forEpisode(path)) {
+      const before = madeHere.get(job.id);
+      if (before === undefined || job.state === "running" || job.state === "queued") continue;
+      madeHere.delete(job.id);
+      const key = job.result;
+      if (job.state !== "done" || !key) continue;
+      void refreshClips().then(() => {
+        if (untrack(() => selected) === before && clips.some((c) => c.key === key)) select(key, paused);
+      });
+    }
+  });
+  // The clip on its way that is chosen, drawn on the clip timeline the way
+  // a clip is: its frame, fitted, which cannot be edited until it is
+  // written. Before its sentences are known it is as long as Shortest,
+  // from the playhead for I and up to it for O.
+  const making = $derived.by((): ClipEntry | null => {
+    const a = onTheWay.find((x) => x.key === selected);
+    if (!a) return null;
+    // Its pieces, once its pauses are cut, which is before its crop is
+    // placed.
+    if (a.pieces?.length) {
+      return {
+        key: a.key,
+        segments: a.pieces.map(([start, end]) => ({ start, end })),
+      } as unknown as ClipEntry;
+    }
+    let from = a.start;
+    let to = a.end;
+    if (to - from < 0.5) {
+      const job = handWork.find((j) => a.key.startsWith(`${j.id}/`));
+      from = job?.backward ? Math.max(0, a.start - min) : a.start;
+      to = job?.backward ? a.start : Math.min(duration, a.start + min);
+    }
+    return { key: a.key, segments: [{ start: from, end: to }] } as unknown as ClipEntry;
+  });
+  // The clip on its way that was just asked for is followed until it is
+  // written: brought into view once its card has slid open, and again
+  // whenever it moves in the list, and with the video paused the playhead
+  // is put where its frame starts, so the picture is of the clip being
+  // made. Brought into view in the frame it was asked for only, the card
+  // was still sliding open, at no height, and came to rest half under the
+  // foot of the list.
+  let followingMade = "";
+  $effect(() => {
+    const m = making;
+    if (!m || ![...madeHere.values()].includes(m.key)) return;
+    const start = m.segments[0].start;
+    const mark = `${m.key}:${start}`;
+    if (mark === followingMade) return;
+    followingMade = mark;
+    untrack(() => {
+      if (paused && Math.abs(time - start) > 0.05) player?.seek(start);
+    });
+    // After the card has slid open and the list has moved it, 200 ms and
+    // 180 ms in ClipList.svelte.
+    setTimeout(showChosen, 240);
+  });
+  const makingTitle = $derived(onTheWay.find((x) => x.key === selected)?.title || "New clip");
+
+  function inOutKey(event: KeyboardEvent) {
+    const out = event.key === "o" || event.key === "O";
+    if (!out && event.key !== "i" && event.key !== "I") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    event.preventDefault();
+    void makeClip(out);
   }
 
   function thumbnailKey(event: KeyboardEvent) {
@@ -1552,11 +1741,29 @@
     }
   }
 
+  // The captions of the clip on its way that is chosen, laid out as they
+  // will be once it is written, from the moment its pieces are known. Asked
+  // for once for every change of its pieces, not on every job event.
+  const makingCaptions = $derived.by(() => {
+    const a = making ? onTheWay.find((x) => x.key === making.key) : undefined;
+    return a?.pieces?.length ? `${a.job}\n${a.n}\n${JSON.stringify(a.pieces)}` : "";
+  });
   $effect(() => {
     const clip = current;
     if (!clip) {
-      captions = null;
-      return;
+      const [job, n] = makingCaptions.split("\n");
+      if (!makingCaptions) {
+        captions = null;
+        return;
+      }
+      let dropped = false;
+      api
+        .arrivingCaptions(job, Number(n))
+        .then((view) => {
+          if (!dropped && view) captions = view;
+        })
+        .catch(() => {});
+      return () => (dropped = true);
     }
     let dropped = false;
     api
@@ -1727,9 +1934,11 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", inOutKey);
     };
   });
 
@@ -1784,7 +1993,8 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    covered={shownHeard}
+    heard={shownHeard}
+    live={stoppedAt ? null : live}
     bind:from
     bind:to
     {marks}
@@ -2244,6 +2454,7 @@
           <div class="scroll list">
             <ClipList
               clips={shown}
+              arriving={onTheWay}
               {selected}
               {coming}
               waiting={comingNow}
@@ -2263,13 +2474,14 @@
       <ClipTimeline
         bind:this={timeline}
         {path}
-        clip={current}
+        clip={current ?? making}
         {duration}
-        {covered}
+        heard={saved}
         {measured}
         {measuredParts}
         {time}
-        locked={renderingCurrent}
+        locked={renderingCurrent || (!current && !!making)}
+        arriving={!current && !!making}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers
@@ -2344,6 +2556,28 @@
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
         {/if}
+        <!-- In and Out, the way every editor marks a clip, with the keys of
+             the same letters. Each makes a clip at the playhead. -->
+        <button
+          class="glyph letter"
+          disabled={duration <= 0}
+          onclick={() => makeClip(false)}
+          aria-label="Start a clip at the playhead"
+          title={makingIn
+            ? "Making a clip. Press again for another one here"
+            : "Start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+          >{#if makingIn}<Busy />{/if}I</button
+        >
+        <button
+          class="glyph letter"
+          disabled={duration <= 0}
+          onclick={() => makeClip(true)}
+          aria-label="End a clip at the playhead"
+          title={makingOut
+            ? "Making a clip. Press again for another one here"
+            : "End a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+          >{#if makingOut}<Busy />{/if}O</button
+        >
         <!-- One job, whatever is chosen: go to the playhead. Going back to
              the clip is what clicking it in the list does. -->
         <button
@@ -2364,6 +2598,11 @@
             >{numbers.seconds} s, {numbers.pieces}
             {numbers.pieces === 1 ? "piece" : "pieces"}</span
           >
+        {:else if making}
+          <div class="titles">
+            <h2 class="selectable">{makingTitle}</h2>
+          </div>
+          <span class="num">{clock(numbers.start)} to {clock(numbers.end)}</span>
         {/if}
         {#if numbers.saving}<span class="muted">Saving</span>{/if}
         <span class="grow"></span>
@@ -2391,15 +2630,15 @@
           {@const inHand = renderingCurrent || renderAsked === current.key}
           <button
             class="primary render"
-            onclick={() => (inHand ? stopWork() : render(current))}
-            disabled={inHand ? stopping || !renderingCurrent : !!working}
+            onclick={() => (inHand ? stopRender() : render(current))}
+            disabled={inHand ? renderStopping || !renderingCurrent : !!working}
             title={inHand
               ? `Stop the render${leftOfWork ? `, ${leftOfWork}` : ""}`
               : working
                 ? "Render once the work running now is done"
                 : "Write the short, and its thumbnails beside it"}
             >{#if inHand}<Busy fraction={renderingCurrent ? renderShare : -1} />{/if}{inHand
-              ? stopping
+              ? renderStopping
                 ? "Cancelling"
                 : "Cancel"
               : current.rendered
@@ -2495,6 +2734,12 @@
     justify-content: center;
     width: var(--control-h);
     padding: 0;
+  }
+
+  /* I and O are their letters, the keys they stand for, the way an editor
+     labels In and Out. */
+  .detail .row .glyph.letter {
+    font-weight: 600;
   }
 
   h2 {

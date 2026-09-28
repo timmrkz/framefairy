@@ -8,10 +8,11 @@ import (
 	"framefairy/engine"
 )
 
-// Everything the window can do to searches and renders, at once, from many
-// goroutines, while they run: New, Continue, Cancel, Render, the job list
-// read and cleared. An episode never has two searches running, and when it
-// is over nothing is left running.
+// Everything the window can do to searches, renders and clips made by
+// hand, at once, from many goroutines, while they run: New, I and O,
+// Continue, Cancel, Render, the job list read and cleared. An episode never
+// has two searches running, no two clips made by hand share an id, and when
+// it is over nothing is left running.
 func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	d := open(t)
 	a := d.add("a", minutes5)
@@ -23,18 +24,18 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	}
 	stop := time.Now().Add(3 * time.Second)
 	var wg sync.WaitGroup
-	for i := range 8 {
+	for i := range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			ep := []string{a, b}[i%2]
-			for time.Now().Before(stop) {
-				switch i % 4 {
+			for n := 0; time.Now().Before(stop); n++ {
+				switch i % 5 {
 				case 0:
 					d.svc.Search(ep, engine.PlanRequest{From: 0, To: 60, Count: 1, Min: 5, Replan: true})
 				case 1:
 					for _, j := range d.svc.Jobs() {
-						if j.Episode == ep && j.Kind == engine.JobSearch {
+						if j.Episode == ep && (j.Kind == engine.JobSearch || j.Kind == engine.JobClip) {
 							if j.State == JobInterrupted || j.State == JobFailed {
 								d.svc.Continue(j.ID)
 							} else {
@@ -60,6 +61,8 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 					if running > 1 {
 						t.Errorf("%d searches of one episode at once", running)
 					}
+				case 4:
+					d.svc.MakeClip(ep, float64(10+(n*37)%250), n%2 == 1)
 				}
 				time.Sleep(5 * time.Millisecond)
 			}
@@ -73,4 +76,13 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	}
 	d.idle(a)
 	d.idle(b)
+	for _, ep := range []string{a, b} {
+		seen := map[string]bool{}
+		for _, c := range d.clips(ep) {
+			if seen[c.Key] {
+				t.Errorf("%s twice in the list", c.Key)
+			}
+			seen[c.Key] = true
+		}
+	}
 }

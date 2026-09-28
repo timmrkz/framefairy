@@ -821,12 +821,48 @@ func (s *FrameFairy) captionOverrides(planPath string) map[string]any {
 	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
 	// The highlight colour of the settings is for a plan that was not given
 	// one of its own in the captions column, the same as the render has it.
-	if plan, _, err := engine.LoadClips(planPath); err == nil {
-		if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
-			overrides["highlight_colour"] = set.HighlightColour
-		}
+	plan, _, err := engine.LoadClips(planPath)
+	if err != nil {
+		overrides["highlight_colour"] = set.HighlightColour
+	} else if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
+		overrides["highlight_colour"] = set.HighlightColour
 	}
 	return overrides
+}
+
+// ArrivingCaptions are the captions of a clip on its way, the nth of a
+// job, laid out the way they will be once it is written, in the style of
+// the clip set it goes into. Nil until the job knows what the clip keeps.
+// The workspace draws them on the clip timeline while the crop is placed.
+func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView, error) {
+	for _, j := range s.jobs.list() {
+		if j.ID != jobID {
+			continue
+		}
+		if !s.store.Known(j.Episode) {
+			return nil, os.ErrNotExist
+		}
+		logs := filepath.Join(engine.WorkDir(j.Episode), "logs")
+		plan := filepath.Join(logs, engine.HandPlanName)
+		if j.Kind == engine.JobSearch {
+			var window *engine.Window
+			if j.From > 0 || j.To > 0 {
+				window = &engine.Window{Start: j.From, End: j.To}
+			}
+			plan = filepath.Join(logs, engine.PlanName(window))
+		}
+		for _, u := range j.Underway {
+			if u.N == n {
+				t, err := s.words(j.Episode)
+				if err != nil {
+					return nil, err
+				}
+				return engine.ArrivingCaptionsView(plan, u, t, s.captionOverrides(plan)), nil
+			}
+		}
+		return nil, nil
+	}
+	return nil, nil
 }
 
 // Fonts are the faces the captions can be written in. They travel with the

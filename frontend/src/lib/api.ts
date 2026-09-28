@@ -83,7 +83,10 @@ export interface EpisodeStatus {
   modified: string;
   missing: boolean;
   transcribed: boolean;
+  // How far the transcript reaches from the start without a gap, and every
+  // part it has heard, which need not start at the start or meet.
   covered: number;
+  heard: [number, number][];
   // How many seconds of the loudness are measured, which is the waveform,
   // which parts, from and to, and whether all of it. It runs ahead of the
   // transcript, from the moment an episode is added, where the clip
@@ -260,8 +263,10 @@ export interface EngineEvent {
   fraction: number;
   remaining: number;
   // The second of the episode the work has reached, where that means
-  // anything. A transcription sets it on every chunk it hears.
+  // anything, and where the part of the episode it covers began. A
+  // transcription sets them on every chunk it hears.
   covered?: number;
+  from?: number;
   // How many clips a search has written to its plan so far.
   found?: number;
   duration?: number;
@@ -277,12 +282,36 @@ export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | 
 // Where a search or a render is: waiting for its turn, hearing the
 // episode, finding clips, or rendering them. A search called off with
 // Cancel is "stopped", and says so the way one cut off does.
-export type JobStep = "waiting" | "hearing" | "finding" | "rendering" | "failed" | "stopped";
+export type JobStep =
+  | "waiting"
+  | "hearing"
+  | "finding"
+  | "framing"
+  | "rendering"
+  | "failed"
+  | "stopped";
+
+// A clip on its way into the list: proposed, by the model or at the
+// playhead with I or O, and not written yet. Every job that makes clips
+// says which it has on the way the same way, so every clip comes in the
+// same way. n is which of its job's clips it is, and stays while its step
+// and its edges change. A clip made by hand is at the playhead, start and
+// end the same, until the words there are known.
+export interface Underway {
+  // What of it is kept, from and to, once its pauses are cut, before its
+  // crop is placed.
+  pieces?: [number, number][];
+  n: number;
+  start: number;
+  end: number;
+  title?: string;
+  step: JobStep;
+}
 
 export interface Job {
   id: string;
   episode: string;
-  kind: "search" | "render" | "model" | "llm";
+  kind: "search" | "render" | "clip" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -301,14 +330,21 @@ export interface Job {
   // The window of a search. To is 0 for the end of the episode.
   from?: number;
   to?: number;
+  // A clip made by hand: the moment I or O was pressed at, and whether it
+  // was O.
+  at?: number;
+  backward?: boolean;
+  // The clips the job has on the way.
+  underway?: Underway[];
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;
 }
 
 // The lanes the Go side runs work in, one job at a time in each: the
-// speech model, the language model and ffmpeg.
-export type Lane = "hearing" | "finding" | "rendering";
+// speech model, the language model, ffmpeg rendering, and ffmpeg placing
+// the crop of a clip made by hand.
+export type Lane = "hearing" | "finding" | "rendering" | "framing";
 
 export interface PlanRequest {
   From: number;
@@ -518,6 +554,10 @@ export const api = {
   removeSearch: (path: string, from: number, to: number) =>
     call<number>("RemoveSearch", path, from, to),
   captions: (path: string, plan: string, clip: string) => call<CaptionsView>("Captions", path, plan, clip),
+  // The captions of a clip on its way, laid out as they will be once it is
+  // written, or null until its job knows what it keeps.
+  arrivingCaptions: (job: string, n: number) =>
+    call<CaptionsView | null>("ArrivingCaptions", job, n),
   // What a gesture on the clip timeline makes of a clip, worked out by
   // the engine while the hand moves and saved by reshape when it lets go,
   // so what is drawn is what is saved. See engine/shape.go.
@@ -533,6 +573,7 @@ export const api = {
   search: (path: string, req: PlanRequest) => call<Job>("Search", path, req),
   // Continue: carries on a search or a render that stopped.
   continueJob: (id: string) => call<Job>("Continue", id),
+  makeClip: (path: string, at: number, backward: boolean) => call<Job>("MakeClip", path, at, backward),
   still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
   // The words said in a part of the episode, for walking the playhead
   // from word to word.

@@ -34,7 +34,7 @@ func (t *Transcript) Correct(corrections map[string]string) {
 		heard = append(heard, w)
 		words = append(words, splitWord(w)...)
 	}
-	t.Heard, t.Words = heard, words
+	t.HeardWords, t.Words = heard, words
 	t.Language = wordsLanguage(words)
 }
 
@@ -70,9 +70,9 @@ func splitWord(word Cue) []Cue {
 // split in two, or the captions hyphenated, is one word here, so correcting
 // either half corrects the word.
 func (t *Transcript) HeardAt(at float64) (Cue, bool) {
-	i := sort.Search(len(t.Heard), func(i int) bool { return t.Heard[i].End > at })
-	if i < len(t.Heard) && at >= t.Heard[i].Start-0.0015 {
-		return t.Heard[i], true
+	i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].End > at })
+	if i < len(t.HeardWords) && at >= t.HeardWords[i].Start-0.0015 {
+		return t.HeardWords[i], true
 	}
 	return Cue{}, false
 }

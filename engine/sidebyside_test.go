@@ -139,9 +139,9 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	}
 }
 
-// Side by side, a transcription still stops exactly where it is held,
-// having heard nothing past it and missed nothing before it.
-func TestHearingSideBySideStopsExactlyAtItsHold(t *testing.T) {
+// Side by side, a part is heard exactly, with nothing missed on the way
+// and no audio heard past what it reads around the part.
+func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	source := testEpisode(t, "70")
 	heard := 0.0
 	copies := &sideBySide{inner: straddlingRecognizer{&heard}, copies: 3}
@@ -150,17 +150,15 @@ func TestHearingSideBySideStopsExactlyAtItsHold(t *testing.T) {
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
-	const stop = 51.37
-	p.StopAt(func() float64 { return stop })
-	if err := p.Transcribe(context.Background()); err != nil {
+	part := Window{10, 51.37}
+	if err := p.Hear(context.Background(), part); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	covered, done := Coverage(source, base.ASRModel)
-	if done || math.Abs(covered-stop) > 0.001 {
-		t.Fatalf("stopped at %v, done %v, asked to stop at %v", covered, done, stop)
+	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{part.Start, part.End} {
+		t.Fatalf("heard %v, asked for %v", parts, part)
 	}
-	if over := heard - stop; over > 0.02 {
-		t.Errorf("heard %.2f s past the stop", over)
+	if over := heard - (part.End - part.Start + 2*hearingPad); over > 0.02 {
+		t.Errorf("heard %.2f s more than the part and the audio around it", over)
 	}
 	stamp, _ := stampOf(source)
 	_, words, _, ok := readTranscriptFile(filepath.Join(p.LogsDir(), "words.json"), stamp,
@@ -168,10 +166,15 @@ func TestHearingSideBySideStopsExactlyAtItsHold(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot read the transcript")
 	}
-	// Every piece before the stop is in, none left behind by a copy that
-	// was still hearing it: a word every 0.6 s from the start.
-	if want := int(math.Floor(stop/0.6)) - 2; len(words) < want {
-		t.Errorf("%d words up to %.2f s, want about %d", len(words), stop, want)
+	// Every piece of the part is in, none left behind by a copy that was
+	// still hearing it: a word every 0.6 s.
+	if want := int(math.Floor((part.End-part.Start)/0.6)) - 2; len(words) < want {
+		t.Errorf("%d words in %v, want about %d", len(words), part, want)
+	}
+	for _, w := range words {
+		if w.Start < part.Start || w.Start >= part.End {
+			t.Errorf("a word outside the part: %v", w)
+		}
 	}
 }
 

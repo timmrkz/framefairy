@@ -68,7 +68,21 @@ type PlanOptions struct {
 	// PlanPath is where each clip is written the moment it is framed. The
 	// first one replaces whatever plan was there.
 	PlanPath string
+	// By is who proposes the clips, stamped on the clip set as
+	// planned_with.by: empty for the model, ByHand for I and O.
+	By string
+	// Grows is a clip set that is added to rather than made anew: each
+	// clip goes in beside the ones there, and takes the next id after
+	// theirs. The clips made by hand are one such set.
+	Grows bool
+	// IDPrefix begins every id in the clip set. A search of a window uses
+	// t<start>-, see newPlanBuilder, so its clips' files never meet those
+	// of another window's.
+	IDPrefix string
 }
+
+// ByHand is the clip set made with I and O, see PlanOptions.By.
+const ByHand = "hand"
 
 // The plan as written to disk. Field order matches the Python version, so a
 // plan reads the same whichever version wrote it.
@@ -90,6 +104,8 @@ type PlannedWith struct {
 	Model string   `json:"model"`
 	From  *PyFloat `json:"from"`
 	To    *PyFloat `json:"to"`
+	// By is who proposed the clips, see PlanOptions.By.
+	By string `json:"by,omitempty"`
 }
 
 // PlanClip is one clip in clips.json.

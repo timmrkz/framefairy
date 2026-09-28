@@ -155,8 +155,6 @@ var spokenLanguages = map[whatlanggo.Lang]bool{
 	whatlanggo.Spa: true, whatlanggo.Swe: true, whatlanggo.Ukr: true,
 }
 
-// languageOf says which language captions are in, as ISO 639-1, read off
-// all their words together.
 // wordsLanguage says which language words are in, as ISO 639-1. An
 // episode is read once, off its first few thousand words, which is plenty
 // to tell and quick enough to do every time a transcript is read.
@@ -338,7 +336,7 @@ func showWords(words []Cue, r captionRoom, language string) []Cue {
 
 // hyphenate splits every word too wide for a line into pieces that fit.
 // The span the word was spoken in is shared out by how long the pieces
-// are, the way SplitCorrected shares out a word corrected into two. The
+// are, the way splitWord shares out a word corrected into two. The
 // words given are never changed, a split gives back a new list.
 func hyphenate(words []Cue, r captionRoom, h *hyphenator) []Cue {
 	var out []Cue

@@ -70,8 +70,8 @@ func TestTranscriptionResumes(t *testing.T) {
 			early = append(early, w)
 		}
 	}
-	file.Partial, file.To, file.Words = true, PyFloat(cut), storedWords(early)
-	if err := writeTranscript(path, file, frames[:2000]); err != nil {
+	file.Parts, file.Words = [][2]PyFloat{{0, PyFloat(cut)}}, storedWords(early)
+	if err := writeTranscript(path, file, frames); err != nil {
 		t.Fatal(err)
 	}
 	if got, done := Coverage(source, base.ASRModel); done || got != cut {
@@ -91,16 +91,15 @@ func TestTranscriptionResumes(t *testing.T) {
 	if err := p.Transcribe(context.Background()); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if heard > 52 || heard < 48 {
-		t.Errorf("resumed run heard %.1f s, want about 50", heard)
+	// The 50 s not heard, and hearingPad before them.
+	if want := 50 + hearingPad; math.Abs(heard-want) > 0.5 {
+		t.Errorf("resumed run heard %.1f s, want about %.1f", heard, want)
 	}
 	resumed, err := p.Transcript()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Exactly the same, because carrying on drops samples by count rather
-	// than asking ffmpeg to seek. TestAPartOfAudioLinesUpWithTheWholeEpisode
-	// covers why that matters.
+	// The same, see TestAPartOfAudioLinesUpWithTheWholeEpisode.
 	if len(resumed.Frames) != len(full.Frames) {
 		t.Errorf("frames %d after resuming, %d in one go", len(resumed.Frames), len(full.Frames))
 	}
@@ -131,8 +130,15 @@ func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
 		t.Fatal(err)
 	}
 	path := filepath.Join(logs, TranscriptName(nil))
+	// Heard from the start to to, of an episode that is longer when the
+	// transcription is not done.
+	end := to
+	if partial {
+		end = to + 10
+	}
 	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
-		To: PyFloat(to), Mean: PyFloat(-30), Partial: partial, Words: storedWords(words)}
+		Mean: PyFloat(-30), Parts: [][2]PyFloat{{0, PyFloat(to)}}, End: PyFloat(end),
+		Words: storedWords(words)}
 	if err := writeTranscript(path, file, frames); err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +167,19 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		if st := Status(source, "modell"); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
+	}
+
+	// A file of version 2 that stopped where a search waited is the one
+	// part it heard, up to where carrying on would have started, without
+	// the word it left to be heard again.
+	file := transcriptFile{Version: 2, Source: stamp, Model: "modell", To: 3, Resume: 2.5,
+		Partial: true, Mean: -30, Words: storedWords(append(words, Cue{2.6, 2.9, "noch"}))}
+	if err := writeTranscript(path, file, make([]float32, 300)); err != nil {
+		t.Fatal(err)
+	}
+	read, got, _, ok := readTranscriptFile(path, stamp, "modell")
+	if parts := read.heard(); !ok || len(parts) != 1 || parts[0] != [2]float64{0, 2.5} || len(got) != 2 {
+		t.Errorf("version 2 read as %v with %v", read.heard(), got)
 	}
 }
 
@@ -262,8 +281,8 @@ func TestCoverageAndSlicing(t *testing.T) {
 		t.Errorf("partial coverage %v %v", got, done)
 	}
 	partialStamp, _ := stampOf(partialSource)
-	if _, ok := readTranscript(partialPath, partialStamp, "modell", Window{0, 2}, nil); ok {
-		t.Errorf("a partial transcript was served as a whole one")
+	if _, ok := sliceTranscript(partialPath, partialStamp, "modell", Window{0, 3}, nil); ok {
+		t.Errorf("a window past what was heard was served")
 	}
 }
 
@@ -326,10 +345,11 @@ func beatEpisode(t *testing.T, seconds string) string {
 	return path
 }
 
-// TestAPartOfAudioLinesUpWithTheWholeEpisode is the reason the engine
-// counts samples itself instead of asking ffmpeg to seek. Starting part way
-// in has to give exactly the audio the whole episode has there, or every
-// word after that point carries a time that is out by the difference.
+// Starting part way in has to give exactly the audio the whole episode has
+// there, or every word after that point carries a time that is out by the
+// difference. A part is read with a seek, see audioFrom, which lands on the
+// sample: what differs is the last digits of a float, a hundred thousandth
+// of a dB, where a shift of a single frame is a dB and more on this tone.
 func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	source := beatEpisode(t, "12")
 	var calls int32
@@ -352,22 +372,29 @@ func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 		t.Fatalf("%d frames from 4 s on, %d in the whole episode",
 			len(part.Frames), len(whole.Frames))
 	}
-	differsAt := func(shift int) int {
+	// How many frames of the part read otherwise than the whole episode
+	// does at the same moment, shifted by some frames.
+	differ := func(shift int) int {
+		n := 0
 		for i := range part.Frames {
 			at := offset + shift + i
-			if at < 0 || at >= len(whole.Frames) || whole.Frames[at] != part.Frames[i] {
-				return i
+			if at < 0 || at >= len(whole.Frames) || math.Abs(float64(whole.Frames[at]-part.Frames[i])) > 0.01 {
+				n++
 			}
 		}
-		return -1
+		return n
 	}
-	if i := differsAt(0); i >= 0 {
-		t.Errorf("frame %d of the part reads %v, the whole episode has %v at the same moment",
-			i, part.Frames[i], whole.Frames[offset+i])
+	// A frame or two on an edge of the tone come out of the decoder a dB
+	// or so apart, the way they do for the loudness, see
+	// TestMeasureLevelsGoesWhereTheClipTimelineLooks. A shift differs on
+	// every edge, five times a second.
+	if n := differ(0); n > len(part.Frames)/100 {
+		t.Errorf("%d frames of %d read otherwise than the whole episode at the same moment", n, len(part.Frames))
 	}
-	// And the tone really is uneven enough that a shift would have shown.
-	if differsAt(2) < 0 || differsAt(-2) < 0 {
-		t.Errorf("the test tone is too even for a shift of 20 ms to show")
+	for _, shift := range []int{-2, -1, 1, 2} {
+		if n := differ(shift); n < len(part.Frames)/10 {
+			t.Errorf("shifted by %d frames only %d differ: the tone is too even for a shift to show", shift, n)
+		}
 	}
 }
 
@@ -551,9 +578,12 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 			early = append(early, w)
 		}
 	}
-	file.Partial, file.To, file.Words = true, PyFloat(40), storedWords(early)
+	file.Parts, file.Words = [][2]PyFloat{{0, 40}}, storedWords(early)
 	if err := writeTranscript(path, file, frames[:2000]); err != nil {
 		t.Fatal(err)
+	}
+	if covered, _ := Coverage(source, base.ASRModel); covered != 20 {
+		t.Errorf("reads as heard to %v, the loudness reaches 20 s", covered)
 	}
 	if err := p.Transcribe(context.Background()); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
@@ -686,69 +716,140 @@ func (s straddlingRecognizer) Recognize(samples []float32, rate int) []Token {
 
 func (straddlingRecognizer) Close() {}
 
-// A transcription with a place to stop hears the audio exactly up to it and
-// no further, saves exactly up to it, and leaves out a word that ran across
-// it. Carrying on starts before that word and hears it whole, once.
-func TestTheTranscriptionStopsExactlyAtItsHold(t *testing.T) {
-	source := testEpisode(t, "70")
+// beatRecognizer hears a word wherever the tone of a beatEpisode sounds,
+// five times a second, so its words are where the sound is, whatever part
+// of the audio it is given, the way a real model's are. A beat cut by the
+// edge of what it is given is heard as part of a word, the way a real
+// model hears half a word.
+type beatRecognizer struct{ seconds *float64 }
+
+func (b beatRecognizer) Recognize(samples []float32, rate int) []Token {
+	*b.seconds += float64(len(samples)) / float64(rate)
+	var tokens []Token
+	step := rate / 100
+	start := -1
+	for i := 0; i+step <= len(samples); i += step {
+		power := 0.0
+		for _, v := range samples[i : i+step] {
+			power += float64(v) * float64(v)
+		}
+		loud := power/float64(step) > 0.01
+		switch {
+		case loud && start < 0:
+			start = i
+		case !loud && start >= 0:
+			tokens = append(tokens, Token{Text: " ton", Start: float64(start) / float64(rate),
+				Duration: float64(i-start) / float64(rate)})
+			start = -1
+		}
+	}
+	if start >= 0 {
+		tokens = append(tokens, Token{Text: " ton", Start: float64(start) / float64(rate),
+			Duration: float64(len(samples)-start) / float64(rate)})
+	}
+	return tokens
+}
+
+func (beatRecognizer) Close() {}
+
+// The transcript is heard in parts, where it is needed first, and they
+// meet with every word once. The parts here start and end inside a beat,
+// so each join has a word across it, heard whole on one side and in part
+// on the other.
+func TestPartsMeetWithEveryWordOnce(t *testing.T) {
+	source := beatEpisode(t, "12")
 	heard := 0.0
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
-	e.OpenRecognizer = func(string) (Recognizer, error) { return straddlingRecognizer{&heard}, nil }
+	e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)
-	// Where each pass starts: the start, then where the last one said to
-	// carry on from, which is before a word that ran across its stop.
-	from := 0.0
-	for _, stop := range []float64{33.25, 51.37} {
-		heard = 0
-		was := from
-		p.StopAt(func() float64 { return stop })
-		if err := p.Transcribe(context.Background()); err != nil {
-			t.Fatalf("a transcription that stopped where it was asked to failed: %v %s", err, p.LastError())
-		}
-		covered, done := Coverage(source, base.ASRModel)
-		if done || math.Abs(covered-stop) > 0.001 {
-			t.Fatalf("stopped at %v, done %v, asked to stop at %v", covered, done, stop)
-		}
-		// Nothing past the stop was heard: zero overshoot, not a chunk.
-		if over := was + heard - stop; over > 0.02 {
-			t.Errorf("heard %.2f s past the stop", over)
-		}
-		path := filepath.Join(p.LogsDir(), "words.json")
-		stamp, _ := stampOf(source)
-		file, words, _, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
-		if !ok {
-			t.Fatal("cannot read the transcript")
-		}
-		for _, w := range words {
-			if w.End > stop+0.001 {
-				t.Errorf("a word that runs across the stop was kept: %v", w)
-			}
-		}
-		from = stop
-		if file.Resume > 0 && float64(file.Resume) < stop {
-			from = float64(file.Resume)
-			t.Logf("a word ran across %v, carrying on from %v", stop, from)
-		}
-	}
+	ctx := context.Background()
 
-	// Carried on to the end: every word once, in order, none overlapping.
-	p.StopAt(func() float64 { return 0 })
-	if err := p.Transcribe(context.Background()); err != nil {
+	if err := p.Hear(ctx, Window{4.1, 6.1}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{4.1, 6.1} {
+		t.Fatalf("heard %v", parts)
+	}
+	// Only the part and the audio either side of it, not from the start.
+	if want := 2 + 2*hearingPad; math.Abs(heard-want) > 0.05 {
+		t.Errorf("heard %.2f s of audio for a part of 2 s, want %.2f", heard, want)
+	}
+	if covered, done := Coverage(source, base.ASRModel); covered != 0 || done {
+		t.Errorf("a part in the middle reads as heard from the start to %v", covered)
+	}
+	if err := p.Hear(ctx, Window{0, 3}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if parts := HeardParts(source, base.ASRModel); len(parts) != 2 {
+		t.Fatalf("heard %v", parts)
+	}
+	if gaps := Unheard(source, base.ASRModel, Window{0, 12}); len(gaps) != 2 ||
+		gaps[0] != (Window{3, 4.1}) || gaps[1] != (Window{6.1, 12}) {
+		t.Errorf("unheard %v", gaps)
+	}
+	// What is heard already is not heard again.
+	heard = 0
+	if err := p.Hear(ctx, Window{0.5, 5}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if want := 1.1 + 2*hearingPad; math.Abs(heard-want) > 0.05 {
+		t.Errorf("heard %.2f s for the 1.1 s between two parts, want %.2f", heard, want)
+	}
+	if err := p.Transcribe(ctx); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if _, done := Coverage(source, base.ASRModel); !done {
-		t.Fatal("not finished after carrying on")
+		t.Fatalf("not done, heard %v", HeardParts(source, base.ASRModel))
 	}
 	whole, err := p.Transcript()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 1; i < len(whole.RawWords); i++ {
-		a, b := whole.RawWords[i-1], whole.RawWords[i]
-		if b.Start < a.End-0.001 && (math.Abs(b.Start-33.25) < 2 || math.Abs(b.Start-51.37) < 2) {
-			t.Errorf("two words overlap at a stop, a word was heard twice: %v and %v", a, b)
+	// A beat every 0.4 s, each heard once, whole, where it is.
+	if len(whole.RawWords) != 30 {
+		t.Errorf("%d words for 30 beats: %v", len(whole.RawWords), whole.RawWords)
+	}
+	for i, w := range whole.RawWords {
+		at := float64(i) * 0.4
+		if math.Abs(w.Start-at) > 0.03 || math.Abs(w.End-(at+0.2)) > 0.03 {
+			t.Errorf("word %d is %.2f to %.2f, the beat is %.2f to %.2f", i, w.Start, w.End, at, at+0.2)
 		}
+	}
+}
+
+// What is added to a transcript lands whole even when two hearings of the
+// same part write at once: each adds only what the other has not.
+func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
+	source := beatEpisode(t, "12")
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	var wg sync.WaitGroup
+	errs := make([]error, 3)
+	for i, span := range []Window{{2, 8}, {2, 8}, {5, 12}} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			heard := 0.0
+			e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+			e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
+			errs[i] = NewProject(e, source, base).Hear(context.Background(), span)
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("hearing %d: %v", i, err)
+		}
+	}
+	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{2, 12} {
+		t.Fatalf("heard %v", parts)
+	}
+	stamp, _ := stampOf(source)
+	_, words, _, _ := readTranscriptFile(filepath.Join(WorkDir(source), "logs", "words.json"), stamp,
+		filepath.Base(base.ASRModel))
+	if len(words) != 25 {
+		t.Errorf("%d words for the 25 beats from 2 s on: %v", len(words), words)
 	}
 }

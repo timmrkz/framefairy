@@ -257,11 +257,15 @@ const clipOf = (id: string) => {
 // that reads as two words is drawn as two, each taking its share of the
 // one moment they both came from.
 const captionCues = (id: string, draft?: { start: number; end: number }[]) => {
-  // With pieces being dragged on the clip timeline, the words are taken
-  // afresh for them, the way the engine's DraftCaptionsView takes them.
-  // A clip keeps no words of its own. What it says is read off the
-  // episode's words, corrected, the way the engine's Said reads it.
+  // With pieces being dragged on the clip timeline, the captions are of
+  // those, the way the engine's ShapeClipView makes them.
   const segments = draft ?? clipOf(id).segments;
+  return cuesOf(segments, id);
+};
+// The captions of any pieces, a saved clip's, a dragged one's or one on
+// its way. A clip keeps no words of its own. What it says is read off the
+// episode's words, corrected, the way the engine's Said reads it.
+const cuesOf = (segments: { start: number; end: number }[], id = "") => {
   const c = {
     segments,
     words: allWords()
@@ -612,11 +616,19 @@ function searchJob(s: FakeSearch) {
     const end = s.to > 0 ? s.to : fullLength;
     const share = Math.min(Math.max((covered - s.heardFrom) / Math.max(end - s.heardFrom, 1), 0), 1);
     const remaining = Math.max(end - covered, 0) / hearsPerSecond;
-    return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, covered, elapsed: 1, time: "" } };
+    return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, from: s.heardFrom, covered, elapsed: 1, time: "" } };
   }
   const lasts = findFor();
   const text = now.found ? `${now.found} of 12 found` : "Finding clips";
-  return { ...base, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
+  // The next clip is named a moment before it lands, and is on its way
+  // until it does, the way the plan builder says so while it places the
+  // crop.
+  const k = now.found;
+  const underway =
+    k < landOrder.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
+      ? [{ n: k + 1, start: 40 + (landOrder[k] - 1) * 140, end: 65 + (landOrder[k] - 1) * 140, title: "Ein Moment " + landOrder[k], step: "framing" }]
+      : [];
+  return { ...base, underway, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
 }
 // How far the saved transcript reaches. With ?lagging it is saved every 8 s
 // of work, minutes of audio apart, while the job reports every chunk.
@@ -645,6 +657,106 @@ function foundClips(): number[] {
   }
   return out;
 }
+// Clips made by hand with I and O, the way the Go side makes them: a job
+// each, any number at once, which hears first where the transcript does
+// not reach, places the crop, and lands its clip in the clips made by hand.
+// Its clip is on its way from the moment it is asked for, at the playhead,
+// and where its sentences are once it has them. ?slowhand takes its time,
+// so a probe can look at a clip on its way.
+const clock = (t: number) => {
+  const s = Math.floor(t);
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+};
+type FakeHand = { id: string; n: number; at: number; backward: boolean; wall: number; hears: boolean; cancelledAt?: number; settled?: boolean };
+const hands = (): FakeHand[] => ((window as any).__hands ??= []);
+// About as long as the real one takes: the speech model loads and hears
+// the minute, then the crop is placed over it. A stub quicker than the
+// app hid that nothing showed for the seconds the app takes.
+const handTakes = () => (location.search.includes("slowhand") ? 5000 : 3000);
+function handAt(h: FakeHand, now = Date.now()) {
+  // Called off, it says so where its clip would have been, the way a
+  // search does, after the moment the real one takes to stop.
+  if (h.settled) return { state: "cancelled", step: "", start: h.at, end: h.at, since: 0, share: -1 };
+  if (h.cancelledAt !== undefined && now - h.cancelledAt >= 400) {
+    return { state: "interrupted", step: "stopped", start: h.at, end: h.at, since: 0, share: -1 };
+  }
+  now = Math.min(now, h.cancelledAt ?? now);
+  const since = now - h.wall;
+  const hearFor = h.hears ? handTakes() : 0;
+  const start = Math.max(0, h.backward ? h.at - 25 : h.at - 2);
+  if (since < hearFor) return { state: "running", step: "hearing", start: h.at, end: h.at, since, share: since / hearFor };
+  if (since < hearFor + handTakes()) {
+    // Its sentences are known a moment into the step.
+    const known = since - hearFor > 200;
+    return { state: "running", step: "framing", start: known ? start : h.at, end: known ? start + 25 : h.at, since, share: -1 };
+  }
+  return { state: "done", step: "", start, end: start + 25, since, share: 1 };
+}
+// The part a clip made by hand has the engine hear, the minute around the
+// playhead, see ClipRequest.reach, and what of it is heard so far.
+function handReach(h: FakeHand): [number, number] {
+  const r = 16;
+  return h.backward
+    ? [Math.max(0, h.at - 30 - r), Math.min(fullLength, h.at + r)]
+    : [Math.max(0, h.at - r), Math.min(fullLength, h.at + 30 + r)];
+}
+function handHeard(h: FakeHand): [number, number] | null {
+  if (!h.hears) return null;
+  const now = handAt(h);
+  const [a, b] = handReach(h);
+  if (now.step === "hearing") return [a, a + (b - a) * now.share];
+  if (now.state === "running" || now.state === "done") return [a, b];
+  return null;
+}
+// What the transcript on disk has heard: from the start as far as the
+// searches got, and the parts the clips made by hand had heard.
+function heardParts(): [number, number][] {
+  const parts: [number, number][] = [[0, savedCovered()]];
+  for (const h of hands()) {
+    const p = handHeard(h);
+    if (p && p[1] > p[0]) parts.push(p);
+  }
+  parts.sort((x, y) => x[0] - y[0]);
+  const out: [number, number][] = [];
+  for (const [a, b] of parts) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else if (b > a) out.push([a, b]);
+  }
+  return out;
+}
+function handJob(h: FakeHand) {
+  const now = handAt(h);
+  const reach = handReach(h);
+  const running = now.state === "running";
+  return {
+    id: h.id, episode: "/eps/ep.mp4", kind: "clip", label: "Make a clip", state: now.state,
+    step: now.step, record: `clip-${h.n}`, at: h.at, backward: h.backward, queued: "",
+    lane: now.step === "hearing" ? "hearing" : "framing",
+    result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
+    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined }] : undefined,
+    progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" } : undefined,
+  };
+}
+// What a clip made by hand keeps once its pauses are cut, a moment into
+// placing its crop: the pieces of the clip it lands as.
+function handMade(h: FakeHand, start: number) {
+  return clip(20 + h.n, start, `Von ${clock(start)} an`, false);
+}
+function handPieces(h: FakeHand, start: number): [number, number][] {
+  return handMade(h, start).segments.map((p: { start: number; end: number }) => [p.start, p.end]);
+}
+// The clips made by hand that have landed.
+function handClips() {
+  return hands()
+    .filter((h) => handAt(h).state === "done")
+    .map((h) => {
+      const at = handAt(h);
+      const made = handMade(h, at.start);
+      return { ...made, id: `h0${h.n}`, slug: `hand-${h.n}`, key: `clips-hand.json/h0${h.n}`, plan: "/eps/ep.framefairy/logs/clips-hand.json" };
+    });
+}
+
 function askSearch(from: number, to: number): FakeSearch {
   const list = fakeSearches();
   for (const s of list) if (s.stopped || s.cancelledAt !== undefined) s.settled = true;
@@ -885,18 +997,35 @@ export const Call = {
         return Promise.resolve(null);
       case "Library":
         return Promise.resolve([
-          { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
-          { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
+          { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, heard: [[0, 14423]], transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
+          { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
         ]);
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number };
         const made = askSearch(req.From, req.To);
         return Promise.resolve(searchJob(made));
       }
+      case "MakeClip": {
+        const at = Number(args[1]);
+        const list = hands();
+        const made = { id: `h${list.length + 1}`, n: list.length + 1, at, backward: !!args[2], wall: Date.now(), hears: false };
+        const reach = handReach(made);
+        made.hears = !heardParts().some(([a, b]) => a <= reach[0] && b >= reach[1]);
+        list.push(made);
+        return Promise.resolve(handJob(made));
+      }
       case "Continue": {
+        const hand = hands().find((h) => h.id === args[0] && handAt(h).state === "interrupted");
+        if (hand) {
+          hand.settled = true;
+          const list = hands();
+          const again = { id: `h${list.length + 1}`, n: list.length + 1, at: hand.at, backward: hand.backward, wall: Date.now(), hears: false };
+          list.push(again);
+          return Promise.resolve(handJob(again));
+        }
         const was = fakeSearches().find((s) => s.id === args[0] && (s.stopped || s.cancelledAt !== undefined) && !s.settled);
         if (!was) return Promise.resolve({ id: "x", episode: "", kind: "continue", label: "Continue", state: "failed", queued: "", lane: "finding" });
         return Promise.resolve(searchJob(askSearch(was.from, was.to)));
@@ -908,8 +1037,16 @@ export const Call = {
       case "Source":
         return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
       case "Clips": {
-        const made = found.map((n) => clip(n + (fresh ? 0 : 4), 40 + (n - 1) * 140, "Ein Moment " + n, false));
-        if (fresh) return Promise.resolve(made.sort((x, y) => x.start - y.start));
+        const made = [
+          ...found.map((n) => clip(n + (fresh ? 0 : 4), 40 + (n - 1) * 140, "Ein Moment " + n, false)),
+          ...handClips(),
+        ];
+        // ?lagclips answers every list 300 ms late, the way a busy machine
+        // does, so a card on its way has to hold its place until the list
+        // has the clip it became.
+        const answer = <T,>(list: T): Promise<T> =>
+          location.search.includes("lagclips") ? new Promise((done) => setTimeout(() => done(list), 300)) : Promise.resolve(list);
+        if (fresh) return answer(made.sort((x, y) => x.start - y.start));
         // A list that is slow to come, the way it is while the machine is
         // busy, and that knows nothing of what was done since it was asked
         // for. It lands after an edit made in the meantime, and whatever it
@@ -924,7 +1061,7 @@ export const Call = {
           return new Promise((done) => setTimeout(() => done(asked), 1200));
         }
         (window as any).__listed = true;
-        return Promise.resolve([
+        return answer([
           clip(1, 57, "Mein Arm ist zersprungen", true),
           clip(2, 400, "Der Typ vor mir auf einmal", false),
           clip(3, 902, "Warum ich nie wieder", false),
@@ -949,7 +1086,7 @@ export const Call = {
         if (location.search.includes("uneven")) {
           const lines = [];
           for (let at = 0; at + 3 <= 3600; at += 4) lines.push({ start: at, end: at + 3, chars: 80 });
-          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: 3600, rate: 30 });
+          return Promise.resolve({ chars: 250000, by: "memory", lines, heard: [[0, 3600]], rate: 30 });
         }
         // A model that reads everything, or with ?small one that reads
         // about 35 minutes at a time, the way Qwen3 14B does, and with
@@ -958,9 +1095,18 @@ export const Call = {
           chars: location.search.includes("small") ? 52000 : location.search.includes("memory") ? 117000 : 600000,
           by: location.search.includes("memory") ? "memory" : "context",
           lines: [],
-          heard: 0,
+          heard: [],
           rate: 25,
         });
+      case "ArrivingCaptions": {
+        const h = hands().find((x) => x.id === args[0]);
+        const now = h && handAt(h);
+        if (!h || !now || now.step !== "framing" || now.start === now.end) return Promise.resolve(null);
+        return Promise.resolve({
+          captions: cuesOf(handMade(h, now.start).segments),
+          style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
+        });
+      }
       case "Captions":
         return Promise.resolve({
           captions: captionCues(String(args[2])),
@@ -1087,7 +1233,7 @@ export const Call = {
         return Promise.resolve({ done: true, clip: "clips.json/03" });
       }
       case "Jobs": {
-        const searches = fakeSearches().map(searchJob);
+        const searches = [...fakeSearches().map(searchJob), ...hands().map(handJob)];
         // A render running on the first clip, so the Render button has
         // work of its own to show.
         if (q.includes("rendering")) {
@@ -1255,6 +1401,9 @@ export const Call = {
         (window as any).__stopped = true;
         ((window as any).__cancels ??= []).push(args[0]);
         if (args[0] === "l1" && llmRunning()) (window as any).__llmCancelled = Date.now();
+        const hand = hands().find((h) => h.id === args[0]);
+        if (hand && handAt(hand).state === "interrupted") hand.settled = true;
+        else if (hand && hand.cancelledAt === undefined) hand.cancelledAt = Date.now();
         const s = fakeSearches().find((f) => f.id === args[0]);
         if (s?.stopped) s.settled = true;
         else if (s && s.cancelledAt === undefined) s.cancelledAt = Date.now();
@@ -1402,8 +1551,8 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
-      for (const s of fakeSearches()) {
-        const job = searchJob(s);
+      for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob)] as any[]) {
+        const s = { id: job.id };
         const key = `${job.state}`;
         if (job.state !== "running" && told.get(s.id) === key) continue;
         told.set(s.id, key);

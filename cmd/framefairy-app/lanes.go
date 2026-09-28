@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"sync"
+
+	"framefairy/engine"
 )
 
 // lanes hands out turns in the queue's lanes, one job at a time in each, in
@@ -18,6 +20,14 @@ import (
 // again, and hearing waits for as long as a search finds. Work that is
 // not a step of a search, a model being installed or a transcription asked
 // for by itself, is neither taken back nor held up.
+//
+// And one more: a clip made by hand hears first. Somebody pressed I or O
+// and is looking at the card, and what it hears is the minute around the
+// playhead, where a search may hear an hour. So it goes ahead of every
+// search waiting to hear, takes the lane back from one that hears, the way
+// finding does, and does not wait for a search that finds: a minute of
+// audio is heard in a second or two. Clips made by hand hear in the order
+// they were asked for.
 type lanes struct {
 	mu      sync.Mutex
 	held    map[string]*holder
@@ -26,13 +36,15 @@ type lanes struct {
 }
 
 // A turn is either plain, or a step of a search: hearing, which gives way,
-// or finding, which the hearing lane gives way to.
+// or finding, which the hearing lane gives way to, or the hearing of a clip
+// made by hand, which everything of a search gives way to.
 type turnKind int
 
 const (
 	plainTurn turnKind = iota
 	hearingTurn
 	findingTurn
+	handHearingTurn
 )
 
 type holder struct {
@@ -85,6 +97,13 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 			l.mu.Unlock()
 			return nil, nil, ctx.Err()
 		}
+		// A clip made by hand takes the lane back from a search that
+		// hears. The search saves what it heard and asks again, behind it.
+		if a.kind == handHearingTurn {
+			if hearing := l.held[a.lane]; hearing != nil && hearing.kind == hearingTurn {
+				hearing.cancel()
+			}
+		}
 		changed := l.changed
 		l.mu.Unlock()
 		select {
@@ -126,7 +145,8 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 
 // mayLocked says whether an ask may have its turn now: its lane is free,
 // nobody asked for that lane before it, and it is not a search hearing
-// while a search finds. l.mu is held.
+// while a search finds. A clip made by hand that hears goes ahead of a
+// search that asked to hear before it. l.mu is held.
 func (l *lanes) mayLocked(a *ask) bool {
 	if l.held[a.lane] != nil {
 		return false
@@ -135,12 +155,17 @@ func (l *lanes) mayLocked(a *ask) bool {
 		if finding := l.held[LaneFinding]; finding != nil && finding.kind == findingTurn {
 			return false
 		}
+		for _, other := range l.asks {
+			if other.lane == a.lane && other.kind == handHearingTurn {
+				return false
+			}
+		}
 	}
 	for _, earlier := range l.asks {
 		if earlier == a {
 			return true
 		}
-		if earlier.lane == a.lane {
+		if earlier.lane == a.lane && (a.kind != handHearingTurn || earlier.kind == handHearingTurn) {
 			return false
 		}
 	}
@@ -156,13 +181,18 @@ func (l *lanes) dropLocked(a *ask) {
 	}
 }
 
-// laneOfStep is the lane a step of a job runs in.
-func laneOfStep(step string) (string, turnKind) {
+// laneOfStep is the lane a step of a kind of job runs in.
+func laneOfStep(kind, step string) (string, turnKind) {
 	switch step {
 	case "hearing":
+		if kind == engine.JobClip {
+			return LaneHearing, handHearingTurn
+		}
 		return LaneHearing, hearingTurn
 	case "finding":
 		return LaneFinding, findingTurn
+	case "framing":
+		return LaneFraming, plainTurn
 	}
 	return LaneRendering, plainTurn
 }

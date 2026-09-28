@@ -22,10 +22,18 @@ type PlanSummary struct {
 	To   float64 `json:"to"` // zero for a whole-episode plan
 	// Parts of the window that were given back, so the model may read
 	// them again. They are inside the window and never overlap.
-	Removed  []Window  `json:"removed,omitempty"`
-	Clips    int       `json:"clips"`
-	Model    string    `json:"model"`
+	Removed []Window `json:"removed,omitempty"`
+	Clips   int      `json:"clips"`
+	Model   string   `json:"model"`
+	// By is who proposed the clips, see PlanOptions.By.
+	By       string    `json:"by,omitempty"`
 	Modified time.Time `json:"modified"`
+}
+
+// Over is the part of the episode the clip set was made over, see
+// madeOver.
+func (s PlanSummary) Over(duration float64) Window {
+	return madeOver(s.From, s.To, s.To > s.From, s.By, duration)
 }
 
 // EpisodeStatus is what the library shows for one episode. It is read from
@@ -39,8 +47,12 @@ type EpisodeStatus struct {
 	// Transcribed means a whole-episode transcript matches the file as it
 	// is now. Stale means one exists but the file has changed since.
 	Transcribed bool `json:"transcribed"`
-	// Covered is how far the transcript reaches, in seconds, finished or not.
-	Covered float64 `json:"covered"`
+	// Covered is how far the transcript reaches from the start without a
+	// gap, in seconds, finished or not, and Heard every part it has heard,
+	// from and to, which need not start at the beginning or meet: a clip
+	// made by hand has the part it needs heard first.
+	Covered float64      `json:"covered"`
+	Heard   [][2]float64 `json:"heard"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -81,8 +93,11 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	whole := filepath.Join(logs, TranscriptName(nil))
 	if stamp, err := stampOf(source); err == nil {
 		if file, _, _, ok := readTranscriptFile(whole, stamp, model); ok {
-			st.Transcribed = !file.Partial
-			st.Covered = float64(file.To)
+			st.Transcribed = file.done()
+			st.Heard = file.heard()
+			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
+				st.Covered = st.Heard[0][1]
+			}
 		} else if exists(whole) {
 			st.TranscriptStale = true
 		}
@@ -100,12 +115,26 @@ func Status(source, asrModelDir string) EpisodeStatus {
 }
 
 // EverSearched says whether this episode has ever been searched for clips: it
-// has a plan, or a search or a render has kept its record or its timings,
-// see jobs.go. It stays true after the clips are removed again, because
-// the timings stay, and the app searches by itself only for an episode
-// nobody has searched. Deleting the work folder makes the episode new.
+// has a clip set made over a part of it, see madeOver, or a search has kept
+// its record or its timings, see jobs.go. It stays true after the clips are
+// removed again, because the timings stay, and the app searches by itself
+// only for an episode nobody has searched. Clips made by hand search
+// nothing. Deleting the work folder makes the episode new.
 func EverSearched(source string) bool {
-	return exists(JobsDir(source)) || len(PlanSummaries(filepath.Join(WorkDir(source), "logs"))) > 0
+	for _, plan := range PlanSummaries(filepath.Join(WorkDir(source), "logs")) {
+		if w := plan.Over(0); w.End > w.Start {
+			return true
+		}
+	}
+	if ReadSearch(source) != nil {
+		return true
+	}
+	for _, t := range ReadTimings(source) {
+		if t.Kind == JobSearch {
+			return true
+		}
+	}
+	return false
 }
 
 // PlanSummaries lists the plan files in a logs folder, newest first. Files
@@ -133,6 +162,9 @@ func PlanSummaries(logs string) []PlanSummary {
 		}
 		if v, ok := made["model"].(string); ok {
 			s.Model = v
+		}
+		if v, ok := made["by"].(string); ok {
+			s.By = v
 		}
 		s.Removed = readWindows(made["removed"])
 		out = append(out, s)
@@ -196,15 +228,13 @@ var ErrNoTranscript = errors.New("this episode has no current transcript yet")
 // Transcript returns the whole-episode transcript from the cache. It never
 // transcribes, so it returns ErrNoTranscript if Transcribe has not run.
 func (p *Project) Transcript() (*Transcript, error) {
-	return SavedTranscript(p.Source, p.LogsDir(), p.Base.ASRModel, nil, p.Base.SilenceDB)
+	return SavedTranscript(p.Source, p.LogsDir(), p.Base.ASRModel, p.Base.SilenceDB)
 }
 
-// SavedTranscript reads the words already heard of an episode, with its
-// corrections, and never transcribes: the transcript of a window when one
-// is named and was made for it, and otherwise the whole-episode transcript,
-// as far as it has got. It returns ErrNoTranscript when there is none.
-func SavedTranscript(source, logsDir, modelDir string, window *Window,
-	silenceDB *float64) (*Transcript, error) {
+// SavedTranscript reads the words already heard of an episode, as far as
+// hearing it has got, with its corrections. It never transcribes, and
+// returns ErrNoTranscript when there is nothing heard yet.
+func SavedTranscript(source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
 	stamp, err := stampOf(source)
 	if err != nil {
 		return nil, err
@@ -212,20 +242,13 @@ func SavedTranscript(source, logsDir, modelDir string, window *Window,
 	if modelDir == "" {
 		modelDir = DefaultModelDir()
 	}
-	model := filepath.Base(filepath.Clean(modelDir))
-	var t *Transcript
-	if window != nil {
-		t, _ = readTranscript(filepath.Join(logsDir, TranscriptName(window)), stamp, model, *window,
-			silenceDB)
+	file, words, frames, ok := readTranscriptFile(filepath.Join(logsDir, TranscriptName(nil)),
+		stamp, filepath.Base(filepath.Clean(modelDir)))
+	if !ok {
+		return nil, ErrNoTranscript
 	}
-	if t == nil {
-		file, words, frames, ok := readTranscriptFile(filepath.Join(logsDir, TranscriptName(nil)),
-			stamp, model)
-		if !ok {
-			return nil, ErrNoTranscript
-		}
-		t = fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
-	}
+	t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
+	t.Heard = file.heard()
 	t.Correct(LoadCorrections(logsDir))
 	return t, nil
 }
@@ -553,6 +576,26 @@ func captionStyle(plan Plan, clip Clip, overrides map[string]any) map[string]any
 		style[key] = value
 	}
 	return style
+}
+
+// ArrivingCaptionsView is the captions of a clip on its way, from the
+// pieces the plan builder says it keeps and the words said in them, laid
+// out the way a written clip's are, in the style of the clip set it goes
+// into. It is nil until the builder has them.
+func ArrivingCaptionsView(planPath string, u Underway, t *Transcript,
+	overrides map[string]any) *CaptionsView {
+	if len(u.Pieces) == 0 {
+		return nil
+	}
+	var clip Clip
+	for _, p := range u.Pieces {
+		clip.Segments = append(clip.Segments, Segment{Start: p[0], End: p[1]})
+	}
+	if len(Said(clip, t.Words)) == 0 {
+		return nil
+	}
+	plan, _, _ := LoadClips(planPath)
+	return captionsView(plan, clip, t, overrides)
 }
 
 func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any) *CaptionsView {

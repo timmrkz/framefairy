@@ -76,8 +76,8 @@ sat idle while it heard. The app now loads several copies of the model,
 are cut exactly as before, and what they hear is taken in the order it was
 said: a piece that is done early waits for the ones before it, so the
 transcript and every save of it reach only as far as all of it has been
-heard. A stop at the end of a window, a pause and the end of the audio each
-wait for every piece still being heard. Measured on the same M2 Max, over
+heard. The end of a part, a pause and the end of the audio each wait for
+every piece still being heard. Measured on the same M2 Max, over
 ten minutes of an episode, `make speechbench`:
 
 | copies | threads each | real time | an hour takes |
@@ -111,19 +111,45 @@ different kind of model, which writes its answer after hearing rather than
 as it hears, and whether they give the word times the captions need, and
 how fast they are here, is still to be measured.
 
-One cut is placed exactly: the end of the window the first search waits
-for. The app gives the transcription that point, `Engine.StopAt`, and the
-piece that reaches it is cut there, so nothing past the window's edge is
-heard. A word that runs across the edge is left out of what is saved, the
-transcript says to carry on from before it, `resume` in `words.json`, and
-the next pass hears it whole.
+### Heard in parts, where it is needed first
+
+The transcript is one file for the whole episode, `logs/words.json` with
+its loudness in `logs/words.frames`, and it holds the parts of the episode
+heard so far, `parts`, which need not start at the beginning or meet. A
+search needs its window heard and a clip made by hand the minute or so
+around the playhead, so `LoadTranscript` is asked for a window and hears
+only what of it is not heard yet, wherever that is. A playhead near the end
+of a four hour episode no longer waits for the hours before it.
+
+A part is read the way the loudness is, `audioFrom`: ffmpeg seeks before
+the input to the frame, decodes a fifth of a second early and throws that
+away. It lands on the sample: read from 4 s on, a tone gated five times a
+second reads the same as the whole episode at the same moment, frame for
+frame, but for a frame or two a dB apart on an edge of the tone, where a
+shift of 10 ms differs on every edge, `TestAPartOfAudioLinesUpWithTheWholeEpisode`.
+Before the parts, carrying on counted samples from the start instead, and
+the reason given was that a seek lands on the packet and differs by up to
+23 ms between builds. With the seek before the input, ffmpeg trims what it
+decoded before the point, and the measurement says it lands.
+
+Each part is read with 3 s of audio on either side, `hearingPad`, so every
+word in it is heard whole: audio cut inside a word is heard as another
+word. Where two parts meet, `addHeard` keeps each word once. A word belongs
+to the part it starts in, and a word of the new part that starts within a
+tenth of a second of the neighbour's word across the join is that same word
+heard twice, and left out. Two hearings of one part at once each add only
+what the other has not, under the file's lock. `TestPartsMeetWithEveryWordOnce`
+cuts its parts inside words on purpose and gets every word once.
+
+A transcript written before version 3 ran from the start without a gap and
+is read as that one part, up to where carrying on would have started.
 
 ## The loudness of the whole episode
 
 The waveform is the loudness every 10 ms, and the transcription measures it
-as it hears. But the transcription stops at the end of the window the first
-search needs, so for the rest of the episode there was no waveform until a
-search reached it. `engine/levels.go` measures it on its own:
+as it hears. But the transcription hears only what a search or a clip made
+by hand needs, so for the rest of the episode there was no waveform until
+one reached it. `engine/levels.go` measures it on its own:
 `MeasureLevels` decodes the audio and takes the same readings from the same
 16 kHz samples, with no speech model, into `logs/levels.frames` and
 `logs/levels.json`. Audio decodes at a few hundred times real time, so an
@@ -521,11 +547,10 @@ So a render needs nothing installed on the machine and a short looks the same
 everywhere. `--font` accepts any other name too, and then it is up to the
 machine to have it.
 
-Every per-clip srt file has a `.words.json` file next to it with the timing
-of each word. When you edit a caption, the words you left alone keep their
-timing, and changed or added words share the time between their unchanged
-neighbours. Without the words file, the words of a caption share its time
-evenly.
+The srt and ass files written next to a short are output and are never
+read back. A word is corrected in the app's caption box, and the next
+render makes the captions from the corrected words, see
+[WORDS.md](WORDS.md).
 
 ## Clip length
 
@@ -793,6 +818,26 @@ transcript as far as it was heard, the clips as they landed, the shorts
 that were finished. The command line does not keep records. The design is
 in [JOBS.md](JOBS.md).
 
+A clip made by hand is `Project.MakeClip` in `handclip.go`, a job of its
+own kind that shares everything but what makes it one. It hears through
+`hear`, the step a search takes, pulled out of `Search`, as far as the
+clip can reach: `Longest` and a sentence past the playhead for I, a
+sentence past it for O. The playhead proposes the clip, `handEntry`, from
+the sentence the playhead stands in, grown a line at a time to
+`Shortest`, and hands it to the plan builder's `propose`, the intake the
+model's scanner uses too. The builder shapes, frames and writes it into
+`clips-hand.json`, a set that grows, `PlanOptions.Grows`, whose clips each
+take the next number under the set's lock as they are written. The set
+says it was made by hand, `planned_with.by`, and `madeOver` reads that as
+made over no part of the episode, so it marks nothing searched and giving
+a part back leaves it alone.
+
+Every job that makes clips says which it has on the way, `Log.Underway`,
+the whole list each time it changes: the builder from the moment a clip is
+queued to be framed until it is written or let go, and a clip made by hand
+from the moment it is asked for, at the playhead. The app puts the list on
+the job, and a record gives it back after a restart.
+
 ## The code
 
 `asr/` wraps the speech recogniser and is the only package with native code.
@@ -813,7 +858,8 @@ Everything else is in `engine/`:
   stream.go     answers read as they are written, and each clip taken
                 the moment it is whole
   plan.go       building the plan: the prompt, the call, the whole answer
-  planbuild.go  clips framed and written as the answer arrives
+  planbuild.go  clips framed and written as they are proposed
+  handclip.go   clips made by hand with I and O
   searchclock.go how far a search has come, against how long it took before
   jobs.go       a search and a render as one job each, with their records
                 and timings

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,14 +25,32 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
+	// Clips made by hand search nothing: neither their set nor their
+	// jobs' timings say the episode was searched.
+	p := NewProject(NewEngine(NewLog(io.Discard, false, false)), source, DefaultOptions())
+	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
+		Slug: "hand", Keep: [][2]int{{1, 1}},
+		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
+	if _, err := addClip(p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
+		t.Fatal(err)
+	}
+	p.addTimings(JobRecord{ID: "clip-1", Kind: JobClip})
+	if EverSearched(source) {
+		t.Fatal("clips made by hand made the episode searched")
+	}
+
 	// A search that was asked for keeps its record, and its timings once
 	// it is done, and either is enough.
 	if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
 		t.Fatal(err)
 	}
+	if !EverSearched(source) {
+		t.Fatal("an episode being searched says it was not searched")
+	}
 	if err := RemoveJob(source, SearchID); err != nil {
 		t.Fatal(err)
 	}
+	p.addTimings(JobRecord{ID: SearchID, Kind: JobSearch})
 	if !EverSearched(source) {
 		t.Fatal("an episode that was searched says it was not")
 	}

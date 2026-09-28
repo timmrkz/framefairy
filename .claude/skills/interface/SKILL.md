@@ -56,6 +56,8 @@ not the workspace: the first run, the settings, the empty window.
 | `?failed` | a search whose record says it failed, with its reason |
 | `?rendering` | a render running on the first clip, with progress |
 | `?measuring` | the episode's loudness, the waveform, measured from the moment the page opens, the four hours in twelve seconds, with a levels event every half second. Like the Go side it measures what the clip timeline last asked the waveform of first, then on from there, then from the start. `?unmeasured` never measured, an episode added before the measuring existed, so the waveform is the transcript's alone |
+| `?slowhand` | a clip made with I or O takes four seconds to place its crop, and four more to be heard first where the transcript does not reach, so a probe can look at its card on the way. Without it, a second and a bit |
+| `?lagclips` | every clip list comes back 300 ms late, the way a busy machine answers, so a card on its way has to hold its place until the list has the clip it became |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 
@@ -89,7 +91,7 @@ looked right in a picture and could answer nothing: the words in the
 caption box are clicked back to the word of the episode they came from,
 through the clip's own pieces, and words that came from nowhere have
 nowhere to go back to. A probe about correcting one would have passed
-whatever the window did. The cues are built from the clip's words now, on
+whatever the window did. The cues are built from the words the clip's pieces hold now, on
 the clip's clock and with a split word drawn as two, the way the engine
 builds them.
 
@@ -634,12 +636,35 @@ thing, and make each one follow the draft, not the saved state. When what
 follows is the engine's to work out, like the captions of a clip, ask the
 engine on the way, one question at a time and always about where the hand
 is now, and keep the last answer until the saved state comes back, so
-nothing jumps as the hand lets go. `DraftCaptions` is the example.
+nothing jumps as the hand lets go. `Shape` is the example.
 
 How to catch it: hold the mouse down with `page.mouse.down()`, move in
 steps, and read the thing after each step, before `page.mouse.up()`. A
 number that only changes after the up is the bug. Then read every frame
 across the up, the way the probe above does for a click.
+
+## Work a click starts is built in front of the person
+
+Answering the click is not enough when the work takes seconds. Tim pressed
+I to make a clip, and for ten seconds nothing he could see changed: the
+card was made, but in its place far down the list, the button showed
+nothing, and the clip timeline waited for the finished clip. Then
+everything changed at once. Every test was green, and the stub made the
+clip in a second, where the list was already looking.
+
+The rule: **what a click asks for is shown where it will live from the
+moment it is asked for, and filled in as each part of it becomes known.**
+The control it was started from wears the beam. What it makes is chosen
+and brought into view. What is known already, where it lies, how long it
+will be, its pieces, its captions, is drawn where the finished thing is
+drawn, the clip timeline above all, as the engine learns it. The finished
+thing replaces what was built with no jump. Nothing appears whole after
+seconds of nothing.
+
+Check it by making the thing somewhere the screen is not looking: far
+down the episode, with the list scrolled elsewhere. And make the stub as
+slow as the app, the speech model loading included, or the gap it hides
+is exactly the one Tim sees.
 
 ## Before saying it is done
 

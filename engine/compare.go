@@ -173,7 +173,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		}
 		run.Plan = newestPlan(dir, began)
 		if run.Plan != "" {
-			heard, err := SavedTranscript(opts.Source, logs, opts.ASRModel, nil, opts.SilenceDB)
+			heard, err := SavedTranscript(opts.Source, logs, opts.ASRModel, opts.SilenceDB)
 			if err != nil {
 				heard = &Transcript{}
 			}
