@@ -182,3 +182,50 @@ func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
 		t.Errorf("started after Relaunch: %v", started)
 	}
 }
+
+// When the app starts, it removes what updating left in the temporary
+// folder once it is old, and only what is Frame Fairy's.
+func TestOldLeftoversAreRemoved(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	put := func(name, content string, age time.Duration) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Chtimes(p, now.Add(-age), now.Add(-age))
+		return p
+	}
+	unpacked := func(name, app string, age time.Duration) string {
+		p := filepath.Join(dir, name)
+		bundle(t, filepath.Join(p, app), "x")
+		_ = os.Chtimes(p, now.Add(-age), now.Add(-age))
+		return p
+	}
+	day := 24 * time.Hour
+	gone := []string{
+		put("framefairy-install-1.log", "went wrong", 8*day),
+		put("wails-update-2.log", "helper start: target=/Applications/Frame Fairy.app", 2*day),
+		unpacked("wails-update-3", "Frame Fairy.app", 2*day),
+	}
+	kept := []string{
+		put("framefairy-install-4.log", "went wrong yesterday", day),
+		put("wails-update-5.log", "helper start: target=/Applications/Frame Fairy.app", time.Hour),
+		unpacked("wails-update-6", "Frame Fairy.app", time.Hour),
+		// Another app made with Wails.
+		put("wails-update-7.log", "helper start: target=/Applications/Other.app", 9*day),
+		unpacked("wails-update-8", "Other.app", 9*day),
+		put("something-else.log", "", 30*day),
+	}
+	tidyTemp(dir, now)
+	for _, p := range gone {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", filepath.Base(p))
+		}
+	}
+	for _, p := range kept {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s was removed", filepath.Base(p))
+		}
+	}
+}

@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -64,6 +65,7 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
+	go tidyTemp(os.TempDir(), time.Now())
 	widenPath()
 	engine.PreferSavedKeys()
 	st := openStore()

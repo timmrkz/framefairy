@@ -46,14 +46,17 @@ func installIfAsked() {
 	for _, k := range []string{envInstallTarget, envInstallFrom, envInstallPID} {
 		_ = os.Unsetenv(k)
 	}
-	if f, err := os.Create(filepath.Join(os.TempDir(), fmt.Sprintf("framefairy-install-%d.log", os.Getpid()))); err == nil {
+	// A log only for a step that went wrong: one that went right has
+	// nothing to say, and would only be left lying in the temporary folder.
+	logPath := filepath.Join(os.TempDir(), fmt.Sprintf("framefairy-install-%d.log", os.Getpid()))
+	if f, err := os.Create(logPath); err == nil {
 		log.SetOutput(f)
 	}
 	if err := installWhenGone(target, from, pid, gone); err != nil {
 		log.Printf("install on quit: %v", err)
 		os.Exit(1)
 	}
-	log.Printf("install on quit: %s is in place", target)
+	_ = os.Remove(logPath)
 	os.Exit(0)
 }
 
@@ -185,4 +188,49 @@ func bundleOf(exe string) string {
 		}
 	}
 	return ""
+}
+
+// What updating leaves in the temporary folder, and how long it may stay
+// there. macOS clears the folder by itself only of what has not been
+// touched for days, so the app clears its own when it starts: the log of
+// a step on quit that went wrong, kept a week so it can still be sent,
+// Wails' log of a Relaunch, and a build Wails unpacked and never used,
+// because a download was cut off or the app ended before it went in.
+// Wails names those the same for every app made with it, so only the ones
+// about Frame Fairy are ours to remove.
+func tidyTemp(dir string, now time.Time) {
+	old := func(name string, after time.Duration) bool {
+		info, err := os.Lstat(name)
+		return err == nil && now.Sub(info.ModTime()) >= after
+	}
+	logs, _ := filepath.Glob(filepath.Join(dir, "framefairy-install-*.log"))
+	for _, name := range logs {
+		if old(name, 7*24*time.Hour) {
+			_ = os.Remove(name)
+		}
+	}
+	wails, _ := filepath.Glob(filepath.Join(dir, "wails-update-*"))
+	for _, name := range wails {
+		if !old(name, 24*time.Hour) || !aboutUs(name) {
+			continue
+		}
+		_ = os.RemoveAll(name)
+	}
+}
+
+// aboutUs says whether something Wails' updater left is Frame Fairy's: a
+// folder with the app unpacked in it, or a log of putting it in place.
+func aboutUs(name string) bool {
+	if strings.HasSuffix(name, ".log") {
+		f, err := os.Open(name)
+		if err != nil {
+			return false
+		}
+		defer f.Close()
+		head := make([]byte, 1024)
+		n, _ := io.ReadFull(f, head)
+		return strings.Contains(string(head[:n]), "/Frame Fairy.app")
+	}
+	_, err := os.Lstat(filepath.Join(name, "Frame Fairy.app"))
+	return err == nil
 }

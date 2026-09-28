@@ -442,8 +442,17 @@ environment, which waits up to a minute for the app to be gone, moves the
 app aside, moves the new build into its place, and only then removes the
 old one. When the new build does not go in whole, the old app is put
 back. It only ever replaces a `.app`, only with a build the updater
-unpacked, and never an app that is still running. What it did is in
-`$TMPDIR/framefairy-install-<pid>.log`.
+unpacked, and never an app that is still running. When it goes wrong, why
+is in `$TMPDIR/framefairy-install-<pid>.log`. When it goes right, it
+leaves no log.
+
+**The app clears what updating left in the temporary folder** when it
+starts. macOS clears that folder by itself only of what has not been
+touched for days, so every app is meant to tidy up after itself. Removed:
+a log of a step on quit that went wrong, after a week, and after a day
+Wails' log of a Relaunch and a build Wails unpacked and never used.
+Wails names those the same for every app made with it, so only the ones
+about Frame Fairy go.
 
 A build made by `make`, and `make run` is one, follows nothing until a
 channel is picked, and looks only when it is picked or Check is clicked.
