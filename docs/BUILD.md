@@ -320,3 +320,31 @@ many words came out unlike the processor's. It uses the speech model in
 `~/.framefairy/models`. The workflow `.github/workflows/speechbench.yml`
 runs the same on the macOS runner with a recorded talk, when the speech
 code changes or by hand.
+
+A second table hears the same speech with several copies of the model at
+once, each taking the next piece as it finishes one, which is how an
+episode could be heard on a machine whose cores one copy leaves idle. It
+tries every mix of copies, `-copies 1,2,3,4`, and threads for each,
+`-each 1,2,3,4,6,8`, that fits the machine's cores, in pieces of
+`-piece 20` seconds, and says how long an hour of episode would take with
+each and how many words came out unlike one copy's. To measure only that,
+over ten minutes so every copy has pieces enough to hear:
+
+```sh
+make speechbench AUDIO=episode.mp4 ARGS="-seconds 600 -providers cpu -threads 8 -pieces 20 -batch 1"
+```
+
+On the cloud machine, 4 cores of an x86 processor, over the model's own
+sample speech looped to 90 s:
+
+| copies | threads each | real time | an hour takes | words unlike one copy |
+|---|---|---|---|---|
+| 1 | 4 | 11.5 times | 314 s | 0 |
+| 2 | 2 | 13.8 | 260 s | 0 |
+| 4 | 1 | 14.9 | 242 s | 0 |
+
+Four copies with one thread each heard 30 % faster than one copy with all
+four, and not a word changed. On an M2 Max four copies of 2 threads heard
+83 times real time where one copy of 8 heard 47, see
+[ENGINE.md](ENGINE.md#hearing-the-audio-in-pieces). The line above the
+table says what the app runs on the machine the benchmark runs on.

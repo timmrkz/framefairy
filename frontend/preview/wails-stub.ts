@@ -372,6 +372,68 @@ type FakeSearch = {
   said?: string;
 };
 const fullLength = 14423;
+
+// The loudness of the episode, measured on its own the way the Go side
+// measures it when an episode is added. ?measuring measures it from the
+// moment the page opens, the four hours in twelve seconds, and says it got
+// further every half second with a levels event. Like the Go side it
+// measures what the clip timeline last asked the waveform of first, then
+// on from there, then from the start, and jumps when the view moves to a
+// part not measured yet. ?unmeasured never measures it, an episode added
+// before the measuring existed, so the waveform is the transcript's alone.
+// Otherwise it is measured already.
+const levelsRate = fullLength / 12;
+let levelParts: [number, number][] = [];
+let levelFocus: [number, number] = [0, 0];
+let levelAt = -1;
+let levelClock = Date.now();
+function levelGap(from: number): number | null {
+  let at = Math.max(0, from);
+  for (const [a, b] of levelParts) if (at >= a && at < b) at = b;
+  return at < fullLength - 0.005 ? at : null;
+}
+function levelNext(): number | null {
+  const [from, to] = levelFocus;
+  return (to > from ? levelGap(from) : null) ?? levelGap(0);
+}
+function levelShown(at: number): boolean {
+  const [from, to] = levelFocus;
+  return to > from && at >= from && at < to;
+}
+function levelsAdvance() {
+  if (!location.search.includes("measuring")) return;
+  const now = Date.now();
+  let budget = ((now - levelClock) / 1000) * levelsRate;
+  levelClock = now;
+  while (budget > 0) {
+    const want = levelNext();
+    if (want === null) return;
+    if (levelAt < 0 || levelGap(levelAt) !== levelAt || (levelShown(want) && !levelShown(levelAt))) {
+      levelAt = want;
+    }
+    const stop = Math.min(fullLength, ...levelParts.map(([a]) => a).filter((a) => a > levelAt));
+    const take = Math.min(budget, stop - levelAt);
+    levelParts.push([levelAt, levelAt + take]);
+    levelParts.sort((x, y) => x[0] - y[0]);
+    levelParts = levelParts.reduce<[number, number][]>((out, p) => {
+      const last = out[out.length - 1];
+      if (last && p[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], p[1]);
+      else out.push([p[0], p[1]]);
+      return out;
+    }, []);
+    levelAt += take;
+    budget -= take;
+  }
+}
+function measuredParts(): [number, number][] {
+  if (location.search.includes("unmeasured")) return [];
+  if (!location.search.includes("measuring")) return [[0, fullLength]];
+  levelsAdvance();
+  return levelParts.map(([a, b]) => [a, b]);
+}
+function measuredNow(): number {
+  return measuredParts().reduce((sum, [a, b]) => sum + b - a, 0);
+}
 // With ?hear=100 it hears a hundred seconds of audio a second instead, so
 // a probe has time to look at the hearing.
 const hearsPerSecond = Number(/hear=(\d+)/.exec(location.search)?.[1] ?? 600);
@@ -729,7 +791,7 @@ export const Call = {
           { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
         ]);
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number };
@@ -1082,9 +1144,15 @@ export const Call = {
         // carrying the same ten milliseconds and the interface has no way to
         // know it.
         const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
-        // The peaks come from the transcript, so while it is being made
-        // there is a waveform up to where it got to and silence after.
-        const edge = location.search.includes("transcribing") ? 1200 : 14423;
+        // The peaks come from the loudness measured on its own, or from the
+        // transcript where only that has heard, the way the Go side
+        // answers. What the waveform is asked for is where the measuring
+        // goes first.
+        levelsAdvance();
+        levelFocus = [from, to];
+        const parts = measuredParts();
+        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
+        const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
         // Loudness is measured every ten milliseconds and no finer, and
         // a bucket is the loudest measurement that falls in it. That is
         // engine.FrameSeconds and Transcript.Peaks, and the stub has to do
@@ -1101,7 +1169,7 @@ export const Call = {
         // neighbouring frames cannot show a staircase however coarsely it
         // is drawn, so a stub without it says every drawing is fine.
         const loud = (t: number) => {
-          if (t > edge) return -90;
+          if (!known(t)) return -90;
           const said = Math.abs(Math.sin(t * 6.3)) * Math.abs(Math.cos(t * 0.7));
           const grain = Math.abs(Math.sin(t * 997));
           return -60 + 45 * said * (0.55 + 0.45 * grain);
@@ -1267,6 +1335,14 @@ export const Events = {
         fn({ data: null });
       };
       return () => delete (window as any).__checkForUpdates;
+    }
+    if (name === "levels") {
+      if (!location.search.includes("measuring")) return () => {};
+      const timer = setInterval(() => {
+        fn({ data: "/eps/ep.mp4" });
+        if (measuredNow() >= fullLength - 0.01) clearInterval(timer);
+      }, 500);
+      return () => clearInterval(timer);
     }
     if (name !== "job") return () => {};
     // Every search reports the way the Go side reports one: about four
