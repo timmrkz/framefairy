@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -27,12 +28,12 @@ func configHome(t *testing.T) string {
 func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 	home := configHome(t)
 	st := openStore()
-	if st.Settings().Count != engine.DefaultOptions().Count {
+	if st.Settings().Target != 0 {
 		t.Errorf("a fresh store starts at %+v", st.Settings())
 	}
 
 	settings := st.Settings()
-	settings.Count = 7
+	settings.Target = 7
 	settings.HighlightColour = "#123456"
 	if err := st.SetSettings(settings); err != nil {
 		t.Fatal(err)
@@ -45,7 +46,7 @@ func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 
 	// A second store reads the same files back.
 	again := openStore()
-	if again.Settings().Count != 7 || again.Settings().HighlightColour != "#123456" {
+	if again.Settings().Target != 7 || again.Settings().HighlightColour != "#123456" {
 		t.Errorf("settings came back as %+v", again.Settings())
 	}
 	episodes := again.Episodes()
@@ -257,9 +258,27 @@ func TestTwoSettingsChangedAtOnceBothStay(t *testing.T) {
 			_ = s.SetCaptionsHeight(path, 600)
 		}()
 		wg.Wait()
-		if set := s.store.Settings(); set.Count != 7 || set.CaptionY != 600 {
+		if set := s.store.Settings(); set.Target != 7 || set.CaptionY != 600 {
 			t.Fatalf("round %d: %d clips at %v, both were set last to 7 at 600",
-				round, set.Count, set.CaptionY)
+				round, set.Target, set.CaptionY)
 		}
+	}
+}
+
+// A settings file from before the target followed the window has a count,
+// which every search took whatever its window. It is read as following the
+// window, and a target typed since is kept.
+func TestAnOldCountFollowsTheWindow(t *testing.T) {
+	home := configHome(t)
+	dir := filepath.Join(home, "config", "FrameFairy")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"count": 8, "min": 20, "max": 30}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := openStore()
+	if set := st.Settings(); set.Target != 0 || set.options().Count != 0 {
+		t.Errorf("an old count became a target: %+v", set)
 	}
 }

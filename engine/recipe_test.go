@@ -329,7 +329,9 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(budgets) != fmt.Sprintf("[%d 1024]", DefaultThink) {
+	// The recipe without a number thinks what its window, the whole 20 s
+	// episode, suggests.
+	if fmt.Sprint(budgets) != fmt.Sprintf("[%d 1024]", SuggestedThink(20)) {
 		t.Errorf("the model was told to think %v", budgets)
 	}
 	// Both sides draw with the same seed, and only the second is told a

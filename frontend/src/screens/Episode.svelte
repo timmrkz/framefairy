@@ -54,6 +54,7 @@
     mostClips,
     type RoomView,
   } from "../lib/room";
+  import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { arriving, type Arriving } from "../lib/arriving";
@@ -69,15 +70,13 @@
 
   let { path, onchange }: { path: string; onchange: () => void } = $props();
 
-  // Long episodes open on their first half hour, short ones whole.
-  const firstLook = 30 * 60;
-
   let status = $state<EpisodeStatus | null>(null);
   let source = $state<SourceView | null>(null);
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
-  let count = $state(12);
+  // The target typed in the workspace, or 0 while it follows the window.
+  let target = $state(0);
   let min = $state(20);
   let max = $state(30);
   let problem = $state("");
@@ -131,8 +130,17 @@
   const duration = $derived(source?.duration ?? 0);
   const reach = $derived(new Reach(roomView, duration));
   const reachAnywhere = $derived(reach.anywhere());
-  const leastLong = $derived(leastWindow(count, min, duration));
+  // The window has room for the clips typed for it. A suggestion follows
+  // the window instead, so it only needs room for one.
+  const leastLong = $derived(leastWindow(target > 0 ? target : 1, min, duration));
   const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
+  // How long the windows of this episode are when the app chooses them, and
+  // how many clips the window drawn now suggests. The engine works out the
+  // same, see engine/suggest.go. What a search looks for is the target
+  // typed, or the suggestion while nothing is typed.
+  const windowSize = $derived(suggestedWindow(duration));
+  const suggested = $derived(Math.min(suggestedCount(to - from, min, max), clipsAtMost));
+  const count = $derived(target > 0 ? target : suggested);
   const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
   // The episode's search, as the Go side keeps it: one job from New to its
   // clips, which hears the episode as far as the window reaches and then
@@ -695,7 +703,7 @@
   // chosen before does not come into it: after a search that part is a
   // wall, and a window left on it hides the clip marks it just made.
   function moveWindowOn() {
-    const next = nextWindow(coverage.free, coverage.searched, duration, firstLook);
+    const next = nextWindow(coverage.free, coverage.searched, duration, windowSize);
     from = next.from;
     to = next.to;
     keepWindow();
@@ -1577,14 +1585,17 @@
   // are kept the moment they change, like everything else in the
   // workspace, and the next episode opens with them.
   function saveSearch() {
-    api.setSearch(count, min, max).catch((err) => (problem = errorText(err)));
+    api.setSearch(target, min, max).catch((err) => (problem = errorText(err)));
     keepWindow();
   }
 
   // A number typed past what the window can hold is taken back to the
-  // most it can, the way a field's own arrows stop there.
-  function keepCount() {
-    count = Math.min(Math.max(Math.round(count) || 1, 1), clipsAtMost);
+  // most it can, the way a field's own arrows stop there. An empty field
+  // follows the window again.
+  function keepTarget(e: Event) {
+    const typed = (e.currentTarget as HTMLInputElement).value.trim();
+    target = typed === "" ? 0 : Math.min(Math.max(Math.round(Number(typed)) || 1, 1), clipsAtMost);
+    (e.currentTarget as HTMLInputElement).value = target > 0 ? String(target) : "";
     saveSearch();
   }
 
@@ -1911,9 +1922,11 @@
     event.preventDefault();
     const here = list.findIndex((c) => c.key === selected);
     const step = event.key === "ArrowDown" ? 1 : -1;
-    // With nothing chosen, down takes the first and up the last.
+    // With nothing chosen, down takes the first and up the last. The list
+    // goes round: down from the last card is the first, and up from the
+    // first is the last.
     const next = here < 0 ? (step > 0 ? 0 : list.length - 1) : here + step;
-    const clip = list[Math.max(0, Math.min(next, list.length - 1))];
+    const clip = list[(next + list.length) % list.length];
     if (!clip) return;
     select(clip.key);
     seekTo(clip.start);
@@ -2002,7 +2015,7 @@
       .then((list) => (fonts = list))
       .catch(() => {});
     api.getSettings().then((settings) => {
-      count = settings.count || 12;
+      target = settings.target || 0;
       min = settings.min || 20;
       max = settings.max || 30;
       captionY = settings.captionY || captionYDefault;
@@ -2028,7 +2041,7 @@
     onremove={(span) => (removingSearch = span)}
     locked={busy}
     least={leastLong}
-    leastSays="room for {count} clips of {min} s"
+    leastSays={target > 0 ? `room for ${target} clips of ${min} s` : `room for a clip of ${min} s`}
     most={reachAnywhere}
     reachSays={roomView?.by === "budget"
       ? "all the budget pays for"
@@ -2129,12 +2142,13 @@
                 type="number"
                 min="1"
                 max={clipsAtMost}
+                placeholder={String(suggested)}
                 title={comingNow
                   ? "The search on its way looks for this many. Change it for the next one"
-                  : `How many clips the model looks for. It gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                  : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own, and clear it to follow the window again. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
-                bind:value={count}
-                onchange={keepCount}
+                value={target > 0 ? target : ""}
+                onchange={keepTarget}
               /></span
             >
           </label>

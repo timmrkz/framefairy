@@ -443,13 +443,20 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	listen.part(partReading)
 
 	schema := json.RawMessage(r.Schema(units, count))
+	// A run works the budget out from its window before it asks, see
+	// SuggestedThink. One that did not is given the budget for half an
+	// hour rather than none at all.
+	think := m.Think
+	if think == ThinkForWindow {
+		think = DefaultThink
+	}
 	ask := map[string]any{
 		"model":      filepath.Base(m.Model),
 		"messages":   messages,
 		"max_tokens": maxTokens,
 		// How long the model may think. The server stops the thought at the
 		// budget and closes it with the message, so the answer follows.
-		"reasoning_budget_tokens":  max(m.Think, -1),
+		"reasoning_budget_tokens":  max(think, -1),
 		"reasoning_budget_message": thinkEnough,
 		// Streamed, with the reading of the prompt reported as it goes and
 		// what it cost at the end, which a stream otherwise leaves out.

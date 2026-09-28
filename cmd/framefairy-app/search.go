@@ -83,7 +83,7 @@ func (s *FrameFairy) Continue(id string) Job {
 		}
 		if req.Count == 0 {
 			set := s.store.Settings()
-			req.Count, req.Min, req.Max = set.Count, set.Min, set.Max
+			req.Count, req.Min, req.Max = set.Target, set.Min, set.Max
 		}
 		return s.Search(path, req)
 	}
@@ -177,8 +177,9 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry string)
 }
 
 // firstSearch asks for the first search of an episode that has never been
-// searched, the moment it is added: the first half hour, or all of a
-// shorter episode, and no more than the model can read at once.
+// searched, the moment it is added: its first window, see
+// engine.SuggestedWindow, and no more than the model can read at once. It
+// looks for the clips its window suggests, or for the target typed.
 func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	if engine.EverSearched(path) {
 		return
@@ -192,16 +193,23 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	room := engine.SearchRoom(opts, filepath.Join(engine.WorkDir(path), "logs"))
 	req := engine.PlanRequest{Count: opts.Count, Min: opts.Min, Max: opts.Max}
 	req.To = firstWindowEnd(info.Duration, room, req)
+	if req.Count == 0 {
+		end := req.To
+		if end <= 0 {
+			end = info.Duration
+		}
+		req.Count = engine.SuggestedCount(end, req.Min, req.Max)
+	}
 	s.Search(path, req)
 }
 
 // firstWindowEnd is where an episode's first window ends. It is what the
-// workspace would draw for it: the first half hour, or the whole of a
-// shorter episode, no longer than the model can read of an episode not
-// heard yet, and no shorter than the clips asked for need. 0 is the end
-// of the episode.
+// workspace would draw for it: the first of the equal windows the episode
+// is cut into, see engine.SuggestedWindow, no longer than the model can
+// read of an episode not heard yet, and no shorter than a target typed for
+// it needs. 0 is the end of the episode.
 func firstWindowEnd(duration float64, room engine.Room, req engine.PlanRequest) float64 {
-	end := math.Min(duration, firstLook)
+	end := math.Min(duration, engine.SuggestedWindow(duration))
 	if room.Chars > 0 {
 		end = math.Min(end, math.Floor(float64(room.Chars)/engine.RateOf(nil)))
 	}
