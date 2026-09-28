@@ -785,8 +785,11 @@
         return;
       }
       if (held) return;
-      const a = clip.segments[0].start;
-      const b = clip.segments[clip.segments.length - 1].end;
+      // Inside the episode, the way the view is, or a clip that reached
+      // past either end was never inside the view and was read again and
+      // again, without end.
+      const a = Math.max(0, clip.segments[0].start);
+      const b = Math.min(duration, clip.segments[clip.segments.length - 1].end);
       const pad = Math.max(8, (b - a) * 0.3);
       if (a < view.from || b > view.to) {
         load(Math.max(0, a - pad), Math.min(duration, b + pad));

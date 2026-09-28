@@ -156,6 +156,7 @@
       out:leave={row}
       data-key={row.key}
       class:next={!!a}
+      class:current={!!a && row.key === selected}
       class:stopped={!!a?.stopped}
       aria-live={a ? "polite" : undefined}
     >
@@ -312,7 +313,8 @@
      with the app's own colour down its edge so it is plain which card it
      is without reading any of them. */
   .pick.current,
-  li:hover .pick.current {
+  li:hover .pick.current,
+  .next.current {
     background: var(--ink-3);
     box-shadow: inset 3px 0 var(--accent);
   }

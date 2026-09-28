@@ -1071,15 +1071,26 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   timeline too. No model is asked: the pauses are cut and the crop placed
   exactly as for a clip a search found, and after that it is an ordinary
   clip.
-  - **Its card is in the list at once**, in its place in the episode,
-    wearing the beam, before a word of it is known. Where the transcript
-    does not reach far enough yet it says Transcribing and fills as the
-    episode is heard up to where the clip can reach, then Placing the
-    crop. Any number can be on their way at once, beside a search too,
-    and none waits for a search to finish finding.
-  - **It is chosen when it lands**, by the rule a search's first clip is:
-    unless another clip has been chosen since the key was pressed, or the
-    video plays, when it lands in the list one click away.
+  - **Everything shows in the frame the key is pressed in.** The **I** or
+    **O** button wears the beam for as long as its clip is on its way.
+    The clip's card is in the list at once, in its place in the episode,
+    wearing the beam, and it is the chosen card, so it is brought into
+    view wherever the list was scrolled to. Where the transcript does not
+    reach far enough yet it says Transcribing and fills as the part
+    around the playhead is heard, then Placing the crop. Any number can
+    be on their way at once, beside a search too, and none waits for a
+    search to finish finding.
+  - **Its frame is on the clip timeline at once**, fitted, first as long
+    as **Shortest** from the playhead, or up to it for **O**, then on its
+    sentences as soon as they are known, with its title over it. It
+    cannot be edited until it is written.
+  - **The card becomes the clip** when it lands, still chosen, unless
+    another clip has been chosen since. While the video plays it stays
+    where it is playing.
+  - **New stays New.** It is the search's button, so a clip made by hand
+    does not turn it into Cancel. Cancel while a search runs stops all
+    the work on the clips, the search and every clip on its way, and
+    Continue carries all of it on.
   - **It searched nothing**: the range picker marks nothing, and giving a
     searched part back leaves it where it is. It goes the way every clip
     goes, with its trash can.

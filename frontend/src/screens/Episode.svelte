@@ -173,9 +173,6 @@
   const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing"));
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
-  // Whether anything of the clip list runs, the search or a clip made by
-  // hand, which is what the head's Cancel stops.
-  const listBusy = $derived(busy || handRunning.length > 0);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -198,7 +195,13 @@
   // which is how it came to say Transcribing over a list of clips.
   const lane = $derived({ word: "Clips", count: true, job: working ?? null });
   const action = $derived.by(() => {
-    if (listBusy) {
+    // New is the search's button, so it turns into Cancel for a search and
+    // for nothing else: a clip made by hand wears the beam on I or O, which
+    // it was started from. It turned into Cancel for those too, under a
+    // hand that had only pressed I, and a click there stopped the clip
+    // nobody meant to stop. Cancel stops all the work on the clips, the
+    // search and every clip on its way, and Continue carries all of it on.
+    if (busy) {
       return {
         label: stopping ? "Cancelling" : "Cancel",
         icon: "close",
@@ -211,17 +214,16 @@
     // Work that was cut off or failed is carried on, not started anew: the
     // button says Continue and takes up the window the search was about,
     // wherever the window on the range picker is now, and every clip made
-    // by hand that stopped.
-    if (stopped || handStopped.length) {
+    // by hand that stopped with it. A clip made by hand that stopped alone
+    // is carried on from its own card.
+    if (stopped) {
       return {
         label: "Continue",
         icon: "play",
         run: carryOn,
         off: duration <= 0,
         primary: true,
-        title: stopped
-          ? `Carry on the search of ${stopped.window.toLowerCase()}${handStopped.length ? ", and the clips made by hand" : ""}`
-          : "Carry on the clips made by hand",
+        title: `Carry on the search of ${stopped.window.toLowerCase()}${handStopped.length ? ", and the clips made by hand" : ""}`,
       };
     }
     return {
@@ -263,6 +265,19 @@
     if (working) api.cancelJob(working.id);
     for (const job of handRunning) api.cancelJob(job.id);
   }
+
+  // The Render button's Cancel stops the render and nothing else. It
+  // called the clip list's Cancel, which stopped the search and every
+  // clip on its way, and left the render running.
+  let renderStopping = $state(false);
+  function stopRender() {
+    if (!renderingJob) return;
+    renderStopping = true;
+    api.cancelJob(renderingJob.id);
+  }
+  $effect(() => {
+    if (!renderingJob) renderStopping = false;
+  });
 
   // Continue, on everything of the clip list that stopped.
   function carryOn() {
@@ -805,7 +820,7 @@
   // list is a card half faded away.
   function showChosen() {
     const list = document.querySelector<HTMLElement>(".pane .list");
-    const card = list?.querySelector<HTMLElement>(".pick.current")?.closest("li");
+    const card = list?.querySelector<HTMLElement>(".pick.current, li.next.current")?.closest("li");
     if (!list || !card) return;
     // The same veil the list fades its ends with, from the stylesheet.
     const veil = 16;
@@ -815,13 +830,15 @@
     else if (box.bottom > view.bottom - veil) list.scrollTop += box.bottom - view.bottom + veil;
   }
 
-  async function select(key: string) {
+  // seek is off for a clip chosen while the video plays, which carries on
+  // where it is.
+  async function select(key: string, seek = true) {
     selected = key;
     // The episode remembers what is being worked on, so opening it again
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
-    if (clip) player?.seek(clip.start);
+    if (clip && seek) player?.seek(clip.start);
     // Picking a clip puts the clip timeline back on it, the same as the
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
@@ -975,9 +992,21 @@
   // see lib/arriving.ts, and the clip is chosen when it is written, by the
   // rule a search's first clip is: unless another has been chosen since,
   // or the video plays.
+  //
+  // Everything the press changes shows in the frame it lands in: the key's
+  // button wears the beam at once, and the clip on its way is chosen, so
+  // its card is brought into view with the beam on it and its frame is on
+  // the clip timeline, first as long as Shortest from the playhead, then
+  // on its sentences as soon as the engine has them. When it is written,
+  // the chosen card becomes the clip, if nothing else has been chosen
+  // since. Any number can be asked for at once, so the buttons never wait.
   const madeHere = new Map<string, string>();
+  let pressed = $state<"in" | "out" | null>(null);
+  const makingIn = $derived(pressed === "in" || handRunning.some((j) => !j.backward));
+  const makingOut = $derived(pressed === "out" || handRunning.some((j) => !!j.backward));
   async function makeClip(backward: boolean) {
     if (duration <= 0) return;
+    pressed = backward ? "out" : "in";
     try {
       const job = await api.makeClip(path, time, backward);
       jobs.apply(job);
@@ -985,9 +1014,15 @@
         problem = job.error ?? "The clip could not be made";
         return;
       }
-      madeHere.set(job.id, selected);
+      const key = `${job.id}/1`;
+      madeHere.set(job.id, key);
+      selected = key;
+      await tick();
+      showChosen();
     } catch (err) {
       problem = errorText(err);
+    } finally {
+      pressed = null;
     }
   }
   $effect(() => {
@@ -998,10 +1033,27 @@
       const key = job.result;
       if (job.state !== "done" || !key) continue;
       void refreshClips().then(() => {
-        if (selected === before && paused && clips.some((c) => c.key === key)) select(key);
+        if (untrack(() => selected) === before && clips.some((c) => c.key === key)) select(key, paused);
       });
     }
   });
+  // The clip on its way that is chosen, drawn on the clip timeline the way
+  // a clip is: its frame, fitted, which cannot be edited until it is
+  // written. Before its sentences are known it is as long as Shortest,
+  // from the playhead for I and up to it for O.
+  const making = $derived.by((): ClipEntry | null => {
+    const a = onTheWay.find((x) => x.key === selected);
+    if (!a) return null;
+    let from = a.start;
+    let to = a.end;
+    if (to - from < 0.5) {
+      const job = handWork.find((j) => a.key.startsWith(`${j.id}/`));
+      from = job?.backward ? Math.max(0, a.start - min) : a.start;
+      to = job?.backward ? a.start : Math.min(duration, a.start + min);
+    }
+    return { key: a.key, segments: [{ start: from, end: to }] } as unknown as ClipEntry;
+  });
+  const makingTitle = $derived(onTheWay.find((x) => x.key === selected)?.title || "New clip");
 
   function inOutKey(event: KeyboardEvent) {
     const out = event.key === "o" || event.key === "O";
@@ -2366,13 +2418,13 @@
       <ClipTimeline
         bind:this={timeline}
         {path}
-        clip={current}
+        clip={current ?? making}
         {duration}
         heard={saved}
         {measured}
         {measuredParts}
         {time}
-        locked={renderingCurrent}
+        locked={renderingCurrent || (!current && !!making)}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers
@@ -2458,16 +2510,20 @@
           disabled={duration <= 0}
           onclick={() => makeClip(false)}
           aria-label="Start a clip at the playhead"
-          title="Start a clip with the sentence under the playhead, as long as Shortest. I does the same"
-          >I</button
+          title={makingIn
+            ? "Making a clip. Press again for another one here"
+            : "Start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+          >{#if makingIn}<Busy />{/if}I</button
         >
         <button
           class="glyph letter"
           disabled={duration <= 0}
           onclick={() => makeClip(true)}
           aria-label="End a clip at the playhead"
-          title="End a clip with the sentence under the playhead, grown back to Shortest. O does the same"
-          >O</button
+          title={makingOut
+            ? "Making a clip. Press again for another one here"
+            : "End a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+          >{#if makingOut}<Busy />{/if}O</button
         >
         <!-- One job, whatever is chosen: go to the playhead. Going back to
              the clip is what clicking it in the list does. -->
@@ -2489,6 +2545,11 @@
             >{numbers.seconds} s, {numbers.pieces}
             {numbers.pieces === 1 ? "piece" : "pieces"}</span
           >
+        {:else if making}
+          <div class="titles">
+            <h2 class="selectable">{makingTitle}</h2>
+          </div>
+          <span class="num">{clock(numbers.start)} to {clock(numbers.end)}</span>
         {/if}
         {#if numbers.saving}<span class="muted">Saving</span>{/if}
         <span class="grow"></span>
@@ -2516,15 +2577,15 @@
           {@const inHand = renderingCurrent || renderAsked === current.key}
           <button
             class="primary render"
-            onclick={() => (inHand ? stopWork() : render(current))}
-            disabled={inHand ? stopping || !renderingCurrent : !!working}
+            onclick={() => (inHand ? stopRender() : render(current))}
+            disabled={inHand ? renderStopping || !renderingCurrent : !!working}
             title={inHand
               ? `Stop the render${leftOfWork ? `, ${leftOfWork}` : ""}`
               : working
                 ? "Render once the work running now is done"
                 : "Write the short, and its thumbnails beside it"}
             >{#if inHand}<Busy fraction={renderingCurrent ? renderShare : -1} />{/if}{inHand
-              ? stopping
+              ? renderStopping
                 ? "Cancelling"
                 : "Cancel"
               : current.rendered

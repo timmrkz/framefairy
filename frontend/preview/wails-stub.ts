@@ -559,7 +559,10 @@ const clock = (t: number) => {
 };
 type FakeHand = { id: string; n: number; at: number; backward: boolean; wall: number; hears: boolean; cancelledAt?: number; settled?: boolean };
 const hands = (): FakeHand[] => ((window as any).__hands ??= []);
-const handTakes = () => (location.search.includes("slowhand") ? 4000 : 1200);
+// About as long as the real one takes: the speech model loads and hears
+// the minute, then the crop is placed over it. A stub quicker than the
+// app hid that nothing showed for the seconds the app takes.
+const handTakes = () => (location.search.includes("slowhand") ? 5000 : 3000);
 function handAt(h: FakeHand, now = Date.now()) {
   // Called off, it says so where its clip would have been, the way a
   // search does, after the moment the real one takes to stop.
@@ -570,7 +573,7 @@ function handAt(h: FakeHand, now = Date.now()) {
   now = Math.min(now, h.cancelledAt ?? now);
   const since = now - h.wall;
   const hearFor = h.hears ? handTakes() : 0;
-  const start = h.backward ? h.at - 25 : h.at - 2;
+  const start = Math.max(0, h.backward ? h.at - 25 : h.at - 2);
   if (since < hearFor) return { state: "running", step: "hearing", start: h.at, end: h.at, since, share: since / hearFor };
   if (since < hearFor + handTakes()) {
     // Its sentences are known a moment into the step.

@@ -10,8 +10,10 @@ export type Arriving = {
   // The job's id and which of its clips this is, so it keeps its place
   // while its step and its edges change.
   key: string;
-  // Where it lies, which is where it goes in the list.
+  // Where it lies, which is where it goes in the list, and where it ends.
+  // Until its sentences are known the two are the same moment.
   start: number;
+  end: number;
   // What it is called, once that is known.
   title: string;
   // What is being done to it, how long is left, and how far it has come.
@@ -50,6 +52,7 @@ export function arriving(
         out.push({
           key,
           start: clip.start,
+          end: clip.end,
           title: clip.title ?? "",
           // In the words a search that stopped uses, in its row.
           what: failed
@@ -69,6 +72,7 @@ export function arriving(
       out.push({
         key,
         start: clip.start,
+        end: clip.end,
         title: clip.title ?? "",
         what: stopping(job) ? "Stopping" : line.what,
         left: line.left,
