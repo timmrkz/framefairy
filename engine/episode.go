@@ -22,10 +22,18 @@ type PlanSummary struct {
 	To   float64 `json:"to"` // zero for a whole-episode plan
 	// Parts of the window that were given back, so the model may read
 	// them again. They are inside the window and never overlap.
-	Removed  []Window  `json:"removed,omitempty"`
-	Clips    int       `json:"clips"`
-	Model    string    `json:"model"`
+	Removed []Window `json:"removed,omitempty"`
+	Clips   int      `json:"clips"`
+	Model   string   `json:"model"`
+	// By is who proposed the clips, see PlanOptions.By.
+	By       string    `json:"by,omitempty"`
 	Modified time.Time `json:"modified"`
+}
+
+// Over is the part of the episode the clip set was made over, see
+// madeOver.
+func (s PlanSummary) Over(duration float64) Window {
+	return madeOver(s.From, s.To, s.To > s.From, s.By, duration)
 }
 
 // EpisodeStatus is what the library shows for one episode. It is read from
@@ -100,12 +108,26 @@ func Status(source, asrModelDir string) EpisodeStatus {
 }
 
 // EverSearched says whether this episode has ever been searched for clips: it
-// has a plan, or a search or a render has kept its record or its timings,
-// see jobs.go. It stays true after the clips are removed again, because
-// the timings stay, and the app searches by itself only for an episode
-// nobody has searched. Deleting the work folder makes the episode new.
+// has a clip set made over a part of it, see madeOver, or a search has kept
+// its record or its timings, see jobs.go. It stays true after the clips are
+// removed again, because the timings stay, and the app searches by itself
+// only for an episode nobody has searched. Clips made by hand search
+// nothing. Deleting the work folder makes the episode new.
 func EverSearched(source string) bool {
-	return exists(JobsDir(source)) || len(PlanSummaries(filepath.Join(WorkDir(source), "logs"))) > 0
+	for _, plan := range PlanSummaries(filepath.Join(WorkDir(source), "logs")) {
+		if w := plan.Over(0); w.End > w.Start {
+			return true
+		}
+	}
+	if ReadSearch(source) != nil {
+		return true
+	}
+	for _, t := range ReadTimings(source) {
+		if t.Kind == JobSearch {
+			return true
+		}
+	}
+	return false
 }
 
 // PlanSummaries lists the plan files in a logs folder, newest first. Files
@@ -133,6 +155,9 @@ func PlanSummaries(logs string) []PlanSummary {
 		}
 		if v, ok := made["model"].(string); ok {
 			s.Model = v
+		}
+		if v, ok := made["by"].(string); ok {
+			s.By = v
 		}
 		s.Removed = readWindows(made["removed"])
 		out = append(out, s)

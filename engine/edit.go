@@ -266,6 +266,12 @@ var errNotAdded = errors.New("the part this clip lies in was removed")
 // would bring back what was just taken away. A plan that is gone
 // altogether is reported as the missing file it is.
 func appendClip(path string, clip PlanClip) error {
+	defer lockPlan(path)()
+	return appendClipLocked(path, clip)
+}
+
+// appendClipLocked is appendClip for a caller that holds the plan's lock.
+func appendClipLocked(path string, clip PlanClip) error {
 	body, err := MarshalPlan(clip)
 	if err != nil {
 		return err
@@ -283,7 +289,7 @@ func appendClip(path string, clip PlanClip) error {
 		start, end = float64(clip.Segments[0].Start), float64(clip.Segments[len(clip.Segments)-1].End)
 	}
 	refused := false
-	err = editPlan(path, func(top *object, clips []*object) error {
+	err = editPlanLocked(path, func(top *object, clips []*object) error {
 		if made, ok := top.values["planned_with"].(*object); ok {
 			for _, hole := range orderedWindows(made.values["removed"]) {
 				if end > hole.Start && start < hole.End {
@@ -313,6 +319,28 @@ func appendClip(path string, clip PlanClip) error {
 		return errNotAdded
 	}
 	return err
+}
+
+// addClip adds a clip to a clip set that grows, numbered after the clips
+// it has, prefix and the next number, and makes the set, as set with this
+// one clip in it, when it is not there yet. The number is taken under the
+// set's lock, so two clips made at the same moment never take the same
+// one. It answers with the clip as it went in.
+func addClip(path string, set PlanFile, clip PlanClip, prefix string) (PlanClip, error) {
+	defer lockPlan(path)()
+	clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(path, prefix)+1)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		return clip, appendClipLocked(path, clip)
+	}
+	set.Clips = []PlanClip{clip}
+	body, err := MarshalPlan(set)
+	if err != nil {
+		return clip, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return clip, err
+	}
+	return clip, replacePlan(path, body)
 }
 
 func findClip(clips []*object, id string) (*object, error) {
@@ -1112,7 +1140,10 @@ func IsPlanFile(path string) bool {
 	return planNameRe.MatchString(filepath.Base(path))
 }
 
-var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+)?\.json$`)
+// planNameRe is what a clip set is called: clips.json for a search of the
+// whole episode, clips-<from>-<to>.json for a search of a window, and
+// HandPlanName for the clips made by hand.
+var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+|-hand)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
 // with it the clips it held. The part it covered is free to be searched
@@ -1283,17 +1314,29 @@ func orderedWindows(raw any) []Window {
 	return MergeWindows(out)
 }
 
-// planWindow is the window a plan was made over. A plan without one was
-// made over the whole episode.
+// planWindow is the window a plan was made over, see madeOver.
 func planWindow(plan Plan, duration float64) Window {
 	made := plan.PlannedWith()
 	from, _ := toFloat(made["from"])
 	to, okTo := toFloat(made["to"])
-	if !okTo || to <= from {
-		if duration > 0 {
-			return Window{0, duration}
-		}
-		return Window{0, math.Inf(1)}
+	by, _ := made["by"].(string)
+	return madeOver(from, to, okTo && to > from, by, duration)
+}
+
+// madeOver is the part of the episode a clip set was made over, which a
+// search marks as searched and giving a part back takes clips out of. A
+// search of a window was made over that window, and one without a window
+// over the whole episode. The clips made by hand were made over no part of
+// it, since no model read anything for them: they mark nothing searched,
+// and giving a searched part back leaves them where they are.
+func madeOver(from, to float64, windowed bool, by string, duration float64) Window {
+	switch {
+	case by == ByHand:
+		return Window{}
+	case windowed:
+		return Window{from, to}
+	case duration > 0:
+		return Window{0, duration}
 	}
-	return Window{from, to}
+	return Window{0, math.Inf(1)}
 }

@@ -226,6 +226,13 @@ func (l *Log) showProgress(text string) {
 }
 
 // ClearProgress removes a progress line if one is showing. A sink is told
+// Underway says which clips the work has on the way, all of them, each
+// time that changes. It goes to the app only, since the command line says
+// each clip as it is written.
+func (l *Log) Underway(list []Underway) {
+	l.send(Event{Kind: EventUnderway, Underway: append([]Underway{}, list...)})
+}
+
 // that nothing is in progress any more.
 func (l *Log) ClearProgress() {
 	l.mu.Lock()

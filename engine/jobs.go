@@ -42,7 +42,10 @@ const (
 	StepHearing   = "hearing"
 	StepFinding   = "finding"
 	StepRendering = "rendering"
-	StepFailed    = "failed"
+	// StepFraming is a clip made by hand having its crop placed, see
+	// MakeClip. A search frames its clips in its finding step.
+	StepFraming = "framing"
+	StepFailed  = "failed"
 	// StepStopped is a job called off by hand, see StopJob.
 	StepStopped = "stopped"
 )
@@ -51,6 +54,8 @@ const (
 const (
 	JobSearch = "search"
 	JobRender = "render"
+	// JobClip is a clip made by hand, see MakeClip.
+	JobClip = "clip"
 )
 
 // SearchID is the id of an episode's search. An episode has one search at
@@ -78,6 +83,11 @@ type JobRecord struct {
 	Preview bool     `json:"preview,omitempty"`
 	Done    []string `json:"done,omitempty"`
 
+	// A clip made by hand: the moment I or O was pressed at, and whether
+	// it was O.
+	At       float64 `json:"at,omitempty"`
+	Backward bool    `json:"backward,omitempty"`
+
 	Step  string    `json:"step"`
 	Error string    `json:"error,omitempty"`
 	Asked time.Time `json:"asked"`
@@ -96,6 +106,22 @@ type StepTime struct {
 // Request is what a search asks for.
 func (r JobRecord) Request() PlanRequest {
 	return PlanRequest{From: r.From, To: r.To, Count: r.Count, Min: r.Min, Max: r.Max, Replan: r.Replan}
+}
+
+// Clip is what a clip made by hand asks for.
+func (r JobRecord) Clip() ClipRequest {
+	return ClipRequest{At: r.At, Backward: r.Backward}
+}
+
+// Underway is the clip a job kept in this record had on the way, so a job
+// read back from its record shows its clip where it would have appeared.
+// Only a clip made by hand has one: a search's clips on the way are either
+// in its plan or not proposed yet.
+func (r JobRecord) Underway() []Underway {
+	if r.Kind != JobClip {
+		return nil
+	}
+	return []Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step}}
 }
 
 // Render is what a render asks for, less the clips it has finished.
@@ -242,7 +268,7 @@ func saneJob(source string, r *JobRecord) bool {
 		return false
 	}
 	switch r.Step {
-	case StepWaiting, StepHearing, StepFinding, StepRendering, StepFailed, StepStopped:
+	case StepWaiting, StepHearing, StepFinding, StepFraming, StepRendering, StepFailed, StepStopped:
 	default:
 		return false
 	}
@@ -250,14 +276,20 @@ func saneJob(source string, r *JobRecord) bool {
 	switch r.Kind {
 	case JobSearch:
 		if r.ID != SearchID || !finite(r.From) || !finite(r.To) || (r.To > 0 && r.To <= r.From) ||
-			r.Count < 0 || r.Count > 1000 || !finite(r.Min) || !finite(r.Max) || r.Step == StepRendering {
+			r.Count < 0 || r.Count > 1000 || !finite(r.Min) || !finite(r.Max) || r.Step == StepRendering ||
+			r.Step == StepFraming {
 			return false
 		}
 	case JobRender:
 		// The plan is one of this episode's, by name and by where it is.
 		if r.ID == SearchID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
-			!planFile.MatchString(filepath.Base(r.Plan)) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
-			r.Step == StepHearing || r.Step == StepFinding {
+			!IsPlanFile(r.Plan) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
+			r.Step == StepHearing || r.Step == StepFinding || r.Step == StepFraming {
+			return false
+		}
+	case JobClip:
+		if !strings.HasPrefix(r.ID, "clip-") || !finite(r.At) || r.At > MaxEpisodeSeconds ||
+			r.Step == StepFinding || r.Step == StepRendering {
 			return false
 		}
 	default:
@@ -272,10 +304,6 @@ func saneJob(source string, r *JobRecord) bool {
 	}
 	return true
 }
-
-// planFile is what a plan is called: clips.json, or clips-<from>-<to>.json
-// for a window.
-var planFile = regexp.MustCompile(`^clips(-[0-9]+-[0-9]+)?\.json$`)
 
 // Turn waits until the job may start a step: the step's lane is free.
 // Hearing, finding and rendering each have a lane, see docs/JOBS.md. The
@@ -396,36 +424,11 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	if err != nil {
 		return "", err
 	}
-	// Only as far as the window. The whole episode is heard to its end,
-	// which finishes the transcript rather than holding it.
-	if !whole {
-		p.StopAt(func() float64 { return end })
-		defer p.StopAt(nil)
+	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
+		return j.turn(ctx, turn, step)
 	}
-	for {
-		covered, done := Coverage(p.Source, p.Base.ASRModel)
-		if done || covered >= end-0.05 {
-			break
-		}
-		stepCtx, release, err := j.turn(ctx, turn, StepHearing)
-		if err != nil {
-			return "", err
-		}
-		err = p.Transcribe(stepCtx)
-		release()
-		if errors.Is(err, ErrCancelled) && ctx.Err() == nil {
-			// The lane was taken back, by a search that finds while this
-			// one hears. What was heard is saved, and the search waits
-			// for its turn to carry on.
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		if covered, done := Coverage(p.Source, p.Base.ASRModel); !done && covered < end-0.05 {
-			return "", fmt.Errorf("the transcription stopped at %s, before the end of the window at %s",
-				HMS(covered), HMS(end))
-		}
+	if err := p.hear(ctx, stepOf, end, whole); err != nil {
+		return "", err
 	}
 	stepCtx, release, err := j.turn(ctx, turn, StepFinding)
 	if err != nil {
@@ -433,6 +436,43 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	}
 	defer release()
 	return p.Plan(stepCtx, req)
+}
+
+// hear makes the one transcript reach end, heard in order from where it
+// stands and held there, the way every job that needs words has it heard.
+// It takes a turn in the lane of hearing, through turn, for as long as
+// there is anything to hear. whole hears to the end of the episode, which
+// finishes the transcript rather than holding it.
+func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (context.Context, func(), error),
+	end float64, whole bool) error {
+	if !whole {
+		p.StopAt(func() float64 { return end })
+		defer p.StopAt(nil)
+	}
+	for {
+		covered, done := Coverage(p.Source, p.Base.ASRModel)
+		if done || covered >= end-0.05 {
+			return nil
+		}
+		stepCtx, release, err := turn(ctx, StepHearing)
+		if err != nil {
+			return err
+		}
+		err = p.Transcribe(stepCtx)
+		release()
+		if errors.Is(err, ErrCancelled) && ctx.Err() == nil {
+			// The lane was taken back, by a search that finds while this
+			// job hears. What was heard is saved, and the job waits for
+			// its turn to carry on.
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if covered, done := Coverage(p.Source, p.Base.ASRModel); !done && covered < end-0.05 {
+			return fmt.Errorf("the transcription stopped at %s, before %s", HMS(covered), HMS(end))
+		}
+	}
 }
 
 // windowEnd is where a search's window ends, and whether that is the end

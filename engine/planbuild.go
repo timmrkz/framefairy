@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -63,11 +64,14 @@ type planBuilder struct {
 	lines      []Line
 	// units are what the recipe numbered, each a run of lines. An answer
 	// is checked in them and turned into lines before anything else.
-	units  []([2]int)
-	opts   PlanOptions
-	cropW  int
-	cache  *cropCache
-	offset int
+	units []([2]int)
+	opts  PlanOptions
+	cropW int
+	cache *cropCache
+	// prefix and base make the ids: the n-th clip queued is prefix and
+	// base+n, see queueLocked.
+	prefix string
+	base   int
 	stamp  PlannedWith
 	planID string
 	// clock hears every clip taken and landed. Nil when no model was asked.
@@ -100,6 +104,9 @@ type planBuilder struct {
 	clips   []PlanClip
 	err     error
 	closed  bool
+	// underway is every clip queued and not yet written or let go, as the
+	// log is told it, see Underway.
+	underway []Underway
 
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
@@ -119,14 +126,21 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		// never makes the reading of the answer wait.
 		queue: make(chan planJob, max(opts.Count, 1))}
 	b.stamp = PlannedWith{Count: opts.Count, Min: PyFloat(opts.MinLen),
-		Max: PyFloat(opts.MaxLen), Model: opts.Model}
+		Max: PyFloat(opts.MaxLen), Model: opts.Model, By: opts.By}
+	b.prefix = opts.IDPrefix
 	// A second pass over a later part of the episode must not reuse 01..04,
 	// or its clips would overwrite the first pass's output. Seconds, not
 	// minutes, so two windows inside the same minute still differ.
 	if opts.Window != nil {
-		b.offset = int(opts.Window.Start)
+		if b.prefix == "" {
+			b.prefix = fmt.Sprintf("t%d-", int(opts.Window.Start))
+		}
 		from, to := PyFloat(roundTo(opts.Window.Start, 3)), PyFloat(roundTo(opts.Window.End, 3))
 		b.stamp.From, b.stamp.To = &from, &to
+	}
+	// A set that grows numbers on from the clips it has.
+	if opts.Grows && opts.PlanPath != "" {
+		b.base = lastNumber(opts.PlanPath, b.prefix)
 	}
 	for range framers {
 		b.done.Add(1)
@@ -152,7 +166,19 @@ func (b *planBuilder) take(raw string) {
 	}
 	b.objects++
 	entry, _, ok := readEntry(value, b.objects, b.units)
-	if !ok {
+	b.mu.Unlock()
+	if ok {
+		b.propose(entry)
+	}
+}
+
+// propose takes a clip, whoever proposed it: the model, through take, or a
+// person with I or O. It is shaped onto sentences, left out when it keeps a
+// moment one before it keeps, and otherwise held back to be fitted or
+// queued to be framed and written, the same way for every clip.
+func (b *planBuilder) propose(entry PlanEntry) {
+	b.mu.Lock()
+	if b.closed || len(b.order) >= b.opts.Count {
 		b.mu.Unlock()
 		return
 	}
@@ -292,19 +318,35 @@ func repeatNote(entry, earlier PlanEntry) string {
 }
 
 // queueLocked gives an entry its id and hands it to the framers. The id is
-// its place among the usable clips of the answer, as it always was.
+// its place among the usable clips of the answer, as it always was, after
+// the clips a set that grows already has.
 func (b *planBuilder) queueLocked(entry PlanEntry) {
 	position := len(b.entries) + 1
 	uniqueSlug(b.seen, &entry, position)
-	id := fmt.Sprintf("%02d", position)
-	if b.opts.Window != nil {
-		id = fmt.Sprintf("t%d-%02d", b.offset, position)
-	}
+	id := fmt.Sprintf("%s%02d", b.prefix, b.base+position)
 	b.entries = append(b.entries, entry)
 	b.ids = append(b.ids, id)
+	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
+	b.underway = append(b.underway, Underway{N: position, Start: b.lines[first-1].Start(),
+		End: b.lines[last-1].End(), Title: entry.Title, Step: StepFraming})
+	b.e.Log.Underway(b.underway)
 	b.queue <- planJob{index: position, entry: entry, id: id}
 	if b.clock != nil {
 		b.clock.taken()
+	}
+}
+
+// arrived takes a clip off the list of clips on the way, written or let
+// go.
+func (b *planBuilder) arrived(job planJob) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, u := range b.underway {
+		if u.N == job.index {
+			b.underway = append(b.underway[:i:i], b.underway[i+1:]...)
+			b.e.Log.Underway(b.underway)
+			return
+		}
 	}
 }
 
@@ -424,6 +466,7 @@ func (b *planBuilder) frameAll() {
 		if b.ctx.Err() != nil {
 			// Stopped. The rest of the queue is let go without work.
 			b.firstFramed(job)
+			b.arrived(job)
 			continue
 		}
 		b.work(job)
@@ -447,6 +490,7 @@ func (b *planBuilder) work(job planJob) {
 			b.e.Log.Detail("%s", debug.Stack())
 		}
 		b.firstFramed(job)
+		b.arrived(job)
 	}()
 	clip, ok, err := framing(b, job)
 	b.firstFramed(job)
@@ -583,7 +627,8 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 
 // land writes a framed clip to the plan. The first one makes the plan, in
 // place of whatever plan was there for this window, and each after it is
-// added through the same edit the app uses.
+// added through the same edit the app uses. A set that grows is never made
+// anew: every clip is added to it, and the first one there makes it.
 func (b *planBuilder) land(clip PlanClip) error {
 	b.writing.Lock()
 	defer b.writing.Unlock()
@@ -591,7 +636,22 @@ func (b *planBuilder) land(clip PlanClip) error {
 		return nil
 	}
 	if path := b.opts.PlanPath; path != "" {
-		if !b.written {
+		if b.opts.Grows {
+			set := PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID, PlannedWith: b.stamp}
+			added, err := addClip(path, set, clip, b.prefix)
+			if err != nil {
+				return err
+			}
+			b.mu.Lock()
+			for i, id := range b.ids {
+				if id == clip.ID {
+					b.ids[i] = added.ID
+				}
+			}
+			b.mu.Unlock()
+			clip = added
+			b.written = true
+		} else if !b.written {
 			if b.opts.CaptionDir != "" {
 				setStaleCaptionsAside(b.e.Log, b.opts.CaptionDir)
 			}
@@ -647,4 +707,25 @@ func (b *planBuilder) settle(planID string) error {
 		return nil
 	}
 	return err
+}
+
+// lastNumber is the highest number among the ids in a clip set that begin
+// with prefix, or 0 for a set that is not there yet. A set that grows gives
+// its next clip the number after it.
+func lastNumber(path, prefix string) int {
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		return 0
+	}
+	last := 0
+	for _, c := range clips {
+		rest, ok := strings.CutPrefix(c.ID, prefix)
+		if !ok {
+			continue
+		}
+		if n, err := strconv.Atoi(rest); err == nil && n > last {
+			last = n
+		}
+	}
+	return last
 }

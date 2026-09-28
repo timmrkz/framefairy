@@ -2,7 +2,6 @@ package engine
 
 import (
 	"math"
-	"path/filepath"
 	"sort"
 )
 
@@ -91,27 +90,19 @@ func Without(w Window, holes []Window) []Window {
 }
 
 // SearchedPlans gives the parts an episode has been searched over, in
-// order and merged where they meet, each with the plans behind it. A plan
-// made without a window covers the whole episode.
+// order and merged where they meet, each with the plans behind it, each
+// plan over the part it was made over, see madeOver.
 func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
 	var found []Searched
 	for _, p := range plans {
-		// Clips made by hand searched nothing, and their set has no window,
-		// which is otherwise read as a search of the whole episode. Named
-		// here rather than through pull request 24's IsHandPlan, so the two
-		// build together whichever lands first.
-		if filepath.Base(p.Path) == "clips-hand.json" {
-			continue
-		}
-		w := Window{p.From, p.To}
-		if w.End <= w.Start {
-			w = Window{0, duration}
-		}
+		w := p.Over(duration)
 		w.Start = math.Max(0, w.Start)
 		if duration > 0 {
 			w.End = math.Min(w.End, duration)
 		}
-		if w.End <= w.Start {
+		// Nothing, for the clips made by hand, and nothing to go by for a
+		// search of the whole of an episode whose length is not known.
+		if w.End <= w.Start || math.IsInf(w.End, 1) {
 			continue
 		}
 		// What was given back is not searched any more, so a plan can leave

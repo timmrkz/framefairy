@@ -25,7 +25,31 @@ const (
 	EventStepFailed EventKind = "step-failed"
 	EventProgress   EventKind = "progress"
 	EventIdle       EventKind = "idle"
+	// EventUnderway lists the clips a job has on the way, the whole list
+	// every time it changes, see Underway.
+	EventUnderway EventKind = "underway"
 )
+
+// Underway is a clip on its way into a clip set: proposed, by the model or
+// at the playhead, and not written yet. Every job that makes clips says
+// which it has on the way the same way, so the app shows them the same way
+// whoever proposed them.
+type Underway struct {
+	// N is which of its job's clips this is, from 1, in the order they
+	// were queued to be made. It stays while the clip's step and edges
+	// change, so the clip keeps its place.
+	N int `json:"n"`
+	// Start and End are where it lies in the episode. A clip made by hand
+	// is at the playhead until the words there are known, and then Start
+	// and End are the same moment.
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	// Title is what it is called, once that is known.
+	Title string `json:"title,omitempty"`
+	// Step is what is being done to it: StepWaiting, StepHearing or
+	// StepFraming.
+	Step string `json:"step"`
+}
 
 // Unknown marks a fraction or a remaining time that cannot be given yet.
 const Unknown = -1.0
@@ -50,6 +74,8 @@ type Event struct {
 	// app reads the list again when it changes, rather than on a timer
 	// that is always a little late.
 	Found int `json:"found,omitempty"`
+	// Underway is every clip the job has on the way, on EventUnderway.
+	Underway []Underway `json:"underway,omitempty"`
 	// Duration is how long a finished or failed step took, in seconds.
 	Duration float64 `json:"duration,omitempty"`
 	// Elapsed is the seconds since the log was made.

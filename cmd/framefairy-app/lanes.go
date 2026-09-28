@@ -163,6 +163,8 @@ func laneOfStep(step string) (string, turnKind) {
 		return LaneHearing, hearingTurn
 	case "finding":
 		return LaneFinding, findingTurn
+	case "framing":
+		return LaneFraming, plainTurn
 	}
 	return LaneRendering, plainTurn
 }
