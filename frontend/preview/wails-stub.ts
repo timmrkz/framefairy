@@ -37,6 +37,15 @@ const allWords = () => {
   return list;
 };
 
+// Whether a piece holds some of a word's sound, the engine's HoldsWord:
+// more than a frame of it.
+const holds = (p: { start: number; end: number }, w: { start: number; end: number }) =>
+  Math.min(p.end, w.end) - Math.max(p.start, w.start) > 0.02;
+
+// The words of the episode, for a probe that has to name one by when it is
+// said, to correct it or to find it on the clip timeline.
+(window as any).__allWords = () => allWords();
+
 const words = (from: number, to: number) =>
   allWords().filter((w) => w.end > from && w.start < to);
 
@@ -115,9 +124,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     start: first,
     end: last,
     segments,
-    words: words(start, start + 25)
+    words: allWords()
       .filter((w) =>
-        segments.some((p) => (w.start + w.end) / 2 >= p.start && (w.start + w.end) / 2 < p.end),
+        segments.some((p) => holds(p, w)),
       )
       .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
     rejected: false,
@@ -180,24 +189,54 @@ const clipOf = (id: string) => {
 // the clip's own clock, with the cuts taken out of it, and a correction
 // that reads as two words is drawn as two, each taking its share of the
 // one moment they both came from.
-const captionCues = (id: string) => {
-  const c = clipOf(id);
+const captionCues = (id: string, draft?: { start: number; end: number }[]) => {
+  // With pieces being dragged on the clip timeline, the words are taken
+  // afresh for them, the way the engine's DraftCaptionsView takes them.
+  const saved = clipOf(id);
+  const c = draft
+    ? {
+        ...saved,
+        segments: draft,
+        words: allWords()
+          .filter((w) => draft.some((p) => holds(p, w)))
+          .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+      }
+    : saved;
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
   const onClipClock: { start: number; end: number; text: string; said: number }[] = [];
-  let offset = 0;
+  // The engine's ClipWords: a word is captioned in the piece that holds
+  // the most of it, from the edge on when an edge cuts into it.
+  const offsets: number[] = [];
+  let sum = 0;
   for (const p of c.segments) {
-    for (const w of c.words) {
-      if (w.start < p.start - 0.02 || w.end > p.end + 0.02) continue;
-      onClipClock.push({
-        start: offset + (w.start - p.start),
-        end: offset + (w.end - p.start),
-        text: w.text,
-        said: w.start,
-      });
-    }
-    offset += p.end - p.start;
+    offsets.push(sum);
+    sum += p.end - p.start;
   }
+  for (const w of c.words) {
+    let best = -1;
+    let most = 0;
+    c.segments.forEach((p, i) => {
+      const held = Math.min(p.end, w.end) - Math.max(p.start, w.start);
+      if (holds(p, w) && held > most) {
+        best = i;
+        most = held;
+      }
+    });
+    if (best < 0) continue;
+    // Clamped only at a cut, never at the clip's first or last edge, the
+    // way the engine keeps it.
+    const p = c.segments[best];
+    const from = best > 0 ? Math.max(w.start, p.start) : w.start;
+    const to = best < c.segments.length - 1 ? Math.min(w.end, p.end) : w.end;
+    onClipClock.push({
+      start: offsets[best] + (from - p.start),
+      end: offsets[best] + (to - p.start),
+      text: w.text,
+      said: w.start,
+    });
+  }
+  onClipClock.sort((x, y) => x.start - y.start);
   const drawn: typeof onClipClock = [];
   for (const w of onClipClock) {
     const parts = w.text.split(" ").filter(Boolean);
@@ -860,6 +899,32 @@ export const Call = {
           captions: captionCues(String(args[1])),
           style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
         });
+      // The captions a clip would have with the pieces being dragged.
+      // ?draftslow answers a quarter of a second late, the way a machine
+      // under load might, so a probe can see the blocks hold meanwhile.
+      case "DraftCaptions": {
+        const [, , id, list] = args as [string, string, string, [number, number][]];
+        (window as any).__drafts = ((window as any).__drafts ?? 0) + 1;
+        const view = {
+          captions: captionCues(id, list.map(([start, end]) => ({ start, end }))),
+          style: {},
+        };
+        return new Promise((done) => setTimeout(() => done(view), location.search.includes("draftslow") ? 250 : 0));
+      }
+      // Moving a clip's edges, on the frame or with toWords on the words,
+      // the same way the engine does.
+      case "TrimClip": {
+        const [, , id, start, end] = args as [string, string, string, number, number];
+        return Promise.resolve(
+          recut(id, (list) => {
+            const kept = list.filter((p) => p.end > start && p.start < end).map((p) => ({ ...p }));
+            if (!kept.length) return list;
+            kept[0].start = start;
+            kept[kept.length - 1].end = end;
+            return kept;
+          }),
+        );
+      }
       case "Fonts":
         return Promise.resolve([
           { name: "Inter Black", about: "", file: "Inter-Black.ttf" },
@@ -1150,6 +1215,24 @@ export const Call = {
             return peak;
           }),
         );
+      }
+      // The words as the captions split them: a correction that reads as
+      // two words is two, sharing its time by letters, the way captionCues
+      // draws it.
+      case "WordStops": {
+        const out: { start: number; end: number; text: string }[] = [];
+        for (const w of words(Number(args[3]) - 5, Number(args[4]) + 5)) {
+          const text = fixed()[said(w.start)] ?? w.text;
+          const parts = text.split(" ").filter(Boolean);
+          const letters = parts.reduce((n, part) => n + part.length, 0);
+          let from = w.start;
+          parts.forEach((part, i) => {
+            const to = i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
+            out.push({ start: from, end: to, text: part });
+            from = to;
+          });
+        }
+        return Promise.resolve(out);
       }
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });

@@ -88,6 +88,17 @@ func TestSnapWords(t *testing.T) {
 	}
 }
 
+// A word the recogniser heard as one can hold a breath between its parts.
+// That silence is not where the word ends, because more of it follows. Only
+// the silence after its last sound is.
+func TestSnapWordsKeepsAWordWholeAcrossABreathInside(t *testing.T) {
+	sound := frames(4, Span{1.00, 1.80}, Span{2.00, 2.50})
+	got := SnapWords([]Cue{{1.00, 2.90, "sweet-grundschulliebe."}}, sound, 0, -40)
+	if !near(got[0].Start, 1.00) || !near(got[0].End, 2.50) {
+		t.Errorf("the word runs %.2f-%.2f, want 1.00-2.50", got[0].Start, got[0].End)
+	}
+}
+
 func TestSnapWordsLeavesSoftOnsetsAlone(t *testing.T) {
 	// A single quiet frame at a word start is a soft consonant, not a pause.
 	sound := frames(3, Span{0.50, 1.00}, Span{1.01, 2.00})

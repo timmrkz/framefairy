@@ -876,7 +876,43 @@ place.
         playhead just put at a clip's start is outside it, so the keys
         walked the transcript instead and the first press after picking a
         clip landed wherever the word before the clip happened to be.
-    - Drag an edge to trim. Edges snap to words the way the render cuts them.
+    - Drag an edge to trim. The edge lands on the frame, the same as the
+      edge of a cut, and shift puts it on the nearest word instead, the way
+      the render cuts a clip the engine proposes. Shift and not alt,
+      because it is the key Tim reached for first. It used to snap to words
+      always, which left no way to take a breath off the end of a clip or
+      keep the first frame of a gesture before the first word.
+    - **The playhead goes with the edge.** While either edge of a clip is
+      dragged, the playhead stands on it and the video preview shows that
+      frame, the clip as it is being dragged, with its captions. On frames
+      it is the clip's first frame, or its last, a frame before the end.
+      With shift it is inside the word the edge snapped to, a frame into
+      the first word or a frame before the end of the last, so that word is
+      always the one lit. The edge itself stands a pause away from the
+      word, and the playhead used to go to the clip's start after a trim,
+      so the word was lit only when the pause happened to be none, which
+      looked random. After letting go the playhead stays where it was.
+    - **Shift stops at the words that light up.** An edge dragged with
+      shift lands on the words the way the clip's captions split them, so
+      the halves of a hyphenated word, or a correction that reads as two
+      words, are two stops, the same words the arrow keys walk. The engine
+      splits them, `WordStops`, from the clip's caption style, for the
+      words around the clip as well, so a half is a stop before the edge
+      has reached its word. An edge let go between two halves lies inside
+      the word the engine knows, so it is saved as the frame it is on.
+    - **The clip edge is over the caption handles.** The first caption is
+      on screen from the clip's first frame, so its handle stood on the
+      clip's start edge, and a hand that reached for the clip in the band
+      of the captions moved the caption instead.
+    - **The captions follow the drag.** While an edge of the clip or of a
+      cut is dragged, the caption blocks are drawn for the clip as the hand
+      has it: a word the edge reaches gets its caption under the hand, and
+      a word it leaves loses it. The engine makes them, through
+      `DraftCaptions`, from the pieces as they are drawn, and saves
+      nothing. They used to wait for the hand to let go, so a drag showed
+      the old captions over the new clip. After letting go they stay until
+      the saved clip's captions come back, which are the same, so nothing
+      jumps.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over.
     - **Nothing on the playhead but the playhead.** It carried a magnifier
@@ -931,8 +967,9 @@ place.
       double-click and a drag both say where exactly and moving the edges
       somewhere else is not what was asked. A cut made this way may stop
       inside a word, which is the point of it.
-    - **Alt lands on whole words instead.** Holding alt while dragging, on a
-      handle or across the clip, puts the edges where the render would cut
+    - **Shift lands on whole words instead.** Holding shift while dragging a
+      handle of a cut, or alt as well as shift while drawing one across the
+      clip, where shift already draws, puts the edges where the render would cut
       them, so a cut dragged over a pause takes the whole pause and a cut
       dragged over speech takes whole words, and it can never stop half way
       through a word. That is the right thing when a whole phrase is to go
@@ -940,7 +977,7 @@ place.
       silence came out as the whole silence, which is why this is the
       modifier now and not the default. The key is
       read while the hand moves rather than when it goes down, so letting
-      go of alt part way through goes back to frames and the block says
+      go of it part way through goes back to frames and the block says
       so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and that is the one place they are

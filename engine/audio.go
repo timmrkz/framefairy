@@ -226,18 +226,26 @@ func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 				begin = timeAt(g)
 			}
 		}
-		// A silence of 120 ms or more inside the word is where it ended.
-		run := 0
-		for g := frameAt(begin); g < frameAt(end); g++ {
+		// A word ends where its last sound does, when 120 ms or more of
+		// silence follow that sound before the recogniser's end. A silence
+		// with more of the word after it is not the end: the recogniser
+		// hears a compound, or words said as one, as one word, and a breath
+		// between its parts used to cut it off there, so "liebe" in
+		// "sweet-grundschulliebe" lay outside its own word, with no caption
+		// and no highlight.
+		last := -1
+		for g := frameAt(end) - 1; g >= frameAt(begin); g-- {
 			if loud(g) {
-				run = 0
-				continue
-			}
-			run++
-			if run >= 12 {
-				end = timeAt(g - run + 1)
+				last = g
 				break
 			}
+		}
+		if last < 0 {
+			if frameAt(end)-frameAt(begin) >= 12 {
+				end = timeAt(frameAt(begin))
+			}
+		} else if frameAt(end)-(last+1) >= 12 {
+			end = timeAt(last + 1)
 		}
 		begin = math.Max(begin, low)
 		if next > begin+0.02 {
