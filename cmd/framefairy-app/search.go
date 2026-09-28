@@ -72,13 +72,19 @@ func (s *FrameFairy) MakeClip(path string, at float64, backward bool) Job {
 		}
 	}
 	s.jobs.settle(path, engine.JobHand, "")
+	var made *Job
 	return s.jobs.addSteps(path, engine.JobHand, label, true, func(j *Job) {
 		j.Record, j.At, j.Backward, j.free = engine.HandID, at, backward, true
+		made = j
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		info, err := s.probe(ctx, path)
 		if err != nil {
 			return "", err
 		}
+		// The part it needs heard, its from and to, so its row says what
+		// it transcribes the way a search's row says its window.
+		part := p.HandPart(at, backward, info.Duration)
+		s.jobs.update(made, nil, func(j *Job) { j.From, j.To = part.Start, part.End })
 		p.Edit = func(write func() error) error { return s.edit(path, write) }
 		plan, id, err := p.MakeClipJob(ctx, at, backward, info.Duration, turn)
 		if err != nil {

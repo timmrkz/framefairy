@@ -293,8 +293,40 @@ func TestAClipMadeByHandNextToAnIsland(t *testing.T) {
 	if len(words) == 0 || words[0].Start > 96 || words[len(words)-1].End < 260 {
 		t.Fatalf("the words reach from %.1f to %.1f", words[0].Start, words[len(words)-1].End)
 	}
-	if _, _, err := p.MakeClip(ctx, 130, false); err != nil {
+	plan, id, err := p.MakeClip(ctx, 130, false)
+	if err != nil {
 		t.Fatal(err)
+	}
+
+	// A clip is a clip, wherever its words were heard: it is trimmed and
+	// its captions are read the way a clip the model found is. An island
+	// the edit could not read would leave it without a word.
+	tr, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip := clips[0]
+	start, end := ClipSpan(clip)
+	if err := TrimClip(plan, id, start, end-2, tr, base.KeepPause); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err = LoadClips(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clips[0].Words) == 0 {
+		t.Fatal("trimming a clip made by hand in an island took its words")
+	}
+	view, err := ClipCaptionsView(plan, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Captions) == 0 {
+		t.Fatal("a clip made by hand in an island has no captions")
 	}
 }
 

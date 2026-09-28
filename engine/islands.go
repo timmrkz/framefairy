@@ -222,10 +222,11 @@ func (p *Project) Unheard(at float64, backward bool, duration float64) bool {
 	return len(p.unheard(at, backward, duration)) > 0
 }
 
-// unheard is what of the part a clip made by hand at a moment needs is
-// not transcribed yet, in the order it lies in the episode. A gap shorter
-// than a second is left, a word does not fit in it.
-func (p *Project) unheard(at float64, backward bool, duration float64) []Window {
+// HandPart is the part of the episode a clip made by hand at a moment
+// needs heard: the clip's longest length on the side it grows to, and the
+// island margin on both sides. The job keeps it as its from and to, so its
+// row says what it transcribes the way a search's says its window.
+func (p *Project) HandPart(at float64, backward bool, duration float64) Window {
 	margin := ClampIslandMargin(p.Base.IslandMargin)
 	from, to := at-margin, at+p.Base.Max+margin
 	if backward {
@@ -235,6 +236,15 @@ func (p *Project) unheard(at float64, backward bool, duration float64) []Window 
 	if duration > 0 {
 		to = math.Min(to, duration)
 	}
+	return Window{from, to}
+}
+
+// unheard is what of the part a clip made by hand at a moment needs is
+// not transcribed yet, in the order it lies in the episode. A gap shorter
+// than a second is left, a word does not fit in it.
+func (p *Project) unheard(at float64, backward bool, duration float64) []Window {
+	part := p.HandPart(at, backward, duration)
+	from, to := part.Start, part.End
 	heard := append([]Window{{0, p.transcribedTo()}}, p.islands()...)
 	var gaps []Window
 	for _, w := range heard {

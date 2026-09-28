@@ -701,9 +701,8 @@ place.
       next clip would have appeared in, in the colour of a warning, and
       **New** becomes **Continue**. *Interrupted. Click Continue* is a
       search the app was closed or fell over in, with the window it was
-      about under it, or with how far the transcript came when it still
-      waited for the transcript, which is the first half of every search on
-      an episode read only part way. *Failed. Click Continue* has its
+      about under it and how long it is. How far the transcript came, when
+      it still waited for the transcript, is in the row's title. *Failed. Click Continue* has its
       reason under it. The whole of it is in the row's title. **Continue**
       takes the window back to the one the search was about and asks for
       it again: a search cut off while it heard hears on from where it
@@ -713,8 +712,8 @@ place.
       the app reads the records as it starts: one in a running step is a
       search that was cut off, a failed one says why. **Cancel** says
       *Stopping* in that row the moment it is pressed, standing still, and
-      then leaves the same row, *Stopped. Click Continue*, with how far the episode was
-      transcribed, because what it did stays and can be carried on. **New**
+      then leaves the same row, *Stopped. Click Continue*, with its window
+      and how long it is, because what it did stays and can be carried on. **New**
       takes its place. Clips it wrote before it stopped stay, with the row
       after them. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
@@ -724,8 +723,14 @@ place.
       same row a search's next clip appears in, and the head says
       **Cancel**. **Cancel** stops everything the list has running, a
       search and a clip made by hand together, and each row says
-      *Stopping* at once and then *Stopped. Click Continue*, the clip's
-      with the moment it was made at. **Continue** carries on everything
+      *Stopping* at once and then *Stopped. Click Continue*. The two rows
+      are one row said by one function, `runningLine` and `stoppedLine` in
+      `lib/steps.ts`, in every state: *Transcribing 30 min* for a search's
+      window and *Transcribing 2 min* for the part a clip made by hand
+      needs, which is its longest length on the side it grows to and the
+      island margin round it, with the time left under it or, while that
+      is not known, where the part lies. Stopped, each says its part and
+      how long it is. **Continue** carries on everything
       that stopped: the clip is made again at the same moment, In or Out,
       and hears only what it had not heard yet. After a restart it says
       *Interrupted. Click Continue* the way a search does.

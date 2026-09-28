@@ -60,7 +60,7 @@ type Job struct {
 	// episode's work folder, see engine/jobs.go.
 	Record string `json:"record,omitempty"`
 	// From and To are the window of a search, To 0 for the end of the
-	// episode.
+	// episode, and the part of the episode a clip made by hand needs heard.
 	From float64 `json:"from,omitempty"`
 	To   float64 `json:"to,omitempty"`
 	// At and Backward are what a clip made by hand is made of: the moment

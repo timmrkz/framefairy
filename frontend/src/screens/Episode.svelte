@@ -53,7 +53,16 @@
     type RoomView,
   } from "../lib/room";
   import { joinColour, splitColour } from "../lib/colour";
-  import { stepLine } from "../lib/steps";
+  import {
+    heldAtOnce,
+    heldLater,
+    runningLine,
+    startingLine,
+    stepLine,
+    stoppedLine,
+    type Held,
+    type WayLine,
+  } from "../lib/steps";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -169,6 +178,9 @@
   // too: Cancel stops everything the list has running, and Continue
   // carries on everything in it that stopped.
   const busy = $derived(searching || starting || handRunning);
+  // Whether a search is on its way, which is what the rows still to come
+  // are waiting for. A clip made by hand has a row of its own.
+  const seeking = $derived(searching || starting);
   // What the search is doing right now, in the step's own words, see
   // lib/steps.ts.
   const doing = $derived(working ? stepLine(working).what : "");
@@ -343,7 +355,7 @@
   // but still: they are what New will fill, and nothing is filling them
   // yet. An episode whose first search was stopped, by quitting among
   // other things, had an empty column there instead.
-  const comingNow = $derived(busy);
+  const comingNow = $derived(seeking);
   // What the row the next clip will appear in is waiting on. While the
   // transcript has not reached the end of the window, that is the
   // transcript, and how far it has come is how much of the window it
@@ -352,89 +364,49 @@
   //
   // An empty headline means nothing new to say, which is what the moment
   // between two reports of the engine is, and the row keeps what it says.
-  const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
-  // How much of the window has been transcribed, by the same edge the range
-  // picker draws, so the row is a view of the window on the range picker:
-  // empty at its start, half full when half of it is transcribed, full at
-  // its end. It used to be measured from the start of the episode, so a
-  // window two hours in began nearly full.
-  const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
+  // The window, as the part of the episode the search is about.
+  const windowPart = $derived({ from, to });
   // The row the next clip will appear in says which step the search is in,
-  // in the words of lib/steps.ts, the same words every row that shows work
-  // uses. While it hears, how far it has come is how far the window has
-  // been heard. Nothing more: the clips it has found so far are the cards
-  // above the row, and the row said "2 of 12 found" in the place the third
-  // clip was to appear.
-  const next = $derived.by(() => {
-    if (!busy) return null;
+  // by runningLine in lib/steps.ts, the one function the row of a clip
+  // made by hand is said by too. While it hears, how far it has come is
+  // how far the window has been heard, by the same edge the range picker
+  // draws. Nothing more: the clips it has found so far are the cards above
+  // the row, and the row said "2 of 12 found" in the place the third clip
+  // was to appear.
+  const next = $derived.by((): WayLine | null => {
+    if (!seeking) return null;
     // Clicked, and the job not there yet: the row already says the step
     // the search is about to take, so Continue goes from Stopped straight
     // to Transcribing, with no empty card and no word in between.
     if (!working) {
       return heardWindow
-        ? { what: "Finding clips", left: windowText, fraction: -1, now: true }
-        : { what: "Transcribing", left: windowText, fraction: heardShare, now: true };
+        ? startingLine("finding", windowPart, -1)
+        : startingLine("hearing", windowPart, waitShare(from, shownHeard, to));
     }
-    const line = stepLine(working, heardShare);
-    // Cancel pressed: the row says so in the same frame, and stands still
-    // where it got to, until the search has saved what it did and says it
-    // stopped. It went on saying Transcribing for a second after the click.
-    if (stopping) {
-      return { what: "Stopping", left: line.left || windowText, fraction: line.fraction, still: true, now: true };
-    }
-    return { ...line, left: line.left || windowText };
+    // Cancel pressed: the row says Stopping in the same frame, and stands
+    // still where it got to, until the search has saved what it did and
+    // says it stopped.
+    return runningLine(working, windowPart, shownHeard, stopping);
   });
 
-  // What the row says, held long enough to be read. The engine reports
-  // twice a second and a search goes through its steps faster than anyone
-  // reads, so a new headline waits until the one before has been there
-  // for a while: two and a half seconds, and one for the count of clips
-  // found going up. The fill and the time left follow at once, because
-  // they are the same thing moving on. It keeps its own time, in onMount,
-  // because an effect that reads the job is set up again on every report.
-  let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
-    null,
-  );
-  let shownSince = 0;
-  // What a click brings about shows in the same frame as the click, not on
-  // the timer's next tick: the row the Stopped note stood in was empty for
-  // up to a quarter of a second after Continue, which read as a flash, and
-  // Cancel went on saying Transcribing. Work starting or ending, and a
-  // headline marked now, go straight in. Only the engine's own moving from
-  // one step to the next waits, below.
+  // What the rows say, held long enough to be read, see Held in
+  // lib/steps.ts. The two rows of work in hand are held by the same rule.
+  // They keep their own time, in onMount, because an effect that reads a
+  // job is set up again on every report.
+  let heldNext = $state<Held>({ line: null, since: 0 });
+  let heldHand = $state<Held>({ line: null, since: 0 });
   $effect(() => {
     const want = next;
-    if (want && (!shownNext || (want.now && (want.what !== shownNext.what || !!want.still !== !!shownNext.still)))) {
-      shownSince = Date.now();
-      shownNext = { what: want.what, left: want.left, fraction: want.fraction, still: want.still };
-    } else if (!want && shownNext) {
-      shownNext = null;
-    }
+    untrack(() => (heldNext = heldAtOnce(heldNext, want, Date.now())));
+  });
+  $effect(() => {
+    const want = handLine;
+    untrack(() => (heldHand = heldAtOnce(heldHand, want, Date.now())));
   });
   onMount(() => {
     const timer = window.setInterval(() => {
-      const want = next;
-      if (!want) {
-        shownNext = null;
-        return;
-      }
-      // Nothing new to say: the row stays as it is.
-      if (!want.what && shownNext) return;
-      const what = want.what;
-      if (!shownNext || what === shownNext.what) {
-        if (!shownNext) shownSince = Date.now();
-        shownNext = { ...want, what };
-        return;
-      }
-      // A step that lasted a moment, a turn that came at once, is not
-      // flashed up: a new headline waits a second.
-      const hold = 1000;
-      if (Date.now() - shownSince < hold) {
-        shownNext = { ...shownNext, left: want.left, fraction: Math.max(shownNext.fraction, want.fraction) };
-        return;
-      }
-      shownSince = Date.now();
-      shownNext = { ...want, what };
+      heldNext = heldLater(heldNext, next, Date.now());
+      heldHand = heldLater(heldHand, handLine, Date.now());
     }, 250);
     return () => window.clearInterval(timer);
   });
@@ -529,43 +501,25 @@
   // row still to come and points to Continue, and nothing starts by
   // itself. A search called off by hand leaves nothing to say.
   const stopped = $derived.by(() => {
-    if (!search || busy) return null;
+    if (!search || seeking) return null;
     if (search.state !== "interrupted" && search.state !== "failed") return null;
     const start = search.from ?? 0;
     const end = search.to && search.to > 0 ? search.to : duration;
+    const part = { from: start, to: end };
+    const line = stoppedLine(search, part);
     const window = `Window ${clock(start)} to ${clock(end)}`;
-    const span = { from: start, to: end, window };
-    if (search.state === "failed") {
-      // The engine's reasons begin in lower case, the way an error does
-      // in the log. In a row of the list it is a sentence.
-      const said = search.error?.trim() ?? "";
-      const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
-      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
-    }
-    // Called off with Cancel, or cut off by the app closing: the same row
-    // either way, because either way what it did stays and Continue
-    // carries it on. Only the first word says which it was.
-    const byHand = search.step === "stopped";
-    const what = byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue";
-    const how = byHand ? "Cancel stopped the search" : "The app was closed";
-    // Stopped before it had heard its window, which is the first half of
-    // every search on an episode heard only part way: Continue hears on
-    // from where it stopped and then finds.
+    if (search.state === "failed") return { ...part, window, ...line, full: `${window}. ${line.left}` };
+    // Called off with Cancel, or cut off by the app closing. Stopped
+    // before it had heard its window, which is the first half of every
+    // search on an episode heard only part way, Continue hears on from
+    // where it stopped and then finds.
+    const how = search.step === "stopped" ? "Cancel stopped the search" : "The app was closed";
     const reached = Math.min(covered, end);
-    if (reached < end - 0.5) {
-      return {
-        ...span,
-        what,
-        left: `Transcribed to ${clock(reached)} of ${clock(end)}`,
-        full: `${window}. ${how} while the episode was transcribed for it. Continue transcribes on from ${clock(reached)} and then finds the clips`,
-      };
-    }
-    return {
-      ...span,
-      what,
-      left: window,
-      full: `${window}. ${how} while the clips were found. Continue looks again`,
-    };
+    const full =
+      reached < end - 0.5
+        ? `${window}. ${how} while the episode was transcribed for it, to ${clock(reached)}. Continue transcribes on from there and then finds the clips`
+        : `${window}. ${how} while the clips were found. Continue looks again`;
+    return { ...part, window, ...line, full };
   });
 
   // Continue carries on everything of the list that stopped: the search,
@@ -573,10 +527,17 @@
   // hears only what it had not heard yet.
   function carryOn() {
     if (handStopped && hand) {
+      resuming = true;
       api
         .continueJob(hand.id)
-        .then((job) => jobs.apply(job))
-        .catch((err) => (problem = errorText(err)));
+        .then((job) => {
+          jobs.apply(job);
+          if (job.state !== "running" && job.state !== "queued") resuming = false;
+        })
+        .catch((err) => {
+          resuming = false;
+          problem = errorText(err);
+        });
     }
     if (stopped) void carryOnSearch();
   }
@@ -596,7 +557,7 @@
     }
   }
   const coming = $derived(
-    busy
+    seeking
       ? shown.length + Math.max(0, count - foundSoFar)
       : shown.length === 0
           ? count
@@ -1031,26 +992,46 @@
     void hand?.progress?.covered;
     if (hearing) untrack(() => timeline?.reread());
   });
-  // The row in the list: the row of work in hand while it runs, said by
-  // stepLine the way a search's row is, and where it stopped, Stopped with
-  // Continue, the way a stopped search says it.
+  // The card in the list: the clip as it will be while it runs, and where
+  // it was asked for once it stopped.
   const handCard = $derived(handRunning ? sketch : handStopped ? outline : null);
-  const makingStep = $derived.by(() => {
-    if (!hand || !handCard) return null;
-    if (handRunning) {
-      const line =
-        !hand.step || hand.step === "waiting" ? { what: "Starting", left: "", fraction: -1 } : stepLine(hand);
-      // Cancel pressed: the row says so in the same frame, and stands still.
-      return stopping ? { ...line, what: "Stopping", still: true } : line;
-    }
-    const where = `At ${clock(hand.at ?? 0)}`;
-    if (hand.state === "failed") {
-      const said = hand.error?.trim() ?? "";
-      return { what: "Failed. Click Continue", left: said ? said[0].toUpperCase() + said.slice(1) : where, fraction: -1, stopped: true };
-    }
-    const byHand = hand.step === "stopped";
-    return { what: byHand ? "Stopped. Click Continue" : "Interrupted. Click Continue", left: where, fraction: -1, stopped: true };
+  // The part of the episode the clip needs heard, which the job says. A
+  // record from before it said so falls back on the outline.
+  const handPart = $derived(
+    hand && (hand.to ?? 0) > (hand.from ?? 0)
+      ? { from: hand.from ?? 0, to: hand.to ?? 0 }
+      : outline
+        ? { from: outline.start, to: outline.end }
+        : { from: 0, to: 0 },
+  );
+  // The step the clip was last seen in, so Continue can say at once what
+  // it goes back to, the way the search's row does.
+  let handWas = $state("");
+  $effect(() => {
+    const step = hand?.step;
+    if (handRunning && step && step !== "waiting") handWas = step;
   });
+  let resuming = $state(false);
+  $effect(() => {
+    if (handRunning) resuming = false;
+  });
+  // The row of the clip while it runs, by runningLine, the one function
+  // the search's row is said by: the same words, the same fill for how
+  // much of its part is heard, the same part of the episode with its
+  // length. Held for reading the same way too, see heldHand.
+  const handLine = $derived.by((): WayLine | null => {
+    if (resuming && hand) return startingLine(handWas === "framing" ? "framing" : "hearing", handPart, -1);
+    if (!handRunning || !hand) return null;
+    return runningLine(hand, handPart, hand.progress?.covered ?? handPart.from, stopping);
+  });
+  // And once it stopped, the way the search's row says it stopped.
+  const makingStep = $derived(
+    !hand || !handCard
+      ? null
+      : resuming || handRunning
+        ? heldHand.line
+        : stoppedLine(hand, handPart),
+  );
   const cards = $derived(
     handCard ? [...shown, handCard].sort((a, b) => a.start - b.start) : shown,
   );
@@ -2441,7 +2422,7 @@
               {makingStep}
               {coming}
               waiting={comingNow}
-              next={shownNext}
+              next={heldNext.line}
               {stopped}
               removed={removed?.key ?? ""}
               onselect={select}

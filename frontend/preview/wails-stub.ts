@@ -589,14 +589,18 @@ function handJob(h: FakeHand) {
   const since = now - h.wall;
   const hearFor = h.hears ? 2500 : 0;
   const frameFor = 1500;
-  const base = { id: h.id, episode: "/eps/ep.mp4", kind: "hand", label: "Make a clip", record: "hand", at: h.at, backward: h.backward, queued: "", lane: "finding" };
+  // The part it needs heard, the way HandPart works it out: the longest
+  // clip on the side it grows to and the island margin round it.
+  const from = Math.max(0, h.backward ? h.at - 60 - 30 : h.at - 30);
+  const to = h.backward ? h.at + 30 : h.at + 60 + 30;
+  const base = { id: h.id, episode: "/eps/ep.mp4", kind: "hand", label: "Make a clip", record: "hand", at: h.at, backward: h.backward, from, to, queued: "", lane: "finding" };
   if (h.cancelledAt !== undefined && Date.now() - h.cancelledAt >= 300) {
     return { ...base, state: h.settled ? "cancelled" : "interrupted", step: "stopped" };
   }
   if (since < hearFor) {
     const fraction = since / hearFor;
     if (h.island) h.island.covered = h.island.from + fraction * (h.island.to - h.island.from);
-    return { ...base, state: "running", step: "hearing", progress: { kind: "progress", text: "transcribing", fraction, remaining: (hearFor - since) / 1000, covered: h.island?.covered ?? 0, elapsed: 1, time: "" } };
+    return { ...base, state: "running", step: "hearing", progress: { kind: "progress", text: "transcribing", fraction, remaining: (hearFor - since) / 1000, covered: h.island?.covered ?? from + fraction * (to - from), elapsed: 1, time: "" } };
   }
   if (h.island) h.island.covered = h.island.to;
   if (since < hearFor + frameFor) {

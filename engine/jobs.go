@@ -71,7 +71,8 @@ type JobRecord struct {
 	Kind string `json:"kind"`
 
 	// A search: the window, To 0 for the end of the episode, and the
-	// numbers it asks for.
+	// numbers it asks for. A clip made by hand: the part it needs heard,
+	// see HandPart.
 	From   float64 `json:"from,omitempty"`
 	To     float64 `json:"to,omitempty"`
 	Count  int     `json:"count,omitempty"`
@@ -276,7 +277,7 @@ func saneJob(source string, r *JobRecord) bool {
 		}
 	case JobHand:
 		if r.ID != HandID || !finite(r.At) || r.At > MaxEpisodeSeconds || r.Step == StepFinding ||
-			r.Step == StepRendering {
+			r.Step == StepRendering || !finite(r.From) || !finite(r.To) || r.To < r.From {
 			return false
 		}
 	default:
@@ -481,7 +482,8 @@ func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, bool
 // waiting for that would not be In and Out.
 func (p *Project) MakeClipJob(ctx context.Context, at float64, backward bool, duration float64,
 	turn Turn) (plan, id string, err error) {
-	j := p.startJob(JobRecord{ID: HandID, Kind: JobHand, At: at, Backward: backward})
+	part := p.HandPart(at, backward, duration)
+	j := p.startJob(JobRecord{ID: HandID, Kind: JobHand, At: at, Backward: backward, From: part.Start, To: part.End})
 	defer j.end(&err)
 	if p.Unheard(at, backward, duration) {
 		stepCtx, release, err := j.turn(ctx, turn, StepHearing)

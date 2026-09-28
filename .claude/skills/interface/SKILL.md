@@ -287,7 +287,7 @@ button, saying Transcribing and Placing the crop in a card that looked
 chosen. Next to the search's row, with its beam, motes, fill and time
 left, it read as a different thing, and Tim asked why the same element
 had two looks. Both are now one snippet in `ClipList.svelte`, fed by
-`stepLine` and `makingLine` in `steps.ts`. So before drawing any state of
+`runningLine` and `stoppedLine` in `steps.ts`. So before drawing any state of
 anything, ask what it is, find where the app already draws that, and
 put the new case through the same markup and the same words, even when
 the data arrives by another road. A new way into an old thing is new
@@ -303,6 +303,18 @@ two things the same, list what each step of one reports, the words, the
 fill, the time left, and make the other report every one of them. The
 Go side sends both steps as the `making` event, and `ClipSegments` reports
 its share of the whole as `FramingLabel`.
+
+**Every state, not only the one that was looked at.** The two rows were
+made one while they ran, and they still parted twice. Stopped, the search's
+row said "Transcribed to 18:30 of 30:00" in markup of its own while the clip
+made by hand said "At 3:00:17", and the list counted the clip's card
+against the rows still to come, so with clips in the list the search's
+Stopped row had no place left and two rows became one and then two again.
+Running, one showed its time left and the other its window, whichever
+happened to have a time. So a shared thing is shared in every state it has,
+running, stopping, stopped, failed, carried on, and the probe for it walks
+all of them with both at once, in a list that already holds clips.
+`?hear=100` with New and then I is that list.
 
 ## When the window itself looks wrong, measure it against a real one
 

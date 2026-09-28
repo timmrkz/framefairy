@@ -2,6 +2,7 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
+  import type { WayLine } from "../lib/steps";
 
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
@@ -36,14 +37,15 @@
     // the next clip will appear.
     // still is work that has been told to stop and has not said so yet:
     // it keeps its fill and stops moving, the way Busy draws it.
-    next?: { what: string; left: string; fraction: number; still?: boolean } | null;
+    next?: WayLine | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
     // have appeared in, the same row that says what a search is doing
     // while it runs, so the end of the story is where the story was told.
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
-    stopped?: { what: string; left: string; full: string } | null;
+    // full is the whole story, in the row's title.
+    stopped?: (WayLine & { full: string }) | null;
     // The card of a clip made by hand while it is made. It stands in its
     // place already, with its title, and says what it is doing, with the
     // beam round it, until the clip is there. It belongs to no
@@ -53,7 +55,7 @@
     // What that card is doing, said where its time and length will be, with
     // the beam round it and the fill when how far is known, the same as
     // the row of a search.
-    makingStep?: { what: string; left: string; fraction: number; still?: boolean; stopped?: boolean } | null;
+    makingStep?: WayLine | null;
     // The clip just taken out. It keeps its place in the list for a moment,
     // showing what happened to it and offering it back, so the rows do not
     // jump out from under the pointer.
@@ -68,8 +70,10 @@
   // A search writes each clip the moment it is found, so the list fills in
   // one row at a time and the rows still to come shrink as it does. What
   // is handed in already counts the clips that are there.
+  // The card of a clip made by hand is not one of them: it has its own
+  // row, and counting it took the row a stopped search says Stopped in.
   const ghosts = $derived.by(() => {
-    const n = Math.max(0, coming - clips.length);
+    const n = Math.max(0, coming - clips.filter((c) => c.key !== making).length);
     return Array.from({ length: n }, (_, i) => i);
   });
 
@@ -129,7 +133,7 @@
      it is doing and how long it has left. The row the next clip of a search
      will appear in and the row of a clip made by hand are the same kind of
      thing, a clip on its way, so they are this one row, drawn once. -->
-{#snippet work(line: { what: string; left: string; fraction: number; still?: boolean; stopped?: boolean })}
+{#snippet work(line: WayLine)}
   {#if !line.stopped}<Busy fraction={line.fraction} still={line.still} />{/if}
   <span class="title">{line.what}</span>
   <span class="meta muted num">{line.left}</span>
@@ -156,13 +160,7 @@
       aria-live={clip.key === making ? "polite" : undefined}
     >
       {#if clip.key === making}
-        <!-- Where it is when nothing else says it: the time of the
-             episode it stands at, the way a search's row falls back on
-             its window. -->
-        {@render work({
-          ...(makingStep ?? { what: "Starting", fraction: -1 }),
-          left: makingStep?.left || clock(clip.start),
-        })}
+        {@render work(makingStep ?? { what: "", left: "", fraction: -1 })}
       {:else if clip.key === removed}
         <div class="gone">
           <Icon name="trash" />
@@ -211,8 +209,7 @@
       </li>
     {:else if row === 0 && stopped}
       <li class="ghost next stopped" title={stopped.full}>
-        <span class="title">{stopped.what}</span>
-        <span class="meta muted num">{stopped.left}</span>
+        {@render work(stopped)}
       </li>
     {:else}
       <li class="ghost" class:waiting style="--wait-in: {row * 800}ms"></li>
