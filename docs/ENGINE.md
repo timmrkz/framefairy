@@ -326,7 +326,7 @@ trimmed off.
 What comes out of that is a proposal, not the last word. Every cut a clip
 carries is a gap between two of its pieces, and the app can move one, put
 one back or make one, through `Reshape` in `engine/shape.go`, which
-takes a gesture and makes the same change `Shape` shows while the hand
+takes a gesture and makes the same change `ShapeClip` shows while the hand
 moves. It goes through `editPlan` like every other edit, so the plan keeps
 its shape and its unknown fields. A clip keeps no words, see
 [WORDS.md](WORDS.md), so there is nothing else to bring up to date. A piece a cut is made inside becomes two, and both keep

@@ -170,7 +170,11 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if fmt.Sprint(shown.Captions.Captions) != fmt.Sprint(landed.Captions) {
+			// As JSON, which is what the interface gets, and which reads what
+			// a pointer points at rather than where it is.
+			a, _ := json.Marshal(shown.Captions.Captions)
+			b, _ := json.Marshal(landed.Captions)
+			if string(a) != string(b) {
 				t.Errorf("captions shown %+v\nsaved %+v", shown.Captions.Captions, landed.Captions)
 			}
 		})

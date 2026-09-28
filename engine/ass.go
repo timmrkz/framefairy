@@ -355,11 +355,6 @@ func LayOutCaptions(captions []Caption, s Style, language string) []LaidCaption 
 	return laid
 }
 
-// CaptionLines splits one caption into the lines the render draws it in.
-func CaptionLines(c Caption, s Style) [][]Cue {
-	return captionLines(c, roomFor(s))
-}
-
 func captionLines(c Caption, r captionRoom) [][]Cue {
 	words := make([]string, len(c.Words))
 	for i, w := range c.Words {

@@ -38,48 +38,6 @@ func LoadCorrections(logsDir string) map[string]string {
 	return file.Words
 }
 
-// ApplyCorrections replaces the text of corrected words.
-func ApplyCorrections(words []Cue, corrections map[string]string) {
-	if len(corrections) == 0 {
-		return
-	}
-	for i := range words {
-		if text, ok := corrections[wordKey(words[i].Start)]; ok {
-			words[i].Text = text
-		}
-	}
-}
-
-// SplitCorrected turns a word that was corrected into several words into one
-// cue per word. The recogniser heard one word where more than one was said,
-// so the span it measured is shared out by how long the words are. The audio
-// is never read again for this: the highlight only has to run over the words
-// inside the part where they were spoken.
-func SplitCorrected(words []Cue) []Cue {
-	out := make([]Cue, 0, len(words))
-	for _, word := range words {
-		parts := strings.Fields(word.Text)
-		if len(parts) < 2 {
-			out = append(out, word)
-			continue
-		}
-		total := 0
-		for _, part := range parts {
-			total += utf8.RuneCountInString(part)
-		}
-		at, span := word.Start, word.End-word.Start
-		for i, part := range parts {
-			end := word.End
-			if i < len(parts)-1 {
-				end = at + span*float64(utf8.RuneCountInString(part))/float64(total)
-			}
-			out = append(out, Cue{at, end, part})
-			at = end
-		}
-	}
-	return out
-}
-
 // CleanWordText checks a corrected word.
 func CleanWordText(text string) (string, error) {
 	text = strings.Join(strings.Fields(Scrub(text, 200)), " ")

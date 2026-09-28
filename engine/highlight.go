@@ -22,14 +22,6 @@ type Caption struct {
 // Cue is the caption without its words.
 func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 
-func captionCues(captions []Caption) []Cue {
-	out := make([]Cue, len(captions))
-	for i, c := range captions {
-		out[i] = c.Cue()
-	}
-	return out
-}
-
 // ---------------------------------------------------------------------------
 // The bouncing highlight
 //

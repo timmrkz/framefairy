@@ -437,11 +437,6 @@ func TestWordCorrections(t *testing.T) {
 	if len(one) != 2 || one[0].Text != "Tippfehler" || len(two) != 1 || two[0].Text != "drei" {
 		t.Errorf("clip words %v %v", one, two)
 	}
-	fresh := append([]Cue(nil), words...)
-	ApplyCorrections(fresh, LoadCorrections(logs))
-	if fresh[0].Text != "Tippfehler" || fresh[1].Text != "zwei" {
-		t.Errorf("corrections %v", fresh)
-	}
 	// A transcript read again from what the recogniser heard takes the
 	// correction from corrections.json.
 	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
@@ -495,7 +490,7 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 		t.Errorf("the word heard is %+v", heard)
 	}
 	// One word stays one word, whatever it holds.
-	if same := SplitCorrected([]Cue{{1, 2, "Und"}}); len(same) != 1 || same[0].End != 2 {
+	if same := splitWord(Cue{1, 2, "Und"}); len(same) != 1 || same[0].End != 2 {
 		t.Errorf("a single word changed: %v", same)
 	}
 }
@@ -563,7 +558,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 		t.Errorf("a half lasts no time at all: %v", added)
 	}
 	// And the text of the caption itself.
-	if !strings.Contains(captionCues(captions())[0].Text, "was wo") {
+	if !strings.Contains(captions()[0].Text, "was wo") {
 		t.Errorf("the caption text is missing the added word")
 	}
 

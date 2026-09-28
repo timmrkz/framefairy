@@ -42,35 +42,53 @@ The captions, the highlight, the caption blocks, the snapping of an edge
 or a cut and the words the arrow keys walk are all made from it.
 
 **A clip's words** are not stored. A clip is its pieces, and its words are
-the words shown that its pieces hold, `ClipWords`: a word is in the clip
+the words said that its pieces hold, `Said`: a word is in the clip
 while the clip holds more than a frame of its sound. Plans no longer carry
 a `words` list, and one that does is not read.
 
 ## Who does what
 
-- The engine works out every word and every edge. Snapping an edge or a
-  cut to words, where the playhead goes while an edge is dragged, the
-  captions of a clip as it is being dragged: one call, `Shape`, answers
-  all of it for a drag, and the edit that saves it uses the same
+- The engine works out every word and every edge. A gesture is what a
+  hand does to a clip on the clip timeline: an edge trimmed, a part taken
+  out, a cut moved, put back or taken out again. `ShapeClip` in
+  `engine/shape.go` answers while the hand moves: where the edges land, on
+  a frame or on the words shown, how far they may go, where the playhead
+  stands and which pieces the clip is left with, and `ShapeClipView` adds
+  the captions. `Reshape` saves the same gesture through the same
   functions, so what is drawn is what is saved.
-- The interface sends where the hand is and draws what comes back. It
-  keeps no rules about words.
-- Captions are always made from the words. The caption files written next
-  to a short are output, never read back. A word is corrected in the
-  caption box.
-- The harness answers the same calls with a small stand-in, and says
-  where it is one.
+- A gesture is held inside what the clip can be rather than refused on the
+  way: a cut is never narrower than the least a cut may be, a moved cut
+  stops short of swallowing the piece beside it, a clip never gets shorter
+  than a second. The timeline used to hold the hand itself, with its own
+  copy of these rules, and the engine refused what got past it.
+- The interface sends where the hand is and draws what comes back, through
+  the app's `Shape` and `Reshape`. It keeps no rules about where an edge
+  lands. What it still does on its own is walk the playhead from word to
+  word with shift and the arrow keys, over the words the captions light,
+  which is navigation and not an edit.
+- Captions are always made from the words, by `ClipCaptions`, for the app
+  and the render alike. The caption files written next to a short are
+  output, never read back. A word is corrected in the caption box, and each
+  word in a caption says which word of the episode it stands for, so the
+  box needs no rule of its own to find it.
+- The harness answers the same calls with a small stand-in, in
+  `frontend/preview/wails-stub.ts`, and says there that it is one. What
+  the gestures really do is proved by the Go tests.
 
-## Batches
+## What went away
 
-1. This plan.
-2. The words said: corrections applied and split in `Transcript.Words`,
-   for every reader.
-3. A clip's words worked out, never stored, and the caption files no
-   longer read back.
-4. The words shown, and snapping on them in the engine, with `Shape`.
-5. The interface draws what `Shape` answers and keeps no snapping rules.
-6. Docs and the last of what went away.
+- In plans: the `words` list of every clip. One that is still there is not
+  read.
+- In the engine: `Clip.Words`, `refreshWords`, `SplitCorrected` and
+  `ApplyCorrections` outside the transcript, `WordStops`,
+  `DraftCaptionsView`, `TrimClip`, `CutClip`, `MoveCut` and `JoinCut`,
+  reading caption files back with `LoadCaptions`, `AlignWords`, the words
+  file and the srt reader, and setting caption files aside when a plan
+  changes.
+- In the interface: `snapStart`, `snapEnd`, `snapCut`, `cutAt`,
+  `saidWord` and the tests that kept them in step with the engine by hand.
+- On the command line: `--refresh-captions` does nothing and is kept so a
+  script that passes it still runs.
 
 No migration. Plans and training records from before are not carried
 over: a plan's `words` list is ignored, and training starts afresh.

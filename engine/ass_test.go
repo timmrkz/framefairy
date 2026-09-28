@@ -100,7 +100,7 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 	// A face the program carries is measured, so where a line breaks depends
 	// on how wide the words really are at that size.
 	s := ResolveStyle(map[string]any{"size": 96.0})
-	lines := CaptionLines(caption, s)
+	lines := captionLines(caption, roomFor(s))
 	held := 0
 	for _, line := range lines {
 		held += len(line)
@@ -115,14 +115,14 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 
 	// The same caption at a bigger size needs more lines.
 	big := ResolveStyle(map[string]any{"size": 200.0})
-	if len(CaptionLines(caption, big)) <= len(lines) {
-		t.Errorf("at size 200 it still takes %d lines", len(CaptionLines(caption, big)))
+	if len(captionLines(caption, roomFor(big))) <= len(lines) {
+		t.Errorf("at size 200 it still takes %d lines", len(captionLines(caption, roomFor(big))))
 	}
 
 	// A face the program does not carry cannot be measured, and then the
 	// character count decides, as it always did.
 	plain := ResolveStyle(map[string]any{"font": "Helvetica", "wrap_chars": 12})
-	lines = CaptionLines(caption, plain)
+	lines = captionLines(caption, roomFor(plain))
 	if len(lines) != 2 || len(lines[0]) != 2 || len(lines[1]) != 3 {
 		t.Fatalf("lines %v", lines)
 	}

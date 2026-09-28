@@ -411,7 +411,6 @@ func SnapEnd(words []Cue, at, keepPause float64) float64 {
 // MaxClipSpan keeps a trimmed clip to a sensible length.
 const MaxClipSpan = 600.0
 
-
 func copyObject(o *object) *object {
 	out := &object{keys: append([]string(nil), o.keys...), values: map[string]any{}}
 	for k, v := range o.values {
@@ -542,7 +541,6 @@ func checkedPieces(change func(pieces []*object) ([]*object, error), pieces []*o
 	return out, nil
 }
 
-
 // snapCut puts the edges of a cut where the render would cut them. A cut is
 // not a trim seen from the other side: a trim moves an edge to the nearest
 // word and keeps it, while a cut takes words away, so it has to be able to
@@ -585,7 +583,6 @@ func snapCut(words []Cue, from, to, keepPause float64) (float64, float64) {
 	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
 }
 
-
 // applyCut takes a part out of a set of pieces. A piece the cut straddles
 // is split, and the half that is kept on each side is a copy of the whole,
 // so the framing and the automatic framing behind it travel with both.
@@ -613,8 +610,6 @@ func applyCut(pieces []*object, from, to float64) []*object {
 	}
 	return out
 }
-
-
 
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
 // left edge in source pixels. Every piece of the clip that the analysis

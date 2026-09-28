@@ -356,7 +356,7 @@ messages, pull request text, code comments and chat replies.
 - **One word model.** What an episode says is `Transcript.Words` and what a
   clip shows is made from it, see [docs/WORDS.md](docs/WORDS.md). A clip
   keeps no words, captions are never read back from a file, and the
-  interface keeps no rules about where an edge lands: `Shape` and
+  interface keeps no rules about where an edge lands: `ShapeClip` and
   `Reshape` in `engine/shape.go` answer for every gesture.
 - **Untrusted input.** Model answers, plan files and caption text are
   untrusted. Keep the checks in `ReadPlan`, `LoadClips` and `SafeChild`.

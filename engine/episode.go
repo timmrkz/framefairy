@@ -359,11 +359,11 @@ type SegmentView struct {
 // Whole is all of it, for a word the captions show in halves or a
 // correction that reads as several words.
 type WordView struct {
-	Start float64 `json:"start"`
-	End   float64 `json:"end"`
-	Text  string  `json:"text"`
-	Said  float64 `json:"said,omitempty"`
-	Whole string  `json:"whole,omitempty"`
+	Start float64  `json:"start"`
+	End   float64  `json:"end"`
+	Text  string   `json:"text"`
+	Said  *float64 `json:"said,omitempty"`
+	Whole string   `json:"whole,omitempty"`
 }
 
 // PlanView is a plan with everything the candidates screen needs.
@@ -597,7 +597,8 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 				// in the caption box is kept against, and all of it.
 				if at, ok := SaidWord(clip, said, (w.Start+w.End)/2); ok {
 					if heard, ok := t.HeardAt(at.Start); ok {
-						word.Said, word.Whole = heard.Start, Scrub(heard.Text, 200)
+						start := heard.Start
+						word.Said, word.Whole = &start, Scrub(heard.Text, 200)
 					}
 				}
 				row.Words = append(row.Words, word)
