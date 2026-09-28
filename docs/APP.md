@@ -821,9 +821,11 @@ place.
       the transcript has got to, and a light passing over it while the
       transcription runs. The transcript is heard in parts, where a search
       or a clip made by hand needs it first, so there can be more than one
-      dark stretch, each with its edge. What is heard wears the fill,
-      still, and the part being heard fills as it goes, from where it
-      began.
+      dark stretch. What is heard is simply not dark, and the part being
+      heard fills as it goes, from where it began, with the head of the
+      fill as its edge. A still fill over every part heard put a bright
+      line at the end of each, and a part heard for a clip made by hand is
+      three pixels of a four hour track, so all it showed was the line.
     - The window is locked while clips are being found.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
@@ -1086,6 +1088,10 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     its crop is placed its pieces are drawn, and its caption blocks come
     in one after another, laid out as the render will draw them. It
     cannot be edited until it is written.
+  - **It is followed while it is made.** Its card is brought all the way
+    into view once it has slid open and again whenever it moves in the
+    list, and with the video paused the playhead goes to where its frame
+    starts, then to where its sentences start.
   - **The card becomes the clip** when it lands, still chosen, unless
     another clip has been chosen since. While the video plays it stays
     where it is playing.

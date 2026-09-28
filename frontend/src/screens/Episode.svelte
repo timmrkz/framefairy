@@ -1061,6 +1061,28 @@
     }
     return { key: a.key, segments: [{ start: from, end: to }] } as unknown as ClipEntry;
   });
+  // The clip on its way that was just asked for is followed until it is
+  // written: brought into view once its card has slid open, and again
+  // whenever it moves in the list, and with the video paused the playhead
+  // is put where its frame starts, so the picture is of the clip being
+  // made. Brought into view in the frame it was asked for only, the card
+  // was still sliding open, at no height, and came to rest half under the
+  // foot of the list.
+  let followingMade = "";
+  $effect(() => {
+    const m = making;
+    if (!m || ![...madeHere.values()].includes(m.key)) return;
+    const start = m.segments[0].start;
+    const mark = `${m.key}:${start}`;
+    if (mark === followingMade) return;
+    followingMade = mark;
+    untrack(() => {
+      if (paused && Math.abs(time - start) > 0.05) player?.seek(start);
+    });
+    // After the card has slid open and the list has moved it, 200 ms and
+    // 180 ms in ClipList.svelte.
+    setTimeout(showChosen, 240);
+  });
   const makingTitle = $derived(onTheWay.find((x) => x.key === selected)?.title || "New clip");
 
   function inOutKey(event: KeyboardEvent) {

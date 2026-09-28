@@ -189,22 +189,15 @@
       to: b,
       edge: a,
       live: !!liveGap && a === liveGap[0],
-      // A fill ends where it starts, and its head is the line there.
-      waiting: heard.some(([, end]) => Math.abs(end - a) < 0.05),
+      // Only the stretch being heard has an edge, and only until its fill
+      // has begun, whose head is the line from then on. A heard part is
+      // simply not dark: a still fill over every part heard put the head
+      // of a fill, a bright line, at the end of each, and a part a minute
+      // long is three pixels of a four hour track, so all it showed was
+      // the line.
+      waiting: !(liveGap && a === liveGap[0] && live && live[1] <= liveSpan![0] + 0.01),
     })),
   );
-  // What is heard wears the fill, standing still, but for the part being
-  // heard, which fills its own stretch as it goes.
-  const heardFills = $derived.by((): Parts => {
-    if (!pending) return [];
-    if (!liveSpan) return heard;
-    const out: Parts = [];
-    for (const [a, b] of heard) {
-      if (a < liveSpan[0]) out.push([a, Math.min(b, liveSpan[0])]);
-      if (b > liveSpan[1]) out.push([Math.max(a, liveSpan[1]), b]);
-    }
-    return out.filter(([a, b]) => b - a > 0.01);
-  });
   // Whether the edge of the transcript may glide to where it is going. It
   // is off for the first frame, so the edge is simply where it is when the
   // track appears, and on from then on, so every step after that reads as
@@ -403,16 +396,9 @@
        button of the app wears, with no rim because the track has no edge to
        run round. Not a copy of it, which is what this was and what looked
        different. Its fill slides by the same transform and the same glide
-       as the shade ahead of it, so the two never part. A reading that has
-       stopped, called off or waiting while another search finds, keeps
-       its fill and stands still, the way Busy draws any work that is not
-       moving, so what has been read never disappears from the track and
-       comes back. -->
-  {#each heardFills as [a, b] (a)}
-    <span class="busyhost" style="left: {at(a)}px; width: {at(b) - at(a)}px"
-      ><Busy fraction={1} rim={false} still /></span
-    >
-  {/each}
+       as the shade ahead of it, so the two never part. Only the part being
+       heard wears it: what has been heard is the track without the dark,
+       and stays so. -->
   {#if liveSpan && live}
     <span
       class="busyhost"
