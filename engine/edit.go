@@ -411,79 +411,6 @@ func SnapEnd(words []Cue, at, keepPause float64) float64 {
 // MaxClipSpan keeps a trimmed clip to a sensible length.
 const MaxClipSpan = 600.0
 
-// TrimClip moves a clip's first and last edge. With ToWords they move onto
-// the nearest words, with ToFrames they stay where they were put, the same
-// as the edges of a cut. Pieces that end up outside are dropped, the first
-// and last piece keep their framing, and the clip's words are taken again
-// from the transcript. The change is recorded as an edit for training.
-func TrimClip(planPath, clipID string, start, end float64, t *Transcript,
-	keepPause float64, snap Snap) error {
-	if snap == ToWords {
-		start = SnapStart(t.Words, start, keepPause)
-		end = SnapEnd(t.Words, end, keepPause)
-	} else {
-		start, end = roundTo(math.Max(0, start), 3), roundTo(end, 3)
-	}
-	if end-start < 1 {
-		return renderErr("a clip needs at least one second")
-	}
-	if end-start > MaxClipSpan {
-		return renderErr("a clip can span at most %s minutes of the episode", fixed(MaxClipSpan/60, 0))
-	}
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
-		c, err := findClip(clips, clipID)
-		if err != nil {
-			return err
-		}
-		list, _ := c.values["segments"].([]any)
-		var kept []any
-		var first, last *object
-		for _, item := range list {
-			seg, ok := item.(*object)
-			if !ok {
-				continue
-			}
-			segStart, _ := seg.get("start")
-			segEnd, _ := seg.get("end")
-			if number(segEnd) <= start || number(segStart) >= end {
-				continue
-			}
-			if first == nil {
-				first = seg
-			}
-			last = seg
-			kept = append(kept, seg)
-		}
-		if first == nil {
-			// The new edges hold none of the old pieces, so the whole
-			// part becomes one piece with the framing of the nearest one.
-			var nearest *object
-			for _, item := range list {
-				if seg, ok := item.(*object); ok {
-					segStart, _ := seg.get("start")
-					if nearest == nil || math.Abs(number(segStart)-start) < math.Abs(number(nearest.values["start"])-start) {
-						nearest = seg
-					}
-				}
-			}
-			if nearest == nil {
-				return renderErr("clip %s has no pieces", clipID)
-			}
-			first, last = nearest, nearest
-			kept = []any{nearest}
-		}
-		first.set("start", roundTo(start, 3))
-		last.set("end", roundTo(end, 3))
-		c.set("segments", kept)
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
-	return nil
-}
 
 func copyObject(o *object) *object {
 	out := &object{keys: append([]string(nil), o.keys...), values: map[string]any{}}
@@ -572,26 +499,15 @@ func pieceSpan(pieces []*object) float64 {
 // can still make, so it is checked before anything is written. The words are
 // taken again from the transcript, the caption file goes, because the
 // captions are built from the words, and the edit is recorded for training.
-func editPieces(planPath, clipID string, t *Transcript,
-	change func(pieces []*object) ([]*object, error)) error {
+func editPieces(planPath, clipID string, change func(pieces []*object) ([]*object, error)) error {
 	err := editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
 		}
-		out, err := change(segmentObjects(c))
+		out, err := checkedPieces(change, segmentObjects(c))
 		if err != nil {
 			return err
-		}
-		if len(out) == 0 {
-			return renderErr("that would leave the clip with nothing in it")
-		}
-		if len(out) > MaxSegments {
-			return renderErr("a clip can hold at most %d pieces", MaxSegments)
-		}
-		if span := pieceSpan(out); span < MinClip {
-			return renderErr("a clip needs at least one second, that would leave %s",
-				fixed(span, 2))
 		}
 		kept := make([]any, len(out))
 		for i, seg := range out {
@@ -607,21 +523,25 @@ func editPieces(planPath, clipID string, t *Transcript,
 	return nil
 }
 
-// Snap says whether a cut's edges are moved onto the words around them.
-//
-// ToWords is what the engine proposes, because a cut that lands between
-// words is right nearly every time, and it is what a drag with alt asks
-// for. ToFrames is what a drag does by itself: it leaves the edges exactly
-// where they were put, because a drag says where, and the picture is then
-// the only thing that says where the edge belongs. An edge put on a frame
-// may stop inside a word, which is the whole point of it. Clip edges and
-// the edges of a cut follow the same rule.
-type Snap bool
+// checkedPieces makes a change to a clip's pieces and checks that what comes
+// back is a clip a person can still watch and the render can still make.
+func checkedPieces(change func(pieces []*object) ([]*object, error), pieces []*object) ([]*object, error) {
+	out, err := change(pieces)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, renderErr("that would leave the clip with nothing in it")
+	}
+	if len(out) > MaxSegments {
+		return nil, renderErr("a clip can hold at most %d pieces", MaxSegments)
+	}
+	if span := pieceSpan(out); span < MinClip {
+		return nil, renderErr("a clip needs at least one second, that would leave %s", fixed(span, 2))
+	}
+	return out, nil
+}
 
-const (
-	ToWords  Snap = true
-	ToFrames Snap = false
-)
 
 // snapCut puts the edges of a cut where the render would cut them. A cut is
 // not a trim seen from the other side: a trim moves an edge to the nearest
@@ -633,10 +553,10 @@ const (
 // air on each side that stays, without reaching into a word that is going.
 // A cut dragged over a pause takes the whole pause, and a cut dragged over
 // speech takes whole words.
-func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
+func snapCut(words []Cue, from, to, keepPause float64) (float64, float64) {
 	// What the cut touches goes with it.
 	swallowedFrom, swallowedTo := math.Inf(1), math.Inf(-1)
-	for _, w := range t.Words {
+	for _, w := range words {
 		if w.End > from && w.Start < to {
 			swallowedFrom = math.Min(swallowedFrom, w.Start)
 			swallowedTo = math.Max(swallowedTo, w.End)
@@ -648,7 +568,7 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 	// The last word that stays before the cut, and the first that stays
 	// after it. The air belongs to the side that stays.
 	before, after := math.Inf(-1), math.Inf(1)
-	for _, w := range t.Words {
+	for _, w := range words {
 		if w.End <= start {
 			before = math.Max(before, w.End)
 		}
@@ -665,29 +585,6 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
 }
 
-// CutClip takes a part out of the middle of a clip. A piece the cut lands
-// inside becomes two, and both keep the framing of the piece they came from,
-// so cutting never moves the picture. A piece the cut swallows whole goes.
-// With ToWords the edges move onto the words around them, with ToFrames they
-// stay where they were put.
-func CutClip(planPath, clipID string, from, to float64, t *Transcript,
-	keepPause float64, snap Snap) error {
-	if snap == ToWords {
-		from, to = snapCut(t, from, to, keepPause)
-	} else {
-		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
-	}
-	if to-from < MinCut {
-		return renderErr("a cut has to take out more than that")
-	}
-	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
-		out := applyCut(pieces, from, to)
-		if len(out) == len(pieces) && pieceSpan(out) >= pieceSpan(pieces) {
-			return nil, renderErr("that cut falls outside the clip")
-		}
-		return out, nil
-	})
-}
 
 // applyCut takes a part out of a set of pieces. A piece the cut straddles
 // is split, and the half that is kept on each side is a copy of the whole,
@@ -717,61 +614,7 @@ func applyCut(pieces []*object, from, to float64) []*object {
 	return out
 }
 
-// JoinCut puts back the part a clip leaves out at a moment, so the two
-// pieces around it become one. The framing of the piece before the cut is
-// the one the joined piece keeps, because that is the shot it opens on.
-func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
-	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
-		for i := 0; i+1 < len(pieces); i++ {
-			end := number(pieces[i].values["end"])
-			next := number(pieces[i+1].values["start"])
-			if at >= end && at <= next {
-				joined := copyObject(pieces[i])
-				joined.set("end", pieces[i+1].values["end"])
-				out := append([]*object{}, pieces[:i]...)
-				out = append(out, joined)
-				return append(out, pieces[i+2:]...), nil
-			}
-		}
-		return nil, renderErr("there is no cut at %s", fixed(at, 2))
-	})
-}
 
-// MoveCut moves both edges of one of a clip's cuts, counted from the first.
-// The pieces either side give way to it, and neither may be squeezed out of
-// existence, so a cut that would swallow its neighbour is refused rather
-// than quietly dropping a piece. With ToWords the edges move onto the words
-// around them, with ToFrames they stay where they were put, which is how an
-// edge is walked a frame at a time.
-func MoveCut(planPath, clipID string, index int, from, to float64,
-	t *Transcript, keepPause float64, snap Snap) error {
-	if snap == ToWords {
-		from, to = snapCut(t, from, to, keepPause)
-	} else {
-		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
-	}
-	if to-from < MinCut {
-		return renderErr("a cut has to take out more than that")
-	}
-	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
-		if index < 0 || index+1 >= len(pieces) {
-			return nil, renderErr("this clip has no cut number %d", index+1)
-		}
-		before, after := pieces[index], pieces[index+1]
-		if from <= number(before.values["start"]) {
-			return nil, renderErr("a cut cannot swallow the piece before it")
-		}
-		if to >= number(after.values["end"]) {
-			return nil, renderErr("a cut cannot swallow the piece after it")
-		}
-		out := append([]*object{}, pieces...)
-		out[index] = copyObject(before)
-		out[index].set("end", roundTo(from, 3))
-		out[index+1] = copyObject(after)
-		out[index+1].set("start", roundTo(to, 3))
-		return out, nil
-	})
-}
 
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
 // left edge in source pixels. Every piece of the clip that the analysis

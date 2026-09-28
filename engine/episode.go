@@ -505,60 +505,27 @@ func ClipCaptionsView(planPath, clipID string, t *Transcript, overrides map[stri
 	return captionsView(plan, clip, t, overrides), nil
 }
 
-// DraftCaptionsView gives the captions a clip would have with other pieces,
-// while an edge of it or of a cut is being dragged, so the clip timeline
-// draws them under the hand rather than when it lets go. Nothing is
-// written.
-func DraftCaptionsView(planPath, clipID string, pieces [][2]float64, t *Transcript,
-	overrides map[string]any) (*CaptionsView, error) {
-	if err := saneDraft(pieces); err != nil {
-		return nil, err
-	}
-	plan, clip, err := planClip(planPath, clipID)
+// ShapedView is what a gesture makes of a clip, with the captions the clip
+// would have, for the clip timeline and the video preview while the hand
+// moves. Nothing is written.
+type ShapedView struct {
+	Shaped
+	Captions *CaptionsView `json:"captions"`
+}
+
+// ShapeClipView works out what a gesture makes of a clip and its captions,
+// see ShapeClip.
+func ShapeClipView(planPath, clipID string, g Gesture, t *Transcript, keepPause float64,
+	overrides map[string]any) (*ShapedView, error) {
+	shaped, err := ShapeClip(planPath, clipID, g, t, keepPause)
 	if err != nil {
 		return nil, err
 	}
-	clip.Segments = make([]Segment, len(pieces))
-	for i, p := range pieces {
-		clip.Segments[i] = Segment{Start: p[0], End: p[1]}
-	}
-	return captionsView(plan, clip, t, overrides), nil
-}
-
-// maxDraftPieces is more pieces than any clip is cut into by hand.
-const maxDraftPieces = 256
-
-// saneDraft checks pieces that came from the interface: in order, apart,
-// and no longer than a trim may make a clip.
-func saneDraft(pieces [][2]float64) error {
-	if len(pieces) == 0 || len(pieces) > maxDraftPieces {
-		return renderErr("a clip needs between 1 and %d pieces", maxDraftPieces)
-	}
-	prev := 0.0
-	for _, p := range pieces {
-		if !isFinite(p[0]) || !isFinite(p[1]) || p[0] < prev || p[1] <= p[0] {
-			return renderErr("the pieces of a clip have to be in order and apart")
-		}
-		prev = p[1]
-	}
-	if pieces[len(pieces)-1][1]-pieces[0][0] > MaxClipSpan {
-		return renderErr("a clip can span at most %s minutes of the episode", fixed(MaxClipSpan/60, 0))
-	}
-	return nil
-}
-
-// WordStops gives the words of a part of the episode the way a clip's
-// captions show them, see ShowWords. They are the words that light up one
-// by one, so they are where an edge dragged with shift stops, and they are
-// known before the edge reaches a word, not only once it is in the clip.
-func WordStops(planPath, clipID string, t *Transcript, from, to float64,
-	overrides map[string]any) ([]Cue, error) {
-	plan, clip, err := planClip(planPath, clipID)
+	plan, _, err := planClip(planPath, clipID)
 	if err != nil {
 		return nil, err
 	}
-	s := ResolveStyle(captionStyle(plan, clip, overrides))
-	return ShowWords(t.WordsBetween(from, to), s, t.Language), nil
+	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, overrides)}, nil
 }
 
 // planClip finds one clip of a plan.

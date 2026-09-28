@@ -123,69 +123,77 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 	}
 }
 
-// The picture in the app draws the captions of the selected clip itself, so
-// it asks the engine for them, on the clip's own clock and already broken
-// into lines.
-// The captions drawn while an edge is dragged are the captions the clip
-// has once it is let go of. If the two differ, the blocks jump as the hand
-// lets go, which is the thing the draft is there to stop.
-func TestDraftCaptionsAreTheCaptionsTheEditLeaves(t *testing.T) {
-	path := editablePlanPath(t)
+// What a gesture shows while the hand moves is what it saves when the hand
+// lets go: the pieces, and the captions the clip has with them. If the two
+// differ, the clip timeline jumps as the hand lets go, which is the thing
+// the gesture is there to stop. And showing one writes nothing.
+func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 	tr := editableTranscript()
 	for _, c := range []struct {
-		name       string
-		start, end float64
-		snap       Snap
+		name string
+		g    Gesture
 	}{
-		{"longer, to words", 10, 13.6, ToWords},
-		{"shorter, to frames", 10.24, 12.2, ToFrames},
+		{"the start to words", Gesture{Kind: "trim", Edge: "start", From: 9.7, ToWords: true, Frame: 0.04}},
+		{"the end to words", Gesture{Kind: "trim", Edge: "end", From: 13.6, ToWords: true, Frame: 0.04}},
+		{"the start to frames", Gesture{Kind: "trim", Edge: "start", From: 10.23, Frame: 0.04}},
+		{"the end to frames", Gesture{Kind: "trim", Edge: "end", From: 12.87, Frame: 0.04}},
+		{"a cut to frames", Gesture{Kind: "cut", From: 10.51, To: 10.58, Frame: 0.04}},
+		{"a cut to words", Gesture{Kind: "cut", From: 10.7, To: 10.8, ToWords: true, Frame: 0.04}},
+		{"a cut moved", Gesture{Kind: "move", Index: 0, From: 11.0, To: 11.95, Frame: 0.04}},
+		{"a cut put back", Gesture{Kind: "join", From: 11.5}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			path := editablePlanPath(t)
-			// The timeline snaps the edges as it draws them, the same way.
-			start, end := c.start, c.end
-			if c.snap == ToWords {
-				start, end = SnapStart(tr.Words, start, 0.1), SnapEnd(tr.Words, end, 0.1)
-			}
-			draft, err := DraftCaptionsView(path, "01",
-				[][2]float64{{start, 11.1}, {11.9, end}}, tr, nil)
+			before, _ := os.ReadFile(path)
+			shown, err := ShapeClipView(path, "01", c.g, tr, 0.1, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := TrimClip(path, "01", c.start, c.end, tr, 0.1, c.snap); err != nil {
+			if after, _ := os.ReadFile(path); string(after) != string(before) {
+				t.Fatal("showing a gesture changed the plan")
+			}
+			if err := Reshape(path, "01", c.g, tr, 0.1); err != nil {
 				t.Fatal(err)
+			}
+			_, clips, err := LoadClips(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved []PieceView
+			for _, seg := range clips[0].Segments {
+				saved = append(saved, PieceView{seg.Start, seg.End})
+			}
+			if fmt.Sprint(shown.Pieces) != fmt.Sprint(saved) {
+				t.Errorf("shown %v, saved %v", shown.Pieces, saved)
 			}
 			landed, err := ClipCaptionsView(path, "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if fmt.Sprint(draft.Captions) != fmt.Sprint(landed.Captions) {
-				t.Errorf("drawn while dragged %+v\nafter %+v", draft.Captions, landed.Captions)
+			if fmt.Sprint(shown.Captions.Captions) != fmt.Sprint(landed.Captions) {
+				t.Errorf("captions shown %+v\nsaved %+v", shown.Captions.Captions, landed.Captions)
 			}
 		})
 	}
-	// Words the saved clip does not hold yet are in the draft.
-	draft, err := DraftCaptionsView(path, "01", [][2]float64{{10, 11.1}, {11.9, 13.6}}, tr, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(fmt.Sprint(draft.Captions), "vier") {
-		t.Errorf("the word the drag reached is not in %+v", draft.Captions)
-	}
+	// A gesture that is not one is refused, and nothing is written.
+	path := editablePlanPath(t)
 	before, _ := os.ReadFile(path)
-	for _, bad := range [][][2]float64{
-		nil,
-		{{11, 10}},
-		{{10, 12}, {11, 13}},
-		{{math.NaN(), 12}},
-		{{0, MaxClipSpan + 1}},
+	for _, g := range []Gesture{
+		{Kind: "trim", Edge: "start", From: math.NaN()},
+		{Kind: "trim", Edge: "middle", From: 10},
+		{Kind: "fold", From: 10},
+		{Kind: "move", Index: 5, From: 10, To: 11},
+		{Kind: "join", From: 20},
 	} {
-		if _, err := DraftCaptionsView(path, "01", bad, tr, nil); err == nil {
-			t.Errorf("pieces %v were accepted", bad)
+		if _, err := ShapeClip(path, "01", g, tr, 0.1); err == nil {
+			t.Errorf("%+v was shown", g)
+		}
+		if err := Reshape(path, "01", g, tr, 0.1); err == nil {
+			t.Errorf("%+v was saved", g)
 		}
 	}
 	if after, _ := os.ReadFile(path); string(after) != string(before) {
-		t.Error("a draft changed the plan")
+		t.Error("a refused gesture changed the plan")
 	}
 }
 
@@ -911,7 +919,7 @@ func TestThumbnailsInAPlanAreChecked(t *testing.T) {
 // The stops an edge lands on with shift are the words the captions light
 // up. A word too wide for a line is two stops, at the same times as its two
 // halves in the captions, and a correction that reads as two words is two.
-func TestWordStopsAreTheWordsTheCaptionsLight(t *testing.T) {
+func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitänsmütze"
 	dir := filepath.Join(t.TempDir(), "ep.framefairy", "logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -926,10 +934,11 @@ func TestWordStopsAreTheWordsTheCaptionsLight(t *testing.T) {
 	}
 	tr := fromStored([]Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und"}}, nil, 0, 0, nil)
 	tr.Correct(map[string]string{wordKey(12.5): "Und da"})
-	stops, err := WordStops(path, "01", tr, 10, 14, nil)
+	loaded, clip, err := planClip(path, "01")
 	if err != nil {
 		t.Fatal(err)
 	}
+	stops := ShowWords(tr.WordsBetween(10, 14), ResolveStyle(captionStyle(loaded, clip, nil)), tr.Language)
 	view, err := ClipCaptionsView(path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -950,5 +959,20 @@ func TestWordStopsAreTheWordsTheCaptionsLight(t *testing.T) {
 			stops[i].Text != lit[i].Text {
 			t.Errorf("stop %d is %+v, the captions light %+v", i, stops[i], lit[i])
 		}
+	}
+	// And they are where an edge dragged with shift lands: the start of the
+	// clip dragged onto the second half of the long word starts the clip
+	// there, and the playhead is in that half, so it is the one lit.
+	half := stops[1]
+	shaped, err := ShapeClip(path, "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
+		ToWords: true, Frame: 0.04}, tr, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := shaped.Pieces[0].Start; math.Abs(got-roundTo(half.Start, 3)) > 0.001 {
+		t.Errorf("the clip starts at %v, not at the second half %+v", got, half)
+	}
+	if shaped.Playhead < half.Start || shaped.Playhead >= half.End {
+		t.Errorf("the playhead is at %v, outside %+v", shaped.Playhead, half)
 	}
 }
