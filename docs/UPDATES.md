@@ -433,6 +433,18 @@ with its newest build, so one fetch is the whole check:
    used to follow main by itself, and Tim, meaning to pick another pull
    request, watched main download without having asked for it.
 
+**Quitting with a build ready puts it in place**, the way Chrome does:
+the next start is the new build, and nothing opens by itself in between.
+Relaunch does the same at once, through Wails' updater, whose own step
+always opens the app again. So quitting starts a step of our own,
+`install.go`: the same program, started again with three variables in its
+environment, which waits up to a minute for the app to be gone, moves the
+app aside, moves the new build into its place, and only then removes the
+old one. When the new build does not go in whole, the old app is put
+back. It only ever replaces a `.app`, only with a build the updater
+unpacked, and never an app that is still running. What it did is in
+`$TMPDIR/framefairy-install-<pid>.log`.
+
 A build made by `make`, and `make run` is one, follows nothing until a
 channel is picked, and looks only when it is picked or Check is clicked.
 Otherwise every `make run` would fetch a build to replace itself with.
@@ -466,8 +478,8 @@ Still to come, in the order they are needed:
   knows the app by its bundle identifier and the certificate, and asks
   once for good. Developer ID, batch 5.5, ends it. Until then a new build
   asks once. Tim accepted that for now.
-- **Installing when the app quits.** Today a build that is ready waits for
-  Update. Quitting throws it away, and the next start downloads it again.
+- **Installing when the app quits, tried on the Mac.** Built, see below,
+  and not yet seen working on Tim's Mac.
 - **Customers.** The stable channel, Apple's signing and notarisation, the
   release key, and a release build that knows no channel list.
 

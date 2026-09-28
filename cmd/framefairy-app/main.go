@@ -62,6 +62,8 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 </main></body></html>`
 
 func main() {
+	// Started again to put a new build in place once the app has quit.
+	installIfAsked()
 	widenPath()
 	engine.PreferSavedKeys()
 	st := openStore()
@@ -98,6 +100,8 @@ func main() {
 		engine.CloseModels()
 		svc.jobs.shutDown()
 		svc.levels.shutDown()
+		// A build that is ready goes in place once the app is gone.
+		svc.updates.installOnQuit()
 	})
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.

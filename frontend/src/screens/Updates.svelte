@@ -135,7 +135,7 @@
         return {
           mark: "new",
           head: "A newer build is ready",
-          more: `${next}. Relaunch to finish updating.`,
+          more: `${next}. Relaunch to finish updating, or it goes in when you quit.`,
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
@@ -213,7 +213,7 @@
             <Info label="How updates work" side="right">
               The list says where this app updates from: main, or one pull request. Every push to
               it makes a new build. The app looks when it starts and every ten minutes, and
-              downloads the newest build by itself. <b>Relaunch</b> restarts the app into it. The
+              downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on the way out. The
               commit under the version opens on GitHub.
             </Info>
           </span>
