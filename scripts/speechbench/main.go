@@ -50,8 +50,7 @@ func main() {
 	length := float64(n) / 16000
 	fmt.Printf("%.0f s of speech, hearing it in fixed pieces, on a machine with %d cores\n\n",
 		length, runtime.NumCPU())
-	fmt.Println("| provider | threads | piece | at once | first piece | time | real time | words | words unlike cpu |")
-	fmt.Println("|---|---|---|---|---|---|---|---|---|")
+	bench := newTable("provider", "threads", "piece", "at once", "first piece", "time", "real time", "words", "words unlike cpu")
 	reference := map[string][]string{}
 	for _, provider := range list(*providers) {
 		for _, t := range list(*threads) {
@@ -59,7 +58,7 @@ func main() {
 			began := time.Now()
 			rec, err := asr.OpenWith(*model, asr.Options{Provider: provider, Threads: count})
 			if err != nil {
-				fmt.Printf("| %s | %s | cannot load: %v |\n", provider, t, err)
+				fmt.Printf("%s cannot load: %v\n", bench.cells(provider, t), err)
 				continue
 			}
 			loaded := time.Since(began)
@@ -93,8 +92,9 @@ func main() {
 					} else if provider == "cpu" {
 						reference[key] = words
 					}
-					fmt.Printf("| %s | %s | %s s | %s | %.1f s | %.1f s | %.1fx | %d | %s |\n",
-						provider, t, p, b, first.Seconds(), took.Seconds(), length/took.Seconds(), len(words), unlike)
+					bench.row(provider, t, p+" s", b, fmt.Sprintf("%.1f s", first.Seconds()),
+						fmt.Sprintf("%.1f s", took.Seconds()), fmt.Sprintf("%.1fx", length/took.Seconds()),
+						strconv.Itoa(len(words)), unlike)
 				}
 			}
 			rec.Close()
@@ -117,10 +117,20 @@ func sideBySide(model string, samples []float32, length, piece float64,
 		parts = append(parts, samples[at:min(at+step, len(samples))])
 	}
 	cores := runtime.NumCPU()
-	fmt.Printf("\nSide by side, in pieces of %.0f s. Today the app runs 1 copy with %d threads.\n\n",
-		piece, min(cores, 8))
-	fmt.Println("| copies | threads each | threads in all | time | real time | an hour takes | words | words unlike cpu |")
-	fmt.Println("|---|---|---|---|---|---|---|---|")
+	machine := asr.ThisMachine()
+	appCopies, appThreads := asr.Mix(machine)
+	fast := "the system does not tell fast ones apart"
+	if machine.Fast > 0 {
+		fast = fmt.Sprintf("%d of them fast", machine.Fast)
+	}
+	copiesSaid := fmt.Sprintf("%d copies", appCopies)
+	if appCopies == 1 {
+		copiesSaid = "1 copy"
+	}
+	fmt.Printf("\nSide by side, in pieces of %.0f s. %d cores, %s, %.0f GB of memory. "+
+		"The app runs %s of %d threads here.\n\n",
+		piece, machine.Cores, fast, float64(machine.Memory)/(1<<30), copiesSaid, appThreads)
+	side := newTable("copies", "threads each", "threads in all", "time", "real time", "an hour takes", "words", "words unlike cpu")
 	key := strconv.FormatFloat(piece, 'f', -1, 64)
 	for _, c := range copies {
 		count, _ := strconv.Atoi(c)
@@ -133,7 +143,7 @@ func sideBySide(model string, samples []float32, length, piece float64,
 			for range count {
 				rec, err := asr.OpenWith(model, asr.Options{Provider: "cpu", Threads: threads})
 				if err != nil {
-					fmt.Printf("| %d | %d | cannot load: %v |\n", count, threads, err)
+					fmt.Printf("%s cannot load: %v\n", side.cells(strconv.Itoa(count), strconv.Itoa(threads)), err)
 					break
 				}
 				// The first piece pays for setting the copy up.
@@ -173,8 +183,9 @@ func sideBySide(model string, samples []float32, length, piece float64,
 					reference[key] = words
 				}
 				speed := length / took.Seconds()
-				fmt.Printf("| %d | %d | %d | %.1f s | %.1fx | %.0f s | %d | %s |\n",
-					count, threads, count*threads, took.Seconds(), speed, 3600/speed, len(words), unlike)
+				side.row(strconv.Itoa(count), strconv.Itoa(threads), strconv.Itoa(count*threads),
+					fmt.Sprintf("%.1f s", took.Seconds()), fmt.Sprintf("%.1fx", speed),
+					fmt.Sprintf("%.0f s", 3600/speed), strconv.Itoa(len(words)), unlike)
 			}
 			for _, rec := range recs {
 				rec.Close()
@@ -182,6 +193,41 @@ func sideBySide(model string, samples []float32, length, piece float64,
 		}
 	}
 }
+
+// table prints a markdown table whose columns line up in a terminal too,
+// every cell padded to the width of its column's head, and numbers to the
+// right, so a column can be read down. The rows are printed as they are
+// measured, so the widths are the heads', which is what every value here
+// fits in.
+type table struct{ widths []int }
+
+func newTable(heads ...string) *table {
+	t := &table{}
+	for _, h := range heads {
+		t.widths = append(t.widths, max(len(h), 8))
+	}
+	fmt.Println(t.cells(heads...))
+	rule := "|"
+	for _, w := range t.widths {
+		rule += " " + strings.Repeat("-", w-1) + ": |"
+	}
+	fmt.Println(rule)
+	return t
+}
+
+func (t *table) cells(values ...string) string {
+	line := "|"
+	for i, v := range values {
+		w := 8
+		if i < len(t.widths) {
+			w = t.widths[i]
+		}
+		line += fmt.Sprintf(" %*s |", w, v)
+	}
+	return line
+}
+
+func (t *table) row(values ...string) { fmt.Println(t.cells(values...)) }
 
 func list(s string) []string {
 	var out []string

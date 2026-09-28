@@ -344,4 +344,7 @@ sample speech looped to 90 s:
 | 4 | 1 | 14.9 | 242 s | 0 |
 
 Four copies with one thread each heard 30 % faster than one copy with all
-four, and not a word changed.
+four, and not a word changed. On an M2 Max four copies of 2 threads heard
+83 times real time where one copy of 8 heard 47, see
+[ENGINE.md](ENGINE.md#hearing-the-audio-in-pieces). The line above the
+table says what the app runs on the machine the benchmark runs on.

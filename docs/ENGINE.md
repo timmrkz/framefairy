@@ -63,12 +63,41 @@ parts of one episode, `make speechbench`:
 | on the processor, 8 threads | 46 | 45 | 0.9 s |
 | through CoreML, 8 threads | 24 | 23 | 5.0 s |
 
-The processor with 8 threads is what the app already does, and it is the
-fastest: an hour of episode is heard in about 80 s. The thread count does
-not change a single word. CoreML is half as fast here too, needs 5 s
-before the first piece and changes up to 20 words in three minutes, so it
-stays out even with pieces of one length. Hearing two pieces in one pass
-gains 3 % at most and changes words, so it stays out as well.
+CoreML is half as fast here too, needs 5 s before the first piece and
+changes up to 20 words in three minutes, so it stays out even with pieces
+of one length. Hearing two pieces in one pass gains 3 % at most and changes
+words, so it stays out as well. The thread count does not change a single
+word.
+
+**Several copies hear side by side.** One copy gains little from more
+threads, 38 times real time with 4 and 46 with 8, so most of a big machine
+sat idle while it heard. The app now loads several copies of the model,
+`asr.Pool`, and each hears the next piece as it finishes one. The pieces
+are cut exactly as before, and what they hear is taken in the order it was
+said: a piece that is done early waits for the ones before it, so the
+transcript and every save of it reach only as far as all of it has been
+heard. A stop at the end of a window, a pause and the end of the audio each
+wait for every piece still being heard. Measured on the same M2 Max, over
+ten minutes of an episode, `make speechbench`:
+
+| copies | threads each | real time | an hour takes |
+| -----: | -----------: | --------: | ------------: |
+|      1 |            8 |     47.3x |          76 s |
+|      2 |            4 |     70.1x |          51 s |
+|      3 |            3 |     76.2x |          47 s |
+|      4 |            2 |     82.6x |          44 s |
+|      4 |            3 |     76.5x |          47 s |
+
+The same 1206 words every way. How many copies, with how many threads, is
+decided by the machine the app runs on, `asr.Mix`: the threads in all are
+its performance cores, where macOS tells them apart, or every core where
+the system does not. With 6 or more they go two to a copy, with fewer one
+to a copy, which was fastest on the 3 cores of an M1 and the 4 of a cloud
+machine too. Every copy holds the model once more, about 0.9 GB, so there
+is a copy for every 8 GB of memory, and four at most, the most measured.
+Where memory allows fewer copies, each takes more of the threads. On the
+M2 Max with 32 GB that is four copies of 2 threads, an hour in about 44 s
+where it took 76.
 
 A smaller model was tried against it: NeMo's multilingual FastConformer
 transducer, in the same library, with German among its ten languages and
