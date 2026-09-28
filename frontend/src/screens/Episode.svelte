@@ -2255,9 +2255,7 @@
         {duration}
         {covered}
         {measured}
-        heardTo={status && !status.transcribed ? covered : null}
         {time}
-        working={!!transcribing}
         locked={renderingCurrent}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}

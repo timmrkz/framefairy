@@ -299,13 +299,10 @@ place.
   have are places waiting to be filled: the shimmer passes over them, the
   same light the window on the range picker shows while clips are being
   found for it. On the clip timeline the waveform is there for the whole
-  episode within seconds of adding it, see below, and what is still to
-  come is the captions: the band across the middle of the track where
-  they will stand wears the grey of a clip card still to come from where
-  the transcript stops, and it breathes while the transcription runs.
-  With nothing running it keeps its grey and stands still, the way paused
-  work does, so a part nobody has heard never reads as a part with nothing
-  said in it. The
+  episode within seconds of adding it, see below, and nothing is drawn
+  over it for the part not heard yet: a grey band across the middle,
+  where the captions stand, looked like a hole in the sound rather than
+  words still to come, and said nothing the range picker does not. The
   range picker carries the reading of the episode in the app's own words:
   what is not transcribed is darker and breathes while the reading runs,
   because it is a place waiting to be filled, and the line where the

@@ -36,11 +36,9 @@
   let {
     path,
     clip,
-    working = false,
     duration,
     covered = duration,
     measured = 0,
-    heardTo = null,
     time,
     locked = false,
     frame = 1 / 30,
@@ -64,9 +62,6 @@
     path: string;
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
-    // True while the transcript is growing. With nothing to draw yet, the
-    // track is a place waiting to be filled.
-    working?: boolean;
     duration: number;
     // How far the transcript has come. The words arrive with it, so the
     // view is taken again as it grows.
@@ -75,10 +70,6 @@
     // measured on its own from the moment the episode is added and runs
     // ahead of the transcript, so the view is taken again as it grows too.
     measured?: number;
-    // Where the part nobody has heard yet begins, while no transcription
-    // runs. null when all of it has been heard, or before the workspace
-    // knows.
-    heardTo?: number | null;
     time: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
@@ -813,20 +804,6 @@
     load(view.from, view.to);
   });
 
-  // Where the part that has not been heard begins, so its captions can
-  // wait there: where the transcript stops, while it grows and when it has
-  // stopped short. The waveform runs ahead of it, measured on its own, so
-  // the waiting is only the band the captions will stand in, and the
-  // waveform shows through above and below it. null when there is nothing
-  // waiting in view.
-  const waitsFrom = $derived.by((): number | null => {
-    let from: number;
-    if (working) from = covered;
-    else if (heardTo === null) return null;
-    else from = heardTo;
-    return from < view.to ? from : null;
-  });
-
   // The waveform, drawn the way an editor draws one: one column of the
   // screen per column of the picture, each a whole pixel wide and a whole
   // pixel tall. Zoomed out a column is the loudest reading that falls in
@@ -1262,27 +1239,12 @@
         each from where it appears to where it goes, and the one the video preview is showing is
         lit. Where one is a little early or late against what you hear, drag its edge: the left
         side of a gap between two captions is where the one before goes, the right side where the
-        one after appears. A double-click on an edge moved by hand puts it back. A grey part is
-        one the transcription has not reached yet, where the captions will be. It breathes while the transcription runs. The
+        one after appears. A double-click on an edge moved by hand puts it back. The
         small pictures along the bottom are the thumbnails, the frames Render writes beside the
         short. The thumbnail button under the timeline, or T, makes the frame under the playhead
         one, and takes it away again. Drag one to another frame.
       </Info>
     </span>
-    <!-- The captions the transcript has not reached yet are a place
-         waiting to be filled, the same as a clip card still to come: the
-         same grey, in the band the captions will stand in, breathing while
-         the transcription runs. With nothing running it keeps its grey and
-         stands still, the way paused work does, so a part nobody has heard
-         never reads as a part where nothing is said. The waveform is there
-         already, above and below it. -->
-    {#if waitsFrom !== null}
-      <div
-        class="asleep"
-        class:waiting={working}
-        style="left: {Math.max(x(waitsFrom), 0)}%; right: 0"
-      ></div>
-    {/if}
     <!-- The ruler in two layers, the same as on the range picker: the line
          under what is drawn on the track, the time over it. A time written
          inside its own line is held at the line's level, because an element
@@ -1518,26 +1480,6 @@
      more, so a position worked out for the track is right here too. */
   .over {
     position: relative;
-  }
-
-  /* Only there once the timeline was moved by hand, which is the one moment
-     a way back is worth a control. It lies over the track, the way the
-     transcription note lies over the range picker, so no row changes
-     height as it comes and goes. */
-  /* In the band the captions stand in, .captions below, so the waveform
-     measured ahead of the transcript shows above and below it. */
-  .asleep {
-    position: absolute;
-    top: round(down, calc(50% - 12px), 1px);
-    height: 24px;
-    right: 0;
-    left: 0;
-    /* The grey of a clip card that is not there yet, .ghost in
-       ClipList.svelte. A white wash of 3 % was here, and breathing it moved
-       the track by five levels out of 255, which nobody could see. */
-    background: var(--ink-2);
-    pointer-events: none;
-    z-index: 1;
   }
 
   .track {
