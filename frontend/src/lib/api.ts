@@ -82,10 +82,12 @@ export interface EpisodeStatus {
   missing: boolean;
   transcribed: boolean;
   covered: number;
-  // How far the loudness is measured, which is the waveform, and whether to
-  // the end. It runs ahead of the transcript, from the moment an episode is
-  // added.
+  // How many seconds of the loudness are measured, which is the waveform,
+  // which parts, from and to, and whether all of it. It runs ahead of the
+  // transcript, from the moment an episode is added, where the clip
+  // timeline looks first.
   measured?: number;
+  measuredParts?: [number, number][] | null;
   measuredAll?: boolean;
   transcriptStale: boolean;
   plans: PlanSummary[] | null;

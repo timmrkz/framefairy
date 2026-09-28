@@ -127,13 +127,27 @@ search reached it. `engine/levels.go` measures it on its own:
 `MeasureLevels` decodes the audio and takes the same readings from the same
 16 kHz samples, with no speech model, into `logs/levels.frames` and
 `logs/levels.json`. Audio decodes at a few hundred times real time, so an
-hour takes seconds. What it has is written every half second, frames first
-and the json that says how far they reach after, so `ReadLevels` never
-hands out a reading the json does not vouch for, and the waveform grows as
-it runs. Levels of a file that has changed since are none, and a measuring
-cut off starts again from the beginning, since the whole of it is quick.
-The app draws whichever of these and the transcript's readings reaches
-further. They are the same numbers where both exist.
+hour takes seconds, but four hours still take the better part of a
+minute, and a playhead put near the end waited for all of it. So
+`MeasureLevels` is told what the clip timeline shows and measures that
+first, then on from there, then from the start. Every half second it asks
+again, and when the view has moved to a part not measured yet, it stops
+ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
+seeks rather than decodes its way there. It starts a fifth of a second
+early and throws that away, `levelsLead`: the first 40 ms after a seek
+came out up to 4 dB off, because a packet of compressed audio is decoded
+together with the one before it. A run ends where it meets a part
+measured already, so nothing is measured twice.
+
+What it has is written every half second, frames first and the json
+after, which gives the parts measured as frame numbers and, once a run
+has reached the end of the audio, how many frames it has. So `ReadLevels`
+never hands out a reading the json does not vouch for, and the waveform
+grows as it runs. Levels of a file that has changed since are none, and a
+measuring cut off carries on with the parts it has. Version 1 of the file
+ran from the start with no gaps and is measured again. `Levels.Over` lays
+these over the transcript's readings, so the waveform has whatever either
+has measured. They are the same numbers where both exist.
 
 ## How words get their timing
 

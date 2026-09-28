@@ -250,6 +250,9 @@
   // transcript, and the Go side says it got further about twice a second
   // while it runs, which is when the status is read again.
   const measured = $derived(status?.measuredAll ? duration : (status?.measured ?? 0));
+  const measuredParts = $derived<[number, number][]>(
+    status?.measuredAll ? [[0, duration]] : (status?.measuredParts ?? []),
+  );
   onMount(() =>
     onLevels((p) => {
       if (p !== path) return;
@@ -2255,6 +2258,7 @@
         {duration}
         {covered}
         {measured}
+        {measuredParts}
         {time}
         locked={renderingCurrent}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}

@@ -847,7 +847,9 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	}
 	// An episode shown is an episode measured: one added before the
 	// loudness had a job of its own is measured the first time it is
-	// opened.
+	// opened. What the clip timeline asks for is what it shows, and the
+	// measuring goes there first.
+	s.levels.look(path, from, to)
 	s.levels.start(path)
 	p := engine.NewProject(nil, path, s.store.Settings().options())
 	t, err := s.transcript(p)
@@ -855,13 +857,10 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 		return nil, err
 	}
 	// The loudness measured on its own and the transcription's are the
-	// same frames from the same samples, so whichever reaches further is
-	// drawn. The measuring runs ahead of the transcription, and a
-	// transcript made before it existed is there before it has run.
-	if l := s.levels.read(path); len(l.Frames) > 0 &&
-		(t == nil || t.Start > 0 || len(l.Frames) > len(t.Frames)) {
-		t = &engine.Transcript{Frames: l.Frames}
-	}
+	// same frames from the same samples, so the waveform has whatever
+	// either has measured. The measuring runs ahead of the transcription,
+	// and a transcript made before it existed is there before it has run.
+	t = s.levels.read(path).Over(t)
 	if t == nil {
 		return []float32{}, nil
 	}

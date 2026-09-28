@@ -1009,8 +1009,13 @@ place.
   measures its loudness on its own, without the speech model: the audio
   decoded and a reading every 10 ms, the same readings the transcription
   takes. Audio decodes at a few hundred times real time, so an hour is
-  measured in seconds, and the waveform fills in from the start as it
-  goes. An episode added before this was there is measured the first time
+  measured in seconds, and the waveform fills in as it goes, first where
+  the clip timeline looks. Every time the clip timeline asks for the
+  waveform it says what it shows, and the measuring goes there next: a
+  playhead put near the end of a four hour episode has its waveform
+  within a second rather than after everything before it. The clip
+  timeline reads its view again while what it read had a gap in it and
+  more has been measured. An episode added before this was there is measured the first time
   it is opened. It is not a job: nobody starts it or waits for it, so it
   has no row in Activity. At most two episodes are measured at a time.
 - **Before the first transcription** there are no words. That is where

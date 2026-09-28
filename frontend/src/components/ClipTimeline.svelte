@@ -39,6 +39,7 @@
     duration,
     covered = duration,
     measured = 0,
+    measuredParts = [],
     time,
     locked = false,
     frame = 1 / 30,
@@ -66,10 +67,13 @@
     // How far the transcript has come. The words arrive with it, so the
     // view is taken again as it grows.
     covered?: number;
-    // How far the loudness is measured, which is the waveform. It is
-    // measured on its own from the moment the episode is added and runs
-    // ahead of the transcript, so the view is taken again as it grows too.
+    // How much of the loudness is measured, which is the waveform, and
+    // which parts, from and to. It is measured on its own from the moment
+    // the episode is added, ahead of the transcript and where this
+    // timeline looks first, so a view with a gap in it is taken again as
+    // it grows.
     measured?: number;
+    measuredParts?: [number, number][];
     time: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
@@ -158,8 +162,11 @@
   let saving = $state(false);
   let viewFor = "";
   let loaded = false;
-  // How far the transcript had come when this view was read.
+  // How far the transcript had come when this view was read, how much of
+  // the loudness was measured, and whether all of what was read.
   let loadedTo = $state(-1);
+  let loadedMeasured = $state(0);
+  let loadedWhole = $state(false);
   // The part the words and the waveform were read for. It is wider than
   // the view, so a swipe has somewhere to go before anything is read again.
   let data = $state({ from: 0, to: 1 });
@@ -509,10 +516,14 @@
   async function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
-    loadedTo = reach;
+    loadedTo = covered;
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
+    loadedMeasured = measured;
+    loadedWhole = measuredParts.some(
+      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
+    );
     const wide = (outer.to - outer.from) / shown;
     const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
     // The words are wanted around the playhead, for snapping an edge to
@@ -794,14 +805,17 @@
     fitView();
   });
 
-  // How far there is anything to read, the words or the waveform. A new
-  // episode's waveform arrives in seconds and its words as it is heard,
-  // both piece by piece, so a view read before either reached it is read
-  // again.
-  const reach = $derived(Math.max(covered, measured));
+  // A new episode's waveform arrives in seconds and its words as it is
+  // heard, both piece by piece, so a view read before either reached it is
+  // read again: the words when the transcript grows past where it stood,
+  // the waveform when more is measured and what was read had a gap in it.
+  // The waveform is measured where this timeline looks first, so a view
+  // it jumped to fills in before the rest.
   $effect(() => {
-    if (!loaded || reach <= loadedTo + 0.5 || loadedTo >= view.to) return;
-    load(view.from, view.to);
+    if (!loaded) return;
+    const heard = covered > loadedTo + 0.5 && loadedTo < view.to;
+    const grew = measured > loadedMeasured + 0.05 && !loadedWhole;
+    if (heard || grew) load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the

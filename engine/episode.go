@@ -41,10 +41,12 @@ type EpisodeStatus struct {
 	Transcribed bool `json:"transcribed"`
 	// Covered is how far the transcript reaches, in seconds, finished or not.
 	Covered float64 `json:"covered"`
-	// Measured is how far the loudness is measured, which is the waveform,
-	// and MeasuredAll says to the end. It runs ahead of the transcript,
-	// see levels.go.
+	// Measured is how many seconds of the loudness are measured, which is
+	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
+	// all of it. It runs ahead of the transcript, where the clip timeline
+	// looks first, see levels.go.
 	Measured        float64       `json:"measured"`
+	MeasuredParts   [][2]float64  `json:"measuredParts"`
 	MeasuredAll     bool          `json:"measuredAll"`
 	TranscriptStale bool          `json:"transcriptStale"`
 	Plans           []PlanSummary `json:"plans"`
@@ -85,7 +87,10 @@ func Status(source, asrModelDir string) EpisodeStatus {
 			st.TranscriptStale = true
 		}
 	}
-	st.Measured, st.MeasuredAll = LevelsReach(source)
+	st.MeasuredParts, st.MeasuredAll = LevelsReach(source)
+	for _, p := range st.MeasuredParts {
+		st.Measured += p[1] - p[0]
+	}
 	st.Plans = PlanSummaries(logs)
 	st.Rendered = countFiles(filepath.Join(work, "out"), ".mp4")
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")

@@ -27,6 +27,9 @@ type measuring struct {
 
 	mu      sync.Mutex
 	running map[string]*measure
+	// Where the clip timeline of each episode looks, which is measured
+	// first, see look.
+	looking map[string][2]float64
 	slots   chan struct{}
 	closed  bool
 	// What was read last, kept while its files stay as they were, because
@@ -42,7 +45,7 @@ type measure struct {
 
 func newMeasuring(ffmpeg func() string, notify func(string)) *measuring {
 	return &measuring{ffmpeg: ffmpeg, notify: notify,
-		running: map[string]*measure{}, slots: make(chan struct{}, 2)}
+		running: map[string]*measure{}, looking: map[string][2]float64{}, slots: make(chan struct{}, 2)}
 }
 
 // start measures an episode unless it is measured already or being
@@ -101,7 +104,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time
-	err := e.MeasureLevels(ctx, path, func(float64) {
+	err := e.MeasureLevels(ctx, path, func() (float64, float64) { return m.lookingAt(path) }, func(float64) {
 		if time.Since(told) >= 500*time.Millisecond {
 			told = time.Now()
 			m.notify(path)
@@ -113,6 +116,24 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	m.notify(path)
 }
 
+// look says what the clip timeline of an episode shows, from and to, which
+// its measuring goes to next. It is cheap to call on every swipe.
+func (m *measuring) look(path string, from, to float64) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.looking[path] = [2]float64{from, to}
+	m.mu.Unlock()
+}
+
+func (m *measuring) lookingAt(path string) (float64, float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	at := m.looking[path]
+	return at[0], at[1]
+}
+
 // stop ends the measuring of an episode and waits until it has, so its
 // work folder can be deleted without anything writing it back.
 func (m *measuring) stop(path string) {
@@ -121,6 +142,7 @@ func (m *measuring) stop(path string) {
 	}
 	m.mu.Lock()
 	run := m.running[path]
+	delete(m.looking, path)
 	m.mu.Unlock()
 	if run == nil {
 		return
