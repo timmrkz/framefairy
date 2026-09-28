@@ -20,7 +20,9 @@ does to an episode, the other can pick up.
 
 ## Working on it
 
-Changes arrive as pull requests from Claude's cloud sessions. After a merge:
+Changes arrive as pull requests from Claude's cloud sessions. The app brings
+them in from its Updates page, following main or a pull request. From the
+checkout, for the command line or a change to `make`:
 
 ```
 git pull
