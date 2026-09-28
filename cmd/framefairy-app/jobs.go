@@ -63,6 +63,14 @@ type Job struct {
 	// episode.
 	From float64 `json:"from,omitempty"`
 	To   float64 `json:"to,omitempty"`
+	// At and Backward are a clip made by hand: the moment I or O was
+	// pressed at, and whether it was O.
+	At       float64 `json:"at,omitempty"`
+	Backward bool    `json:"backward,omitempty"`
+	// Underway is every clip the job has on the way, proposed and not
+	// written yet, whoever proposed it, see engine.Underway. The clip list
+	// shows each in its place until it is written.
+	Underway []engine.Underway `json:"underway,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -90,11 +98,14 @@ type JobUpdate struct {
 }
 
 // Lanes the queue runs side by side, one for each kind of machinery a step
-// uses: the speech model, the language model, and ffmpeg.
+// uses: the speech model, the language model, ffmpeg encoding a short, and
+// ffmpeg decoding the picture to place the crop of a clip made by hand. A
+// search places its own clips' crops in its turn of finding.
 const (
 	LaneHearing   = "hearing"
 	LaneFinding   = "finding"
 	LaneRendering = "rendering"
+	LaneFraming   = "framing"
 )
 
 // queue runs one job in each lane at a time. More would only make each of
@@ -162,6 +173,8 @@ func laneFor(kind string) string {
 		return LaneHearing
 	case "render":
 		return LaneRendering
+	case engine.JobClip:
+		return LaneFraming
 	}
 	return LaneFinding
 }
@@ -293,7 +306,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 // came is not how far this one is, so the progress starts again with it.
 func (q *queue) turn(job *Job) engine.Turn {
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
-		lane, kind := laneOfStep(step)
+		lane, kind := laneOfStep(job.Kind, step)
 		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
 		if err != nil {
@@ -302,6 +315,27 @@ func (q *queue) turn(job *Job) engine.Turn {
 		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = step, lane, nil })
 		return stepCtx, release, nil
 	}
+}
+
+// makesClips says whether a kind of job makes clips: a search and a clip
+// made by hand. Called off by hand, such a job keeps its record and says
+// Stopped with Continue, because what it did stays and can be carried on,
+// and the clip list's Cancel and Continue take all of them at once.
+func makesClips(kind string) bool {
+	return kind == engine.JobSearch || kind == engine.JobClip
+}
+
+// jobLabel is what a job is called in Activity, by what it does.
+func jobLabel(kind string, preview bool) string {
+	switch {
+	case kind == engine.JobRender && preview:
+		return "Preview"
+	case kind == engine.JobRender:
+		return "Render"
+	case kind == engine.JobClip:
+		return "Make a clip"
+	}
+	return "Find clips"
 }
 
 // restore puts the searches and renders the episodes' records say were
@@ -314,18 +348,12 @@ func (q *queue) restore(episodes []string) {
 			if !rec.Interrupted() {
 				state = JobFailed
 			}
-			label := "Find clips"
-			if rec.Kind == engine.JobRender {
-				label = "Render"
-				if rec.Preview {
-					label = "Preview"
-				}
-			}
 			q.mu.Lock()
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
-				Label: label, State: state, Error: rec.Error, Queued: rec.Asked, Lane: laneFor(rec.Kind),
-				Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Plan: rec.Plan,
+				Label: jobLabel(rec.Kind, rec.Preview), State: state, Error: rec.Error, Queued: rec.Asked,
+				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To,
+				At: rec.At, Backward: rec.Backward, Underway: rec.Underway(), Plan: rec.Plan,
 				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
@@ -516,12 +544,12 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
-// stopByHand calls off a search with Cancel. It ends as a search that
-// stopped, not as one that is gone, see runJob.
+// stopByHand calls off a job that makes clips with Cancel, see makesClips.
+// It ends as work that stopped, not as work that is gone, see runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && j.Kind == engine.JobSearch && j.Record != "" {
+		if j.ID == id && makesClips(j.Kind) && j.Record != "" {
 			j.byHand = true
 		}
 	}
@@ -660,6 +688,10 @@ func (q *queue) runJob(job *Job) {
 			return
 		}
 		copied := ev
+		if copied.Kind == engine.EventUnderway {
+			q.update(job, nil, func(j *Job) { j.Underway = copied.Underway })
+			return
+		}
 		q.update(job, &copied, func(j *Job) {
 			j.Last = &copied
 			if copied.Kind == engine.EventProgress {
@@ -695,13 +727,13 @@ func (q *queue) runJob(job *Job) {
 		}
 		switch {
 		case err == nil:
-			j.State = JobDone
+			j.State, j.Underway = JobDone, nil
 		case errors.Is(err, engine.ErrCancelled) && j.byHand:
 			// Called off by hand, a search says Stopped, Click Continue,
 			// because what it heard stays and it can be carried on.
 			j.State, j.Step = JobInterrupted, engine.StepStopped
 		case errors.Is(err, engine.ErrCancelled):
-			j.State = JobCancelled
+			j.State, j.Underway = JobCancelled, nil
 		default:
 			j.State = JobFailed
 			j.Error = project.LastError()

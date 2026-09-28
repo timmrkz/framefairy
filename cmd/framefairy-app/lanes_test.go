@@ -98,6 +98,43 @@ func TestFindingTakesHearingBack(t *testing.T) {
 	comes(t, again, "hearing after the search found")()
 }
 
+// A clip made by hand hears first: it takes the lane back from a search
+// that hears, goes ahead of a search waiting to hear, and does not wait for
+// a search that finds. Clips made by hand hear in the order asked.
+func TestAClipMadeByHandHearsFirst(t *testing.T) {
+	l := newLanes()
+	hearing, heard := given(t, l, LaneHearing, hearingTurn)
+	later, _ := waiting(l, LaneHearing, hearingTurn)
+	first, _ := waiting(l, LaneHearing, handHearingTurn)
+	second, _ := waiting(l, LaneHearing, handHearingTurn)
+	select {
+	case <-hearing.Done():
+	case <-time.After(time.Second):
+		t.Fatal("the hearing search was not stopped for a clip made by hand")
+	}
+	// The search lets go, saving what it heard, and asks again behind them.
+	heard()
+	again, _ := waiting(l, LaneHearing, hearingTurn)
+	done := comes(t, first, "the first clip made by hand")
+	waits(t, second, "the second clip made by hand before the first is done")
+	waits(t, later, "a search asked before the clips made by hand")
+	done()
+	comes(t, second, "the second clip made by hand")()
+	comes(t, later, "the search asked before")()
+	comes(t, again, "the search that was taken back")()
+
+	// Not held up by a search that finds, and not taken back by one.
+	_, found := given(t, l, LaneFinding, findingTurn)
+	hand, handDone := given(t, l, LaneHearing, handHearingTurn)
+	found2, _ := waiting(l, LaneFinding, findingTurn)
+	found()
+	comes(t, found2, "the next search's finding")()
+	if hand.Err() != nil {
+		t.Error("a clip made by hand was stopped for a search that finds")
+	}
+	handDone()
+}
+
 // Work that is not a step of a search is neither taken back nor held up:
 // a model being installed goes on while a search finds.
 func TestFindingLeavesOtherWorkAlone(t *testing.T) {
@@ -125,11 +162,11 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			which := i % 2
-			kind := []turnKind{plainTurn, hearingTurn, findingTurn}[i%3]
+			kind := []turnKind{plainTurn, hearingTurn, findingTurn, handHearingTurn}[(i/2)%4]
 			if which == 0 && kind == findingTurn {
 				kind = hearingTurn
 			}
-			if which == 1 && kind == hearingTurn {
+			if which == 1 && (kind == hearingTurn || kind == handHearingTurn) {
 				kind = findingTurn
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

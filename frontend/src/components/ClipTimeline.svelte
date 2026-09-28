@@ -29,7 +29,15 @@
     type Word,
     type CaptionCue,
   } from "../lib/api";
-  import { draftCaptions, inClip, inEpisode, insideClip, type CaptionDraft } from "../lib/flow";
+  import {
+    draftCaptions,
+    heardIn,
+    inClip,
+    inEpisode,
+    insideClip,
+    type CaptionDraft,
+    type Parts,
+  } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
@@ -38,7 +46,7 @@
     path,
     clip,
     duration,
-    covered = duration,
+    heard = [[0, duration]],
     measured = 0,
     measuredParts = [],
     time,
@@ -52,6 +60,7 @@
     onmovecut,
     onwalkclip,
     captions = [],
+    arriving = false,
     captionLook = null,
     oncaptiontime,
     oncaptiondraft,
@@ -66,9 +75,9 @@
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
     duration: number;
-    // How far the transcript has come. The words arrive with it, so the
-    // view is taken again as it grows.
-    covered?: number;
+    // What the transcript has heard, in parts. The words arrive with it,
+    // so the view is taken again as more of it is heard.
+    heard?: Parts;
     // How much of the loudness is measured, which is the waveform, and
     // which parts, from and to. It is measured on its own from the moment
     // the episode is added, ahead of the transcript and where this
@@ -106,6 +115,10 @@
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
     captions?: CaptionCue[];
+    // The clip is on its way, being made: its caption blocks come in one
+    // after another as they arrive, so the clip is built in front of the
+    // person rather than appearing whole.
+    arriving?: boolean;
     // The colours the captions are burned in, as the video preview draws
     // them: the words, the box behind them and the pill behind the word
     // being spoken. A block wears all three, so a colour picked for the
@@ -174,9 +187,9 @@
   let saving = $state(false);
   let viewFor = "";
   let loaded = false;
-  // How far the transcript had come when this view was read, how much of
-  // the loudness was measured, and whether all of what was read.
-  let loadedTo = $state(-1);
+  // How much of the view the transcript had heard when it was read, how
+  // much of the loudness was measured, and whether all of what was read.
+  let loadedHeard = $state(-1);
   let loadedMeasured = $state(0);
   let loadedWhole = $state(false);
   // The part the words and the waveform were read for. It is wider than
@@ -515,7 +528,7 @@
   async function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
-    loadedTo = covered;
+    loadedHeard = heardIn(heard, from, to);
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
@@ -800,8 +813,11 @@
         return;
       }
       if (held) return;
-      const a = clip.segments[0].start;
-      const b = clip.segments[clip.segments.length - 1].end;
+      // Inside the episode, the way the view is, or a clip that reached
+      // past either end was never inside the view and was read again and
+      // again, without end.
+      const a = Math.max(0, clip.segments[0].start);
+      const b = Math.min(duration, clip.segments[clip.segments.length - 1].end);
       const pad = Math.max(8, (b - a) * 0.3);
       if (a < view.from || b > view.to) {
         load(Math.max(0, a - pad), Math.min(duration, b + pad));
@@ -836,9 +852,9 @@
   // it jumped to fills in before the rest.
   $effect(() => {
     if (!loaded) return;
-    const heard = covered > loadedTo + 0.5 && loadedTo < view.to;
+    const more = heardIn(heard, view.from, view.to) > loadedHeard + 0.5;
     const grew = measured > loadedMeasured + 0.05 && !loadedWhole;
-    if (heard || grew) load(view.from, view.to);
+    if (more || grew) load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
@@ -1527,6 +1543,7 @@
            where it appears to where it goes. -->
       <div
         class="captions"
+        class:arriving
         style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
           'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
       >
@@ -1547,7 +1564,7 @@
             <div
               class="caption"
               class:showing={time >= b.from && time < b.to}
-              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px)"
+              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px); --i: {b.i}"
               role="button"
               title="Put the playhead where this caption appears"
               onpointerdown={(e) => e.stopPropagation()}
@@ -2056,5 +2073,19 @@
 
   .over.scrubbing .head {
     cursor: grabbing;
+  }
+
+  /* The caption blocks of a clip on its way come in one after another, in
+     the order they are said, the way a clip is built. */
+  .captions.arriving .caption {
+    animation: arrive 180ms ease-out both;
+    animation-delay: calc(var(--i) * 70ms);
+  }
+
+  @keyframes arrive {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
   }
 </style>

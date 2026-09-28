@@ -65,6 +65,15 @@ class JobStore {
     return last;
   }
 
+  // The episode's clips made by hand with I and O that have something to
+  // say: on their way, or stopped, cut off or failed. With the search,
+  // they are the work of the clip list.
+  clips(path: string): Job[] {
+    return this.list.filter(
+      (j) => j.episode === path && j.kind === "clip" && j.state !== "done" && j.state !== "cancelled",
+    );
+  }
+
   get busy(): number {
     return this.list.filter((j) => j.state === "running" || j.state === "queued").length;
   }

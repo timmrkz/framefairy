@@ -39,14 +39,14 @@ func TestWhereTheModelHasLooked(t *testing.T) {
 	}
 }
 
-// Clips made by hand, in the clip set pull request 24 writes, searched
-// nothing. The set has no window, and a set with no window is otherwise a
-// search of the whole episode, which laid the window over the whole range
-// picker and hid every mark under it.
+// Clips made by hand searched nothing. Their set has no window, and a set
+// with no window is otherwise a search of the whole episode, which laid the
+// window over the whole range picker and hid every mark under it. It says
+// who made it, and that is what counts, not what the file is called.
 func TestAClipSetMadeByHandSearchedNothing(t *testing.T) {
 	plans := []PlanSummary{
 		{Path: "/ep.framefairy/logs/clips-0-1800.json", From: 0, To: 1800, Clips: 12},
-		{Path: "/ep.framefairy/logs/clips-hand.json", Clips: 1},
+		{Path: "/ep.framefairy/logs/clips-by-any-name.json", By: ByHand, Clips: 1},
 	}
 	got := SearchedWindows(plans, 14400)
 	if len(got) != 1 || got[0] != (Window{0, 1800}) {

@@ -346,6 +346,16 @@ messages, pull request text, code comments and chat replies.
   It must also stay quick when there is nothing to do: everything `make`
   decides before it builds is a `command -v` or a file test, never a
   package manager asked what it has.
+- **One primitive per thing, extended rather than copied.** A new use of
+  something the app already has goes through the thing it has. Before
+  adding a second transcript, a second path that makes clips, a new kind
+  of job or another shape of a clip, find the one there is and extend it.
+  Where two uses differ, that is a field on the one thing, not a copy of
+  it with its own rules. A copy starts out the same and drifts, and every
+  place that handles the thing then needs to know which copy it has: a
+  clip made by hand was once built beside the clips a search makes, with
+  its own transcript, its own file, its own job and its own card, and each
+  needed special cases wherever clips, transcripts and jobs were handled.
 - **One engine, two front ends.** The app drives the engine through
   `engine.Project`, which calls the same `Run` as the command line. Never
   duplicate engine logic in the app. Keep every command-line flag working.

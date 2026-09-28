@@ -22,10 +22,18 @@ type PlanSummary struct {
 	To   float64 `json:"to"` // zero for a whole-episode plan
 	// Parts of the window that were given back, so the model may read
 	// them again. They are inside the window and never overlap.
-	Removed  []Window  `json:"removed,omitempty"`
-	Clips    int       `json:"clips"`
-	Model    string    `json:"model"`
+	Removed []Window `json:"removed,omitempty"`
+	Clips   int      `json:"clips"`
+	Model   string   `json:"model"`
+	// By is who proposed the clips, see PlanOptions.By.
+	By       string    `json:"by,omitempty"`
 	Modified time.Time `json:"modified"`
+}
+
+// Over is the part of the episode the clip set was made over, see
+// madeOver.
+func (s PlanSummary) Over(duration float64) Window {
+	return madeOver(s.From, s.To, s.To > s.From, s.By, duration)
 }
 
 // EpisodeStatus is what the library shows for one episode. It is read from
@@ -39,8 +47,12 @@ type EpisodeStatus struct {
 	// Transcribed means a whole-episode transcript matches the file as it
 	// is now. Stale means one exists but the file has changed since.
 	Transcribed bool `json:"transcribed"`
-	// Covered is how far the transcript reaches, in seconds, finished or not.
-	Covered float64 `json:"covered"`
+	// Covered is how far the transcript reaches from the start without a
+	// gap, in seconds, finished or not, and Heard every part it has heard,
+	// from and to, which need not start at the beginning or meet: a clip
+	// made by hand has the part it needs heard first.
+	Covered float64      `json:"covered"`
+	Heard   [][2]float64 `json:"heard"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -81,8 +93,11 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	whole := filepath.Join(logs, TranscriptName(nil))
 	if stamp, err := stampOf(source); err == nil {
 		if file, _, _, ok := readTranscriptFile(whole, stamp, model); ok {
-			st.Transcribed = !file.Partial
-			st.Covered = float64(file.To)
+			st.Transcribed = file.done()
+			st.Heard = file.heard()
+			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
+				st.Covered = st.Heard[0][1]
+			}
 		} else if exists(whole) {
 			st.TranscriptStale = true
 		}
@@ -100,12 +115,26 @@ func Status(source, asrModelDir string) EpisodeStatus {
 }
 
 // EverSearched says whether this episode has ever been searched for clips: it
-// has a plan, or a search or a render has kept its record or its timings,
-// see jobs.go. It stays true after the clips are removed again, because
-// the timings stay, and the app searches by itself only for an episode
-// nobody has searched. Deleting the work folder makes the episode new.
+// has a clip set made over a part of it, see madeOver, or a search has kept
+// its record or its timings, see jobs.go. It stays true after the clips are
+// removed again, because the timings stay, and the app searches by itself
+// only for an episode nobody has searched. Clips made by hand search
+// nothing. Deleting the work folder makes the episode new.
 func EverSearched(source string) bool {
-	return exists(JobsDir(source)) || len(PlanSummaries(filepath.Join(WorkDir(source), "logs"))) > 0
+	for _, plan := range PlanSummaries(filepath.Join(WorkDir(source), "logs")) {
+		if w := plan.Over(0); w.End > w.Start {
+			return true
+		}
+	}
+	if ReadSearch(source) != nil {
+		return true
+	}
+	for _, t := range ReadTimings(source) {
+		if t.Kind == JobSearch {
+			return true
+		}
+	}
+	return false
 }
 
 // PlanSummaries lists the plan files in a logs folder, newest first. Files
@@ -133,6 +162,9 @@ func PlanSummaries(logs string) []PlanSummary {
 		}
 		if v, ok := made["model"].(string); ok {
 			s.Model = v
+		}
+		if v, ok := made["by"].(string); ok {
+			s.By = v
 		}
 		s.Removed = readWindows(made["removed"])
 		out = append(out, s)
@@ -211,6 +243,7 @@ func (p *Project) Transcript() (*Transcript, error) {
 		return nil, ErrNoTranscript
 	}
 	t := fromStored(words, frames, float64(file.From), float64(file.Mean), p.Base.SilenceDB)
+	t.Heard = file.heard()
 	// Corrected words show corrected, in the app and in every clip made or
 	// changed from here on.
 	ApplyCorrections(t.Words, LoadCorrections(p.LogsDir()))
@@ -548,14 +581,7 @@ func WordStops(planPath, clipID string, words []Cue, overrides map[string]any) (
 	if clip == nil {
 		return nil, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
 	}
-	style := clipStyle(plan.CaptionStyle(), *clip)
-	for key, value := range overrides {
-		if text, ok := value.(string); ok && text == "" {
-			continue
-		}
-		style[key] = value
-	}
-	r := roomFor(ResolveStyle(style))
+	r := roomFor(captionStyleOf(plan.CaptionStyle(), *clip, overrides))
 	split := SplitCorrected(words)
 	var h *hyphenator
 	for _, w := range split {
@@ -603,14 +629,7 @@ func clipCaptionsView(planPath, clipID string, overrides map[string]any,
 		clip = &draft
 	}
 
-	style := clipStyle(plan.CaptionStyle(), *clip)
-	for key, value := range overrides {
-		if text, ok := value.(string); ok && text == "" {
-			continue
-		}
-		style[key] = value
-	}
-	s := ResolveStyle(style)
+	s := captionStyleOf(plan.CaptionStyle(), *clip, overrides)
 	work := filepath.Dir(filepath.Dir(planPath))
 	var captions []Caption
 	if pieces != nil {
@@ -622,7 +641,47 @@ func clipCaptionsView(planPath, clipID string, overrides map[string]any,
 			return nil, err
 		}
 	}
+	return captionsView(*clip, captions, s), nil
+}
 
+// ArrivingCaptionsView is the captions of a clip on its way, from the
+// pieces and words the plan builder says it keeps, laid out the way a
+// written clip's are, in the style of the clip set it goes into. It is
+// nil until the builder has them.
+func ArrivingCaptionsView(planPath string, u Underway, overrides map[string]any) *CaptionsView {
+	if len(u.Pieces) == 0 || len(u.Words) == 0 {
+		return nil
+	}
+	clip := Clip{Words: u.Words}
+	for _, p := range u.Pieces {
+		clip.Segments = append(clip.Segments, Segment{Start: p[0], End: p[1]})
+	}
+	var style map[string]any
+	if plan, _, err := LoadClips(planPath); err == nil {
+		style = plan.CaptionStyle()
+	}
+	s := captionStyleOf(style, clip, overrides)
+	return captionsView(clip, Captions(clip, max(8, int(s.MaxChars)), TooWide(s)), s)
+}
+
+// captionStyleOf is the style a clip's captions are drawn in: the plan's,
+// the clip's own place for them, and what the app puts over both.
+func captionStyleOf(planStyle map[string]any, clip Clip, overrides map[string]any) Style {
+	style := map[string]any{}
+	for key, value := range clipStyle(planStyle, clip) {
+		style[key] = value
+	}
+	for key, value := range overrides {
+		if text, ok := value.(string); ok && text == "" {
+			continue
+		}
+		style[key] = value
+	}
+	return ResolveStyle(style)
+}
+
+// captionsView lays a clip's captions out for the app.
+func captionsView(clip Clip, captions []Caption, s Style) *CaptionsView {
 	// The lines the render will use, so the picture in the app breaks the
 	// caption in the same places.
 	laid := LayOutCaptions(captions, s)
@@ -647,11 +706,11 @@ func clipCaptionsView(planPath, clipID string, overrides map[string]any,
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			first, last := c.Words[0], c.Words[len(c.Words)-1]
-			if w, ok := SaidWord(*clip, (first.Start+first.End)/2); ok {
+			if w, ok := SaidWord(clip, (first.Start+first.End)/2); ok {
 				item.First = w.Start
 				item.StartMoved = clip.CaptionTimes[wordKey(w.Start)].Start != nil
 			}
-			if w, ok := SaidWord(*clip, (last.Start+last.End)/2); ok {
+			if w, ok := SaidWord(clip, (last.Start+last.End)/2); ok {
 				item.Last = w.Start
 				item.EndMoved = clip.CaptionTimes[wordKey(w.Start)].End != nil
 			}
@@ -665,7 +724,7 @@ func clipCaptionsView(planPath, clipID string, overrides map[string]any,
 		}
 		view.Captions = append(view.Captions, item)
 	}
-	return view, nil
+	return view
 }
 
 func twoDigits(n int) string {

@@ -9,6 +9,8 @@
 // every step of a hand. The engine checks the same sum again before it
 // sends anything.
 
+import { heardIn, type Parts } from "./flow";
+
 export interface LineWeight {
   start: number;
   end: number;
@@ -23,9 +25,9 @@ export interface RoomView {
   // cost.
   by: string;
   lines: LineWeight[];
-  // How far the transcript reaches, silence at its end included.
-  heard: number;
-  // Characters a second, for the part of the episode not heard yet.
+  // The parts the transcript has heard, silence included.
+  heard: [number, number][];
+  // Characters a second, for the parts of the episode not heard yet.
   rate: number;
 }
 
@@ -37,8 +39,8 @@ export class Reach {
   private readonly lines: LineWeight[];
   // sums[i] is the weight of the lines before line i.
   private readonly sums: number[];
-  // Where the transcript ends. Past it, a second weighs the rate.
-  private readonly heard: number;
+  // What the transcript has heard. Outside it, a second weighs the rate.
+  private readonly heard: Parts;
 
   constructor(
     readonly room: RoomView | null,
@@ -47,8 +49,7 @@ export class Reach {
     this.lines = room?.lines ?? [];
     this.sums = [0];
     for (const line of this.lines) this.sums.push(this.sums[this.sums.length - 1] + line.chars);
-    const last = this.lines.length ? this.lines[this.lines.length - 1].end : 0;
-    this.heard = Math.max(room?.heard ?? 0, last);
+    this.heard = room?.heard ?? [];
   }
 
   // Whether there is a room at all. Until the engine has answered there is
@@ -66,7 +67,7 @@ export class Reach {
     const first = this.search((i) => this.lines[i].end > from);
     const past = this.search((i) => this.lines[i].start >= to);
     let chars = past > first ? this.sums[past] - this.sums[first] : 0;
-    const unheard = to - Math.max(from, this.heard);
+    const unheard = to - from - heardIn(this.heard, from, to);
     if (unheard > 0) chars += unheard * (this.room?.rate ?? 0);
     return chars;
   }
@@ -118,13 +119,13 @@ export class Reach {
   //
   // The densest stretch decides it, and a window is densest when it starts
   // just before a line ends: the line is counted whole for a moment of it.
-  // Past the transcript every second weighs the same, so one start there
-  // says it all. A window cut short by the end of the
+  // Where nothing is heard every second weighs the same, so the edges of
+  // what is heard say it all. A window cut short by the end of the
   // episode does not count, because the end is not the model's limit.
   anywhere(): number {
     if (!this.known || this.fits(0, this.duration)) return this.duration;
     let shortest = this.duration;
-    const starts = [0, this.heard, ...this.lines.map((l) => Math.max(l.start, l.end - 0.001))];
+    const starts = [0, ...this.heard.flat(), ...this.lines.map((l) => Math.max(l.start, l.end - 0.001))];
     for (const start of starts) {
       if (start >= this.duration) continue;
       const end = this.longestFrom(start);

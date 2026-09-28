@@ -17,10 +17,10 @@ type RoomView struct {
 	Chars int                 `json:"chars"`
 	By    string              `json:"by"`
 	Lines []engine.LineWeight `json:"lines"`
-	// Heard is how far the transcript reaches, silence at its end
-	// included. Past it a second weighs Rate.
-	Heard float64 `json:"heard"`
-	Rate  float64 `json:"rate"`
+	// Heard are the parts the transcript has heard, from and to, silence
+	// included. Outside them a second weighs Rate.
+	Heard [][2]float64 `json:"heard"`
+	Rate  float64      `json:"rate"`
 }
 
 // Room says what a search on this episode can read, with the settings as
@@ -34,7 +34,7 @@ func (s *FrameFairy) Room(path string) (RoomView, error) {
 	p := engine.NewProject(nil, path, opts)
 	room := engine.SearchRoom(opts, p.LogsDir())
 	out := RoomView{Chars: room.Chars, By: room.By, Lines: []engine.LineWeight{},
-		Rate: engine.SpokenChars}
+		Heard: [][2]float64{}, Rate: engine.SpokenChars}
 	t, err := s.transcript(p)
 	if errors.Is(err, engine.ErrNoTranscript) {
 		return out, nil
@@ -43,7 +43,9 @@ func (s *FrameFairy) Room(path string) (RoomView, error) {
 		return RoomView{}, err
 	}
 	out.Lines = engine.WeighLines(t)
-	out.Heard = t.Start + t.Duration()
+	if t.Heard != nil {
+		out.Heard = t.Heard
+	}
 	out.Rate = engine.RateOf(out.Lines)
 	return out, nil
 }
