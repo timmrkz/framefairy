@@ -203,6 +203,72 @@ from that: the row the next clip will appear in, New, Continue and Cancel,
 the fill on the range picker, the Render button of a clip, the note of a
 job that stopped. While a search runs, the range picker shows its window.
 
+## Clips made by hand
+
+The model is probabilistic and sometimes misses the moment a person wants.
+**I** and **O** make a clip at the playhead, the way In and Out mark one in
+every video editor: **I** starts it with the sentence the playhead stands
+in and grows it forward, **O** ends it with that sentence and grows it
+back, for a moment noticed once it has passed. It grows a whole sentence at
+a time until it is as long as **Shortest**, never past **Longest** for one
+sentence more.
+
+A clip made by hand is not a second kind of clip. It is made by the same
+parts, in the same order, as a clip a search makes, and only what differs
+between the two is its own:
+
+| part | a search | a clip made by hand |
+| --- | --- | --- |
+| **hearing** | the transcript up to the end of the window | the transcript up to where the clip can reach, `Longest` and a sentence past the playhead |
+| **proposing** | the model names clips | the playhead names one, see `handKeep` |
+| **making** | the plan builder shapes each onto sentences, places its crop, gives it an id and writes it | the same |
+| **its clip set** | the window's, made anew by each search of it | the episode's clips made by hand, which grows |
+| **searched** | the window is marked searched | nothing is, since no model looked |
+
+So there is one transcript, heard from the start the one way it always
+is, and one plan builder, which takes entries from whatever proposed them.
+The builder's intake is `propose`: the scanner of the model's answer calls
+it for every clip it reads, and a clip made by hand calls it once. Where a
+clip came from is a field of its clip set, `planned_with.by`, and nothing
+else in the code asks where a clip came from.
+
+**It is a job**, like a search and a render: `clip` in `jobs/clip-<id>.json`,
+going **waiting**, **hearing** when the transcript does not reach far
+enough yet, **framing**, **done**. An episode can make any number at a time,
+the way it can render any number, so I and O can be pressed while a search
+runs and while other clips are still being made. Framing has a lane of its
+own, the fourth, because placing a crop decodes the picture and waits for
+neither model: a clip made by hand never waits for a search to finish
+finding. A search frames its clips in its own finding turn, as it always
+did.
+
+**A clip is on the list from the moment it is proposed.** Every job says
+which clips it has on the way in its `underway` list: where each lies, what
+it is called once that is known, and the step it is in. The plan builder
+keeps it for every job alike, from the moment a clip is proposed until it
+is written, and a clip made by hand is in it from the moment the key is
+pressed, at the playhead, before a word of it is known. The clip list shows
+every clip on the way in its place in the episode, with the beam round it,
+and hands over to the clip itself when it is written. So a clip the model
+named and a clip made by hand come in the same way, and a search no longer
+shows its clips only once their crops are placed.
+
+**Not undone by Cmd+Z.** A search's clips are not either: undo takes back
+changes to clips, and making one is work, see `LeaveOutNewClips`. A clip
+made by hand is taken away the way every clip is, with its trash can, and
+put back from there.
+
+**Heard in order.** Where the transcript does not reach, the one
+transcription hears on to where the clip needs it, held there the way a
+search holds it at the end of its window. An earlier attempt heard the part
+around the playhead out of turn into files of its own, islands, and read
+them into the transcript wherever the transcription from the start had not
+come. That was a second transcript with seams, heard again once the first
+arrived, and a second speech model loaded beside the pool. Hearing where it
+is needed first is worth having for a search too, and when it comes it
+comes to the one transcript, the way the loudness does since the waveform
+went where the clip timeline looks.
+
 ## What went away
 
 In the interface: `chosen.asked`, `chosen.held`, `chosen.looked`,
