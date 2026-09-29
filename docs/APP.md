@@ -1018,7 +1018,12 @@ place.
       shadow on all four sides. The waveform's grey and the app's colour are
       about as bright as each other, and such an edge seems to shimmer. The
       shadow gives it a step in brightness. A click on one chooses it. The
-      chosen clip has no mark, because its frame already shows it. On the
+      chosen clip has no mark, because its frame already shows it. Clips
+      may lie over each other, and on the clip timeline another clip's
+      mark gives way inside the chosen clip's frame, where its captions
+      are worked on. Drawn over them it hid them, and the caption being
+      shown, in the app's colour, could not be told from a mark in the
+      same colour. On the
       range picker the chosen clip is drawn the way it is up close, a
       frame round the wash, nearly three times as tall as the rest. Zoomed out, the
       track is the episode with all its clips, the way an editor's

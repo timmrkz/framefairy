@@ -147,7 +147,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
 // it was asked about and give the same one back.
 const starts: Record<string, [number, string, boolean]> = {
   "01": [57, "Mein Arm ist zersprungen", true],
-  "02": [400, "Der Typ vor mir auf einmal", false],
+  // ?overlap puts the second clip over the end of the first, the way two
+  // clips of a short episode can lie over each other.
+  "02": [location.search.includes("overlap") ? 75 : 400, "Der Typ vor mir auf einmal", false],
   "03": [902, "Warum ich nie wieder", false],
   "04": [1400, "Ein echtes Thema", false],
 };
@@ -996,7 +998,7 @@ export const Call = {
         (window as any).__listed = true;
         return answer([
           clip(1, 57, "Mein Arm ist zersprungen", true),
-          clip(2, 400, "Der Typ vor mir auf einmal", false),
+          clip(2, starts["02"][0], "Der Typ vor mir auf einmal", false),
           clip(3, 902, "Warum ich nie wieder", false),
           clip(4, 1400, "Ein echtes Thema", false),
           ...made,

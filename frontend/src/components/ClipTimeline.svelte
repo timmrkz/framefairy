@@ -1168,9 +1168,28 @@
   });
 
   // The other clips in view, as marks across the middle of the track.
-  const shownMarks = $derived(
-    marks.filter((m) => m.key !== clip?.key && m.end > view.from && m.start < view.to),
-  );
+  // Clips may overlap, and inside the chosen clip its own captions are
+  // what is worked on, so another clip's mark gives way there: drawn over
+  // the captions, it hid them, and the caption the video preview shows,
+  // in the accent over a mark in the accent, could not be seen at all.
+  // What is left of a mark on either side still says where that clip is,
+  // and the range picker shows the two lying over each other.
+  const shownMarks = $derived.by(() => {
+    const out: { id: string; key: string; at: number; start: number; end: number; rendered: boolean }[] = [];
+    for (const m of marks) {
+      if (m.key === clip?.key || m.end <= view.from || m.start >= view.to) continue;
+      const pieces = wholeClip
+        ? [
+            { start: m.start, end: Math.min(m.end, wholeClip.start) },
+            { start: Math.max(m.start, wholeClip.end), end: m.end },
+          ]
+        : [{ start: m.start, end: m.end }];
+      pieces.forEach((p, i) => {
+        if (p.end - p.start > 0.001) out.push({ ...m, ...p, id: `${m.key}-${i}`, at: m.start });
+      });
+    }
+    return out;
+  });
 
   // A caption block is detail for working inside a clip, and it is drawn
   // only while it can be read as a block: while the caption in the middle
@@ -1505,13 +1524,13 @@
     {/if}
     <!-- The other clips, the same marks the range picker draws, so the
          timeline zoomed out shows where they all are. A click chooses one. -->
-    {#each shownMarks as m (m.key)}
+    {#each shownMarks as m (m.id)}
       <button
         class="clipmark"
         class:rendered={m.rendered}
         style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
-        aria-label="Clip at {clock(m.start)}"
-        title="Choose the clip at {clock(m.start)}"
+        aria-label="Clip at {clock(m.at)}"
+        title="Choose the clip at {clock(m.at)}"
         onpointerdown={(e) => e.stopPropagation()}
         onclick={() => onmark?.(m.key)}
       ></button>
