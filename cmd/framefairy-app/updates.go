@@ -65,6 +65,10 @@ type UpdateState struct {
 	// pull request merged or closed. Nothing is downloaded for it, and
 	// nothing else is either until another channel is picked.
 	Gone string `json:"gone"`
+	// Building is the newest commit of the channel followed when its build
+	// has not come yet, so the page does not offer the build there is as
+	// the newest. Empty when the build is the newest.
+	Building string `json:"building"`
 	// Phase is "", checking, current, gone, downloading, ready or failed.
 	Phase      string `json:"phase"`
 	Next       string `json:"next"`
@@ -245,9 +249,10 @@ func (c *updating) seen(l updates.List) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Channels = chans
-	c.state.Follows, c.state.Gone = "", ""
+	c.state.Follows, c.state.Gone, c.state.Building = "", "", ""
 	if b, ok := l.Follow(c.state.Picked, buildChannel); ok {
 		c.state.Follows = b.Channel
+		c.state.Building = b.Newest
 	} else {
 		c.state.Gone = updates.Followed(c.state.Picked, buildChannel)
 	}

@@ -118,6 +118,13 @@
   // A build's version ends in its commit, so the version says it all.
   const next = $derived(update?.next ?? "");
 
+  // A commit pushed to the channel whose build has not come yet. The build
+  // there is is still offered, it is the newest there is, but never as
+  // the newest commit: a build of the commit before was once tested as
+  // the fix it did not have yet.
+  const building = $derived(update?.building ? short(update.building) : "");
+  const stillBuilding = $derived(building ? ` ${building} is being built.` : "");
+
   // Where things stand, in the words of the line under the build: what it
   // is in a few words, then what that means.
   const standing = $derived.by((): { mark: string; head: string; more: string } => {
@@ -129,17 +136,25 @@
         return { mark: "look", head: "Looking for a newer build", more: `Of ${followingName}.` };
       case "downloading": {
         const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
-        return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}`.trim() };
+        return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
       }
       case "ready":
         return {
           mark: "new",
           head: "A newer build is ready",
-          more: `${next}. Relaunch to finish updating, or it goes in when you quit.`,
+          more: `${next}. Relaunch to finish updating, or it goes in when you quit.${stillBuilding}`,
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
+      // The newest build is here, and a newer commit is on its way. Work
+      // running somewhere else, so the pulse.
       case "current":
+        if (building)
+          return {
+            mark: "look",
+            head: "A newer commit is being built",
+            more: `${building}. This is the build before it, the newest of ${followingName} so far. ${when(u.checked)}`.trim(),
+          };
         return {
           mark: "ok",
           head: "Up to date",

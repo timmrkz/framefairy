@@ -2,6 +2,22 @@
 # the update key and publishes it where the app looks for a newer build of
 # itself. See docs/UPDATES.md.
 #
+# A push to a pull request is built on the push, not on the pull request's
+# synchronize. GitHub runs no pull_request workflow while a pull request is
+# in conflict with main, and a commit pushed to #35 in that state got no
+# build: the Updates page went on offering the one before as the newest.
+# GitHub runs push whatever the conflict, so every push to a branch of this
+# repository comes here, finds the branch's open pull request and builds
+# its channel. A branch with no open pull request builds nothing. The
+# pull_request event is left with what only it says: opened, reopened and
+# closed. The build is of the branch as it is, not merged with main, so a
+# conflict does not make it wrong to test.
+#
+# A commit that is built already, or that only changes the docs against
+# the build there is, gets no build of its own. scripts/needs-build.sh
+# decides that for the build and for the list alike, so a pull request
+# opened after its branch was pushed is not built twice.
+#
 # A channel is main or one pull request. Everything lives in one release of
 # this repository called dev, marked a pre-release so it is never taken for
 # the latest one:
@@ -12,8 +28,10 @@
 #   channels.json                 every entry in one file, which is the one
 #                                 file the app reads
 #
-# Three jobs, because they need three different kinds of care:
+# Five jobs, because they need different kinds of care:
 #
+# 0. which, what a push or a pull request is a build of: main, the open pull
+#    request of the branch pushed, or nothing.
 # 1. build, on macOS, per channel. A second push to a pull request stops the
 #    build of the first, whose result nobody wants any more.
 # 2. publish, per channel, one after another and never stopped half way,
@@ -24,7 +42,14 @@
 #    replaced by the next, which is safe, because each writes the list from
 #    what is there when it runs. It also takes away the entry of any pull
 #    request that is not open any more, which the close did not take away
-#    itself, see below.
+#    itself, see below. Beside each pull request's build it writes the
+#    newest commit of the pull request when that is not the one built and
+#    has a build to come, so the Updates page says the build it offers is
+#    not the newest.
+# 4. announce, the same list written at once when a push starts, beside the
+#    build. Without it the list only learned of a push when its build was
+#    done, so for the whole of the build the page offered the build before
+#    as the newest.
 #
 # Only branches of this repository are built. A build runs whatever the
 # pull request holds, and one from a fork gets no secrets anyway. Until the
@@ -33,23 +58,82 @@ name: Builds to update to
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, reopened, closed]
   push:
-    branches: [main]
+    branches: ["**"]
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  which:
+    # A branch deleted is a push too, of nothing.
     if: >-
-      github.event.action != 'closed' &&
-      (github.event_name == 'push' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+      (github.event_name == 'push' && !github.event.deleted) ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      channel: ${{ steps.which.outputs.channel }}
+      number: ${{ steps.which.outputs.number }}
+      title: ${{ steps.which.outputs.title }}
+      sha: ${{ steps.which.outputs.sha }}
+      build: ${{ steps.which.outputs.build }}
+    steps:
+      - id: which
+        name: What this is a build of
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          BRANCH: ${{ github.ref_name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        # A branch's pull request is only one opened from this repository:
+        # a fork can have a branch of the same name.
+        run: |
+          build=true
+          if [ "$EVENT" = pull_request ]; then
+            if [ "$ACTION" = closed ]; then build=false; fi
+          elif [ "$BRANCH" = main ]; then
+            NUMBER=
+          else
+            found=$(gh pr list --head "$BRANCH" --state open --json number,title,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
+            if [ -z "$found" ]; then
+              echo "::notice::$BRANCH has no open pull request, so it has no channel to build for."
+              exit 0
+            fi
+            NUMBER=$(printf '%s' "$found" | jq -r .number)
+            TITLE=$(printf '%s' "$found" | jq -r .title)
+          fi
+          if [ -n "$NUMBER" ]; then channel="pr-$NUMBER"; else channel=main; fi
+          {
+            echo "channel=$channel"
+            echo "number=$NUMBER"
+            echo "sha=$SHA"
+            echo "build=$build"
+            # A title can hold anything, so it goes in a block of its own,
+            # ended by a word no title holds.
+            end="END_$(openssl rand -hex 12)"
+            echo "title<<$end"
+            printf '%s\n' "$TITLE" | tr -d '\r' | head -n 1
+            echo "$end"
+          } >> "$GITHUB_OUTPUT"
+          echo "$SHA is a build of $channel"
+
+  build:
+    needs: which
+    if: needs.which.outputs.build == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
     concurrency:
-      group: builds-build-${{ github.event.pull_request.number || 'main' }}
+      group: builds-build-${{ needs.which.outputs.channel }}
       cancel-in-progress: true
     outputs:
       built: ${{ steps.zip.outputs.built }}
@@ -59,7 +143,7 @@ jobs:
         with:
           # The branch as it is, not merged with main: the build Tim tests is
           # the pull request's own.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ needs.which.outputs.sha }}
 
       - id: key
         name: Is there an update key
@@ -73,23 +157,38 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # A push that only changed the docs changes nothing the app does, so
-      # it gets no build of its own, and Tim no restart for nothing. When
-      # the push before cannot be read, say after a force push, it builds.
+      # A pull request's commit that is built already, or that only changes
+      # the docs against the build there is, gets no build of its own, and
+      # Tim no restart for nothing. It is measured against the build and
+      # not against the push before: a push of the docs that stopped the
+      # build of a push of code left that code with no build at all. main
+      # is always built.
       - id: needs
         if: steps.key.outputs.ready == 'true'
-        name: Does this push change the app
+        name: Does this commit need a build
         env:
-          BEFORE: ${{ github.event.before }}
-          ACTION: ${{ github.event.action }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANNEL: ${{ needs.which.outputs.channel }}
+          SHA: ${{ needs.which.outputs.sha }}
         run: |
           run=true
-          if [ "$ACTION" = synchronize ] && git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; then
-            changed=$(git diff --name-only "$BEFORE" HEAD)
-            if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^docs/|\.md$'; then
-              echo "::notice::Only the docs changed, so this push has no build of its own."
-              run=false
+          if [ "$CHANNEL" != main ]; then
+            built=""
+            if gh release download dev --pattern "channel-$CHANNEL.json" --dir built 2>/dev/null; then
+              built=$(jq -r '.commit // empty' "built/channel-$CHANNEL.json")
             fi
+            rm -rf built
+            case $(sh scripts/needs-build.sh "$built" "$SHA") in
+            built)
+              echo "::notice::$SHA is built already."
+              run=false
+              ;;
+            docs)
+              echo "::notice::Only the docs changed against the build there is, so this commit has no build of its own."
+              run=false
+              ;;
+            esac
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
@@ -97,9 +196,9 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         name: What this build is
         env:
-          NUMBER: ${{ github.event.pull_request.number }}
-          TITLE: ${{ github.event.pull_request.title }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          NUMBER: ${{ needs.which.outputs.number }}
+          TITLE: ${{ needs.which.outputs.title }}
+          SHA: ${{ needs.which.outputs.sha }}
         # A build is named by the commit it was made from, the way git and
         # GitHub shorten it, so its version says what is in it. Nothing
         # orders builds by their version: the app installs whatever build
@@ -207,18 +306,16 @@ jobs:
           retention-days: 3
 
   publish:
-    needs: build
+    needs: [which, build]
     # always(), so it also runs when build was skipped because the pull
     # request closed.
     if: >-
-      always() &&
-      ((github.event.action == 'closed' &&
-        github.event.pull_request.head.repo.full_name == github.repository) ||
-       needs.build.outputs.built == 'true')
+      always() && needs.which.result == 'success' &&
+      (github.event.action == 'closed' || needs.build.outputs.built == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:
-      group: builds-publish-${{ github.event.pull_request.number || 'main' }}
+      group: builds-publish-${{ needs.which.outputs.channel }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -277,31 +374,7 @@ jobs:
           cache: true
 
       - name: Write the channel list from every entry
-        run: |
-          mkdir -p entries
-          gh release download dev --pattern 'channel-*.json' --dir entries || true
-          # The entry of a pull request that is not open any more goes. The
-          # close takes it away by itself, but GitHub runs nothing for a pull
-          # request that no longer merges into main, so one closed in that
-          # state kept its entry for good, and the app went on offering it:
-          # #24. Only when the list of open pull requests could be read, or
-          # a failure to read it would take every entry away.
-          if open=$(gh pr list --state open --limit 1000 --json number --jq '.[].number'); then
-            for entry in entries/channel-pr-*.json; do
-              [ -e "$entry" ] || continue
-              number=${entry#entries/channel-pr-}
-              number=${number%.json}
-              printf '%s\n' "$open" | grep -qxF "$number" && continue
-              echo "taking away the entry of pull request $number, which is not open"
-              gh release delete-asset dev "channel-pr-$number.json" -y || true
-              rm -f "$entry"
-            done
-          fi
-          set -- entries/*.json
-          [ -e "$1" ] || set --
-          go run ./cmd/framefairy-release list -out channels.json "$@"
-          cat channels.json
-          gh release upload dev channels.json --clobber
+        run: sh scripts/channel-list.sh
 
       # A zip no entry points at is gone an hour after it was made. Not at
       # once: a publish that runs beside this job may have uploaded a zip
@@ -320,3 +393,46 @@ jobs:
               gh release delete-asset dev "$name" -y || true
             fi
           done
+
+  # The list written the moment a push to a pull request starts, beside its
+  # build, so the Updates page says for the whole of the build that the
+  # build it offers is not the newest. The list job writes it again when
+  # the build is done. The two share one queue, and each writes the list
+  # from what is there when it runs, so the order they run in does not
+  # matter.
+  announce:
+    needs: which
+    if: needs.which.outputs.build == 'true' && needs.which.outputs.channel != 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-list
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.which.outputs.sha }}
+      # Nothing is published until the key is made, and a list without it
+      # cannot be checked.
+      - id: key
+        name: Is there an update key
+        run: |
+          if [ -s cmd/framefairy-app/update-key.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No update key yet, so there is no list to write."
+          fi
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - if: steps.key.outputs.ready == 'true'
+        name: Write the channel list from every entry
+        run: sh scripts/channel-list.sh

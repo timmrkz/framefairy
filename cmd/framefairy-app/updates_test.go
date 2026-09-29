@@ -46,6 +46,8 @@ type channelServer struct {
 	// slowOnly holds back only the builds whose path has this in it.
 	slowOnly string
 	hits     atomic.Int32
+	// newest is a channel's commit still to be built, as the list says it.
+	newest map[string]string
 }
 
 func newChannelServer(t *testing.T) *channelServer {
@@ -96,6 +98,7 @@ func (cs *channelServer) publish(t *testing.T, builds ...[3]string) {
 			Channel: channel, Name: "#" + channel, Version: version, Commit: "abc1234",
 			URL: cs.srv.URL + path, Size: size, SHA256: hex.EncodeToString(digest),
 			Signature: updates.Sign(cs.key, digest), Published: time.Now(),
+			Newest: cs.newest[channel],
 		})
 	}
 	data, _ := json.Marshal(l)
@@ -252,6 +255,30 @@ func TestAMergedPullRequestDownloadsNothing(t *testing.T) {
 	s = waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" })
 	if s.Follows != "main" || s.Gone != "" || s.Next != "0.3.0-main.5" {
 		t.Errorf("%+v", s)
+	}
+}
+
+// A push whose build has not come yet is said beside the channel
+// followed, and only that channel's. The build there is still downloads:
+// it is the newest there is.
+func TestACommitStillToBeBuiltIsSaid(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.newest = map[string]string{"pr-20": "def5678abcde", "main": "0123456789ab"}
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	_ = c.Follow("pr-20")
+	s := waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Building != "def5678abcde" || s.Next != "0.3.0-pr20.9" {
+		t.Errorf("%+v", s)
+	}
+	// Once it is built the list says nothing more, and neither does the
+	// page.
+	cs.newest = nil
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c.check()
+	if s := c.State(); s.Building != "" {
+		t.Errorf("still says %q is being built", s.Building)
 	}
 }
 
