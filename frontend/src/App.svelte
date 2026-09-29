@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     api,
     clock,
@@ -15,9 +15,11 @@
     errorText,
   } from "./lib/api";
   import { jobs, nav, shell } from "./lib/state.svelte";
+  import { sortEpisodes, type EpisodeOrder } from "./lib/order";
   import Icon from "./components/Icon.svelte";
   import Confirm from "./components/Confirm.svelte";
   import Busy from "./components/Busy.svelte";
+  import Pick from "./components/Pick.svelte";
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
@@ -31,7 +33,43 @@
   // it is pinned. Open, it lies over the workspace rather than pushing it,
   // so the video preview never changes size while you reach for an episode.
   let near = $state(false);
-  const open = $derived(shell.pinned || near);
+  // The sort list lies over the app, outside the sidebar, so moving onto it
+  // is leaving the sidebar as far as the pointer can tell, and so is the
+  // keyboard going into it. The sidebar stays open while its list is.
+  let sorting = $state(false);
+  const open = $derived(shell.pinned || near || sorting);
+  let aside = $state<HTMLElement>();
+
+  // What the sidebar knew of the pointer is out of date once its list
+  // closes: while the list was open the pointer was on the list, not on
+  // the sidebar. Falling back on that closed the sidebar the moment Escape
+  // or a click shut the list. So it stays open and asks the next move of
+  // the pointer where it really is, and only a move outside closes it.
+  let asking = false;
+
+  function sortList(isOpen: boolean) {
+    sorting = isOpen;
+    if (!isOpen) {
+      near = true;
+      asking = true;
+    }
+  }
+
+  function pointerMoved(e: PointerEvent) {
+    if (!asking || sorting) return;
+    asking = false;
+    near = !!aside?.contains(e.target as Node);
+  }
+
+  // Escape closes one thing at a time, the way a menu on the Mac does: the
+  // list first, and the sidebar that hovering opened only on the next press.
+  // Read before the list hears it, so the press that closes the list is not
+  // also the press that closes the sidebar.
+  function escape(e: KeyboardEvent) {
+    if (e.key !== "Escape" || sorting || shell.pinned || !near || removing) return;
+    near = false;
+    asking = false;
+  }
 
   // The button does what it says at once: open, it closes the sidebar, even
   // with the pointer still on it. Hover opens it again once the pointer has
@@ -42,6 +80,16 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
+  // The list as the sidebar shows it. The trigger is the sort mark Apple's
+  // own apps put on a sort menu, and says what it does rather than which
+  // order is on: a clock alone read as anything but sorting. The rows say
+  // which, with a tick on the one that is on.
+  const listed = $derived(sortEpisodes(episodes, shell.order));
+  let list = $state<HTMLUListElement>();
+  const orders = [
+    { value: "added", label: "Added", icon: "sort-added" },
+    { value: "name", label: "Name", icon: "sort-name" },
+  ];
   // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
   const title = $derived.by(() => {
@@ -83,7 +131,13 @@
     try {
       const added = await api.addEpisodes();
       await refresh();
-      if (added && added.length) nav.go({ name: "episode", path: added[0] });
+      if (added && added.length) {
+        nav.go({ name: "episode", path: added[0] });
+        // Added last, it is at the foot of a list that may be longer than
+        // the sidebar, so it is brought into view to be seen arriving.
+        await tick();
+        list?.querySelector(".episode.current")?.scrollIntoView({ block: "nearest" });
+      }
     } catch (err) {
       // One file that could not be added does not mean none of them were,
       // so the list is read again either way.
@@ -257,6 +311,8 @@
   });
 </script>
 
+<svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} />
+
 <div class="shell" style={shellStyle}>
   <!-- The bar across the top: the close, minimise and zoom buttons, and
        the name of what is on screen beside them. It is the whole width of
@@ -295,6 +351,7 @@
   {:else}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <aside
+    bind:this={aside}
     class:open
     onpointerenter={() => (near = true)}
     onpointerleave={() => (near = false)}
@@ -311,9 +368,24 @@
         <Icon name="sidebar" />
       </button>
       <h2>Episodes</h2>
+      {#if episodes.length > 1}
+        <span class="order">
+          <Pick
+            value={shell.order}
+            options={orders}
+            label="Sort episodes by"
+            title={shell.order === "name" ? "Sort episodes, now by name" : "Sort episodes, now by when they were added"}
+            align="right"
+            face="icon"
+            icon="sort"
+            onopenchange={sortList}
+            onpick={(v) => shell.sortBy(v as EpisodeOrder)}
+          />
+        </span>
+      {/if}
     </div>
-    <ul class="scroll">
-      {#each episodes as ep (ep.source)}
+    <ul class="scroll" bind:this={list}>
+      {#each listed as ep (ep.source)}
         <li>
           <button
             class="episode"
@@ -682,6 +754,7 @@
      pointer that came for it. So a row keeps its height and only its
      words go, and an episode keeps its row and shows only its lamp. */
   aside:not(.open) h2,
+  aside:not(.open) .order,
   aside:not(.open) .label {
     display: none;
   }
@@ -745,6 +818,12 @@
 
   .head h2 {
     flex: 1;
+  }
+
+  /* The sort choice keeps its size and gives way to nothing: the name of
+     the area takes what is left. */
+  .order {
+    flex: none;
   }
 
   h2 {
