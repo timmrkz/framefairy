@@ -289,7 +289,16 @@ another. When it is written, the same blocks stay.
 
 A card hands over to the clip it becomes in one step: it keeps its place
 until the list has read the clip, so there is never a gap where it was and
-never the two of them at once. A clip made by hand is chosen the moment
+never the two of them at once. It goes in the same assignment that puts
+the list on screen, from the first read asked after the clip was written,
+whichever read answers first. The event that takes a written clip off the
+list also counts it, `written` on the job, so the rows a search holds
+open, the number asked for less what it has written and what it has on
+the way, come from one event and never add a clip up twice. It said it
+had found one more in one event and took the clip off the list in the
+next, and between the two the list showed four cards for a search asked
+for three. A clip written between two job events, never on the way in
+either, holds a row of its own until a read brings it in. A clip made by hand is chosen the moment
 the key is pressed, as its card, and the card that is chosen stays chosen
 as the clip, unless another has been chosen since. It was chosen only once
 it landed, so for the seconds it took nothing on the clip timeline said

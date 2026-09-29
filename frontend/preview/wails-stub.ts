@@ -402,6 +402,9 @@ type FakeSearch = {
   error?: string;
   settled?: boolean;
   said?: string;
+  // How many clips it was asked for. It finds that many and no more, the
+  // way the Go side does.
+  count?: number;
 };
 const fullLength = 14423;
 
@@ -470,8 +473,10 @@ function measuredNow(): number {
 // a probe has time to look at the hearing.
 const hearsPerSecond = Number(/hear=(\d+)/.exec(location.search)?.[1] ?? 600);
 const landEvery = () => (location.search.includes("slow") ? 2000 : 350);
-const findFor = () => 700 + 12 * landEvery() + 1000;
+const findFor = (s?: FakeSearch) => 700 + landsOf(s).length * landEvery() + 1000;
 const landOrder = [3, 1, 7, 2, 12, 5, 4, 9, 6, 11, 8, 10];
+// The clips a search lands, in the order it lands them.
+const landsOf = (s?: FakeSearch) => landOrder.slice(0, s?.count ?? 12);
 const fakeSearches = (): FakeSearch[] => {
   const w = window as any;
   if (!w.__searches) {
@@ -529,13 +534,13 @@ function searchAt(s: FakeSearch, now = Date.now()) {
       : { state: "running", step: "hearing", covered: Math.max(covered, s.heardFrom), found: 0, since };
   }
   const finding = since - hearFor;
-  const found = landOrder.filter((_, k) => finding >= 700 + k * landEvery()).length;
-  if (finding < findFor()) {
+  const found = landsOf(s).filter((_, k) => finding >= 700 + k * landEvery()).length;
+  if (finding < findFor(s)) {
     return byHand
       ? { state: stoppedState, step: "stopped", covered: end, found, since: finding }
       : { state: "running", step: "finding", covered: end, found, since: finding };
   }
-  return { state: "done", step: "", covered: end, found: 12, since: finding };
+  return { state: "done", step: "", covered: end, found: landsOf(s).length, since: finding };
 }
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
@@ -551,15 +556,16 @@ function searchJob(s: FakeSearch) {
     const remaining = Math.max(end - covered, 0) / hearsPerSecond;
     return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, from: s.heardFrom, covered, elapsed: 1, time: "" } };
   }
-  const lasts = findFor();
-  const text = now.found ? `${now.found} of 12 found` : "Finding clips";
+  const lasts = findFor(s);
+  const lands = landsOf(s);
+  const text = now.found ? `${now.found} of ${lands.length} found` : "Finding clips";
   // The next clip is named a moment before it lands, and is on its way
   // until it does, the way the plan builder says so while it places the
   // crop.
   const k = now.found;
   const underway =
-    k < landOrder.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
-      ? [{ n: k + 1, start: 40 + (landOrder[k] - 1) * 140, end: 65 + (landOrder[k] - 1) * 140, title: "Ein Moment " + landOrder[k], step: "framing" }]
+    k < lands.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
+      ? [{ n: k + 1, start: 40 + (lands[k] - 1) * 140, end: 65 + (lands[k] - 1) * 140, title: "Ein Moment " + lands[k], step: "framing" }]
       : [];
   // What it has written goes with what it has on the way, in one event,
   // the way the Go side sends them.
@@ -587,7 +593,7 @@ function foundClips(): number[] {
   for (const s of fakeSearches()) {
     if (s.stopped || !s.n) continue;
     const now = searchAt(s);
-    const landed = now.step === "finding" || now.state === "done" ? landOrder.slice(0, now.found) : [];
+    const landed = now.step === "finding" || now.state === "done" ? landsOf(s).slice(0, now.found) : [];
     out.push(...landed.map((k) => k + (s.n - 1) * 12));
   }
   return out;
@@ -692,11 +698,11 @@ function handClips() {
     });
 }
 
-function askSearch(from: number, to: number): FakeSearch {
+function askSearch(from: number, to: number, count?: number): FakeSearch {
   const list = fakeSearches();
   for (const s of list) if (s.stopped || s.cancelledAt !== undefined) s.settled = true;
   const n = list.filter((s) => s.n > 0).length + 1;
-  const made = { id: `s${n}`, n, from, to, heardFrom: savedCovered(), wall: Date.now() };
+  const made = { id: `s${n}`, n, from, to, heardFrom: savedCovered(), wall: Date.now(), count };
   list.push(made);
   return made;
 }
@@ -939,8 +945,8 @@ export const Call = {
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
-        const req = args[1] as { From: number; To: number };
-        const made = askSearch(req.From, req.To);
+        const req = args[1] as { From: number; To: number; Count?: number };
+        const made = askSearch(req.From, req.To, req.Count);
         return Promise.resolve(searchJob(made));
       }
       case "MakeClip": {

@@ -644,22 +644,45 @@
     void refreshClips();
   });
   const onTheWay = $derived([...arrivingNow, ...landing]);
+  // The search the list last counted rows for, and how many of its clips
+  // the newest read of the list holds: what it had written when the read
+  // was asked, because the plan is written before the job says so.
+  let searchSeen = $state("");
+  let readWritten = $state(0);
+  $effect(() => {
+    const id = working?.id;
+    if (!id || id === untrack(() => searchSeen)) return;
+    searchSeen = id;
+    readWritten = 0;
+  });
+
   // How many clips the search has written and has on the way. It says so
   // itself, so a clip made by hand while it runs is not counted as one of
   // its own.
   const searchTook = $derived((working?.written ?? 0) + (working?.underway?.length ?? 0));
+  // Clips the search has written that no read of the list has brought in
+  // yet, and that have no card on the way either: a clip can be written
+  // between two job events and never be on the way in either. Each keeps
+  // a row of its own until the list has it, during the search and after
+  // it ended alike, so the list is never a row short while the read is in
+  // the air.
+  const lastSearch = $derived(jobs.forEpisode(path).find((j) => j.id === searchSeen));
+  const unread = $derived(
+    Math.max(
+      0,
+      (lastSearch?.written ?? 0) - readWritten - landing.filter((a) => a.job === searchSeen).length,
+    ),
+  );
   const coming = $derived(
     shown.length +
       onTheWay.length +
       (busy
-        ? Math.max(0, count - searchTook)
+        ? Math.max(0, count - searchTook) + unread
         : shown.length === 0 && onTheWay.length === 0
-          ? count
+          ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            stopped
-            ? 1
-            : 0),
+            unread + (stopped ? 1 : 0)),
   );
   // What the window lies over. A window may be drawn anywhere, so looking
   // again at material that was searched is allowed, it only asks first and
@@ -786,10 +809,12 @@
 
   async function refreshClips() {
     const ticket = listed.send();
+    const written = lastSearch?.written ?? 0;
     try {
       const list = (await api.clips(path)) ?? [];
       if (listed.keep(ticket)) {
         clips = list;
+        readWritten = written;
         // The cards of clips this read already holds, in the same step.
         if (landing.some((a) => a.after <= ticket)) landing = landing.filter((a) => a.after > ticket);
       }
