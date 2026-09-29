@@ -467,3 +467,25 @@ func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 		t.Errorf("captions were made for a short without them: %v", made)
 	}
 }
+
+// A panic while a job hears gives the lane of hearing back. The queue
+// recovers the panic and fails the job, but a lane held for good would
+// leave every later search waiting for a turn that never comes.
+func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
+	p, _ := searchProject(t, func(string) (Recognizer, error) {
+		panic("the speech model broke")
+	})
+	held := 0
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		held++
+		stepCtx, cancel := context.WithCancel(ctx)
+		return stepCtx, func() { held--; cancel() }, nil
+	}
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, turn)
+	}()
+	if held != 0 {
+		t.Errorf("%d lanes still held after the panic", held)
+	}
+}
