@@ -107,9 +107,11 @@ the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
 The episodes are listed in the order they were added, the newest at the
-foot, where one just added is brought into view. Once there are two, the
-head of the sidebar offers **Date Added** or **Name**, the words Finder uses
-under Sort By. By name, Folge 2 comes before Folge 10. The choice is kept by
+foot, where one just added is brought into view. Once there are two, an
+icon at the right of the head of the sidebar says how they are sorted, a
+clock for **Date Added** and A over Z for **Name**, the words Finder uses
+under Sort By, and opens a list of the two. The sidebar stays open while
+that list is. By name, Folge 2 comes before Folge 10. The choice is kept by
 the app, like whether the sidebar stays open. A library from before this
 kept no order, so its episodes stay in the order they were in, sorted by
 where they are on disk, and the ones added from now on go at the foot.

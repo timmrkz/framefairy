@@ -33,7 +33,11 @@
   // it is pinned. Open, it lies over the workspace rather than pushing it,
   // so the video preview never changes size while you reach for an episode.
   let near = $state(false);
-  const open = $derived(shell.pinned || near);
+  // The sort list lies over the app, outside the sidebar, so moving onto it
+  // is leaving the sidebar as far as the pointer can tell, and so is the
+  // keyboard going into it. The sidebar stays open while its list is.
+  let sorting = $state(false);
+  const open = $derived(shell.pinned || near || sorting);
 
   // The button does what it says at once: open, it closes the sidebar, even
   // with the pointer still on it. Hover opens it again once the pointer has
@@ -49,8 +53,8 @@
   const listed = $derived(sortEpisodes(episodes, shell.order));
   let list = $state<HTMLUListElement>();
   const orders = [
-    { value: "added", label: "Date Added" },
-    { value: "name", label: "Name" },
+    { value: "added", label: "Date Added", icon: "sort-added" },
+    { value: "name", label: "Name", icon: "sort-name" },
   ];
   // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
@@ -336,8 +340,10 @@
             value={shell.order}
             options={orders}
             label="Sort episodes by"
-            title="Sort the episodes by when they were added or by name"
+            title={shell.order === "name" ? "Sorted by name" : "Sorted by date added"}
             align="right"
+            face="icon"
+            onopenchange={(o) => (sorting = o)}
             onpick={(v) => shell.sortBy(v as EpisodeOrder)}
           />
         </span>

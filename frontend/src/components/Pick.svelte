@@ -43,6 +43,14 @@
     // work yet wears a frame in the colour of a warning, the way a field
     // that needs something does, so it is seen on the control itself.
     tone = undefined,
+    // What the trigger shows: the name of what is picked, or only its icon,
+    // for a list in a place with no room for words, the way a toolbar on the
+    // Mac shows a sort menu as an icon. The rows still say their names.
+    face = "text",
+    // Told when the list opens and closes. The list lies over the app,
+    // outside whatever the trigger stands in, so a sidebar that closes when
+    // the pointer leaves it has to be told the pointer is still its own.
+    onopenchange = undefined,
   }: {
     // What is picked. It goes one way only, and nothing here ever writes
     // it back: what the trigger says is what the caller says is true, and
@@ -56,7 +64,7 @@
     // will not run here, and rows may stand in groups under a head, the way
     // a pop-up menu on the Mac puts a separator and a heading between kinds
     // of thing. A group is named on its first row and runs until the next.
-    options: { value: string; label: string; detail?: string; warn?: boolean; group?: string }[];
+    options: { value: string; label: string; detail?: string; warn?: boolean; group?: string; icon?: string }[];
     // What to do with a pick. A caller that keeps the value itself sets it
     // here, and a caller that sends it to the engine draws whatever comes
     // back. Either way the trigger only ever says what came back.
@@ -68,7 +76,11 @@
     align?: "left" | "right";
     disabled?: boolean;
     tone?: "warn" | "err";
+    face?: "text" | "icon";
+    onopenchange?: (open: boolean) => void;
   } = $props();
+
+  const picked = $derived(options.find((o) => o.value === value));
 
   // What the trigger says. A value that is not in the list yet, which is
   // what the moment between opening an episode and its fonts arriving looks
@@ -99,7 +111,7 @@
   // names down the left and what goes with them down the right. Names that
   // end in one line with the trigger's only work while a name is all a row
   // holds.
-  const columns = $derived(options.some((o) => o.detail || o.group));
+  const columns = $derived(options.some((o) => o.detail || o.group || o.icon));
 
   let ticked = $state("");
   $effect(() => {
@@ -114,6 +126,7 @@
   {disabled}
   onOpenChange={(open) => {
     if (open) ticked = value;
+    onopenchange?.(open);
   }}
   onValueChange={(v) => onpick?.(v)}
 >
@@ -122,6 +135,8 @@
       <button
         {...props}
         class="pick"
+        class:face={face === "icon"}
+        class:quiet={face === "icon"}
         class:right={align === "right"}
         class:warn={tone === "warn"}
         class:err={tone === "err"}
@@ -129,11 +144,15 @@
         {title}
         {id}
       >
-        <span class="said">
-          <span class="room" aria-hidden="true">{longest}</span>
-          <span>{shown}</span>
-        </span>
-        <span class="mark"><Icon name="pick" size={12} /></span>
+        {#if face === "icon"}
+          <Icon name={picked?.icon ?? "pick"} />
+        {:else}
+          <span class="said">
+            <span class="room" aria-hidden="true">{longest}</span>
+            <span>{shown}</span>
+          </span>
+          <span class="mark"><Icon name="pick" size={12} /></span>
+        {/if}
       </button>
     {/snippet}
   </Select.Trigger>
@@ -170,6 +189,9 @@
                         <span class="tick">
                           {#if selected}<Icon name="check" size={12} />{/if}
                         </span>
+                        {#if option.icon}
+                          <span class="glyph"><Icon name={option.icon} /></span>
+                        {/if}
                         <span class="what">{option.label}</span>
                       {/if}
                       {#if option.detail}
@@ -201,6 +223,21 @@
     padding-right: 8px;
     color: var(--text);
     text-align: left;
+  }
+
+  /* Only the icon of what is picked, in a box as wide as it is high plus
+     the room the rail gives every icon, and as quiet as the icons beside
+     it until the pointer is on it. */
+  .pick.face {
+    justify-content: center;
+    width: 36px;
+    padding: 0;
+    color: var(--muted);
+  }
+
+  .pick.face:hover:not(:disabled),
+  .pick.face[aria-expanded="true"] {
+    color: var(--text);
   }
 
   .pick.warn {
@@ -359,6 +396,12 @@
     flex: none;
     width: 12px;
     color: var(--accent-lit);
+  }
+
+  /* The icon a row shares with the trigger, in the colour of its name. */
+  .glyph {
+    display: flex;
+    flex: none;
   }
 
   .what {

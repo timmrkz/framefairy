@@ -97,6 +97,17 @@
   {:else if name === "update"}
     <circle cx="8" cy="8" r="6" />
     <path d="M8 5v5.8M5.5 8.4 8 10.9l2.5-2.5" />
+  <!-- Sorted by when things were added: a clock, the mark Finder's
+       Date Added column and Recents are known by. -->
+  {:else if name === "sort-added"}
+    <circle cx="8" cy="8" r="6.2" />
+    <path d="M8 4.6V8l2.3 1.5" />
+  <!-- Sorted by name: A over Z and an arrow down beside them, the way an
+       alphabetical sort is drawn in the apps people use. -->
+  {:else if name === "sort-name"}
+    <path d="M1.8 7.2 3.9 1.8 6 7.2M2.6 5.3h2.6" />
+    <path d="M2 9.2h3.8L2 14.2h3.8" />
+    <path d="M11.5 2v11.6M9 11.2l2.5 2.5 2.5-2.5" />
   {:else if name === "sliders"}
     <path d="M2 4.5h12M2 11.5h12" />
     <circle cx="5.5" cy="4.5" r="1.9" fill="var(--ink-1)" />
