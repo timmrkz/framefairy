@@ -1,0 +1,298 @@
+# Signs and publishes the builds builds.yml makes, and keeps the channel
+# list the app updates itself from. See docs/UPDATES.md.
+#
+# builds.yml runs a branch's own code, so it holds no secret and no token
+# that can write: a push runs the workflow file of the branch pushed, and
+# whatever that file is given, any branch can take. This workflow is
+# started by GitHub whenever builds.yml starts or ends, and GitHub always
+# runs it from main, whatever branch the build was of. So the update key,
+# the token that writes the release and the tools that use them are
+# main's, and nothing a branch holds runs beside them.
+#
+# The key is read in the environment called updates. Kept there, and that
+# environment limited to main in the repository's settings, no branch can
+# read it, not even one that rewrites this file: a branch's copy of this
+# file is never what runs, and a branch's copy of builds.yml cannot enter
+# an environment limited to main.
+#
+# From the build it takes the zip and nothing else. Which channel it is,
+# which commit and which version, it works out again from GitHub's own
+# record of the run, by the same rules builds.yml goes by. A build is still
+# a branch's code, so what the zip holds is as trusted as the branch: the
+# key is the development key, which only development builds carry.
+#
+# Three jobs:
+#
+# 1. announce, the moment a build starts, writes the channel list again,
+#    so the Updates page says for the whole of the build that the build it
+#    offers is not the newest.
+# 2. publish, per channel, one after another and never stopped half way,
+#    signs the zip and uploads it with its entry to the release dev.
+# 3. list, when a build ends, writes channels.json again from every entry.
+#    It also takes away the entry of any pull request that is not open any
+#    more, which is how a closed pull request leaves the list. When a pull
+#    request's build is listed, it marks the commit ready to update to.
+#
+# announce and list share one queue, and each writes the list from what is
+# there when it runs, so the order they run in does not matter.
+name: Publish builds
+
+on:
+  workflow_run:
+    workflows: ["Builds to update to"]
+    types: [requested, completed]
+
+permissions: {}
+
+jobs:
+  announce:
+    if: >-
+      github.event.action == 'requested' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch != 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-list
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+      # Nothing is published until the key is made, and a list without it
+      # cannot be checked.
+      - id: key
+        name: Is there an update key
+        run: |
+          if [ -s cmd/framefairy-app/update-key.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No update key yet, so there is no list to write."
+          fi
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - if: steps.key.outputs.ready == 'true'
+        name: Write the channel list from every entry
+        run: sh scripts/channel-list.sh
+
+  publish:
+    if: >-
+      github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: updates
+    concurrency:
+      group: builds-publish-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    outputs:
+      published: ${{ steps.upload.outputs.published }}
+      channel: ${{ steps.which.outputs.channel }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # main, the default for a workflow_run, never the branch.
+      - uses: actions/checkout@v5
+
+      # What the build is a build of, from GitHub's record of the run and
+      # not from anything the build wrote. A run that left no zip is a
+      # commit that needed no build, a pull request that closed, or a
+      # branch with no pull request, and there is nothing to publish.
+      - id: which
+        name: What this is a build of
+        env:
+          EVENT: ${{ github.event.workflow_run.event }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          zips=$(gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" \
+            --jq '[.artifacts[] | select(.name == "build" and (.expired | not))] | length')
+          if [ "$zips" = 0 ]; then
+            echo "::notice::The run left no build, so there is nothing to publish."
+            exit 0
+          fi
+          if [ "$EVENT" = push ] && [ "$BRANCH" = main ]; then
+            channel=main
+            name=main
+            tag=main
+          else
+            found=$(gh pr list --head "$BRANCH" --state open --json number,title,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
+            if [ -z "$found" ]; then
+              echo "::notice::$BRANCH has no open pull request any more, so its build has no channel."
+              exit 0
+            fi
+            number=$(printf '%s' "$found" | jq -r .number)
+            title=$(printf '%s' "$found" | jq -r .title | tr -d '\r' | head -n 1)
+            channel="pr-$number"
+            name="#$number $title"
+            tag="pr$number"
+          fi
+          # The engine's version at the commit built, read and not run.
+          engine=$(gh api "repos/$GH_REPO/contents/engine/log.go?ref=$SHA" \
+            -H 'Accept: application/vnd.github.raw' |
+            awk -F'"' '/^const Version = /{ print $2; exit }')
+          if ! printf '%s' "$engine" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::The engine's version at $SHA is not a version: $engine"
+            exit 1
+          fi
+          short=$(echo "$SHA" | cut -c1-7)
+          version="$engine-$tag.$short"
+          mkdir -p dist
+          # The name can hold anything a title can, so it goes by file.
+          printf '%s' "$name" > dist/name.txt
+          {
+            echo "run=true"
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "commit=$(echo "$SHA" | cut -c1-12)"
+            echo "zip=app-$channel-$version.zip"
+          } >> "$GITHUB_OUTPUT"
+          echo "$SHA is $version, for $channel"
+
+      - id: key
+        if: steps.which.outputs.run == 'true'
+        name: Is there an update key
+        env:
+          KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
+        run: |
+          if [ -z "$KEY" ] || [ ! -s cmd/framefairy-app/update-key.txt ]; then
+            echo "::notice::No update key yet, so nothing is published. See docs/UPDATES.md, The keys."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: build
+          path: ${{ runner.temp }}/build
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - id: sign
+        if: steps.key.outputs.ready == 'true'
+        name: Sign it
+        env:
+          FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
+          BUILT: ${{ runner.temp }}/build/app.zip
+          ZIP: ${{ steps.which.outputs.zip }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+          VERSION: ${{ steps.which.outputs.version }}
+          COMMIT: ${{ steps.which.outputs.commit }}
+        run: |
+          mv "$BUILT" "dist/$ZIP"
+          go run ./cmd/framefairy-release sign \
+            -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
+            -version "$VERSION" -commit "$COMMIT" \
+            -url "https://github.com/$GH_REPO/releases/download/dev/$ZIP" \
+            -out "dist/channel-$CHANNEL.json"
+          ls -l dist
+
+      - name: The release the builds live in
+        if: steps.key.outputs.ready == 'true'
+        run: |
+          gh release view dev >/dev/null 2>&1 ||
+            gh release create dev --prerelease --latest=false --target main \
+              --title "Builds to update to" \
+              --notes "The builds of main and of each open pull request, for the app to update itself to while it is being made. Not for customers. See docs/UPDATES.md." ||
+            gh release view dev >/dev/null
+
+      # The two files of this channel by name, never a pattern: one channel
+      # has no business with another's entry.
+      - id: upload
+        if: steps.key.outputs.ready == 'true'
+        name: Upload the build and its entry
+        env:
+          ZIP: ${{ steps.which.outputs.zip }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: |
+          gh release upload dev "dist/$ZIP" "dist/channel-$CHANNEL.json" --clobber
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  list:
+    needs: publish
+    if: always() && needs.publish.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-list
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: key
+        name: Is there an update key
+        run: |
+          if [ -s cmd/framefairy-app/update-key.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No update key yet, so there is no list to write."
+          fi
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - if: steps.key.outputs.ready == 'true'
+        name: Write the channel list from every entry
+        run: sh scripts/channel-list.sh
+
+      # A zip no entry points at is gone an hour after it was made. Not at
+      # once: a publish that runs beside this job may have uploaded a zip
+      # whose entry this job has not seen yet.
+      - if: steps.key.outputs.ready == 'true'
+        name: Remove builds nobody can reach any more
+        run: |
+          jq -r '.channels[].url | split("/") | last' channels.json > kept.txt
+          now=$(date -u +%s)
+          gh release view dev --json assets \
+            --jq '.assets[] | select(.name | test("^app-.*\\.zip$")) | "\(.name) \(.createdAt)"' |
+          while read -r name created; do
+            grep -qxF "$name" kept.txt && continue
+            age=$(( now - $(date -u -d "$created" +%s) ))
+            if [ "$age" -gt 3600 ]; then
+              echo "removing $name"
+              gh release delete-asset dev "$name" -y || true
+            fi
+          done
+
+      # This workflow runs from main, so its checks show on main's commit
+      # and not on the pull request. The pull request learns its build is
+      # ready from a status on the commit that was built.
+      - name: Mark the commit ready to update to
+        if: needs.publish.outputs.published == 'true' && needs.publish.outputs.channel != 'main'
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          CHANNEL: ${{ needs.publish.outputs.channel }}
+        run: |
+          gh api "repos/$GH_REPO/statuses/$SHA" \
+            -f state=success -f context="Ready to update to" \
+            -f description="On the Updates page as $CHANNEL" >/dev/null

@@ -1,6 +1,6 @@
 // Command framefairy-release makes the update key, and signs and lists the
 // builds the app updates itself to. It is not shipped. Tim runs it once, to
-// make the key, and the build workflow runs the rest. See docs/UPDATES.md.
+// make the key, and the publish workflow runs the rest. See docs/UPDATES.md.
 //
 //	framefairy-release key
 //	    make an update key: the public half into the repository, the
@@ -82,14 +82,15 @@ func makeKey() error {
 	copy.Stdin = strings.NewReader(priv)
 	if copy.Run() == nil {
 		fmt.Println("The private half is on the clipboard. Paste it into")
-		fmt.Println("  1. GitHub, the repository's Settings, Secrets and variables, Actions,")
-		fmt.Println("     New repository secret, named FRAMEFAIRY_UPDATE_KEY")
+		fmt.Println("  1. GitHub, the repository's Settings, Environments, updates,")
+		fmt.Println("     Add environment secret, named FRAMEFAIRY_UPDATE_KEY")
 		fmt.Println("  2. your password manager")
 		fmt.Println("and then copy something else, so it leaves the clipboard.")
 		return nil
 	}
 	fmt.Println("There is no clipboard here, so this is the private half. Put it in")
-	fmt.Println("GitHub's secrets as FRAMEFAIRY_UPDATE_KEY and in your password manager,")
+	fmt.Println("the secrets of GitHub's environment updates as FRAMEFAIRY_UPDATE_KEY and")
+	fmt.Println("in your password manager,")
 	fmt.Println("and nowhere else:")
 	fmt.Printf("\n  %s\n", priv)
 	return nil

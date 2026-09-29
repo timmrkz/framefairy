@@ -31,20 +31,26 @@ facade the app goes around, and three files too big to hold in one's head.
 ## Glaringly wrong
 
 1. **Every branch build can read the update signing key.** `builds.yml`
-   builds every pushed branch that has a pull request. It puts
-   `FRAMEFAIRY_UPDATE_KEY` in the environment and runs
-   `go run ./cmd/framefairy-release sign` from the branch's own code
-   (around line 283). The app trusts that one key and no other
-   (`cmd/framefairy-app/updates.go:32`), and customers are meant to get the
-   same key. So any branch, one pushed by a Claude session gone wrong
-   included, could sign anything or send the key elsewhere. `publish`
-   uploads `dist/*` with `--clobber` (line 342), so a branch build could also
-   replace main's `channel-main.json`, and the `list` and `announce` jobs run
+   builds every pushed branch that has a pull request. It put
+   `FRAMEFAIRY_UPDATE_KEY` in the environment and ran
+   `go run ./cmd/framefairy-release sign` from the branch's own code. Every
+   development build trusts that key (`cmd/framefairy-app/updates.go:32`).
+   Customers get a release key of their own, as
+   [UPDATES.md](UPDATES.md) plans, so this reaches development builds
+   only, which is less than the first draft of this item said. Still, any
+   branch, one pushed by a Claude session gone wrong included, could sign
+   anything or send the key elsewhere. `publish` uploaded `dist/*` with
+   `--clobber`, so a branch build could also replace main's
+   `channel-main.json`, and the `list` and `announce` jobs ran
    `scripts/channel-list.sh` from the branch with a token that can write.
-   Fix: sign in a job of its own that runs the signing tool from main, with
-   the key in a GitHub environment, and upload only the channel's own files.
-   Later, before customers: a key for test builds apart from the release key.
-   **In progress.**
+   A change to the YAML alone cannot close this, because a push runs the
+   workflow file of the branch pushed, and a branch can rewrite it. Fixed
+   in #43: `builds.yml` gets no secret and no token that can write, and
+   leaves only the zip. `publish.yml`, which GitHub always runs from main,
+   works out channel, commit and version from GitHub's record of the run,
+   signs, and uploads the channel's own two files by name. The key lives
+   in the environment `updates`, which Tim limits to main. **In progress**,
+   until the secret is moved.
 2. **A short counts as rendered while it is written, and after it is cut
    off.** Render writes straight to `out/<name>.mp4`
    (`engine/render.go:164`), and a clip counts as rendered as soon as that
