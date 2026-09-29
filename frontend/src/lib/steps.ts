@@ -21,6 +21,8 @@ const doing: Record<string, string> = {
   finding: "Finding clips",
   rendering: "Rendering",
   framing: "Placing the crop",
+  // A clip of a search's answer well off the length, asked for again.
+  fitting: "Fitting to the length",
 };
 
 export type StepLine = {

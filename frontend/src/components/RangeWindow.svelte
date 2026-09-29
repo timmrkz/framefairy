@@ -49,7 +49,16 @@
     from?: number;
     to?: number;
     shown?: boolean;
-    marks?: { key: string; start: number; end: number; rendered: boolean }[];
+    marks?: {
+      key: string;
+      start: number;
+      end: number;
+      rendered: boolean;
+      // A clip on its way, where its card says it lies, and the key that
+      // chooses its card. It keeps its mark when it is written.
+      arriving?: boolean;
+      pick?: string;
+    }[];
     selected?: string;
     // The clip under the hand, here, on the clip timeline or in the clip
     // list. Its mark is lit the way it is under the pointer.
@@ -83,7 +92,7 @@
   let width = $state(0);
 
   // Everything on the track is placed in whole pixels. In shares of the
-  // width the window and the shade beside it land on halves of a pixel,
+  // width the window and its edges land on halves of a pixel,
   // which is what made one border of the window look thicker than the
   // others.
   const scale = $derived(width / Math.max(duration, 0.001));
@@ -281,8 +290,8 @@
 </script>
 
 <!-- The playhead is drawn over the track rather than in it. The track
-     clips what is inside it, which is what keeps the waveform and the
-     shades inside its rounded corners, and the playhead is the one thing
+     clips what is inside it, which is what keeps the marks inside its
+     rounded corners, and the playhead is the one thing
      that has to reach past them: its head stands above the track the way
      an editor's does, and at the very start or the very end it would
      otherwise be cut off by the corner. -->
@@ -296,22 +305,19 @@
   onpointerdown={scrub}
   aria-label="The range picker"
 >
-  {#if shown}
-    <div class="shade" style="left: 0; width: {at(from)}px"></div>
-    <div class="shade" style="left: {at(to)}px; right: 0"></div>
-  {/if}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
       class="clipmark"
       class:rendered={m.rendered}
-      class:selected={m.key === selected}
+      class:selected={(m.pick ?? m.key) === selected}
       class:lit={m.key === hovered}
+      class:waiting={m.arriving}
       style="left: {at(m.start)}px; width: {Math.max(at(m.end) - at(m.start), 4)}px"
       aria-label="Clip at {clock(m.start)}"
       {@attach hoverClip(m.key, onhover)}
       onpointerdown={(e) => e.stopPropagation()}
-      onclick={() => onmark?.(m.key)}
+      onclick={() => onmark?.(m.pick ?? m.key)}
     ></button>
   {/each}
   <!-- The ruler, in two layers, and they have to be two.
@@ -441,7 +447,7 @@
        together and fill the height of the app. */
     height: var(--picker-h, 56px);
     flex: none;
-    background: var(--ink-1);
+    background: var(--well);
     border: 1px solid var(--line);
     border-radius: var(--radius-m);
     overflow: hidden;
@@ -487,14 +493,6 @@
   .start {
     left: 0;
     margin-left: 12px;
-  }
-
-  .shade {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: rgba(12, 12, 14, 0.5);
-    pointer-events: none;
   }
 
   /* One box, the same line on all four sides and round corners, so where

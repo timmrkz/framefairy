@@ -212,6 +212,12 @@ export class Newest {
     return ++this.sent;
   }
 
+  // The ticket the next ask will get, so something can wait for the
+  // first answer asked from now on.
+  next(): number {
+    return this.sent + 1;
+  }
+
   // Whether this answer is still the newest one to arrive. Asking marks it
   // used either way, so an answer older than this one is never taken after
   // it, including the answer to an ask that failed.

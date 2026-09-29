@@ -58,6 +58,8 @@ not the workspace: the first run, the settings, the empty window.
 | `?measuring` | the episode's loudness, the waveform, measured from the moment the page opens, the four hours in twelve seconds, with a levels event every half second. Like the Go side it measures what the clip timeline last asked the waveform of first, then on from there, then from the start. `?unmeasured` never measured, an episode added before the measuring existed, so the waveform is the transcript's alone |
 | `?slowhand` | a clip made with I or O takes four seconds to place its crop, and four more to be heard first where the transcript does not reach, so a probe can look at its card on the way. Without it, a second and a bit |
 | `?lagclips` | every clip list comes back 300 ms late, the way a busy machine answers, so a card on its way has to hold its place until the list has the clip it became |
+| `?asked=4` | with `?growing`, the first search the Go side starts by itself asks for 4 clips, not what the workspace would suggest for its window, so the rows and the target have to follow the search |
+| `?crossclips` | one clip list read comes back 400 ms late and the next at once, so a read asked later answers first. A card on its way and the clip it became must never both be on screen |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 
@@ -279,6 +281,18 @@ the day either is changed. So a place that shows work puts `Busy` in it,
 with `rim={false}` where there is no edge to run round, and a change to
 how work looks is made once, in `Busy.svelte` and `app.css`, and is then
 true everywhere. The same goes for the shimmer and the pulse.
+
+**A handover the eye sees as one thing is one row.** A card on its way
+and the clip it became were two rows of a keyed list, one going and one
+coming, and the card was held for its clip by an effect, a render late.
+No frame the harness sampled ever showed the gap: the probe counting rows
+on every frame passed. What gave it away was reading the list's height on
+every forced layout, `getBoundingClientRect` patched to log
+`scrollHeight`: the list went a row short inside one update, the leaving
+row set absolute by `animate:flip`, which clamps a scrolled list, and the
+card came back sliding open. Tim saw it as the whole list blinking at the
+end of a search. When a thing changes what it is, keep its key, and hold
+what must not go in the same pass that builds the list.
 
 ## When the window itself looks wrong, measure it against a real one
 

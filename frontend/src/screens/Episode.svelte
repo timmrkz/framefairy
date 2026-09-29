@@ -62,7 +62,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
-  import { arriving, type Arriving } from "../lib/arriving";
+  import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -123,6 +123,8 @@
   // come are counted from it.
   let listedBefore = $state<Set<string> | null>(null);
   let pickedBefore = "";
+  // The clip the search chose by itself, see showFirstFound.
+  let chosenByFind = "";
   let shownFirst = false;
   let player = $state<Player>();
   let timeline = $state<ClipTimeline>();
@@ -444,6 +446,14 @@
   // found going up. The fill and the time left follow at once, because
   // they are the same thing moving on. It keeps its own time, in onMount,
   // because an effect that reads the job is set up again on every report.
+  // The search's work for its own cards, once no row is left to say it,
+  // see ClipList.
+  const carry = $derived.by(() => {
+    if (!working) return null;
+    const { fraction, left } = stepLine(working, heardShare);
+    return { job: working.id, fraction, left, still: stopping };
+  });
+
   let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
     null,
   );
@@ -638,40 +648,67 @@
       (job) => void api.continueJob(job.id).then((j) => jobs.apply(j)),
     ),
   );
+  // Everything that puts the clip list on screen takes a ticket: a read of
+  // the whole list and the answer to an edit alike. A read asked for before
+  // an edit can answer after it, and it knows nothing of the edit, so a clip
+  // removed a moment ago came back, and a trim looked undone, until the list
+  // was read again. Only the newest answer is used.
+  const listed = new Newest();
   // A clip that has just been written keeps its card until the list has
   // read it, so the card becomes the clip in one step: never a gap where
-  // it was, and never the two of them at once.
-  let landing = $state<Arriving[]>([]);
-  let arrivedBefore: Arriving[] = [];
+  // it was, and never the two of them at once. See OnTheWay in
+  // lib/arriving.ts. The card goes in the same step that puts the list on
+  // screen, with the first read asked after the clip was written, whichever
+  // read answers first.
+  const cardsOnTheWay = new OnTheWay();
+  let keptRead = $state(0);
+  const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, listed.next(), keptRead));
   $effect(() => {
-    const now = arrivingNow;
-    const here = new Set(now.map((a) => a.key));
-    const gone = arrivedBefore.filter((a) => !here.has(a.key) && !a.stopped);
-    arrivedBefore = now;
-    if (!gone.length) return;
-    landing = [...untrack(() => landing), ...gone];
-    const done = new Set(gone.map((a) => a.key));
-    void refreshClips().finally(() => (landing = landing.filter((a) => !done.has(a.key))));
+    void onTheWay;
+    if (cardsOnTheWay.unread(listed.next())) void refreshClips();
   });
-  const onTheWay = $derived([...arrivingNow, ...landing]);
+  // The search the list last counted rows for, and how many of its clips
+  // the newest read of the list holds: what it had written when the read
+  // was asked, because the plan is written before the job says so.
+  let searchSeen = $state("");
+  let readWritten = $state(0);
+  $effect(() => {
+    const id = working?.id;
+    if (!id || id === untrack(() => searchSeen)) return;
+    searchSeen = id;
+    readWritten = 0;
+  });
+
   // How many clips the search has written and has on the way. It says so
   // itself, so a clip made by hand while it runs is not counted as one of
   // its own.
-  const searchTook = $derived(
-    (finding ? (working?.progress?.found ?? 0) : 0) + (working?.underway?.length ?? 0),
+  const searchTook = $derived((working?.written ?? 0) + (working?.underway?.length ?? 0));
+  // Clips the search has written that no read of the list has brought in
+  // yet, and that have no card on the way either: a clip can be written
+  // between two job events and never be on the way in either. Each keeps
+  // a row of its own until the list has it, during the search and after
+  // it ended alike, so the list is never a row short while the read is in
+  // the air.
+  const lastSearch = $derived(jobs.forEpisode(path).find((j) => j.id === searchSeen));
+  const unread = $derived(
+    Math.max(
+      0,
+      (lastSearch?.written ?? 0) - readWritten - onTheWay.filter((a) => a.held && a.job === searchSeen).length,
+    ),
   );
   const coming = $derived(
     shown.length +
       onTheWay.length +
       (busy
-        ? Math.max(0, count - searchTook)
+        ? // The rows the search itself was asked for, not what the
+          // workspace would ask for now: the first search of an episode
+          // is asked for by the Go side.
+          (working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)) + unread
         : shown.length === 0 && onTheWay.length === 0
-          ? count
+          ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            stopped
-            ? 1
-            : 0),
+            unread + (stopped ? 1 : 0)),
   );
   // Whether the window has been searched before, all of it or a part.
   // New then looks there again, for moments its searches did not bring,
@@ -679,11 +716,27 @@
   const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
-  const marks = $derived(
-    shown
+  //
+  // A clip on its way has its mark from the moment its card has its place,
+  // where the card says it lies, breathing the way everything not there
+  // yet does, and it keeps the mark when it is written: the mark is known
+  // by the clip it will be. The marks came only with the written clip, so
+  // the range picker and the clip timeline said where a clip lay long
+  // after its card did.
+  const marks = $derived.by(() => {
+    const written = shown
       .filter((c) => c.key !== removed?.key)
-      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered })),
-  );
+      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered }));
+    const here = new Set(written.map((m) => m.key));
+    const coming = onTheWay
+      .filter((a) => !(a.clip && here.has(a.clip)))
+      .map((a) => {
+        const first = a.pieces?.[0]?.[0] ?? a.start;
+        const last = a.pieces?.[a.pieces.length - 1]?.[1] ?? a.end;
+        return { key: a.clip ?? a.key, start: first, end: last, rendered: false, arriving: true, pick: a.key };
+      });
+    return [...written, ...coming];
+  });
   // Whether the render running is of this clip. The job says what it is
   // of from the moment it is queued: its result only says so once it is
   // over, which is how the button never saw its own render running.
@@ -841,12 +894,6 @@
     await select(clip.key);
   }
 
-  // Everything that puts the clip list on screen takes a ticket: a read of
-  // the whole list and the answer to an edit alike. A read asked for before
-  // an edit can answer after it, and it knows nothing of the edit, so a clip
-  // removed a moment ago came back, and a trim looked undone, until the list
-  // was read again. Only the newest answer is used.
-  const listed = new Newest();
 
   // One clip as an edit left it.
   function putClip(updated: ClipEntry) {
@@ -856,11 +903,18 @@
 
   async function refreshClips() {
     const ticket = listed.send();
+    const written = lastSearch?.written ?? 0;
     try {
       const list = (await api.clips(path)) ?? [];
-      if (listed.keep(ticket)) clips = list;
+      if (listed.keep(ticket)) {
+        // The list, and the cards of the clips it holds going, in one step.
+        clips = list;
+        readWritten = written;
+        keptRead = ticket;
+      }
     } catch (err) {
       problem = errorText(err);
+      if (listed.keep(ticket)) keptRead = ticket;
     }
   }
 
@@ -1650,6 +1704,7 @@
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
     shownFirst = false;
+    chosenByFind = "";
   }
 
   // New. The search hears the window first if the episode has not been
@@ -1676,10 +1731,10 @@
   // The effect runs on every job event, so it only acts on a change.
   let foundHeard = 0;
   $effect(() => {
-    const found = (finding ? working?.progress?.found : 0) ?? 0;
+    const found = working?.written ?? 0;
     if (found === foundHeard) return;
     foundHeard = found;
-    if (found > 0) refreshClips().then(showFirstFound);
+    if (found > 0) refreshClips().then(() => showFirstFound());
   });
 
   // Undo and Redo, from the Edit menu and its keys. A field being typed in,
@@ -1731,15 +1786,23 @@
   // a picture that jumps from where it was playing to a clip nobody asked
   // for is the search taking the video away from the hand. The clips land
   // in the list and on both tracks either way, and are one click off.
-  function showFirstFound() {
-    if (!listedBefore || shownFirst) return;
+  //
+  // When the search is over, the earliest of what it found is the one
+  // chosen, the first of its clips in the list, as long as the clip chosen
+  // is still the one the search chose. The model names its clips strongest
+  // first, not in the order of the episode, so the first to land was often
+  // the last in the list, and it stayed chosen with the playhead on it.
+  function showFirstFound(ended = false) {
+    if (!listedBefore || (shownFirst && !ended)) return;
     const known = listedBefore;
     const found = clips.filter((c) => !known.has(c.key));
     if (!found.length) return;
     shownFirst = true;
-    if (selected !== pickedBefore || !paused) return;
+    if ((selected !== pickedBefore && selected !== chosenByFind) || !paused) return;
     // The list is in the order of the episode, and so is what is new in
     // it, so this is the earliest of what has landed.
+    if (found[0].key === selected) return;
+    chosenByFind = found[0].key;
     select(found[0].key);
   }
 
@@ -1767,6 +1830,7 @@
       listedBefore = new Set(clips.map((c) => c.key));
       pickedBefore = selected;
       shownFirst = false;
+      chosenByFind = "";
     }
   });
 
@@ -1874,10 +1938,9 @@
       const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
       const size = length || searchedTo - (ended.from ?? 0);
       placeWindow(followingWindow(searchedTo, size, duration, min), size);
-      // A clip was shown while the search ran, and whatever has been
-      // picked since is where the hand is now. Otherwise the search's
-      // first clip, the way it always was.
-      showFirstFound();
+      // The earliest clip it found, unless something else has been picked
+      // since the search chose one, which is where the hand is now.
+      showFirstFound(true);
       // A window searched again comes back under the names it had, so
       // nothing in the list is new. Its first clip, as long as nobody has
       // picked another.
@@ -2019,7 +2082,7 @@
         // Each clip lands in the plan the moment it is framed, while the
         // model is still writing the next, so the list is read again as
         // the search runs and the first one is put on screen.
-        refreshClips().then(showFirstFound);
+        refreshClips().then(() => showFirstFound());
       }
     }, 2000);
     return () => clearInterval(timer);
@@ -2123,7 +2186,7 @@
                   ? "The search on its way looks for this many. Change it for the next one"
                   : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
-                value={typed > 0 ? typed : ""}
+                value={comingNow && working?.count ? working.count : typed > 0 ? typed : ""}
                 onchange={keepTarget}
               /></span
             >
@@ -2469,8 +2532,10 @@
               {hovered}
               onhover={hoverClip}
               {coming}
+              at={stopped ? stopped.to : to}
               waiting={comingNow}
               next={shownNext}
+              {carry}
               {stopped}
               removed={removed?.key ?? ""}
               onselect={select}

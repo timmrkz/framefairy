@@ -45,6 +45,9 @@ const (
 	// StepFraming is a clip made by hand having its crop placed, see
 	// MakeClip. A search frames its clips in its finding step.
 	StepFraming = "framing"
+	// StepFitting is a clip of a search's answer well off the length, held
+	// back while the model is asked for it again, see fit.
+	StepFitting = "fitting"
 	StepFailed  = "failed"
 	// StepStopped is a job called off by hand, see StopJob.
 	StepStopped = "stopped"

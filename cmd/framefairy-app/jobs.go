@@ -71,6 +71,18 @@ type Job struct {
 	// written yet, whoever proposed it, see engine.Underway. The clip list
 	// shows each in its place until it is written.
 	Underway []engine.Underway `json:"underway,omitempty"`
+	// Written is how many clips the job has written, from the same event
+	// as Underway, so a clip is never counted both as written and as on
+	// the way, or as neither.
+	Written int `json:"written,omitempty"`
+	// Count is how many clips a search was asked for. The clip list holds
+	// that many rows open, whatever the workspace would ask for now: the
+	// first search of an episode is asked for by the Go side, and a number
+	// worked out again in the workspace told the list another.
+	Count int `json:"count,omitempty"`
+	// Whole is, for a search, that its answer is read to its end, so every
+	// clip still to come is in Underway.
+	Whole bool `json:"whole,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -352,7 +364,7 @@ func (q *queue) restore(episodes []string) {
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
 				Label: jobLabel(rec.Kind, rec.Preview), State: state, Error: rec.Error, Queued: rec.Asked,
-				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To,
+				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Count: rec.Count,
 				At: rec.At, Backward: rec.Backward, Underway: rec.Underway(), Plan: rec.Plan,
 				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
@@ -689,7 +701,9 @@ func (q *queue) runJob(job *Job) {
 		}
 		copied := ev
 		if copied.Kind == engine.EventUnderway {
-			q.update(job, nil, func(j *Job) { j.Underway = copied.Underway })
+			q.update(job, nil, func(j *Job) {
+				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
+			})
 			return
 		}
 		q.update(job, &copied, func(j *Job) {

@@ -136,7 +136,16 @@
     // Every clip of the episode, the way the range picker has them, so
     // the timeline zoomed out shows where the others are. The chosen one
     // is the frame and has no mark.
-    marks?: { key: string; start: number; end: number; rendered: boolean }[];
+    marks?: {
+      key: string;
+      start: number;
+      end: number;
+      rendered: boolean;
+      // A clip on its way, where its card says it lies, and the key that
+      // chooses its card. It keeps its mark when it is written.
+      arriving?: boolean;
+      pick?: string;
+    }[];
     // A mark clicked, which chooses that clip, as on the range picker.
     onmark?: (key: string) => void;
     // The clip under the hand, here, on the range picker or in the clip
@@ -986,9 +995,20 @@
   // What is left of a mark on either side still says where that clip is,
   // and the range picker shows the two lying over each other.
   const shownMarks = $derived.by(() => {
-    const out: { id: string; key: string; at: number; start: number; end: number; rendered: boolean }[] = [];
+    const out: {
+      id: string;
+      key: string;
+      at: number;
+      start: number;
+      end: number;
+      rendered: boolean;
+      arriving?: boolean;
+      pick?: string;
+    }[] = [];
     for (const m of marks) {
-      if (m.key === clip?.key || m.end <= view.from || m.start >= view.to) continue;
+      if (m.key === clip?.key || m.pick === clip?.key || m.end <= view.from || m.start >= view.to) {
+        continue;
+      }
       const pieces = wholeClip
         ? [
             { start: m.start, end: Math.min(m.end, wholeClip.start) },
@@ -1341,12 +1361,13 @@
         class="clipmark"
         class:rendered={m.rendered}
         class:lit={m.key === hovered}
+        class:waiting={m.arriving}
         style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
         aria-label="Clip at {clock(m.at)}"
         title="Choose the clip at {clock(m.at)}"
         {@attach hoverClip(m.key, onhover)}
         onpointerdown={(e) => e.stopPropagation()}
-        onclick={() => onmark?.(m.key)}
+        onclick={() => onmark?.(m.pick ?? m.key)}
       ></button>
     {/each}
     {#if clip && !locked}
@@ -1512,7 +1533,7 @@
     position: relative;
     /* As tall as the height of the app allows, set by the workspace. */
     height: var(--wave-h, 112px);
-    background: var(--ink-1);
+    background: var(--well);
     border: 1px solid var(--line);
     border-radius: var(--radius-m);
     overflow: hidden;

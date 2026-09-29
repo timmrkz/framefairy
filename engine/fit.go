@@ -36,6 +36,13 @@ func (b *planBuilder) holding() []PlanEntry {
 	return append([]PlanEntry(nil), b.held...)
 }
 
+// heldCardsNow are the cards of the clips held back, in their order.
+func (b *planBuilder) heldCardsNow() []int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]int(nil), b.heldCards...)
+}
+
 // fitRequest is what the model is asked about the clips held back.
 func (b *planBuilder) fitRequest(held []PlanEntry) string {
 	recipe := b.opts.recipe()
@@ -97,7 +104,7 @@ func (b *planBuilder) fitRequest(held []PlanEntry) string {
 // once more about the clips it left out. Without an ask, or when it fails,
 // the clips go as they came.
 func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
-	held := b.holding()
+	held, cards := b.holding(), b.heldCardsNow()
 	if len(held) == 0 {
 		return
 	}
@@ -160,7 +167,7 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.held = nil
+	b.held, b.heldCards = nil, nil
 	for i, entry := range held {
 		chosen := entry
 		if found := answers[i]; found != nil {
@@ -189,7 +196,7 @@ func (b *planBuilder) fit(ask func(request string, count int) (string, error)) {
 		if b.closed {
 			return
 		}
-		b.queueLocked(chosen)
+		b.queueLocked(chosen, cards[i])
 	}
 }
 
