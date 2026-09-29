@@ -127,7 +127,9 @@ facade the app goes around, and three files too big to hold in one's head.
     a chosen ffmpeg is done twice in the app (`main.go:391, 647`), without
     the `ffprobe.exe` case the engine has (`engine/run.go:145-155`), so on
     Windows the app would not find it. `main.go:436` repeats `tokens.txt`
-    from `engine/speech.go:98`. Fix: one engine helper used by both. **Open.**
+    from `engine/speech.go:98`. Fix: one engine helper used by both. **Fixed** in #48: `Engine.UseTools` and
+    `SpeechModelReady`, used by the command line and the app alike. The
+    app's own check had also taken an empty `tokens.txt` for a model.
 
 ## Risks
 
