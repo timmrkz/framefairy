@@ -94,6 +94,7 @@ interface=0
 build=0
 rules=0
 changed_rules=0
+build_rules=0
 workflows=""
 shells=""
 
@@ -111,14 +112,22 @@ for file in $changed; do
 		changed_rules=1
 		shells="$shells $file"
 		;;
+	scripts/needs-build.sh | scripts/needs-build-test.sh)
+		build_rules=1
+		shells="$shells $file"
+		;;
 	*.sh)
 		shells="$shells $file"
 		build=1
 		;;
 	.github/workflows/*)
 		workflows="$workflows $file"
-		# The CI workflow runs the rules, so a change to it runs them too.
-		case $file in */ci.yml) rules=1 ;; esac
+		# The CI workflow runs the rules, so a change to it runs them too,
+		# and the builds workflow is what the rule for a build is for.
+		case $file in
+		*/ci.yml) rules=1 ;;
+		*/builds.yml) build_rules=1 ;;
+		esac
 		;;
 	.github/*) ;;
 	*)
@@ -170,9 +179,10 @@ fi
 [ "$build" = 1 ] && say "build:     make"
 [ "$rules" = 1 ] && say "rules:     scripts/ci-needs-test.sh"
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
+[ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
 [ -n "$shells" ] && say "scripts:   sh -n$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$build$rules$changed_rules" = 0000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$build$rules$changed_rules$build_rules" = 00000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -183,6 +193,7 @@ if [ "$plan_only" = 1 ]; then
 	[ "$build" = 1 ] && echo build
 	[ "$rules" = 1 ] && echo rules
 	[ "$changed_rules" = 1 ] && echo changed-rules
+	[ "$build_rules" = 1 ] && echo build-rules
 	for s in $shells; do echo "script $s"; done
 	for w in $workflows; do echo "workflow $w"; done
 	exit 0
@@ -295,6 +306,7 @@ done
 
 [ "$rules" = 1 ] && sh scripts/ci-needs-test.sh
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
+[ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$build" = 1 ] && $MAKE -s --no-print-directory
 
 exit 0

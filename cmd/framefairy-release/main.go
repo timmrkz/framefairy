@@ -9,8 +9,9 @@
 //	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F
 //	    sign a build with the private half, read from FRAMEFAIRY_UPDATE_KEY,
 //	    and write its entry for the channel list
-//	framefairy-release list -out F ENTRY...
-//	    write the channel list from the entries of every channel
+//	framefairy-release list -out F [-newest CHANNEL=COMMIT]... ENTRY...
+//	    write the channel list from the entries of every channel, with the
+//	    newest commit of each channel that has one still to be built
 package main
 
 import (
@@ -171,6 +172,18 @@ func sign(args []string) error {
 func list(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	out := fs.String("out", "", "where the channel list goes")
+	// A channel's newest commit, when it has one still to be built. The
+	// workflow knows which pull requests have one, and the entry, written
+	// when the build was made, cannot.
+	newest := map[string]string{}
+	fs.Func("newest", "a channel's newest commit still to be built, as CHANNEL=COMMIT", func(v string) error {
+		channel, commit, ok := strings.Cut(v, "=")
+		if !ok || !updates.ValidChannel(channel) {
+			return fmt.Errorf("%q is not a channel and a commit", v)
+		}
+		newest[channel] = commit
+		return nil
+	})
 	_ = fs.Parse(args)
 	text, err := os.ReadFile(publicKeyFile)
 	if err != nil {
@@ -198,13 +211,15 @@ func list(args []string) error {
 			fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
 			continue
 		}
+		b.Newest = newest[b.Channel]
 		l.Channels = append(l.Channels, b)
 	}
 	data, err := json.Marshal(l)
 	if err != nil {
 		return err
 	}
-	// The same reading the app does, so what is written is what it keeps.
+	// The same reading the app does, so what is written is what it keeps,
+	// and a newest commit that is not one is not written.
 	parsed, err := updates.Parse(data)
 	if err != nil {
 		return err

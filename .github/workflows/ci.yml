@@ -68,6 +68,10 @@ jobs:
       # takes a second and it is the one thing nothing else would catch.
       - name: Check the CI rules
         run: sh scripts/ci-needs-test.sh
+      # And the rule that decides whether a push gets a build to update to,
+      # which is as silent when it is wrong.
+      - name: Check the rule for a build
+        run: sh scripts/needs-build-test.sh
       - id: needs
         run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
       - if: steps.needs.outputs.run == 'true'

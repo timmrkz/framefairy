@@ -107,6 +107,38 @@ func TestParseKeepsGoodBuildsAndSortsThem(t *testing.T) {
 	}
 }
 
+// A push whose build has not come yet is named beside the build there is.
+// What is not a newer commit is dropped, and the build stays either way,
+// because it can still be installed.
+func TestParseKeepsANewerCommitOnlyWhenItIsOne(t *testing.T) {
+	key := testKey(t)
+	zipped := appZip(t, "x")
+	for newest, want := range map[string]string{
+		"":                "",
+		"def5678":         "def5678",
+		"def5678abcd":     "def5678abcd",
+		"abc1234":         "",
+		"abc1234ef":       "",
+		"abc12":           "",
+		"DEF5678":         "",
+		"def5678\nsay hi": "",
+		"../../evil":      "",
+	} {
+		b := build(t, key, "pr-3", "0.3.0-pr3.abc1234", "https://example.com/a.zip", zipped)
+		b.Newest = newest
+		list, err := Parse(listJSON(t, b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list.Channels) != 1 {
+			t.Fatalf("%q: the build went with it", newest)
+		}
+		if got := list.Channels[0].Newest; got != want {
+			t.Errorf("%q: kept %q, want %q", newest, got, want)
+		}
+	}
+}
+
 func TestParseRefusesWhatIsNotAList(t *testing.T) {
 	for _, data := range []string{"", "[]", "{", `{"channels": 3}`} {
 		if _, err := Parse([]byte(data)); err == nil {
@@ -382,6 +414,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte(`{"channels":[{"channel":"main","name":"main","version":"0.3.0-main.1","commit":"abc1234","url":"https://example.com/a.zip","size":10,"sha256":"` + strings.Repeat("a", 64) + `","signature":"` + b64(make([]byte, 64)) + `"}]}`))
 	f.Add([]byte(`{"channels":[{"channel":"pr-0"},{"channel":"pr-1","published":"x"}]}`))
 	f.Add([]byte(`{}`))
+	f.Add([]byte(`{"channels":[{"channel":"pr-3","name":"#3","version":"0.3.0-pr3.abc1234","commit":"abc1234","newest":"def5678","url":"https://example.com/a.zip","size":10,"sha256":"` + strings.Repeat("a", 64) + `","signature":"` + b64(make([]byte, 64)) + `"}]}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		list, err := Parse(data)
 		if err != nil {
@@ -396,6 +429,9 @@ func FuzzParse(f *testing.F) {
 				t.Fatalf("channel %s twice", b.Channel)
 			}
 			seen[b.Channel] = true
+			if b.Newest != "" && (!commitPattern.MatchString(b.Newest) || strings.HasPrefix(b.Newest, b.Commit)) {
+				t.Fatalf("kept %q as a newer commit than %q", b.Newest, b.Commit)
+			}
 			if _, err := Release(b); err != nil {
 				t.Fatal(err)
 			}
