@@ -200,7 +200,7 @@ messages, pull request text, code comments and chat replies.
   said where it was started and where its result would have appeared, and
   it stays there until it is acted on, after a restart too. A search that
   stopped says so in the row its next clip would have appeared in, and
-  what it heard of the episode stays on the range picker. No toasts and
+  its window stays on the range picker. No toasts and
   no banners: a toast is gone before it is read and appears far from what
   it is about, and a banner is standing text that moves the workspace.
   Work called off by hand says so the same way as work cut off by the app

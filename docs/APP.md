@@ -323,229 +323,14 @@ place.
   episode within seconds of adding it, see below, and nothing is drawn
   over it for the part not heard yet: a grey band across the middle,
   where the captions stand, looked like a hole in the sound rather than
-  words still to come, and said nothing the range picker does not. The
-  range picker carries the reading of the episode in the app's own words:
-  what is not transcribed is darker and breathes while the reading runs,
-  because it is a place waiting to be filled, and the line where the
-  reading has got to is the head of a fill, the same bright line with a
-  glow that the head of every other fill in the app carries. The line is
-  what carries it. Two greys this dark are about 1.2 to 1 against each
-  other however far apart they are put, measured off the pixels, because
-  lightness is compressed at this end of the scale, so the shade alone can
-  never say where the transcript has got to. A line can: it carries its
-  contrast in the step across it rather than in the area, and it is the
-  edge the eye follows as the transcript grows. A hairline of the muted
-  grey did that job before and did it too quietly to see: measured off the
-  pixels it stood at 53 against a track of 48, a step of five in 255. The
-  fill's head stands at 189 against 54, a step of 135. It breathes only
-  while the reading runs, because an episode read half way and left alone
-  is not work in hand. It moves with the work, not
-  with the saving of it: the transcript is written to disk every few
-  seconds, but every chunk the recogniser finishes says how far it has come,
-  and the edge follows that. Nothing on that track moves of its own accord
-  unless work is running on it: the window while a search runs, and the
-  part with no transcript yet while the reading runs.
-- **The clip list is a stack of cards**, each clip its own, with air
-  between them and the app's colour down the edge of the chosen one. It has
-  no box around it: the ends go under a veil, so a card scrolling out of
-  sight fades rather than being cut off, which is what says there is more.
-  What a search is doing fills the button it was started from, behind its
-  own words, so nothing is drawn across the list for it.
-- **A clip under the hand is lit wherever it is shown.** The pointer on a
-  card lights the clip's mark on the range picker and on the clip timeline,
-  or the clip's frame when it is the clip up close. The pointer on a mark
-  on either track lights its card and its mark on the other track. Each
-  looks exactly as it does under the pointer. The list does not scroll to
-  a card lit from a track.
-- **The playhead** is a thin line in the app's colour with a head at the
-  top, the way an editor draws one, the same on both tracks. It is drawn
-  over the track rather than inside it, because a track clips what is in it
-  to keep the waveform inside its rounded corners, so the head stands above
-  the track and is whole even at the very start or the very end. It is the one
-  thing in the app with a hue that is not the accent, so it can be found on
-  a dark track, on a waveform and inside a clip alike.
-- **Shift and the arrows up and down walk the clip list**, the way shift
-  and left and right walk its words: each step takes the next clip and
-  puts the playhead at its start, which is where a short begins and so the
-  one frame worth seeing first. The list goes round: down from the last
-  card is the first, and up from the first is the last. **Shift is what
-  means a clip or a caption throughout.** Without it the arrows move the playhead a frame, which is
-  the episode and nothing else. With it they move it a word and a clip,
-  and the two read as one idea rather than two keys that happen to be
-  next to each other.
-- **The pane is the clip list and nothing else.** It says **Clips** and
-  carries **New**, whatever else is happening. The transcription is not in
-  it at any point: it has a place of its own, on the range picker, at the
-  edge it moves. A head that carried both is how it came to say
-  **Transcribing** over a list of clips.
-- **New works whether the window is transcribed or not.** Pressed before
-  the episode has been heard to the end of the window, the search
-  hears it first: the first row of the clip list says Waiting for the
-  transcript with the window, the window is locked, and the search finds
-  the moment the episode is heard to the window's edge. The transcription is the first step of the search as far as
-  anyone can see: the moment New is pressed the list opens as many rows as
-  the search will look for, the first wearing the beam and the fill, the
-  rest breathing, and the first is brought into view. The fill is how much
-  of the window has been transcribed, a view of the window on the range
-  picker: empty at its start, half full when the edge is half way across
-  it, full at its end. It was measured from the start of the episode, and
-  a window two hours in began nearly full. **Cancel** calls the search off, and what
-  it heard stays. New used to be off until the window was transcribed, and a
-  transcription that had been paused had to be carried on first with a
-  mark at the edge of the range picker, which nobody could be expected to
-  know about. That mark is gone, and so is pausing: the transcription
-  runs for a search, so the search is what is started and stopped. It
-  goes by what has been heard, the edge the range picker draws, not by
-  what has been written down, which comes every 8 s of work, minutes of
-  audio apart.
-- **What is running shows in the button it was started from.** Work that
-  knows how far along it is fills the button, with a line of the app's
-  colour at the front of the fill. Work that cannot say sends a band of that
-  colour travelling across it instead.
-- **The chosen card is always in view.** Walking the list with the arrows
-  brings it far enough in to clear the veil at either end.
-- **Playing moves nothing.** An editor's timeline follows its playhead
-  while it plays, and there it is a setting, off as often as on, because a
-  view somebody put somewhere is a view they meant. Here it was neither
-  asked for nor announced. Finding the playhead is what the crosshair
-  under the track is for, and going back to the clip is what clicking its
-  card does: two controls that say what they do, and no third that does it
-  uninvited.
-- **How close the timeline stands is the hand's.** A pinch sets it, and
-  fitting a clip sets it, and nothing else may. Whatever brings the
-  playhead into the view moves the view along at the width it already has,
-  never making it wider or narrower: that is putting the playhead
-  somewhere on the range picker, and the crosshair under the timeline.
-- **The clip list waits in the shape it will have.** While the transcript is
-  still coming, and while a search runs, the list holds as many rows as the
-  search was asked for, with the light passing over them, so it does not
-  fill out from four rows to twelve. The clips of earlier searches are not
-  counted against it, and each clip that lands takes the place of one of
-  the rows. Nothing is written in the empty space:
-  what is happening is in the info mark at the head.
-- **Settings column:** what the model looks for and how the captions look.
-  **New clips** holds how many clips to find and how long they may be, and
-  never more than a window can hold: **Target** and **Shortest** go no
-  higher than fits, one clip after another at the shortest length, in the
-  longest window the model can read anywhere on the episode. A number typed
-  past that is taken back to it, and its `title` says what the most is.
-  Target is how many clips the model looks for, not how many it must
-  give: the prompt asks for up to that many and says fewer strong clips
-  beat padding, so an episode with six strong moments gives six when
-  eight were the target. Its `title` says so. It was called Clips, which
-  read as a promise, and asking the model once more for the ones missing
-  was turned down: two short of eight is a judgement, not a fault.
-  **Captions** holds the face, the size and the colours for every clip of
-  the episode, and the height the captions sit at, which is kept for every
-  episode. **Text** is the colour the words are written in, **Box** the
-  colour of the box behind them and **Highlight** the pill behind the word
-  being spoken. The name **Highlight** is also its switch, the way an entry
-  in a chart's legend turns its line on and off: a click turns the pill off,
-  and with it the bounce of the word being spoken, so the short shows the
-  box and the words and nothing in it moves. Off, the name is struck
-  through and the pill's colour steps back. A click on the name turns it on
-  again, and so does choosing a colour or an opacity for the pill, because
-  that says the pill is wanted. The row keeps its size either way. It is
-  kept per clip set, like the colours, and the way back of the captions
-  puts it on again. **Text** and **Box** are switches the same way. Box
-  off leaves the words on the picture with no box behind them, and keeps
-  the box's colour for when it comes back. Text off renders the short
-  without any captions at all, and the video preview draws none, so what
-  it shows is what the render makes. With the text off, Box and Highlight
-  read as off too, because nothing of the captions is drawn, and each
-  keeps its own setting for when the text comes back. A click on either,
-  or a colour chosen for either, turns the captions on again with it. The transcription is still needed
-  either way: the model reads it to choose the clips, and the cuts go by
-  its words. Beside each colour is
-  how much of it is seen:
-  100, where the text and the pill start, is solid, and a box at 0
-  leaves only the words. A see-through text keeps its opacity in the
-  short, the word on the pill included, and a see-through pill lets the
-  box and the picture through, in the short as in the video preview.
-  A colour is drawn in the video preview while it is picked and saved when
-  the picker lets go, and Undo takes it back. The height follows the
-  caption box in the video preview as it is dragged, not when it is let
-  go, and a mark at the end of the **Captions** row puts the captions back
-  as they start out, the font, the size, the height and the colours
-  together, because
-  it is beside the head of the whole group and not beside one row of it. It
-  turns anticlockwise for that, and once they are back it turns clockwise
-  instead and puts them as you had them, so one click is undone by one click.
-  It is not there when there is nothing to undo either way, and the whole group appears once a clip is selected. How
-  many clips a search looks for and how long they may be are set here and
-  nowhere else, and they are kept for the next episode too. Every setting is one row, the name
-  on the left and the control on the right, all of them the same width. A
-  unit stands inside its field, right beside the number. Which part is
-  searched is chosen on the track, not here.
-- **Video preview:** the episode, with one **Play** button that plays from where
-  the playhead stands. The space bar does the same, unless a field has the
-  keyboard. Clicking the video preview plays or pauses.
-    - **With the playhead in the chosen clip**, the clip plays: its cuts
-      are jumped and it stops at its end, or starts again when it loops.
-      Pressed again right at its end, it plays from its start once more.
-    - **With the playhead anywhere else**, the episode plays on from there,
-      clip or no clip, because that is where it was put to be heard. It
-      used to go back to the start of the chosen clip, so no other part of
-      the episode could be heard while a clip was chosen.
-    - For the selected clip, everything outside its vertical crop is dimmed
-      and the frame sits where the render will put it. The frame is dashed
-      while the playhead is in a part the clip cuts out. **The frame a
-      piece begins in belongs to it**, and so does the one it ends in: the
-      playhead is put on a clip's first second and the picture answers with
-      the frame it is showing, which begins a little before it, so without
-      that the crop frame went dashed at the start of the clip it belonged
-      to and one press of an arrow key put it right.
-    - Playing a clip jumps over its cuts and stops where the clip ends,
-      however it was started. **It seeks first only when the picture has
-      to move.** A seek that changes nothing still interrupts the play, and
-      a play refused by a seek is a press of the space bar that did
-      nothing, with the second press working. The playhead standing a hair
-      before a clip's start counts as standing at it, for the same reason
-      the crop frame is solid there.
-    - **A seek is chased while it has not landed, and never while the
-      picture is playing.** The webview drops a seek silently when the
-      machine is busy, so it is asked again, then the file is read once
-      more, then it gives up. A playing clock is meant to run away from
-      where it was sent, which reads exactly like a seek that never
-      landed, and chasing it pulls the picture back to where playing began
-      and then empties the element. **Loop** starts it over instead, which is how
-      a clip is judged. It stays on until it is switched off again.
-    - **A jump a playing clip makes by itself**, over a cut or from its end
-      back to its start, moves the playhead when the picture has landed and
-      not before, so the crop frame, the captions and the picture change
-      together. A frame read from the file is only drawn over the video
-      preview while the playhead is in the frame it was read for. Before,
-      one read for another moment flashed up on every loop while the seek
-      was on its way.
-    - **The frame read from the file is the frame the video shows.** While
-      the video preview cannot keep up with the playhead, a frame read from
-      the file is laid over it, and it is the frame the playhead is in, the
-      one the video will show once it lands, so nothing changes when it
-      does. It used to be the nearest whole second, so from half past on it
-      was the next second's frame: dragging the playhead showed one frame,
-      letting go showed another, and one spot showed two frames depending
-      on which of the two was on screen. `frameStart` in
-      `frontend/src/lib/flow.ts` and `Still` in `engine/frames.go` work the
-      frame out the same way, and both are tested.
-    - While the playhead is inside the clip, its captions are drawn inside
-      the crop, in the font, size, place and colours the render burns in,
-      with the spoken word on its pill. The engine hands over the lines and
-      the look, so a correction shows up here at once.
-- **Picking from a list:** every list in the app is the app's own, in
-  `frontend/src/components/Pick.svelte`. There is no `<select>` anywhere,
-  because a `<select>` is drawn by the system: on macOS the webview hands
-  the whole list to AppKit, which paints it white with a blue row and a
-  tick, in a box that has nothing to do with the dark workspace around it,
-  and no stylesheet can reach it. The trigger is a control like any other
-  control, the same height with the same border and the same background,
-  with the mark where a unit would be. **The list opens right under the
-  trigger, hangs on its right edge and grows away from it**, out to the
-  left, as wide as the names in it need. A row keeps the same room for its
-  tick that the trigger keeps for its mark, so a name in the list ends
-  where the name on the trigger ends, whatever the name is. The right edge
-  of the whole thing is one line down the column, which is what that
-  column asks of everything in it, and no name is ever cut short in the
-  list, because the list is where a name is read.
+  words still to come, and said nothing the clip cards do not. The
+  range picker carries none of the reading either. It once did, the part
+  not transcribed darker and the part being heard filling, but how far
+  the work has come is said on the clip cards, the transcribing and the
+  finding alike, and the range picker said only the first half of it.
+  Tim had it taken away: while clips are found the window breathes and
+  the motes of work in hand rise through it, and nothing else on the
+  range picker moves.
 
   **The width it is measured at is the width it grows from.** Which way a
   list grows is the placement's to decide, and it decides from the width
@@ -846,27 +631,16 @@ place.
       after a search of the whole of a short episode it lay over all of
       it and hid every clip just found, and an outline with handles read
       as the same window. A clip is removed from its row in the list.
-    - While clips are being found for it, a soft light passes through the
-      window every couple of seconds, which is the track saying work is in
-      hand. How far the search has come is on the line under the head of
-      the clip list. The part of the episode not yet transcribed is darker,
-      with a line at the edge where the transcript has got to, and a light
-      passing over it while the transcription runs. A press on the window
-      is a press on the track.
+    - While clips are being found for it, the window breathes and the
+      motes of work in hand, the ones every control sheds, rise through
+      it, which is the track saying work is in hand. Nothing else on the
+      range picker moves: how far the search has come, the transcribing
+      and the finding, is on its cards in the clip list. A press on the
+      window is a press on the track.
     - A mark for every clip runs across the middle of the track, green once
       rendered, and the chosen clip is a frame round the wash, the way the
       clip timeline draws it. Click a mark to select that clip.
     - A press anywhere else takes hold of the playhead, see above.
-    - What is not transcribed yet is darker, while anything hears the
-      episode, a search or a clip made by hand, and while a search stands
-      stopped. At rest none of it is drawn. The transcript
-      is heard in parts, where a search or a clip made by hand needs it
-      first, so there can be more than one dark stretch. What is heard is
-      simply not dark, and the part being heard fills as it goes, from
-      where it began, with the head of the fill as its edge. A still fill
-      over every part heard put a bright line at the end of each, and a
-      part heard for a clip made by hand is three pixels of a four hour
-      track, so all it showed was the line.
 - **Nothing sits under the range picker.** The line that parts the workspace
   from the clip up close runs right below it, and the workspace is exactly as
   tall as the video preview and the range picker need. If the transcript has

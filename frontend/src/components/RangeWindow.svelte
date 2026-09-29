@@ -17,7 +17,7 @@
   // anything a person has to look after.
   import { onMount } from "svelte";
   import { clock } from "../lib/api";
-  import { gapsIn, gridStep, type Parts } from "../lib/flow";
+  import { gridStep } from "../lib/flow";
   import { hoverClip } from "../lib/hover";
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
@@ -25,8 +25,6 @@
 
   let {
     duration,
-    heard = [[0, duration]],
-    live = null,
     from = 0,
     to = 0,
     shown = false,
@@ -38,8 +36,6 @@
     playhead = -1,
     onseek,
     locked = false,
-    transcribing = false,
-    holding = false,
     onmove,
     onreset,
     grid = $bindable(0),
@@ -49,11 +45,6 @@
     reachSays = "",
   }: {
     duration: number;
-    // What of the episode is heard, in parts, the part being heard among
-    // them, and that part itself, from where it began to where it has got,
-    // or null while nothing is being heard.
-    heard?: Parts;
-    live?: [number, number] | null;
     // The window of the search in hand, drawn while shown.
     from?: number;
     to?: number;
@@ -69,14 +60,6 @@
     onseek?: (time: number) => void;
     // Clips are being found for the window, which wears the shimmer.
     locked?: boolean;
-    // Whether the episode is being read. Nothing is done about it here:
-    // the reading is a step of a search, and is started and called off
-    // with New and Cancel in the head of the clip list.
-    transcribing?: boolean;
-    // The edge is being held where it is, because Cancel was pressed. It
-    // stops moving at once rather than sliding on to where the work had
-    // got to, which is a second or two of an interface ignoring a click.
-    holding?: boolean;
     // The window at rest dragged by its outline, with where its edges are
     // now, while the hand moves, and done when it lets go. What it may be
     // is the workspace's to say, which gives back where it put it.
@@ -127,66 +110,12 @@
     const right = last ? width + 2 : at(to) + 2;
     return { left, width: Math.max(right - left, 0), first, last };
   });
-  // What is not heard yet, drawn only while something hears the episode, a
-  // search or a clip made by hand, or while a search stands stopped. At rest
-  // what has been heard is the engine's to know, like what has been
-  // searched. A gap too short to see is no gap.
-  const hearing = $derived(shown || !!live);
-  const gaps = $derived(hearing && duration > 0 ? gapsIn(heard, 0, duration).filter(([a, b]) => b - a > 0.5) : []);
-  const pending = $derived(gaps.length > 0);
-  // The part being heard runs into the gap that starts where it has got.
-  // Its stretch of the track is from where it began to the end of that
-  // gap, which stays put while it is heard, so its shade and its fill are
-  // laid out once and only slide.
-  const liveGap = $derived(live ? gaps.find(([a]) => Math.abs(a - live[1]) < 0.05) : undefined);
-  const liveSpan = $derived<[number, number] | null>(
-    live && liveGap ? [Math.min(live[0], liveGap[0]), liveGap[1]] : null,
-  );
-  // Each gap in the dark, with the edge its shade starts from.
-  const shades = $derived(
-    gaps.map(([a, b]) => ({
-      from: liveSpan && liveGap && a === liveGap[0] ? liveSpan[0] : a,
-      to: b,
-      edge: a,
-      live: !!liveGap && a === liveGap[0],
-      // Only the stretch being heard has an edge, and only until its fill
-      // has begun, whose head is the line from then on. A heard part is
-      // simply not dark: a still fill over every part heard put the head
-      // of a fill, a bright line, at the end of each, and a part a minute
-      // long is three pixels of a four hour track, so all it showed was
-      // the line.
-      waiting: !(liveGap && a === liveGap[0] && live && live[1] <= liveSpan![0] + 0.01),
-    })),
-  );
-
-
-  // Whether the edge of the transcript may glide to where it is going. It
-  // is off for the first frame, so the edge is simply where it is when the
-  // track appears, and on from then on, so every step after that reads as
-  // movement rather than a jump.
-  let glide = $state(false);
-
   onMount(() => {
-    let armed = 0;
-    const arm = () => {
-      cancelAnimationFrame(armed);
-      armed = requestAnimationFrame(() => (glide = true));
-    };
     const observer = new ResizeObserver(() => {
-      // A track that changes width moves every edge on it at once, and one
-      // that glided while the rest jumped would lag behind the track it
-      // belongs to. So a resize puts the edge where it goes and the glide
-      // comes back on the next frame.
-      glide = false;
       width = track.clientWidth;
-      arm();
     });
     observer.observe(track);
-    arm();
-    return () => {
-      cancelAnimationFrame(armed);
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   });
 
   // Dragging the playhead, the same way as on the clip timeline, see
@@ -371,40 +300,6 @@
     <div class="shade" style="left: 0; width: {at(from)}px"></div>
     <div class="shade" style="left: {at(to)}px; right: 0"></div>
   {/if}
-  <!-- Over the shade, not under it, so what has no transcript yet reads
-       the same wherever it is. The part being heard wears the work in hand
-       of Busy.svelte itself, the one every row and button of the app
-       wears, with no rim because the track has no edge to run round. Its
-       fill slides by the same transform and the same glide as the dark
-       ahead of it, so the two never part. Only the part being heard wears
-       it: what has been heard is the track without the dark, and stays so. -->
-  {#if liveSpan && live}
-    <span
-      class="busyhost"
-      class:glide={glide && !holding}
-      class:held={holding}
-      style="left: {at(liveSpan[0])}px; width: {at(liveSpan[1]) - at(liveSpan[0])}px"
-      ><Busy
-        fraction={(live[1] - liveSpan[0]) / Math.max(liveSpan[1] - liveSpan[0], 0.001)}
-        rim={false}
-        still={!transcribing}
-      /></span
-    >
-  {/if}
-  <!-- Each stretch not heard yet is dark from its edge on. The dark is as
-       wide as the stretch and slides by transform, so the edge of the part
-       being heard is only ever moved, never laid out again. -->
-  {#each shades as g (g.from)}
-    <div class="gap" style="left: {at(g.from)}px; width: {at(g.to) - at(g.from)}px">
-      <div
-        class="pending"
-        class:waiting={g.waiting}
-        class:glide={g.live && glide && !holding}
-        class:held={holding}
-        style="transform: translateX({at(g.edge) - at(g.from)}px)"
-      ></div>
-    </div>
-  {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
@@ -446,8 +341,9 @@
       press a mark to work on its clip. The marks at the four corners are where New looks next: drag
       a bar between them to look somewhere else, drag a triangle to make it shorter or longer, and
       double-click to put it back. It is at least as long as its clips need and at most as long as
-      the model reads at once, and flashes red when a triangle runs into either. While clips are being found, the part being searched is framed, and the dark part of it
-      is not read yet.
+      the model reads at once, and flashes red when a triangle runs into either. While clips are
+      being found, the window is drawn over the track. How far a search has come is on its cards in
+      the clip list.
     </Info>
   </span>
 </div>
@@ -465,7 +361,13 @@
     class:first={frame.first}
     class:last={frame.last}
     style="left: {frame.left}px; width: {frame.width}px"
-  ></div>
+  >
+    <!-- The motes of work in hand rise through it while its clips are
+         found, the ones every control of the app sheds, with no rim and no
+         fill: how far the search has come is said on the clip cards, and
+         only there. -->
+    {#if locked}<Busy rim={false} />{/if}
+  </div>
 {/if}
 {#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
@@ -587,98 +489,6 @@
     margin-left: 12px;
   }
 
-  /* What has not been transcribed yet is darker, and the edge between the
-     two is where the transcript has got to.
-     The shade alone could never say where that is. Down at this end of the
-     scale lightness is compressed: the track is #1d1f23, and laying black
-     over it at any strength lands between 1.1 and 1.2 to 1 against it,
-     measured off the pixels. Taking it to near black does not help, it only
-     turns the far end of the track into a hole. Two large areas that close
-     together are one area.
-     An edge is a different thing to see. A line carries its contrast in the
-     step across it rather than in the area, so one pixel of a grey that is
-     plainly lighter says what a whole field of darker grey cannot, and it
-     is the edge that shows the movement: what the eye follows as the
-     transcript grows is the line, not the shade behind it. */
-  /* It is as wide as the whole track and travels by transform, so what is
-     drawn is only ever moved and never laid out again. A left that is
-     animated is worked out by the main thread on every frame, which is the
-     same thread the transcription's own reports land on, so the edge stood
-     still for a frame or two and then caught up in a jump: a step, beside a
-     mark that glided. Measured while transcribing, the distance between the
-     two varied by 1.80 pixels. A transform is carried by the compositor,
-     like the mark's, so the two move as one thing.
-     The track clips what runs past its right edge. */
-  /* A stretch not heard yet. It clips the dark sliding inside it. */
-  .gap {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .pending {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    /* The head of a fill, which is what this edge is: the app fills this
-       track from the left as it reads the episode, so the line where it
-       has got to is the same bright line with a glow ahead of it that the
-       head of every other fill in the app carries. A hairline of --muted
-       said the same thing in a colour that means nothing here, and said it
-       so quietly that Tim could not see the reading move. */
-    /* While the reading runs, the head is the fill's own, the bright line
-       with the glow pushed ahead of it that every fill in the app has, so
-       this is only the dark ahead of it. A reading that was paused has no
-       fill, and a quiet line says where it stopped. */
-    border-left: 1px solid var(--line);
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.34) 28px);
-    pointer-events: none;
-  }
-
-  /* The transcription hands in a chunk of audio at a time, so the edge
-     arrives in steps of about a second. Gliding between them for as long
-     as a step usually takes turns the steps into the one movement they
-     are. The glide is armed a frame after the first edge is drawn, so
-     opening a workspace mid-transcription does not sweep the track. */
-  .pending.waiting {
-    border-left-color: transparent;
-  }
-
-  .pending.glide {
-    transition: transform 1s linear;
-  }
-
-  /* Cancel was pressed, so the edge stops. Taking the glide away should be
-     enough and is not: a transition already on its way carries on to where
-     it was going, which is a second of an edge still sliding after the
-     press. Saying none outright ends it, and the edge lands on the second
-     the work really reached. */
-  /* The host of the work in hand drawn over a part of the track. It lies
-     under the window, the searched parts and the marks, like the track's
-     own shade, and it glides the way the shade's edge does. Square, since
-     a part meets the next one inside the track, and the track clips its
-     own corners. */
-  .busyhost {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    border-radius: 0;
-    pointer-events: none;
-    --fill-glide: 0s;
-  }
-
-  .busyhost.glide {
-    --fill-glide: 1s linear;
-  }
-
-  .pending.held {
-    transition: none;
-  }
-
   .shade {
     position: absolute;
     top: 0;
@@ -700,6 +510,10 @@
     top: 0;
     bottom: 0;
     z-index: 3;
+    /* The motes rise inside it and no further, and lie under nothing
+       outside it. */
+    isolation: isolate;
+    overflow: hidden;
     background: var(--accent-wash);
     /* Only looked at: a press on it is a press on the track, which moves
        the playhead. */

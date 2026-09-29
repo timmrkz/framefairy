@@ -2044,8 +2044,6 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    heard={shownHeard}
-    live={stoppedAt ? null : live}
     from={stopped && !busy ? stopped.from : from}
     to={stopped && !busy ? stopped.to : to}
     shown={busy || !!stopped}
@@ -2057,8 +2055,6 @@
     playhead={time}
     onseek={seekTo}
     locked={busy}
-    transcribing={isTranscribing}
-    holding={stoppedAt !== null}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
     bind:grid
