@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     api,
     clock,
@@ -15,9 +15,11 @@
     errorText,
   } from "./lib/api";
   import { chosen, jobs, nav, shell } from "./lib/state.svelte";
+  import { sortEpisodes, type EpisodeOrder } from "./lib/order";
   import Icon from "./components/Icon.svelte";
   import Confirm from "./components/Confirm.svelte";
   import Busy from "./components/Busy.svelte";
+  import Pick from "./components/Pick.svelte";
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
@@ -42,6 +44,14 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
+  // The list as the sidebar shows it. The words are the ones Finder uses
+  // in Sort By, so there is nothing new to read.
+  const listed = $derived(sortEpisodes(episodes, shell.order));
+  let list = $state<HTMLUListElement>();
+  const orders = [
+    { value: "added", label: "Date Added" },
+    { value: "name", label: "Name" },
+  ];
   // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
   const title = $derived.by(() => {
@@ -83,7 +93,13 @@
     try {
       const added = await api.addEpisodes();
       await refresh();
-      if (added && added.length) nav.go({ name: "episode", path: added[0] });
+      if (added && added.length) {
+        nav.go({ name: "episode", path: added[0] });
+        // Added last, it is at the foot of a list that may be longer than
+        // the sidebar, so it is brought into view to be seen arriving.
+        await tick();
+        list?.querySelector(".episode.current")?.scrollIntoView({ block: "nearest" });
+      }
     } catch (err) {
       // One file that could not be added does not mean none of them were,
       // so the list is read again either way.
@@ -314,9 +330,21 @@
         <Icon name="sidebar" />
       </button>
       <h2>Episodes</h2>
+      {#if episodes.length > 1}
+        <span class="order">
+          <Pick
+            value={shell.order}
+            options={orders}
+            label="Sort episodes by"
+            title="Sort the episodes by when they were added or by name"
+            align="right"
+            onpick={(v) => shell.sortBy(v as EpisodeOrder)}
+          />
+        </span>
+      {/if}
     </div>
-    <ul class="scroll">
-      {#each episodes as ep (ep.source)}
+    <ul class="scroll" bind:this={list}>
+      {#each listed as ep (ep.source)}
         <li>
           <button
             class="episode"
@@ -685,6 +713,7 @@
      pointer that came for it. So a row keeps its height and only its
      words go, and an episode keeps its row and shows only its lamp. */
   aside:not(.open) h2,
+  aside:not(.open) .order,
   aside:not(.open) .label {
     display: none;
   }
@@ -748,6 +777,12 @@
 
   .head h2 {
     flex: 1;
+  }
+
+  /* The sort choice keeps its size and gives way to nothing: the name of
+     the area takes what is left. */
+  .order {
+    flex: none;
   }
 
   h2 {

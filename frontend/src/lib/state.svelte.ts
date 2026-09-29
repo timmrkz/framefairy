@@ -1,6 +1,7 @@
 // Shared state: the job list, kept current from the Go side's events.
 import { api, onJob, type Job, type EngineEvent, type Lane } from "./api";
 import { mergeJob } from "./flow";
+import type { EpisodeOrder } from "./order";
 
 // How often the list is read again while anything runs. The events keep it
 // current, and this is what puts it right when one of them was lost: a job
@@ -121,6 +122,10 @@ export const nav = new Nav();
 // about an episode, so it lives in the webview and not in the settings file.
 class Shell {
   pinned = $state(read());
+  // How the sidebar lists the episodes: in the order they were added, the
+  // newest last, or by name. The order added is the library's own, so it
+  // is the one a new copy of the app starts with.
+  order = $state<EpisodeOrder>(readOrder());
 
   set(open: boolean) {
     this.pinned = open;
@@ -130,13 +135,22 @@ class Shell {
       // A webview without storage simply forgets the choice.
     }
   }
+
+  sortBy(order: EpisodeOrder) {
+    this.order = order;
+    try {
+      localStorage.setItem("episodeOrder", order);
+    } catch {
+      // Forgotten again, the same way.
+    }
+  }
 }
 
-function read(): boolean {
+function readOrder(): EpisodeOrder {
   try {
-    return localStorage.getItem("sidebar") !== "closed";
+    return localStorage.getItem("episodeOrder") === "name" ? "name" : "added";
   } catch {
-    return true;
+    return "added";
   }
 }
 

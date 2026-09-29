@@ -106,6 +106,14 @@ The sidebar lists your episodes and how far each one is. **Add episode**, at
 the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
+The episodes are listed in the order they were added, the newest at the
+foot, where one just added is brought into view. Once there are two, the
+head of the sidebar offers **Date Added** or **Name**, the words Finder uses
+under Sort By. By name, Folge 2 comes before Folge 10. The choice is kept by
+the app, like whether the sidebar stays open. A library from before this
+kept no order, so its episodes stay in the order they were in, sorted by
+where they are on disk, and the ones added from now on go at the foot.
+
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
