@@ -153,7 +153,10 @@ facade the app goes around, and three files too big to hold in one's head.
     write a temporary file and rename it, but never sync it. After a power
     loss a plan or transcript can come back empty. `transcript.go:134-137`
     also writes the frames file and the JSON as two steps. Fix: sync before
-    the rename, and make the two one function. **Open.**
+    the rename, and make the two one function. **Fixed** in #51: one
+    `replaceFile`, which flushes the file before the move and the folder
+    after, and which `writeAtomic` and `replacePlan` both go through. The
+    frames and the transcript stay two files written one after the other.
 15. **Plan locks hold only inside one process.** `lockFile`
     (`engine/edit.go:151`) is a map of mutexes, so the CLI and the app
     editing one plan at once can lose an edit. Unlikely, but it should be

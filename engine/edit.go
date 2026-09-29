@@ -234,23 +234,10 @@ func writePlanFile(path string, body []byte) error {
 // plans of an episode globs for clips*.json and a half written plan must
 // never be one of them.
 func replacePlan(path string, body []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".clips-*.json")
-	if err != nil {
+	return replaceFile(path, ".clips-*.json", body, func(tmp string) error {
+		_, _, err := LoadClips(tmp)
 		return err
-	}
-	name := tmp.Name()
-	_, err = tmp.Write(body)
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		_, _, err = LoadClips(name)
-	}
-	if err != nil {
-		os.Remove(name)
-		return err
-	}
-	return os.Rename(name, path)
+	})
 }
 
 // errNotAdded is a clip that was not added because the plan no longer has
