@@ -98,6 +98,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.75 | Clip edges land on the frame like the edges of a cut, with shift for whole words, so a clip can be trimmed a frame at a time | `[x]` |
 | 2.76 | The caption blocks on the clip timeline follow an edge or a cut while it is dragged, made by the engine from the pieces as they are drawn | `[x]` |
 | 2.77 | The playhead goes with a dragged clip edge and the video preview shows the clip as it is dragged. With shift the word the edge snapped to is always lit. The clip edge lies over the caption handles | `[x]` |
+| 2.78 | Playback that starts clean: the video preview jumped back and forth for a moment after the space bar, most of all on a clip just made with I. Found by Tim | `[ ]` |
 | 2.78 | A word is said and captioned while a clip holds any of its sound, one rule for the words a clip keeps, its captions and a drag, so dragging an edge back over a word brings its caption in at the word's last sound. A word a cut parts is captioned once | `[x]` |
 | 2.79 | A word the recogniser heard as one keeps its end across a breath inside it: "sweet-grundschulliebe" was cut off before "liebe", which had no caption and was never lit | `[x]` |
 | 2.81 | The clip list goes round: shift and the down arrow on the last card is the first, shift and the up arrow on the first is the last. Asked for by Tim | `[x]` |
