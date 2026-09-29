@@ -789,9 +789,12 @@ place.
       episode it starts over at the start. The last window may be cut
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
-      The workspace opens on the window where the fewest searches have
-      been, earliest first, as long as the episode's windows are, and a
-      double-click on the window's marks puts it back there. A short
+      The window is kept with the episode the moment it changes, beside
+      the clip last worked on in `chosen.json`, so the workspace opens on
+      it again, after a restart too. An episode that has none opens on the
+      window where the fewest searches have been, earliest first, as long
+      as the episode's windows are, and a double-click on the window's
+      marks puts it back there. A short
       episode is one window and is searched whole each time. A window searched again keeps every
       clip there is: the model is told which lines are clips already and
       asked for other moments, and a search that brings none ends with

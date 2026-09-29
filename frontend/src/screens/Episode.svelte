@@ -25,6 +25,7 @@
     type ClipEntry,
     type Gesture,
     type CoverageView,
+    type KeptWindow,
     type EpisodeStatus,
     type SourceView,
     type Word,
@@ -720,6 +721,7 @@
     to = next.to;
     length = windowSize;
     keepWindow();
+    rememberWindow();
   }
 
   // How long the window was made, by the app or by a hand on its marks.
@@ -746,6 +748,7 @@
     if (done) {
       keepWindow();
       length = to - from;
+      rememberWindow();
     }
   }
 
@@ -768,11 +771,35 @@
     keepWindow();
   }
 
-  // The window the workspace opens with: the next one a search would
-  // read. Nobody chooses it: it is the next part nobody has looked at, as
-  // long as the episode's windows are, see engine/suggest.go.
-  function openWindow() {
+  // The window the workspace opens with: the one the episode was left
+  // with, after a restart too, and where there is none, the one the app
+  // would choose, see moveWindowOn. One that no longer fits the episode
+  // is not one.
+  async function openWindow() {
+    const was = path;
+    let kept: KeptWindow | null = null;
+    try {
+      kept = await api.chosenWindow(path);
+    } catch {
+      kept = null;
+    }
+    if (path !== was) return;
+    if (kept && kept.to > kept.from && kept.to <= duration + 0.5) {
+      from = kept.from;
+      to = Math.min(kept.to, duration);
+      length = Math.max(kept.length, to - from);
+      keepWindow();
+      return;
+    }
     moveWindowOn();
+  }
+
+  // The window is kept the moment it changes, by a hand, by a search that
+  // moved it on, or by a double-click that put it back, so it is where it
+  // was left when the episode is opened again.
+  function rememberWindow() {
+    if (duration <= 0 || to <= from) return;
+    api.chooseWindow(path, from, to, Math.max(length, to - from)).catch(() => {});
   }
 
   // The clip the workspace opens on: the one this episode was last worked
@@ -833,7 +860,7 @@
       if (!status.missing) await refreshCoverage();
       if (!status.missing) await refreshRoom();
       if (first && source) {
-        openWindow();
+        await openWindow();
       }
       await refreshClips();
       if (first) await openOnAClip();
@@ -1824,6 +1851,7 @@
       from = next.from;
       to = next.to;
       keepWindow();
+      rememberWindow();
       // A clip was shown while the search ran, and whatever has been
       // picked since is where the hand is now. Otherwise the search's
       // first clip, the way it always was.

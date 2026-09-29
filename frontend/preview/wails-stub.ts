@@ -1159,6 +1159,21 @@ export const Call = {
       case "ChooseClip":
         (window as any).__chosen = args[1];
         return Promise.resolve();
+      // Kept across a reload, the way the Go side keeps it across a
+      // restart, so a probe can reload the page and see it come back.
+      case "ChosenWindow":
+        try {
+          return Promise.resolve(JSON.parse(sessionStorage.getItem("__window") ?? "null"));
+        } catch {
+          return Promise.resolve(null);
+        }
+      case "ChooseWindow":
+        try {
+          sessionStorage.setItem("__window", JSON.stringify({ from: args[1], to: args[2], length: args[3] }));
+        } catch {
+          /* nothing to keep it in */
+        }
+        return Promise.resolve();
       case "GetSettings":
         return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was

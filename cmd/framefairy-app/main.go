@@ -1269,32 +1269,71 @@ func (s *FrameFairy) ClipPlayed(plan, clipID string) error {
 	return engine.RecordDecision(plan, clipID, engine.DecisionViewed, nil)
 }
 
-// chosenFile is where an episode keeps the clip that was last worked on.
-// It is about that episode and nothing else, so it sits in the episode's
-// own folder and goes when the folder goes.
+// chosenFile is where an episode keeps what was last chosen in it, the
+// clip worked on and the window on the range picker. It is about that
+// episode and nothing else, so it sits in the episode's own folder and
+// goes when the folder goes.
 const chosenFile = "chosen.json"
 
-// chosenClip is the whole of that file. A struct rather than a bare string
-// so a later version can keep more without the older one choking on it.
-type chosenClip struct {
-	Clip string `json:"clip"`
+// chosen is the whole of that file. A struct rather than a bare string so
+// a later version can keep more without the older one choking on it, which
+// is how the window came to be kept beside the clip.
+type chosen struct {
+	Clip   string      `json:"clip"`
+	Window *KeptWindow `json:"window,omitempty"`
 }
 
-// ChooseClip remembers which clip of an episode is being worked on, so
-// opening the episode again opens on the same one. An empty key forgets it.
-//
-// The key names a clip set and a clip inside it. It arrives from the
-// interface, so it is never joined onto a path and never used to reach a
-// file: it is written down as it is and only ever compared with the keys
-// the app works out for itself. Anything longer than a key could be, or
-// carrying anything a key never carries, is refused rather than stored.
-func (s *FrameFairy) ChooseClip(path, key string) error {
-	if !s.store.Known(path) {
-		return os.ErrNotExist
+// KeptWindow is the window as it was left: where it starts and ends, and
+// how long it was made, which is longer than it is when the end of the
+// episode cut it short.
+type KeptWindow struct {
+	From   float64 `json:"from"`
+	To     float64 `json:"to"`
+	Length float64 `json:"length"`
+}
+
+// ok says whether a window could be one: numbers, in order, inside the
+// longest episode there is. It arrives from the interface, and it is read
+// back from a file anything could have written.
+func (w KeptWindow) ok() bool {
+	for _, v := range []float64{w.From, w.To, w.Length} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > engine.MaxEpisodeSeconds {
+			return false
+		}
 	}
-	if !looksLikeClipKey(key) {
-		return errors.New("that is not the key of a clip")
+	return w.To > w.From && w.Length >= w.To-w.From-0.001
+}
+
+// chosenMu keeps two changes to the same file from crossing, a clip chosen
+// while the window is let go, each reading the file and writing it back.
+var chosenMu sync.Mutex
+
+func readChosen(path string) chosen {
+	var held chosen
+	file, err := engine.SafeChild(engine.WorkDir(path), chosenFile)
+	if err != nil {
+		return held
 	}
+	data, err := os.ReadFile(file)
+	if err != nil || json.Unmarshal(data, &held) != nil {
+		return chosen{}
+	}
+	if !looksLikeClipKey(held.Clip) {
+		held.Clip = ""
+	}
+	if held.Window != nil && !held.Window.ok() {
+		held.Window = nil
+	}
+	return held
+}
+
+// changeChosen reads the file, changes it and writes it back whole, through
+// a file of its own, so it is never found half written.
+func changeChosen(path string, change func(*chosen)) error {
+	chosenMu.Lock()
+	defer chosenMu.Unlock()
+	held := readChosen(path)
+	change(&held)
 	dir := engine.WorkDir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -1303,7 +1342,7 @@ func (s *FrameFairy) ChooseClip(path, key string) error {
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(chosenClip{Clip: key})
+	body, err := json.Marshal(held)
 	if err != nil {
 		return err
 	}
@@ -1328,6 +1367,24 @@ func (s *FrameFairy) ChooseClip(path, key string) error {
 	return nil
 }
 
+// ChooseClip remembers which clip of an episode is being worked on, so
+// opening the episode again opens on the same one. An empty key forgets it.
+//
+// The key names a clip set and a clip inside it. It arrives from the
+// interface, so it is never joined onto a path and never used to reach a
+// file: it is written down as it is and only ever compared with the keys
+// the app works out for itself. Anything longer than a key could be, or
+// carrying anything a key never carries, is refused rather than stored.
+func (s *FrameFairy) ChooseClip(path, key string) error {
+	if !s.store.Known(path) {
+		return os.ErrNotExist
+	}
+	if !looksLikeClipKey(key) {
+		return errors.New("that is not the key of a clip")
+	}
+	return changeChosen(path, func(c *chosen) { c.Clip = key })
+}
+
 // ChosenClip gives back the clip an episode was last worked on, or an empty
 // string where there is none or where what is written down is not a key.
 // The interface checks it against the clips it has either way: a clip set
@@ -1336,22 +1393,31 @@ func (s *FrameFairy) ChosenClip(path string) string {
 	if !s.store.Known(path) {
 		return ""
 	}
-	file, err := engine.SafeChild(engine.WorkDir(path), chosenFile)
-	if err != nil {
-		return ""
+	return readChosen(path).Clip
+}
+
+// ChooseWindow remembers the window on an episode's range picker as it was
+// left, so the app opens on it again after a restart rather than on one of
+// its own choosing. length is how long the window was made.
+func (s *FrameFairy) ChooseWindow(path string, from, to, length float64) error {
+	if !s.store.Known(path) {
+		return os.ErrNotExist
 	}
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return ""
+	w := KeptWindow{From: from, To: to, Length: length}
+	if !w.ok() {
+		return errors.New("that is not a window")
 	}
-	var held chosenClip
-	if json.Unmarshal(data, &held) != nil {
-		return ""
+	return changeChosen(path, func(c *chosen) { c.Window = &w })
+}
+
+// ChosenWindow gives back the window an episode was left with, or nil where
+// there is none or what is written down is not a window. The interface
+// checks it against the episode's length, which it knows and this does not.
+func (s *FrameFairy) ChosenWindow(path string) *KeptWindow {
+	if !s.store.Known(path) {
+		return nil
 	}
-	if !looksLikeClipKey(held.Clip) || held.Clip == "" {
-		return ""
-	}
-	return held.Clip
+	return readChosen(path).Window
 }
 
 // looksLikeClipKey reports whether a string could be the key of a clip: a

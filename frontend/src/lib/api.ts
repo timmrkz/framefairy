@@ -230,6 +230,13 @@ export interface WindowView {
   clips?: number;
 }
 
+// The window as it was left on the range picker, see chosenWindow.
+export interface KeptWindow {
+  from: number;
+  to: number;
+  length: number;
+}
+
 // Where the model has already looked, and what is left to look at.
 export interface CoverageView {
   searched: WindowView[];
@@ -501,6 +508,12 @@ export const api = {
   // opens on the same one. It is the clip's key, or an empty string.
   chosenClip: (path: string) => call<string>("ChosenClip", path),
   chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
+  // The window an episode's range picker was left with, so opening it
+  // again, after a restart too, opens on the same one. length is how long
+  // it was made, longer than it is when the end of the episode cut it.
+  chosenWindow: (path: string) => call<KeptWindow | null>("ChosenWindow", path),
+  chooseWindow: (path: string, from: number, to: number, length: number) =>
+    call<void>("ChooseWindow", path, from, to, length),
   getSettings: () => call<Settings>("GetSettings"),
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
