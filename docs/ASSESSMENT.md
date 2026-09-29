@@ -96,29 +96,40 @@ facade the app goes around, and three files too big to hold in one's head.
    `StopLeftoverServer` (`engine/leftover.go:88`) stops whatever matches its
    port and model, live or not. Either can also overwrite the other's note,
    so a real leftover is then never found. Fix: keep the owner's process id
-   in the note and stop the server only when that owner is gone. **Open.**
+   in the note and stop the server only when that owner is gone. **Fixed**
+   in #48: one note a server, with the process that started it, and a
+   model path with a space in it is found too.
 7. **The model's health check cannot be cancelled.** `local.go:326` asks
    `/health` with a client that has no timeout and no context. A server that
    accepts and never answers holds the load, and at quit it is left running
    until the next start. Fix: a request with the context and about 2 s per
-   try. **Open.**
+   try. **Fixed** in #48.
 8. **The retry for a model that spent its budget thinking depends on the
    wording of an error.** `engine/api.go:705` looks for
    `"blocks: ['thinking']"` in `err.Error()`. Changed wording, or a reply
    with another block in the list, turns the retry off without a sound. Fix:
-   a sentinel error checked with `errors.Is`. **Open.**
+   a sentinel error checked with `errors.Is`. **Fixed**
+   in #48: a reply of thinking blocks alone, shown or hidden, carries
+   `errSpentThinking`.
 9. **A window's start goes from number to text and back.** `Project.Plan`
    names the plan with `int(window.Start)` (`engine/project.go:139`), then
    hands `Run` the start as a string with three decimals, which `Run` parses
    and names the file from again (`run.go:218, 266`). A start of 29.9996
    gives the caller `clips-29-…` while `Run` writes `clips-30-…`. The
    interface usually snaps windows, so it is latent. Fix: pass the window as
-   a value. **Open.**
+   a value. **Fixed**
+   in #48, differently: the window is rounded to the millisecond before
+   anything names it, in one function, `searchWindow`, which the search,
+   its record and Run's input now share. A job record also named the
+   whole episode asked for by its end `clips-0-<end>.json` where the
+   search wrote `clips.json`.
 10. **Engine logic copied into the app has drifted.** Finding ffprobe beside
     a chosen ffmpeg is done twice in the app (`main.go:391, 647`), without
     the `ffprobe.exe` case the engine has (`engine/run.go:145-155`), so on
     Windows the app would not find it. `main.go:436` repeats `tokens.txt`
-    from `engine/speech.go:98`. Fix: one engine helper used by both. **Open.**
+    from `engine/speech.go:98`. Fix: one engine helper used by both. **Fixed** in #48: `Engine.UseTools` and
+    `SpeechModelReady`, used by the command line and the app alike. The
+    app's own check had also taken an empty `tokens.txt` for a model.
 
 ## Risks
 
@@ -228,7 +239,9 @@ facade the app goes around, and three files too big to hold in one's head.
 29. **Settings has a Training data section** (`Settings.svelte:812-834`,
     bindings at `main.go:1571-1609`), while `CLAUDE.md` says no training
     screens in the app and everything about the records in
-    `framefairy-train`. **For Tim.**
+    `framefairy-train`. **Decided:** it stays for now, as not important
+    yet. It comes up again with 5.7 in GUI-PLAN.md, whether customer
+    builds record training data at all.
 30. **Sizes worked out in JavaScript.** `RangeWindow.svelte:114` measures its
     width and places everything in pixels, to land on whole pixels.
     `Player.svelte:702` does the same for the caption scale. CSS `round()`

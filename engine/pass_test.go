@@ -155,6 +155,20 @@ func TestPassNames(t *testing.T) {
 	if got := rec.PlanName(360); got != "clips-0-360-2.json" {
 		t.Errorf("a second pass of a whole episode is %s", got)
 	}
+	// A record names the plan its search wrote: the whole episode asked
+	// for by its end is clips.json, as the search writes it, and an edge
+	// a hair under a second is named the way Run names it.
+	for _, c := range []struct {
+		rec  JobRecord
+		want string
+	}{
+		{JobRecord{To: 360}, "clips.json"},
+		{JobRecord{From: 9.9996, To: 39.9996}, "clips-10-40.json"},
+	} {
+		if got := c.rec.PlanName(360); got != c.want {
+			t.Errorf("the record %+v names %s, want %s", c.rec, got, c.want)
+		}
+	}
 }
 
 func TestTakenLines(t *testing.T) {

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -164,4 +165,38 @@ func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
 			t.Error("said yes about a file that is not there")
 		}
 	})
+}
+
+// ffprobe is looked for beside an ffmpeg that was chosen, under the name
+// the system gives it, and one named on its own wins. The app looked for
+// it its own way and missed ffprobe.exe.
+func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
+	for _, c := range []struct{ ffmpeg, ffprobe string }{
+		{"ffmpeg", "ffprobe"},
+		{"ffmpeg.exe", "ffprobe.exe"},
+		{"FFMPEG.EXE", "ffprobe.exe"},
+	} {
+		dir := t.TempDir()
+		for _, name := range []string{c.ffmpeg, c.ffprobe} {
+			if err := os.WriteFile(filepath.Join(dir, name), nil, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		e := NewEngine(NewLog(io.Discard, false, false))
+		e.UseTools(filepath.Join(dir, c.ffmpeg), "")
+		if want := filepath.Join(dir, c.ffprobe); e.FFprobe != want {
+			t.Errorf("beside %s: ffprobe is %s, want %s", c.ffmpeg, e.FFprobe, want)
+		}
+	}
+
+	e := NewEngine(NewLog(io.Discard, false, false))
+	was := e.FFprobe
+	e.UseTools("", "")
+	if e.FFprobe != was {
+		t.Error("no ffmpeg chosen changed ffprobe")
+	}
+	e.UseTools(filepath.Join(t.TempDir(), "ffmpeg"), "/opt/ffprobe")
+	if e.FFprobe != "/opt/ffprobe" {
+		t.Errorf("an ffprobe named on its own lost to a guess: %s", e.FFprobe)
+	}
 }

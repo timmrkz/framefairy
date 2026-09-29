@@ -118,15 +118,7 @@ func (r JobRecord) Request() PlanRequest {
 // PlanName is the plan file a search writes, see PassName, for an episode
 // duration seconds long.
 func (r JobRecord) PlanName(duration float64) string {
-	var window *Window
-	if r.From > 0 || r.To > 0 || r.Pass > 1 {
-		to := r.To
-		if to <= 0 || to > duration {
-			to = duration
-		}
-		window = &Window{r.From, to}
-	}
-	return PassName(window, r.Pass)
+	return PassName(searchWindow(r.From, r.To, r.Pass, duration), r.Pass)
 }
 
 // Clip is what a clip made by hand asks for.
