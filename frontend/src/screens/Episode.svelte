@@ -2503,6 +2503,7 @@
               arriving={onTheWay}
               {selected}
               {coming}
+              at={stopped ? stopped.to : to}
               waiting={comingNow}
               next={shownNext}
               {stopped}

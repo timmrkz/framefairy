@@ -721,8 +721,17 @@ place.
       A clip made with I or O comes in the same way, see below, because
       every job says which clips it has on the way the same way, see
       [JOBS.md](JOBS.md).
-    - **A search starts in sight.** The rows still to come are after the
-      clips there are, so in a long list a search began out of sight and
+    - **The rows still to come stand where the window is.** Everything a
+      search finds lies in its window, so its rows stand in the list where
+      the window ends: after the clips before the window and before the
+      clips after it. A window drawn between the second clip and the third
+      opens its rows between the two, and each card that comes takes a
+      row's place, so the clips after the window move down once, when the
+      search starts, and not again. Within the window the cards land in
+      the order of the episode, and the model names them strongest first,
+      so a card can land above one that came before it.
+    - **A search starts in sight.** The rows still to come are often after
+      the clips there are, so in a long list a search began out of sight and
       all anyone saw was New turning into Cancel. The row the next clip
       will appear in, the one wearing the work, is brought to the top of
       the column the moment it is there, and back into view every time a

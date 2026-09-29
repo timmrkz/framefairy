@@ -13,6 +13,7 @@
     selected,
     removed = "",
     coming = 0,
+    at = Infinity,
     waiting = true,
     next = null,
     stopped = null,
@@ -34,6 +35,12 @@
     // many rows wait in place, so the list is already the shape it is
     // about to be, and the info mark at the head says what is going on.
     coming?: number;
+    // Where in the episode those rows stand: the end of the window being
+    // searched. What a search finds lies in its window, so it lands before
+    // them, and a clip after the window comes after them. A window drawn
+    // between the second clip and the third puts them between the two,
+    // and the card that comes takes their place without anything moving.
+    at?: number;
     // Whether anything is on its way to fill those rows. They breathe while
     // it is and stand still while nothing is, the way paused work does.
     waiting?: boolean;
@@ -80,7 +87,7 @@
   // row short for a moment, which the browser answered by pulling a list
   // that was scrolled down back up, every card jumping at once. The keys
   // are kept for as long as the list is, so a clip never changes rows.
-  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: Arriving };
+  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: Arriving; ghost?: number };
   const rowOf = new Map<string, string>();
   const rows = $derived.by((): Row[] => {
     for (const a of arriving) if (a.clip && !rowOf.has(a.clip)) rowOf.set(a.clip, a.key);
@@ -90,8 +97,13 @@
       ...arriving
         .filter((a) => !(a.clip && here.has(a.clip)))
         .map((a) => ({ key: a.key, start: a.start, arriving: a })),
+      // The rows still to come, in their place in the episode, see at.
+      ...ghosts.map((g) => ({ key: `ghost-${g}`, start: at, ghost: g })),
     ];
-    return all.sort((a, b) => a.start - b.start);
+    // A row still to come stands before a clip that starts where the
+    // window ends, and the rows still to come keep their own order.
+    const rank = (r: Row) => (r.ghost !== undefined ? r.ghost - 1e6 : 0);
+    return all.sort((a, b) => a.start - b.start || rank(a) - rank(b));
   });
 
   // A clip taken out slides away. A clip on the way does not: it becomes
@@ -109,15 +121,16 @@
   // card under it jumped up and slid back down.
   let settled = 0;
   $effect(() => {
-    settled = rows.length + ghosts.length;
+    settled = rows.length;
   });
   function enter(node: Element, row: Row) {
-    const grows = rows.length + ghosts.length > settled;
+    const grows = rows.length > settled;
     return row.arriving && grows ? slide(node, { duration: 200 }) : { duration: 0 };
   }
 
-  // The rows still to come are after the clips there are, so in a list
-  // longer than its column a search began out of sight: all anyone saw
+  // The rows still to come stand where the window ends, often after the
+  // clips there are, so in a list longer than its column a search began
+  // out of sight: all anyone saw
   // was New turning into Cancel. The row the next clip will appear in, the
   // one wearing the work, is what is being done, so it is kept in view:
   // brought to the top of the column when the search starts, with the rows
@@ -126,11 +139,11 @@
   // with part of the row after it showing, so it is plain there is more to
   // come, and the clip that just landed is right above it. Only when a clip
   // lands: following every report would fight a hand that is scrolling.
-  let nextRow = $state<HTMLLIElement>();
+  const nextRow = () => list?.querySelector<HTMLLIElement>("li.ghost.next:not(.stopped)") ?? undefined;
   let hadNext = false;
   $effect(() => {
-    const has = !!next && !!nextRow;
-    if (has && !hadNext) nextRow!.scrollIntoView({ block: "start", behavior: "smooth" });
+    const has = !!next && ghosts.length > 0;
+    if (has && !hadNext) nextRow()?.scrollIntoView({ block: "start", behavior: "smooth" });
     hadNext = has;
   });
   //
@@ -153,7 +166,7 @@
     if (!before || !list || Date.now() > searchedUntil) return;
     const landed = keys.filter((k) => !before.has(k));
     if (!landed.length) return;
-    const row = nextRow;
+    const row = nextRow();
     const own = list;
     // After whatever else the landing moves. The first clip found is
     // chosen, and the workspace brings the chosen card into view at once,
@@ -172,17 +185,42 @@
   {#each rows as row (row.key)}
     {@const clip = row.clip}
     {@const a = row.arriving}
+    {@const g = row.ghost}
+    {@const lead = g === 0 && !!(next || stopped)}
     <li
       animate:flip={{ duration: 180 }}
       in:enter={row}
       out:leave={row}
       data-key={clip?.key ?? a?.key}
-      class:next={!!a}
+      class:ghost={g !== undefined}
+      class:waiting={g !== undefined && !lead && waiting}
+      style={g !== undefined && !lead ? `--wait-in: ${g * 800}ms` : undefined}
+      class:next={!!a || lead}
       class:current={!!a && a.key === selected}
-      class:stopped={!!a?.stopped}
-      aria-live={a ? "polite" : undefined}
+      class:stopped={!!a?.stopped || (lead && !next)}
+      title={lead && !next ? stopped?.full : undefined}
+      aria-live={a || (lead && next) ? "polite" : undefined}
     >
-      {#if a}
+      {#if g !== undefined}
+        <!-- A row still to come. They are as many as the search was asked
+             for, so the list does not fill out from four rows to twelve,
+             and the shimmer over them is the only thing that says it is
+             still working. Each row is a step further into the shimmer's
+             round than the one above, so every card is tipped at its own
+             angle and the light runs down the column rather than the whole
+             column being one sheet. The step is a twelfth of the round, and
+             twelve is what a search is asked for, so a full list covers the
+             round exactly once. The first says what the search is doing,
+             or how it ended. -->
+        {#if g === 0 && next}
+          <Busy fraction={next.fraction} still={next.still} />
+          <span class="title">{next.what}</span>
+          <span class="meta muted num">{next.left}</span>
+        {:else if g === 0 && stopped}
+          <span class="title">{stopped.what}</span>
+          <span class="meta muted num">{stopped.left}</span>
+        {/if}
+      {:else if a}
         {#if a.stopped}
           <button class="pick carry" title={a.full} onclick={() => a.oncontinue?.()}>
             <span class="title">{a.what}</span>
@@ -224,31 +262,6 @@
         {/if}
       {/if}
     </li>
-  {/each}
-  <!-- The rows that are not there yet, after whatever is. They are as many
-       as the search was asked for, so the list does not fill out from four
-       rows to twelve, and the shimmer over them is the only thing that
-       says it is still working. Each row is a step further into the
-       shimmer's round than the one above, so every card is tipped at its
-       own angle and the light runs down the column rather than the whole
-       column being one sheet. The step is a twelfth of the round, and
-       twelve is what a search is asked for, so a full list covers the
-       round exactly once. -->
-  {#each ghosts as row (row)}
-    {#if row === 0 && next}
-      <li class="ghost next" aria-live="polite" bind:this={nextRow}>
-        <Busy fraction={next.fraction} still={next.still} />
-        <span class="title">{next.what}</span>
-        <span class="meta muted num">{next.left}</span>
-      </li>
-    {:else if row === 0 && stopped}
-      <li class="ghost next stopped" title={stopped.full}>
-        <span class="title">{stopped.what}</span>
-        <span class="meta muted num">{stopped.left}</span>
-      </li>
-    {:else}
-      <li class="ghost" class:waiting style="--wait-in: {row * 800}ms"></li>
-    {/if}
   {/each}
 </ol>
 

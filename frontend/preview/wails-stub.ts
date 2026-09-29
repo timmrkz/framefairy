@@ -632,7 +632,7 @@ function searchJob(s: FakeSearch) {
   const k = now.found;
   const underway =
     k < lands.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
-      ? [{ n: k + 1, start: 40 + (lands[k] - 1) * 140, end: 65 + (lands[k] - 1) * 140, title: "Ein Moment " + lands[k], step: "framing", clip: `clips.json/0${lands[k] + (s.n - 1) * 12 + (freshList() ? 0 : 4)}` }]
+      ? [{ n: k + 1, start: placeOf(s, lands[k]), end: placeOf(s, lands[k]) + 25, title: "Ein Moment " + lands[k], step: "framing", clip: `clips.json/0${lands[k] + (s.n - 1) * 12 + (freshList() ? 0 : 4)}` }]
       : [];
   // What it has written goes with what it has on the way, in one event,
   // the way the Go side sends them.
@@ -655,15 +655,22 @@ function savedCovered(): number {
 }
 // The clips the searches of this run have found, numbered after the ones
 // the episode had, in the order they land.
-function foundClips(): number[] {
-  const out: number[] = [];
+function foundClips(): { n: number; start: number }[] {
+  const out: { n: number; start: number }[] = [];
   for (const s of fakeSearches()) {
     if (s.stopped || !s.n) continue;
     const now = searchAt(s);
     const landed = now.step === "finding" || now.state === "done" ? landsOf(s).slice(0, now.found) : [];
-    out.push(...landed.map((k) => k + (s.n - 1) * 12));
+    out.push(...landed.map((k) => ({ n: k + (s.n - 1) * 12, start: placeOf(s, k) })));
   }
   return out;
+}
+// Where the k-th of the twelve moments a search can find starts: in its
+// window, the way the model can only name what the window holds, a
+// twelfth of the window apart.
+function placeOf(s: FakeSearch, k: number): number {
+  const end = s.to > 0 ? s.to : fullLength;
+  return Math.max(s.from, s.from + ((end - s.from) * (k - 0.5)) / 12 - 12.5);
 }
 // Clips made by hand with I and O, the way the Go side makes them: a job
 // each, any number at once, which hears first where the transcript does
@@ -1058,7 +1065,7 @@ export const Call = {
         return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
       case "Clips": {
         const made = [
-          ...found.map((n) => clip(n + (fresh ? 0 : 4), 40 + (n - 1) * 140, "Ein Moment " + n, false)),
+          ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),
           ...handClips(),
         ];
         // ?lagclips answers every list 300 ms late, the way a busy machine
