@@ -32,10 +32,6 @@ type Clip struct {
 	Slug     string
 	Title    string
 	Segments []Segment
-	// The words this clip contains, on the source clock, each with the time
-	// it was spoken. They are both the record of what is said and the source
-	// of what is shown, which is what keeps the two in step.
-	Words []Cue
 	// Rejected clips stay in the plan but are left out of a full render.
 	Rejected bool
 	// CaptionY is where the captions sit in this clip, as the distance from
@@ -346,25 +342,6 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			continue
 		}
 
-		var spoken []Cue
-		if list, ok := entry["words"].([]any); ok {
-			for _, itemAny := range list {
-				item, ok := itemAny.([]any)
-				if !ok || len(item) != 3 {
-					continue
-				}
-				low, ok1 := toFloat(item[0])
-				high, ok2 := toFloat(item[1])
-				if !ok1 || !ok2 {
-					continue
-				}
-				text := Scrub(pyStr(item[2]), 100)
-				if isFinite(low) && isFinite(high) && high >= low && text != "" {
-					spoken = append(spoken, Cue{low, high, text})
-				}
-			}
-		}
-
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry["id"]
 		idText := fallback
@@ -396,7 +373,6 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			Slug:         SanitiseName(slugText, ""),
 			Title:        Scrub(titleText, 200),
 			Segments:     segments,
-			Words:        spoken,
 		})
 	}
 

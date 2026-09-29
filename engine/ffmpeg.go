@@ -320,11 +320,12 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	defer os.RemoveAll(tmp)
 	// A name shaped like a real one, so anything the parser dislikes about
 	// digits, underscores or hyphens shows up here rather than mid-render.
-	// Radius 0 keeps this out of the measuring path, which would call back
-	// into this function and never return.
+	// No highlight and radius 0 keep this out of the measuring path, which
+	// would call back into this function and never return.
 	name := "00_probe-name.ass"
-	if err := e.WriteASS(ctx, []Caption{{Start: 0, End: 1, Text: "probe"}}, filepath.Join(tmp, name),
-		320, 180, map[string]any{"radius": 0.0}); err != nil {
+	if err := e.WriteASS(ctx, []LaidCaption{{Caption: Caption{Start: 0, End: 1, Text: "probe",
+		Words: []Cue{{0, 1, "probe"}}}, Lines: [][]Cue{{{0, 1, "probe"}}}}}, filepath.Join(tmp, name),
+		320, 180, map[string]any{"radius": 0.0, "highlight": 0.0}); err != nil {
 		return "", err
 	}
 	if err := InstallFont(tmp, DefaultFont); err != nil {

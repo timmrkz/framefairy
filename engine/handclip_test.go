@@ -123,15 +123,19 @@ func TestAClipMadeByHand(t *testing.T) {
 			break
 		}
 	}
-	if cut == nil || len(cut.Words) == 0 {
+	if cut == nil {
 		t.Fatalf("never said what it keeps: %v", lists)
 	}
 	if first, last := cut.Pieces[0][0], cut.Pieces[len(cut.Pieces)-1][1]; math.Abs(first-c.Start) > 0.01 ||
 		math.Abs(last-(c.Start+c.Duration)) > 0.5 {
 		t.Errorf("on the way it keeps %v, it was written from %.2f for %.2f s", cut.Pieces, c.Start, c.Duration)
 	}
-	arriving := ArrivingCaptionsView(p.HandPlanPath(), *cut, nil)
-	written, err := ClipCaptionsView(p.HandPlanPath(), c.ID, nil)
+	heard, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	arriving := ArrivingCaptionsView(p.HandPlanPath(), *cut, heard, nil)
+	written, err := ClipCaptionsView(p.HandPlanPath(), c.ID, heard, nil)
 	if arriving == nil || err != nil || len(arriving.Captions) == 0 || len(arriving.Captions) != len(written.Captions) {
 		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
 	}
