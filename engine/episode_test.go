@@ -29,7 +29,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	// jobs' timings say the episode was searched.
 	p := NewProject(NewEngine(NewLog(io.Discard, false, false)), source, DefaultOptions())
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
-		Slug: "hand", Keep: [][2]int{{1, 1}}, Words: [][3]any{},
+		Slug: "hand", Keep: [][2]int{{1, 1}},
 		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
 	if _, err := addClip(p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
 		t.Fatal(err)

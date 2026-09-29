@@ -82,7 +82,7 @@ func TestUndoLeavesAClipThatLandedSince(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
 	change := edited(t, logs, func() error { return SetRejected(path, "01", true) })
-	landing := PlanClip{ID: "03", Slug: "drei", Words: [][3]any{},
+	landing := PlanClip{ID: "03", Slug: "drei",
 		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
 	if err := appendClip(path, landing); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestUndoLeavesAClipThatLandedSince(t *testing.T) {
 func TestUndoLeavesAClipThatLandedDuringTheEdit(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
-	landing := PlanClip{ID: "03", Slug: "drei", Words: [][3]any{},
+	landing := PlanClip{ID: "03", Slug: "drei",
 		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
 	change := edited(t, logs, func() error {
 		if err := SetRejected(path, "01", true); err != nil {
@@ -138,7 +138,7 @@ func TestUndoLeavesAClipThatLandedDuringTheEdit(t *testing.T) {
 func TestAClipLandingAloneIsNoEdit(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
-	landing := PlanClip{ID: "03", Slug: "drei", Words: [][3]any{},
+	landing := PlanClip{ID: "03", Slug: "drei",
 		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
 	change := edited(t, logs, func() error { return appendClip(path, landing) }).LeaveOutNewClips()
 	if change != nil {
@@ -171,8 +171,7 @@ func TestUndoRefusesWhatChangedSince(t *testing.T) {
 func TestARemovedSearchComesBack(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
-	captions := filepath.Join(filepath.Dir(logs), "captions")
-	change := edited(t, logs, func() error { return RemovePlan(path, captions) })
+	change := edited(t, logs, func() error { return RemovePlan(path) })
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("the plan is still there")
 	}
@@ -195,14 +194,13 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 	logs := filepath.Dir(path)
 	tr := editableTranscript()
 	change := edited(t, logs, func() error {
-		_, err := SetWordText(logs, 10.6, "zwo", tr)
-		return err
+		return SetWordText(logs, 10.6, "zwo", tr)
 	})
 	if LoadCorrections(logs)[wordKey(10.6)] != "zwo" {
 		t.Fatal("the word was not corrected")
 	}
 	// A word of another clip corrected since is not the undo's to take.
-	if _, err := SetWordText(logs, 20.1, "fünf!", tr); err != nil {
+	if err := SetWordText(logs, 20.1, "fünf!", tr); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := change.Undo(); err != nil {
@@ -215,9 +213,13 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 	if corrections[wordKey(20.1)] != "fünf!" {
 		t.Error("a correction made since was lost")
 	}
-	body, _ := os.ReadFile(path)
-	if strings.Contains(string(body), `"zwo"`) {
-		t.Errorf("the plan still says zwo:\n%s", body)
+	// The words made again from what is kept say zwei again.
+	again := editableTranscript()
+	again.Correct(corrections)
+	for _, w := range Said(clipsOf(t, path)["01"], again.Words) {
+		if w.Text == "zwo" {
+			t.Errorf("the clip still says zwo: %v", again.Words)
+		}
 	}
 }
 
@@ -226,7 +228,9 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
-	change := edited(t, logs, func() error { return SetCaptionTime(path, "01", 10.0, "start", 9.8) })
+	change := edited(t, logs, func() error {
+		return SetCaptionTime(path, "01", 10.0, "start", 9.8, editableTranscript())
+	})
 	moved := func() bool {
 		got := clipsOf(t, path)["01"].CaptionTimes[wordKey(10.0)].Start
 		return got != nil && near(*got, 9.8)

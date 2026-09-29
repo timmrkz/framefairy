@@ -133,7 +133,7 @@ func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 	}
 	c := clipByID(t, path, "01")
 	var said []string
-	for _, w := range c.Words {
+	for _, w := range Said(c, cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	got := strings.Join(said, " ")
@@ -146,7 +146,7 @@ func TestCuttingTakesTheWordsWithIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	said = nil
-	for _, w := range clipByID(t, path, "01").Words {
+	for _, w := range Said(clipByID(t, path, "01"), cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	if got := strings.Join(said, " "); got != "eins zwei" {
@@ -185,7 +185,7 @@ func TestACutOverSpeechTakesWholeWords(t *testing.T) {
 	}
 	c := clipByID(t, path, "01")
 	var said []string
-	for _, w := range c.Words {
+	for _, w := range Said(c, cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	if got := strings.Join(said, " "); got != "eins zwei" {
@@ -239,7 +239,7 @@ func TestACutToFramesMayStopInsideAWord(t *testing.T) {
 	// rule does not change because the cut was made to frames: drei is
 	// mostly still there, so it is still said.
 	var said []string
-	for _, w := range clipByID(t, path, "01").Words {
+	for _, w := range Said(clipByID(t, path, "01"), cutsTranscript().Words) {
 		said = append(said, w.Text)
 	}
 	if got := strings.Join(said, " "); got != "eins zwei drei vier" {
@@ -267,7 +267,7 @@ func TestAWordIsSaidWhileAnyOfItIsKept(t *testing.T) {
 				t.Fatal(err)
 			}
 			has := false
-			for _, w := range clipByID(t, path, "01").Words {
+			for _, w := range Said(clipByID(t, path, "01"), cutsTranscript().Words) {
 				if w.Text == "drei" {
 					has = true
 				}
@@ -321,17 +321,8 @@ func TestACutToFramesIsStillChecked(t *testing.T) {
 		name string
 		run  func(path string) error
 	}{
-		{"a cut that takes out nothing", func(p string) error {
-			return CutClip(p, "01", 12, 12.01, tr, 0.1, ToFrames)
-		}},
 		{"a cut that leaves the clip with nothing", func(p string) error {
 			return CutClip(p, "01", 9, 17, tr, 0.1, ToFrames)
-		}},
-		{"a cut that swallows the piece before it", func(p string) error {
-			return MoveCut(p, "02", 0, 19.5, 24.8, tr, 0.1, ToFrames)
-		}},
-		{"a cut that swallows the piece after it", func(p string) error {
-			return MoveCut(p, "02", 0, 20.65, 26.5, tr, 0.1, ToFrames)
 		}},
 	}
 	for _, c := range refused {
@@ -457,12 +448,6 @@ func TestARefusedCutLeavesThePlanAlone(t *testing.T) {
 		}},
 		{"a cut number the clip has not got", func(p string) error {
 			return MoveCut(p, "02", 4, 21.5, 23, tr, 0.1, ToWords)
-		}},
-		{"a cut that swallows the piece before it", func(p string) error {
-			return MoveCut(p, "02", 0, 19, 24.8, tr, 0.1, ToWords)
-		}},
-		{"a cut that swallows the piece after it", func(p string) error {
-			return MoveCut(p, "02", 0, 20.65, 27, tr, 0.1, ToWords)
 		}},
 	}
 	for _, c := range refused {
@@ -724,12 +709,10 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 // once, in the piece that holds the most of it. Two captions of one word
 // would show it twice.
 func TestAWordACutPartsIsCaptionedOnce(t *testing.T) {
-	clip := Clip{
-		Segments: []Segment{{Start: 10, End: 14.2}, {Start: 14.35, End: 16}},
-		Words:    []Cue{{13, 13.5, "zwei"}, {14, 14.5, "drei"}, {15, 15.5, "vier"}},
-	}
+	clip := Clip{Segments: []Segment{{Start: 10, End: 14.2}, {Start: 14.35, End: 16}}}
+	said := []Cue{{13, 13.5, "zwei"}, {14, 14.5, "drei"}, {15, 15.5, "vier"}}
 	var drei []Cue
-	for _, w := range ClipWords(clip) {
+	for _, w := range ClipWords(clip, said) {
 		if w.Text == "drei" {
 			drei = append(drei, w)
 		}
@@ -747,8 +730,8 @@ func TestTheHalvesOfAWordStayPutAsAnEdgeMoves(t *testing.T) {
 	word := Cue{Start: 10, End: 12, Text: "sweet-grundschulliebe."}
 	var at []float64
 	for _, edge := range []float64{9.5, 10.5, 11.2} {
-		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}, Words: []Cue{word}}
-		words := ClipWords(clip)
+		clip := Clip{Segments: []Segment{{Start: edge, End: 14}}}
+		words := ClipWords(clip, []Cue{word})
 		if len(words) != 1 {
 			t.Fatalf("edge %v gives %+v", edge, words)
 		}
@@ -759,5 +742,87 @@ func TestTheHalvesOfAWordStayPutAsAnEdgeMoves(t *testing.T) {
 		if !near(a, 10) {
 			t.Errorf("the word starts at %v in the episode as the edge moves, want 10: %v", a, at)
 		}
+	}
+}
+
+// A gesture is held inside what the clip can be, the way the hand is held
+// while it drags: a cut that would take out almost nothing is held open at
+// the least a cut may be, and a cut moved into the piece beside it stops
+// short of swallowing it. The timeline used to hold the hand itself, and
+// the engine refused what got past it. Now there is one rule, here, and
+// what is drawn is what is saved.
+func TestAGestureIsHeldInsideWhatTheClipCanBe(t *testing.T) {
+	tr := cutsTranscript()
+	path := cutsPlanPath(t)
+	if err := CutClip(path, "01", 12, 12.01, tr, 0.1, ToFrames); err != nil {
+		t.Fatal(err)
+	}
+	cuts := ClipCuts(clipByID(t, path, "01"))
+	if len(cuts) != 1 || cuts[0].To-cuts[0].From < MinCut-0.0005 {
+		t.Errorf("a cut of nothing is %+v, not held open at %v", cuts, MinCut)
+	}
+	for _, snap := range []Snap{ToFrames, ToWords} {
+		path := cutsPlanPath(t)
+		before := clipByID(t, path, "02").Segments
+		// Into the piece before, all the way past its start.
+		if err := MoveCut(path, "02", 0, 19, 24, tr, 0.1, snap); err != nil {
+			t.Fatal(err)
+		}
+		after := clipByID(t, path, "02").Segments
+		if len(after) != len(before) {
+			t.Fatalf("a piece was swallowed: %+v", after)
+		}
+		if after[0].End-after[0].Start < MinCut-0.0005 || after[1].End-after[1].Start < MinCut-0.0005 {
+			t.Errorf("a piece was squeezed to nothing: %+v", after)
+		}
+	}
+}
+
+// A cut put on frames, the way a shift double-click puts one, asked for a
+// width the zoom worked out. These were the interface's own rules, cutAt,
+// until the engine took them over.
+func TestACutOnFramesFitsThePieceItIsIn(t *testing.T) {
+	const frame = 1.0 / 25
+	two := Clip{Segments: []Segment{{Start: 10, End: 20}, {Start: 22, End: 30}}}
+	g := Gesture{Kind: "cut", Frame: frame}
+	at := func(clip Clip, at, wide float64) (float64, float64, bool) {
+		return g.cutOnFrames(clip, at-wide/2, at+wide/2)
+	}
+	onFrame := func(x float64) bool { return math.Abs(x/frame-math.Round(x/frame)) < 1e-6 }
+
+	// Centred where it was asked, a whole number of frames wide, rounded
+	// up: seven frames of 40 ms for a quarter second asked.
+	a, b, ok := at(two, 15, 0.25)
+	if !ok || math.Abs((a+b)/2-15) > 0.05 || math.Abs(b-a-0.28) > 1e-6 || !onFrame(a) || !onFrame(b) {
+		t.Errorf("a quarter second at 15 is %v to %v", a, b)
+	}
+	// Room on both sides of the piece, wherever it is clicked.
+	for _, where := range []float64{10.001, 10.1, 15, 19.9, 19.999} {
+		a, b, ok := at(two, where, 0.25)
+		if !ok || a < 10.05-1e-6 || b > 19.95+1e-6 || b-a < MinCut-1e-6 {
+			t.Errorf("at %v the cut is %v to %v", where, a, b)
+		}
+	}
+	// No room in a piece too short to spare any.
+	if _, _, ok := at(Clip{Segments: []Segment{{Start: 10, End: 10.1}}}, 10.05, 0.25); ok {
+		t.Error("a cut was made in a piece with no room")
+	}
+	// What room there is, in a short piece.
+	if a, b, ok := at(Clip{Segments: []Segment{{Start: 10, End: 10.4}}}, 10.2, 0.25); !ok ||
+		a < 10.05-1e-6 || b > 10.35+1e-6 || b-a < MinCut-1e-6 {
+		t.Errorf("a short piece gives %v to %v", a, b)
+	}
+	one := Clip{Segments: []Segment{{Start: 10, End: 30}}}
+	// Zoomed right out, forty pixels are a long time, and the cut is that long.
+	if a, b, ok := at(one, 20, 8); !ok || math.Abs(b-a-8) > 1e-6 {
+		t.Errorf("eight seconds asked gives %v to %v", a, b)
+	}
+	// Zoomed right in, held open at the least rather than refused.
+	if a, b, ok := at(one, 20, 0.001); !ok || b-a < MinCut-1e-6 {
+		t.Errorf("a hair asked gives %v to %v", a, b)
+	}
+	// Never more than the piece has room for.
+	if a, b, ok := at(one, 20, 999); !ok || a < 10.05-1e-6 || b > 29.95+1e-6 {
+		t.Errorf("more than the piece asked gives %v to %v", a, b)
 	}
 }
