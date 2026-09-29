@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,9 +27,12 @@ type Settings struct {
 	// for it, and 0 when it follows the window, see engine.SuggestedCount.
 	// It was count, a number every search took whatever its window: a
 	// file that still has it is read as following the window.
-	Target int     `json:"target"`
-	Min    float64 `json:"min"`
-	Max    float64 `json:"max"`
+	Target int `json:"target"`
+	// TargetWindow is how long the window was that Target was typed for,
+	// in seconds. Target is for that window and no other, see targetFor.
+	TargetWindow float64 `json:"targetWindow,omitempty"`
+	Min          float64 `json:"min"`
+	Max          float64 `json:"max"`
 	// The colour of the pill behind the word being spoken, in the framefairy
 	// the engine renders. It belongs to the short, not to the app.
 	HighlightColour string `json:"highlightColour"`
@@ -96,9 +100,6 @@ func (s Settings) options() engine.Options {
 	}
 	if s.APIModel != "" {
 		o.Model = s.APIModel
-	}
-	if s.Target > 0 {
-		o.Count = s.Target
 	}
 	if s.Min > 0 {
 		o.Min = s.Min
@@ -275,4 +276,16 @@ func (s *store) Known(path string) bool {
 		}
 	}
 	return false
+}
+
+// targetFor is the target typed for a window as long as this one, or 0,
+// which follows the window, see engine.SuggestedCount. A number typed for
+// one window is no number for another: three typed for the six minutes of
+// one episode went on asking for three in the half hour of the next, and
+// in the first search the app starts by itself when a video is added.
+func (s Settings) targetFor(window float64) int {
+	if s.Target > 0 && math.Abs(window-s.TargetWindow) < 0.5 {
+		return s.Target
+	}
+	return 0
 }

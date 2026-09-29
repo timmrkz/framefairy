@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"framefairy/engine"
 )
 
 // The episodes of these tests are five minutes long, which the stand-in
@@ -311,4 +313,30 @@ func TestPathNewOnALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 		}
 	}
 	t.Logf("heard %.0f s again, reports (covered, share): %v", again, reports)
+}
+
+// A video added gets as many clips as its first window suggests, not the
+// target typed for a window of another length. The same length keeps it.
+func TestPathATargetStaysWithItsWindow(t *testing.T) {
+	d := open(t)
+	if err := d.svc.SetSearch(3, 1800, 20, 30); err != nil {
+		t.Fatal(err)
+	}
+	asked := func(ep string) int {
+		d.idle(ep)
+		timings := engine.ReadTimings(ep)
+		if len(timings) != 1 {
+			t.Fatalf("%d searches of %s", len(timings), ep)
+		}
+		return timings[0].Count
+	}
+	if n, want := asked(d.add("other", minutes5)), engine.SuggestedCount(300, 20, 30); n != want || n == 3 {
+		t.Errorf("five minutes asked for %d, want the %d they suggest", n, want)
+	}
+	if err := d.svc.SetSearch(3, 300, 20, 30); err != nil {
+		t.Fatal(err)
+	}
+	if n := asked(d.add("same", minutes5)); n != 3 {
+		t.Errorf("five minutes asked for %d, with 3 typed for five minutes", n)
+	}
 }
