@@ -228,12 +228,19 @@ func breakWord(word string, r captionRoom, h *hyphenator) []string {
 		}
 		return string(runes[from:to]) + "-"
 	}
+	// A piece only gets wider as it gets longer, so the points after the
+	// first that does not fit do not fit either. Measuring every point of
+	// the word for every line made a long word cost the cube of its length.
 	last := func(from int, among []int) int {
 		cut := 0
 		for _, p := range among {
-			if p > from && r.fits(piece(from, p)) {
-				cut = p
+			if p <= from {
+				continue
 			}
+			if !r.fits(piece(from, p)) {
+				break
+			}
+			cut = p
 		}
 		return cut
 	}
@@ -274,6 +281,10 @@ func breakWord(word string, r captionRoom, h *hyphenator) []string {
 // where the patterns allow. Punctuation around the word stays with it.
 // With no patterns and nothing else to go by, anywhere will do, unless
 // only the joints are asked for, which are only ever where they are.
+// longestWord is more letters than any word the patterns are for, a
+// German compound among them, has.
+const longestWord = 64
+
 func breakPoints(runes []rune, h *hyphenator, joints bool) []int {
 	first, last := 0, len(runes)
 	for first < last && !unicode.IsLetter(runes[first]) {
@@ -300,8 +311,19 @@ func breakPoints(runes []rune, h *hyphenator, joints bool) []int {
 			if i < last && runes[i] != '-' {
 				continue
 			}
-			for _, p := range h.lang.Hyphenate(strings.ToLower(string(runes[start:i]))) {
-				allowed[start+p] = true
+			// A part longer than any word is no word, and the patterns
+			// look at every piece of what they are given, so their time
+			// grows with the square of its length: a caption of a few
+			// thousand letters took the better part of a minute. It may
+			// break anywhere instead.
+			if i-start > longestWord {
+				for k := start + 1; k < i; k++ {
+					allowed[k] = true
+				}
+			} else {
+				for _, p := range h.lang.Hyphenate(strings.ToLower(string(runes[start:i]))) {
+					allowed[start+p] = true
+				}
 			}
 			start = i + 1
 		}
