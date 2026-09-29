@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -222,15 +223,34 @@ func (p *Project) planWindow(ctx context.Context, req PlanRequest) (*Window, err
 		}
 		return nil, err
 	}
-	from, to := req.From, req.To
-	if to <= 0 || to > info.Duration {
-		to = info.Duration
-	}
-	if req.Pass > 1 || from > 0.0005 || to < info.Duration-0.0005 {
-		return &Window{from, to}, nil
-	}
-	return nil, nil
+	return searchWindow(req.From, req.To, req.Pass, info.Duration), nil
 }
+
+// searchWindow is the window a search of from to to asks for, in an
+// episode duration seconds long, or nil for the whole episode. A later
+// pass over the whole episode is a window from its start to its end, see
+// PassName. The search, its record and Run all name the plan from it.
+//
+// The edges are rounded to the millisecond, the way the window is handed
+// to Run, which names the plan from that. Named from an edge as asked, a
+// hair under a whole second, the plan a search answered with was a second
+// off the plan Run wrote.
+func searchWindow(from, to float64, pass int, duration float64) *Window {
+	if from <= 0 && to <= 0 && pass <= 1 {
+		return nil
+	}
+	from, to = toMillisecond(from), toMillisecond(to)
+	if to <= 0 || to > duration {
+		to = duration
+	}
+	if pass > 1 || from > 0.0005 || to < duration-0.0005 {
+		return &Window{from, to}
+	}
+	return nil
+}
+
+// toMillisecond rounds a time the way fixed(t, 3) writes it.
+func toMillisecond(t float64) float64 { return math.Round(t*1000) / 1000 }
 
 // nextPass is the first pass of a window that has no plan yet.
 func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {

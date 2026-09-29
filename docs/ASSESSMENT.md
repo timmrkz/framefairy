@@ -117,7 +117,12 @@ facade the app goes around, and three files too big to hold in one's head.
    and names the file from again (`run.go:218, 266`). A start of 29.9996
    gives the caller `clips-29-…` while `Run` writes `clips-30-…`. The
    interface usually snaps windows, so it is latent. Fix: pass the window as
-   a value. **Open.**
+   a value. **Fixed**
+   in #48, differently: the window is rounded to the millisecond before
+   anything names it, in one function, `searchWindow`, which the search,
+   its record and Run's input now share. A job record also named the
+   whole episode asked for by its end `clips-0-<end>.json` where the
+   search wrote `clips.json`.
 10. **Engine logic copied into the app has drifted.** Finding ffprobe beside
     a chosen ffmpeg is done twice in the app (`main.go:391, 647`), without
     the `ffprobe.exe` case the engine has (`engine/run.go:145-155`), so on

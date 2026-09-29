@@ -537,3 +537,20 @@ func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 		t.Errorf("left in the folder: %v", left)
 	}
 }
+
+// The plan a search says it wrote is the plan it wrote, whatever the
+// window's edges. Run is handed the window as text to the millisecond and
+// names the plan from that, so an edge a hair under a whole second was
+// named one second apart on either side, and the search answered with a
+// plan that was not there.
+func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
+	p, _ := searchProject(t, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{From: 9.9996, To: 39.9996, Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if !isFile(plan) {
+		made, _ := filepath.Glob(filepath.Join(p.LogsDir(), "clips-*.json"))
+		t.Fatalf("the search answered %s, and wrote %v", filepath.Base(plan), made)
+	}
+}
