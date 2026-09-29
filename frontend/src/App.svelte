@@ -38,6 +38,38 @@
   // keyboard going into it. The sidebar stays open while its list is.
   let sorting = $state(false);
   const open = $derived(shell.pinned || near || sorting);
+  let aside = $state<HTMLElement>();
+
+  // What the sidebar knew of the pointer is out of date once its list
+  // closes: while the list was open the pointer was on the list, not on
+  // the sidebar. Falling back on that closed the sidebar the moment Escape
+  // or a click shut the list. So it stays open and asks the next move of
+  // the pointer where it really is, and only a move outside closes it.
+  let asking = false;
+
+  function sortList(isOpen: boolean) {
+    sorting = isOpen;
+    if (!isOpen) {
+      near = true;
+      asking = true;
+    }
+  }
+
+  function pointerMoved(e: PointerEvent) {
+    if (!asking || sorting) return;
+    asking = false;
+    near = !!aside?.contains(e.target as Node);
+  }
+
+  // Escape closes one thing at a time, the way a menu on the Mac does: the
+  // list first, and the sidebar that hovering opened only on the next press.
+  // Read before the list hears it, so the press that closes the list is not
+  // also the press that closes the sidebar.
+  function escape(e: KeyboardEvent) {
+    if (e.key !== "Escape" || sorting || shell.pinned || !near || removing) return;
+    near = false;
+    asking = false;
+  }
 
   // The button does what it says at once: open, it closes the sidebar, even
   // with the pointer still on it. Hover opens it again once the pointer has
@@ -280,6 +312,8 @@
   });
 </script>
 
+<svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} />
+
 <div class="shell" style={shellStyle}>
   <!-- The bar across the top: the close, minimise and zoom buttons, and
        the name of what is on screen beside them. It is the whole width of
@@ -318,6 +352,7 @@
   {:else}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <aside
+    bind:this={aside}
     class:open
     onpointerenter={() => (near = true)}
     onpointerleave={() => (near = false)}
@@ -343,7 +378,7 @@
             title={shell.order === "name" ? "Sorted by name" : "Sorted by date added"}
             align="right"
             face="icon"
-            onopenchange={(o) => (sorting = o)}
+            onopenchange={sortList}
             onpick={(v) => shell.sortBy(v as EpisodeOrder)}
           />
         </span>

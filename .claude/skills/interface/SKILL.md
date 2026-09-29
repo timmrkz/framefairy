@@ -685,6 +685,16 @@ Check it with the container not pinned: open it by hovering, open the list,
 move onto a row one step at a time, and read the container's width at
 every step.
 
+**And after the list closes, it asks where the pointer is.** Held open by
+its list alone, the sidebar fell back on what it last knew of the pointer
+the moment the list closed, and that was a pointer that had left: Escape
+with the pointer off the sidebar, or a click on the sidebar itself, closed
+the list and the sidebar with it. What it knew went stale while the list
+was open. So it stays open and lets the next move of the pointer decide,
+and Escape closes one layer per press. Check every way a list closes, a
+pick, Escape and a click, with the pointer on the trigger, on the
+container and outside it.
+
 ## Before saying it is done
 
 - `make interface`, which is the type check and the interface's own tests.
