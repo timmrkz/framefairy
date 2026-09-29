@@ -101,7 +101,17 @@ shells=""
 for file in $changed; do
 	case $file in
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
-	frontend/*) interface=1 ;;
+	frontend/*)
+		interface=1
+		# A file of the interface a Go test reads, the way the bindings
+		# test reads api.ts, is that test's package too. It is found by
+		# the path the test reads it by, "../frontend/..." in quotes, so a
+		# file a test only names in a comment does not count. The same
+		# rule as scripts/ci-needs.sh.
+		for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git -- "../$file\"" . 2>/dev/null); do
+			gopkgs="$gopkgs $(package_of "${t#./}")"
+		done
+		;;
 	go.mod | go.sum) all_go=1 ;;
 	Makefile) build=1 ;;
 	scripts/ci-needs.sh | scripts/ci-needs-test.sh)
