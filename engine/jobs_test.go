@@ -489,3 +489,51 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 		t.Errorf("%d lanes still held after the panic", held)
 	}
 }
+
+// A render that fails leaves the short there was before it, and no half of
+// the new one. ffmpeg here writes a few bytes where it was told to and
+// fails, the way a render cut off halfway leaves a file behind.
+func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
+	p, _ := searchProject(t, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Base.Out = t.TempDir()
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	shorts, _ := filepath.Glob(filepath.Join(p.Base.Out, "*.mp4"))
+	if len(shorts) != 1 {
+		t.Fatalf("shorts %v", shorts)
+	}
+	before, err := os.ReadFile(shorts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Every other call goes to the real ffmpeg. The render is the one call
+	// that asks for +faststart.
+	broken := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\n" +
+		"for a in \"$@\"; do last=$a; done\n" +
+		"case \" $* \" in *\" +faststart \"*) printf half > \"$last\"; exit 1 ;; esac\n" +
+		"exec '" + p.Engine().FFmpeg + "' \"$@\"\n"
+	if err := os.WriteFile(broken, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p.Engine().FFmpeg = broken
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err == nil {
+		t.Fatal("the render did not fail")
+	}
+	after, err := os.ReadFile(shorts[0])
+	if err != nil {
+		t.Fatalf("the short before is gone: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("the short before was overwritten")
+	}
+	if left, _ := filepath.Glob(filepath.Join(p.Base.Out, "*")); len(left) != 1 {
+		t.Errorf("left in the folder: %v", left)
+	}
+}
