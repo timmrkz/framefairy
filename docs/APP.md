@@ -106,6 +106,18 @@ The sidebar lists your episodes and how far each one is. **Add episode**, at
 the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
+The episodes are listed in the order they were added, the newest at the
+foot, where one just added is brought into view. Once there are two, the
+sort mark at the right of the head of the sidebar, an arrow up beside an
+arrow down as Reminders, Notes and Files have it, opens a list of
+**Added**, with a clock, and **Name**, with A over Z. A tick marks the one
+that is on. The sidebar stays open while
+that list is, and after it closes until the pointer moves away. Escape
+closes one thing at a time: the list, then the sidebar hovering opened. By name, Folge 2 comes before Folge 10. The choice is kept by
+the app, like whether the sidebar stays open. A library from before this
+kept no order, so its episodes stay in the order they were in, sorted by
+where they are on disk, and the ones added from now on go at the foot.
+
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
