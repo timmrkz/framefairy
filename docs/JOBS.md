@@ -317,6 +317,13 @@ when it is written, because the mark is known by the clip it will be. The
 marks came only with the written clip, so the two tracks said where a
 clip lay long after its card did.
 
+A search says how many clips it was asked for, `count` on the job, and
+the rows it holds open and the target in the workspace follow that number
+while it runs, not the one the workspace would ask for now. The first
+search of an episode is asked for by the Go side, and the workspace worked
+out another number, so the list opened three rows for a search that looked
+for six.
+
 A card and its clip are one row of the list. The card says which clip it
 will be, `Clip` on `Underway`, the clip set's file name and the id the
 builder gave it when it queued it, and the list keeps the card's row for

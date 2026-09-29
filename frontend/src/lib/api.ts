@@ -352,6 +352,8 @@ export interface Job {
   // one event, so the two always add up.
   underway?: Underway[];
   written?: number;
+  // How many clips a search was asked for.
+  count?: number;
   // The answer is read to its end: every clip still to come is in
   // underway, so no row is held open for one the model did not name.
   whole?: boolean;

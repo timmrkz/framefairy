@@ -692,7 +692,10 @@
     shown.length +
       onTheWay.length +
       (busy
-        ? (working?.whole ? 0 : Math.max(0, count - searchTook)) + unread
+        ? // The rows the search itself was asked for, not what the
+          // workspace would ask for now: the first search of an episode
+          // is asked for by the Go side.
+          (working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)) + unread
         : shown.length === 0 && onTheWay.length === 0
           ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row
@@ -2175,7 +2178,7 @@
                   ? "The search on its way looks for this many. Change it for the next one"
                   : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
-                value={typed > 0 ? typed : ""}
+                value={comingNow && working?.count ? working.count : typed > 0 ? typed : ""}
                 onchange={keepTarget}
               /></span
             >

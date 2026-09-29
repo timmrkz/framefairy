@@ -34,7 +34,7 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
 	return s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
-		j.Record, j.From, j.To = engine.SearchID, req.From, req.To
+		j.Record, j.From, j.To, j.Count = engine.SearchID, req.From, req.To, req.Count
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.

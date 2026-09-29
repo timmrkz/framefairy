@@ -75,6 +75,11 @@ type Job struct {
 	// as Underway, so a clip is never counted both as written and as on
 	// the way, or as neither.
 	Written int `json:"written,omitempty"`
+	// Count is how many clips a search was asked for. The clip list holds
+	// that many rows open, whatever the workspace would ask for now: the
+	// first search of an episode is asked for by the Go side, and a number
+	// worked out again in the workspace told the list another.
+	Count int `json:"count,omitempty"`
 	// Whole is, for a search, that its answer is read to its end, so every
 	// clip still to come is in Underway.
 	Whole bool `json:"whole,omitempty"`
@@ -359,7 +364,7 @@ func (q *queue) restore(episodes []string) {
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
 				Label: jobLabel(rec.Kind, rec.Preview), State: state, Error: rec.Error, Queued: rec.Asked,
-				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To,
+				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Count: rec.Count,
 				At: rec.At, Backward: rec.Backward, Underway: rec.Underway(), Plan: rec.Plan,
 				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
