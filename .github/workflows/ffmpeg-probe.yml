@@ -70,7 +70,7 @@ jobs:
                 fi
               fi
             done
-            echo "$label: $hung of 20 did not finish cleanly"
+            echo "$label: $hung of 20 did not finish cleanly" | tee -a summary.txt
           }
           select="scale=256:-2,select='gt(scene,0.3)',showinfo"
           run hw-to  -hwaccel auto -ss 9.5 -to 30.5 -i ep.mp4 -vf "$select" -an -fps_mode passthrough -f null -
@@ -81,8 +81,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: The engine tests, each named as it starts
+      - name: The engine tests, three times over, the way CI runs them
         run: |
           export PATH="$PWD/.build/ffmpeg/bin:$PATH"
-          go test ./engine/ -count=1 -v -timeout 8m 2>&1 | tee engine.log | grep -E '^(=== RUN|--- FAIL|FAIL|ok|panic: test timed out)' | tail -60 || true
-          grep -A3 'panic: test timed out' engine.log || true
+          set +e
+          go test -race -ldflags=-extldflags=-mmacosx-version-min=13.0 ./engine/ -count=3 -timeout 25m >engine.log 2>&1
+          echo "engine tests: exit $?" | tee -a summary.txt
+          set -e
+          grep -E '^--- FAIL|^    [a-z_]+_test.go:[0-9]+:' engine.log | head -40 >>summary.txt || true
+          grep -A6 'panic: test timed out' engine.log >>summary.txt || true
+      - name: What was found
+        if: always()
+        run: |
+          echo "==== ffmpeg $(.build/ffmpeg/bin/ffmpeg -hide_banner -version | head -1)"
+          cat summary.txt 2>/dev/null || echo "no summary"
