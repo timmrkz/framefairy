@@ -230,10 +230,19 @@ export interface WindowView {
   clips?: number;
 }
 
+// The window as it was left on the range picker, see chosenWindow.
+export interface KeptWindow {
+  from: number;
+  to: number;
+  length: number;
+}
+
 // Where the model has already looked, and what is left to look at.
 export interface CoverageView {
   searched: WindowView[];
   free: WindowView[];
+  // The whole episode in parts, each with how many searches have read it.
+  passes: { from: number; to: number; times: number }[];
 }
 
 export interface SourceView {
@@ -499,6 +508,15 @@ export const api = {
   // opens on the same one. It is the clip's key, or an empty string.
   chosenClip: (path: string) => call<string>("ChosenClip", path),
   chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
+  // The window an episode's range picker was left with, so opening it
+  // again, after a restart too, opens on the same one. length is how long
+  // it was made, longer than it is when the end of the episode cut it.
+  chosenWindow: (path: string) => call<KeptWindow | null>("ChosenWindow", path),
+  // byHand makes it a step that undo takes back, as a drag or a
+  // double-click on the window's marks is. A window the app moved on by
+  // itself is not.
+  chooseWindow: (path: string, from: number, to: number, length: number, byHand: boolean) =>
+    call<void>("ChooseWindow", path, from, to, length, byHand),
   getSettings: () => call<Settings>("GetSettings"),
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
@@ -693,6 +711,8 @@ export interface Undone {
   done: boolean;
   // The key of the clip it changed, as the clip list has it.
   clip?: string;
+  // Where it put the window on the range picker, when it moved it.
+  window?: KeptWindow;
 }
 
 // Undo and Redo in the Edit menu. The menu has the keys, so this is how

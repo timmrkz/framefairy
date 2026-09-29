@@ -103,6 +103,11 @@ type PlanRequest struct {
 	Min, Max float64
 	// Replan asks the model again even if a plan for this window exists.
 	Replan bool
+	// Pass is which search of the window this is, each with a plan of its
+	// own, see PassName. 0 is the first for Plan, and for Search the next
+	// one the window has not had yet, which it then keeps in its record,
+	// so a search carried on writes to the plan it began.
+	Pass int
 }
 
 // Plan makes candidate clips and returns the plan file's path. A window
@@ -127,24 +132,19 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	if req.Max > 0 {
 		opts.Max = req.Max
 	}
-	name := PlanName(nil)
-	if req.From > 0 || req.To > 0 {
-		info, err := p.engine.Probe(ctx, p.Source)
-		if err != nil {
-			if ctx.Err() != nil {
-				return "", ErrCancelled
-			}
-			return "", err
-		}
-		from, to := req.From, req.To
-		if to <= 0 || to > info.Duration {
-			to = info.Duration
-		}
-		if from > 0.0005 || to < info.Duration-0.0005 {
-			opts.From, opts.To = fixed(from, 3), fixed(to, 3)
-			name = PlanName(&Window{from, to})
-		}
+	window, err := p.planWindow(ctx, req)
+	if err != nil {
+		return "", err
 	}
+	name := PassName(window, req.Pass)
+	if window != nil {
+		opts.From, opts.To = fixed(window.Start, 3), fixed(window.End, 3)
+	}
+	opts.Pass = max(req.Pass, 1)
+	// Every search is told what the searches before it proposed, so a
+	// window searched again brings other moments rather than the same
+	// ones, see Taken.
+	opts.Taken = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name))
 	if err := p.run(ctx, opts); err != nil {
 		return "", err
 	}
@@ -190,6 +190,81 @@ func PlanName(window *Window) string {
 		return "clips.json"
 	}
 	return fmt.Sprintf("clips-%d-%d.json", int(window.Start), int(window.End))
+}
+
+// PassName is the plan file of a search of a window after the first,
+// clips-<from>-<to>-<pass>.json. The first is PlanName's, so the plans
+// made before there were passes are the first pass of their windows. A
+// later pass is always of a window, the whole episode too, so its name
+// says which.
+func PassName(window *Window, pass int) string {
+	if pass <= 1 || window == nil {
+		return PlanName(window)
+	}
+	return fmt.Sprintf("clips-%d-%d-%d.json", int(window.Start), int(window.End), pass)
+}
+
+// planWindow is the window a request is for, or nil for the whole
+// episode. A later pass over the whole episode is a window from its start
+// to its end, see PassName.
+func (p *Project) planWindow(ctx context.Context, req PlanRequest) (*Window, error) {
+	if req.From <= 0 && req.To <= 0 && req.Pass <= 1 {
+		return nil, nil
+	}
+	info, err := p.engine.Probe(ctx, p.Source)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ErrCancelled
+		}
+		return nil, err
+	}
+	from, to := req.From, req.To
+	if to <= 0 || to > info.Duration {
+		to = info.Duration
+	}
+	if req.Pass > 1 || from > 0.0005 || to < info.Duration-0.0005 {
+		return &Window{from, to}, nil
+	}
+	return nil, nil
+}
+
+// nextPass is the first pass of a window that has no plan yet.
+func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {
+	opts := p.Base
+	for pass := 1; ; pass++ {
+		req.Pass = pass
+		window, err := p.planWindow(ctx, req)
+		if err != nil {
+			return 0, err
+		}
+		if !exists(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
+			return pass, nil
+		}
+	}
+}
+
+// proposed is every part of the episode a clip has been proposed for, by
+// a search or by hand, in every plan but the one about to be written. A
+// clip that was removed counts too: it was proposed, and turned down.
+func (p *Project) proposed(except string) []Window {
+	var out []Window
+	for _, plan := range p.Plans() {
+		if plan == except || !IsPlanFile(plan) {
+			continue
+		}
+		_, clips, err := LoadClips(plan)
+		if err != nil {
+			continue
+		}
+		for _, c := range clips {
+			for _, seg := range c.Segments {
+				if seg.End > seg.Start {
+					out = append(out, Window{seg.Start, seg.End})
+				}
+			}
+		}
+	}
+	return MergeWindows(out)
 }
 
 func (p *Project) planFiles() map[string]int64 {
