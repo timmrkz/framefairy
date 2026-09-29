@@ -61,7 +61,7 @@ check "the commit that is built" "$app" "$app" built
 check "the built commit, shortened" "$(echo "$app" | cut -c1-12)" "$app" built
 check "a push of the docs" "$app" "$docs" docs
 check "a README is docs too" "$app" "$readme" docs
-check "two pushes of docs" "$app" "$readme" docs
+check "two pushes of docs, one after the other" "$docs" "$readme" docs
 check "code after docs" "$app" "$code" build
 check "code, measured from what is built" "$docs" "$code" build
 check "nothing changed in the commit" "$code" "$empty" built
