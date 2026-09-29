@@ -47,6 +47,10 @@
     // for a list in a place with no room for words, the way a toolbar on the
     // Mac shows a sort menu as an icon. The rows still say their names.
     face = "text",
+    // The icon an icon face always wears, whatever is picked, for a list
+    // whose trigger says what it does rather than what it holds. Without
+    // it the face shows the icon of what is picked.
+    icon = undefined,
     // Told when the list opens and closes. The list lies over the app,
     // outside whatever the trigger stands in, so a sidebar that closes when
     // the pointer leaves it has to be told the pointer is still its own.
@@ -77,6 +81,7 @@
     disabled?: boolean;
     tone?: "warn" | "err";
     face?: "text" | "icon";
+    icon?: string;
     onopenchange?: (open: boolean) => void;
   } = $props();
 
@@ -145,7 +150,7 @@
         {id}
       >
         {#if face === "icon"}
-          <Icon name={picked?.icon ?? "pick"} />
+          <Icon name={icon ?? picked?.icon ?? "pick"} />
         {:else}
           <span class="said">
             <span class="room" aria-hidden="true">{longest}</span>

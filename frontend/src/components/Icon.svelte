@@ -97,6 +97,11 @@
   {:else if name === "update"}
     <circle cx="8" cy="8" r="6" />
     <path d="M8 5v5.8M5.5 8.4 8 10.9l2.5-2.5" />
+  <!-- Sort: an arrow up beside an arrow down, the mark Reminders, Notes
+       and Files put on a sort menu, whatever it sorts by. -->
+  {:else if name === "sort"}
+    <path d="M5 13V3M2.5 5.5 5 3l2.5 2.5" />
+    <path d="M11 3v10M8.5 10.5 11 13l2.5-2.5" />
   <!-- Sorted by when things were added: a clock, the mark Finder's
        Date Added column and Recents are known by. -->
   {:else if name === "sort-added"}

@@ -80,12 +80,14 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
-  // The list as the sidebar shows it. The words are the ones Finder uses
-  // in Sort By, so there is nothing new to read.
+  // The list as the sidebar shows it. The trigger is the sort mark Apple's
+  // own apps put on a sort menu, and says what it does rather than which
+  // order is on: a clock alone read as anything but sorting. The rows say
+  // which, with a tick on the one that is on.
   const listed = $derived(sortEpisodes(episodes, shell.order));
   let list = $state<HTMLUListElement>();
   const orders = [
-    { value: "added", label: "Date Added", icon: "sort-added" },
+    { value: "added", label: "Added", icon: "sort-added" },
     { value: "name", label: "Name", icon: "sort-name" },
   ];
   // What is on screen, said once, in the bar at the top. The
@@ -375,9 +377,10 @@
             value={shell.order}
             options={orders}
             label="Sort episodes by"
-            title={shell.order === "name" ? "Sorted by name" : "Sorted by date added"}
+            title={shell.order === "name" ? "Sort episodes, now by name" : "Sort episodes, now by when they were added"}
             align="right"
             face="icon"
+            icon="sort"
             onopenchange={sortList}
             onpick={(v) => shell.sortBy(v as EpisodeOrder)}
           />
