@@ -59,7 +59,9 @@ facade the app goes around, and three files too big to hold in one's head.
    (`render.go:204`), a broken file stays and counts as done. A failed
    re-render deletes the good short from before. Fix: write to
    `<name>.part.mp4`, check it, then rename it into place, the way
-   thumbnails already do (`render.go:251-268`). **Open.**
+   thumbnails already do (`render.go:251-268`). **Fixed** in #44:
+   `<name>.part.mp4` is checked and then renamed into place, and nothing
+   that counts shorts takes a `.part` file for one.
 
 ## Bugs
 
@@ -68,7 +70,7 @@ facade the app goes around, and three files too big to hold in one's head.
    not in a `defer`. A panic fails the job, but the lane stays taken, and
    every later search and clip made by hand waits for good. That breaks the
    rule that a job that goes wrong fails itself, not the app. Fix: release
-   in a `defer`, as the other steps do. **Open.**
+   in a `defer`, as the other steps do. **Fixed** in #44.
 4. **Edits do not check that a plan belongs to its episode.** `SetWord`,
    `SetCrop`, `ResetCrop`, `SetThumbnail`, `SetCaptionTime`, `RemoveClip`,
    `Shape`, `Reshape`, `Captions` and the caption setters
@@ -77,7 +79,9 @@ facade the app goes around, and three files too big to hold in one's head.
    is accepted: the undo history snapshots the wrong episode, the crop is
    clamped to the wrong video and the words come from the wrong transcript.
    `RemoveSearch` already checks it properly. Fix: one guard used by every
-   edit. **Open.**
+   edit. **Fixed** in #44: `PlanOf` checks the plan is in the episode's
+   own logs folder, and every edit, the captions and the render go
+   through it.
 5. **CI skips the Go tests for a change to the interface alone.**
    `scripts/ci-needs.sh:86` and `scripts/changed.sh:104` see no Go change,
    but `cmd/framefairy-app/bindings_test.go:115` reads
@@ -85,7 +89,8 @@ facade the app goes around, and three files too big to hold in one's head.
    `frontend/src/lib/suggest.cases.json`. A break between the two sides
    passes the pull request and fails on main. Fix: count the files the Go
    tests read as Go changes, in both scripts and in `ci-needs-test.sh`.
-   **Open.**
+   **Fixed** in #44: such a file is found by the path a test reads it by,
+   so a new one needs no new rule.
 6. **Starting the app can kill a llama-server the command line is using.**
    The CLI and the app share one note, `~/.framefairy/llama-server.json`, and
    `StopLeftoverServer` (`engine/leftover.go:88`) stops whatever matches its
