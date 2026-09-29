@@ -34,8 +34,10 @@ export interface Settings {
   planner: "local" | "api";
   apiModel: string;
   // How many clips a search looks for when a number was typed, 0 while it
-  // follows the window.
+  // follows the window, and how long the window was it was typed for. It
+  // is for a window that long and no other.
   target: number;
+  targetWindow?: number;
   min: number;
   max: number;
   // The colour of the pill behind the word being spoken, in the rendered
@@ -504,9 +506,10 @@ export const api = {
   // How many clips a search looks for and how long they may be. They are
   // set in the workspace, beside the episode they are about, and kept for
   // the next one.
-  // A target of 0 follows the window.
-  setSearch: (target: number, min: number, max: number) =>
-    call<void>("SetSearch", target, min, max),
+  // A target of 0 follows the window. window is how long the window is
+  // that the target was typed for.
+  setSearch: (target: number, window: number, min: number, max: number) =>
+    call<void>("SetSearch", target, window, min, max),
   checkSetup: () => call<Check[]>("CheckSetup"),
   // What a new copy of the app still needs, and the three ways to answer
   // it. Setup only reads, the other three change something.

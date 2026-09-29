@@ -1151,11 +1151,12 @@ func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 // clips wants them everywhere. A target of 0 follows the window. The
 // numbers are held to the same range the controls offer, because what
 // arrives here is not to be trusted.
-func (s *FrameFairy) SetSearch(target int, min, max float64) error {
+func (s *FrameFairy) SetSearch(target int, window, min, max float64) error {
 	return s.store.UpdateSettings(func(set *Settings) {
-		set.Target = 0
-		if target > 0 {
+		set.Target, set.TargetWindow = 0, 0
+		if target > 0 && window > 0 {
 			set.Target = int(hold(float64(target), 1, 30))
+			set.TargetWindow = hold(window, 1, engine.MaxEpisodeSeconds)
 		}
 		set.Min = hold(min, 5, 180)
 		set.Max = hold(max, 5, 180)
