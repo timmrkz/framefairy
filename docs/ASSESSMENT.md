@@ -162,13 +162,14 @@ facade the app goes around, and three files too big to hold in one's head.
     uses `http.DefaultClient` (`engine/speech.go:223`), so a stalled
     connection waits for Cancel. `api.go:297` reads a reply with
     `io.ReadAll` and no limit. Fix: a timeout for stalls, and
-    `io.LimitReader` of a few MB. **Fixed** in #49: a download that gets no
+    `io.LimitReader` of a few MB. **Fixed** in #51: a download that gets no
     byte for a minute ends, with what came kept to carry on from, and an
     answer read whole is read to 16 MB.
 17. **No fuzz target for the model's streamed answers.** `readClaudeStream`
     (`engine/stream.go:135`) and `readLocalStream` (`:417`) read what a model
     sends, on the default paths, and have unit tests only. `CLAUDE.md` asks
-    for fuzz targets on everything that reads a model answer. **Open.**
+    for fuzz targets on everything that reads a model answer. **Fixed** in #51:
+    `FuzzReadClaudeStream` and `FuzzReadLocalStream`.
 
 ## Design debt
 
