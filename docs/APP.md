@@ -1263,8 +1263,11 @@ places simply leaves it unused. The engine side is `SetCaptionTime` in
 **Everything done to an episode's clips can be taken back**, with **Undo**
 and **Redo** in the Edit menu, Cmd-Z and Cmd-Y, Ctrl-Z and Ctrl-Y on Windows and Linux. That is a trim, a
 cut made, moved or put back, the crop frame, the caption box moved, a word
-corrected, added or removed, the caption face, size and colours, a clip removed and
-a search removed. Each is one step. Taking one back chooses the clip it
+corrected, added or removed, the caption face, size and colours, a clip removed,
+a search removed, and the window on the range picker moved, made longer or
+shorter, or put back with a double-click. Each is one step. The window a
+search moves on by itself is no step, and undoing a step of the window
+puts it back where the hand had it whatever a search did with it since. Taking one back chooses the clip it
 changed, so nothing changes where nobody is looking. A new edit after an
 undo starts again from there, and what was undone is gone, as in every
 editor.

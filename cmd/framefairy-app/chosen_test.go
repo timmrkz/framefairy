@@ -106,7 +106,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	if err := s.ChooseClip(source, "clips/abc123"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ChooseWindow(source, 120, 180, 60); err != nil {
+	if err := s.ChooseWindow(source, 120, 180, 60, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ChosenWindow(source); got == nil || *got != (KeptWindow{From: 120, To: 180, Length: 60}) {
@@ -122,7 +122,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 		t.Errorf("choosing a clip lost the window: %+v", got)
 	}
 	// Cut short at the end of the episode, it is shorter than it was made.
-	if err := s.ChooseWindow(source, 300, 325, 60); err != nil {
+	if err := s.ChooseWindow(source, 300, 325, 60, false); err != nil {
 		t.Errorf("a window cut short: %v", err)
 	}
 	for _, bad := range [][3]float64{
@@ -133,7 +133,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 		{0, 60, 30},
 		{0, engine.MaxEpisodeSeconds + 1, engine.MaxEpisodeSeconds + 1},
 	} {
-		if err := s.ChooseWindow(source, bad[0], bad[1], bad[2]); err == nil {
+		if err := s.ChooseWindow(source, bad[0], bad[1], bad[2], false); err == nil {
 			t.Errorf("%v was kept", bad)
 		}
 	}
@@ -168,7 +168,7 @@ func TestAClipAndAWindowChosenAtOnce(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			if err := s.ChooseWindow(source, float64(i), float64(i+60), 60); err != nil {
+			if err := s.ChooseWindow(source, float64(i), float64(i+60), 60, i%2 == 0); err != nil {
 				t.Error(err)
 			}
 			_ = s.ChosenWindow(source)
@@ -189,4 +189,45 @@ func chosenApp(t *testing.T) (*FrameFairy, string) {
 	}
 	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
 	return &FrameFairy{store: st}, source
+}
+
+// A window moved by hand is a step: undo puts it back and redo moves it
+// again, whatever a search did with it in between. One the app moved by
+// itself is no step.
+func TestTheWindowMovedByHandIsUndone(t *testing.T) {
+	s, source := chosenApp(t)
+	if err := s.ChooseWindow(source, 0, 60, 60, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ChooseWindow(source, 120, 180, 60, true); err != nil {
+		t.Fatal(err)
+	}
+	// A search moves it on by itself.
+	if err := s.ChooseWindow(source, 180, 240, 60, false); err != nil {
+		t.Fatal(err)
+	}
+	done, err := s.Undo(source)
+	if err != nil || !done.Done || done.Window == nil || *done.Window != (KeptWindow{0, 60, 60}) {
+		t.Fatalf("undo gave %+v, %v", done, err)
+	}
+	if got := s.ChosenWindow(source); got == nil || got.From != 0 {
+		t.Errorf("after undo the window is kept at %+v", got)
+	}
+	done, err = s.Redo(source)
+	if err != nil || done.Window == nil || done.Window.From != 120 {
+		t.Fatalf("redo gave %+v, %v", done, err)
+	}
+	if done, _ := s.Redo(source); done.Done {
+		t.Error("a search moving the window on was a step")
+	}
+	// The same place again is no step.
+	if err := s.ChooseWindow(source, 120, 180, 60, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Undo(source); err != nil {
+		t.Fatal(err)
+	}
+	if done, _ := s.Undo(source); done.Done {
+		t.Error("a window put where it already was became a step")
+	}
 }

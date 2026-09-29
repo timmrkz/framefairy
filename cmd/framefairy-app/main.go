@@ -1398,8 +1398,10 @@ func (s *FrameFairy) ChosenClip(path string) string {
 
 // ChooseWindow remembers the window on an episode's range picker as it was
 // left, so the app opens on it again after a restart rather than on one of
-// its own choosing. length is how long the window was made.
-func (s *FrameFairy) ChooseWindow(path string, from, to, length float64) error {
+// its own choosing. length is how long the window was made. A window moved
+// by a hand, dragged or put back with a double-click, is a step that undo
+// takes back. One the app moved by itself, after a search, is not.
+func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand bool) error {
 	if !s.store.Known(path) {
 		return os.ErrNotExist
 	}
@@ -1407,7 +1409,21 @@ func (s *FrameFairy) ChooseWindow(path string, from, to, length float64) error {
 	if !w.ok() {
 		return errors.New("that is not a window")
 	}
-	return changeChosen(path, func(c *chosen) { c.Window = &w })
+	h := s.historyOf(path)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	was := readChosen(path).Window
+	if err := changeChosen(path, func(c *chosen) { c.Window = &w }); err != nil {
+		return err
+	}
+	if byHand && (was == nil || *was != w) {
+		h.undo = append(h.undo, step{window: &[2]*KeptWindow{was, &w}})
+		if len(h.undo) > historyDepth {
+			h.undo = h.undo[len(h.undo)-historyDepth:]
+		}
+		h.redo = nil
+	}
+	return nil
 }
 
 // ChosenWindow gives back the window an episode was left with, or nil where

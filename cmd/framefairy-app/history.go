@@ -14,11 +14,13 @@ import (
 //
 // Everything a person does to an episode's clips can be taken back: a trim,
 // a cut, the crop frame, the caption box, a word, the caption face and size,
-// a clip removed, a search removed. Each is one step, and the steps of an
+// a clip removed, a search removed, and the window on the range picker
+// moved or made longer or shorter. Each is one step, and the steps of an
 // episode are kept while the app is open. Jobs are not in it, because they
-// make things rather than change them, and neither is moving about the
-// episode or anything in the settings but the caption height, which is
-// moved in the workspace like everything else here.
+// make things rather than change them, and neither is the window a search
+// moves on by itself, nor moving about the episode or anything in the
+// settings but the caption height, which is moved in the workspace like
+// everything else here.
 //
 // Nothing is kept when the app closes. Everything is saved the moment it is
 // done, so there is nothing to lose by closing, and a history that outlived
@@ -34,6 +36,10 @@ type step struct {
 	// captionY is the caption height before and after, when the step
 	// moved it. It is an app setting rather than a file of the episode.
 	captionY *[2]float64
+	// window is the window on the range picker before and after, when a
+	// hand moved it, see ChooseWindow. Before is nil for an episode that
+	// had none kept.
+	window *[2]*KeptWindow
 }
 
 // history is the undo and redo of one episode.
@@ -100,6 +106,8 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 type Undone struct {
 	Done bool   `json:"done"`
 	Clip string `json:"clip,omitempty"`
+	// Window is where the step put the window, when it moved it.
+	Window *KeptWindow `json:"window,omitempty"`
 }
 
 // Undo takes back the last thing done to an episode's clips.
@@ -170,9 +178,25 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 			return Undone{}, err
 		}
 	}
+	// The window goes back where the hand had it, whatever a search did
+	// with it since: a search moving it on is not a step of its own, so
+	// it is no reason to give up the history before it.
+	var window *KeptWindow
+	if st.window != nil {
+		window = st.window[0]
+		if !back {
+			window = st.window[1]
+		}
+		if window != nil {
+			w := *window
+			if err := changeChosen(path, func(c *chosen) { c.Window = &w }); err != nil {
+				return Undone{}, err
+			}
+		}
+	}
 	*from = (*from)[:len(*from)-1]
 	*to = append(*to, st)
-	done := Undone{Done: true}
+	done := Undone{Done: true, Window: window}
 	if shown.ID != "" {
 		done.Clip = filepath.Base(shown.Plan) + "/" + shown.ID
 	}

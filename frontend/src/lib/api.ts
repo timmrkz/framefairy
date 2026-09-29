@@ -512,8 +512,11 @@ export const api = {
   // again, after a restart too, opens on the same one. length is how long
   // it was made, longer than it is when the end of the episode cut it.
   chosenWindow: (path: string) => call<KeptWindow | null>("ChosenWindow", path),
-  chooseWindow: (path: string, from: number, to: number, length: number) =>
-    call<void>("ChooseWindow", path, from, to, length),
+  // byHand makes it a step that undo takes back, as a drag or a
+  // double-click on the window's marks is. A window the app moved on by
+  // itself is not.
+  chooseWindow: (path: string, from: number, to: number, length: number, byHand: boolean) =>
+    call<void>("ChooseWindow", path, from, to, length, byHand),
   getSettings: () => call<Settings>("GetSettings"),
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
@@ -708,6 +711,8 @@ export interface Undone {
   done: boolean;
   // The key of the clip it changed, as the clip list has it.
   clip?: string;
+  // Where it put the window on the range picker, when it moved it.
+  window?: KeptWindow;
 }
 
 // Undo and Redo in the Edit menu. The menu has the keys, so this is how

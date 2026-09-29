@@ -118,6 +118,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 2.92 | The window is kept with its episode, beside the clip last worked on, and the workspace opens on it after a restart. It was kept only while the app ran, and before that not at all. Found by Tim | `[x]` |
 | 2.93 | Every window the app places lands on the range picker's step, start and length, like one dragged there, so it lies on the ruler's lines. The app's own 30:02 of four hours drifted a pixel off them with every search. Found by Tim | `[x]` |
 | 2.94 | The window's limits are back on the range picker: a triangle stops where the window would hold too few clips or more than the model reads, and the marks flash red twice as it runs in. Lost when the window was rebuilt. Found by Tim | `[x]` |
+| 2.95 | Moving the window, making it longer or shorter and putting it back are steps of undo and redo, and a search moving it on is not. Found by Tim | `[x]` |
 | 2.61 | Text and Box in the captions column are switches like Highlight: a short can be rendered without the box, or without captions at all | `[x]` |
 | 2.60 | Jobs as one thing each, see [JOBS.md](JOBS.md): the design `[x]`, the path tests `[x]`, the records and `Project.Search` in the engine `[x]`, the app running jobs in three lanes `[x]`, the interface switched over `[x]`, the old parts gone `[x]` | `[~]` |
 | 2.59 | A search that stopped before it found anything says so where its clips would have been, with its reason, after a restart too, and points to **New**. Nothing starts by itself | `[x]` |

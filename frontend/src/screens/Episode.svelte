@@ -716,9 +716,9 @@
   // The workspace opens on it, and a double-click on the window's marks
   // puts it back there. After a search the window walks on instead, see
   // followingWindow.
-  function moveWindowOn() {
+  function moveWindowOn(byHand = false) {
     const next = nextWindow(coverage.passes, duration, windowSize, min);
-    placeWindow(next, windowSize);
+    placeWindow(next, windowSize, byHand);
   }
 
   // A window the app places lands on the range picker's step, the one a
@@ -727,14 +727,14 @@
   // of steps. The episode's own windows are an even share of it, 30:02 of
   // four hours, and a window that length drifted a few seconds off the
   // lines with every search, which shows as a pixel. See onGrid.
-  function placeWindow(w: { from: number; to: number }, size: number) {
+  function placeWindow(w: { from: number; to: number }, size: number, byHand = false) {
     unplaced = grid <= 0;
     const placed = onGrid(w, w.to - w.from, duration, grid, min);
     from = placed.from;
     to = placed.to;
     length = grid > 0 ? Math.max(Math.round(size / grid) * grid, grid) : size;
     keepWindow();
-    rememberWindow();
+    rememberWindow(byHand);
   }
 
   // The step of the range picker, see gridStep, 0 until it is measured.
@@ -766,7 +766,7 @@
     if (done) {
       keepWindow();
       length = to - from;
-      rememberWindow();
+      rememberWindow(true);
     }
   }
 
@@ -815,9 +815,9 @@
   // The window is kept the moment it changes, by a hand, by a search that
   // moved it on, or by a double-click that put it back, so it is where it
   // was left when the episode is opened again.
-  function rememberWindow() {
+  function rememberWindow(byHand = false) {
     if (duration <= 0 || to <= from) return;
-    api.chooseWindow(path, from, to, Math.max(length, to - from)).catch(() => {});
+    api.chooseWindow(path, from, to, Math.max(length, to - from), byHand).catch(() => {});
   }
 
   // The clip the workspace opens on: the one this episode was last worked
@@ -1703,6 +1703,13 @@
       const done = what === "undo" ? await api.undo(path) : await api.redo(path);
       if (!done?.done) return;
       problem = "";
+      // A step that moved the window puts it where it was. It is kept on
+      // the Go side already.
+      if (done.window && !busy) {
+        from = done.window.from;
+        to = Math.min(done.window.to, duration);
+        length = Math.max(done.window.length, to - from);
+      }
       await load();
       // The caption height is kept in the settings, so an undo of a drag
       // is read back from there.
@@ -2053,7 +2060,7 @@
     transcribing={isTranscribing}
     holding={stoppedAt !== null}
     onmove={moveWindow}
-    onreset={moveWindowOn}
+    onreset={() => moveWindowOn(true)}
     bind:grid
     least={leastLong}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}

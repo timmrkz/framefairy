@@ -1167,13 +1167,22 @@ export const Call = {
         } catch {
           return Promise.resolve(null);
         }
-      case "ChooseWindow":
+      case "ChooseWindow": {
+        const now = { from: args[1], to: args[2], length: args[3] };
+        let was = null;
         try {
-          sessionStorage.setItem("__window", JSON.stringify({ from: args[1], to: args[2], length: args[3] }));
+          was = JSON.parse(sessionStorage.getItem("__window") ?? "null");
+          sessionStorage.setItem("__window", JSON.stringify(now));
         } catch {
           /* nothing to keep it in */
         }
+        // A window moved by hand is a step, the way the Go side keeps it.
+        if (args[4] && JSON.stringify(was) !== JSON.stringify(now)) {
+          ((window as any).__windowSteps ??= []).push([was, now]);
+          (window as any).__windowRedo = [];
+        }
         return Promise.resolve();
+      }
       case "GetSettings":
         return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
@@ -1263,6 +1272,23 @@ export const Call = {
       case "Undo":
       case "Redo": {
         ((window as any).__undone ??= []).push(method);
+        // The window's steps first, the way they come last on the Go side
+        // when a probe has just moved it.
+        const back = method === "Undo";
+        const steps = ((window as any).__windowSteps ??= []);
+        const redo = ((window as any).__windowRedo ??= []);
+        const from = back ? steps : redo;
+        const step = from.pop();
+        if (step) {
+          (back ? redo : steps).push(step);
+          const put = back ? step[0] : step[1];
+          try {
+            sessionStorage.setItem("__window", JSON.stringify(put));
+          } catch {
+            /* nothing to keep it in */
+          }
+          return Promise.resolve({ done: true, window: put ?? undefined });
+        }
         return Promise.resolve({ done: true, clip: "clips.json/03" });
       }
       case "Jobs": {
