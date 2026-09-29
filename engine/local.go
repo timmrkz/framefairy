@@ -323,30 +323,49 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		// How far the loading is, is the search's to say: it knows how long
 		// it took before.
-		response, err := localClient.Get(url + "/health")
-		if err == nil {
-			response.Body.Close()
-			if response.StatusCode == http.StatusOK {
-				took := time.Since(started).Seconds()
-				if logFile != nil {
-					if before, ok := setupTime(logFile.Name()); ok {
-						// What loading costs is worth knowing in two parts:
-						// llama-server setting itself and the graphics up,
-						// and reading the model into memory.
-						e.Log.Info("model loaded in %ss, %ss of it before llama-server began reading the model",
-							fixed(took, 1), fixed(before, 1))
-						return url, stop, nil
-					}
+		if healthy(ctx, url) {
+			took := time.Since(started).Seconds()
+			if logFile != nil {
+				if before, ok := setupTime(logFile.Name()); ok {
+					// What loading costs is worth knowing in two parts:
+					// llama-server setting itself and the graphics up,
+					// and reading the model into memory.
+					e.Log.Info("model loaded in %ss, %ss of it before llama-server began reading the model",
+						fixed(took, 1), fixed(before, 1))
+					return url, stop, nil
 				}
-				e.Log.Info("model loaded in %ss", fixed(took, 1))
-				return url, stop, nil
 			}
+			e.Log.Info("model loaded in %ss", fixed(took, 1))
+			return url, stop, nil
 		}
 		if time.Since(started) > 10*time.Minute {
 			stop()
 			return "", nil, renderErr("the language model did not finish loading within 10 minutes")
 		}
 	}
+}
+
+// healthWait is how long one look at a loading server may take. A server
+// that took the connection and never answers would otherwise hold the
+// load past Cancel and past quitting, since the client has no timeout of
+// its own: an answer from the model takes minutes.
+var healthWait = 2 * time.Second
+
+// healthy says whether the server at url says it is ready, asking for no
+// longer than healthWait and no longer than ctx lasts.
+func healthy(ctx context.Context, url string) bool {
+	ctx, cancel := context.WithTimeout(ctx, healthWait)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/health", nil)
+	if err != nil {
+		return false
+	}
+	response, err := localClient.Do(request)
+	if err != nil {
+		return false
+	}
+	response.Body.Close()
+	return response.StatusCode == http.StatusOK
 }
 
 // setupTime reads from llama-server's log how long it took before it began

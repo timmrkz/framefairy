@@ -103,7 +103,7 @@ facade the app goes around, and three files too big to hold in one's head.
    `/health` with a client that has no timeout and no context. A server that
    accepts and never answers holds the load, and at quit it is left running
    until the next start. Fix: a request with the context and about 2 s per
-   try. **Open.**
+   try. **Fixed** in #48.
 8. **The retry for a model that spent its budget thinking depends on the
    wording of an error.** `engine/api.go:705` looks for
    `"blocks: ['thinking']"` in `err.Error()`. Changed wording, or a reply
