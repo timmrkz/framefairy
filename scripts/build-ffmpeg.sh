@@ -49,8 +49,8 @@ SYSTEM=$(uname -s 2>/dev/null)
 # its archive to, and answers nothing from some networks. Raising a
 # version means raising its pin beside it: sha256sum of the archive, or
 # git ls-remote of the tag, the line ending ^{}.
-FFMPEG_VERSION=7.1.5
-FFMPEG_COMMIT=3a0867c2bfda4a4d4309ca1a8cbdc6175e67f587
+FFMPEG_VERSION=7.1.1
+FFMPEG_COMMIT=db69d06eeeab4f46da15030a80d539efb4503ca8
 FREETYPE_VERSION=2.13.3
 FREETYPE_SHA256=0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289
 FRIBIDI_VERSION=1.0.16

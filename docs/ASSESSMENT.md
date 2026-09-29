@@ -146,8 +146,13 @@ facade the app goes around, and three files too big to hold in one's head.
     its archive to.
 12. **ffmpeg 7.1.1 is four point releases behind.** 7.1.5 is out on the same
     branch, with security fixes in code that reads the user's video.
-    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Fixed** in #51: ffmpeg 7.1.5.
-    harfbuzz 10.1.0 and libass 0.17.3 stay for now.
+    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Open.** Tried in #51: the
+    first macOS test run with 7.1.5 hung for six minutes in an ffmpeg
+    that finds camera switches, with the system's decoder
+    (`-hwaccel auto`, VideoToolbox), where 7.1.1 passed every run. Only a
+    Mac can say why, so the update goes on its own, and 7.1.1 stays,
+    now pinned by its commit. harfbuzz 10.1.0 and libass 0.17.3 stay
+    too.
 13. **Workflows are not hardened.** `ci.yml` and `speechbench.yml` have no
     `permissions:` block, every action is pinned by tag rather than by
     commit, and `tools.yml` puts `inputs.tag` straight into a shell line.
