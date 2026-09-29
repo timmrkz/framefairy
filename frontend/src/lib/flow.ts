@@ -145,17 +145,17 @@ export function nextWindow(passes: Passes, duration: number, size: number, least
 }
 
 // Where the window goes after a search: on from where the search ended,
-// as long as the window the person left it, so a window made a minute long
+// as long as the person left the window, so a window made a minute long
 // stays a minute long and the episode is walked in the steps they chose.
-// At the end of the episode it starts over at the start, and a scrap at
-// the end shorter than least, too short for a clip, is passed over the
-// same way. The last window may be shorter than the others, never longer
-// than the episode.
-export function followingWindow(searched: Span, duration: number, least = 0): Span {
-  const size = Math.max(searched.to - searched.from, 0);
-  let from = searched.to;
+// The last one is cut at the end of the episode, and is only cut: the
+// window after it is as long as the person made it again, so length is
+// what they set and not the window just searched. At the end of the
+// episode it starts over at the start, and a scrap at the end shorter than
+// least, too short for a clip, is passed over the same way.
+export function followingWindow(ended: number, length: number, duration: number, least = 0): Span {
+  let from = ended;
   if (duration - from < Math.max(least, 0.5)) from = 0;
-  return { from, to: Math.min(from + size, duration) };
+  return { from, to: Math.min(from + Math.max(length, 0), duration) };
 }
 
 // How many searches have read any of from..to, the most of them.

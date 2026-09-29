@@ -709,8 +709,14 @@
     const next = nextWindow(coverage.passes, duration, windowSize, min);
     from = next.from;
     to = next.to;
+    length = windowSize;
     keepWindow();
   }
+
+  // How long the window was made, by the app or by a hand on its marks.
+  // A window cut short at the end of the episode is still this long when
+  // it starts over, see followingWindow.
+  let length = $state(0);
 
   // The window dragged by its outline on the range picker, moved whole or
   // by one edge. An edge stops where the window would hold too few clips
@@ -728,7 +734,10 @@
     }
     from = start;
     to = end;
-    if (done) keepWindow();
+    if (done) {
+      keepWindow();
+      length = to - from;
+    }
   }
 
   // The window put back inside what a search can do with it, whenever
@@ -1802,7 +1811,7 @@
       // followingWindow. The search's own window, which the Go side may
       // have started by itself, not whatever the workspace held.
       const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
-      const next = followingWindow({ from: ended.from ?? from, to: searchedTo }, duration, min);
+      const next = followingWindow(searchedTo, length || searchedTo - (ended.from ?? 0), duration, min);
       from = next.from;
       to = next.to;
       keepWindow();

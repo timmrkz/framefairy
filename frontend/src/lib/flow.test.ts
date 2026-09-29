@@ -638,24 +638,25 @@ describe("waitShare", () => {
 
 describe("after a search the window walks on as long as it was left", () => {
   const six = 6 * 60;
+  const short = 5 * 60 + 25;
 
-  test("a minute at three goes on to a minute at four", () => {
-    expect(followingWindow({ from: 180, to: 240 }, six, 20)).toEqual({ from: 240, to: 300 });
+  test("a minute at four goes on to a minute at five", () => {
+    expect(followingWindow(240, 60, six, 20)).toEqual({ from: 240, to: 300 });
   });
 
   test("the last one is cut at the end of the episode", () => {
-    expect(followingWindow({ from: 240, to: 330 }, six, 20)).toEqual({ from: 330, to: 360 });
+    expect(followingWindow(300, 60, short, 20)).toEqual({ from: 300, to: short });
   });
 
-  test("at the end it starts over at the start, the same length", () => {
-    expect(followingWindow({ from: 300, to: 360 }, six, 20)).toEqual({ from: 0, to: 60 });
+  test("and the one after it is as long as it was set again, from the start", () => {
+    expect(followingWindow(short, 60, short, 20)).toEqual({ from: 0, to: 60 });
   });
 
   test("a scrap too short for a clip is passed over", () => {
-    expect(followingWindow({ from: 250, to: 350 }, six, 20)).toEqual({ from: 0, to: 100 });
+    expect(followingWindow(310, 60, short, 20)).toEqual({ from: 0, to: 60 });
   });
 
   test("a short episode searched whole is searched whole again", () => {
-    expect(followingWindow({ from: 0, to: six }, six, 20)).toEqual({ from: 0, to: six });
+    expect(followingWindow(six, six, six, 20)).toEqual({ from: 0, to: six });
   });
 });

@@ -780,7 +780,9 @@ place.
       finds join the ones already there. After a search the window walks
       on from where the search ended, as long as it was left, so a window
       made a minute long stays a minute long, and at the end of the
-      episode it starts over at the start. The last window may be shorter.
+      episode it starts over at the start. The last window may be cut
+      short by the end of the episode, and the one after it, at the
+      start, is as long as the window was made again.
       The workspace opens on the window where the fewest searches have
       been, earliest first, as long as the episode's windows are, and a
       double-click on the window's marks puts it back there. A short
