@@ -54,8 +54,10 @@ func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 		t.Errorf("episodes %v, want them sorted and without the repeat", episodes)
 	}
 	// What the settings become for the engine.
+	// A target typed is the search's to take, for its window, see
+	// TestATargetIsForItsWindow. The engine's count follows the window.
 	o := again.Settings().options()
-	if o.Count != 7 || o.HighlightColour != "#123456" || o.Min != engine.DefaultOptions().Min {
+	if o.Count != 0 || o.HighlightColour != "#123456" || o.Min != engine.DefaultOptions().Min {
 		t.Errorf("options %+v", o)
 	}
 
@@ -246,9 +248,9 @@ func TestTwoSettingsChangedAtOnceBothStay(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := range 30 {
-				_ = s.SetSearch(i%20+1, 20, 30)
+				_ = s.SetSearch(i%20+1, 1800, 20, 30)
 			}
-			_ = s.SetSearch(7, 20, 30)
+			_ = s.SetSearch(7, 1800, 20, 30)
 		}()
 		go func() {
 			defer wg.Done()
@@ -280,5 +282,40 @@ func TestAnOldCountFollowsTheWindow(t *testing.T) {
 	st := openStore()
 	if set := st.Settings(); set.Target != 0 || set.options().Count != 0 {
 		t.Errorf("an old count became a target: %+v", set)
+	}
+}
+
+// A target typed is for the window it was typed for. Another window, of
+// another episode or drawn anew, follows its own suggestion, and the
+// window it was typed for keeps it. Three typed for the six minutes of one
+// episode went on asking for three in the half hour of the next.
+func TestATargetIsForItsWindow(t *testing.T) {
+	configHome(t)
+	s := &FrameFairy{store: openStore()}
+	if err := s.SetSearch(3, 360, 20, 30); err != nil {
+		t.Fatal(err)
+	}
+	set := s.store.Settings()
+	if set.targetFor(360) != 3 || set.targetFor(360.2) != 3 {
+		t.Errorf("the window it was typed for asks for %d", set.targetFor(360))
+	}
+	if n := set.targetFor(1800); n != 0 {
+		t.Errorf("a half hour window asks for the %d typed for six minutes", n)
+	}
+	// Cleared, every window follows its own.
+	if err := s.SetSearch(0, 360, 20, 30); err != nil {
+		t.Fatal(err)
+	}
+	if n := s.store.Settings().targetFor(360); n != 0 {
+		t.Errorf("a cleared target still asks for %d", n)
+	}
+	// A target from before windows were kept with it is for none.
+	old := s.store.Settings()
+	old.Target, old.TargetWindow = 5, 0
+	if err := s.store.SetSettings(old); err != nil {
+		t.Fatal(err)
+	}
+	if n := s.store.Settings().targetFor(1800); n != 0 {
+		t.Errorf("a target kept without its window asks for %d", n)
 	}
 }

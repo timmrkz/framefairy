@@ -83,7 +83,14 @@ func (s *FrameFairy) Continue(id string) Job {
 		}
 		if req.Count == 0 {
 			set := s.store.Settings()
-			req.Count, req.Min, req.Max = set.Target, set.Min, set.Max
+			req.Min, req.Max = set.Min, set.Max
+			window := req.To - req.From
+			if req.To <= 0 {
+				if info, err := s.probe(context.Background(), path); err == nil {
+					window = info.Duration - req.From
+				}
+			}
+			req.Count = set.targetFor(window)
 		}
 		return s.Search(path, req)
 	}
@@ -191,13 +198,15 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	set := s.store.Settings()
 	opts := set.options()
 	room := engine.SearchRoom(opts, filepath.Join(engine.WorkDir(path), "logs"))
-	req := engine.PlanRequest{Count: opts.Count, Min: opts.Min, Max: opts.Max}
+	req := engine.PlanRequest{Min: opts.Min, Max: opts.Max}
 	req.To = firstWindowEnd(info.Duration, room, req)
+	end := req.To
+	if end <= 0 {
+		end = info.Duration
+	}
+	// A target typed for a window this long, or what this window suggests.
+	req.Count = set.targetFor(end)
 	if req.Count == 0 {
-		end := req.To
-		if end <= 0 {
-			end = info.Duration
-		}
 		req.Count = engine.SuggestedCount(end, req.Min, req.Max)
 	}
 	s.Search(path, req)

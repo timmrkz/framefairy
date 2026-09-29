@@ -75,8 +75,11 @@
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
-  // The target typed in the workspace, or 0 while it follows the window.
+  // The target typed in the workspace, or 0 while it follows the window,
+  // and how long the window was it was typed for. It is the target of a
+  // window that long and of no other, see typed.
   let target = $state(0);
+  let targetWindow = $state(0);
   let min = $state(20);
   let max = $state(30);
   let problem = $state("");
@@ -132,7 +135,12 @@
   const reachAnywhere = $derived(reach.anywhere());
   // The window has room for the clips typed for it. A suggestion follows
   // the window instead, so it only needs room for one.
-  const leastLong = $derived(leastWindow(target > 0 ? target : 1, min, duration));
+  // The target typed for this window, or 0 when it follows the window.
+  // Three typed for the six minutes of one episode went on asking for
+  // three in the half hour of the next, so a number typed is for the
+  // window it was typed for: another length follows its own suggestion.
+  const typed = $derived(target > 0 && Math.abs(to - from - targetWindow) < 0.5 ? target : 0);
+  const leastLong = $derived(leastWindow(typed > 0 ? typed : 1, min, duration));
   const clipsAtMost = $derived(mostClips(reachAnywhere, min, 30));
   // How long the windows of this episode are when the app chooses them, and
   // how many clips the window drawn now suggests. The engine works out the
@@ -140,7 +148,7 @@
   // typed, or the suggestion while nothing is typed.
   const windowSize = $derived(suggestedWindow(duration));
   const suggested = $derived(Math.min(suggestedCount(to - from, min, max), clipsAtMost));
-  const count = $derived(target > 0 ? target : suggested);
+  const count = $derived(typed > 0 ? typed : suggested);
   const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
   // The episode's search, as the Go side keeps it: one job from New to its
   // clips, which hears the episode as far as the window reaches and then
@@ -1585,7 +1593,7 @@
   // are kept the moment they change, like everything else in the
   // workspace, and the next episode opens with them.
   function saveSearch() {
-    api.setSearch(target, min, max).catch((err) => (problem = errorText(err)));
+    api.setSearch(target, targetWindow, min, max).catch((err) => (problem = errorText(err)));
     keepWindow();
   }
 
@@ -1593,8 +1601,9 @@
   // most it can, the way a field's own arrows stop there. An empty field
   // follows the window again.
   function keepTarget(e: Event) {
-    const typed = (e.currentTarget as HTMLInputElement).value.trim();
-    target = typed === "" ? 0 : Math.min(Math.max(Math.round(Number(typed)) || 1, 1), clipsAtMost);
+    const entry = (e.currentTarget as HTMLInputElement).value.trim();
+    target = entry === "" ? 0 : Math.min(Math.max(Math.round(Number(entry)) || 1, 1), clipsAtMost);
+    targetWindow = target > 0 ? to - from : 0;
     (e.currentTarget as HTMLInputElement).value = target > 0 ? String(target) : "";
     saveSearch();
   }
@@ -2016,6 +2025,7 @@
       .catch(() => {});
     api.getSettings().then((settings) => {
       target = settings.target || 0;
+      targetWindow = settings.targetWindow || 0;
       min = settings.min || 20;
       max = settings.max || 30;
       captionY = settings.captionY || captionYDefault;
@@ -2041,7 +2051,7 @@
     onremove={(span) => (removingSearch = span)}
     locked={busy}
     least={leastLong}
-    leastSays={target > 0 ? `room for ${target} clips of ${min} s` : `room for a clip of ${min} s`}
+    leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
     most={reachAnywhere}
     reachSays={roomView?.by === "budget"
       ? "all the budget pays for"
@@ -2145,9 +2155,9 @@
                 placeholder={String(suggested)}
                 title={comingNow
                   ? "The search on its way looks for this many. Change it for the next one"
-                  : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own, and clear it to follow the window again. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                  : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
-                value={target > 0 ? target : ""}
+                value={typed > 0 ? typed : ""}
                 onchange={keepTarget}
               /></span
             >
