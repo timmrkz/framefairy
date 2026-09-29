@@ -679,6 +679,35 @@ down the episode, with the list scrolled elsewhere. And make the stub as
 slow as the app, the speech model loading included, or the gap it hides
 is exactly the one Tim sees.
 
+## A list that floats keeps what it hangs from in place
+
+Every list in the app is `Pick.svelte`, and its list hangs on the edge of
+its trigger. That holds only while the trigger stays where it was. The
+list is drawn over the whole app, outside whatever the trigger stands in,
+so to anything that opens on hover, moving onto the list is leaving. The
+first sort menu in the sidebar was hung correctly, and on Tim's Mac the
+sidebar closed under it: moving onto a row shrank the sidebar, the list
+followed the trigger across and ended 40 pixels short of it, the pointer
+came back over the sidebar, and it flashed open and shut until it gave up.
+No row could be picked. The probe had passed because the sidebar in the
+harness was pinned.
+
+The rule: **a container that opens on hover stays open while a list or a
+bubble of its own is open**, which is what `onopenchange` on `Pick` is for.
+Check it with the container not pinned: open it by hovering, open the list,
+move onto a row one step at a time, and read the container's width at
+every step.
+
+**And after the list closes, it asks where the pointer is.** Held open by
+its list alone, the sidebar fell back on what it last knew of the pointer
+the moment the list closed, and that was a pointer that had left: Escape
+with the pointer off the sidebar, or a click on the sidebar itself, closed
+the list and the sidebar with it. What it knew went stale while the list
+was open. So it stays open and lets the next move of the pointer decide,
+and Escape closes one layer per press. Check every way a list closes, a
+pick, Escape and a click, with the pointer on the trigger, on the
+container and outside it.
+
 ## Before saying it is done
 
 - `make interface`, which is the type check and the interface's own tests.

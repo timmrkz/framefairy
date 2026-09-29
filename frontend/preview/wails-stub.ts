@@ -1007,12 +1007,18 @@ export const Call = {
         (window as any).__apiModel = String(args[0]);
         if ((window as any).__settings) (window as any).__settings.apiModel = String(args[0]);
         return Promise.resolve(null);
-      case "AddEpisodes":
-        return Promise.resolve(null);
+      // Add brings in one more episode, whose name sorts between the two
+      // already there, so a probe can tell the order added from the order
+      // by name. The library keeps the order added, the way the Go side does.
+      case "AddEpisodes": {
+        const n = ((window as any).__added = ((window as any).__added ?? 0) + 1);
+        return Promise.resolve([`/eps/neu${n}.mp4`]);
+      }
       case "Library":
         return Promise.resolve([
           { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, heard: [[0, 14423]], transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
           { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },
+          ...Array.from({ length: (window as any).__added ?? 0 }, (_, k) => ({ source: `/eps/neu${k + 1}.mp4`, name: `Folge ${k + 3}, der Morgen danach`, size: 1, modified: "", missing: false, transcribed: false, covered: 0, heard: [], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: false })),
         ]);
       case "Episode":
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
