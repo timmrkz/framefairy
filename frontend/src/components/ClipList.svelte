@@ -136,57 +136,55 @@
     return row.arriving && grows ? slide(node, { duration: 200 }) : { duration: 0 };
   }
 
-  // The rows still to come stand where the window ends, often after the
-  // clips there are, so in a list longer than its column a search began
-  // out of sight: all anyone saw
-  // was New turning into Cancel. The row the next clip will appear in, the
-  // one wearing the work, is what is being done, so it is kept in view:
-  // brought to the top of the column when the search starts, with the rows
-  // still to come under it, and brought back every time a clip lands,
-  // wherever the list has been scrolled to in the meantime. It comes back
-  // with part of the row after it showing, so it is plain there is more to
-  // come, and the clip that just landed is right above it. Only when a clip
-  // lands: following every report would fight a hand that is scrolling.
-  const nextRow = () => list?.querySelector<HTMLLIElement>("li.ghost.next:not(.stopped)") ?? undefined;
-  let hadNext = false;
-  $effect(() => {
-    const has = !!next && ghosts.length > 0;
-    if (has && !hadNext) nextRow()?.scrollIntoView({ block: "start", behavior: "smooth" });
-    hadNext = has;
-  });
-  //
-  // The last clip a search finds leaves no row to come after it, so there
-  // is nothing to follow: that clip itself is brought into view, to the
-  // foot of the list when it lands below. The search may already have
-  // reported that it is done by the time its last clip is in the list, so
-  // a landing a few seconds after the search is still one of its own.
+  // The work in hand stays in view: the block of rows from the first card
+  // on its way or row still to come to the last. They stand together, at
+  // the window's place in the list, with a clip made by hand wherever its
+  // moment is. When the block, with the row above it, fits the column the
+  // list moves just far enough to show all of it, and when it does not,
+  // the row above it goes to the top. It moves when a card comes or goes or a search starts, never on
+  // a report of how far something has come, which would fight a hand that
+  // is scrolling. Three rules did this before, one for the row of the next
+  // clip as a search began, one for it as each clip landed and one for the
+  // last clip, and with several cards on their way each followed a
+  // different one, so what was in view depended on which ran last.
   let list = $state<HTMLOListElement>();
-  let known: Set<string> | null = null;
-  let searchedUntil = 0;
+  const work = $derived(
+    rows.filter((r) => r.arriving || r.ghost !== undefined).map((r) => r.key).join(" "),
+  );
+  let shown = "";
+  let showing = 0;
   $effect(() => {
-    if (next) searchedUntil = Infinity;
-    else if (searchedUntil === Infinity) searchedUntil = Date.now() + 5000;
+    const now = work;
+    if (now === shown) return;
+    shown = now;
+    if (!now) return;
+    // After the rows have slid and moved into their places, 200 ms and
+    // 180 ms, so the block is measured where it comes to rest.
+    clearTimeout(showing);
+    showing = window.setTimeout(showWork, 220);
   });
-  $effect(() => {
-    const keys = clips.map((c) => c.key);
-    const before = known;
-    known = new Set(keys);
-    if (!before || !list || Date.now() > searchedUntil) return;
-    const landed = keys.filter((k) => !before.has(k));
-    if (!landed.length) return;
-    const row = nextRow();
-    const own = list;
-    // After whatever else the landing moves. The first clip found is
-    // chosen, and the workspace brings the chosen card into view at once,
-    // which stops a smooth scroll that began before it.
-    setTimeout(() => {
-      const target =
-        row?.isConnected
-          ? row
-          : own.querySelector<HTMLElement>(`li[data-key="${CSS.escape(landed[landed.length - 1])}"]`);
-      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-  });
+  function showWork() {
+    const scroller = list?.parentElement;
+    if (!list || !scroller) return;
+    const rowsNow = [...list.querySelectorAll<HTMLElement>(":scope > li.next, :scope > li.ghost")];
+    if (!rowsNow.length) return;
+    const veil = parseFloat(getComputedStyle(list).paddingTop) || 0;
+    const view = scroller.getBoundingClientRect();
+    // A row of room above the block, when there is a row above it: a card
+    // lands in its place in the episode, which is often just above the
+    // rows still to come, and it lands in view rather than just out of it.
+    const first = rowsNow[0];
+    const above = first.previousElementSibling
+      ? first.getBoundingClientRect().top - first.previousElementSibling.getBoundingClientRect().top
+      : 0;
+    const top = first.getBoundingClientRect().top - above;
+    const bottom = rowsNow[rowsNow.length - 1].getBoundingClientRect().bottom;
+    const room = view.height - 2 * veil;
+    let by = 0;
+    if (bottom - top > room || top < view.top + veil) by = top - (view.top + veil);
+    else if (bottom > view.bottom - veil) by = bottom - (view.bottom - veil);
+    if (Math.abs(by) >= 1) scroller.scrollBy({ top: by, behavior: "smooth" });
+  }
 </script>
 
 <ol bind:this={list}>

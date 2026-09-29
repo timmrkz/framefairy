@@ -629,11 +629,13 @@ function searchJob(s: FakeSearch) {
   // The next clip is named a moment before it lands, and is on its way
   // until it does, the way the plan builder says so while it places the
   // crop.
+  // Named two and a half landings before it lands, so up to three are on
+  // their way at once, the way several framers work on a real machine.
   const k = now.found;
-  const underway =
-    k < lands.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
-      ? [{ n: k + 1, start: placeOf(s, lands[k]), end: placeOf(s, lands[k]) + 25, title: "Ein Moment " + lands[k], step: "framing", clip: `clips.json/0${lands[k] + (s.n - 1) * 12 + (freshList() ? 0 : 4)}` }]
-      : [];
+  const underway = lands
+    .map((n, j) => ({ n, j }))
+    .filter(({ j }) => j >= k && now.since >= Math.max(300, 700 + j * landEvery() - landEvery() * 2.5))
+    .map(({ n, j }) => ({ n: j + 1, start: placeOf(s, n), end: placeOf(s, n) + 25, title: "Ein Moment " + n, step: "framing", clip: `clips.json/0${n + (s.n - 1) * 12 + (freshList() ? 0 : 4)}` }));
   // What it has written goes with what it has on the way, in one event,
   // the way the Go side sends them.
   return { ...base, underway, written: now.found, whole: now.found + underway.length >= lands.length, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
