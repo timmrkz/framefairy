@@ -42,7 +42,11 @@ func NewProject(e *Engine, source string, base Options) *Project {
 func (p *Project) WorkDir() string { return WorkDir(p.Source) }
 
 // LogsDir holds the transcript, plans and records.
-func (p *Project) LogsDir() string { return filepath.Join(p.WorkDir(), "logs") }
+func (p *Project) LogsDir() string { return LogsDir(p.Source) }
+
+// LogsDir is the folder that holds the transcript, plans and records of the
+// episode at source.
+func LogsDir(source string) string { return filepath.Join(WorkDir(source), "logs") }
 
 // CaptionsDir holds the editable captions.
 func (p *Project) CaptionsDir() string { return filepath.Join(p.WorkDir(), "captions") }

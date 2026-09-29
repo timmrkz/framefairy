@@ -18,6 +18,17 @@ set -eu
 kind=${1:?say what to decide about: go, interface or build}
 
 say() { echo "$*" >&2; }
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+# read_by_go FILE: whether a Go test reads this file of the interface, the
+# way the bindings test reads api.ts. It is found by the path the test
+# reads it by, "../frontend/..." in quotes, so a file a test only names in
+# a comment does not count, and a new test that reads one needs no rule of
+# its own here.
+read_by_go() {
+	grep -rqF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git -- "../$1\"" "$root" 2>/dev/null
+}
 answer() {
 	say "$2"
 	echo "run=$1"
@@ -57,6 +68,9 @@ for file in $changed; do
 		;;
 	frontend/*)
 		frontend=$((frontend + 1))
+		if read_by_go "$file"; then
+			go=$((go + 1))
+		fi
 		;;
 	*.go | go.mod | go.sum)
 		go=$((go + 1))
@@ -76,7 +90,8 @@ fi
 case $kind in
 go)
 	# The interface is built into the app by make, but no Go test builds
-	# it, so a change under frontend/ cannot change what a Go test does.
+	# it, so a change under frontend/ cannot change what a Go test does,
+	# except in a file a Go test reads, which counts as Go above.
 	if [ "$go" -gt 0 ]; then
 		answer true "Go code changed"
 	fi

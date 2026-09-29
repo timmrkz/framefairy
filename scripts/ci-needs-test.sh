@@ -45,6 +45,13 @@ check "frontend/src/App.svelte" go false
 check "frontend/src/App.svelte" interface true
 check "frontend/src/App.svelte" build true
 
+# Except the files of the interface a Go test reads: the bindings test
+# reads api.ts and the engine reads the cases it shares with suggest.ts.
+# A file a Go test only names in a comment is not one of them.
+check "frontend/src/lib/api.ts" go true
+check "frontend/src/lib/suggest.cases.json" go true
+check "frontend/src/lib/flow.ts" go false
+
 # The other way round.
 check "engine/edit.go go.sum" go true
 check "engine/edit.go go.sum" interface false

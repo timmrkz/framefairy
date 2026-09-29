@@ -103,7 +103,7 @@ committed or not, new files included, and runs what those files can reach:
 | --- | --- |
 | Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below |
 | `go.mod`, `go.sum` | every package and every fuzz target |
-| `frontend/` | `make interface` |
+| `frontend/` | `make interface`, and for a file a Go test reads, like `api.ts`, that test's package too |
 | `Makefile`, a build script | `make` |
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
@@ -224,7 +224,7 @@ anything for it to do, so a typo in a README does not fuzz two platforms:
 | What changed | What runs |
 | --- | --- |
 | `docs/`, any `.md`, `.vscode/`, `.claude/` | nothing |
-| `frontend/` only | `interface`, `build`, `macos` |
+| `frontend/` only | `interface`, `build`, `macos`, and everything when a Go test reads one of the files, like `api.ts` |
 | Go files, `go.mod`, `go.sum` only | everything but `interface` |
 | anything else, or a mix | everything |
 

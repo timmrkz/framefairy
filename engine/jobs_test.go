@@ -467,3 +467,73 @@ func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 		t.Errorf("captions were made for a short without them: %v", made)
 	}
 }
+
+// A panic while a job hears gives the lane of hearing back. The queue
+// recovers the panic and fails the job, but a lane held for good would
+// leave every later search waiting for a turn that never comes.
+func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
+	p, _ := searchProject(t, func(string) (Recognizer, error) {
+		panic("the speech model broke")
+	})
+	held := 0
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		held++
+		stepCtx, cancel := context.WithCancel(ctx)
+		return stepCtx, func() { held--; cancel() }, nil
+	}
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, turn)
+	}()
+	if held != 0 {
+		t.Errorf("%d lanes still held after the panic", held)
+	}
+}
+
+// A render that fails leaves the short there was before it, and no half of
+// the new one. ffmpeg here writes a few bytes where it was told to and
+// fails, the way a render cut off halfway leaves a file behind.
+func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
+	p, _ := searchProject(t, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Base.Out = t.TempDir()
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	shorts, _ := filepath.Glob(filepath.Join(p.Base.Out, "*.mp4"))
+	if len(shorts) != 1 {
+		t.Fatalf("shorts %v", shorts)
+	}
+	before, err := os.ReadFile(shorts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Every other call goes to the real ffmpeg. The render is the one call
+	// that asks for +faststart.
+	broken := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\n" +
+		"for a in \"$@\"; do last=$a; done\n" +
+		"case \" $* \" in *\" +faststart \"*) printf half > \"$last\"; exit 1 ;; esac\n" +
+		"exec '" + p.Engine().FFmpeg + "' \"$@\"\n"
+	if err := os.WriteFile(broken, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p.Engine().FFmpeg = broken
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err == nil {
+		t.Fatal("the render did not fail")
+	}
+	after, err := os.ReadFile(shorts[0])
+	if err != nil {
+		t.Fatalf("the short before is gone: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("the short before was overwritten")
+	}
+	if left, _ := filepath.Glob(filepath.Join(p.Base.Out, "*")); len(left) != 1 {
+		t.Errorf("left in the folder: %v", left)
+	}
+}
