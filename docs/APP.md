@@ -245,7 +245,13 @@ dragged the same way on both**: a press anywhere on the track or on the
 playhead's head takes hold of it, and the video preview follows the hand,
 one seek a frame, until it lets go. The range picker only went there once
 the hand let go, and Tim asked for it to behave like the clip timeline. It
-is one function, `scrub` in `frontend/src/lib/scrub.ts`, used by both.
+is one function, `scrub` in `frontend/src/lib/scrub.ts`, used by both. The
+playhead is taken hold of by its line as well as its head, a few pixels
+either side, and on both tracks it shows the arrows left and right under
+the pointer, the way a clip's edges do. The empty track shows the hand.
+The two differed: the clip timeline seemed to show the arrows on the
+playhead only because the playhead so often stands on the chosen clip's
+edge.
 
 The **crosshair** in the row under the timeline goes to the playhead, always,
 clip or no clip, and puts it in the middle of the view, because the reason to
@@ -778,22 +784,30 @@ place.
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part
   being searched.
-    - **At rest the window is only marked, on the borders.** A bar runs
-      along the top border and the bottom one over the window's width,
-      with a small triangle at each end pointing into the track, so it
-      never lies over a clip. It says where New looks next, which the app
-      decides, see New above, and a hand can drag either bar to move the
-      window somewhere else. It keeps its length, and the title of New
-      says where it is while it moves. While its clips are found, or while
-      its search stands stopped with Continue, the whole window is drawn
-      over the track instead, and when the search is done the marks come
-      back on the window after it. Only one of the two is ever drawn. The
-      window at rest was once drawn over the track, and could be drawn,
-      dragged and resized over searched parts that were shaded, with a
-      trash can that gave a searched part back. Tim found it a leftover
-      that got in the way: after a search of the whole of a short episode
-      the window lay over all of it and hid every clip just found. A clip
-      is removed from its row in the list.
+    - **At rest the window is outlined, the way QuickTime and Photos
+      outline a trim.** A bar runs along the top border and the bottom
+      one, and a handle with a grip line stands at each end, inside the
+      window, so the round corners of the track round it off rather than
+      cut it away. The outline hides no clip. It says where New looks
+      next, which the app decides, see New above. A bar drags the window
+      somewhere else and keeps its length, a handle makes it shorter or
+      longer, and a double-click on any of it puts it back where the app
+      would have it. An edge lands on a round step, the smallest one still
+      about eight pixels wide, five minutes on a four hour episode and
+      five seconds on a six minute one, and the ends of the episode win
+      over the step. A handle stops where the window would hold too few
+      clips or more than the model reads. Under the pointer the whole
+      outline lights up, bars grab and handles show the arrows left and
+      right. The title of New and the suggested Target follow the hand.
+      While its clips are found, or while its search stands stopped with
+      Continue, the whole window is drawn over the track instead, and when
+      the search is done the outline comes back on the window after it.
+      Only one of the two is ever drawn. The window at rest was once laid
+      over the track, with searched parts shaded and a trash can that gave
+      a searched part back. Tim found it a leftover that got in the way:
+      after a search of the whole of a short episode the window lay over
+      all of it and hid every clip just found. A clip is removed from its
+      row in the list.
     - While clips are being found for it, a soft light passes through the
       window every couple of seconds, which is the track saying work is in
       hand. How far the search has come is on the line under the head of

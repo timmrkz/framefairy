@@ -3,11 +3,14 @@
   // the playhead, which a press anywhere takes hold of. While clips are
   // being found, or a search stands stopped, the window it is about is
   // drawn over the track, with how far the episode has been read for it.
-  // At rest the window is not drawn over the track, only marked on its top
-  // and bottom borders, a bar with a small triangle at each end: laid over
-  // a short episode searched whole, the window hid every clip just found.
-  // The marks say where New looks next, which the app decides, see
-  // nextWindow in lib/flow.ts, and a hand can drag them somewhere else.
+  // At rest the window is not laid over the track, only outlined, the way
+  // QuickTime and Photos outline the part of a clip a trim keeps: a bar
+  // along the top border and the bottom one, and a handle at each end.
+  // Laid over a short episode searched whole, the window hid every clip
+  // just found, and an outline hides none. It says where New looks next,
+  // which the app decides, see nextWindow in lib/flow.ts. A bar drags the
+  // window somewhere else, a handle makes it shorter or longer, and a
+  // double-click puts it back where the app would have it.
   // What has been searched or read so far is the engine's to know, not
   // anything a person has to look after.
   import { onMount } from "svelte";
@@ -33,6 +36,7 @@
     transcribing = false,
     holding = false,
     onmove,
+    onreset,
   }: {
     duration: number;
     // What of the episode is heard, in parts, the part being heard among
@@ -59,9 +63,13 @@
     // stops moving at once rather than sliding on to where the work had
     // got to, which is a second or two of an interface ignoring a click.
     holding?: boolean;
-    // The marks of the window at rest dragged, with where its start is
-    // now, while the hand moves, and done when it lets go.
-    onmove?: (from: number, done: boolean) => void;
+    // The window at rest dragged by its outline, with where its edges are
+    // now, while the hand moves, and done when it lets go. What it may be
+    // is the workspace's to say, which gives back where it put it.
+    onmove?: (from: number, to: number, done: boolean) => void;
+    // A double-click on the outline, which puts the window back where the
+    // app would have it.
+    onreset?: () => void;
   } = $props();
 
   let track: HTMLDivElement;
@@ -157,37 +165,63 @@
     scrubPlayhead(event, timeAt, (t) => onseek?.(t), (held) => (scrubbing = held));
   }
 
-  // Dragging the window at rest by its marks. It keeps its length and
-  // stays on the episode, and follows the hand the whole way, so the New
-  // button's title says where it is while it moves.
-  let moving = $state(false);
-  const movable = $derived(!shown && to > from && to - from < duration - 0.5);
+  // An edge dragged lands on a round step, so a window is something that
+  // can be said out loud: the smallest round step still about eight pixels
+  // wide on the track, five minutes on a four hour episode and five seconds
+  // on a six minute one. The ends of the episode win over it. The window
+  // snapped this way before it was taken away, and Tim missed it.
+  const grid = $derived.by(() => {
+    const steps = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
+    const least = (duration / Math.max(width, 1)) * 8;
+    return steps.find((step) => step >= least) ?? 1800;
+  });
 
-  function grabWindow(event: PointerEvent) {
-    if (event.button !== 0 || !movable) return;
+  function round(t: number): number {
+    return Math.round(t / grid) * grid;
+  }
+
+  // Dragging the window at rest by its outline: a bar moves all of it, a
+  // handle one edge. It follows the hand the whole way, so the New button's
+  // title and the Target's suggestion say where it is while it moves.
+  let moving = $state<"" | "move" | "from" | "to">("");
+
+  function grabWindow(what: "move" | "from" | "to", event: PointerEvent) {
+    if (event.button !== 0 || !onmove) return;
     event.preventDefault();
     event.stopPropagation();
     const focused = document.activeElement as HTMLElement | null;
     if (focused && focused !== document.body) focused.blur();
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
-    const size = to - from;
     const startX = event.clientX;
-    const was = from;
-    const place = (clientX: number) =>
-      Math.round(Math.min(Math.max(was + (clientX - startX) / Math.max(scale, 1e-9), 0), duration - size));
-    moving = true;
-    const move = (e: PointerEvent) => onmove?.(place(e.clientX), false);
+    const was = { from, to };
+    const place = (clientX: number): [number, number] => {
+      const by = (clientX - startX) / Math.max(scale, 1e-9);
+      if (what === "from") return [Math.min(Math.max(round(was.from + by), 0), was.to), was.to];
+      if (what === "to") return [was.from, Math.max(Math.min(round(was.to + by), duration), was.from)];
+      // Moved whole, the start lands on the step and the window keeps
+      // its length.
+      const size = was.to - was.from;
+      const start = Math.min(Math.max(round(was.from + by), 0), Math.max(duration - size, 0));
+      return [start, start + size];
+    };
+    moving = what;
+    const move = (e: PointerEvent) => onmove?.(...place(e.clientX), false);
     const up = (e: PointerEvent) => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      moving = false;
-      onmove?.(place(e.clientX), true);
+      moving = "";
+      onmove?.(...place(e.clientX), true);
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  function resetWindow(event: MouseEvent) {
+    event.stopPropagation();
+    onreset?.();
   }
 
   function timeAt(clientX: number): number {
@@ -272,25 +306,43 @@
     <div class="window frame" class:waiting={locked} class:whole style="left: {at(from)}px; width: {at(to) - at(from)}px"></div>
   {/if}
   {#if !shown && to > from && duration > 0}
-    <!-- The window at rest, marked on the top border and the bottom one,
-         the two the same, so either can be taken hold of. Along the edges
-         of the track and not across it, so no clip is ever under it. -->
-    {#each ["top", "bottom"] as side (side)}
-      <div
-        class="aim {side}"
-        class:movable
-        class:moving
-        style="left: {at(from)}px; width: {at(to) - at(from)}px"
-        role="slider"
-        tabindex="-1"
-        aria-label="Where New looks next"
-        aria-valuenow={from}
-        title={movable
-          ? `Where New looks next, ${clock(from)} to ${clock(to)}. Drag to look somewhere else`
-          : `Where New looks next, ${clock(from)} to ${clock(to)}`}
-        onpointerdown={grabWindow}
-      ></div>
-    {/each}
+    <!-- The window at rest, outlined. The outline takes the pointer and
+         what is inside it does not, so a press inside is a press on the
+         track and a clip under it is still pressed like any other. -->
+    <div
+      class="aim"
+      class:moving={moving !== ""}
+      style="left: {at(from)}px; width: {at(to) - at(from)}px"
+    >
+      {#each ["top", "bottom"] as side (side)}
+        <div
+          class="bar {side}"
+          class:held={moving === "move"}
+          role="slider"
+          tabindex="-1"
+          aria-label="Where New looks next"
+          aria-valuenow={from}
+          title="Where New looks next, {clock(from)} to {clock(to)}. Drag to look somewhere else, double-click to put it back"
+          onpointerdown={(e) => grabWindow("move", e)}
+          ondblclick={resetWindow}
+        ></div>
+      {/each}
+      {#each ["from", "to"] as const as edge (edge)}
+        <div
+          class="grip {edge}"
+          class:held={moving === edge}
+          role="slider"
+          tabindex="-1"
+          aria-label={edge === "from" ? "Where the window starts" : "Where the window ends"}
+          aria-valuenow={edge === "from" ? from : to}
+          title="{edge === 'from' ? 'Where the window starts' : 'Where the window ends'}, {clock(
+            edge === 'from' ? from : to,
+          )}. Drag to make it shorter or longer, double-click to put it back"
+          onpointerdown={(e) => grabWindow(edge, e)}
+          ondblclick={resetWindow}
+        ></div>
+      {/each}
+    </div>
   {/if}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -328,14 +380,24 @@
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
       The whole episode, with its clips as marks. Press or drag anywhere to move the playhead, and
-      press a mark to work on its clip. The marks on the top and bottom border are where New looks
-      next, and can be dragged somewhere else. While clips are being found, the part being searched
-      is framed, and the dark part of it is not read yet.
+      press a mark to work on its clip. The outline is where New looks next: drag its top or bottom
+      to look somewhere else, drag an end to make it shorter or longer, and double-click it to put it
+      back. While clips are being found, the part being searched is framed, and the dark part of it
+      is not read yet.
     </Info>
   </span>
 </div>
 {#if playhead >= 0}
-  <div class="playhead" class:scrubbing style="left: {at(playhead)}px">
+  <!-- The line takes the drag as well as its head, the same as on the
+       clip timeline. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="playhead"
+    class:scrubbing
+    style="left: {at(playhead)}px"
+    onpointerdown={scrub}
+    title="Drag to move the playhead"
+  >
     <!-- The head is its own element, the way it is on the clip timeline,
          because it stands above the track and a head the hand goes
          straight through is not a handle. -->
@@ -394,9 +456,10 @@
     pointer-events: none;
   }
 
+  /* Clear of the handle of a window that starts with the episode. */
   .start {
     left: 0;
-    margin-left: 6px;
+    margin-left: 12px;
   }
 
   /* What has not been transcribed yet is darker, and the edge between the
@@ -535,83 +598,84 @@
     border-color: var(--accent);
   }
 
-  /* The window at rest, marked on a border: a bar along it, as thick as
-     the frame's line is twice, and a small triangle at each end pointing
-     into the track, so the two ends are plain however short the window
-     is. The hold is taller than the mark, so a hand finds it, and it lies
-     over the ruler's times, which take no pointer. */
+  /* The window at rest, outlined the way QuickTime and Photos outline a
+     trim: a bar along the top border and the bottom one, and a handle at
+     each end with a grip line in it. The handles lie inside the window, so
+     at the ends of the episode the track's round corners round them off
+     rather than cut them away. Only the outline takes the pointer, and it
+     is taller and wider to the hand than it is drawn. */
   .aim {
     position: absolute;
-    height: 10px;
-    z-index: 5;
-    --aim: var(--accent);
-    background: linear-gradient(var(--aim), var(--aim)) no-repeat;
-    background-size: 100% 3px;
-  }
-
-  .aim.top {
     top: 0;
-    background-position: top;
-  }
-
-  .aim.bottom {
     bottom: 0;
-    background-position: bottom;
+    z-index: 5;
+    pointer-events: none;
+    --aim: var(--accent);
   }
 
-  .aim::before,
-  .aim::after {
-    content: "";
-    position: absolute;
-    width: 7px;
-    height: 5px;
-    background: var(--aim);
-  }
-
-  .aim::before {
-    left: 0;
-  }
-
-  .aim::after {
-    right: 0;
-  }
-
-  .aim.top::before,
-  .aim.top::after {
-    top: 3px;
-  }
-
-  .aim.bottom::before,
-  .aim.bottom::after {
-    bottom: 3px;
-  }
-
-  .aim.top::before {
-    clip-path: polygon(0 0, 100% 0, 0 100%);
-  }
-
-  .aim.top::after {
-    clip-path: polygon(0 0, 100% 0, 100% 100%);
-  }
-
-  .aim.bottom::before {
-    clip-path: polygon(0 0, 100% 100%, 0 100%);
-  }
-
-  .aim.bottom::after {
-    clip-path: polygon(100% 0, 100% 100%, 0 100%);
-  }
-
-  .aim.movable {
-    cursor: grab;
-  }
-
-  .aim.movable:hover,
+  /* Under the hand the whole outline lights up, not only the part the
+     pointer is on, because it is one thing: the window. It stays lit for
+     as long as it is held. */
+  .aim:has(.bar:hover, .grip:hover),
   .aim.moving {
     --aim: var(--accent-hi);
   }
 
-  .aim.moving {
+  .bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 10px;
+    pointer-events: auto;
+    cursor: grab;
+    background: linear-gradient(var(--aim), var(--aim)) no-repeat;
+    background-size: 100% 3px;
+  }
+
+  .bar.top {
+    top: 0;
+    background-position: top;
+  }
+
+  .bar.bottom {
+    bottom: 0;
+    background-position: bottom;
+  }
+
+  .grip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    pointer-events: auto;
+    cursor: ew-resize;
+    background: var(--aim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .grip.from {
+    left: 0;
+    border-radius: var(--radius-s) 0 0 var(--radius-s);
+  }
+
+  .grip.to {
+    right: 0;
+    border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  }
+
+  /* The grip line, the way a trim handle has one, a third of the track
+     high. */
+  .grip::after {
+    content: "";
+    width: 2px;
+    height: 34%;
+    border-radius: 1px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .bar.held {
     cursor: grabbing;
   }
 
@@ -632,8 +696,20 @@
     width: 2px;
     margin-left: -1px;
     background: var(--accent-hi);
-    pointer-events: none;
     z-index: 6;
+    /* Dragged left and right, head and line alike, as on the clip
+       timeline, and taken hold of a few pixels either side of the line. */
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .playhead::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
   }
 
   .head {
@@ -644,8 +720,7 @@
     height: 9px;
     border-radius: 2px 2px 1px 1px;
     background: var(--accent-hi);
-    pointer-events: auto;
-    cursor: pointer;
+    cursor: ew-resize;
     touch-action: none;
   }
 
@@ -655,8 +730,6 @@
     background: #fff;
   }
 
-  .playhead.scrubbing .head {
-    cursor: grabbing;
-  }
+
 
 </style>

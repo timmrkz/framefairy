@@ -709,13 +709,22 @@
     keepWindow();
   }
 
-  // The window dragged by its marks on the range picker. It keeps its
-  // length, and when the hand lets go it is put back inside what a search
-  // can do with it there.
-  function moveWindow(start: number, done: boolean) {
-    const size = to - from;
+  // The window dragged by its outline on the range picker, moved whole or
+  // by one edge. An edge stops where the window would hold too few clips
+  // or more than the model reads, the edge that is not held staying where
+  // it is. When the hand lets go it is put inside what a search can do
+  // with it there.
+  function moveWindow(start: number, end: number, done: boolean) {
+    const moved = Math.abs(end - start - (to - from)) > 0.001;
+    if (moved && Math.abs(end - to) < 0.001) {
+      start = Math.min(Math.max(start, end - reachAnywhere), end - leastLong);
+      start = Math.max(start, 0);
+    } else if (moved) {
+      end = Math.max(Math.min(end, start + reachAnywhere), start + leastLong);
+      end = Math.min(end, duration);
+    }
     from = start;
-    to = start + size;
+    to = end;
     if (done) keepWindow();
   }
 
@@ -1974,6 +1983,7 @@
     transcribing={isTranscribing}
     holding={stoppedAt !== null}
     onmove={moveWindow}
+    onreset={moveWindowOn}
   />
 {/snippet}
 

@@ -1460,7 +1460,11 @@
   </div>
     {#if time >= view.from && time <= view.to}
       <div class="at" style="left: {x(time)}%">
-        <div class="playhead"></div>
+        <!-- The line takes the drag as well as its head, a few pixels
+             either side of it, so the playhead is taken hold of wherever
+             the hand finds it, the same as on the range picker. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="playhead" onpointerdown={scrub} title="Drag to move the playhead"></div>
         <!-- The head is its own element rather than something drawn on the
              line, because it stands above the track and the track is what
              takes the drag. Drawn but not grabbable, its top five pixels
@@ -1862,6 +1866,9 @@
      waveform. */
   /* The head stands above the track, which is where an editor puts it and
      what says this is the playhead rather than a line someone drew. */
+  /* It is dragged left and right, and says so under the pointer, head and
+     line alike, the way a clip's edges do. A press on the empty track also
+     moves it, and there the pointer is the hand of anything pressed. */
   .playhead {
     position: absolute;
     top: -5px;
@@ -1869,7 +1876,17 @@
     left: -1px;
     width: 2px;
     background: var(--accent-hi);
-    pointer-events: none;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .playhead::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
   }
 
   /* The same head, in the same place, as the line used to draw on itself.
@@ -1884,17 +1901,13 @@
     height: 9px;
     border-radius: 2px 2px 1px 1px;
     background: var(--accent-hi);
-    cursor: pointer;
+    cursor: ew-resize;
     touch-action: none;
   }
 
   .over.scrubbing .playhead,
   .over.scrubbing .head {
     background: #fff;
-  }
-
-  .over.scrubbing .head {
-    cursor: grabbing;
   }
 
   /* The caption blocks of a clip on its way come in one after another, in
