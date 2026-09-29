@@ -108,7 +108,9 @@ facade the app goes around, and three files too big to hold in one's head.
    wording of an error.** `engine/api.go:705` looks for
    `"blocks: ['thinking']"` in `err.Error()`. Changed wording, or a reply
    with another block in the list, turns the retry off without a sound. Fix:
-   a sentinel error checked with `errors.Is`. **Open.**
+   a sentinel error checked with `errors.Is`. **Fixed**
+   in #48: a reply of thinking blocks alone, shown or hidden, carries
+   `errSpentThinking`.
 9. **A window's start goes from number to text and back.** `Project.Plan`
    names the plan with `int(window.Start)` (`engine/project.go:139`), then
    hands `Run` the start as a string with three decimals, which `Run` parses

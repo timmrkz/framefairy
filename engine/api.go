@@ -672,7 +672,11 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		if stop == "" {
 			stop = "?"
 		}
-		return "", renderErr("the reply contained no text (blocks: %s, stop=%s)", kindText, stop)
+		err := renderErr("the reply contained no text (blocks: %s, stop=%s)", kindText, stop)
+		if onlyThinking(kinds) {
+			err = thinkingOnly{err}
+		}
+		return "", err
 	}
 	if data.StopReason == "max_tokens" {
 		e.Log.Warn("the reply hit the %s token ceiling and was cut off. Trying to "+
@@ -683,6 +687,28 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		return "{" + text, nil
 	}
 	return text, nil
+}
+
+// errSpentThinking marks a reply that was thinking and nothing else, so
+// the code that gives more room asks errors.Is rather than reading the
+// wording of a message.
+var errSpentThinking = errors.New("the model spent the whole ceiling thinking")
+
+// thinkingOnly keeps the words of the error it wraps, for whoever reads
+// them, and is errSpentThinking to errors.Is.
+type thinkingOnly struct{ error }
+
+func (e thinkingOnly) Unwrap() []error { return []error{e.error, errSpentThinking} }
+
+// onlyThinking says whether a reply's blocks were all thinking, shown or
+// hidden by the provider, and there was at least one.
+func onlyThinking(kinds []string) bool {
+	for _, k := range kinds {
+		if k != "thinking" && k != "redacted_thinking" {
+			return false
+		}
+	}
+	return len(kinds) > 0
 }
 
 // CallAPIWithHeadroom asks, and if the model spent the whole ceiling
@@ -702,7 +728,7 @@ func (e *Engine) CallAPIWithHeadroom(ctx context.Context, prompt, model string,
 	if err == nil {
 		return text, nil
 	}
-	spentThinking := strings.Contains(err.Error(), "blocks: ['thinking']")
+	spentThinking := errors.Is(err, errSpentThinking)
 	headroom := min(maxTokens*2, facts.MaxOutput)
 	if !spentThinking || headroom <= maxTokens {
 		return "", err
