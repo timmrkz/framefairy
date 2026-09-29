@@ -784,30 +784,32 @@ place.
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part
   being searched.
-    - **At rest the window is outlined, the way QuickTime and Photos
-      outline a trim.** A bar runs along the top border and the bottom
-      one, and a handle with a grip line stands at each end, inside the
-      window, so the round corners of the track round it off rather than
-      cut it away. The outline hides no clip. It says where New looks
-      next, which the app decides, see New above. A bar drags the window
-      somewhere else and keeps its length, a handle makes it shorter or
-      longer, and a double-click on any of it puts it back where the app
-      would have it. An edge lands on a round step, the smallest one still
-      about eight pixels wide, five minutes on a four hour episode and
-      five seconds on a six minute one, and the ends of the episode win
-      over the step. A handle stops where the window would hold too few
-      clips or more than the model reads. Under the pointer the whole
-      outline lights up, bars grab and handles show the arrows left and
-      right. The title of New and the suggested Target follow the hand.
-      While its clips are found, or while its search stands stopped with
-      Continue, the whole window is drawn over the track instead, and when
-      the search is done the outline comes back on the window after it.
-      Only one of the two is ever drawn. The window at rest was once laid
-      over the track, with searched parts shaded and a trash can that gave
-      a searched part back. Tim found it a leftover that got in the way:
-      after a search of the whole of a short episode the window lay over
-      all of it and hid every clip just found. A clip is removed from its
-      row in the list.
+    - **At rest the window is marked at its corners, not drawn.** A bar
+      runs just outside the top border and one just outside the bottom
+      border, over the window's width, and a triangle hangs from each end
+      of them with its tip reaching into the track. Nothing else of it
+      lies over the track, so it hides no clip and does not read as a
+      window. It says where New looks next, which the app decides, see
+      New above. The four triangles are the handles: the left two drag
+      where the window starts and the right two where it ends. A bar
+      drags the whole window and keeps its length, and a double-click on
+      any of it puts it back where the app would have it. An edge lands
+      on a round step, the smallest one still about eight pixels wide,
+      five minutes on a four hour episode and five seconds on a six
+      minute one, and the ends of the episode win over the step. A handle
+      stops where the window would hold too few clips or more than the
+      model reads. Under the pointer the whole mark lights up, a bar shows
+      the hand that grabs and a triangle the arrows left and right. The
+      triangles lie over the playhead, which a search leaves on the
+      window's start, and the bars under it. The title of New and the
+      suggested Target follow the hand. While its clips are found, or
+      while its search stands stopped with Continue, the mark turns into
+      the window, drawn over the track, and back into the mark when the
+      search is done, on the window after it. Only one of the two is ever
+      drawn. Tim found a window at rest a leftover that got in the way:
+      after a search of the whole of a short episode it lay over all of
+      it and hid every clip just found, and an outline with handles read
+      as the same window. A clip is removed from its row in the list.
     - While clips are being found for it, a soft light passes through the
       window every couple of seconds, which is the track saying work is in
       hand. How far the search has come is on the line under the head of

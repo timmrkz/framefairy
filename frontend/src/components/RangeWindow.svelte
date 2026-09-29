@@ -3,14 +3,16 @@
   // the playhead, which a press anywhere takes hold of. While clips are
   // being found, or a search stands stopped, the window it is about is
   // drawn over the track, with how far the episode has been read for it.
-  // At rest the window is not laid over the track, only outlined, the way
-  // QuickTime and Photos outline the part of a clip a trim keeps: a bar
-  // along the top border and the bottom one, and a handle at each end.
+  // At rest the window is not drawn at all, only marked at its corners: a
+  // bar just outside the top border and one just outside the bottom
+  // border, with a triangle at each end whose tip reaches into the track.
   // Laid over a short episode searched whole, the window hid every clip
-  // just found, and an outline hides none. It says where New looks next,
-  // which the app decides, see nextWindow in lib/flow.ts. A bar drags the
-  // window somewhere else, a handle makes it shorter or longer, and a
-  // double-click puts it back where the app would have it.
+  // just found, and a frame round it read as the same window, so nothing
+  // of the mark lies over the track but the tips. It says where New looks
+  // next, which the app decides, see nextWindow in lib/flow.ts. A triangle
+  // drags its edge, a bar drags the whole window, and a double-click puts
+  // it back where the app would have it. While clips are found the mark
+  // turns into the window, and back into the mark when they are.
   // What has been searched or read so far is the engine's to know, not
   // anything a person has to look after.
   import { onMount } from "svelte";
@@ -305,45 +307,6 @@
          app's to say, and a press on it is a press on the track. -->
     <div class="window frame" class:waiting={locked} class:whole style="left: {at(from)}px; width: {at(to) - at(from)}px"></div>
   {/if}
-  {#if !shown && to > from && duration > 0}
-    <!-- The window at rest, outlined. The outline takes the pointer and
-         what is inside it does not, so a press inside is a press on the
-         track and a clip under it is still pressed like any other. -->
-    <div
-      class="aim"
-      class:moving={moving !== ""}
-      style="left: {at(from)}px; width: {at(to) - at(from)}px"
-    >
-      {#each ["top", "bottom"] as side (side)}
-        <div
-          class="bar {side}"
-          class:held={moving === "move"}
-          role="slider"
-          tabindex="-1"
-          aria-label="Where New looks next"
-          aria-valuenow={from}
-          title="Where New looks next, {clock(from)} to {clock(to)}. Drag to look somewhere else, double-click to put it back"
-          onpointerdown={(e) => grabWindow("move", e)}
-          ondblclick={resetWindow}
-        ></div>
-      {/each}
-      {#each ["from", "to"] as const as edge (edge)}
-        <div
-          class="grip {edge}"
-          class:held={moving === edge}
-          role="slider"
-          tabindex="-1"
-          aria-label={edge === "from" ? "Where the window starts" : "Where the window ends"}
-          aria-valuenow={edge === "from" ? from : to}
-          title="{edge === 'from' ? 'Where the window starts' : 'Where the window ends'}, {clock(
-            edge === 'from' ? from : to,
-          )}. Drag to make it shorter or longer, double-click to put it back"
-          onpointerdown={(e) => grabWindow(edge, e)}
-          ondblclick={resetWindow}
-        ></div>
-      {/each}
-    </div>
-  {/if}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
@@ -380,13 +343,56 @@
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
       The whole episode, with its clips as marks. Press or drag anywhere to move the playhead, and
-      press a mark to work on its clip. The outline is where New looks next: drag its top or bottom
-      to look somewhere else, drag an end to make it shorter or longer, and double-click it to put it
-      back. While clips are being found, the part being searched is framed, and the dark part of it
+      press a mark to work on its clip. The marks at the four corners are where New looks next: drag
+      a bar between them to look somewhere else, drag a triangle to make it shorter or longer, and
+      double-click to put it back. While clips are being found, the part being searched is framed, and the dark part of it
       is not read yet.
     </Info>
   </span>
 </div>
+{#if !shown && to > from && duration > 0}
+  <!-- The window at rest, marked at its four corners and not drawn over
+       the track. A bar just outside the top border and one just outside
+       the bottom border join the marks, and only the tips of the
+       triangles reach into the track, so nothing lies over a clip. It is
+       drawn beside the track rather than in it, because the track clips
+       what is inside it. The four triangles are the handles, the left two
+       for where the window starts and the right two for where it ends, and
+       a bar moves the whole of it. -->
+  <div
+    class="aim"
+    class:moving={moving !== ""}
+    style="left: {at(from) + 1}px; width: {at(to) - at(from)}px"
+  >
+    {#each ["top", "bottom"] as side (side)}
+      <div
+        class="bar {side}"
+        class:held={moving === "move"}
+        role="slider"
+        tabindex="-1"
+        aria-label="Where New looks next"
+        aria-valuenow={from}
+        title="Where New looks next, {clock(from)} to {clock(to)}. Drag to look somewhere else, double-click to put it back"
+        onpointerdown={(e) => grabWindow("move", e)}
+        ondblclick={resetWindow}
+      ></div>
+      {#each ["from", "to"] as const as edge (edge)}
+        <div
+          class="tip {side} {edge}"
+          role="slider"
+          tabindex="-1"
+          aria-label={edge === "from" ? "Where the window starts" : "Where the window ends"}
+          aria-valuenow={edge === "from" ? from : to}
+          title="{edge === 'from' ? 'Where the window starts' : 'Where the window ends'}, {clock(
+            edge === 'from' ? from : to,
+          )}. Drag to make it shorter or longer, double-click to put it back"
+          onpointerdown={(e) => grabWindow(edge, e)}
+          ondblclick={resetWindow}
+        ></div>
+      {/each}
+    {/each}
+  </div>
+{/if}
 {#if playhead >= 0}
   <!-- The line takes the drag as well as its head, the same as on the
        clip timeline. -->
@@ -598,25 +604,27 @@
     border-color: var(--accent);
   }
 
-  /* The window at rest, outlined the way QuickTime and Photos outline a
-     trim: a bar along the top border and the bottom one, and a handle at
-     each end with a grip line in it. The handles lie inside the window, so
-     at the ends of the episode the track's round corners round them off
-     rather than cut them away. Only the outline takes the pointer, and it
-     is taller and wider to the hand than it is drawn. */
+  /* The window at rest, marked at its corners. A bar three pixels thick
+     runs just outside the top border and just outside the bottom one, and
+     a triangle hangs from each end of it, its tip reaching seven pixels
+     into the track along the window's edge. The bars and the triangles
+     are what takes the pointer, each more to the hand than it is drawn,
+     and the whole of the mark lights up while any of it is under the
+     pointer or held, because it is one thing. */
+  /* No layer of its own, so its parts take their own places among the
+     track's: the bars under the playhead, whose head would otherwise be
+     lost along them, and the triangles over it, because a playhead
+     standing on the window's start, where a search leaves it, took every
+     press meant for the handles there. */
   .aim {
     position: absolute;
     top: 0;
     bottom: 0;
-    z-index: 5;
     pointer-events: none;
     --aim: var(--accent);
   }
 
-  /* Under the hand the whole outline lights up, not only the part the
-     pointer is on, because it is one thing: the window. It stays lit for
-     as long as it is held. */
-  .aim:has(.bar:hover, .grip:hover),
+  .aim:has(.bar:hover, .tip:hover),
   .aim.moving {
     --aim: var(--accent-hi);
   }
@@ -625,7 +633,8 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 10px;
+    height: 9px;
+    z-index: 5;
     pointer-events: auto;
     cursor: grab;
     background: linear-gradient(var(--aim), var(--aim)) no-repeat;
@@ -633,50 +642,85 @@
   }
 
   .bar.top {
-    top: 0;
-    background-position: top;
+    top: -6px;
+    background-position: 0 3px;
   }
 
   .bar.bottom {
-    bottom: 0;
-    background-position: bottom;
-  }
-
-  .grip {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 8px;
-    pointer-events: auto;
-    cursor: ew-resize;
-    background: var(--aim);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .grip.from {
-    left: 0;
-    border-radius: var(--radius-s) 0 0 var(--radius-s);
-  }
-
-  .grip.to {
-    right: 0;
-    border-radius: 0 var(--radius-s) var(--radius-s) 0;
-  }
-
-  /* The grip line, the way a trim handle has one, a third of the track
-     high. */
-  .grip::after {
-    content: "";
-    width: 2px;
-    height: 34%;
-    border-radius: 1px;
-    background: rgba(0, 0, 0, 0.45);
+    bottom: -6px;
+    background-position: 0 3px;
   }
 
   .bar.held {
     cursor: grabbing;
+  }
+
+  /* A handle, fourteen pixels to the hand around a triangle eight wide
+     and ten tall, which starts on the bar and ends seven pixels in. */
+  .tip {
+    position: absolute;
+    width: 14px;
+    height: 16px;
+    z-index: 7;
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .tip::after {
+    content: "";
+    position: absolute;
+    width: 8px;
+    height: 10px;
+    background: var(--aim);
+  }
+
+  .tip.top {
+    top: -6px;
+  }
+
+  .tip.bottom {
+    bottom: -6px;
+  }
+
+  .tip.top::after {
+    top: 3px;
+  }
+
+  .tip.bottom::after {
+    bottom: 3px;
+  }
+
+  .tip.from {
+    left: -6px;
+  }
+
+  .tip.to {
+    right: -6px;
+  }
+
+  .tip.from::after {
+    left: 6px;
+  }
+
+  .tip.to::after {
+    right: 6px;
+  }
+
+  .tip.top.from::after {
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+
+  .tip.top.to::after {
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  .tip.bottom.from::after {
+    clip-path: polygon(0 0, 100% 100%, 0 100%);
+  }
+
+  .tip.bottom.to::after {
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing
