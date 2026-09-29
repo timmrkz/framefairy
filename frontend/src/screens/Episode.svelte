@@ -700,6 +700,16 @@
     keepWindow();
   }
 
+  // The window dragged by its marks on the range picker. It keeps its
+  // length, and when the hand lets go it is put back inside what a search
+  // can do with it there.
+  function moveWindow(start: number, done: boolean) {
+    const size = to - from;
+    from = start;
+    to = start + size;
+    if (done) keepWindow();
+  }
+
   // The window put back inside what a search can do with it, whenever
   // what that is changes: the room, or the clips asked for. Not while clips
   // are being found for it, because then it is the window being searched.
@@ -1988,6 +1998,7 @@
     locked={busy}
     transcribing={isTranscribing}
     holding={stoppedAt !== null}
+    onmove={moveWindow}
   />
 {/snippet}
 

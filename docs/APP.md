@@ -773,17 +773,22 @@ place.
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part
   being searched.
-    - **There is no window at rest.** Which part of the episode a search
-      reads is the app's to decide, see `engine/suggest.go`, and what has
-      been searched or transcribed so far is the engine's to know, so none
-      of it is drawn. The window is drawn only while its clips are found,
-      or while its search stands stopped with Continue, and it goes when
-      the search is done. Until then the range picker had a window at rest
-      that could be drawn, dragged and resized, over searched parts that
-      were shaded, with a trash can that gave a searched part back. Tim
-      found it a leftover that got in the way: after a search of the whole
-      of a short episode the window lay over all of it and hid every clip
-      just found. A clip is removed from its row in the list.
+    - **At rest the window is only marked, on the borders.** A bar runs
+      along the top border and the bottom one over the window's width,
+      with a small triangle at each end pointing into the track, so it
+      never lies over a clip. It says where New looks next, which the app
+      decides, see New above, and a hand can drag either bar to move the
+      window somewhere else. It keeps its length, and the title of New
+      says where it is while it moves. While its clips are found, or while
+      its search stands stopped with Continue, the whole window is drawn
+      over the track instead, and when the search is done the marks come
+      back on the window after it. Only one of the two is ever drawn. The
+      window at rest was once drawn over the track, and could be drawn,
+      dragged and resized over searched parts that were shaded, with a
+      trash can that gave a searched part back. Tim found it a leftover
+      that got in the way: after a search of the whole of a short episode
+      the window lay over all of it and hid every clip just found. A clip
+      is removed from its row in the list.
     - While clips are being found for it, a soft light passes through the
       window every couple of seconds, which is the track saying work is in
       hand. How far the search has come is on the line under the head of
@@ -797,7 +802,7 @@ place.
     - A press anywhere else takes hold of the playhead, see above.
     - What is not transcribed yet is darker, while anything hears the
       episode, a search or a clip made by hand, and while a search stands
-      stopped. At rest none of it is drawn, like the window. The transcript
+      stopped. At rest none of it is drawn. The transcript
       is heard in parts, where a search or a clip made by hand needs it
       first, so there can be more than one dark stretch. What is heard is
       simply not dark, and the part being heard fills as it goes, from

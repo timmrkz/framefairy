@@ -3,12 +3,13 @@
   // the playhead, which a press anywhere takes hold of. While clips are
   // being found, or a search stands stopped, the window it is about is
   // drawn over the track, with how far the episode has been read for it.
-  // At rest there is no window: which part of the episode a search reads
-  // is the app's to decide, see engine/suggest.go, and what has been
-  // searched or read so far is the engine's to know, not anything a person
-  // has to look after. Tim found the window at rest a leftover that got in
-  // the way: laid over a short episode searched whole, it hid every clip
-  // just found.
+  // At rest the window is not drawn over the track, only marked on its top
+  // and bottom borders, a bar with a small triangle at each end: laid over
+  // a short episode searched whole, the window hid every clip just found.
+  // The marks say where New looks next, which the app decides, see
+  // nextWindow in lib/flow.ts, and a hand can drag them somewhere else.
+  // What has been searched or read so far is the engine's to know, not
+  // anything a person has to look after.
   import { onMount } from "svelte";
   import { clock } from "../lib/api";
   import { gapsIn, type Parts } from "../lib/flow";
@@ -31,6 +32,7 @@
     locked = false,
     transcribing = false,
     holding = false,
+    onmove,
   }: {
     duration: number;
     // What of the episode is heard, in parts, the part being heard among
@@ -57,6 +59,9 @@
     // stops moving at once rather than sliding on to where the work had
     // got to, which is a second or two of an interface ignoring a click.
     holding?: boolean;
+    // The marks of the window at rest dragged, with where its start is
+    // now, while the hand moves, and done when it lets go.
+    onmove?: (from: number, done: boolean) => void;
   } = $props();
 
   let track: HTMLDivElement;
@@ -152,6 +157,39 @@
     scrubPlayhead(event, timeAt, (t) => onseek?.(t), (held) => (scrubbing = held));
   }
 
+  // Dragging the window at rest by its marks. It keeps its length and
+  // stays on the episode, and follows the hand the whole way, so the New
+  // button's title says where it is while it moves.
+  let moving = $state(false);
+  const movable = $derived(!shown && to > from && to - from < duration - 0.5);
+
+  function grabWindow(event: PointerEvent) {
+    if (event.button !== 0 || !movable) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused && focused !== document.body) focused.blur();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const size = to - from;
+    const startX = event.clientX;
+    const was = from;
+    const place = (clientX: number) =>
+      Math.round(Math.min(Math.max(was + (clientX - startX) / Math.max(scale, 1e-9), 0), duration - size));
+    moving = true;
+    const move = (e: PointerEvent) => onmove?.(place(e.clientX), false);
+    const up = (e: PointerEvent) => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      moving = false;
+      onmove?.(place(e.clientX), true);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
+
   function timeAt(clientX: number): number {
     const box = track.getBoundingClientRect();
     const share = Math.max(0, Math.min(1, (clientX - box.left) / box.width));
@@ -233,6 +271,27 @@
          app's to say, and a press on it is a press on the track. -->
     <div class="window frame" class:waiting={locked} class:whole style="left: {at(from)}px; width: {at(to) - at(from)}px"></div>
   {/if}
+  {#if !shown && to > from && duration > 0}
+    <!-- The window at rest, marked on the top border and the bottom one,
+         the two the same, so either can be taken hold of. Along the edges
+         of the track and not across it, so no clip is ever under it. -->
+    {#each ["top", "bottom"] as side (side)}
+      <div
+        class="aim {side}"
+        class:movable
+        class:moving
+        style="left: {at(from)}px; width: {at(to) - at(from)}px"
+        role="slider"
+        tabindex="-1"
+        aria-label="Where New looks next"
+        aria-valuenow={from}
+        title={movable
+          ? `Where New looks next, ${clock(from)} to ${clock(to)}. Drag to look somewhere else`
+          : `Where New looks next, ${clock(from)} to ${clock(to)}`}
+        onpointerdown={grabWindow}
+      ></div>
+    {/each}
+  {/if}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
@@ -269,8 +328,9 @@
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
       The whole episode, with its clips as marks. Press or drag anywhere to move the playhead, and
-      press a mark to work on its clip. While clips are being found, the part being searched is
-      framed, and the dark part of it is not read yet.
+      press a mark to work on its clip. The marks on the top and bottom border are where New looks
+      next, and can be dragged somewhere else. While clips are being found, the part being searched
+      is framed, and the dark part of it is not read yet.
     </Info>
   </span>
 </div>
@@ -473,6 +533,86 @@
   .track.locked .window.whole {
     background-color: var(--accent-wash);
     border-color: var(--accent);
+  }
+
+  /* The window at rest, marked on a border: a bar along it, as thick as
+     the frame's line is twice, and a small triangle at each end pointing
+     into the track, so the two ends are plain however short the window
+     is. The hold is taller than the mark, so a hand finds it, and it lies
+     over the ruler's times, which take no pointer. */
+  .aim {
+    position: absolute;
+    height: 10px;
+    z-index: 5;
+    --aim: var(--accent);
+    background: linear-gradient(var(--aim), var(--aim)) no-repeat;
+    background-size: 100% 3px;
+  }
+
+  .aim.top {
+    top: 0;
+    background-position: top;
+  }
+
+  .aim.bottom {
+    bottom: 0;
+    background-position: bottom;
+  }
+
+  .aim::before,
+  .aim::after {
+    content: "";
+    position: absolute;
+    width: 7px;
+    height: 5px;
+    background: var(--aim);
+  }
+
+  .aim::before {
+    left: 0;
+  }
+
+  .aim::after {
+    right: 0;
+  }
+
+  .aim.top::before,
+  .aim.top::after {
+    top: 3px;
+  }
+
+  .aim.bottom::before,
+  .aim.bottom::after {
+    bottom: 3px;
+  }
+
+  .aim.top::before {
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+
+  .aim.top::after {
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  .aim.bottom::before {
+    clip-path: polygon(0 0, 100% 100%, 0 100%);
+  }
+
+  .aim.bottom::after {
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  }
+
+  .aim.movable {
+    cursor: grab;
+  }
+
+  .aim.movable:hover,
+  .aim.moving {
+    --aim: var(--accent-hi);
+  }
+
+  .aim.moving {
+    cursor: grabbing;
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing
