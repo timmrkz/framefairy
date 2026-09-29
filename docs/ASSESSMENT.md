@@ -96,7 +96,9 @@ facade the app goes around, and three files too big to hold in one's head.
    `StopLeftoverServer` (`engine/leftover.go:88`) stops whatever matches its
    port and model, live or not. Either can also overwrite the other's note,
    so a real leftover is then never found. Fix: keep the owner's process id
-   in the note and stop the server only when that owner is gone. **Open.**
+   in the note and stop the server only when that owner is gone. **Fixed**
+   in #48: one note a server, with the process that started it, and a
+   model path with a space in it is found too.
 7. **The model's health check cannot be cancelled.** `local.go:326` asks
    `/health` with a client that has no timeout and no context. A server that
    accepts and never answers holds the load, and at quit it is left running

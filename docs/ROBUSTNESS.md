@@ -41,9 +41,11 @@ what became of it.
    15 s. `engine/modelhost.go`, `cmd/framefairy-app/jobs.go`,
    `cmd/framefairy-app/main.go`. An app that is killed rather than quit, or
    that crashes, stops nothing, so a running llama-server is written down,
-   its process, port and model, in `~/.framefairy/llama-server.json`, and
-   the next start stops it if that process is still exactly that server.
-   A process the system has given the same number since is left alone.
+   its process, port, model and the program that started it, one note a
+   server in `~/.framefairy/llama-servers/`, and the next start stops it
+   once that program has gone, if that process is still exactly that
+   server. A process the system has given the same number since is left
+   alone, and so is a server the command line is still using.
    `engine/leftover.go`.
    Found by Tim on a Mac: all of that ran after `app.Run`, which never
    returns on macOS. Cmd+Q ends the process from inside Cocoa once Wails

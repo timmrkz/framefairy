@@ -166,10 +166,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 // The app waited five seconds for one, frozen, on Cmd+Q and on removing an
 // episode while a search ran.
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
-	was := serverNoteFile
-	note := filepath.Join(t.TempDir(), "llama-server.json")
-	serverNoteFile = func() string { return note }
-	t.Cleanup(func() { serverNoteFile = was })
+	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
