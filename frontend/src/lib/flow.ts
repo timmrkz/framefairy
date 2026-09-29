@@ -144,6 +144,20 @@ export function nextWindow(passes: Passes, duration: number, size: number, least
   return { from: room.from, to: room.from + (span > size * 1.5 ? size : span) };
 }
 
+// Where the window goes after a search: on from where the search ended,
+// as long as the window the person left it, so a window made a minute long
+// stays a minute long and the episode is walked in the steps they chose.
+// At the end of the episode it starts over at the start, and a scrap at
+// the end shorter than least, too short for a clip, is passed over the
+// same way. The last window may be shorter than the others, never longer
+// than the episode.
+export function followingWindow(searched: Span, duration: number, least = 0): Span {
+  const size = Math.max(searched.to - searched.from, 0);
+  let from = searched.to;
+  if (duration - from < Math.max(least, 0.5)) from = 0;
+  return { from, to: Math.min(from + size, duration) };
+}
+
 // How many searches have read any of from..to, the most of them.
 export function timesIn(passes: Passes, from: number, to: number): number {
   let most = 0;

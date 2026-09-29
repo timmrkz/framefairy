@@ -45,6 +45,7 @@
     Newest,
     nextWindow,
     timesIn,
+    followingWindow,
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
@@ -699,9 +700,11 @@
     }
   }
 
-  // The window moves on to where the fewest searches have been, earliest
-  // first, see nextWindow. What was chosen before does not come into it:
-  // the search just made made that part one more.
+  // The window the app would choose: where the fewest searches have been,
+  // earliest first, as long as the episode's windows are, see nextWindow.
+  // The workspace opens on it, and a double-click on the window's marks
+  // puts it back there. After a search the window walks on instead, see
+  // followingWindow.
   function moveWindowOn() {
     const next = nextWindow(coverage.passes, duration, windowSize, min);
     from = next.from;
@@ -1794,11 +1797,15 @@
         listedBefore = null;
         return;
       }
-      // The window just searched is a wall now, so the window moves on to
-      // the next one nobody has looked at. It would otherwise sit on the
-      // clips it just found, lying over their marks as an X-ray and
-      // offering to throw them away.
-      moveWindowOn();
+      // The window walks on from where the search ended, as long as it
+      // was, and starts over at the start at the end of the episode, see
+      // followingWindow. The search's own window, which the Go side may
+      // have started by itself, not whatever the workspace held.
+      const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
+      const next = followingWindow({ from: ended.from ?? from, to: searchedTo }, duration, min);
+      from = next.from;
+      to = next.to;
+      keepWindow();
       // A clip was shown while the search ran, and whatever has been
       // picked since is where the hand is now. Otherwise the search's
       // first clip, the way it always was.

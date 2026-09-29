@@ -12,6 +12,7 @@ import {
   mergeJob,
   nextWindow,
   timesIn,
+  followingWindow,
   pictureIsStale,
   pieceAt,
   insideClip,
@@ -632,5 +633,29 @@ describe("waitShare", () => {
   it("is full when all of the window is heard and never past it", () => {
     expect(waitShare(1800, [[0, 3600]], 3600)).toBe(1);
     expect(waitShare(1800, [[0, 4000]], 3600)).toBe(1);
+  });
+});
+
+describe("after a search the window walks on as long as it was left", () => {
+  const six = 6 * 60;
+
+  test("a minute at three goes on to a minute at four", () => {
+    expect(followingWindow({ from: 180, to: 240 }, six, 20)).toEqual({ from: 240, to: 300 });
+  });
+
+  test("the last one is cut at the end of the episode", () => {
+    expect(followingWindow({ from: 240, to: 330 }, six, 20)).toEqual({ from: 330, to: 360 });
+  });
+
+  test("at the end it starts over at the start, the same length", () => {
+    expect(followingWindow({ from: 300, to: 360 }, six, 20)).toEqual({ from: 0, to: 60 });
+  });
+
+  test("a scrap too short for a clip is passed over", () => {
+    expect(followingWindow({ from: 250, to: 350 }, six, 20)).toEqual({ from: 0, to: 100 });
+  });
+
+  test("a short episode searched whole is searched whole again", () => {
+    expect(followingWindow({ from: 0, to: six }, six, 20)).toEqual({ from: 0, to: six });
   });
 });
