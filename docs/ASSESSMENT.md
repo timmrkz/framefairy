@@ -147,7 +147,12 @@ facade the app goes around, and three files too big to hold in one's head.
     `permissions:` block, every action is pinned by tag rather than by
     commit, and `tools.yml` puts `inputs.tag` straight into a shell line.
     Fix: `contents: read` by default, pins by commit or Dependabot for
-    actions, inputs through `env:`. **Open.**
+    actions, inputs through `env:`. **Fixed** in #51: every
+    workflow has a `permissions:` block, every action is pinned to the
+    commit its tag named on 29 September 2026, with the tag beside it,
+    and the release tag reaches the shell through `env:`. Pinned actions
+    do not update themselves. Dependabot could propose updates as pull
+    requests, which is left for Tim to decide.
 14. **Writes that replace a file are not flushed.** `writeAtomic`
     (`engine/transcript.go:140`) and `replacePlan` (`engine/edit.go:236`)
     write a temporary file and rename it, but never sync it. After a power

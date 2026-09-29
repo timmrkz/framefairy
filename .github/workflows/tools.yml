@@ -79,7 +79,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # CI is set in the environment on a runner, so make never installs
       # anything by itself here. What a build needs is asked for in the
@@ -117,11 +117,11 @@ jobs:
           sh scripts/verify-tools.sh .build/unpacked/bin .build/dist/*.manifest.txt
 
       - name: Sign what came out
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: .build/dist/*.tar.gz
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tools-${{ runner.os }}-${{ runner.arch }}
           path: .build/dist/*
@@ -141,12 +141,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: sh scripts/pack-source.sh .build/dist
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: .build/dist/*.tar.gz
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tools-source
           path: .build/dist/*
@@ -162,8 +162,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: assets
           merge-multiple: true
@@ -172,12 +172,16 @@ jobs:
       # whole point is being able to say where a file came from, one less
       # third party in the chain is worth the three extra lines.
       - name: Make the release and attach everything to it
+        # The tag is typed by whoever starts the workflow, so it reaches the
+        # shell as a variable and never as part of the script.
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
         run: |
-          tag='${{ inputs.tag }}'
+          tag=$TAG
           [ -n "$tag" ] || tag="tools-$(date -u '+%Y-%m-%d')"
-          sed "s/{REPO}/${{ github.repository }}/g" \
+          sed "s|{REPO}|$REPO|g" \
             .github/tools-release-notes.md >notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" assets/* --clobber
