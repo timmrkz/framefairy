@@ -166,10 +166,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 // The app waited five seconds for one, frozen, on Cmd+Q and on removing an
 // episode while a search ran.
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
-	was := serverNoteFile
-	note := filepath.Join(t.TempDir(), "llama-server.json")
-	serverNoteFile = func() string { return note }
-	t.Cleanup(func() { serverNoteFile = was })
+	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
 	model := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(model, nil, 0o644); err != nil {
@@ -232,5 +229,41 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "ran out of memory") ||
 		!strings.Contains(err.Error(), "another language model") {
 		t.Errorf("got %v", err)
+	}
+}
+
+// A server that takes the connection and never answers holds a look at
+// its health no longer than healthWait, and not a moment once the load is
+// cancelled. Without a limit, a load that hung there outlived Cancel and
+// quitting.
+func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+	was := healthWait
+	healthWait = 200 * time.Millisecond
+	t.Cleanup(func() { healthWait = was })
+
+	began := time.Now()
+	if healthy(context.Background(), server.URL) {
+		t.Error("a server that never answered was taken for ready")
+	}
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("a look at a server that never answers took %s", took)
+	}
+
+	healthWait = time.Minute
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	began = time.Now()
+	healthy(ctx, server.URL)
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("a cancelled load waited %s for an answer", took)
 	}
 }

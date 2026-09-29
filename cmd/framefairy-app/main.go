@@ -386,12 +386,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	var out []Check
 
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	if opts.FFmpeg != "" {
-		e.FFmpeg = opts.FFmpeg
-		if guess := filepath.Join(filepath.Dir(opts.FFmpeg), "ffprobe"); fileExists(guess) {
-			e.FFprobe = guess
-		}
-	}
+	e.UseTools(opts.FFmpeg, "")
 	ff := Check{Name: "ffmpeg"}
 	if err := e.Preflight(ctx); err != nil {
 		ff.Detail = err.Error()
@@ -433,7 +428,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		asrDir = engine.DefaultModelDir()
 	}
 	speech := Check{Name: "Speech model", Detail: asrDir}
-	speech.OK = fileExists(filepath.Join(asrDir, "tokens.txt"))
+	speech.OK = engine.SpeechModelReady(asrDir)
 	if !speech.OK {
 		speech.Detail = "not found in " + asrDir + "\n" + engine.ModelHelp(asrDir)
 	}
@@ -642,12 +637,7 @@ func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo,
 		return cached, nil
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	if ff := s.store.Settings().FFmpeg; ff != "" {
-		e.FFmpeg = ff
-		if guess := filepath.Join(filepath.Dir(ff), "ffprobe"); fileExists(guess) {
-			e.FFprobe = guess
-		}
-	}
+	e.UseTools(s.store.Settings().FFmpeg, "")
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
 		s.mu.Lock()

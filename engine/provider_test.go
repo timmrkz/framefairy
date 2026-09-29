@@ -421,3 +421,43 @@ func TestAThinkingModelIsAskedToSayItThinks(t *testing.T) {
 		t.Errorf("openai was sent %v", got)
 	}
 }
+
+// claudeThinkingOnly is a reply that spent the whole ceiling thinking and
+// never answered, in blocks of the kinds given.
+func claudeThinkingOnly(kinds ...string) func(w http.ResponseWriter) {
+	return func(w http.ResponseWriter) {
+		w.Header().Set("content-type", "text/event-stream")
+		fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n")
+		for i, kind := range kinds {
+			fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":%d,\"content_block\":{\"type\":%q}}\n\n", i, kind)
+		}
+		fmt.Fprint(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"},\"usage\":{\"output_tokens\":100}}\n\n")
+		fmt.Fprint(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}
+}
+
+// A reply that is thinking and nothing else is asked again with more room,
+// whatever kinds of thinking it holds. The check once read the wording of
+// the error, which named the kinds, so thinking the provider hides from
+// view beside thinking it shows was not asked again.
+func TestAReplyOfThinkingAloneIsAskedAgain(t *testing.T) {
+	for _, kinds := range [][]string{{"thinking"}, {"redacted_thinking", "thinking"}, {"redacted_thinking"}} {
+		fake, e := cloud(t, claudeThinkingOnly(kinds...), claudeStream(`{"clips": []}`))
+		text, err := e.CallAPIWithHeadroom(context.Background(), "p", "claude-sonnet-5", 100, "", "plan", "", nil)
+		if err != nil || text != `{"clips": []}` {
+			t.Errorf("%v: %q, %v", kinds, text, err)
+			continue
+		}
+		if n := len(fake.seen()); n != 2 {
+			t.Errorf("%v: %d requests", kinds, n)
+		}
+	}
+	// A reply with no text for another reason is not asked again.
+	fake, e := cloud(t, claudeThinkingOnly("tool_use"), claudeStream(`{"clips": []}`))
+	if _, err := e.CallAPIWithHeadroom(context.Background(), "p", "claude-sonnet-5", 100, "", "plan", "", nil); err == nil {
+		t.Error("a reply of a tool call alone was taken for an answer")
+	}
+	if n := len(fake.seen()); n != 1 {
+		t.Errorf("a reply of a tool call alone was asked %d times", n)
+	}
+}
