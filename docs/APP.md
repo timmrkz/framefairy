@@ -351,6 +351,12 @@ place.
   sight fades rather than being cut off, which is what says there is more.
   What a search is doing fills the button it was started from, behind its
   own words, so nothing is drawn across the list for it.
+- **A clip under the hand is lit wherever it is shown.** The pointer on a
+  card lights the clip's mark on the range picker and on the clip timeline,
+  or the clip's frame when it is the clip up close. The pointer on a mark
+  on either track lights its card and its mark on the other track. Each
+  looks exactly as it does under the pointer. The list does not scroll to
+  a card lit from a track.
 - **The playhead** is a thin line in the app's colour with a head at the
   top, the way an editor draws one, the same on both tracks. It is drawn
   over the track rather than inside it, because a track clips what is in it

@@ -36,6 +36,7 @@
     type Parts,
   } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
+  import { hoverClip } from "../lib/hover";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
 
@@ -62,6 +63,8 @@
     thumbnails = [],
     onthumbnail,
     marks = [],
+    hovered = "",
+    onhover,
     onmark,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
@@ -136,6 +139,11 @@
     marks?: { key: string; start: number; end: number; rendered: boolean }[];
     // A mark clicked, which chooses that clip, as on the range picker.
     onmark?: (key: string) => void;
+    // The clip under the hand, here, on the range picker or in the clip
+    // list. Its mark is lit the way it is under the pointer, and when it is
+    // the clip up close, its frame is.
+    hovered?: string;
+    onhover?: (key: string, on: boolean) => void;
     // What the clip is, for the row under the timeline: its edges as they
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
@@ -1274,6 +1282,7 @@
     {#if wholeClip}
       <div
         class="span frame"
+        class:lit={!!clip && clip.key === hovered}
         style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
       ></div>
     {/if}
@@ -1331,9 +1340,11 @@
       <button
         class="clipmark"
         class:rendered={m.rendered}
+        class:lit={m.key === hovered}
         style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
         aria-label="Clip at {clock(m.at)}"
         title="Choose the clip at {clock(m.at)}"
+        {@attach hoverClip(m.key, onhover)}
         onpointerdown={(e) => e.stopPropagation()}
         onclick={() => onmark?.(m.key)}
       ></button>

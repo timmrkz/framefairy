@@ -103,6 +103,15 @@
   // so whatever they ask for fits wherever the window is.
   let roomView = $state<RoomView | null>(null);
   let selected = $state("");
+  // The clip under the hand, on its card, on the range picker or on the
+  // clip timeline. All three light it, so the same clip is found in the
+  // other two at a glance. Going off one thing and onto the next can come
+  // in either order, so going off only clears what is still this clip.
+  let hovered = $state("");
+  function hoverClip(key: string, on: boolean) {
+    if (on) hovered = key;
+    else if (hovered === key) hovered = "";
+  }
   // What the clip list held and which clip was picked when a search began.
   // A search writes each clip to the plan as it is found, so the first one
   // it finds is put on screen the moment it lands, long before the search
@@ -1992,6 +2001,8 @@
     shown={busy || !!stopped}
     {marks}
     {selected}
+    {hovered}
+    onhover={hoverClip}
     onmark={select}
     playhead={time}
     onseek={seekTo}
@@ -2400,6 +2411,8 @@
               clips={shown}
               arriving={onTheWay}
               {selected}
+              {hovered}
+              onhover={hoverClip}
               {coming}
               waiting={comingNow}
               next={shownNext}
@@ -2435,6 +2448,8 @@
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
         {marks}
+        {hovered}
+        onhover={hoverClip}
         onmark={select}
         captions={captions?.captions ?? []}
         captionLook={shownCaptions

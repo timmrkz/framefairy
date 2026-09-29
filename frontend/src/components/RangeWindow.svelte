@@ -18,6 +18,7 @@
   import { onMount } from "svelte";
   import { clock } from "../lib/api";
   import { gapsIn, type Parts } from "../lib/flow";
+  import { hoverClip } from "../lib/hover";
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
   import { scrub as scrubPlayhead } from "../lib/scrub";
@@ -31,6 +32,8 @@
     shown = false,
     marks = [],
     selected = "",
+    hovered = "",
+    onhover,
     onmark,
     playhead = -1,
     onseek,
@@ -52,6 +55,10 @@
     shown?: boolean;
     marks?: { key: string; start: number; end: number; rendered: boolean }[];
     selected?: string;
+    // The clip under the hand, here, on the clip timeline or in the clip
+    // list. Its mark is lit the way it is under the pointer.
+    hovered?: string;
+    onhover?: (key: string, on: boolean) => void;
     onmark?: (key: string) => void;
     playhead?: number;
     onseek?: (time: number) => void;
@@ -325,8 +332,10 @@
       class="clipmark"
       class:rendered={m.rendered}
       class:selected={m.key === selected}
+      class:lit={m.key === hovered}
       style="left: {at(m.start)}px; width: {Math.max(at(m.end) - at(m.start), 4)}px"
       aria-label="Clip at {clock(m.start)}"
+      {@attach hoverClip(m.key, onhover)}
       onpointerdown={(e) => e.stopPropagation()}
       onclick={() => onmark?.(m.key)}
     ></button>
