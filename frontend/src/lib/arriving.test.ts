@@ -138,6 +138,15 @@ describe("one card carries the search's work, from the first frame to the last",
     expect(carrier.pick([], "s")).toBe("");
   });
 
+  test("a card still being fitted carries it, because it lands last", () => {
+    const cards = [
+      card("s/1", 100, { step: "fitting" }),
+      card("s/2", 400, { step: "framing" }),
+      card("s/3", 900, { step: "framing" }),
+    ];
+    expect(new Carrier().pick(cards, "s")).toBe("s/1");
+  });
+
   test("a card that stopped carries nothing", () => {
     expect(new Carrier().pick([card("s/1", 100), card("s/2", 400, { stopped: true })], "s")).toBe("s/1");
   });

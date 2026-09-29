@@ -503,7 +503,10 @@ place.
       search that is done, measured against how long the same parts took
       the last time on this machine. Inside a part, what the model counts
       itself beats the clock: the transcript it has read, what it has
-      thought against its budget, the clips it has written. A local model
+      thought against its budget, the clips it has written. Asking a local
+      model again about the clips well off the length is a part of its
+      own, so the fill is not full while the cards still say *Fitting to
+      the length*. A local model
       this machine has never timed is measured against a search timed on
       an M2 Max until its own first search has finished. A model in the
       cloud the app knows by name is measured against a first guess the

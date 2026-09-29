@@ -3,7 +3,7 @@
 // its place, wearing what is being done to it, until it is written. A clip
 // the model named and a clip made by hand with I or O come in the same way,
 // because nothing here asks which it is.
-import { clock, type Job } from "./api";
+import { clock, type Job, type JobStep } from "./api";
 import { arrivalLine } from "./steps";
 
 export type Arriving = {
@@ -24,7 +24,9 @@ export type Arriving = {
   end: number;
   // What it is called, once that is known.
   title: string;
-  // What is being done to it, how long is left, and how far it has come.
+  // What is being done to it, in the engine's word and in the words shown,
+  // how long is left, and how far it has come.
+  step?: JobStep;
   what: string;
   left: string;
   fraction: number;
@@ -88,6 +90,7 @@ export function arriving(
         start: clip.start,
         end: clip.end,
         title: clip.title ?? "",
+        step: clip.step,
         what: stopping(job) ? "Stopping" : line.what,
         left: line.left,
         fraction: line.fraction,
@@ -139,19 +142,22 @@ export class OnTheWay {
 // left to say it: how far the whole search has come and how long it has
 // left. One card, never all of them: every card of the search wore it
 // once, three fills and three "About 0:10 left" side by side for one
-// piece of work. It is the last of the search's cards in the list, the
-// one nearest where the row that said it stood, and it keeps it for as
-// long as it is on the way, so the work does not jump from card to card
-// as others land. A card whose clip is written has done its work and
-// passes it on.
+// piece of work. It is a card still being fitted to the length when
+// there is one, because those land last, after the model is asked about
+// them again, while the others only wait for their crop. Of those, the
+// last in the list, the one nearest where the row that said it stood. It
+// keeps it for as long as it is on the way, so the work does not jump from
+// card to card as others land. A card whose clip is written has done its
+// work and passes it on.
 export class Carrier {
   private key = "";
 
   pick(cards: OnTheWayCard[], job: string): string {
     const own = cards.filter((a) => a.job === job && !a.stopped && !a.held);
     if (own.some((a) => a.key === this.key)) return this.key;
+    const fitting = own.filter((a) => a.step === "fitting");
     let last: OnTheWayCard | undefined;
-    for (const a of own) if (!last || a.start >= last.start) last = a;
+    for (const a of fitting.length ? fitting : own) if (!last || a.start >= last.start) last = a;
     this.key = last?.key ?? "";
     return this.key;
   }
