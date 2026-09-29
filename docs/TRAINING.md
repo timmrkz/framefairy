@@ -27,6 +27,14 @@ A cut leaves 0.1 seconds (`--keep-pause`) of silence after the last word and
 before the next one. Where a pause is shorter than that, the two runs join
 into one piece and nothing plays twice.
 
+### Version 4
+
+The same brief, and when a window is searched again, or holds clips made
+by hand, the task names the lines that are in clips already and asks for
+other moments. Those lines stay in the transcript, so a new clip is read
+against what is around them. Without such lines the prompt is version 3
+word for word. The answer is version 2's.
+
 ### Version 3
 
 The brief for any video. The brief before it was written for one podcast

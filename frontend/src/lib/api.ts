@@ -205,6 +205,8 @@ export interface WindowView {
 export interface CoverageView {
   searched: WindowView[];
   free: WindowView[];
+  // The whole episode in parts, each with how many searches have read it.
+  passes: { from: number; to: number; times: number }[];
 }
 
 export interface SourceView {

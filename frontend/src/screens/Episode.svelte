@@ -43,6 +43,7 @@
     inEpisode,
     Newest,
     nextWindow,
+    timesIn,
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
@@ -88,7 +89,7 @@
   let still = $state("");
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
-  let coverage = $state<CoverageView>({ searched: [], free: [] });
+  let coverage = $state<CoverageView>({ searched: [], free: [], passes: [] });
   // How much one search can read, from the engine, and what that makes of
   // the window and the clip settings. The window is no longer than the
   // model reads in one request and no shorter than the clips asked for
@@ -238,11 +239,11 @@
       label: "New",
       icon: "plus",
       run: newClips,
-      off: duration <= 0 || to <= 0 || !roomLeft,
+      off: duration <= 0 || to <= 0,
       primary: true,
-      title: !roomLeft
-        ? "Every part of the episode has been searched"
-        : `Look for clips from ${clock(from)} to ${clock(to)}, the next part nobody has looked at`,
+      title: searchedBefore
+        ? `Look again for clips from ${clock(from)} to ${clock(to)}, keeping the ones there are`
+        : `Look for clips from ${clock(from)} to ${clock(to)}`,
     };
   });
 
@@ -651,9 +652,10 @@
             ? 1
             : 0),
   );
-  // Whether any part of the episode is still to be searched. New takes
-  // the next one, and when there is none, it has nothing to do.
-  const roomLeft = $derived(coverage.free.some((w) => w.to - w.from > 0.5));
+  // Whether the window has been searched before, all of it or a part.
+  // New then looks there again, for moments its searches did not bring,
+  // and every clip there is stays.
+  const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
   const marks = $derived(
@@ -684,15 +686,15 @@
       const now = await api.coverage(path, min);
       if (coverageRead.keep(ticket)) coverage = now;
     } catch {
-      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [] };
+      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [], passes: [] };
     }
   }
 
-  // The window moves on to the first part nobody has looked at. What was
-  // chosen before does not come into it: after a search that part is a
-  // wall, and a window left on it hides the clip marks it just made.
+  // The window moves on to where the fewest searches have been, earliest
+  // first, see nextWindow. What was chosen before does not come into it:
+  // the search just made made that part one more.
   function moveWindowOn() {
-    const next = nextWindow(coverage.free, coverage.searched, duration, windowSize);
+    const next = nextWindow(coverage.passes, duration, windowSize, min);
     from = next.from;
     to = next.to;
     keepWindow();
@@ -1577,7 +1579,7 @@
   }
 
   function newClips() {
-    if (roomLeft) findClips(false);
+    findClips(false);
   }
 
   // A click shows at once: the list opens its rows and the head says

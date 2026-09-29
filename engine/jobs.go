@@ -75,6 +75,9 @@ type JobRecord struct {
 	Min    float64 `json:"min,omitempty"`
 	Max    float64 `json:"max,omitempty"`
 	Replan bool    `json:"replan,omitempty"`
+	// Pass is which search of its window a search is, so one carried on
+	// writes to the plan it began, see PlanRequest.Pass.
+	Pass int `json:"pass,omitempty"`
 
 	// A render: the plan, its clips, empty for all of them, and the clips
 	// finished so far.
@@ -105,7 +108,22 @@ type StepTime struct {
 
 // Request is what a search asks for.
 func (r JobRecord) Request() PlanRequest {
-	return PlanRequest{From: r.From, To: r.To, Count: r.Count, Min: r.Min, Max: r.Max, Replan: r.Replan}
+	return PlanRequest{From: r.From, To: r.To, Count: r.Count, Min: r.Min, Max: r.Max, Replan: r.Replan,
+		Pass: r.Pass}
+}
+
+// PlanName is the plan file a search writes, see PassName, for an episode
+// duration seconds long.
+func (r JobRecord) PlanName(duration float64) string {
+	var window *Window
+	if r.From > 0 || r.To > 0 || r.Pass > 1 {
+		to := r.To
+		if to <= 0 || to > duration {
+			to = duration
+		}
+		window = &Window{r.From, to}
+	}
+	return PassName(window, r.Pass)
 }
 
 // Clip is what a clip made by hand asks for.
@@ -416,8 +434,15 @@ func (j *job) fail(reason string) {
 // What was heard stays however the search ends, and the next search
 // carries on from there.
 func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan string, err error) {
+	// A new search is the next pass over its window, with a plan of its
+	// own beside the ones before it, and keeps every clip they have.
+	if req.Pass == 0 {
+		if req.Pass, err = p.nextPass(ctx, req); err != nil {
+			return "", err
+		}
+	}
 	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, From: req.From, To: req.To,
-		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan})
+		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass})
 	defer j.end(&err)
 
 	end, err := p.windowEnd(ctx, req)

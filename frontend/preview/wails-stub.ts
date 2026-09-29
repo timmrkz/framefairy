@@ -1004,15 +1004,25 @@ export const Call = {
           ...made,
         ].sort((x, y) => x.start - y.start));
       }
-      case "Coverage":
-        if (fresh) {
-          if (!found.length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
-          return Promise.resolve({ searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: found.length }], free: [{ from: 1800, to: 14423 }] });
-        }
-        return Promise.resolve({
-          searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
-          free: [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
+      case "Coverage": {
+        // The parts searched once and the parts free, and the episode in
+        // passes made of the two, the way the Go side counts them.
+        const view = (searched: { from: number; to: number; plans?: string[]; clips?: number }[], free: { from: number; to: number }[]) => ({
+          searched,
+          free,
+          passes: [...searched.map((w) => ({ from: w.from, to: w.to, times: 1 })), ...free.map((w) => ({ ...w, times: 0 }))].sort((a, b) => a.from - b.from),
         });
+        if (fresh) {
+          if (!found.length) return Promise.resolve(view([], [{ from: 0, to: 14423 }]));
+          return Promise.resolve(view([{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: found.length }], [{ from: 1800, to: 14423 }]));
+        }
+        return Promise.resolve(
+          view(
+            [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
+            [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
+          ),
+        );
+      }
       case "Room":
         // ?uneven is an episode read for its first hour, lighter there than
         // the rest is weighed, the way a real one is: the longest window

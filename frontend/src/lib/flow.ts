@@ -117,32 +117,38 @@ export function waitShare(from: number, heard: Parts, to: number): number {
 // A part of the episode, in seconds. The range picker works in these.
 export type Span = { from: number; to: number };
 
-// Where the window goes when it has to choose for itself: the first
-// part nobody has looked at, and at most one window of it, as long as the
-// episode's windows are, see suggestedWindow in suggest.ts.
-// With the whole episode searched there is no free room left, so it rests
-// on the last part that was searched, which is the one whose clips are
-// on screen.
+// The episode in parts, each with how many searches have read it, from
+// its start to its end, the parts nobody has searched too, see
+// SearchPasses in engine/windows.go.
+export type Passes = { from: number; to: number; times: number }[];
+
+// Where the window goes when it has to choose for itself: where the
+// fewest searches have been, earliest first, and at most one window of
+// it, as long as the episode's windows are, see suggestedWindow in
+// suggest.ts. The first round walks the episode from its start, and when
+// every part has been searched once the second starts over at the start,
+// and so on, so New always does the same thing and never runs out. A part
+// shorter than least, too short to hold a clip, is passed over.
 //
-// A window is never left lying on material that has just been searched. It
-// reads as an X-ray there, it hides the clip marks under it, and its trash
-// can offers to throw away the clips that were only just found, which is
-// the opposite of what the search was for.
-export function nextWindow(
-  free: Span[],
-  searched: Span[],
-  duration: number,
-  size: number,
-): Span {
-  const room = free.find((w) => w.to - w.from > 0.5);
-  if (!room) {
-    const last = searched[searched.length - 1];
-    return { from: last?.from ?? 0, to: last?.to ?? duration };
-  }
+// A window is never left lying on material that has just been searched
+// while there is a part searched fewer times: its search made that part
+// one more, so it is not the fewest any more.
+export function nextWindow(passes: Passes, duration: number, size: number, least = 0): Span {
+  const usable = passes.filter((p) => p.to - p.from >= Math.max(least, 0.5));
+  if (!usable.length) return { from: 0, to: duration };
+  const fewest = Math.min(...usable.map((p) => p.times));
+  const room = usable.find((p) => p.times === fewest)!;
   const span = room.to - room.from;
   // A part only a little longer than a window is taken whole, rather than
   // leaving a scrap behind that is too short to search.
   return { from: room.from, to: room.from + (span > size * 1.5 ? size : span) };
+}
+
+// How many searches have read any of from..to, the most of them.
+export function timesIn(passes: Passes, from: number, to: number): number {
+  let most = 0;
+  for (const p of passes) if (p.to > from + 0.5 && p.from < to - 0.5) most = Math.max(most, p.times);
+  return most;
 }
 
 // A run of asks where only the newest answer counts.

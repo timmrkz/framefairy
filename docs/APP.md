@@ -752,11 +752,17 @@ place.
       after them. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed.
-    - **New**, above the list, finds clips in the next part of the
-      episode nobody has searched, as long as the episode's windows are,
-      and says so while it looks. The clips it finds join the ones already
-      there. Nobody chooses the part: it is the app's to decide. When every
-      part has been searched New is off, and says so in its title.
+    - **New**, above the list, finds clips in the window, as long as the
+      episode's windows are, and says so while it looks. The clips it
+      finds join the ones already there. The window goes where the fewest
+      searches have been, earliest first, so the first round walks the
+      episode from its start, and once every part has been searched the
+      next round starts over at the start. A short episode is one window
+      and is searched whole each time. A window searched again keeps every
+      clip there is: the model is told which lines are clips already and
+      asked for other moments, and a search that brings none ends with
+      nothing added. New is never off for want of room, and its title
+      says whether it looks somewhere new or again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
       can, saying **Removed** and offering **Put it back**. Nothing above or

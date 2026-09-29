@@ -729,6 +729,16 @@ type WindowView struct {
 type CoverageView struct {
 	Searched []WindowView `json:"searched"`
 	Free     []WindowView `json:"free"`
+	// Passes is the whole episode in parts, each with how many searches
+	// have read it, see engine.SearchPasses. New goes by it.
+	Passes []PassView `json:"passes"`
+}
+
+// PassView is a part of an episode and how many searches have read it.
+type PassView struct {
+	From  float64 `json:"from"`
+	To    float64 `json:"to"`
+	Times int     `json:"times"`
 }
 
 // Coverage gives the parts of an episode that have been searched for
@@ -745,7 +755,10 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (
 	plans := engine.Status(path, s.store.Settings().ASRModel).Plans
 	looked := engine.SearchedPlans(plans, info.Duration)
 	searched := make([]engine.Window, 0, len(looked))
-	out := CoverageView{Searched: []WindowView{}, Free: []WindowView{}}
+	out := CoverageView{Searched: []WindowView{}, Free: []WindowView{}, Passes: []PassView{}}
+	for _, p := range engine.SearchPasses(plans, info.Duration) {
+		out.Passes = append(out.Passes, PassView{From: p.Start, To: p.End, Times: p.Times})
+	}
 	for _, w := range looked {
 		searched = append(searched, w.Window)
 		out.Searched = append(out.Searched,
@@ -855,11 +868,17 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 		logs := filepath.Join(engine.WorkDir(j.Episode), "logs")
 		plan := filepath.Join(logs, engine.HandPlanName)
 		if j.Kind == engine.JobSearch {
-			var window *engine.Window
-			if j.From > 0 || j.To > 0 {
-				window = &engine.Window{Start: j.From, End: j.To}
+			// The search's own record says which pass of its window it
+			// is, and so which plan it writes.
+			rec := engine.JobRecord{From: j.From, To: j.To}
+			if r := engine.ReadSearch(j.Episode); r != nil {
+				rec = *r
 			}
-			plan = filepath.Join(logs, engine.PlanName(window))
+			duration := rec.To
+			if info, err := s.probe(context.Background(), j.Episode); err == nil {
+				duration = info.Duration
+			}
+			plan = filepath.Join(logs, rec.PlanName(duration))
 		}
 		for _, u := range j.Underway {
 			if u.N == n {

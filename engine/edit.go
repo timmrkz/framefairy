@@ -1148,9 +1148,10 @@ func IsPlanFile(path string) bool {
 }
 
 // planNameRe is what a clip set is called: clips.json for a search of the
-// whole episode, clips-<from>-<to>.json for a search of a window, and
-// HandPlanName for the clips made by hand.
-var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+|-hand)?\.json$`)
+// whole episode, clips-<from>-<to>.json for a search of a window,
+// clips-<from>-<to>-<pass>.json for a later search of it, see PassName,
+// and HandPlanName for the clips made by hand.
+var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+(-\d+)?|-hand)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
 // with it the clips it held. The part it covered is free to be searched

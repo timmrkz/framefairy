@@ -89,6 +89,12 @@ type Options struct {
 	// window is missing, it makes the plan instead. The app sets it, the
 	// command line does not.
 	ExactPlan bool
+	// Pass is which search of the window this is, see PassName. 0 and 1
+	// are the first.
+	Pass int
+	// Taken are the parts of the episode clips were proposed for already.
+	// The model is told to leave them, see PlanOptions.Taken.
+	Taken []Window
 	// NoRecord stops training records from being written.
 	NoRecord bool
 	// TrainingDir is the one folder the records go in. Empty means the
@@ -269,7 +275,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	logsDir := filepath.Join(work, "logs")
 	planName := "clips.json"
 	if window != nil {
-		planName = PlanName(window)
+		planName = PassName(window, opts.Pass)
 	}
 	planPath := opts.ClipsPath
 	if planPath == "" {
@@ -404,6 +410,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
 				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
+				Pass: opts.Pass, Taken: opts.Taken,
 				Recipe:   opts.Recipe,
 				PlanPath: planPath, CaptionDir: planCaptions,
 			})
@@ -456,6 +463,10 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	if err != nil {
 		log.Error("clip plan is invalid: %s", err)
 		return 1
+	}
+	if len(clips) == 0 && plannedNow && len(opts.Taken) > 0 && opts.PlanOnly {
+		// A window searched again that held nothing new, see BuildPlan.
+		return 0
 	}
 	if len(clips) == 0 {
 		log.Error("clip plan contains no clips")
