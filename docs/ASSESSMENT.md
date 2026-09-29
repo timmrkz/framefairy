@@ -160,7 +160,10 @@ facade the app goes around, and three files too big to hold in one's head.
 15. **Plan locks hold only inside one process.** `lockFile`
     (`engine/edit.go:151`) is a map of mutexes, so the CLI and the app
     editing one plan at once can lose an edit. Unlikely, but it should be
-    written down or closed with a file lock. **Open.**
+    written down or closed with a file lock. **Fixed** in
+    #51 on macOS and Linux: `flock` on a hidden file beside the plan or
+    transcript, taken after the lock inside the program. Windows keeps
+    only the lock inside the program until it is shipped.
 16. **Some reads and downloads have no bound.** The speech model download
     uses `http.DefaultClient` (`engine/speech.go:223`), so a stalled
     connection waits for Cancel. `api.go:297` reads a reply with

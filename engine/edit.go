@@ -150,11 +150,22 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // not be the one that disappears.
 var fileLocks sync.Map
 
+// lockFile holds the lock of the file at path until the function it
+// returns is called. Edits are one at a time inside the program, and one
+// program at a time as well, the command line and the app, see
+// lockAcrossProcesses. The lock inside the program is taken first, so two
+// edits in one program wait for each other without both waiting on the
+// system.
 func lockFile(path string) func() {
-	held, _ := fileLocks.LoadOrStore(resolvePath(path), &sync.Mutex{})
+	key := resolvePath(path)
+	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := held.(*sync.Mutex)
 	mu.Lock()
-	return mu.Unlock
+	release := lockAcrossProcesses(key)
+	return func() {
+		release()
+		mu.Unlock()
+	}
 }
 
 func editPlan(path string, change func(top *object, clips []*object) error) error {
