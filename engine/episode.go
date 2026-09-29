@@ -228,25 +228,28 @@ var ErrNoTranscript = errors.New("this episode has no current transcript yet")
 // Transcript returns the whole-episode transcript from the cache. It never
 // transcribes, so it returns ErrNoTranscript if Transcribe has not run.
 func (p *Project) Transcript() (*Transcript, error) {
-	stamp, err := stampOf(p.Source)
+	return SavedTranscript(p.Source, p.LogsDir(), p.Base.ASRModel, p.Base.SilenceDB)
+}
+
+// SavedTranscript reads the words already heard of an episode, as far as
+// hearing it has got, with its corrections. It never transcribes, and
+// returns ErrNoTranscript when there is nothing heard yet.
+func SavedTranscript(source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
+	stamp, err := stampOf(source)
 	if err != nil {
 		return nil, err
 	}
-	modelDir := p.Base.ASRModel
 	if modelDir == "" {
 		modelDir = DefaultModelDir()
 	}
-	path := filepath.Join(p.LogsDir(), TranscriptName(nil))
-	file, words, frames, ok := readTranscriptFile(path, stamp,
-		filepath.Base(filepath.Clean(modelDir)))
+	file, words, frames, ok := readTranscriptFile(filepath.Join(logsDir, TranscriptName(nil)),
+		stamp, filepath.Base(filepath.Clean(modelDir)))
 	if !ok {
 		return nil, ErrNoTranscript
 	}
-	t := fromStored(words, frames, float64(file.From), float64(file.Mean), p.Base.SilenceDB)
+	t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
 	t.Heard = file.heard()
-	// Corrected words show corrected, in the app and in every clip made or
-	// changed from here on.
-	ApplyCorrections(t.Words, LoadCorrections(p.LogsDir()))
+	t.Correct(LoadCorrections(logsDir))
 	return t, nil
 }
 
@@ -352,7 +355,6 @@ type ClipView struct {
 	Start    float64       `json:"start"`
 	End      float64       `json:"end"`
 	Segments []SegmentView `json:"segments"`
-	Words    []WordView    `json:"words"`
 	Rejected bool          `json:"rejected"`
 	Rendered string        `json:"rendered,omitempty"`
 	Preview  string        `json:"preview,omitempty"`
@@ -375,11 +377,16 @@ type SegmentView struct {
 	Moved bool `json:"moved"`
 }
 
-// WordView is one word on the source clock.
+// WordView is one word. In a caption it also says which word of the
+// episode it stands for: Said is when that word starts in the episode, and
+// Whole is all of it, for a word the captions show in halves or a
+// correction that reads as several words.
 type WordView struct {
-	Start float64 `json:"start"`
-	End   float64 `json:"end"`
-	Text  string  `json:"text"`
+	Start float64  `json:"start"`
+	End   float64  `json:"end"`
+	Text  string   `json:"text"`
+	Said  *float64 `json:"said,omitempty"`
+	Whole string   `json:"whole,omitempty"`
 }
 
 // PlanView is a plan with everything the candidates screen needs.
@@ -436,9 +443,6 @@ func ReadPlan(path string) (*PlanView, error) {
 		}
 		for _, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved})
-		}
-		for _, w := range c.Words {
-			v.Words = append(v.Words, WordView{w.Start, w.End, w.Text})
 		}
 		if out := filepath.Join(work, "out", v.Basename+".mp4"); isFile(out) {
 			v.Rendered = out
@@ -514,177 +518,89 @@ type CaptionsView struct {
 
 // ClipCaptionsView gives the captions of one clip of a plan, on the clip's
 // own clock, in the lines and the look the render uses. It is what the app
-// draws over the picture, so that nothing about captions has to be decided
-// twice.
-func ClipCaptionsView(planPath, clipID string, overrides map[string]any) (*CaptionsView, error) {
-	return clipCaptionsView(planPath, clipID, overrides, nil, nil)
-}
-
-// DraftCaptionsView gives the captions a clip would have with other pieces,
-// while an edge of it or of a cut is being dragged, so the clip timeline
-// draws them under the hand rather than when it lets go. Nothing is
-// written. The pieces are where the edges are drawn, already snapped, and
-// the words are taken from the transcript the way an edit takes them. A
-// caption file written by hand is not read, because the edit that lands
-// removes it.
-func DraftCaptionsView(planPath, clipID string, pieces [][2]float64, t *Transcript,
-	overrides map[string]any) (*CaptionsView, error) {
-	if err := saneDraft(pieces); err != nil {
-		return nil, err
-	}
-	if t == nil {
-		t = &Transcript{}
-	}
-	return clipCaptionsView(planPath, clipID, overrides, pieces, t)
-}
-
-// maxDraftPieces is more pieces than any clip is cut into by hand.
-const maxDraftPieces = 256
-
-// saneDraft checks pieces that came from the interface: in order, apart,
-// and no longer than a trim may make a clip.
-func saneDraft(pieces [][2]float64) error {
-	if len(pieces) == 0 || len(pieces) > maxDraftPieces {
-		return renderErr("a clip needs between 1 and %d pieces", maxDraftPieces)
-	}
-	prev := 0.0
-	for _, p := range pieces {
-		if !isFinite(p[0]) || !isFinite(p[1]) || p[0] < prev || p[1] <= p[0] {
-			return renderErr("the pieces of a clip have to be in order and apart")
-		}
-		prev = p[1]
-	}
-	if pieces[len(pieces)-1][1]-pieces[0][0] > MaxClipSpan {
-		return renderErr("a clip can span at most %s minutes of the episode", fixed(MaxClipSpan/60, 0))
-	}
-	return nil
-}
-
-// WordStops gives words the way a clip's captions split them: a correction
-// that reads as two words is two, and a word too wide for a line is its
-// hyphenated halves, each with its share of the word's time, the same share
-// LayOutCaptions gives them. They are the words that light up one by one,
-// so they are where an edge dragged with shift stops, and they are known
-// before the edge reaches a word, not only once it is in the clip.
-func WordStops(planPath, clipID string, words []Cue, overrides map[string]any) ([]Cue, error) {
-	plan, clips, err := LoadClips(planPath)
+// draws over the picture, made by ClipCaptions like the render's, so that
+// nothing about captions is decided twice.
+func ClipCaptionsView(planPath, clipID string, t *Transcript, overrides map[string]any) (*CaptionsView, error) {
+	plan, clip, err := planClip(planPath, clipID)
 	if err != nil {
 		return nil, err
 	}
-	var clip *Clip
-	for i := range clips {
-		if clips[i].ID == clipID || clips[i].Basename() == clipID {
-			clip = &clips[i]
-			break
-		}
-	}
-	if clip == nil {
-		return nil, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
-	}
-	r := roomFor(captionStyleOf(plan.CaptionStyle(), *clip, overrides))
-	split := SplitCorrected(words)
-	var h *hyphenator
-	for _, w := range split {
-		if !r.fits(w.Text) {
-			// The language the clip's captions are read in, as LayOutCaptions
-			// reads it off them.
-			h = hyphenatorFor(languageOf([]Caption{{Words: SplitCorrected(clip.Words)}}))
-			break
-		}
-	}
-	return hyphenate(split, r, h), nil
+	return captionsView(plan, clip, t, overrides), nil
 }
 
-func clipCaptionsView(planPath, clipID string, overrides map[string]any,
-	pieces [][2]float64, t *Transcript) (*CaptionsView, error) {
-	plan, clips, err := LoadClips(planPath)
+// ShapedView is what a gesture makes of a clip, with the captions the clip
+// would have, for the clip timeline and the video preview while the hand
+// moves. Nothing is written.
+type ShapedView struct {
+	Shaped
+	Captions *CaptionsView `json:"captions"`
+}
+
+// ShapeClipView works out what a gesture makes of a clip and its captions,
+// see ShapeClip.
+func ShapeClipView(planPath, clipID string, g Gesture, t *Transcript, keepPause float64,
+	overrides map[string]any) (*ShapedView, error) {
+	shaped, err := ShapeClip(planPath, clipID, g, t, keepPause)
 	if err != nil {
 		return nil, err
 	}
-	var clip *Clip
-	for i := range clips {
-		if clips[i].ID == clipID || clips[i].Basename() == clipID {
-			clip = &clips[i]
-			break
-		}
+	plan, _, err := planClip(planPath, clipID)
+	if err != nil {
+		return nil, err
 	}
-	if clip == nil {
-		return nil, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
-	}
-	if pieces != nil {
-		draft := *clip
-		draft.Segments = make([]Segment, len(pieces))
-		for i, p := range pieces {
-			draft.Segments[i] = Segment{Start: p[0], End: p[1]}
-		}
-		draft.Words = nil
-		for _, w := range t.Words {
-			for _, p := range pieces {
-				if HoldsWord(p[0], p[1], w) {
-					draft.Words = append(draft.Words, Cue{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
-					break
-				}
-			}
-		}
-		clip = &draft
-	}
-
-	s := captionStyleOf(plan.CaptionStyle(), *clip, overrides)
-	work := filepath.Dir(filepath.Dir(planPath))
-	var captions []Caption
-	if pieces != nil {
-		captions = Captions(*clip, max(8, int(s.MaxChars)), TooWide(s))
-	} else {
-		captions, err = ClipCaptions(*clip, filepath.Join(work, "captions"), max(8, int(s.MaxChars)),
-			TooWide(s))
-		if err != nil {
-			return nil, err
-		}
-	}
-	return captionsView(*clip, captions, s), nil
+	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, overrides)}, nil
 }
 
-// ArrivingCaptionsView is the captions of a clip on its way, from the
-// pieces and words the plan builder says it keeps, laid out the way a
-// written clip's are, in the style of the clip set it goes into. It is
-// nil until the builder has them.
-func ArrivingCaptionsView(planPath string, u Underway, overrides map[string]any) *CaptionsView {
-	if len(u.Pieces) == 0 || len(u.Words) == 0 {
-		return nil
+// planClip finds one clip of a plan.
+func planClip(planPath, clipID string) (Plan, Clip, error) {
+	plan, clips, err := LoadClips(planPath)
+	if err != nil {
+		return Plan{}, Clip{}, err
 	}
-	clip := Clip{Words: u.Words}
-	for _, p := range u.Pieces {
-		clip.Segments = append(clip.Segments, Segment{Start: p[0], End: p[1]})
+	for _, c := range clips {
+		if c.ID == clipID || c.Basename() == clipID {
+			return plan, c, nil
+		}
 	}
-	var style map[string]any
-	if plan, _, err := LoadClips(planPath); err == nil {
-		style = plan.CaptionStyle()
-	}
-	s := captionStyleOf(style, clip, overrides)
-	return captionsView(clip, Captions(clip, max(8, int(s.MaxChars)), TooWide(s)), s)
+	return Plan{}, Clip{}, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
 }
 
-// captionStyleOf is the style a clip's captions are drawn in: the plan's,
-// the clip's own place for them, and what the app puts over both.
-func captionStyleOf(planStyle map[string]any, clip Clip, overrides map[string]any) Style {
-	style := map[string]any{}
-	for key, value := range clipStyle(planStyle, clip) {
-		style[key] = value
-	}
+// captionStyle is the look of a clip's captions: the plan's, the clip's
+// own caption line, and the overrides the render puts on top.
+func captionStyle(plan Plan, clip Clip, overrides map[string]any) map[string]any {
+	style := clipStyle(plan.CaptionStyle(), clip)
 	for key, value := range overrides {
 		if text, ok := value.(string); ok && text == "" {
 			continue
 		}
 		style[key] = value
 	}
-	return ResolveStyle(style)
+	return style
 }
 
-// captionsView lays a clip's captions out for the app.
-func captionsView(clip Clip, captions []Caption, s Style) *CaptionsView {
-	// The lines the render will use, so the picture in the app breaks the
-	// caption in the same places.
-	laid := LayOutCaptions(captions, s)
+// ArrivingCaptionsView is the captions of a clip on its way, from the
+// pieces the plan builder says it keeps and the words said in them, laid
+// out the way a written clip's are, in the style of the clip set it goes
+// into. It is nil until the builder has them.
+func ArrivingCaptionsView(planPath string, u Underway, t *Transcript,
+	overrides map[string]any) *CaptionsView {
+	if len(u.Pieces) == 0 {
+		return nil
+	}
+	var clip Clip
+	for _, p := range u.Pieces {
+		clip.Segments = append(clip.Segments, Segment{Start: p[0], End: p[1]})
+	}
+	if len(Said(clip, t.Words)) == 0 {
+		return nil
+	}
+	plan, _, _ := LoadClips(planPath)
+	return captionsView(plan, clip, t, overrides)
+}
+
+func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any) *CaptionsView {
+	s := ResolveStyle(captionStyle(plan, clip, overrides))
+	laid := ClipCaptions(clip, t, s)
 
 	// The render authors every measure against a 1920 pixel tall frame and
 	// scales by the real height.
@@ -702,15 +618,16 @@ func captionsView(clip Clip, captions []Caption, s Style) *CaptionsView {
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
 	}
+	said := Said(clip, t.Words)
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			first, last := c.Words[0], c.Words[len(c.Words)-1]
-			if w, ok := SaidWord(clip, (first.Start+first.End)/2); ok {
+			if w, ok := SaidWord(clip, said, (first.Start+first.End)/2); ok {
 				item.First = w.Start
 				item.StartMoved = clip.CaptionTimes[wordKey(w.Start)].Start != nil
 			}
-			if w, ok := SaidWord(clip, (last.Start+last.End)/2); ok {
+			if w, ok := SaidWord(clip, said, (last.Start+last.End)/2); ok {
 				item.Last = w.Start
 				item.EndMoved = clip.CaptionTimes[wordKey(w.Start)].End != nil
 			}
@@ -718,7 +635,16 @@ func captionsView(clip Clip, captions []Caption, s Style) *CaptionsView {
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}
 			for _, w := range line {
-				row.Words = append(row.Words, WordView{w.Start, w.End, Scrub(w.Text, 200)})
+				word := WordView{Start: w.Start, End: w.End, Text: Scrub(w.Text, 200)}
+				// The word of the episode it stands for, the one a correction
+				// in the caption box is kept against, and all of it.
+				if at, ok := SaidWord(clip, said, (w.Start+w.End)/2); ok {
+					if heard, ok := t.HeardAt(at.Start); ok {
+						start := heard.Start
+						word.Said, word.Whole = &start, Scrub(heard.Text, 200)
+					}
+				}
+				row.Words = append(row.Words, word)
 			}
 			item.Lines = append(item.Lines, row)
 		}

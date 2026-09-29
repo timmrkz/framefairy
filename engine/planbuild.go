@@ -364,7 +364,7 @@ func (b *planBuilder) takeOffLocked(index int) {
 
 // cutDown says what a clip on the way keeps, once its pauses are cut and
 // before its crop is placed, which is the slow part.
-func (b *planBuilder) cutDown(index int, spans []Span, words []Cue) {
+func (b *planBuilder) cutDown(index int, spans []Span) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for i := range b.underway {
@@ -375,7 +375,7 @@ func (b *planBuilder) cutDown(index int, spans []Span, words []Cue) {
 		for k, s := range spans {
 			pieces[k] = [2]float64{roundTo(s.Start, 3), roundTo(s.End, 3)}
 		}
-		b.underway[i].Pieces, b.underway[i].Words = pieces, words
+		b.underway[i].Pieces = pieces
 		b.e.Log.Underway(b.underway, len(b.clips))
 		return
 	}
@@ -581,7 +581,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	for k, s := range spans {
 		tightSpans[k] = Span{s.Start, s.End}
 	}
-	b.cutDown(index, tightSpans, chosen)
+	b.cutDown(index, tightSpans)
 
 	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache)
 	if err != nil {
@@ -614,11 +614,6 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		Title:  job.entry.Title,
 		Reason: job.entry.Reason,
 		Keep:   ranges,
-		Words:  [][3]any{},
-	}
-	for _, w := range chosen {
-		clip.Words = append(clip.Words, [3]any{PyFloat(roundTo(w.Start, 3)),
-			PyFloat(roundTo(w.End, 3)), w.Text})
 	}
 	lengths := make([]float64, len(segments))
 	for k, s := range segments {
@@ -694,9 +689,6 @@ func (b *planBuilder) land(index int, clip PlanClip) error {
 			clip = added
 			b.written = true
 		} else if !b.written {
-			if b.opts.CaptionDir != "" {
-				setStaleCaptionsAside(b.e.Log, b.opts.CaptionDir)
-			}
 			body, err := MarshalPlan(PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID,
 				PlannedWith: b.stamp, Clips: []PlanClip{clip}})
 			if err != nil {

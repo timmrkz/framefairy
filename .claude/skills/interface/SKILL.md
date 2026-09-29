@@ -92,7 +92,7 @@ looked right in a picture and could answer nothing: the words in the
 caption box are clicked back to the word of the episode they came from,
 through the clip's own pieces, and words that came from nowhere have
 nowhere to go back to. A probe about correcting one would have passed
-whatever the window did. The cues are built from the clip's words now, on
+whatever the window did. The cues are built from the words the clip's pieces hold now, on
 the clip's clock and with a split word drawn as two, the way the engine
 builds them.
 
@@ -649,7 +649,7 @@ thing, and make each one follow the draft, not the saved state. When what
 follows is the engine's to work out, like the captions of a clip, ask the
 engine on the way, one question at a time and always about where the hand
 is now, and keep the last answer until the saved state comes back, so
-nothing jumps as the hand lets go. `DraftCaptions` is the example.
+nothing jumps as the hand lets go. `Shape` is the example.
 
 How to catch it: hold the mouse down with `page.mouse.down()`, move in
 steps, and read the thing after each step, before `page.mouse.up()`. A

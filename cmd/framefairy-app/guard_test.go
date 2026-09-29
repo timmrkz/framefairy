@@ -81,17 +81,18 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if job := svc.Render(mine, engine.RenderRequest{Plan: elsewhere}); job.State != JobFailed {
 		t.Errorf("Render used a plan outside the library: %s", job.State)
 	}
-	if _, err := svc.WordStops(other, elsewhere, "01", 0, 10); err == nil {
-		t.Error("WordStops answered for a file that is not in the library")
+	g := engine.Gesture{Kind: "trim", Edge: "start", From: 1}
+	if _, err := svc.Shape(other, elsewhere, "01", g); err == nil {
+		t.Error("Shape answered for a file that is not in the library")
 	}
-	if _, err := svc.WordStops(mine, elsewhere, "01", 0, 10); err == nil {
-		t.Error("WordStops read a plan outside the library")
+	if _, err := svc.Shape(mine, elsewhere, "01", g); err == nil {
+		t.Error("Shape read a plan outside the library")
 	}
-	if _, err := svc.DraftCaptions(other, elsewhere, "01", [][2]float64{{0, 10}}); err == nil {
-		t.Error("DraftCaptions answered for a file that is not in the library")
+	if _, err := svc.Reshape(ctx, mine, elsewhere, "01", g); err == nil {
+		t.Error("Reshape wrote a plan outside the library")
 	}
-	if _, err := svc.DraftCaptions(mine, elsewhere, "01", [][2]float64{{0, 10}}); err == nil {
-		t.Error("DraftCaptions read a plan outside the library")
+	if _, err := svc.Captions(other, elsewhere, "01"); err == nil {
+		t.Error("Captions answered for a file that is not in the library")
 	}
 	if _, err := svc.RemoveSearch(ctx, other, 0, 10); err == nil {
 		t.Error("RemoveSearch answered for a file that is not in the library")

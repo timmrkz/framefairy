@@ -100,7 +100,7 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 	// A face the program carries is measured, so where a line breaks depends
 	// on how wide the words really are at that size.
 	s := ResolveStyle(map[string]any{"size": 96.0})
-	lines := CaptionLines(caption, s)
+	lines := captionLines(caption, roomFor(s))
 	held := 0
 	for _, line := range lines {
 		held += len(line)
@@ -115,24 +115,19 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 
 	// The same caption at a bigger size needs more lines.
 	big := ResolveStyle(map[string]any{"size": 200.0})
-	if len(CaptionLines(caption, big)) <= len(lines) {
-		t.Errorf("at size 200 it still takes %d lines", len(CaptionLines(caption, big)))
+	if len(captionLines(caption, roomFor(big))) <= len(lines) {
+		t.Errorf("at size 200 it still takes %d lines", len(captionLines(caption, roomFor(big))))
 	}
 
 	// A face the program does not carry cannot be measured, and then the
 	// character count decides, as it always did.
 	plain := ResolveStyle(map[string]any{"font": "Helvetica", "wrap_chars": 12})
-	lines = CaptionLines(caption, plain)
+	lines = captionLines(caption, roomFor(plain))
 	if len(lines) != 2 || len(lines[0]) != 2 || len(lines[1]) != 3 {
 		t.Fatalf("lines %v", lines)
 	}
 	if lines[0][0] != words[0] || lines[1][2] != words[4] {
 		t.Errorf("the words moved: %v", lines)
-	}
-	// A caption without word timings still comes back wrapped.
-	lines = CaptionLines(Caption{Start: 0, End: 5, Text: "Als Kind stand ich da"}, plain)
-	if len(lines) != 2 || lines[0][0].Text != "Als Kind" || lines[1][0].Text != "stand ich da" {
-		t.Errorf("lines without timings %v", lines)
 	}
 }
 
@@ -145,7 +140,7 @@ func TestAWordTooWideIsHyphenated(t *testing.T) {
 	laid := LayOutCaptions([]Caption{
 		{Start: 0, End: 2, Text: "die " + long, Words: []Cue{{0, 0.2, "die"}, {0.2, 2, long}}},
 		short,
-	}, s)
+	}, s, "de")
 	if len(laid) != 2 {
 		t.Fatalf("laid out as %v", laid)
 	}
@@ -271,7 +266,7 @@ func TestAGermanWordBreaksWhereItsPartsJoin(t *testing.T) {
 	}
 }
 
-// The language is read off the words of the captions.
+// The language is read off the words.
 func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 	for text, want := range map[string]string{
 		"Wir haben mit Pflanzenpflege und Suchmaschinenoptimierung angefangen und dann gemerkt, dass es läuft": "de",
@@ -282,7 +277,7 @@ func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 		for i, w := range fields(text) {
 			words = append(words, Cue{float64(i), float64(i) + 1, w})
 		}
-		if got := languageOf([]Caption{{Words: words}}); got != want {
+		if got := wordsLanguage(words); got != want {
 			t.Errorf("%q read as %s", text, got)
 		}
 	}
@@ -291,23 +286,21 @@ func TestTheCaptionsSayWhatLanguageTheyAreIn(t *testing.T) {
 // A word too wide for a line gets a caption of its own, so it is read as
 // two lines of one caption, and the words around it stay where they fit.
 func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
-	clip := Clip{
-		Segments: []Segment{{Start: 0, End: 5}},
-		Words: []Cue{
-			{0.1, 0.3, "mit"}, {0.3, 1.6, "Suchmaschinenoptimierung"}, {1.6, 2.0, "Geld"},
-			{2.0, 2.5, "verdient."},
-		},
+	clip := Clip{Segments: []Segment{{Start: 0, End: 5}}}
+	words := []Cue{
+		{0.1, 0.3, "mit"}, {0.3, 1.6, "Suchmaschinenoptimierung"}, {1.6, 2.0, "Geld"},
+		{2.0, 2.5, "verdient."},
 	}
 	alone := TooWide(ResolveStyle(map[string]any{"font": "Inter Black", "size": 96.0}))
 	var texts []string
-	for _, c := range Captions(clip, 38, alone) {
+	for _, c := range Captions(clip, words, 38, alone) {
 		texts = append(texts, c.Text)
 	}
 	if strings.Join(texts, "|") != "mit|Suchmaschinenoptimierung|Geld verdient." {
 		t.Errorf("captions %q", texts)
 	}
 	// Without the rule it rides with the others, as before.
-	if got := Captions(clip, 38, nil); len(got) != 2 || got[0].Text != "mit Suchmaschinenoptimierung Geld" {
+	if got := Captions(clip, words, 38, nil); len(got) != 2 || got[0].Text != "mit Suchmaschinenoptimierung Geld" {
 		t.Errorf("captions %v", got)
 	}
 }
@@ -337,13 +330,26 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 }
 
 // writeCaptionFile writes an ASS file without measuring, which needs no
-// ffmpeg: no rounded box and no highlight.
+// ffmpeg: no rounded box and no highlight. Captions are made from words, so
+// a caption given only its text gets one word for each word of it.
 func writeCaptionFile(t *testing.T, captions []Caption) string {
 	t.Helper()
+	for i, c := range captions {
+		if len(c.Words) > 0 {
+			continue
+		}
+		parts := strings.Fields(c.Text)
+		for k, part := range parts {
+			share := (c.End - c.Start) / float64(len(parts))
+			captions[i].Words = append(captions[i].Words,
+				Cue{c.Start + float64(k)*share, c.Start + float64(k+1)*share, part})
+		}
+	}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	path := filepath.Join(t.TempDir(), "clip.ass")
-	err := e.WriteASS(context.Background(), captions, path, 1080, 1920,
-		map[string]any{"radius": 0.0, "highlight": 0.0})
+	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
+	laid := LayOutCaptions(captions, ResolveStyle(overrides), "de")
+	err := e.WriteASS(context.Background(), laid, path, 1080, 1920, overrides)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,8 +469,8 @@ func TestTheBoxCanBeSwitchedOff(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	write := func(style map[string]any) string {
 		path := filepath.Join(t.TempDir(), "clip.ass")
-		if err := e.WriteASS(context.Background(), []Caption{{Start: 0, End: 2, Text: "zwei worte"}},
-			path, 1080, 1920, style); err != nil {
+		laid := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "zwei worte"}}, ResolveStyle(style), "de")
+		if err := e.WriteASS(context.Background(), laid, path, 1080, 1920, style); err != nil {
 			t.Fatal(err)
 		}
 		body, _ := os.ReadFile(path)

@@ -2,7 +2,6 @@ package engine
 
 import (
 	"math"
-	"os"
 	"strings"
 	"testing"
 )
@@ -180,16 +179,14 @@ func TestSegmentsDoNotReachIntoDroppedWords(t *testing.T) {
 }
 
 func TestCaptionsFollowWords(t *testing.T) {
-	clip := Clip{
-		Segments: []Segment{{Start: 10, End: 13}, {Start: 20, End: 22}},
-		Words: []Cue{
-			{10.1, 10.4, "Als"}, {10.4, 10.7, "Kind"}, {10.7, 11.2, "stand"},
-			{11.2, 11.5, "ich"}, {11.5, 12.0, "dort."},
-			{15.0, 15.5, "weg"}, // not in any segment
-			{20.2, 20.6, "Und"}, {20.6, 21.4, "dann"},
-		},
+	clip := Clip{Segments: []Segment{{Start: 10, End: 13}, {Start: 20, End: 22}}}
+	words := []Cue{
+		{10.1, 10.4, "Als"}, {10.4, 10.7, "Kind"}, {10.7, 11.2, "stand"},
+		{11.2, 11.5, "ich"}, {11.5, 12.0, "dort."},
+		{15.0, 15.5, "weg"}, // not in any segment
+		{20.2, 20.6, "Und"}, {20.6, 21.4, "dann"},
 	}
-	cues := Captions(clip, 38, nil)
+	cues := Captions(clip, words, 38, nil)
 	if len(cues) != 2 {
 		t.Fatalf("got %v", cues)
 	}
@@ -220,8 +217,8 @@ func TestCaptionsBreakAtWidth(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		ws = append(ws, Cue{float64(i) * 0.3, float64(i)*0.3 + 0.3, "Zielgruppe"})
 	}
-	clip := Clip{Segments: []Segment{{Start: 0, End: 4}}, Words: ws}
-	for _, c := range Captions(clip, 38, nil) {
+	clip := Clip{Segments: []Segment{{Start: 0, End: 4}}}
+	for _, c := range Captions(clip, ws, 38, nil) {
 		if runeLen(c.Text) > 38 {
 			t.Errorf("caption %q is %d characters", c.Text, runeLen(c.Text))
 		}
@@ -243,62 +240,5 @@ func TestQuietestCut(t *testing.T) {
 	at := float64(cut) * FrameSeconds
 	if at < 22.0 || at > 22.5 {
 		t.Errorf("cut at %.2f, want inside the pause at 22.0-22.5", at)
-	}
-}
-
-func TestAlignWordsKeepsUnchangedTiming(t *testing.T) {
-	original := []Cue{{1.0, 1.3, "Ich"}, {1.3, 1.8, "merke,"}, {1.9, 2.2, "dass"},
-		{2.2, 2.5, "das"}, {2.6, 3.0, "Werkstadt"}}
-	got := AlignWords("Ich merke, dass das Werkstatt ist", 1.0, 3.4, original)
-	if len(got) != 6 {
-		t.Fatalf("got %v", got)
-	}
-	for i := 0; i < 4; i++ {
-		if got[i].Start != original[i].Start || got[i].End != original[i].End {
-			t.Errorf("unchanged word %q moved to %.2f-%.2f", got[i].Text, got[i].Start, got[i].End)
-		}
-	}
-	// The corrected word and the added one share the time after "das".
-	if got[4].Start < 2.5-1e-9 || got[5].End > 3.4+1e-9 || got[5].Start < got[4].End-1e-9 {
-		t.Errorf("changed words at %v", got[4:])
-	}
-	if got[4].Text != "Werkstatt" || got[5].Text != "ist" {
-		t.Errorf("texts %q %q", got[4].Text, got[5].Text)
-	}
-}
-
-func TestAlignWordsWithoutOriginal(t *testing.T) {
-	got := AlignWords("ab abcd", 2, 4, nil)
-	if len(got) != 2 || !near(got[0].Start, 2) || !near(got[1].End, 4) ||
-		!near(got[0].End, 2+2.0/3) {
-		t.Errorf("got %v", got)
-	}
-}
-
-func TestCaptionsRoundTripThroughEdits(t *testing.T) {
-	dir := t.TempDir()
-	path := dir + "/01_x.srt"
-	caps := []Caption{{0, 2, "Als Kind stand", []Cue{{0.1, 0.4, "Als"}, {0.4, 0.8, "Kind"},
-		{0.9, 1.5, "stand"}}}}
-	if err := WriteCaptions(caps, path); err != nil {
-		t.Fatal(err)
-	}
-	body, _ := os.ReadFile(path)
-	edited := strings.Replace(string(body), "Als Kind stand", "Als kleines Kind stand", 1)
-	os.WriteFile(path, []byte(edited), 0o644)
-	got, err := LoadCaptions(path)
-	if err != nil || len(got) != 1 || len(got[0].Words) != 4 {
-		t.Fatalf("got %v, %v", got, err)
-	}
-	w := got[0].Words
-	if !near(w[0].Start, 0.1) || !near(w[2].Start, 0.4) || !near(w[3].Start, 0.9) {
-		t.Errorf("words %v", w)
-	}
-	if w[1].Text != "kleines" || w[1].Start < 0.4-1e-9 || w[1].End > 0.4+1e-9 {
-		// "kleines" is squeezed into the zero gap before "Kind" and gets a
-		// minimum slot, which is fine as long as it sits there.
-		if w[1].Start < 0.1 || w[1].Start > 0.45 {
-			t.Errorf("added word at %v", w[1])
-		}
 	}
 }

@@ -19,12 +19,9 @@
   import {
     api,
     clock,
-    cutAt,
-    snapCut,
-    snapEnd,
-    snapStart,
     intoWord,
     wordStep,
+    type Gesture,
     type ClipEntry,
     type Word,
     type CaptionCue,
@@ -53,10 +50,7 @@
     frame = 1 / 30,
     lit = [],
     onseek,
-    ontrim,
-    oncut,
-    onjoincut,
-    onmovecut,
+    onreshape,
     onwalkclip,
     captions = [],
     arriving = false,
@@ -96,16 +90,10 @@
     // in the transcript and never in this one.
     lit?: Word[];
     onseek: (t: number) => void;
-    ontrim?: (start: number, end: number, toWords: boolean) => Promise<void>;
-    // The cuts inside the clip: taking a part out, putting one back, and
-    // moving the edges of one that is already there.
-    // toWords says whether the engine should put the edges on the words
-    // around them. Without it the edges land on the frame they were let go
-    // on and stay there. Shift asks for words on an edge, and alt with
-    // shift on a cut being drawn, because there shift already draws.
-    oncut?: (from: number, to: number, toWords: boolean) => Promise<void>;
-    onjoincut?: (at: number) => Promise<void>;
-    onmovecut?: (index: number, from: number, to: number, toWords: boolean) => Promise<void>;
+    // A gesture let go of: an edge of the clip trimmed, a part taken out,
+    // the edges of a cut moved, a cut put back. The engine makes the change
+    // it showed while the hand moved, see engine/shape.go.
+    onreshape?: (g: Gesture) => Promise<void>;
     // Walking the words has run off the end of the clip. The words of the
     // clip beside it are not here to walk on to, they arrive with its
     // captions, so the workspace is asked and it takes it from there.
@@ -162,7 +150,7 @@
       end,
       seconds: Math.round(drawnPieces.reduce((sum, p) => sum + p.end - p.start, 0)),
       pieces: drawnPieces.length,
-      saving: saving || cutSaving,
+      saving,
     };
   });
 
@@ -174,16 +162,7 @@
   let width = $state(0);
   let view = $state({ from: 0, to: 1 });
   let words = $state<Word[]>([]);
-  // The same words the way the chosen clip's captions split them, see
-  // stops below. Asked for with the words, and again when the captions
-  // change, because a new size can hyphenate a word the old one did not.
-  let wordStops = $state<Word[]>([]);
-  let saidAt = { from: 0, to: 0 };
-  let keepPause = $state(0.1);
   let peaks = $state<number[]>([]);
-  let dragging = $state<null | "start" | "end">(null);
-  let draft = $state({ start: 0, end: 0 });
-  let saving = $state(false);
   let viewFor = "";
   let loaded = false;
   // How much of the view the transcript had heard when it was read, how
@@ -205,8 +184,6 @@
   const segments = $derived(clip?.segments ?? []);
   const first = $derived(segments.length ? segments[0].start : 0);
   const last = $derived(segments.length ? segments[segments.length - 1].end : 0);
-  const start = $derived(dragging || saving ? draft.start : first);
-  const end = $derived(dragging || saving ? draft.end : last);
   const span = $derived(Math.max(view.to - view.from, 0.001));
 
   function x(t: number): number {
@@ -238,7 +215,7 @@
     if (event.button !== 0) return;
     // Shift and a drag marks a part to take out instead of moving the
     // playhead. Everything else about the track is unchanged.
-    if (event.shiftKey && editable && oncut) {
+    if (event.shiftKey && editable && onreshape) {
       event.preventDefault();
       drawCut(event);
       return;
@@ -262,141 +239,208 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // Pieces as the render will play them, with the edges of a drag applied.
-  const pieces = $derived.by(() => {
-    const out = segments.map((s) => ({ start: s.start, end: s.end }));
-    if (!out.length) return out;
-    out[0].start = start;
-    out[out.length - 1].end = end;
-    return out.filter((p) => p.end > p.start);
-  });
-
-  // A cut is a part the clip leaves out, which is the gap between two
-  // pieces. The engine counts them from the first, and so does the timeline,
-  // because that is what a move names.
+  // A gesture on the clip, and what the engine makes of it. The hand says
+  // where it is and the engine says where that lands, see engine/shape.go:
+  // on a frame or on a word, how far an edge may go, where the playhead
+  // stands, which pieces the clip is left with and what its captions say.
+  // Nothing about that is decided here. The timeline draws the answer, so
+  // what is drawn is what the same gesture saves when the hand lets go.
   //
-  // A cut being moved and a cut being drawn are held here and drawn from
-  // here until the engine answers, so the block follows the hand rather
-  // than jumping when the edit lands. Both are snapped the way the engine
-  // snaps, so what is drawn is what will be left out.
-  let movingCut = $state<null | { index: number; from: number; to: number }>(null);
-  let drawnCut = $state<null | { from: number; to: number }>(null);
-  // Kept apart from saving, which belongs to the trim and its own draft.
-  let cutSaving = $state(false);
-  // The closest two edges of a cut may come, so a drag can never turn a cut
-  // inside out.
-  const leastCut = 0.05;
+  // One question at a time, and always about where the hand is now: a drag
+  // moves faster than the answers come, and the ones in between are of
+  // places the hand has already left. After the hand lets go the answer
+  // stays until the saved clip and its captions come back, which are the
+  // same, so nothing jumps on the way.
+  let hand = $state<Gesture | null>(null);
+  let saving = $state(false);
+  let shaped = $state<null | {
+    pieces: { start: number; end: number }[];
+    cues: CaptionCue[];
+    held: CaptionCue[];
+  }>(null);
+  let nextGesture: Gesture | null = null;
+  let asking = false;
+  let shapeFor = 0;
 
-  // A cut that is not snapped to words is snapped to the picture instead:
-  // a video is cut between frames and nowhere else, so an edge in the
-  // middle of one is an edge the render has to round anyway. Rounding here
-  // means the number on screen is the number that will be used.
-  function onFrame(t: number): number {
-    return Math.round(t / frame) * frame;
+  function gesture(g: Omit<Gesture, "frame">): Gesture {
+    return { ...g, frame };
   }
 
-  const editable = $derived(!!clip && !locked && !saving && !cutSaving);
+  function shape(g: Gesture) {
+    hand = g;
+    nextGesture = g;
+    void ask();
+  }
 
-  // The pieces as they are drawn, with a cut being moved or drawn applied.
-  // A cut being drawn takes its part out of the pieces at once rather
-  // than being a block laid over them, so the wash parts under the hand and
-  // the count under the timeline follows the drag. What is happening is
-  // shown while it happens.
-  const drawnPieces = $derived.by(() => {
-    const out = pieces.map((p) => ({ start: p.start, end: p.end }));
-    const m = movingCut;
-    if (m && m.index >= 0 && m.index + 1 < out.length) {
-      out[m.index].end = m.from;
-      out[m.index + 1].start = m.to;
-    }
-    const d = drawnCut;
-    if (d) {
-      const i = out.findIndex((p) => d.from > p.start && d.to < p.end);
-      if (i >= 0) {
-        const after = { start: d.to, end: out[i].end };
-        out[i] = { start: out[i].start, end: d.from };
-        out.splice(i + 1, 0, after);
+  async function ask() {
+    if (asking || !nextGesture || !clip) return;
+    const g = nextGesture;
+    const asked = clip;
+    const mine = shapeFor;
+    const held = captions;
+    nextGesture = null;
+    asking = true;
+    try {
+      const answer = await api.shape(path, asked.plan, asked.id, g);
+      if (mine === shapeFor && clip?.key === asked.key && answer) {
+        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
+        if (answer.playhead >= 0) seekSoon(answer.playhead);
       }
+    } catch {
+      // A gesture the engine says no to shows the last one it said yes to.
+      // Letting go says what is wrong.
+    } finally {
+      asking = false;
+      void ask();
     }
-    return out;
+  }
+
+  // The hand let go. The same gesture is saved, and a gesture that never
+  // moved anything is let go of with nothing saved.
+  async function letGo(save: boolean) {
+    const g = hand;
+    hand = null;
+    nextGesture = null;
+    if (!save || !g || !onreshape) {
+      shapeFor++;
+      shaped = null;
+      return;
+    }
+    await reshape(g);
+  }
+
+  async function reshape(g: Gesture) {
+    if (!onreshape) return;
+    saving = true;
+    try {
+      await onreshape(g);
+    } finally {
+      saving = false;
+    }
+  }
+
+  const reshaping = $derived(!!hand || saving);
+  const samePieces = (a: { start: number; end: number }[], b: { start: number; end: number }[]) =>
+    a.length === b.length &&
+    a.every((p, i) => Math.abs(p.start - b[i].start) < 0.002 && Math.abs(p.end - b[i].end) < 0.002);
+  $effect(() => {
+    if (shaped && !reshaping && (captions !== shaped.held || !samePieces(segments, shaped.pieces))) {
+      shaped = null;
+    }
   });
+  // Another clip chosen is another clip's gesture. The key and not the
+  // clip, because an edit hands back the same clip as a new object, and
+  // that must not let go of the answer while its captions are on their way.
+  const clipKey = $derived(clip?.key);
+  $effect(() => {
+    void clipKey;
+    shapeFor++;
+    shaped = null;
+    hand = null;
+  });
+  const shapedShown = $derived(!!shaped && (reshaping || captions === shaped.held));
+
+  // The pieces as they are drawn: the engine's answer to the gesture in
+  // hand, or the clip as it is saved. A cut being drawn takes its part out
+  // of the pieces at once rather than being a block laid over them, so the
+  // wash parts under the hand and the count under the timeline follows the
+  // drag. What is happening is shown while it happens.
+  const drawnPieces = $derived(
+    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end })),
+  );
+  const start = $derived(drawnPieces.length ? drawnPieces[0].start : 0);
+  const end = $derived(drawnPieces.length ? drawnPieces[drawnPieces.length - 1].end : 0);
+  const editable = $derived(!!clip && !locked && !saving);
 
   // The clip from its first piece to its last, cuts and all. It is one
   // clip however many holes are in it, and the rules above and below say
   // so by running the whole way.
-  const wholeClip = $derived(
-    drawnPieces.length
-      ? { start: drawnPieces[0].start, end: drawnPieces[drawnPieces.length - 1].end }
-      : null,
-  );
+  const wholeClip = $derived(drawnPieces.length ? { start, end } : null);
 
-  // The cuts as they are drawn, in the order the engine counts them.
+  // A cut is a part the clip leaves out, which is the gap between two
+  // pieces. The engine counts them from the first, and so does the timeline,
+  // because that is what a move names.
   const cuts = $derived(
     drawnPieces
       .slice(1)
       .map((p, i) => ({ index: i, from: drawnPieces[i].end, to: p.start }))
       .filter((c) => c.to > c.from),
   );
+  // A cut the saved clip does not have yet is one being drawn.
+  const savedCuts = $derived(
+    segments.slice(1).map((p, i) => ({ from: segments[i].end, to: p.start })),
+  );
+  function drawing(c: { from: number; to: number }): boolean {
+    return hand?.kind === "cut" && !savedCuts.some((s) => Math.abs(s.from - c.from) < 0.002);
+  }
+
+  // An edge of the clip is dragged to trim it. Clicking one without
+  // dragging puts the playhead exactly on it, which is how you start a clip
+  // over. It lands on the frame, and shift puts it on a word, read on every
+  // move, so letting go of shift part way through goes back to frames.
+  function grab(edge: "start" | "end", event: PointerEvent) {
+    if (!editable || !onreshape) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const from = event.clientX;
+    let moved = false;
+    const move = (e: PointerEvent) => {
+      if (!moved && Math.abs(e.clientX - from) > 2) moved = true;
+      if (!moved) return;
+      shape(gesture({ kind: "trim", edge, index: 0, from: timeAt(e.clientX), to: 0, toWords: e.shiftKey }));
+    };
+    const up = async () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      if (!moved) {
+        onseek(edge === "start" ? first : last);
+        return;
+      }
+      undone = null;
+      await letGo(true);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  }
 
   // An edge of a cut is dragged the way a clip edge is, and the other edge
-  // stays where it was. What the engine would make of the drag is worked
-  // out on the way, so the block shows the words it will really take.
+  // stays where it was. Shift puts the edges on words, the same as on a
+  // clip edge.
   function grabCut(index: number, side: "from" | "to", event: PointerEvent) {
-    if (!editable || !onmovecut) return;
+    if (!editable || !onreshape) return;
     const was = cuts.find((c) => c.index === index);
     if (!was) return;
     event.preventDefault();
     event.stopPropagation();
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
-    const held = { from: was.from, to: was.to };
-    // A cut lives between the two pieces it parts, and neither may be
-    // squeezed out of existence. The hand is held inside those walls, so
-    // the block never shows a clip the engine is about to refuse.
-    const wall = {
-      least: (pieces[index]?.start ?? 0) + leastCut,
-      most: (pieces[index + 1]?.end ?? duration) - leastCut,
-    };
     const startX = event.clientX;
     let moved = false;
-    // A cut lands on the frame, because a drag says where and growing it
-    // out to the words either side puts it somewhere else. Shift asks for
-    // words instead, the same as on a clip edge, and it is read on every
-    // move rather than at the press, so letting go of shift part way
-    // through a drag goes back to frames and the block says so before the
-    // hand lets go.
-    let toWords = event.shiftKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      toWords = e.shiftKey;
-      const t = Math.min(Math.max(timeAt(e.clientX), wall.least), wall.most);
-      const from = side === "from" ? Math.min(t, held.to - leastCut) : held.from;
-      const to = side === "to" ? Math.max(t, held.from + leastCut) : held.to;
-      const [a, b] = toWords ? snapCut(words, from, to, keepPause) : [onFrame(from), onFrame(to)];
-      movingCut = { index, from: a, to: b };
+      const t = timeAt(e.clientX);
+      shape(
+        gesture({
+          kind: "move",
+          edge: "",
+          index,
+          from: side === "from" ? t : was.from,
+          to: side === "to" ? t : was.to,
+          toWords: e.shiftKey,
+        }),
+      );
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      const m = movingCut;
-      if (!moved || !m) {
-        movingCut = null;
-        return;
-      }
-      if (Math.abs(m.from - held.from) < 0.01 && Math.abs(m.to - held.to) < 0.01) {
-        movingCut = null;
-        return;
-      }
-      cutSaving = true;
-      try {
-        undone = null;
-        await onmovecut?.(m.index, m.from, m.to, toWords);
-      } finally {
-        cutSaving = false;
-        movingCut = null;
-      }
+      undone = null;
+      await letGo(moved);
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
@@ -406,48 +450,24 @@
   // Drawing a cut is a drag across the clip with shift held, which is how
   // a part is marked in an editing timeline. Without shift the same drag
   // moves the playhead, so nothing that worked before works differently.
+  // Shift already draws, so alt as well puts the edges on words.
   function drawCut(event: PointerEvent) {
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const from = timeAt(startX);
     let moved = false;
-    let toWords = event.altKey;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      toWords = e.altKey;
-      const t = timeAt(e.clientX);
-      const near = Math.min(from, t);
-      const far = Math.max(from, t);
-      // Snapping grows a cut to whole words, so it is never too short for
-      // the engine. Frames do not, and a cut of nothing would be refused
-      // with the plan untouched and a message for a drag of two pixels. So
-      // it is held open at the least a cut may be, the way the walls hold
-      // an edge that is being moved. This is the usual way round now, not
-      // the exception.
-      const [a, b] = toWords
-        ? snapCut(words, near, far, keepPause)
-        : [onFrame(near), Math.max(onFrame(far), onFrame(near) + leastCut)];
-      drawnCut = { from: a, to: b };
+      shape(gesture({ kind: "cut", edge: "", index: 0, from, to: timeAt(e.clientX), toWords: e.altKey }));
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      const d = drawnCut;
-      if (!moved || !d) {
-        drawnCut = null;
-        return;
-      }
-      cutSaving = true;
-      try {
-        undone = null;
-        await oncut?.(d.from, d.to, toWords);
-      } finally {
-        cutSaving = false;
-        drawnCut = null;
-      }
+      undone = null;
+      await letGo(moved);
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
@@ -474,18 +494,11 @@
   // Shift and a double-click takes a part out where you click, the way
   // shift and a drag takes out the part you drag across. Shift is the
   // cutting hand on this track either way. Where it goes exactly, and
-  // whether it goes at all, is cutAt in lib/api.ts, which has the tests.
+  // whether there is room for it, is the engine's.
   async function cutHere(at: number, wide: number) {
-    if (!editable || !oncut) return;
-    const where = cutAt(pieces, at, wide, leastCut, frame);
-    if (!where) return;
-    cutSaving = true;
-    try {
-      undone = null;
-      await oncut(where[0], where[1], false);
-    } finally {
-      cutSaving = false;
-    }
+    if (!editable) return;
+    undone = null;
+    await reshape(gesture({ kind: "cut", edge: "", index: 0, from: at - wide / 2, to: at + wide / 2, toWords: false }));
   }
 
   // The cut that was last put back, so the same double-click in the same
@@ -501,31 +514,19 @@
   // is easy to land on by accident while scrubbing.
   async function putCutBack(index: number, event: MouseEvent) {
     event.preventDefault();
-    if (!editable || !onjoincut) return;
+    if (!editable) return;
     const cut = cuts.find((c) => c.index === index);
     if (!cut) return;
-    cutSaving = true;
-    try {
-      await onjoincut((cut.from + cut.to) / 2);
-      undone = clip ? { key: clip.key, from: cut.from, to: cut.to } : null;
-    } finally {
-      cutSaving = false;
-    }
+    await reshape(gesture({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false }));
+    undone = clip ? { key: clip.key, from: cut.from, to: cut.to } : null;
   }
 
   // Putting back what was just put back. The part is taken out again
-  // exactly as it was, edge for edge, so it is sent as it stands rather
-  // than snapped afresh: snapping it again would be snapping something
-  // already snapped, and on a cut made a frame at a time it would move.
+  // exactly as it was, edge for edge.
   async function cutAgain(was: { from: number; to: number }) {
-    if (!editable || !oncut) return;
+    if (!editable) return;
     undone = null;
-    cutSaving = true;
-    try {
-      await oncut(was.from, was.to, false);
-    } finally {
-      cutSaving = false;
-    }
+    await reshape(gesture({ kind: "restore", edge: "", index: 0, from: was.from, to: was.to, toWords: false }));
   }
 
   // A view is read with as much again either side of it, so swiping along
@@ -561,16 +562,13 @@
       to: Math.min(outer.to, middle + spoken / 2),
     };
     const mine = ++latest;
-    saidAt = said;
     try {
       const [w, p] = await Promise.all([
         api.words(path, said.from, said.to),
         api.waveform(path, outer.from, outer.to, buckets),
-        askStops(),
       ]);
       if (mine !== latest) return;
-      words = w.words ?? [];
-      keepPause = w.keepPause;
+      words = w ?? [];
       peaks = p ?? [];
       data = outer;
     } catch {
@@ -580,28 +578,6 @@
       data = outer;
     }
   }
-
-  let stopsAsked = 0;
-  async function askStops() {
-    const mine = ++stopsAsked;
-    const c = clip;
-    if (!c) {
-      wordStops = [];
-      return;
-    }
-    try {
-      const got = await api.wordStops(path, c.plan, c.id, saidAt.from, saidAt.to);
-      if (mine === stopsAsked) wordStops = got ?? [];
-    } catch {
-      if (mine === stopsAsked) wordStops = [];
-    }
-  }
-  $effect(() => {
-    // Captions that came back changed may break a word somewhere else.
-    void captions;
-    void clipKey;
-    askStops();
-  });
 
   // Brings a moment into the view without changing how much of the episode
   // the view shows. How close the timeline stands is the hand's: a pinch
@@ -688,7 +664,7 @@
       if (!cuts.some((c) => at >= c.from && at <= c.to)) void cutHere(at, wide);
       return;
     }
-    if (event && editable && onjoincut && track) {
+    if (event && editable && onreshape && track) {
       const at = timeAt(event.clientX);
       const hit = cuts.find((c) => at >= c.from && at <= c.to);
       if (hit) {
@@ -756,7 +732,7 @@
     // clip that could not be made to happen twice: it only happens on the
     // first press after picking one.
     const step = Math.max(frame, 1 / 240);
-    const walk = lit.length && insideClip(pieces, time, step) ? lit : words;
+    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
       put(to);
@@ -971,96 +947,6 @@
     };
   });
 
-  // An edge is dragged to trim. Clicking one without dragging puts the
-  // playhead exactly on it, which is how you start a clip over. It lands
-  // on the frame, the same as the edge of a cut, and shift puts it on the
-  // nearest word instead. Shift is read on every move, like a cut's.
-  function grab(edge: "start" | "end", event: PointerEvent) {
-    if (!clip || locked || saving) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    const from = event.clientX;
-    draft = { start, end };
-    let moved = false;
-    let toWords = event.shiftKey;
-    let playAt = edge === "start" ? start : end;
-    const move = (e: PointerEvent) => {
-      if (!moved && Math.abs(e.clientX - from) > 2) {
-        moved = true;
-        if (ontrim) dragging = edge;
-      }
-      if (!moved || !dragging) return;
-      toWords = e.shiftKey;
-      const t = timeAt(e.clientX);
-      if (edge === "start") {
-        const at = toWords ? snapStart(stops, t, keepPause) : Math.max(0, onFrame(t));
-        draft.start = Math.min(at, draft.end - 1);
-      } else {
-        const at = toWords ? snapEnd(stops, t, keepPause) : onFrame(t);
-        draft.end = Math.max(at, draft.start + 1);
-      }
-      // The playhead goes with the edge, so the video preview shows the
-      // frame the clip now starts or ends on while the hand moves.
-      playAt = edgePlayhead(edge, toWords);
-      seekSoon(playAt);
-    };
-    const up = async () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      const dragged = !!dragging;
-      dragging = null;
-      if (!dragged) {
-        onseek(edge === "start" ? first : last);
-        return;
-      }
-      if (Math.abs(draft.start - first) < 0.01 && Math.abs(draft.end - last) < 0.01) return;
-      saving = true;
-      try {
-        // A clip whose edges have moved is not the clip the part was
-        // taken out of, so there is nothing to put back any more.
-        undone = null;
-        // An edge on the line between the halves of a word lies inside the
-        // word the engine knows, which would snap it to the whole word, so
-        // it is sent as the frame it is on.
-        const between = (x: number) => words.some((w) => w.start < x - 0.001 && w.end > x + 0.001);
-        await ontrim?.(draft.start, draft.end, toWords && !between(draft.start) && !between(draft.end));
-        onseek(playAt);
-      } finally {
-        saving = false;
-      }
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
-  }
-
-  // Where the playhead stands while an edge is dragged. On frames it is the
-  // frame at the edge: the first frame of the clip, or its last, one frame
-  // before the end, because the end is where the clip is already over. On
-  // words it is inside the word the edge snapped to, a frame into the first
-  // word or a frame before the end of the last, so that word is always the
-  // one lit. The edge itself stands a pause away from the word, and a
-  // playhead put there lit the word only when the pause happened to be
-  // none, which is what looked random.
-  function edgePlayhead(edge: "start" | "end", toWords: boolean): number {
-    if (edge === "start") {
-      if (toWords) {
-        const word = stops.find((w) => w.start >= draft.start - 0.0005);
-        if (word && word.end <= draft.end) return intoWord(word, frame);
-      }
-      return draft.start;
-    }
-    if (toWords) {
-      let word: Word | undefined;
-      for (const w of stops) if (w.end <= draft.end + 0.0005) word = w;
-      if (word && word.start >= draft.start) return Math.max(word.end - frame, (word.start + word.end) / 2);
-    }
-    return Math.max(draft.end - frame, draft.start);
-  }
-
   // The captions along the foot of the track. A caption appears when its
   // first word is said and goes when the next appears, or a moment after
   // its last word when a pause follows, and where that is a little off
@@ -1076,97 +962,14 @@
   // while the saved captions are on their way.
   let capHeld: CaptionCue[] | undefined;
 
-  // The captions while an edge of the clip or of a cut is dragged. What a
-  // drag reshapes, the engine captions afresh, and the blocks are drawn
-  // from its answer on the pieces as they are drawn, so a word the edge
-  // reaches has its caption under the hand and not when it lets go. What is
-  // happening is shown while it happens. After the hand lets go the draft
-  // stays until the captions of the saved clip come back, so the blocks do
-  // not jump back to where they were on the way. An edit that is refused
-  // leaves the pieces as they were, and then the draft is not what is
-  // there any more.
-  let shaped = $state<null | {
-    cues: CaptionCue[];
-    pieces: { start: number; end: number }[];
-    held: CaptionCue[];
-  }>(null);
-  const reshaping = $derived(!!dragging || saving || !!movingCut || !!drawnCut || cutSaving);
-  let shapeAsked = "";
-  let shapeWanted: [number, number][] | null = null;
-  let shapeBusy = false;
-
-  const samePieces = (a: { start: number; end: number }[], b: { start: number; end: number }[]) =>
-    a.length === b.length &&
-    a.every((p, i) => Math.abs(p.start - b[i].start) < 0.002 && Math.abs(p.end - b[i].end) < 0.002);
-
-  $effect(() => {
-    if (!clip || !reshaping || !path) return;
-    const list = drawnPieces.map((p) => [p.start, p.end] as [number, number]);
-    const key = JSON.stringify(list);
-    if (key === shapeAsked) return;
-    shapeAsked = key;
-    shapeWanted = list;
-    askShape();
-  });
-
-  // One question at a time, and always about where the hand is now: a
-  // drag moves faster than the answers come, and the ones in between are
-  // of pieces that are no longer drawn.
-  async function askShape() {
-    if (shapeBusy || !shapeWanted || !clip) return;
-    const list = shapeWanted;
-    const asked = clip;
-    const held = captions;
-    shapeWanted = null;
-    shapeBusy = true;
-    try {
-      const view = await api.draftClipCaptions(path, asked.plan, asked.id, list);
-      if (clip?.key === asked.key) {
-        shaped = {
-          cues: view?.captions ?? [],
-          pieces: list.map(([start, end]) => ({ start, end })),
-          held,
-        };
-      }
-    } catch {
-      // A draft is only a picture of the drag. Without it the blocks stay
-      // where the saved clip has them, and letting go says what is wrong.
-    } finally {
-      shapeBusy = false;
-      askShape();
-    }
-  }
-
-  $effect(() => {
-    if (shaped && !reshaping && (captions !== shaped.held || !samePieces(segments, shaped.pieces))) {
-      shaped = null;
-      shapeAsked = "";
-    }
-  });
-  // Another clip chosen is another clip's captions. The key and not the
-  // clip, because an edit hands back the same clip as a new object, and
-  // that must not let go of the draft while its captions are on their way.
-  const clipKey = $derived(clip?.key);
-  $effect(() => {
-    void clipKey;
-    shaped = null;
-    shapeAsked = "";
-  });
-
-  const shapedShown = $derived(!!shaped && (reshaping || captions === shaped.held));
+  // The clip as a gesture shapes it goes to the video preview too, so it
+  // shows the same clip as the timeline while the hand moves.
   $effect(() => {
     onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces } : null);
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);
 
-  // The words an edge stops at with shift: the words of the episode, each
-  // split the way the clip's captions split it, so a word the captions
-  // hyphenate or a correction that reads as two is two stops, the same
-  // words the arrow keys walk and the video preview lights. The engine
-  // splits them, from the clip's caption style, for the words around the
-  // clip too, so a half is a stop before the edge has reached the word.
-  const stops = $derived(clip && wordStops.length ? wordStops : words);
   const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
 
   const captionBlocks = $derived.by(() => {
@@ -1483,20 +1286,20 @@
       <div
         class="cut"
         class:editable
-        class:drawing={!!drawnCut && Math.abs(c.from - drawnCut.from) < 0.001}
+        class:drawing={drawing(c)}
         style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
         title={editable
           ? "A part the clip leaves out. Drag an edge to change it, double-click to put it back."
           : "A part the clip leaves out."}
       ></div>
     {/each}
-    {#if editable && onmovecut}
+    {#if editable && onreshape}
       <!-- The handles come after every cut, so a handle is never drawn
            under the next cut's block. -->
       {#each cuts as c (c.index)}
         <div
           class="cutedge"
-          class:active={movingCut?.index === c.index}
+          class:active={hand?.kind === "move" && hand.index === c.index}
           style="left: {x(c.from)}%"
           role="slider"
           tabindex="-1"
@@ -1506,7 +1309,7 @@
         ></div>
         <div
           class="cutedge"
-          class:active={movingCut?.index === c.index}
+          class:active={hand?.kind === "move" && hand.index === c.index}
           style="left: {x(c.to)}%"
           role="slider"
           tabindex="-1"
@@ -1532,7 +1335,7 @@
     {#if clip && !locked}
       <div
         class="edge"
-        class:active={dragging === "start"}
+        class:active={hand?.kind === "trim" && hand.edge === "start"}
         style="left: {x(start)}%"
         role="slider"
         tabindex="-1"
@@ -1542,7 +1345,7 @@
       ></div>
       <div
         class="edge"
-        class:active={dragging === "end"}
+        class:active={hand?.kind === "trim" && hand.edge === "end"}
         style="left: {x(end)}%"
         role="slider"
         tabindex="-1"

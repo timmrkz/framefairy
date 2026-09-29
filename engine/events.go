@@ -50,12 +50,11 @@ type Underway struct {
 	// StepFraming.
 	Step string `json:"step"`
 	// Pieces are what of it is kept, from and to, once its pauses are cut,
-	// which is before its crop is placed, and Words what is said in them.
-	// The app draws its pieces and lays its captions out from them while
-	// the crop is placed, see ArrivingCaptionsView, so the clip is built
-	// in front of the person rather than appearing whole.
+	// which is before its crop is placed. The app draws them and lays the
+	// captions of the words said in them out while the crop is placed, see
+	// ArrivingCaptionsView, so the clip is built in front of the person
+	// rather than appearing whole.
 	Pieces [][2]float64 `json:"pieces,omitempty"`
-	Words  []Cue        `json:"-"`
 	// Clip is the key it will have in the clip list once it is written,
 	// its clip set's file name and its id, from the moment it has an id.
 	// The list keeps one row for it from its card to the clip, so a card
