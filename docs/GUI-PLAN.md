@@ -183,6 +183,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.11b | A clip under the hand lit in all three places it is shown: its card, its mark on the range picker, and its mark or frame on the clip timeline | `[x]` |
 | 3.12 | Captions stay the size chosen. A word too long for a line gets a caption of its own and is hyphenated with TeX's patterns for the language of the episode, a German compound where its parts join, instead of one long word making every caption of the clip smaller | `[x]` |
 | 3.13 | The clip timeline zoomed out: every other clip of the episode drawn as the range picker marks it, a click choosing it, and the caption blocks only once they are wide enough to be read | `[x]` |
+| 3.14 | The range picker and the clip timeline on one floor, a step darker than the workspace, with nothing darkened outside the window. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 
