@@ -184,14 +184,29 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      - if: steps.key.outputs.ready == 'true'
+      # A branch that has not merged main since builds.yml stopped signing
+      # runs the builds.yml it has, which still signs and publishes its own
+      # build and leaves no app.zip. That build is its own to publish.
+      - id: zip
+        if: steps.key.outputs.ready == 'true'
+        name: Is it a build this workflow signs
+        env:
+          BUILT: ${{ runner.temp }}/build/app.zip
+        run: |
+          if [ -f "$BUILT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The build has no app.zip. It was made by a builds.yml from before main signed the builds, which publishes it itself."
+          fi
+
+      - if: steps.zip.outputs.ready == 'true'
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
       - id: sign
-        if: steps.key.outputs.ready == 'true'
+        if: steps.zip.outputs.ready == 'true'
         name: Sign it
         env:
           FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
@@ -210,7 +225,7 @@ jobs:
           ls -l dist
 
       - name: The release the builds live in
-        if: steps.key.outputs.ready == 'true'
+        if: steps.zip.outputs.ready == 'true'
         run: |
           gh release view dev >/dev/null 2>&1 ||
             gh release create dev --prerelease --latest=false --target main \
@@ -221,7 +236,7 @@ jobs:
       # The two files of this channel by name, never a pattern: one channel
       # has no business with another's entry.
       - id: upload
-        if: steps.key.outputs.ready == 'true'
+        if: steps.zip.outputs.ready == 'true'
         name: Upload the build and its entry
         env:
           ZIP: ${{ steps.which.outputs.zip }}
