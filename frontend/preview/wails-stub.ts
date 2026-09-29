@@ -124,11 +124,6 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     start: first,
     end: last,
     segments,
-    words: allWords()
-      .filter((w) =>
-        segments.some((p) => holds(p, w)),
-      )
-      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
     rejected: false,
     rendered: rendered ? "/tmp/out.mp4" : undefined,
     captionY: 300,
@@ -152,6 +147,78 @@ const starts: Record<string, [number, string, boolean]> = {
   "02": [location.search.includes("overlap") ? 75 : 400, "Der Typ vor mir auf einmal", false],
   "03": [902, "Warum ich nie wieder", false],
   "04": [1400, "Ein echtes Thema", false],
+};
+
+type StubGesture = {
+  kind: string;
+  edge: string;
+  index: number;
+  from: number;
+  to: number;
+  toWords: boolean;
+  frame: number;
+};
+
+// The stand-in for engine/shape.go, see the Shape case.
+const gestured = (now: Piece[], g: StubGesture, at: number): { pieces: Piece[]; playhead: number } | null => {
+  const on = (t: number) => (g.frame > 0 ? Math.round(t / g.frame) * g.frame : t);
+  const said = words(at - 60, at + 90);
+  const least = 0.05;
+  if (!now.length) return null;
+  if (g.kind === "trim") {
+    let start = now[0].start;
+    let end = now[now.length - 1].end;
+    let playhead = -1;
+    if (g.edge === "start") {
+      const w = said.reduce((b, x) => (Math.abs(x.start - g.from) < Math.abs(b.start - g.from) ? x : b), said[0]);
+      start = g.toWords && w ? Math.max(w.start - 0.1, said[said.indexOf(w) - 1]?.end ?? 0) : Math.max(0, on(g.from));
+      start = Math.min(start, end - 1);
+      playhead = g.toWords && w ? Math.min(w.start + (g.frame || 1 / 30), (w.start + w.end) / 2) : start;
+    } else {
+      const w = said.reduce((b, x) => (Math.abs(x.end - g.from) < Math.abs(b.end - g.from) ? x : b), said[0]);
+      end = g.toWords && w ? Math.min(w.end + 0.1, said[said.indexOf(w) + 1]?.start ?? Infinity) : on(g.from);
+      end = Math.max(end, start + 1);
+      playhead = g.toWords && w ? Math.max(w.end - (g.frame || 1 / 30), (w.start + w.end) / 2) : Math.max(end - (g.frame || 1 / 30), start);
+    }
+    const kept = now.filter((p) => p.end > start && p.start < end).map((p) => ({ ...p }));
+    if (!kept.length) return null;
+    kept[0].start = start;
+    kept[kept.length - 1].end = end;
+    return { pieces: kept, playhead };
+  }
+  if (g.kind === "cut" || g.kind === "restore") {
+    const near = Math.min(g.from, g.to);
+    const far = Math.max(g.from, g.to);
+    const [a, b] =
+      g.kind === "restore"
+        ? [near, far]
+        : g.toWords
+          ? snapCut(said, near, far)
+          : [on(near), Math.max(on(far), on(near) + least)];
+    const out = applyCut(now, a, b);
+    return { pieces: out, playhead: -1 };
+  }
+  if (g.kind === "move") {
+    const i = g.index;
+    if (i < 0 || i + 1 >= now.length) return null;
+    let [a, b] = g.toWords ? snapCut(said, g.from, g.to) : [on(g.from), on(g.to)];
+    a = Math.min(Math.max(a, now[i].start + least), now[i + 1].end - 2 * least);
+    b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    const out = now.map((p) => ({ ...p }));
+    out[i].end = a;
+    out[i + 1].start = b;
+    return { pieces: out, playhead: -1 };
+  }
+  if (g.kind === "join") {
+    for (let i = 0; i + 1 < now.length; i++) {
+      if (g.from >= now[i].end && g.from <= now[i + 1].start) {
+        const joined = { ...now[i], end: now[i + 1].end };
+        return { pieces: [...now.slice(0, i), joined, ...now.slice(i + 2)], playhead: -1 };
+      }
+    }
+    return null;
+  }
+  return null;
 };
 
 const recut = (id: string, change: (list: Piece[]) => Piece[]) => {
@@ -192,25 +259,24 @@ const clipOf = (id: string) => {
 // that reads as two words is drawn as two, each taking its share of the
 // one moment they both came from.
 const captionCues = (id: string, draft?: { start: number; end: number }[]) => {
-  // With pieces being dragged on the clip timeline, the words are taken
-  // afresh for them, the way the engine's DraftCaptionsView takes them.
-  const saved = clipOf(id);
-  const c = draft
-    ? {
-        ...saved,
-        segments: draft,
-        words: allWords()
-          .filter((w) => draft.some((p) => holds(p, w)))
-          .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
-      }
-    : saved;
-  return cuesOf(c, id);
+  // With pieces being dragged on the clip timeline, the captions are of
+  // those, the way the engine's ShapeClipView makes them.
+  const segments = draft ?? clipOf(id).segments;
+  return cuesOf(segments, id);
 };
-// The captions of a clip, whether saved, drafted or on its way.
-const cuesOf = (c: ReturnType<typeof clipOf>, id = "") => {
+// The captions of any pieces, a saved clip's, a dragged one's or one on
+// its way. A clip keeps no words of its own. What it says is read off the
+// episode's words, corrected, the way the engine's Said reads it.
+const cuesOf = (segments: { start: number; end: number }[], id = "") => {
+  const c = {
+    segments,
+    words: allWords()
+      .filter((w) => segments.some((p) => holds(p, w)))
+      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+  };
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
-  const onClipClock: { start: number; end: number; text: string; said: number }[] = [];
+  const onClipClock: { start: number; end: number; text: string; said: number; whole: string }[] = [];
   // The engine's ClipWords: a word is captioned in the piece that holds
   // the most of it, from the edge on when an edge cuts into it.
   const offsets: number[] = [];
@@ -240,6 +306,7 @@ const cuesOf = (c: ReturnType<typeof clipOf>, id = "") => {
       end: offsets[best] + (to - p.start),
       text: w.text,
       said: w.start,
+      whole: w.text,
     });
   }
   onClipClock.sort((x, y) => x.start - y.start);
@@ -255,7 +322,7 @@ const cuesOf = (c: ReturnType<typeof clipOf>, id = "") => {
     parts.forEach((part, i) => {
       const to =
         i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
-      drawn.push({ start: from, end: to, text: part, said: w.said });
+      drawn.push({ start: from, end: to, text: part, said: w.said, whole: w.whole });
       from = to;
     });
   }
@@ -1048,41 +1115,15 @@ export const Call = {
         const now = h && handAt(h);
         if (!h || !now || now.step !== "framing" || now.start === now.end) return Promise.resolve(null);
         return Promise.resolve({
-          captions: cuesOf(handMade(h, now.start)),
+          captions: cuesOf(handMade(h, now.start).segments),
           style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
         });
       }
       case "Captions":
         return Promise.resolve({
-          captions: captionCues(String(args[1])),
+          captions: captionCues(String(args[2])),
           style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
         });
-      // The captions a clip would have with the pieces being dragged.
-      // ?draftslow answers a quarter of a second late, the way a machine
-      // under load might, so a probe can see the blocks hold meanwhile.
-      case "DraftCaptions": {
-        const [, , id, list] = args as [string, string, string, [number, number][]];
-        (window as any).__drafts = ((window as any).__drafts ?? 0) + 1;
-        const view = {
-          captions: captionCues(id, list.map(([start, end]) => ({ start, end }))),
-          style: {},
-        };
-        return new Promise((done) => setTimeout(() => done(view), location.search.includes("draftslow") ? 250 : 0));
-      }
-      // Moving a clip's edges, on the frame or with toWords on the words,
-      // the same way the engine does.
-      case "TrimClip": {
-        const [, , id, start, end] = args as [string, string, string, number, number];
-        return Promise.resolve(
-          recut(id, (list) => {
-            const kept = list.filter((p) => p.end > start && p.start < end).map((p) => ({ ...p }));
-            if (!kept.length) return list;
-            kept[0].start = start;
-            kept[kept.length - 1].end = end;
-            return kept;
-          }),
-        );
-      }
       case "Fonts":
         return Promise.resolve([
           { name: "Inter Black", about: "", file: "Inter-Black.ttf" },
@@ -1202,50 +1243,6 @@ export const Call = {
       case "Redo": {
         ((window as any).__undone ??= []).push(method);
         return Promise.resolve({ done: true, clip: "clips.json/03" });
-      }
-      // The cuts inside a clip. They answer with the clip as it now is,
-      // the way the Go side does, so the timeline draws where the edges
-      // really landed rather than where the hand let go.
-      case "CutClip": {
-        // The last argument is toWords. Without it the edges stay where
-        // they were put, which is how a cut lands on a frame rather than
-        // on a word, so the stub has to honour it or the harness cannot
-        // tell the two gestures apart.
-        const [, , id, from, to, toWords] = args as
-          [string, string, string, number, number, boolean];
-        const [at] = starts[id] ?? [60];
-        const said = words(at, at + 25);
-        const [a, b] = toWords ? snapCut(said, from, to) : [from, to];
-        return Promise.resolve(recut(id, (list) => applyCut(list, a, b)));
-      }
-      case "JoinCut": {
-        const [, , id, at] = args as [string, string, string, number];
-        return Promise.resolve(
-          recut(id, (list) => {
-            for (let i = 0; i + 1 < list.length; i++) {
-              if (at >= list[i].end && at <= list[i + 1].start) {
-                const joined = { ...list[i], end: list[i + 1].end };
-                return [...list.slice(0, i), joined, ...list.slice(i + 2)];
-              }
-            }
-            return list;
-          }),
-        );
-      }
-      case "MoveCut": {
-        const [, , id, index, from, to, toWords] = args as
-          [string, string, string, number, number, number, boolean];
-        const [at] = starts[id] ?? [60];
-        const [a, b] = toWords ? snapCut(words(at, at + 25), from, to) : [from, to];
-        return Promise.resolve(
-          recut(id, (list) => {
-            if (index < 0 || index + 1 >= list.length) return list;
-            const out = list.map((p) => ({ ...p }));
-            out[index].end = a;
-            out[index + 1].start = b;
-            return out;
-          }),
-        );
       }
       case "Jobs": {
         const searches = [...fakeSearches().map(searchJob), ...hands().map(handJob)];
@@ -1374,27 +1371,32 @@ export const Call = {
           }),
         );
       }
-      // The words as the captions split them: a correction that reads as
-      // two words is two, sharing its time by letters, the way captionCues
-      // draws it.
-      case "WordStops": {
-        const out: { start: number; end: number; text: string }[] = [];
-        for (const w of words(Number(args[3]) - 5, Number(args[4]) + 5)) {
-          const text = fixed()[said(w.start)] ?? w.text;
-          const parts = text.split(" ").filter(Boolean);
-          const letters = parts.reduce((n, part) => n + part.length, 0);
-          let from = w.start;
-          parts.forEach((part, i) => {
-            const to = i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
-            out.push({ start: from, end: to, text: part });
-            from = to;
-          });
+      // What a gesture makes of a clip, and saving it. The engine works this
+      // out in engine/shape.go. This is a small stand-in with the same
+      // shape of answer: edges on frames, or on the nearest word with shift,
+      // a clip at least a second long, and a cut at least 50 ms wide.
+      case "Shape":
+      case "Reshape": {
+        const [, , id, g] = args as [string, string, string, StubGesture];
+        const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
+        const now = pieces(Number(id), at);
+        const out = gestured(now, g, at);
+        if (!out) return Promise.reject(new Error("that would leave the clip with nothing in it"));
+        if (method === "Reshape") {
+          held()[id] = out.pieces;
+          return Promise.resolve(clip(Number(id), at, title, rendered));
         }
-        return Promise.resolve(out);
+        return Promise.resolve({
+          pieces: out.pieces.map((p) => ({ start: p.start, end: p.end })),
+          playhead: out.playhead,
+          captions: { captions: captionCues(id, out.pieces), style: {} },
+        });
       }
       case "Words":
-        if (location.search.includes("transcribing")) return Promise.resolve({ words: [], keepPause: 0.1 });
-        return Promise.resolve({ words: words(Number(args[1]), Number(args[2])), keepPause: 0.1 });
+        if (location.search.includes("transcribing")) return Promise.resolve([]);
+        return Promise.resolve(
+          words(Number(args[1]), Number(args[2])).map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+        );
       case "Still":
         // One file per frame, and the harness episode has a frame a second,
         // so a test can see the frame follow the playhead. Every ask is

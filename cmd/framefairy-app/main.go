@@ -802,7 +802,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 			if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
 				continue
 			}
-			n, err := engine.RemoveRange(plan.Path, p.CaptionsDir(), from, to, duration)
+			n, err := engine.RemoveRange(plan.Path, from, to, duration)
 			if err != nil {
 				return err
 			}
@@ -816,25 +816,15 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 // Captions gives the captions of one clip, on the clip's own clock and in
 // the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.
-func (s *FrameFairy) Captions(planPath, clipID string) (*engine.CaptionsView, error) {
-	if !s.store.Known(planPath) {
-		return nil, os.ErrNotExist
-	}
-	return engine.ClipCaptionsView(planPath, clipID, s.captionOverrides(planPath))
-}
-
-// DraftCaptions gives the captions a clip would have with the pieces an
-// edge being dragged on the clip timeline draws, so the caption blocks
-// follow the hand. Nothing is saved.
-func (s *FrameFairy) DraftCaptions(path, planPath, clipID string, pieces [][2]float64) (*engine.CaptionsView, error) {
+func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsView, error) {
 	if !s.store.Known(path) || !s.store.Known(planPath) {
 		return nil, os.ErrNotExist
 	}
-	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	t, err := s.words(path)
 	if err != nil {
 		return nil, err
 	}
-	return engine.DraftCaptionsView(planPath, clipID, pieces, t, s.captionOverrides(planPath))
+	return engine.ClipCaptionsView(planPath, clipID, t, s.captionOverrides(planPath))
 }
 
 // captionOverrides are the settings the render puts on top of a plan's
@@ -882,7 +872,11 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 		}
 		for _, u := range j.Underway {
 			if u.N == n {
-				return engine.ArrivingCaptionsView(plan, u, s.captionOverrides(plan)), nil
+				t, err := s.words(j.Episode)
+				if err != nil {
+					return nil, err
+				}
+				return engine.ArrivingCaptionsView(plan, u, t, s.captionOverrides(plan)), nil
 			}
 		}
 		return nil, nil
@@ -925,6 +919,17 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	s.said, s.saidBy = t, stamp
 	s.mu.Unlock()
 	return t, nil
+}
+
+// words is what an episode says, see engine/words.go, from the transcript
+// read once and kept. An episode not transcribed yet says nothing, which
+// is an empty answer and not a failure.
+func (s *FrameFairy) words(path string) (*engine.Transcript, error) {
+	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	if errors.Is(err, engine.ErrNoTranscript) {
+		return &engine.Transcript{}, nil
+	}
+	return t, err
 }
 
 // Waveform returns the loudest level in each of buckets pieces of a part
@@ -999,57 +1004,20 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 	return s.render(path, req, nil)
 }
 
-// WordsView is the words of a part, with the lead-in and lead-out the
-// renderer leaves around a cut, so the interface can snap edges the same
-// way.
-type WordsView struct {
-	Words     []engine.WordView `json:"words"`
-	KeepPause float64           `json:"keepPause"`
-}
-
-// Words returns the words spoken in a part. Before the first
-// transcription there are none, which is an empty answer and not a failure.
-func (s *FrameFairy) Words(path string, from, to float64) (WordsView, error) {
+// Words returns the words said in a part, for walking the playhead from
+// word to word. Before the first transcription there are none, which is an
+// empty answer and not a failure.
+func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, error) {
 	if !s.store.Known(path) {
-		return WordsView{}, os.ErrNotExist
-	}
-	opts := s.store.Settings().options()
-	out := WordsView{Words: []engine.WordView{}, KeepPause: opts.KeepPause}
-	t, err := s.transcript(engine.NewProject(nil, path, opts))
-	if errors.Is(err, engine.ErrNoTranscript) {
-		return out, nil
-	}
-	if err != nil {
-		return WordsView{}, err
-	}
-	// One word either side, so an edge can snap past the part.
-	words := t.WordsBetween(from-5, to+5)
-	for _, w := range words {
-		out.Words = append(out.Words, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
-	}
-	return out, nil
-}
-
-// WordStops returns the words spoken in a part the way a clip's captions
-// split them, see engine.WordStops. They are where an edge dragged with
-// shift stops on the clip timeline, the same words the arrow keys walk.
-func (s *FrameFairy) WordStops(path, planPath, clipID string, from, to float64) ([]engine.WordView, error) {
-	if !s.store.Known(path) || !s.store.Known(planPath) {
 		return nil, os.ErrNotExist
 	}
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
 	out := []engine.WordView{}
-	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
-	if errors.Is(err, engine.ErrNoTranscript) {
-		return out, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	stops, err := engine.WordStops(planPath, clipID, t.WordsBetween(from-5, to+5), s.captionOverrides(planPath))
-	if err != nil {
-		return nil, err
-	}
-	for _, w := range stops {
+	// One word either side, so a step can reach past the part.
+	for _, w := range t.WordsBetween(from-5, to+5) {
 		out = append(out, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
 	}
 	return out, nil
@@ -1067,8 +1035,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		_, err := engine.SetWordText(p.LogsDir(), start, text, t)
-		return err
+		return engine.SetWordText(p.LogsDir(), start, text, t)
 	}); err != nil {
 		return ClipEntry{}, err
 	}
@@ -1272,8 +1239,12 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if at < 0 {
 		at = math.NaN()
 	}
+	t, err := s.words(path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
 	if err := s.edit(path, func() error {
-		return engine.SetCaptionTime(plan, clipID, word, edge, at)
+		return engine.SetCaptionTime(plan, clipID, word, edge, at, t)
 	}); err != nil {
 		return ClipEntry{}, err
 	}
@@ -1428,80 +1399,33 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// TrimClip moves the first and last edge of a clip and returns it as it is
-// now. With toWords the edges land on the nearest words, without it they
-// stay exactly where the hand put them, a frame at a time.
-func (s *FrameFairy) TrimClip(ctx context.Context, path, plan, clipID string, start, end float64, toWords bool) (ClipEntry, error) {
+// Shape works out what a gesture on the clip timeline makes of a clip,
+// with its captions, while the hand moves, and writes nothing. See
+// engine/shape.go.
+func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine.ShapedView, error) {
+	if !s.store.Known(path) || !s.store.Known(plan) {
+		return nil, os.ErrNotExist
+	}
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
+	return engine.ShapeClipView(plan, clipID, g, t, s.store.Settings().options().KeepPause,
+		s.captionOverrides(plan))
+}
+
+// Reshape makes the change a gesture on the clip timeline showed while the
+// hand moved, and returns the clip as it is now.
+func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g engine.Gesture) (ClipEntry, error) {
 	if !s.store.Known(path) || !s.store.Known(plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
-	opts := s.store.Settings().options()
-	t, err := engine.NewProject(nil, path, opts).Transcript()
+	t, err := s.words(path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		return engine.TrimClip(plan, clipID, start, end, t, opts.KeepPause, engine.Snap(toWords))
-	}); err != nil {
-		return ClipEntry{}, err
-	}
-	return s.clipEntry(ctx, path, plan, clipID)
-}
-
-// cutting is what every change to a clip's cuts needs: the episode and the
-// plan have to belong to the library, and the transcript is what the edges
-// snap to.
-func (s *FrameFairy) cutting(path, plan string) (*engine.Transcript, engine.Options, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
-		return nil, engine.Options{}, os.ErrNotExist
-	}
-	opts := s.store.Settings().options()
-	t, err := engine.NewProject(nil, path, opts).Transcript()
-	if err != nil {
-		return nil, engine.Options{}, err
-	}
-	return t, opts, nil
-}
-
-// CutClip takes a part out of the middle of a clip and returns it as it
-// is now. With toWords the edges land on the words around them, without it
-// they stay exactly where the hand put them.
-func (s *FrameFairy) CutClip(ctx context.Context, path, plan, clipID string, from, to float64, toWords bool) (ClipEntry, error) {
-	t, opts, err := s.cutting(path, plan)
-	if err != nil {
-		return ClipEntry{}, err
-	}
-	if err := s.edit(path, func() error {
-		return engine.CutClip(plan, clipID, from, to, t, opts.KeepPause, engine.Snap(toWords))
-	}); err != nil {
-		return ClipEntry{}, err
-	}
-	return s.clipEntry(ctx, path, plan, clipID)
-}
-
-// JoinCut puts back the part a clip leaves out at a moment and returns
-// the clip as it is now.
-func (s *FrameFairy) JoinCut(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
-	t, _, err := s.cutting(path, plan)
-	if err != nil {
-		return ClipEntry{}, err
-	}
-	if err := s.edit(path, func() error { return engine.JoinCut(plan, clipID, at, t) }); err != nil {
-		return ClipEntry{}, err
-	}
-	return s.clipEntry(ctx, path, plan, clipID)
-}
-
-// MoveCut moves both edges of one of a clip's cuts and returns the clip as
-// it is now. With toWords the edges land on the words around them, without
-// it they stay exactly where they were put, a frame at a time.
-func (s *FrameFairy) MoveCut(ctx context.Context, path, plan, clipID string, index int, from, to float64, toWords bool) (ClipEntry, error) {
-	t, opts, err := s.cutting(path, plan)
-	if err != nil {
-		return ClipEntry{}, err
-	}
-	if err := s.edit(path, func() error {
-		return engine.MoveCut(plan, clipID, index, from, to, t, opts.KeepPause, engine.Snap(toWords))
+		return engine.Reshape(plan, clipID, g, t, s.store.Settings().options().KeepPause)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

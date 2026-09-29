@@ -210,10 +210,6 @@ func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
 	if !first.Segments[1].Moved || *first.Segments[1].CropX != 300 {
 		t.Errorf("hand-placed crop %+v", first.Segments[1])
 	}
-	// Only words with two real times and some text survive.
-	if len(first.Words) != 2 || first.Words[1].Text != "zwei" {
-		t.Errorf("words %+v", first.Words)
-	}
 	if first.Duration() != 4 {
 		t.Errorf("duration %v", first.Duration())
 	}
@@ -275,12 +271,6 @@ func FuzzLoadClips(f *testing.F) {
 			for k, th := range clip.Thumbnails {
 				if !insidePieces(clip.Segments, th) || (k > 0 && th <= clip.Thumbnails[k-1]) {
 					t.Fatalf("thumbnail %v in %v", th, clip.Thumbnails)
-				}
-			}
-			for _, word := range clip.Words {
-				if !isFinite(word.Start) || !isFinite(word.End) || word.End < word.Start ||
-					strings.ContainsFunc(word.Text, isControl) {
-					t.Fatalf("word %+v", word)
 				}
 			}
 		}

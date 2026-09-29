@@ -99,11 +99,8 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 		t.Errorf("waveform got %d peaks, %v", len(peaks), err)
 	}
 	words, err := svc.Words(source, 0, 60)
-	if err != nil || len(words.Words) != 0 {
-		t.Errorf("words got %d words, %v", len(words.Words), err)
-	}
-	if words.KeepPause <= 0 {
-		t.Errorf("keepPause %v", words.KeepPause)
+	if err != nil || words == nil || len(words) != 0 {
+		t.Errorf("words got %v, %v", words, err)
 	}
 	room, err := svc.Room(source)
 	if err != nil || len(room.Lines) != 0 || room.Chars <= 0 || room.Rate != engine.SpokenChars {

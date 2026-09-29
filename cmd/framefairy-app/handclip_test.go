@@ -153,7 +153,7 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 	}
 	c := made[0]
 	ctx := context.Background()
-	if _, err := d.svc.TrimClip(ctx, ep, c.Plan, c.ID, c.Start+2, c.End, true); err != nil {
+	if _, err := d.svc.Reshape(ctx, ep, c.Plan, c.ID, engine.Gesture{Kind: "trim", Edge: "start", From: c.Start + 2}); err != nil {
 		t.Fatal(err)
 	}
 	if done := d.waitFor(d.in(ep, 150).ID); done.State != JobDone {

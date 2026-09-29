@@ -24,7 +24,6 @@
     shouldChase,
     pieceAt as pieceIndex,
     playingPiece,
-    saidWord,
   } from "../lib/flow";
   import Info from "./Info.svelte";
   import {
@@ -426,15 +425,21 @@
   // are and somewhere to send it.
   const correctable = $derived(!!clip && !!onword && !locked);
 
-  // Every word of the caption beside the word of the episode it stands for.
-  // A correction that reads as two words is drawn as two, and both halves
-  // point back at the one word they came from.
-  const rows = $derived.by(() => {
-    const said = clip?.words ?? [];
-    return (caption?.lines ?? []).map((line) =>
-      line.words.map((word) => ({ word, said: correctable ? saidWord(pieces, said, word) : null })),
-    );
-  });
+  // Every word of the caption beside the word of the episode it stands for,
+  // which the engine says with the word. A correction that reads as two
+  // words, or a word shown in halves, is drawn as two, and both point back
+  // at the one word they came from.
+  const rows = $derived.by(() =>
+    (caption?.lines ?? []).map((line) =>
+      line.words.map((word) => ({
+        word,
+        said:
+          correctable && word.said !== undefined
+            ? { start: word.said, text: word.whole ?? word.text }
+            : null,
+      })),
+    ),
+  );
 
   // A word is in the caption twice when it was split in two, and while one
   // half is being corrected it holds the whole word, so the other half is

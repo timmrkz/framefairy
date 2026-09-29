@@ -197,7 +197,7 @@ func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
 	_, end := ClipSpan(clips[0])
 	// Everything after the first clip is given back while the second is
 	// still being written.
-	if _, err := RemoveRange(path, p.CaptionsDir(), end, 30, 40); err != nil {
+	if _, err := RemoveRange(path, end, 30, 40); err != nil {
 		t.Fatal(err)
 	}
 	close(letGo)

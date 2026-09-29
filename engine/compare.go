@@ -173,7 +173,11 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		}
 		run.Plan = newestPlan(dir, began)
 		if run.Plan != "" {
-			run.Clips = foundClips(run.Plan)
+			heard, err := SavedTranscript(opts.Source, logs, opts.ASRModel, opts.SilenceDB)
+			if err != nil {
+				heard = &Transcript{}
+			}
+			run.Clips = foundClips(run.Plan, heard.Words)
 		}
 		runs = append(runs, run)
 	}
@@ -260,8 +264,8 @@ func newestPlan(dir string, began time.Time) string {
 }
 
 // foundClips reads a plan the way the engine does, and writes each clip
-// out as it is heard.
-func foundClips(path string) []FoundClip {
+// out as it is heard, in the episode's words.
+func foundClips(path string, words []Cue) []FoundClip {
 	plan, clips, err := LoadClips(path)
 	if err != nil {
 		return nil
@@ -284,10 +288,8 @@ func foundClips(path string) []FoundClip {
 			if i > 0 {
 				text.WriteString(" [...]")
 			}
-			for _, w := range c.Words {
-				if w.Start >= seg.Start-0.001 && w.Start < seg.End {
-					text.WriteString(" " + w.Text)
-				}
+			for _, w := range Said(Clip{Segments: []Segment{seg}}, words) {
+				text.WriteString(" " + w.Text)
 			}
 		}
 		found.Text = strings.TrimSpace(text.String())

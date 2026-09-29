@@ -898,11 +898,13 @@ place.
     - **Shift stops at the words that light up.** An edge dragged with
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two
-      words, are two stops, the same words the arrow keys walk. The engine
-      splits them, `WordStops`, from the clip's caption style, for the
-      words around the clip as well, so a half is a stop before the edge
-      has reached its word. An edge let go between two halves lies inside
-      the word the engine knows, so it is saved as the frame it is on.
+      words, are two stops, the same words the arrow keys walk.
+    - **The engine answers for every drag.** The timeline sends what the
+      hand is doing, `Shape`, and draws what comes back: the pieces, the
+      captions and where the playhead goes. Letting go saves the same
+      gesture, `Reshape`, so what was drawn is what is saved. The timeline
+      keeps no rules about where an edge lands, see
+      [WORDS.md](WORDS.md).
     - **The clip edge is over the caption handles.** The first caption is
       on screen from the clip's first frame, so its handle stood on the
       clip's start edge, and a hand that reached for the clip in the band
@@ -910,9 +912,8 @@ place.
     - **The captions follow the drag.** While an edge of the clip or of a
       cut is dragged, the caption blocks are drawn for the clip as the hand
       has it: a word the edge reaches gets its caption under the hand, and
-      a word it leaves loses it. The engine makes them, through
-      `DraftCaptions`, from the pieces as they are drawn, and saves
-      nothing. They used to wait for the hand to let go, so a drag showed
+      a word it leaves loses it. The engine makes them with the answer to
+      the gesture, and saves nothing until the hand lets go. They used to wait for the hand to let go, so a drag showed
       the old captions over the new clip. After letting go they stay until
       the saved clip's captions come back, which are the same, so nothing
       jumps.

@@ -69,9 +69,6 @@ type PlanOptions struct {
 	// PlanPath is where each clip is written the moment it is framed. The
 	// first one replaces whatever plan was there.
 	PlanPath string
-	// CaptionDir holds the caption files a new plan makes stale. They are
-	// set aside when the first clip lands.
-	CaptionDir string
 	// By is who proposes the clips, stamped on the clip set as
 	// planned_with.by: empty for the model, ByHand for I and O.
 	By string
@@ -128,7 +125,6 @@ type PlanClip struct {
 	Title    string        `json:"title"`
 	Reason   string        `json:"reason"`
 	Keep     [][2]int      `json:"keep"`
-	Words    [][3]any      `json:"words"`
 	Segments []PlanSegment `json:"segments"`
 }
 

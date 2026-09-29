@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 )
 
 // object is a JSON object that remembers its key order, so an edit made by
@@ -442,101 +441,6 @@ func SnapEnd(words []Cue, at, keepPause float64) float64 {
 // MaxClipSpan keeps a trimmed clip to a sensible length.
 const MaxClipSpan = 600.0
 
-// TrimClip moves a clip's first and last edge. With ToWords they move onto
-// the nearest words, with ToFrames they stay where they were put, the same
-// as the edges of a cut. Pieces that end up outside are dropped, the first
-// and last piece keep their framing, and the clip's words are taken again
-// from the transcript. The change is recorded as an edit for training.
-func TrimClip(planPath, clipID string, start, end float64, t *Transcript,
-	keepPause float64, snap Snap) error {
-	if snap == ToWords {
-		start = SnapStart(t.Words, start, keepPause)
-		end = SnapEnd(t.Words, end, keepPause)
-	} else {
-		start, end = roundTo(math.Max(0, start), 3), roundTo(end, 3)
-	}
-	if end-start < 1 {
-		return renderErr("a clip needs at least one second")
-	}
-	if end-start > MaxClipSpan {
-		return renderErr("a clip can span at most %s minutes of the episode", fixed(MaxClipSpan/60, 0))
-	}
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
-		c, err := findClip(clips, clipID)
-		if err != nil {
-			return err
-		}
-		list, _ := c.values["segments"].([]any)
-		var kept []any
-		var first, last *object
-		for _, item := range list {
-			seg, ok := item.(*object)
-			if !ok {
-				continue
-			}
-			segStart, _ := seg.get("start")
-			segEnd, _ := seg.get("end")
-			if number(segEnd) <= start || number(segStart) >= end {
-				continue
-			}
-			if first == nil {
-				first = seg
-			}
-			last = seg
-			kept = append(kept, seg)
-		}
-		if first == nil {
-			// The new edges hold none of the old pieces, so the whole
-			// part becomes one piece with the framing of the nearest one.
-			var nearest *object
-			for _, item := range list {
-				if seg, ok := item.(*object); ok {
-					segStart, _ := seg.get("start")
-					if nearest == nil || math.Abs(number(segStart)-start) < math.Abs(number(nearest.values["start"])-start) {
-						nearest = seg
-					}
-				}
-			}
-			if nearest == nil {
-				return renderErr("clip %s has no pieces", clipID)
-			}
-			first, last = nearest, nearest
-			kept = []any{nearest}
-		}
-		first.set("start", roundTo(start, 3))
-		last.set("end", roundTo(end, 3))
-		c.set("segments", kept)
-
-		refreshWords(c, kept, t)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	dropCaptionFile(planPath, clipID)
-	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
-	return nil
-}
-
-// refreshWords takes a clip's words again from the transcript: every word
-// some of whose sound one of its pieces holds, see HoldsWord.
-func refreshWords(c *object, pieces []any, t *Transcript) {
-	spoken := []any{}
-	for _, w := range t.Words {
-		for _, item := range pieces {
-			seg, ok := item.(*object)
-			if !ok {
-				continue
-			}
-			if HoldsWord(number(seg.values["start"]), number(seg.values["end"]), w) {
-				spoken = append(spoken, []any{roundTo(w.Start, 3), roundTo(w.End, 3), w.Text})
-				break
-			}
-		}
-	}
-	c.set("words", spoken)
-}
-
 func copyObject(o *object) *object {
 	out := &object{keys: append([]string(nil), o.keys...), values: map[string]any{}}
 	for k, v := range o.values {
@@ -624,58 +528,48 @@ func pieceSpan(pieces []*object) float64 {
 // can still make, so it is checked before anything is written. The words are
 // taken again from the transcript, the caption file goes, because the
 // captions are built from the words, and the edit is recorded for training.
-func editPieces(planPath, clipID string, t *Transcript,
-	change func(pieces []*object) ([]*object, error)) error {
+func editPieces(planPath, clipID string, change func(pieces []*object) ([]*object, error)) error {
 	err := editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
 		}
-		out, err := change(segmentObjects(c))
+		out, err := checkedPieces(change, segmentObjects(c))
 		if err != nil {
 			return err
-		}
-		if len(out) == 0 {
-			return renderErr("that would leave the clip with nothing in it")
-		}
-		if len(out) > MaxSegments {
-			return renderErr("a clip can hold at most %d pieces", MaxSegments)
-		}
-		if span := pieceSpan(out); span < MinClip {
-			return renderErr("a clip needs at least one second, that would leave %s",
-				fixed(span, 2))
 		}
 		kept := make([]any, len(out))
 		for i, seg := range out {
 			kept[i] = seg
 		}
 		c.set("segments", kept)
-		refreshWords(c, kept, t)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	dropCaptionFile(planPath, clipID)
 	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
 	return nil
 }
 
-// Snap says whether a cut's edges are moved onto the words around them.
-//
-// ToWords is what the engine proposes, because a cut that lands between
-// words is right nearly every time, and it is what a drag with alt asks
-// for. ToFrames is what a drag does by itself: it leaves the edges exactly
-// where they were put, because a drag says where, and the picture is then
-// the only thing that says where the edge belongs. An edge put on a frame
-// may stop inside a word, which is the whole point of it. Clip edges and
-// the edges of a cut follow the same rule.
-type Snap bool
-
-const (
-	ToWords  Snap = true
-	ToFrames Snap = false
-)
+// checkedPieces makes a change to a clip's pieces and checks that what comes
+// back is a clip a person can still watch and the render can still make.
+func checkedPieces(change func(pieces []*object) ([]*object, error), pieces []*object) ([]*object, error) {
+	out, err := change(pieces)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, renderErr("that would leave the clip with nothing in it")
+	}
+	if len(out) > MaxSegments {
+		return nil, renderErr("a clip can hold at most %d pieces", MaxSegments)
+	}
+	if span := pieceSpan(out); span < MinClip {
+		return nil, renderErr("a clip needs at least one second, that would leave %s", fixed(span, 2))
+	}
+	return out, nil
+}
 
 // snapCut puts the edges of a cut where the render would cut them. A cut is
 // not a trim seen from the other side: a trim moves an edge to the nearest
@@ -687,10 +581,10 @@ const (
 // air on each side that stays, without reaching into a word that is going.
 // A cut dragged over a pause takes the whole pause, and a cut dragged over
 // speech takes whole words.
-func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
+func snapCut(words []Cue, from, to, keepPause float64) (float64, float64) {
 	// What the cut touches goes with it.
 	swallowedFrom, swallowedTo := math.Inf(1), math.Inf(-1)
-	for _, w := range t.Words {
+	for _, w := range words {
 		if w.End > from && w.Start < to {
 			swallowedFrom = math.Min(swallowedFrom, w.Start)
 			swallowedTo = math.Max(swallowedTo, w.End)
@@ -702,7 +596,7 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 	// The last word that stays before the cut, and the first that stays
 	// after it. The air belongs to the side that stays.
 	before, after := math.Inf(-1), math.Inf(1)
-	for _, w := range t.Words {
+	for _, w := range words {
 		if w.End <= start {
 			before = math.Max(before, w.End)
 		}
@@ -717,30 +611,6 @@ func snapCut(t *Transcript, from, to, keepPause float64) (float64, float64) {
 		end = math.Max(after-keepPause, swallowedTo)
 	}
 	return roundTo(math.Max(0, start), 3), roundTo(end, 3)
-}
-
-// CutClip takes a part out of the middle of a clip. A piece the cut lands
-// inside becomes two, and both keep the framing of the piece they came from,
-// so cutting never moves the picture. A piece the cut swallows whole goes.
-// With ToWords the edges move onto the words around them, with ToFrames they
-// stay where they were put.
-func CutClip(planPath, clipID string, from, to float64, t *Transcript,
-	keepPause float64, snap Snap) error {
-	if snap == ToWords {
-		from, to = snapCut(t, from, to, keepPause)
-	} else {
-		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
-	}
-	if to-from < MinCut {
-		return renderErr("a cut has to take out more than that")
-	}
-	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
-		out := applyCut(pieces, from, to)
-		if len(out) == len(pieces) && pieceSpan(out) >= pieceSpan(pieces) {
-			return nil, renderErr("that cut falls outside the clip")
-		}
-		return out, nil
-	})
 }
 
 // applyCut takes a part out of a set of pieces. A piece the cut straddles
@@ -769,62 +639,6 @@ func applyCut(pieces []*object, from, to float64) []*object {
 		}
 	}
 	return out
-}
-
-// JoinCut puts back the part a clip leaves out at a moment, so the two
-// pieces around it become one. The framing of the piece before the cut is
-// the one the joined piece keeps, because that is the shot it opens on.
-func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
-	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
-		for i := 0; i+1 < len(pieces); i++ {
-			end := number(pieces[i].values["end"])
-			next := number(pieces[i+1].values["start"])
-			if at >= end && at <= next {
-				joined := copyObject(pieces[i])
-				joined.set("end", pieces[i+1].values["end"])
-				out := append([]*object{}, pieces[:i]...)
-				out = append(out, joined)
-				return append(out, pieces[i+2:]...), nil
-			}
-		}
-		return nil, renderErr("there is no cut at %s", fixed(at, 2))
-	})
-}
-
-// MoveCut moves both edges of one of a clip's cuts, counted from the first.
-// The pieces either side give way to it, and neither may be squeezed out of
-// existence, so a cut that would swallow its neighbour is refused rather
-// than quietly dropping a piece. With ToWords the edges move onto the words
-// around them, with ToFrames they stay where they were put, which is how an
-// edge is walked a frame at a time.
-func MoveCut(planPath, clipID string, index int, from, to float64,
-	t *Transcript, keepPause float64, snap Snap) error {
-	if snap == ToWords {
-		from, to = snapCut(t, from, to, keepPause)
-	} else {
-		from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
-	}
-	if to-from < MinCut {
-		return renderErr("a cut has to take out more than that")
-	}
-	return editPieces(planPath, clipID, t, func(pieces []*object) ([]*object, error) {
-		if index < 0 || index+1 >= len(pieces) {
-			return nil, renderErr("this clip has no cut number %d", index+1)
-		}
-		before, after := pieces[index], pieces[index+1]
-		if from <= number(before.values["start"]) {
-			return nil, renderErr("a cut cannot swallow the piece before it")
-		}
-		if to >= number(after.values["end"]) {
-			return nil, renderErr("a cut cannot swallow the piece after it")
-		}
-		out := append([]*object{}, pieces...)
-		out[index] = copyObject(before)
-		out[index].set("end", roundTo(from, 3))
-		out[index+1] = copyObject(after)
-		out[index+1].set("start", roundTo(to, 3))
-		return out, nil
-	})
 }
 
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
@@ -955,7 +769,7 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 // It is kept against the word rather than the caption, because captions
 // break in other places when the face or the size changes, and a word stays
 // what it is.
-func SetCaptionTime(planPath, clipID string, word float64, edge string, at float64) error {
+func SetCaptionTime(planPath, clipID string, word float64, edge string, at float64, t *Transcript) error {
 	if edge != "start" && edge != "end" {
 		return renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
 	}
@@ -964,23 +778,26 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 		return renderErr("a caption cannot be moved to %s", fixed(at, 3))
 	}
 	key := wordKey(word)
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
+	// Only a word the clip says. A caption is made of its words and of
+	// nothing else.
+	_, clip, err := planClip(planPath, clipID)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, w := range Said(clip, t.Words) {
+		if wordKey(w.Start) == key {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return renderErr("the clip has no word at %s", HMS(word))
+	}
+	err = editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
-		}
-		// Only a word of this clip. A caption is made of its words and of
-		// nothing else.
-		found := false
-		list, _ := c.values["words"].([]any)
-		for _, item := range list {
-			if triple, ok := item.([]any); ok && len(triple) == 3 && wordKey(number(triple[0])) == key {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return renderErr("the clip has no word at %s", HMS(word))
 		}
 		times, _ := c.values["caption_times"].(*object)
 		if times == nil {
@@ -1010,7 +827,6 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 	if err != nil {
 		return err
 	}
-	dropCaptionFile(planPath, clipID)
 	return nil
 }
 
@@ -1155,58 +971,15 @@ var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+(-\d+)?|-hand)?\.json$`)
 
 // RemovePlan takes a whole search out of an episode: the plan file goes, and
 // with it the clips it held. The part it covered is free to be searched
-// again afterwards.
-//
-// The caption files of its clips are moved aside rather than deleted,
-// because they may hold corrections made by hand, and because a later plan
-// could otherwise inherit the caption text of a clip it has nothing to do
-// with. Rendered files are finished work and are left alone.
-func RemovePlan(planPath, captionsDir string) error {
+// again afterwards. Rendered files are finished work and are left alone.
+func RemovePlan(planPath string) error {
 	if !IsPlanFile(planPath) {
 		return renderErr("%s is not a plan", filepath.Base(planPath))
 	}
 	// An edit of this plan may be halfway through writing it.
 	defer lockFile(planPath)()
-	_, clips, err := LoadClips(planPath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := setCaptionsAside(captionsDir, clips); err != nil {
-		return err
-	}
 	if err := os.Remove(planPath); err != nil && !os.IsNotExist(err) {
 		return err
-	}
-	return nil
-}
-
-// setCaptionsAside moves the caption files of clips that are going away
-// into a folder of their own, dated, rather than deleting them.
-func setCaptionsAside(captionsDir string, clips []Clip) error {
-	var files []string
-	for _, clip := range clips {
-		for _, ext := range []string{".srt", ".ass"} {
-			// The basename comes out of a plan file, which is untrusted.
-			name, err := SafeChild(captionsDir, clip.Basename()+ext)
-			if err != nil {
-				return err
-			}
-			if isFile(name) {
-				files = append(files, name)
-			}
-		}
-	}
-	if len(files) == 0 {
-		return nil
-	}
-	attic := filepath.Join(captionsDir, "superseded-"+time.Now().Format("20060102-150405"))
-	if err := os.MkdirAll(attic, 0o755); err != nil {
-		return err
-	}
-	for _, old := range files {
-		if err := os.Rename(old, filepath.Join(attic, filepath.Base(old))); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -1225,9 +998,8 @@ func ClipSpan(c Clip) (float64, float64) {
 // model may read again, so the range picker shows it as free. A plan whose
 // whole window is given back goes altogether.
 //
-// It answers with how many clips went. Caption files are moved aside, as
-// they are when a whole plan goes.
-func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int, error) {
+// It answers with how many clips went.
+func RemoveRange(planPath string, from, to, duration float64) (int, error) {
 	if !IsPlanFile(planPath) {
 		return 0, renderErr("%s is not a plan", filepath.Base(planPath))
 	}
@@ -1255,10 +1027,7 @@ func RemoveRange(planPath, captionsDir string, from, to, duration float64) (int,
 	}
 	// Nothing of the window is left, so the plan itself goes.
 	if len(Without(window, append(readWindows(plan.PlannedWith()["removed"]), Window{start, end}))) == 0 {
-		return len(going), RemovePlan(planPath, captionsDir)
-	}
-	if err := setCaptionsAside(captionsDir, going); err != nil {
-		return 0, err
+		return len(going), RemovePlan(planPath)
 	}
 	gone := map[string]bool{}
 	for _, clip := range going {

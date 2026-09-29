@@ -131,7 +131,7 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 
 // RenderClip writes one finished short.
 func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
-	source SourceInfo, outDir string, cues []Caption, rs RenderSettings,
+	source SourceInfo, outDir string, cues []LaidCaption, rs RenderSettings,
 	style map[string]any, captionDir string, dryRun bool) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
