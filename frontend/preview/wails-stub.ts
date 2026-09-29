@@ -561,7 +561,9 @@ function searchJob(s: FakeSearch) {
     k < landOrder.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
       ? [{ n: k + 1, start: 40 + (landOrder[k] - 1) * 140, end: 65 + (landOrder[k] - 1) * 140, title: "Ein Moment " + landOrder[k], step: "framing" }]
       : [];
-  return { ...base, underway, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
+  // What it has written goes with what it has on the way, in one event,
+  // the way the Go side sends them.
+  return { ...base, underway, written: now.found, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
 }
 // How far the saved transcript reaches. With ?lagging it is saved every 8 s
 // of work, minutes of audio apart, while the job reports every chunk.
@@ -977,8 +979,13 @@ export const Call = {
         // ?lagclips answers every list 300 ms late, the way a busy machine
         // does, so a card on its way has to hold its place until the list
         // has the clip it became.
+        // ?crossclips answers one read late and the next at once, so a
+        // read asked later can answer first, the way two reads in the air
+        // together do on a busy machine.
+        const reads = ((window as any).__reads = ((window as any).__reads ?? 0) + 1);
+        const late = location.search.includes("lagclips") ? 300 : location.search.includes("crossclips") && reads % 2 ? 400 : 0;
         const answer = <T,>(list: T): Promise<T> =>
-          location.search.includes("lagclips") ? new Promise((done) => setTimeout(() => done(list), 300)) : Promise.resolve(list);
+          late ? new Promise((done) => setTimeout(() => done(list), late)) : Promise.resolve(list);
         if (fresh) return answer(made.sort((x, y) => x.start - y.start));
         // A list that is slow to come, the way it is while the machine is
         // busy, and that knows nothing of what was done since it was asked

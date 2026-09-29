@@ -83,7 +83,8 @@ type Event struct {
 	From float64 `json:"from,omitempty"`
 	// Found is how many clips a search has written to its plan so far. The
 	// app reads the list again when it changes, rather than on a timer
-	// that is always a little late.
+	// that is always a little late. On EventUnderway it is how many the
+	// job has written, sent with the clips it has on the way.
 	Found int `json:"found,omitempty"`
 	// Underway is every clip the job has on the way, on EventUnderway.
 	Underway []Underway `json:"underway,omitempty"`

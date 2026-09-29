@@ -324,3 +324,43 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 		t.Errorf("the repeat was said %d times:\n%s", n, said.String())
 	}
 }
+
+// A written clip leaves the clips on the way in the same event that counts
+// it, and before the search says it found one more. The clip list adds the
+// two up to know how many rows are left, and when the count came first the
+// list read the clip while its card was still on the way, a row more than
+// the search was asked for.
+func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
+	letGo := make(chan struct{})
+	close(letGo)
+	p, _ := searching(t, letGo)
+	var mu sync.Mutex
+	written, most := 0, 0
+	var problems []string
+	p.engine.Log.SetSink(func(ev Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case ev.Kind == EventUnderway:
+			if ev.Found < written {
+				problems = append(problems, fmt.Sprintf("written went back from %d to %d", written, ev.Found))
+			}
+			written = ev.Found
+			most = max(most, ev.Found+len(ev.Underway))
+		case ev.Kind == EventProgress && ev.Found > written:
+			problems = append(problems, fmt.Sprintf("found %d while the clips on the way had counted %d",
+				ev.Found, written))
+		}
+	})
+	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, problem := range problems {
+		t.Error(problem)
+	}
+	if written != 2 || most > 2 {
+		t.Errorf("written %d, at most %d on the way and written together", written, most)
+	}
+}

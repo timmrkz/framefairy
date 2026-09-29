@@ -329,22 +329,26 @@ func (b *planBuilder) queueLocked(entry PlanEntry) {
 	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
 	b.underway = append(b.underway, Underway{N: position, Start: b.lines[first-1].Start(),
 		End: b.lines[last-1].End(), Title: entry.Title, Step: StepFraming})
-	b.e.Log.Underway(b.underway)
+	b.e.Log.Underway(b.underway, len(b.clips))
 	b.queue <- planJob{index: position, entry: entry, id: id}
 	if b.clock != nil {
 		b.clock.taken()
 	}
 }
 
-// arrived takes a clip off the list of clips on the way, written or let
-// go.
+// arrived takes a clip off the list of clips on the way, let go. A clip
+// that is written is taken off by land, in the same event that counts it.
 func (b *planBuilder) arrived(job planJob) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.takeOffLocked(job.index)
+}
+
+func (b *planBuilder) takeOffLocked(index int) {
 	for i, u := range b.underway {
-		if u.N == job.index {
+		if u.N == index {
 			b.underway = append(b.underway[:i:i], b.underway[i+1:]...)
-			b.e.Log.Underway(b.underway)
+			b.e.Log.Underway(b.underway, len(b.clips))
 			return
 		}
 	}
@@ -364,7 +368,7 @@ func (b *planBuilder) cutDown(index int, spans []Span, words []Cue) {
 			pieces[k] = [2]float64{roundTo(s.Start, 3), roundTo(s.End, 3)}
 		}
 		b.underway[i].Pieces, b.underway[i].Words = pieces, words
-		b.e.Log.Underway(b.underway)
+		b.e.Log.Underway(b.underway, len(b.clips))
 		return
 	}
 }
@@ -520,7 +524,7 @@ func (b *planBuilder) work(job planJob) {
 	if !ok {
 		return
 	}
-	if err := b.land(clip); err != nil {
+	if err := b.land(job.index, clip); err != nil {
 		b.fail(err)
 	}
 }
@@ -649,7 +653,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 // place of whatever plan was there for this window, and each after it is
 // added through the same edit the app uses. A set that grows is never made
 // anew: every clip is added to it, and the first one there makes it.
-func (b *planBuilder) land(clip PlanClip) error {
+func (b *planBuilder) land(index int, clip PlanClip) error {
 	b.writing.Lock()
 	defer b.writing.Unlock()
 	if b.gone {
@@ -701,8 +705,11 @@ func (b *planBuilder) land(clip PlanClip) error {
 			return err
 		}
 	}
+	// Written: counted and off the list of clips on the way in one event,
+	// before the clock says it found one more.
 	b.mu.Lock()
 	b.clips = append(b.clips, clip)
+	b.takeOffLocked(index)
 	b.mu.Unlock()
 	if b.clock != nil {
 		b.clock.landed()

@@ -307,8 +307,10 @@ export interface Job {
   // was O.
   at?: number;
   backward?: boolean;
-  // The clips the job has on the way.
+  // The clips the job has on the way, and how many it has written, from
+  // one event, so the two always add up.
   underway?: Underway[];
+  written?: number;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

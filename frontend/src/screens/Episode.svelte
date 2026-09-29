@@ -625,8 +625,13 @@
   );
   // A clip that has just been written keeps its card until the list has
   // read it, so the card becomes the clip in one step: never a gap where
-  // it was, and never the two of them at once.
-  let landing = $state<Arriving[]>([]);
+  // it was, and never the two of them at once. The card goes in the same
+  // assignment that puts the list on screen, and only with a list read
+  // after the clip was written, see refreshClips. It went when its own
+  // read answered, and a read asked a moment later that answered first
+  // put the clip on screen beside its card, a card more than the search
+  // was asked for.
+  let landing = $state<(Arriving & { after: number })[]>([]);
   let arrivedBefore: Arriving[] = [];
   $effect(() => {
     const now = arrivingNow;
@@ -634,17 +639,15 @@
     const gone = arrivedBefore.filter((a) => !here.has(a.key) && !a.stopped);
     arrivedBefore = now;
     if (!gone.length) return;
-    landing = [...untrack(() => landing), ...gone];
-    const done = new Set(gone.map((a) => a.key));
-    void refreshClips().finally(() => (landing = landing.filter((a) => !done.has(a.key))));
+    const after = listed.next();
+    landing = [...untrack(() => landing), ...gone.map((a) => ({ ...a, after }))];
+    void refreshClips();
   });
   const onTheWay = $derived([...arrivingNow, ...landing]);
   // How many clips the search has written and has on the way. It says so
   // itself, so a clip made by hand while it runs is not counted as one of
   // its own.
-  const searchTook = $derived(
-    (finding ? (working?.progress?.found ?? 0) : 0) + (working?.underway?.length ?? 0),
-  );
+  const searchTook = $derived((working?.written ?? 0) + (working?.underway?.length ?? 0));
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -785,9 +788,14 @@
     const ticket = listed.send();
     try {
       const list = (await api.clips(path)) ?? [];
-      if (listed.keep(ticket)) clips = list;
+      if (listed.keep(ticket)) {
+        clips = list;
+        // The cards of clips this read already holds, in the same step.
+        if (landing.some((a) => a.after <= ticket)) landing = landing.filter((a) => a.after > ticket);
+      }
     } catch (err) {
       problem = errorText(err);
+      if (landing.some((a) => a.after <= ticket)) landing = landing.filter((a) => a.after > ticket);
     }
   }
 
@@ -1670,7 +1678,7 @@
   // The effect runs on every job event, so it only acts on a change.
   let foundHeard = 0;
   $effect(() => {
-    const found = (finding ? working?.progress?.found : 0) ?? 0;
+    const found = working?.written ?? 0;
     if (found === foundHeard) return;
     foundHeard = found;
     if (found > 0) refreshClips().then(showFirstFound);
