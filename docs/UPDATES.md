@@ -307,8 +307,8 @@ What it can start with and what it cannot:
   it is the first thing the batch that builds this tries.
 - **It takes a few minutes per push.** The build runs in CI after each
   commit, so an update is ready a few minutes after Claude pushes, not at
-  once. The pull request says when it is ready: the check called list, of
-  Builds to update to, turns green.
+  once. The pull request says when it is ready: the status Ready to update
+  to turns green on the commit that was built.
 - **The app lives in one place.** It is installed once, to
   `/Applications`, and updates itself there. An administrator can write
   there without a password prompt, and Tim's account is one. `make run`
@@ -329,12 +329,22 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 | Key | Signs | Private half lives | Public half lives |
 | --- | --- | --- | --- |
 | The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for Tim's approval, and a backup in Tim's password manager | in the repository, built into every customer build |
-| The development key | the builds of `main` and of pull requests | a GitHub secret the build workflow can read, `FRAMEFAIRY_UPDATE_KEY`, and the password manager | in the repository, built into every development build |
+| The development key | the builds of `main` and of pull requests | `FRAMEFAIRY_UPDATE_KEY`, a secret of the GitHub environment `updates`, which only main can enter, and the password manager | in the repository, built into every development build |
 
 - **The private half never leaves those two places.** It is not in the
   repository, not in a chat, not on a cloud session's disk. Tim makes the
   pair, pastes the private half into the repository's secrets on GitHub's
   settings page, and keeps a copy in his password manager.
+- **No branch can read it.** A push runs the workflow file of the branch
+  pushed, so whatever the build workflow is given, any branch can take,
+  by rewriting that file. So the build, `builds.yml`, gets no secret and no
+  token that can write, and leaves only the zip. `publish.yml` signs it.
+  GitHub runs that one from main whatever branch was built, and the key
+  sits in an environment only main can enter. Which channel, commit and
+  version a build is, it works out again from GitHub's record of the run,
+  not from anything the build wrote. Until #43 the build signed itself
+  with the key in its own environment, and a branch could also have
+  replaced main's entry in the list.
 - **The public half is not a secret.** It sits in the repository and is
   built into the app, which is what lets the app check a download without
   asking anybody.
@@ -415,7 +425,8 @@ with its newest build, so one fetch is the whole check:
 1. **Once, the key.** Tim runs `make update-key` on his Mac. It puts the
    public half in `cmd/framefairy-app/update-key.txt` and the private half
    on the clipboard, never in a file. He pastes the private half into the
-   repository's secrets on GitHub as `FRAMEFAIRY_UPDATE_KEY` and into his
+   secrets of the GitHub environment `updates` as `FRAMEFAIRY_UPDATE_KEY`,
+   with the environment's deployment branches set to main only, and into his
    password manager, and the public half into the pull request, where
    Claude commits it. Until then nothing is built to update to, and the
    app says it has no key.
@@ -495,7 +506,8 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
-| The workflow | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list, at the start of a push and when its build is done. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
+| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so it gets no secret and no token that can write. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
+| The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 
 The signature is Ed25519 over the SHA-256 of the zip, which is what Wails'

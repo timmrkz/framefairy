@@ -1,10 +1,10 @@
 #!/bin/sh
 # Writes the channel list, channels.json, from every channel's entry in the
-# release called dev, and uploads it. The build workflow runs it in two
+# release called dev, and uploads it. The publish workflow runs it in two
 # places: once a build is published, and the moment a push to a pull
 # request starts, so the list says a newer commit is on its way for the
-# whole of its build and not only once the build is done. See
-# .github/workflows/builds.yml and docs/UPDATES.md.
+# whole of its build and not only once the build is done. It always runs
+# from main. See .github/workflows/publish.yml and docs/UPDATES.md.
 #
 #   sh scripts/channel-list.sh
 #

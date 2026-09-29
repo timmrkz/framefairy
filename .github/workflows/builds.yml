@@ -1,6 +1,16 @@
-# Builds the app for every push to main and to a pull request, signs it with
-# the update key and publishes it where the app looks for a newer build of
-# itself. See docs/UPDATES.md.
+# Builds the app for every push to main and to a pull request. Signing it
+# with the update key and publishing it where the app looks for a newer
+# build of itself is publish.yml's work, not this one's. See
+# docs/UPDATES.md.
+#
+# This workflow runs the branch's own code, so it gets no secret and no
+# token that can write. A branch is code nobody has reviewed yet, and a
+# push to a branch runs the workflow file of that branch, so whatever this
+# file is given, any branch can take. publish.yml runs from main whenever
+# this workflow starts or ends, takes the zip this one leaves as an
+# artifact, and signs and publishes it with main's own tools. The zip is
+# the only thing it takes from here: which channel, which commit and which
+# version it works out again from GitHub's own record of the run.
 #
 # A push to a pull request is built on the push, not on the pull request's
 # synchronize. GitHub runs no pull_request workflow while a pull request is
@@ -18,42 +28,17 @@
 # decides that for the build and for the list alike, so a pull request
 # opened after its branch was pushed is not built twice.
 #
-# A channel is main or one pull request. Everything lives in one release of
-# this repository called dev, marked a pre-release so it is never taken for
-# the latest one:
-#
-#   app-<channel>-<version>.zip   a channel's build, the app and nothing else
-#   channel-<channel>.json        its entry: version, commit, where the zip
-#                                 is, its checksum and its signature
-#   channels.json                 every entry in one file, which is the one
-#                                 file the app reads
-#
-# Five jobs, because they need different kinds of care:
+# Two jobs:
 #
 # 0. which, what a push or a pull request is a build of: main, the open pull
 #    request of the branch pushed, or nothing.
 # 1. build, on macOS, per channel. A second push to a pull request stops the
-#    build of the first, whose result nobody wants any more.
-# 2. publish, per channel, one after another and never stopped half way,
-#    uploads the zip and the entry, or takes the entry away when a pull
-#    request is merged or closed.
-# 3. list, for all channels at once, writes channels.json again from every
-#    entry. Two of them never run together, and one that is waiting is
-#    replaced by the next, which is safe, because each writes the list from
-#    what is there when it runs. It also takes away the entry of any pull
-#    request that is not open any more, which the close did not take away
-#    itself, see below. Beside each pull request's build it writes the
-#    newest commit of the pull request when that is not the one built and
-#    has a build to come, so the Updates page says the build it offers is
-#    not the newest.
-# 4. announce, the same list written at once when a push starts, beside the
-#    build. Without it the list only learned of a push when its build was
-#    done, so for the whole of the build the page offered the build before
-#    as the newest.
+#    build of the first, whose result nobody wants any more. It leaves the
+#    zip as an artifact called build, and nothing else.
 #
 # Only branches of this repository are built. A build runs whatever the
 # pull request holds, and one from a fork gets no secrets anyway. Until the
-# key is made, nothing is published and the build says why.
+# key is made, nothing is built and the build says why.
 name: Builds to update to
 
 on:
@@ -135,9 +120,6 @@ jobs:
     concurrency:
       group: builds-build-${{ needs.which.outputs.channel }}
       cancel-in-progress: true
-    outputs:
-      built: ${{ steps.zip.outputs.built }}
-      channel: ${{ steps.what.outputs.channel }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -145,12 +127,12 @@ jobs:
           # the pull request's own.
           ref: ${{ needs.which.outputs.sha }}
 
+      # Only the public half is looked at here. The private half is
+      # publish.yml's, and a build made without it would never be signed.
       - id: key
         name: Is there an update key
-        env:
-          KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
         run: |
-          if [ -z "$KEY" ] || [ ! -s cmd/framefairy-app/update-key.txt ]; then
+          if [ ! -s cmd/framefairy-app/update-key.txt ]; then
             echo "::notice::No update key yet, so nothing is built to update to. See docs/UPDATES.md, The keys."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
@@ -197,34 +179,29 @@ jobs:
         name: What this build is
         env:
           NUMBER: ${{ needs.which.outputs.number }}
-          TITLE: ${{ needs.which.outputs.title }}
           SHA: ${{ needs.which.outputs.sha }}
         # A build is named by the commit it was made from, the way git and
         # GitHub shorten it, so its version says what is in it. Nothing
         # orders builds by their version: the app installs whatever build
         # its channel has when it is not the one running, and the list
-        # keeps a channel's newest by when it was published.
+        # keeps a channel's newest by when it was published. publish.yml
+        # works the version out again by the same rule, so what the app
+        # says it is and what the list says it is are one.
         run: |
           engine=$(awk -F'"' '/^const Version = /{ print $2; exit }' engine/log.go)
           short=$(echo "$SHA" | cut -c1-7)
           if [ -n "$NUMBER" ]; then
             channel="pr-$NUMBER"
-            name="#$NUMBER $TITLE"
             version="$engine-pr$NUMBER.$short"
           else
             channel=main
-            name=main
             version="$engine-main.$short"
           fi
           {
             echo "channel=$channel"
             echo "version=$version"
             echo "commit=$(echo "$SHA" | cut -c1-12)"
-            echo "zip=app-$channel-$version.zip"
           } >> "$GITHUB_OUTPUT"
-          # The name can hold anything a title can, so it goes by file.
-          mkdir -p dist
-          printf '%s' "$name" > dist/name.txt
 
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-go@v6
@@ -275,25 +252,14 @@ jobs:
       # asks of a zip. --norsrc, because ditto otherwise adds a ._ file
       # beside every file for its extended attributes, and the updater
       # would unpack them into the bundle. The signatures are inside the
-      # programs, not in attributes, so nothing is lost.
+      # programs, not in attributes, so nothing is lost. The zip is named
+      # and signed by publish.yml.
       - id: zip
         if: steps.needs.outputs.run == 'true'
-        name: Pack it and sign it
-        env:
-          FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
-          ZIP: ${{ steps.what.outputs.zip }}
-          CHANNEL: ${{ steps.what.outputs.channel }}
-          VERSION: ${{ steps.what.outputs.version }}
-          COMMIT: ${{ steps.what.outputs.commit }}
-          REPO: ${{ github.repository }}
+        name: Pack it
         run: |
-          ditto -c -k --norsrc --keepParent "bin/Frame Fairy.app" "dist/$ZIP"
-          go run ./cmd/framefairy-release sign \
-            -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
-            -version "$VERSION" -commit "$COMMIT" \
-            -url "https://github.com/$REPO/releases/download/dev/$ZIP" \
-            -out "dist/channel-$CHANNEL.json"
-          rm dist/name.txt
+          mkdir -p dist
+          ditto -c -k --norsrc --keepParent "bin/Frame Fairy.app" dist/app.zip
           ls -l dist
           echo "built=true" >> "$GITHUB_OUTPUT"
 
@@ -301,138 +267,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build
-          path: dist/*
+          path: dist/app.zip
           if-no-files-found: error
           retention-days: 3
-
-  publish:
-    needs: [which, build]
-    # always(), so it also runs when build was skipped because the pull
-    # request closed.
-    if: >-
-      always() && needs.which.result == 'success' &&
-      (github.event.action == 'closed' || needs.build.outputs.built == 'true')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    concurrency:
-      group: builds-publish-${{ needs.which.outputs.channel }}
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - name: The release the builds live in
-        run: |
-          gh release view dev >/dev/null 2>&1 ||
-            gh release create dev --prerelease --latest=false --target main \
-              --title "Builds to update to" \
-              --notes "The builds of main and of each open pull request, for the app to update itself to while it is being made. Not for customers. See docs/UPDATES.md." ||
-            gh release view dev >/dev/null
-
-      - if: github.event.action != 'closed'
-        uses: actions/download-artifact@v8
-        with:
-          name: build
-          path: dist
-
-      - name: Upload the build and its entry
-        if: github.event.action != 'closed'
-        run: gh release upload dev dist/* --clobber
-
-      - name: Take the pull request's entry away
-        if: github.event.action == 'closed'
-        env:
-          NUMBER: ${{ github.event.pull_request.number }}
-        run: gh release delete-asset dev "channel-pr-$NUMBER.json" -y || true
-
-  list:
-    needs: publish
-    if: always() && needs.publish.result == 'success'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    concurrency:
-      group: builds-list
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      pull-requests: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      # The same commit the build came from, so a pull request that changes
-      # the tool is listed by its own tool. Only branches of this repository
-      # get this far.
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Write the channel list from every entry
-        run: sh scripts/channel-list.sh
-
-      # A zip no entry points at is gone an hour after it was made. Not at
-      # once: a publish that runs beside this job may have uploaded a zip
-      # whose entry this job has not seen yet.
-      - name: Remove builds nobody can reach any more
-        run: |
-          jq -r '.channels[].url | split("/") | last' channels.json > kept.txt
-          now=$(date -u +%s)
-          gh release view dev --json assets \
-            --jq '.assets[] | select(.name | test("^app-.*\\.zip$")) | "\(.name) \(.createdAt)"' |
-          while read -r name created; do
-            grep -qxF "$name" kept.txt && continue
-            age=$(( now - $(date -u -d "$created" +%s) ))
-            if [ "$age" -gt 3600 ]; then
-              echo "removing $name"
-              gh release delete-asset dev "$name" -y || true
-            fi
-          done
-
-  # The list written the moment a push to a pull request starts, beside its
-  # build, so the Updates page says for the whole of the build that the
-  # build it offers is not the newest. The list job writes it again when
-  # the build is done. The two share one queue, and each writes the list
-  # from what is there when it runs, so the order they run in does not
-  # matter.
-  announce:
-    needs: which
-    if: needs.which.outputs.build == 'true' && needs.which.outputs.channel != 'main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    concurrency:
-      group: builds-list
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      pull-requests: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.which.outputs.sha }}
-      # Nothing is published until the key is made, and a list without it
-      # cannot be checked.
-      - id: key
-        name: Is there an update key
-        run: |
-          if [ -s cmd/framefairy-app/update-key.txt ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::No update key yet, so there is no list to write."
-          fi
-      - if: steps.key.outputs.ready == 'true'
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - if: steps.key.outputs.ready == 'true'
-        name: Write the channel list from every entry
-        run: sh scripts/channel-list.sh
