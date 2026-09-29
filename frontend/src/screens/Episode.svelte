@@ -110,6 +110,8 @@
   // come are counted from it.
   let listedBefore = $state<Set<string> | null>(null);
   let pickedBefore = "";
+  // The clip the search chose by itself, see showFirstFound.
+  let chosenByFind = "";
   let shownFirst = false;
   let player = $state<Player>();
   let timeline = $state<ClipTimeline>();
@@ -1643,6 +1645,7 @@
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
     shownFirst = false;
+    chosenByFind = "";
   }
 
   // New. The search hears the window first if the episode has not been
@@ -1672,7 +1675,7 @@
     const found = working?.written ?? 0;
     if (found === foundHeard) return;
     foundHeard = found;
-    if (found > 0) refreshClips().then(showFirstFound);
+    if (found > 0) refreshClips().then(() => showFirstFound());
   });
 
   // Undo and Redo, from the Edit menu and its keys. A field being typed in,
@@ -1717,15 +1720,23 @@
   // a picture that jumps from where it was playing to a clip nobody asked
   // for is the search taking the video away from the hand. The clips land
   // in the list and on both tracks either way, and are one click off.
-  function showFirstFound() {
-    if (!listedBefore || shownFirst) return;
+  //
+  // When the search is over, the earliest of what it found is the one
+  // chosen, the first of its clips in the list, as long as the clip chosen
+  // is still the one the search chose. The model names its clips strongest
+  // first, not in the order of the episode, so the first to land was often
+  // the last in the list, and it stayed chosen with the playhead on it.
+  function showFirstFound(ended = false) {
+    if (!listedBefore || (shownFirst && !ended)) return;
     const known = listedBefore;
     const found = clips.filter((c) => !known.has(c.key));
     if (!found.length) return;
     shownFirst = true;
-    if (selected !== pickedBefore || !paused) return;
+    if ((selected !== pickedBefore && selected !== chosenByFind) || !paused) return;
     // The list is in the order of the episode, and so is what is new in
     // it, so this is the earliest of what has landed.
+    if (found[0].key === selected) return;
+    chosenByFind = found[0].key;
     select(found[0].key);
   }
 
@@ -1753,6 +1764,7 @@
       listedBefore = new Set(clips.map((c) => c.key));
       pickedBefore = selected;
       shownFirst = false;
+      chosenByFind = "";
     }
   });
 
@@ -1858,10 +1870,9 @@
       // clips it just found, lying over their marks as an X-ray and
       // offering to throw them away.
       moveWindowOn();
-      // A clip was shown while the search ran, and whatever has been
-      // picked since is where the hand is now. Otherwise the search's
-      // first clip, the way it always was.
-      showFirstFound();
+      // The earliest clip it found, unless something else has been picked
+      // since the search chose one, which is where the hand is now.
+      showFirstFound(true);
       // A window searched again comes back under the names it had, so
       // nothing in the list is new. Its first clip, as long as nobody has
       // picked another.
@@ -2003,7 +2014,7 @@
         // Each clip lands in the plan the moment it is framed, while the
         // model is still writing the next, so the list is read again as
         // the search runs and the first one is put on screen.
-        refreshClips().then(showFirstFound);
+        refreshClips().then(() => showFirstFound());
       }
     }, 2000);
     return () => clearInterval(timer);

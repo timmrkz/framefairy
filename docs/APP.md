@@ -692,7 +692,12 @@ place.
       shrink as it does. The first clip found is put on screen as soon as
       it lands, unless another clip was picked after the search began: a
       clip taken away from the hand that is working on it is worse than
-      one shown a little later. A clip that has landed can be played,
+      one shown a little later. When the search is over, the earliest of
+      the clips it found, the first of them in the list, is the one chosen,
+      with the playhead at its start, as long as the clip chosen is still
+      the one the search chose and the video is paused. The model names its
+      clips strongest first, so the first to land is often not the first
+      in the list. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
       search keeps the clips it had found.
     - **A clip on its way is a card in its place.** A clip the model has
