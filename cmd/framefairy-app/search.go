@@ -113,8 +113,8 @@ func (s *FrameFairy) Continue(id string) Job {
 func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine.JobRecord) Job {
 	label := jobLabel(engine.JobRender, req.Preview)
 	// The plan is a path of its own, read and written to, so it is checked
-	// the same way the episode is.
-	if !s.store.Known(path) || (req.Plan != "" && !s.store.Known(req.Plan)) {
+	// the same way the episode is, and has to be one of this episode's.
+	if !s.store.Known(path) || (req.Plan != "" && !s.store.PlanOf(path, req.Plan)) {
 		return s.jobs.refuse(path, engine.JobRender, label, notInLibrary)
 	}
 	id := engine.NewRenderID()

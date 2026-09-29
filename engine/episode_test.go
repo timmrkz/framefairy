@@ -65,3 +65,23 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Error("an episode whose work folder is gone is new again")
 	}
 }
+
+// A short still being written is not a short.
+func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "episode.mp4")
+	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(WorkDir(source), "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4"} {
+		if err := os.WriteFile(filepath.Join(out, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := Status(source, "").Rendered; got != 1 {
+		t.Errorf("%d rendered, want 1", got)
+	}
+}

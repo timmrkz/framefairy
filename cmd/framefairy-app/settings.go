@@ -282,6 +282,18 @@ func (s *store) Known(path string) bool {
 	return false
 }
 
+// PlanOf reports whether plan is a plan of the episode at path: both in the
+// library, and the plan in that episode's own logs folder, where plans are
+// kept. Known alone takes any file of any episode, so a plan of one
+// episode given with the path of another would be edited against the
+// wrong video, the wrong words and the wrong history.
+func (s *store) PlanOf(path, plan string) bool {
+	if !s.Known(path) || !s.Known(plan) {
+		return false
+	}
+	return filepath.Dir(engine.ResolvePath(plan)) == engine.ResolvePath(engine.LogsDir(path))
+}
+
 // targetFor is the target typed for a window as long as this one, or 0,
 // which follows the window, see engine.SuggestedCount. A number typed for
 // one window is no number for another: three typed for the six minutes of

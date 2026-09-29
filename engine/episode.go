@@ -180,7 +180,9 @@ func countFiles(dir, ext string) int {
 	}
 	n := 0
 	for _, entry := range entries {
-		if entry.Type().IsRegular() && strings.EqualFold(filepath.Ext(entry.Name()), ext) {
+		name := entry.Name()
+		if entry.Type().IsRegular() && strings.EqualFold(filepath.Ext(name), ext) &&
+			!strings.EqualFold(filepath.Ext(strings.TrimSuffix(name, filepath.Ext(name))), partial) {
 			n++
 		}
 	}

@@ -480,8 +480,12 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 		if err != nil {
 			return err
 		}
-		err = p.Hear(stepCtx, span)
-		release()
+		// Given back in a defer, so a panic while hearing does not keep the
+		// lane taken, and every later search waiting, until a restart.
+		err = func() error {
+			defer release()
+			return p.Hear(stepCtx, span)
+		}()
 		if errors.Is(err, ErrCancelled) && ctx.Err() == nil {
 			// The lane was taken back, by a search that finds while this
 			// job hears, or a clip made by hand that needs words sooner.
