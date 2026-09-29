@@ -146,6 +146,14 @@ class Shell {
   }
 }
 
+function read(): boolean {
+  try {
+    return localStorage.getItem("sidebar") !== "closed";
+  } catch {
+    return true;
+  }
+}
+
 function readOrder(): EpisodeOrder {
   try {
     return localStorage.getItem("episodeOrder") === "name" ? "name" : "added";
