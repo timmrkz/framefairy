@@ -79,10 +79,16 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	}
 
 	// The next window goes on from what was heard, and only needs the
-	// model when the transcript is there already.
+	// model when the transcript is there already. The model gives the
+	// moment the first search found, so the search keeps nothing, and
+	// ends with a plan that says so rather than failing.
 	turns = nil
-	if _, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, turn); err != nil {
-		t.Fatal(err)
+	again, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, turn)
+	if err != nil {
+		t.Fatal(err, p.LastError())
+	}
+	if _, clips, err := LoadClips(again); err != nil || len(clips) != 0 {
+		t.Errorf("a window with nothing new: %v, %d clip(s)", err, len(clips))
 	}
 	if strings.Join(turns, " ") != "finding" {
 		t.Errorf("a window already heard asked for %v", turns)

@@ -386,7 +386,7 @@ func TestTheBriefIsPutRight(t *testing.T) {
 	if !strings.Contains(l.Request(lines, l.units(lines), opts), AnnotateLines(lines)) {
 		t.Error("lines no longer writes every line with its time, pause and level")
 	}
-	if PromptVersion != 3 {
+	if PromptVersion != 4 {
 		t.Error("the brief changed, so the prompt version has to")
 	}
 }

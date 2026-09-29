@@ -14,7 +14,7 @@
     type EpisodeStatus,
     errorText,
   } from "./lib/api";
-  import { chosen, jobs, nav, shell } from "./lib/state.svelte";
+  import { jobs, nav, shell } from "./lib/state.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
   import Icon from "./components/Icon.svelte";
   import Confirm from "./components/Confirm.svelte";
@@ -169,9 +169,6 @@
       // episode it showed, which was no longer in the library, and every
       // read came back as "file does not exist".
       if (nav.view.name === "episode" && nav.view.path === ep.source) nav.go({ name: "empty" });
-      // An episode added again is a new one: its window starts from the
-      // beginning and it looks for its first clips by itself.
-      chosen.forget(ep.source);
       removing = null;
       await refresh();
     } catch (err) {

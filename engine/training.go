@@ -27,11 +27,15 @@ import (
 // PromptVersion changes whenever the prompt or the line rules change, so
 // training data made with an older prompt can be told apart.
 //
+// Version 4 names the lines that are in clips already, when a window is
+// searched again or holds clips made by hand, and asks for other moments.
+// Without such lines it is version 3 word for word, and its answer is
+// version 2's.
 // Version 3 is the brief for any video, with what must never be cut, and
 // the task said again after the transcript. Its answer is version 2's.
 // Version 2 lets two runs follow each other directly, which cuts only the
 // pause between them. Version 1 could only cut a pause by dropping a line.
-const PromptVersion = 3
+const PromptVersion = 4
 
 // TrainingSchema is the version of the record format.
 const TrainingSchema = 1
