@@ -40,6 +40,21 @@ var updateKeyText string
 // a few minutes after each push.
 const checkEvery = 10 * time.Minute
 
+// checkBuilding is how often it looks while the channel followed has a
+// commit being built. A build takes a few minutes, and at the pace above
+// it was found up to ten minutes after it was there. A look is one small
+// file, and only a build it does not have yet is downloaded, so looking
+// this often costs nothing.
+const checkBuilding = 20 * time.Second
+
+// nextCheck is how long to wait before looking again.
+func nextCheck(s UpdateState) time.Duration {
+	if s.Building != "" {
+		return checkBuilding
+	}
+	return checkEvery
+}
+
 func runningVersion() string {
 	if buildVersion != "" {
 		return buildVersion
@@ -212,7 +227,7 @@ func (c *updating) start() {
 	go func() {
 		for {
 			c.check()
-			time.Sleep(checkEvery)
+			time.Sleep(nextCheck(c.State()))
 		}
 	}()
 }

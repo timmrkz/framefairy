@@ -228,8 +228,8 @@
           <span class="ask">
             <Info label="How updates work" side="right">
               The list says where this app updates from: main, or one pull request. Every push to
-              it makes a new build. The app looks when it starts and every ten minutes, and
-              downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on the way out. The
+              it makes a new build. The app looks when it starts and every ten minutes, every twenty
+              seconds while a newer commit is being built, and downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on the way out. The
               commit under the version opens on GitHub.
             </Info>
           </span>

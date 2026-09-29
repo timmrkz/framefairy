@@ -282,6 +282,18 @@ func TestACommitStillToBeBuiltIsSaid(t *testing.T) {
 	}
 }
 
+// While a commit is being built the app looks every twenty seconds, so the
+// build is downloaded soon after it lands, and every ten minutes when
+// nothing is on its way.
+func TestItLooksOftenWhileACommitIsBeingBuilt(t *testing.T) {
+	if got := nextCheck(UpdateState{Building: "def5678abcde"}); got != 20*time.Second {
+		t.Errorf("while building, looks every %v", got)
+	}
+	if got := nextCheck(UpdateState{}); got != 10*time.Minute {
+		t.Errorf("otherwise, looks every %v", got)
+	}
+}
+
 // The running build is the channel's build, so there is nothing to fetch.
 func TestTheRunningBuildIsCurrent(t *testing.T) {
 	cs := newChannelServer(t)
