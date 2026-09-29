@@ -448,6 +448,13 @@ Sessions at claude.ai/code run on Ubuntu 24.04 on x86_64, with the setup
 script from `scripts/cloud-setup.sh` pasted into the environment. It
 provides Go 1.27, ffmpeg, and the GTK and WebKit packages the app needs to
 compile. There are no models in the cloud, which the tests do not need.
+It also installs the engineering skills from `samber/cc-skills-golang` and
+`addyosmani/agent-skills` into `~/.claude/skills`, each pinned to a commit,
+because plugins added on claude.ai do not reach cloud sessions. They are
+general advice. Where one disagrees with this file, this file wins.
+`.claude/settings.json` raises the room Claude Code gives the list of
+skills, `SLASH_COMMAND_TOOL_CHAR_BUDGET`, to 80000 characters. Below that,
+the skills listed last show their name without what they are for.
 
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
