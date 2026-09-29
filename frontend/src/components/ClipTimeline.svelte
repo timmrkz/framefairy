@@ -35,6 +35,7 @@
     type CaptionDraft,
     type Parts,
   } from "../lib/flow";
+  import { scrub as scrubPlayhead } from "../lib/scrub";
   import { hoverClip } from "../lib/hover";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
@@ -212,10 +213,12 @@
     return view.from + ((clientX - box.left) / box.width) * span;
   }
 
-  // Dragging the playhead. The video preview follows the finger, which is
-  // the quickest way to find a moment. One seek per frame is enough, and it
-  // keeps a four hour episode moving.
+  // Dragging the playhead, the same way as on the range picker, see
+  // lib/scrub.ts.
   let scrubbing = $state(false);
+
+  // One seek a frame while an edge is dragged, for the playhead that goes
+  // with it, the same pace the playhead itself is dragged at.
   let wanted = 0;
   let queued = 0;
 
@@ -237,23 +240,7 @@
       drawCut(event);
       return;
     }
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    scrubbing = true;
-    seekSoon(timeAt(event.clientX));
-    const move = (e: PointerEvent) => seekSoon(timeAt(e.clientX));
-    const up = () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      scrubbing = false;
-      cancelAnimationFrame(queued);
-      queued = 0;
-      onseek(wanted);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
+    scrubPlayhead(event, timeAt, onseek, (held) => (scrubbing = held));
   }
 
   // A gesture on the clip, and what the engine makes of it. The hand says
@@ -1001,11 +988,39 @@
   });
 
   // The other clips in view, as marks across the middle of the track.
-  const shownMarks = $derived(
-    marks.filter(
-      (m) => m.key !== clip?.key && m.pick !== clip?.key && m.end > view.from && m.start < view.to,
-    ),
-  );
+  // Clips may overlap, and inside the chosen clip its own captions are
+  // what is worked on, so another clip's mark gives way there: drawn over
+  // the captions, it hid them, and the caption the video preview shows,
+  // in the accent over a mark in the accent, could not be seen at all.
+  // What is left of a mark on either side still says where that clip is,
+  // and the range picker shows the two lying over each other.
+  const shownMarks = $derived.by(() => {
+    const out: {
+      id: string;
+      key: string;
+      at: number;
+      start: number;
+      end: number;
+      rendered: boolean;
+      arriving?: boolean;
+      pick?: string;
+    }[] = [];
+    for (const m of marks) {
+      if (m.key === clip?.key || m.pick === clip?.key || m.end <= view.from || m.start >= view.to) {
+        continue;
+      }
+      const pieces = wholeClip
+        ? [
+            { start: m.start, end: Math.min(m.end, wholeClip.start) },
+            { start: Math.max(m.start, wholeClip.end), end: m.end },
+          ]
+        : [{ start: m.start, end: m.end }];
+      pieces.forEach((p, i) => {
+        if (p.end - p.start > 0.001) out.push({ ...m, ...p, id: `${m.key}-${i}`, at: m.start });
+      });
+    }
+    return out;
+  });
 
   // A caption block is detail for working inside a clip, and it is drawn
   // only while it can be read as a block: while the caption in the middle
@@ -1341,15 +1356,15 @@
     {/if}
     <!-- The other clips, the same marks the range picker draws, so the
          timeline zoomed out shows where they all are. A click chooses one. -->
-    {#each shownMarks as m (m.key)}
+    {#each shownMarks as m (m.id)}
       <button
         class="clipmark"
         class:rendered={m.rendered}
         class:lit={m.key === hovered}
         class:waiting={m.arriving}
         style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
-        aria-label="Clip at {clock(m.start)}"
-        title="Choose the clip at {clock(m.start)}"
+        aria-label="Clip at {clock(m.at)}"
+        title="Choose the clip at {clock(m.at)}"
         {@attach hoverClip(m.key, onhover)}
         onpointerdown={(e) => e.stopPropagation()}
         onclick={() => onmark?.(m.pick ?? m.key)}
@@ -1477,7 +1492,11 @@
   </div>
     {#if time >= view.from && time <= view.to}
       <div class="at" style="left: {x(time)}%">
-        <div class="playhead"></div>
+        <!-- The line takes the drag as well as its head, a few pixels
+             either side of it, so the playhead is taken hold of wherever
+             the hand finds it, the same as on the range picker. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="playhead" onpointerdown={scrub} title="Drag to move the playhead"></div>
         <!-- The head is its own element rather than something drawn on the
              line, because it stands above the track and the track is what
              takes the drag. Drawn but not grabbable, its top five pixels
@@ -1879,6 +1898,9 @@
      waveform. */
   /* The head stands above the track, which is where an editor puts it and
      what says this is the playhead rather than a line someone drew. */
+  /* It is dragged left and right, and says so under the pointer, head and
+     line alike, the way a clip's edges do. A press on the empty track also
+     moves it, and there the pointer is the hand of anything pressed. */
   .playhead {
     position: absolute;
     top: -5px;
@@ -1886,7 +1908,17 @@
     left: -1px;
     width: 2px;
     background: var(--accent-hi);
-    pointer-events: none;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .playhead::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
   }
 
   /* The same head, in the same place, as the line used to draw on itself.
@@ -1901,17 +1933,13 @@
     height: 9px;
     border-radius: 2px 2px 1px 1px;
     background: var(--accent-hi);
-    cursor: pointer;
+    cursor: ew-resize;
     touch-action: none;
   }
 
   .over.scrubbing .playhead,
   .over.scrubbing .head {
     background: #fff;
-  }
-
-  .over.scrubbing .head {
-    cursor: grabbing;
   }
 
   /* The caption blocks of a clip on its way come in one after another, in

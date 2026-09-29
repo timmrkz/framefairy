@@ -11,6 +11,10 @@ import {
   Newest,
   mergeJob,
   nextWindow,
+  timesIn,
+  followingWindow,
+  gridStep,
+  onGrid,
   pictureIsStale,
   pieceAt,
   insideClip,
@@ -45,70 +49,79 @@ describe("the window moves on when it chooses for itself", () => {
   const hours = 4 * 3600;
 
   test("a fresh episode opens on the first half hour", () => {
-    const w = nextWindow([{ from: 0, to: hours }], [], hours, half);
+    const w = nextWindow([{ from: 0, to: hours, times: 0 }], hours, half);
     expect(w).toEqual({ from: 0, to: half });
   });
 
   test("after the first search it moves past what was searched", () => {
-    const w = nextWindow([{ from: half, to: hours }], [{ from: 0, to: half }], hours, half);
-    expect(w).toEqual({ from: half, to: 2 * half });
-  });
-
-  test("so it never lies on the clips that were just found", () => {
-    const searched = [{ from: 0, to: half }];
-    const w = nextWindow([{ from: half, to: hours }], searched, hours, half);
-    expect(searched.some((s) => s.to > w.from && s.from < w.to)).toBe(false);
+    const passes = [
+      { from: 0, to: half, times: 1 },
+      { from: half, to: hours, times: 0 },
+    ];
+    expect(nextWindow(passes, hours, half)).toEqual({ from: half, to: 2 * half });
   });
 
   test("a gap in the middle is taken before the end", () => {
-    const w = nextWindow(
-      [
-        { from: half, to: 2 * half },
-        { from: 3 * half, to: hours },
-      ],
-      [
-        { from: 0, to: half },
-        { from: 2 * half, to: 3 * half },
-      ],
-      hours,
-      half,
-    );
-    expect(w).toEqual({ from: half, to: 2 * half });
+    const passes = [
+      { from: 0, to: half, times: 1 },
+      { from: half, to: 2 * half, times: 0 },
+      { from: 2 * half, to: 3 * half, times: 1 },
+      { from: 3 * half, to: hours, times: 0 },
+    ];
+    expect(nextWindow(passes, hours, half)).toEqual({ from: half, to: 2 * half });
   });
 
   test("a part a little longer than the half hour is taken whole", () => {
-    const w = nextWindow([{ from: 0, to: 40 * 60 }], [], hours, half);
-    expect(w).toEqual({ from: 0, to: 40 * 60 });
+    const passes = [
+      { from: 0, to: 40 * 60, times: 0 },
+      { from: 40 * 60, to: hours, times: 1 },
+    ];
+    expect(nextWindow(passes, hours, half)).toEqual({ from: 0, to: 40 * 60 });
   });
 
   test("a part well over the half hour gives up only that much", () => {
-    const w = nextWindow([{ from: 0, to: 60 * 60 }], [], hours, half);
-    expect(w).toEqual({ from: 0, to: half });
-  });
-
-  test("an episode searched end to end rests on the last part", () => {
-    const searched = [
-      { from: 0, to: half },
-      { from: half, to: hours },
+    const passes = [
+      { from: 0, to: 60 * 60, times: 0 },
+      { from: 60 * 60, to: hours, times: 1 },
     ];
-    expect(nextWindow([], searched, hours, half)).toEqual({ from: half, to: hours });
+    expect(nextWindow(passes, hours, half)).toEqual({ from: 0, to: half });
   });
 
-  test("an episode with nothing anywhere takes the whole of it", () => {
-    expect(nextWindow([], [], hours, half)).toEqual({ from: 0, to: hours });
+  test("an episode searched end to end starts over at the start", () => {
+    expect(nextWindow([{ from: 0, to: hours, times: 1 }], hours, half)).toEqual({ from: 0, to: half });
   });
 
-  test("a scrap of free room too short to search is passed over", () => {
-    const w = nextWindow(
-      [
-        { from: half, to: half + 0.2 },
-        { from: 2 * half, to: hours },
-      ],
-      [{ from: 0, to: half }],
-      hours,
-      half,
-    );
-    expect(w).toEqual({ from: 2 * half, to: 3 * half });
+  test("and the second round walks on the way the first did", () => {
+    const passes = [
+      { from: 0, to: half, times: 2 },
+      { from: half, to: hours, times: 1 },
+    ];
+    expect(nextWindow(passes, hours, half)).toEqual({ from: half, to: 2 * half });
+  });
+
+  test("a short episode is searched whole, again and again", () => {
+    const six = 6 * 60;
+    expect(nextWindow([{ from: 0, to: six, times: 0 }], six, six)).toEqual({ from: 0, to: six });
+    expect(nextWindow([{ from: 0, to: six, times: 3 }], six, six)).toEqual({ from: 0, to: six });
+  });
+
+  test("a scrap too short for a clip is passed over", () => {
+    const passes = [
+      { from: 0, to: 10, times: 0 },
+      { from: 10, to: half, times: 1 },
+      { from: half, to: hours, times: 0 },
+    ];
+    expect(nextWindow(passes, hours, half, 20)).toEqual({ from: half, to: 2 * half });
+  });
+
+  test("how often a window has been searched is the most of any part in it", () => {
+    const passes = [
+      { from: 0, to: half, times: 2 },
+      { from: half, to: hours, times: 1 },
+    ];
+    expect(timesIn(passes, half, 2 * half)).toBe(1);
+    expect(timesIn(passes, half - 60, 2 * half)).toBe(2);
+    expect(timesIn([], 0, half)).toBe(0);
   });
 });
 
@@ -622,5 +635,60 @@ describe("waitShare", () => {
   it("is full when all of the window is heard and never past it", () => {
     expect(waitShare(1800, [[0, 3600]], 3600)).toBe(1);
     expect(waitShare(1800, [[0, 4000]], 3600)).toBe(1);
+  });
+});
+
+describe("after a search the window walks on as long as it was left", () => {
+  const six = 6 * 60;
+  const short = 5 * 60 + 25;
+
+  test("a minute at four goes on to a minute at five", () => {
+    expect(followingWindow(240, 60, six, 20)).toEqual({ from: 240, to: 300 });
+  });
+
+  test("the last one is cut at the end of the episode", () => {
+    expect(followingWindow(300, 60, short, 20)).toEqual({ from: 300, to: short });
+  });
+
+  test("and the one after it is as long as it was set again, from the start", () => {
+    expect(followingWindow(short, 60, short, 20)).toEqual({ from: 0, to: 60 });
+  });
+
+  test("a scrap too short for a clip is passed over", () => {
+    expect(followingWindow(310, 60, short, 20)).toEqual({ from: 0, to: 60 });
+  });
+
+  test("a short episode searched whole is searched whole again", () => {
+    expect(followingWindow(six, six, six, 20)).toEqual({ from: 0, to: six });
+  });
+});
+
+describe("every window lands on the range picker's step", () => {
+  const hours = 14423;
+
+  test("the step is the smallest round one still eight pixels wide", () => {
+    expect(gridStep(hours, 915)).toBe(300);
+    expect(gridStep(hours, 1370)).toBe(120);
+    expect(gridStep(360, 915)).toBe(5);
+  });
+
+  test("the app's own window of 30:02 is 30:00 on the step", () => {
+    expect(onGrid({ from: 0, to: 1803 }, 1803, hours, 300, 20)).toEqual({ from: 0, to: 1800 });
+  });
+
+  test("a window after one that ended off the step starts on it", () => {
+    expect(onGrid({ from: 4202, to: 6004 }, 1802, hours, 300, 20)).toEqual({ from: 4200, to: 6000 });
+  });
+
+  test("the last one takes in the scrap after it", () => {
+    expect(onGrid({ from: 12600, to: 14400 }, 1800, hours, 300, 20)).toEqual({ from: 12600, to: hours });
+  });
+
+  test("never shorter than a step", () => {
+    expect(onGrid({ from: 60, to: 62 }, 2, 360, 5, 0)).toEqual({ from: 60, to: 65 });
+  });
+
+  test("with no step it is as it was", () => {
+    expect(onGrid({ from: 7, to: 70 }, 63, 360, 0, 20)).toEqual({ from: 7, to: 70 });
   });
 });

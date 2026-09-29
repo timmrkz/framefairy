@@ -25,6 +25,7 @@
     type ClipEntry,
     type Gesture,
     type CoverageView,
+    type KeptWindow,
     type EpisodeStatus,
     type SourceView,
     type Word,
@@ -32,7 +33,7 @@
     onUndo,
     onLevels,
   } from "../lib/api";
-  import { chosen, jobs } from "../lib/state.svelte";
+  import { jobs } from "../lib/state.svelte";
   import {
     draftCaptions,
     frameStart,
@@ -44,6 +45,9 @@
     inEpisode,
     Newest,
     nextWindow,
+    timesIn,
+    followingWindow,
+    onGrid,
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
@@ -92,7 +96,7 @@
   let still = $state("");
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
-  let coverage = $state<CoverageView>({ searched: [], free: [] });
+  let coverage = $state<CoverageView>({ searched: [], free: [], passes: [] });
   // How much one search can read, from the engine, and what that makes of
   // the window and the clip settings. The window is no longer than the
   // model reads in one request and no shorter than the clips asked for
@@ -260,11 +264,9 @@
       run: newClips,
       off: duration <= 0 || to <= 0,
       primary: true,
-      title: !heardWindow
-        ? "Look for clips in the window. What of it is not transcribed yet is transcribed first"
-        : covering
-          ? "Look at the window again, removing the clips it has"
-          : "Look for clips in the window",
+      title: searchedBefore
+        ? `Look again for clips from ${clock(from)} to ${clock(to)}, keeping the ones there are`
+        : `Look for clips from ${clock(from)} to ${clock(to)}`,
     };
   });
 
@@ -502,11 +504,6 @@
         : "The window is not all transcribed yet.";
     return `${first} Clips are found by themselves once the window is transcribed.`;
   });
-  // The window stays with the episode while the app runs, so leaving the
-  // workspace and coming back does not throw away what was chosen.
-  $effect(() => {
-    if (duration > 0 && to > from) chosen.keep(path, from, to);
-  });
   // The whole layout is worked out by the browser, in the stylesheet at
   // the foot of this file, from the size of the app and two numbers that
   // have nothing to do with it: the shape of the episode and how tall
@@ -702,13 +699,10 @@
             // after them says what became of the rest.
             unread + (stopped ? 1 : 0)),
   );
-  // What the window lies over. A window may be drawn anywhere, so looking
-  // again at material that was searched is allowed, it only asks first and
-  // takes the clips it finds there with it.
-  const covering = $derived(coverage.searched.some((w) => w.to > from && w.from < to));
-  const inWindow = $derived(
-    clips.filter((c) => !c.rejected && c.end > from && c.start < to).length,
-  );
+  // Whether the window has been searched before, all of it or a part.
+  // New then looks there again, for moments its searches did not bring,
+  // and every clip there is stays.
+  const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
   //
@@ -755,18 +749,67 @@
       const now = await api.coverage(path, min);
       if (coverageRead.keep(ticket)) coverage = now;
     } catch {
-      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [] };
+      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [], passes: [] };
     }
   }
 
-  // The window moves on to the first part nobody has looked at. What was
-  // chosen before does not come into it: after a search that part is a
-  // wall, and a window left on it hides the clip marks it just made.
-  function moveWindowOn() {
-    const next = nextWindow(coverage.free, coverage.searched, duration, windowSize);
-    from = next.from;
-    to = next.to;
+  // The window the app would choose: where the fewest searches have been,
+  // earliest first, as long as the episode's windows are, see nextWindow.
+  // The workspace opens on it, and a double-click on the window's marks
+  // puts it back there. After a search the window walks on instead, see
+  // followingWindow.
+  function moveWindowOn(byHand = false) {
+    const next = nextWindow(coverage.passes, duration, windowSize, min);
+    placeWindow(next, windowSize, byHand);
+  }
+
+  // A window the app places lands on the range picker's step, the one a
+  // drag lands on, so its edges lie on the ruler's lines like a window
+  // placed by hand, and the length it carries on with is a whole number
+  // of steps. The episode's own windows are an even share of it, 30:02 of
+  // four hours, and a window that length drifted a few seconds off the
+  // lines with every search, which shows as a pixel. See onGrid.
+  function placeWindow(w: { from: number; to: number }, size: number, byHand = false) {
+    unplaced = grid <= 0;
+    const placed = onGrid(w, w.to - w.from, duration, grid, min);
+    from = placed.from;
+    to = placed.to;
+    length = grid > 0 ? Math.max(Math.round(size / grid) * grid, grid) : size;
     keepWindow();
+    rememberWindow(byHand);
+  }
+
+  // The step of the range picker, see gridStep, 0 until it is measured.
+  // A window the app placed before then lands on it once it is known, the
+  // first time only: a window placed by hand, or kept from before, stays
+  // where it was put.
+  let grid = $state(0);
+  let unplaced = false;
+  $effect(() => {
+    if (grid > 0 && unplaced && !busy) {
+      unplaced = false;
+      placeWindow({ from, to }, windowSize);
+    }
+  });
+
+  // How long the window was made, by the app or by a hand on its marks.
+  // A window cut short at the end of the episode is still this long when
+  // it starts over, see followingWindow.
+  let length = $state(0);
+
+  // The window dragged by its marks on the range picker, moved whole or by
+  // one edge. An edge stops where the window would hold too few clips or
+  // more than the model reads, which the range picker works out and says,
+  // see least and most on it. When the hand lets go it is put inside what
+  // a search can do with it there.
+  function moveWindow(start: number, end: number, done: boolean) {
+    from = start;
+    to = end;
+    if (done) {
+      keepWindow();
+      length = to - from;
+      rememberWindow(true);
+    }
   }
 
   // The window put back inside what a search can do with it, whenever
@@ -788,23 +831,35 @@
     keepWindow();
   }
 
-  // The window the workspace opens with: the one this episode had a moment
-  // ago if it still fits, otherwise wherever a window goes by itself.
-  function openWindow() {
-    const kept = chosen.of(path, duration);
-    // A window that has been searched all through since is not opened on
-    // again: the search it was drawn for ended while the workspace was not
-    // open, on Activity say, and nothing moved it on then. It lay over the
-    // clips just found and hid their marks.
-    const searchedThrough =
-      !!kept && !busy && coverage.searched.some((w) => w.from <= kept.from + 0.5 && w.to >= kept.to - 0.5);
-    if (kept && !searchedThrough) {
+  // The window the workspace opens with: the one the episode was left
+  // with, after a restart too, and where there is none, the one the app
+  // would choose, see moveWindowOn. One that no longer fits the episode
+  // is not one.
+  async function openWindow() {
+    const was = path;
+    let kept: KeptWindow | null = null;
+    try {
+      kept = await api.chosenWindow(path);
+    } catch {
+      kept = null;
+    }
+    if (path !== was) return;
+    if (kept && kept.to > kept.from && kept.to <= duration + 0.5) {
       from = kept.from;
-      to = kept.to;
+      to = Math.min(kept.to, duration);
+      length = Math.max(kept.length, to - from);
       keepWindow();
       return;
     }
     moveWindowOn();
+  }
+
+  // The window is kept the moment it changes, by a hand, by a search that
+  // moved it on, or by a double-click that put it back, so it is where it
+  // was left when the episode is opened again.
+  function rememberWindow(byHand = false) {
+    if (duration <= 0 || to <= from) return;
+    api.chooseWindow(path, from, to, Math.max(length, to - from), byHand).catch(() => {});
   }
 
   // The clip the workspace opens on: the one this episode was last worked
@@ -866,7 +921,7 @@
       if (!status.missing) await refreshCoverage();
       if (!status.missing) await refreshRoom();
       if (first && source) {
-        openWindow();
+        await openWindow();
       }
       await refreshClips();
       if (first) await openOnAClip();
@@ -1625,39 +1680,7 @@
     saveSearch();
   }
 
-  // Clips for a window that already has some are asked for again, which
-  // replaces what is there. That is not something to do by accident.
-  let confirmReplace = $state(false);
-
-  // Removing what the window covers: the clips in it go and the
-  // model may read it again. Also not something to do by accident.
-  let removingSearch = $state<{ from: number; to: number } | null>(null);
-
-  async function removeRange(span: { from: number; to: number }, thenSearch: boolean) {
-    removingSearch = null;
-    confirmReplace = false;
-    problem = "";
-    try {
-      await api.removeSearch(path, span.from, span.to);
-      removed = null;
-      await load();
-      if (!clips.some((c) => c.key === selected)) selected = "";
-      await refreshCoverage();
-      onchange();
-      // A search of its own follows when the window was given back in
-      // order to look at it again. The window stays where it is then.
-      if (thenSearch) await findClips(true);
-      else openWindow();
-    } catch (err) {
-      problem = errorText(err);
-    }
-  }
-
   function newClips() {
-    if (covering) {
-      confirmReplace = true;
-      return;
-    }
     findClips(false);
   }
 
@@ -1724,6 +1747,13 @@
       const done = what === "undo" ? await api.undo(path) : await api.redo(path);
       if (!done?.done) return;
       problem = "";
+      // A step that moved the window puts it where it was. It is kept on
+      // the Go side already.
+      if (done.window && !busy) {
+        from = done.window.from;
+        to = Math.min(done.window.to, duration);
+        length = Math.max(done.window.length, to - from);
+      }
       await load();
       // The caption height is kept in the settings, so an undo of a drag
       // is read back from there.
@@ -1890,11 +1920,13 @@
         listedBefore = null;
         return;
       }
-      // The window just searched is a wall now, so the window moves on to
-      // the next one nobody has looked at. It would otherwise sit on the
-      // clips it just found, lying over their marks as an X-ray and
-      // offering to throw them away.
-      moveWindowOn();
+      // The window walks on from where the search ended, as long as it
+      // was, and starts over at the start at the end of the episode, see
+      // followingWindow. The search's own window, which the Go side may
+      // have started by itself, not whatever the workspace held.
+      const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
+      const size = length || searchedTo - (ended.from ?? 0);
+      placeWindow(followingWindow(searchedTo, size, duration, min), size);
       // The earliest clip it found, unless something else has been picked
       // since the search chose one, which is where the hand is now.
       showFirstFound(true);
@@ -2064,10 +2096,9 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    heard={shownHeard}
-    live={stoppedAt ? null : live}
-    bind:from
-    bind:to
+    from={stopped && !busy ? stopped.from : from}
+    to={stopped && !busy ? stopped.to : to}
+    shown={busy || !!stopped}
     {marks}
     {selected}
     {hovered}
@@ -2075,9 +2106,10 @@
     onmark={select}
     playhead={time}
     onseek={seekTo}
-    searched={coverage.searched}
-    onremove={(span) => (removingSearch = span)}
     locked={busy}
+    onmove={moveWindow}
+    onreset={() => moveWindowOn(true)}
+    bind:grid
     least={leastLong}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
     most={reachAnywhere}
@@ -2086,9 +2118,6 @@
       : roomView?.by === "memory"
         ? "all this computer's memory holds"
         : "all the model reads at once"}
-    onmoved={(edge) => seekTo(edge === "to" ? Math.max(to - 1, 0) : from)}
-    transcribing={isTranscribing}
-    holding={stoppedAt !== null}
   />
 {/snippet}
 
@@ -2101,45 +2130,6 @@
 <section
   style="--ar: {ratio}; --above: {aboveH > 0 ? `calc(${Math.ceil(aboveH)}px + var(--gap))` : '0px'}"
 >
-  {#if confirmReplace}
-    <Confirm
-      title="Look at {clock(from)} to {clock(to)} again?"
-      oncancel={() => (confirmReplace = false)}
-    >
-      <p>
-        Part of this window has been searched already. The
-        {inWindow}
-        {inWindow === 1 ? "clip" : "clips"} in it are removed first, with every trim, crop and
-        caption place you gave them, and the model reads the window as if for the first time.
-        Clips outside it stay as they are, and clips you have rendered stay as files on disk.
-      </p>
-      {#snippet actions()}
-        <button onclick={() => (confirmReplace = false)}>Cancel</button>
-        <button class="danger" onclick={() => removeRange({ from, to }, true)}>Look again</button>
-      {/snippet}
-    </Confirm>
-  {/if}
-
-  {#if removingSearch}
-    {@const span = removingSearch}
-    <Confirm
-      title="Remove the clips in {clock(span.from)} to {clock(span.to)}?"
-      oncancel={() => (removingSearch = null)}
-    >
-      <p>
-        The {inWindow}
-        {inWindow === 1 ? "clip" : "clips"} in this part leave the list, with every trim, crop
-        and caption place you gave them. Clips you have rendered stay as files on disk. Afterwards
-        the part is free again, and the model will read it as if for the first time. What was
-        searched outside it stays searched.
-      </p>
-      {#snippet actions()}
-        <button onclick={() => (removingSearch = null)}>Cancel</button>
-        <button class="danger" onclick={() => removeRange(span, false)}>Remove</button>
-      {/snippet}
-    </Confirm>
-  {/if}
-
   <!-- Everything that stands above the workspace, together, so its height
        is one number the layout can take off the app. It is not there at
        all most of the time, and an empty row would still cost a space. -->
@@ -2515,7 +2505,6 @@
               onclick={action.run}
               disabled={action.off}
               title={`${action.title}${busy && leftOfWork ? `, ${leftOfWork}` : ""}`}
-              aria-haspopup={action.label === "New" && covering ? "dialog" : undefined}
             >
               <!-- A search says how it is going in the row its next clip
                    will appear in, where it can say what it is doing as

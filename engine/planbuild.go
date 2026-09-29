@@ -95,6 +95,11 @@ type planBuilder struct {
 	// repeats counts the clips left out as they arrived for keeping a
 	// moment an earlier clip keeps, so the whole answer says only the rest.
 	repeats int
+	// taken are the lines clips were proposed for already, by an earlier
+	// search or by hand, see PlanOptions.Taken, and retakes counts the
+	// clips left out as they arrived for keeping mostly those.
+	taken   [][2]int
+	retakes int
 	// order is every clip of the answer taken so far, the held ones too,
 	// in the order the answer gave them.
 	order []PlanEntry
@@ -137,12 +142,16 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 	b.stamp = PlannedWith{Count: opts.Count, Min: PyFloat(opts.MinLen),
 		Max: PyFloat(opts.MaxLen), Model: opts.Model, By: opts.By}
 	b.prefix = opts.IDPrefix
+	b.taken = takenLines(lines, opts.Taken)
 	// A second pass over a later part of the episode must not reuse 01..04,
 	// or its clips would overwrite the first pass's output. Seconds, not
 	// minutes, so two windows inside the same minute still differ.
 	if opts.Window != nil {
 		if b.prefix == "" {
 			b.prefix = fmt.Sprintf("t%d-", int(opts.Window.Start))
+			if opts.Pass > 1 {
+				b.prefix = fmt.Sprintf("t%d-%d-", int(opts.Window.Start), opts.Pass)
+			}
 		}
 		from, to := PyFloat(roundTo(opts.Window.Start, 3)), PyFloat(roundTo(opts.Window.End, 3))
 		b.stamp.From, b.stamp.To = &from, &to
@@ -192,6 +201,12 @@ func (b *planBuilder) propose(entry PlanEntry) {
 		return
 	}
 	entry = b.shaped(entry)
+	if b.retaken(entry) {
+		b.retakes++
+		b.mu.Unlock()
+		b.e.Log.Warn("%s", retakeNote(entry))
+		return
+	}
 	if earlier, repeated := sameMomentAs(b.order, entry); repeated {
 		b.repeats++
 		b.mu.Unlock()
@@ -305,6 +320,54 @@ func sameMomentAs(entries []PlanEntry, entry PlanEntry) (PlanEntry, bool) {
 		}
 	}
 	return PlanEntry{}, false
+}
+
+// takenLines are the runs of lines, numbered from 1 the way the model
+// reads them, that lie mostly inside the parts given: more than half of a
+// line's time.
+func takenLines(lines []Line, parts []Window) [][2]int {
+	var out [][2]int
+	if len(parts) == 0 {
+		return nil
+	}
+	for i, line := range lines {
+		inside := 0.0
+		for _, w := range parts {
+			inside += max(0, min(w.End, line.End())-max(w.Start, line.Start()))
+		}
+		if 2*inside <= line.Duration() || line.Duration() <= 0 {
+			continue
+		}
+		n := i + 1
+		if last := len(out) - 1; last >= 0 && out[last][1] == n-1 {
+			out[last][1] = n
+			continue
+		}
+		out = append(out, [2]int{n, n})
+	}
+	return out
+}
+
+// retaken says whether a clip keeps mostly lines a clip was proposed for
+// already, which is the same measure as two clips of one answer keeping
+// the same moment, see sameMomentAs. The model is told to leave those
+// lines, and a clip that keeps them all the same would be a moment the
+// list has, or one that was removed from it.
+func (b *planBuilder) retaken(entry PlanEntry) bool {
+	if len(b.taken) == 0 {
+		return false
+	}
+	shared := 0
+	for _, a := range b.taken {
+		for _, k := range entry.Keep {
+			shared += max(0, min(a[1], k[1])-max(a[0], k[0])+1)
+		}
+	}
+	return 2*shared > keptLines(entry)
+}
+
+func retakeNote(entry PlanEntry) string {
+	return fmt.Sprintf("the model gave %q, a moment an earlier clip has. It is left out.", entry.Title)
 }
 
 func keptLines(entry PlanEntry) int {
@@ -444,10 +507,20 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	}
 	// The clips taken as the answer arrived were checked for repeats in
 	// the same order, so the first of the repeats were already said.
-	for i := range whole {
-		whole[i] = b.shaped(whole[i])
+	fresh := whole[:0]
+	retakes := 0
+	for _, entry := range whole {
+		entry = b.shaped(entry)
+		if b.retaken(entry) {
+			if retakes++; retakes > b.retakes {
+				b.e.Log.Warn("%s", retakeNote(entry))
+			}
+			continue
+		}
+		fresh = append(fresh, entry)
 	}
-	whole, repeats := distinctMoments(whole)
+	b.retakes = max(b.retakes, retakes)
+	whole, repeats := distinctMoments(fresh)
 	for _, r := range repeats[min(b.repeats, len(repeats)):] {
 		b.e.Log.Warn("%s", repeatNote(r[0], r[1]))
 	}
@@ -766,6 +839,27 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 	if b.clock != nil {
 		b.clock.landed()
 	}
+	return nil
+}
+
+// none writes the plan with no clips in it, for a search that found
+// nothing beyond the clips there are, see BuildPlan.
+func (b *planBuilder) none() error {
+	b.writing.Lock()
+	defer b.writing.Unlock()
+	path := b.opts.PlanPath
+	if path == "" || b.written || b.gone || b.opts.Grows {
+		return nil
+	}
+	body, err := MarshalPlan(PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID,
+		PlannedWith: b.stamp, Clips: []PlanClip{}})
+	if err != nil {
+		return err
+	}
+	if err := writePlanFile(path, body); err != nil {
+		return err
+	}
+	b.written = true
 	return nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -79,6 +80,15 @@ type PlanOptions struct {
 	// t<start>-, see newPlanBuilder, so its clips' files never meet those
 	// of another window's.
 	IDPrefix string
+	// Pass is which search of the window this is, see PassName. A later
+	// pass numbers its clips t<start>-<pass>-, so they never meet the
+	// files of an earlier pass over the same window.
+	Pass int
+	// Taken are the parts of the episode clips were proposed for already,
+	// by an earlier search or by hand. The lines inside them are named to
+	// the model as lines to leave, and a clip that is mostly those lines
+	// all the same is left out, see takenLines.
+	Taken []Window
 }
 
 // ByHand is the clip set made with I and O, see PlanOptions.By.
@@ -143,6 +153,13 @@ func buildPrompt(lines []Line, opts PlanOptions) string {
 	task := fmt.Sprintf("Find up to %d clips, the strongest first. Each runs %s to %s seconds "+
 		"once what you leave out is gone. Keep the heart and the payoff of every story whole.",
 		opts.Count, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
+	// A window searched before, or one with clips made by hand in it, has
+	// lines that are clips already. They stay in the transcript, because a
+	// new clip is read against what is around it, and the task says to
+	// leave them.
+	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
+		task += " " + takenSentence(taken)
+	}
 	ask := []string{
 		task,
 		fmt.Sprintf("The transcript below is numbered from 1 to %d. Those numbers are what "+
@@ -157,6 +174,25 @@ func buildPrompt(lines []Line, opts PlanOptions) string {
 		"That is the whole transcript. "+task,
 		"Reply with the JSON object and nothing else.")
 	return strings.Join(ask, "\n")
+}
+
+// takenSentence names the lines that are clips already.
+func takenSentence(taken [][2]int) string {
+	runs := make([]string, len(taken))
+	for i, r := range taken {
+		runs[i] = strconv.Itoa(r[0])
+		if r[1] > r[0] {
+			runs[i] += "-" + strconv.Itoa(r[1])
+		}
+	}
+	names := runs[0]
+	if n := len(runs); n > 1 {
+		names = strings.Join(runs[:n-1], ", ") + " and " + runs[n-1]
+	}
+	if len(taken) == 1 && taken[0][0] == taken[0][1] {
+		return fmt.Sprintf("Line %s is in a clip already. Find other moments, and do not keep it.", names)
+	}
+	return fmt.Sprintf("Lines %s are in clips already. Find other moments, and keep none of those lines.", names)
 }
 
 type savedReply struct {
@@ -461,6 +497,18 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		build.clock.finish(len(clips) > 0)
 	}
 	e.Log.OK("%d candidate clip(s) proposed, %d kept", len(entries), len(clips))
+	if len(clips) == 0 && len(build.taken) > 0 {
+		// A window searched again can hold nothing but the moments its
+		// clips have. That is an answer, not a failure: the search is
+		// kept as a plan with no clips, so it counts as a pass and New
+		// moves on rather than asking about the same window again.
+		if err := build.none(); err != nil {
+			return nil, err
+		}
+		e.Log.OK("no moments beyond the clips there are")
+		return &PlanFile{Source: filepath.Base(sourcePath), PlanID: build.planID,
+			PlannedWith: build.stamp, Clips: []PlanClip{}}, nil
+	}
 	if len(clips) == 0 {
 		return nil, renderErr("no usable clips came back from the model")
 	}

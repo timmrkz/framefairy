@@ -6,10 +6,9 @@ import (
 )
 
 // Where the model has already looked. A search covers the window it was
-// made over, and a window is never put to the model twice by accident, so
-// the app says what it is about to look at again and asks first.
-// Without that, two passes over the same material would come back with the
-// same moments, and the list would hold each of them twice.
+// made over, and a window searched again is another pass over it, told
+// which lines are clips already so it brings other moments, see PassName
+// and PlanOptions.Taken.
 //
 // A window can be given back, in whole or in part: the clips inside it go
 // and the plan notes the window as one the model may read again. That is
@@ -124,6 +123,56 @@ func SearchedPlans(plans []PlanSummary, duration float64) []Searched {
 		merged = append(merged, w)
 	}
 	return merged
+}
+
+// Pass is a part of an episode and how many searches have read it.
+type Pass struct {
+	Window
+	Times int
+}
+
+// SearchPasses cuts an episode into the parts that have been read by the
+// same number of searches, from its start to its end, the parts nobody
+// has searched too, with 0. New searches where the fewest searches have
+// been, earliest first, so the first round walks the episode from its
+// start and the second starts over when every part has had one.
+func SearchPasses(plans []PlanSummary, duration float64) []Pass {
+	if duration <= 0 {
+		return nil
+	}
+	type edge struct {
+		at    float64
+		delta int
+	}
+	var edges []edge
+	for _, p := range plans {
+		w := p.Over(duration)
+		if math.IsInf(w.End, 1) || w.End <= w.Start {
+			continue
+		}
+		for _, piece := range Without(w, p.Removed) {
+			a, b := math.Max(0, piece.Start), math.Min(duration, piece.End)
+			if b > a {
+				edges = append(edges, edge{a, 1}, edge{b, -1})
+			}
+		}
+	}
+	edges = append(edges, edge{duration, 0})
+	sort.SliceStable(edges, func(a, b int) bool { return edges[a].at < edges[b].at })
+	var out []Pass
+	at, times := 0.0, 0
+	for _, e := range edges {
+		if e.at > at {
+			if n := len(out); n > 0 && out[n-1].Times == times {
+				out[n-1].End = e.at
+			} else {
+				out = append(out, Pass{Window{at, e.at}, times})
+			}
+			at = e.at
+		}
+		times += e.delta
+	}
+	return out
 }
 
 // SearchedWindows is the same, as plain parts.

@@ -420,11 +420,19 @@ rule an edited srt file gets, further down. Corrections stay one entry per
 recognised word, so writing one word again undoes it.
 
 Each search is saved under the window it was made over, `clips-<from>-<to>.json`,
-so passes add up instead of overwriting each other. The model is only ever
-shown the window it is asked about and knows nothing of earlier passes, so
-two passes over the same material would come back with the same moments. The
-app therefore lets a window be drawn only where nobody has looked yet, which
-`SearchedWindows` and `FreeWindows` work out from the plans on disk. A plan
+so passes add up instead of overwriting each other. A window searched again
+is the next pass over it, `clips-<from>-<to>-<pass>.json`, with ids that
+begin `t<from>-<pass>-`, and the passes before it stay as they are. A search
+carried on keeps the pass it began, which its record holds. The model is
+only ever shown the window it is asked about, so every search is told which
+lines are in clips already, from any pass and from the clips made by hand,
+the removed ones too, and asked for other moments, see version 4 in
+[TRAINING.md](TRAINING.md). A clip that keeps more than half its lines from
+those all the same is left out and said in the log, the same measure as a
+moment given twice. A pass that brings nothing new writes a plan with no
+clips, so it still counts as a pass. `SearchPasses` cuts the episode into
+parts by how many searches have read them, and the app's New goes where the
+fewest have been, earliest first. A plan
 carries the window it was made over in `planned_with`, and the parts of
 it that were given back again in `planned_with.removed`, so a search is a
 window with holes in it. `RemoveRange` makes a hole: the clips inside the

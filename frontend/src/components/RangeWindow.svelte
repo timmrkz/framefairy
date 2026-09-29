@@ -1,23 +1,33 @@
 <script lang="ts">
-  // The whole episode as one slim track. The window you drag is the part
-  // of the episode the model reads. Clip marks, the playhead and time
-  // labels sit inside the track. A click without dragging moves the video
-  // preview.
+  // The whole episode as one slim track: the ruler, the clips as marks and
+  // the playhead, which a press anywhere takes hold of. While clips are
+  // being found, or a search stands stopped, the window it is about is
+  // drawn over the track, with how far the episode has been read for it.
+  // At rest the window is not drawn at all, only marked at its corners: a
+  // bar just outside the top border and one just outside the bottom
+  // border, with a triangle at each end whose tip reaches into the track.
+  // Laid over a short episode searched whole, the window hid every clip
+  // just found, and a frame round it read as the same window, so nothing
+  // of the mark lies over the track but the tips. It says where New looks
+  // next, which the app decides, see nextWindow in lib/flow.ts. A triangle
+  // drags its edge, a bar drags the whole window, and a double-click puts
+  // it back where the app would have it. While clips are found the mark
+  // turns into the window, and back into the mark when they are.
+  // What has been searched or read so far is the engine's to know, not
+  // anything a person has to look after.
   import { onMount } from "svelte";
-  import { clock, type WindowView } from "../lib/api";
-  import { gapsIn, type Parts } from "../lib/flow";
+  import { clock } from "../lib/api";
+  import { gridStep } from "../lib/flow";
   import { hoverClip } from "../lib/hover";
   import Busy from "./Busy.svelte";
-  import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
+  import { scrub as scrubPlayhead } from "../lib/scrub";
 
   let {
     duration,
-    heard = [[0, duration]],
-    live = null,
-    from = $bindable(0),
-    to = $bindable(0),
-    onmoved,
+    from = 0,
+    to = 0,
+    shown = false,
     marks = [],
     selected = "",
     hovered = "",
@@ -25,25 +35,20 @@
     onmark,
     playhead = -1,
     onseek,
-    searched = [],
-    onremove,
     locked = false,
-    transcribing = false,
-    holding = false,
+    onmove,
+    onreset,
+    grid = $bindable(0),
     least = 0,
     leastSays = "",
     most = Infinity,
     reachSays = "",
   }: {
     duration: number;
-    // What of the episode is heard, in parts, the part being heard among
-    // them, and that part itself, from where it began to where it has got,
-    // or null while nothing is being heard.
-    heard?: Parts;
-    live?: [number, number] | null;
-    from: number;
-    to: number;
-    onmoved?: (edge: "from" | "to") => void;
+    // The window of the search in hand, drawn while shown.
+    from?: number;
+    to?: number;
+    shown?: boolean;
     marks?: {
       key: string;
       start: number;
@@ -62,28 +67,21 @@
     onmark?: (key: string) => void;
     playhead?: number;
     onseek?: (time: number) => void;
-    // The parts already searched for clips, in order and merged. They
-    // are drawn as marks on the track. A window may be drawn over them,
-    // and what that means is decided by whoever acts on the window.
-    searched?: WindowView[];
-    // Removing what the window covers, which lets the clips in it go and
-    // leaves that part free to be searched again. The caller asks first.
-    onremove?: (span: { from: number; to: number }) => void;
+    // Clips are being found for the window, which wears the shimmer.
     locked?: boolean;
-    // Whether the episode is being read. Nothing is done about it here:
-    // the reading is a step of a search, and is started and called off
-    // with New and Cancel in the head of the clip list.
-    transcribing?: boolean;
-    // The edge is being held where it is, because Cancel was pressed. It
-    // stops moving at once rather than sliding on to where the work had
-    // got to, which is a second or two of an interface ignoring a click.
-    holding?: boolean;
-    // What a search can do with the window holds its edges. It is no
-    // shorter than least, the clips asked for one after another at their
-    // shortest, and no longer than most, the length the model reads in one
-    // request wherever the window is. One length, so a window that fits
-    // fits wherever it is moved. The two sayings are what the window says
-    // while an edge is held by one.
+    // The window at rest dragged by its outline, with where its edges are
+    // now, while the hand moves, and done when it lets go. What it may be
+    // is the workspace's to say, which gives back where it put it.
+    onmove?: (from: number, to: number, done: boolean) => void;
+    // A double-click on the outline, which puts the window back where the
+    // app would have it.
+    onreset?: () => void;
+    // The round step an edge lands on, see gridStep, 0 until the track has
+    // been measured.
+    grid?: number;
+    // The shortest the window may be, with room for the clips asked for,
+    // and the longest, as much as the model reads at once, each with what
+    // it is in words, said on the handle that runs into it.
     least?: number;
     leastSays?: string;
     most?: number;
@@ -92,17 +90,6 @@
 
   let track: HTMLDivElement;
   let width = $state(0);
-  const minimum = 10;
-  // A press that travels less than this is a click. A trackpad rarely holds
-  // still to the pixel, and on a four hour episode one pixel is half a
-  // minute, so a wobble used to draw a window nobody asked for.
-  const slack = 6;
-
-  // Whether the window lies over material that has been searched already.
-  // A window may be drawn anywhere, so this is what the buttons around it
-  // go by: what it covers there can be removed, and searching it again
-  // asks first.
-  const covering = $derived(searched.some((w) => w.to > from && w.from < to));
 
   // Everything on the track is placed in whole pixels. In shares of the
   // width the window and the shade beside it land on halves of a pixel,
@@ -114,53 +101,123 @@
     return Math.round(Math.min(Math.max(t, 0), duration) * scale);
   }
 
-  // Edges land on a round step, so a window is something you can say out
-  // loud. The step is the smallest round one that is still about eight
-  // pixels wide, which keeps it useful for a fifteen minute episode and for
-  // a four hour one.
-  const grid = $derived.by(() => {
-    const steps = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
-    const least = (duration / Math.max(width, 1)) * 8;
-    return steps.find((step) => step >= least) ?? 1800;
+  const whole = $derived(from <= 0.5 && to >= duration - 0.5);
+
+  // Where the window is drawn, beside the track rather than in it, in the
+  // box the track and its border fill. An edge on a minute is drawn on
+  // that minute's line: the line is the pixel after the moment's own, the
+  // track's border being the first, so the window reaches over it at its
+  // end and starts on it at its start, and both edges sit on their lines
+  // alike. It was one short at the end, so the end missed its line and
+  // the start did not. A window that starts or ends with the episode
+  // reaches the outside of the border and takes its round corner, so it
+  // lies on the range picker's own edge rather than inside it.
+  const frame = $derived.by(() => {
+    const first = from <= 0.5;
+    const last = to >= duration - 0.5;
+    const left = first ? 0 : at(from) + 1;
+    const right = last ? width + 2 : at(to) + 2;
+    return { left, width: Math.max(right - left, 0), first, last };
+  });
+  onMount(() => {
+    const observer = new ResizeObserver(() => {
+      width = track.clientWidth;
+    });
+    observer.observe(track);
+    return () => observer.disconnect();
+  });
+
+  // Dragging the playhead, the same way as on the clip timeline, see
+  // lib/scrub.ts. A press anywhere on the track takes hold of it, and so
+  // does its head, and the video preview follows the hand.
+  let scrubbing = $state(false);
+
+  function scrub(event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    // Keeping the press from selecting text also keeps it from taking the
+    // focus away, which every other click in the app does. A field that
+    // kept it, Target say, took the I and O meant for the playhead just
+    // put here.
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused && focused !== document.body) focused.blur();
+    scrubPlayhead(event, timeAt, (t) => onseek?.(t), (held) => (scrubbing = held));
+  }
+
+  // An edge dragged lands on a round step, so a window is something that
+  // can be said out loud: the smallest round step still about eight pixels
+  // wide on the track, five minutes on a four hour episode and five seconds
+  // on a six minute one. The ends of the episode win over it. The window
+  // snapped this way before it was taken away, and Tim missed it.
+  // The workspace places its own windows on the same step, see onGrid in
+  // lib/flow.ts, so it is handed back to it.
+  $effect(() => {
+    grid = width > 0 && duration > 0 ? gridStep(duration, width) : 0;
   });
 
   function round(t: number): number {
-    return Math.round(t / grid) * grid;
+    return grid > 0 ? Math.round(t / grid) * grid : Math.round(t);
   }
 
-  // The shortest a window may be, and never longer than the episode.
-  const shortest = $derived(Math.min(Math.max(least, minimum), duration));
+  // Dragging the window at rest by its outline: a bar moves all of it, a
+  // handle one edge. It follows the hand the whole way, so the New button's
+  // title and the Target's suggestion say where it is while it moves.
+  let moving = $state<"" | "move" | "from" | "to">("");
 
-  // The furthest an end may go from a start, and the earliest a start may
-  // be for an end, as far as the model reads.
-  function latest(start: number): number {
-    return Math.min(start + most, duration);
-  }
-  function earliest(end: number): number {
-    return Math.max(end - most, 0);
+  function grabWindow(what: "move" | "from" | "to", event: PointerEvent) {
+    if (event.button !== 0 || !onmove) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused && focused !== document.body) focused.blur();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const was = { from, to };
+    const place = (clientX: number): [number, number] => {
+      const by = (clientX - startX) / Math.max(scale, 1e-9);
+      if (what === "from") return [startAt(was.to, Math.max(round(was.from + by), 0)), was.to];
+      if (what === "to") return [was.from, endAt(was.from, Math.min(round(was.to + by), duration))];
+      // Moved whole, the start lands on the step and the window keeps
+      // its length.
+      const size = was.to - was.from;
+      const start = Math.min(Math.max(round(was.from + by), 0), Math.max(duration - size, 0));
+      return [start, start + size];
+    };
+    moving = what;
+    const move = (e: PointerEvent) => {
+      const was = held;
+      held = "";
+      const placed = place(e.clientX);
+      if (held && held !== was) knocked();
+      onmove?.(...placed, false);
+    };
+    const up = (e: PointerEvent) => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      moving = "";
+      onmove?.(...place(e.clientX), true);
+      held = "";
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
   }
 
-  // What holds the window back while it is being drawn, so it can say so.
+  // The shortest a window may be, never longer than the episode, and the
+  // furthest an end may go from its start, as far as the model reads.
+  const shortest = $derived(Math.min(Math.max(least, 0), duration));
+
+  // What holds a handle back while it is dragged, so the marks can say so.
   let held = $state<"" | "least" | "reach">("");
 
-  // The moment an edge runs into a limit, the border flashes twice in the
-  // colour of a warning, so a hand that keeps pulling knows it is the
-  // limit and not the app that stopped. Once for each time it runs in, not
-  // for as long as it is held there. The two names take turns so the same
-  // animation starts over each time, without the element being made again,
-  // which would drop the pointer the drag is holding.
-  let knock = $state<"" | "a" | "b">("");
-  function knocked() {
-    knock = knock === "a" ? "b" : "a";
-  }
-
-  // An edge held back by the model stops exactly at the limit. The limit
-  // is a wall, and a wall wins over the step, the same as a searched part
-  // does: stopping at the step before it would give away room the model
-  // has.
+  // An edge held back stops exactly at its limit. The limit is a wall, and
+  // a wall wins over the step: stopping at the step before it would give
+  // away room the model has, or leave too little for the clips.
   function endAt(start: number, want: number): number {
     const lo = Math.min(start + shortest, duration);
-    const hi = latest(start);
+    const hi = Math.min(start + most, duration);
     if (want > hi) {
       held = "reach";
       return hi;
@@ -173,7 +230,7 @@
   }
 
   function startAt(end: number, want: number): number {
-    const lo = earliest(end);
+    const lo = Math.max(end - most, 0);
     const hi = Math.max(end - shortest, 0);
     if (want < lo) {
       held = "reach";
@@ -186,73 +243,28 @@
     return want;
   }
 
-  const whole = $derived(from <= 0.5 && to >= duration - 0.5);
-  // What is not heard yet. A gap too short to see is no gap.
-  const gaps = $derived(duration > 0 ? gapsIn(heard, 0, duration).filter(([a, b]) => b - a > 0.5) : []);
-  const pending = $derived(gaps.length > 0);
-  // The part being heard runs into the gap that starts where it has got.
-  // Its stretch of the track is from where it began to the end of that
-  // gap, which stays put while it is heard, so its shade and its fill are
-  // laid out once and only slide.
-  const liveGap = $derived(live ? gaps.find(([a]) => Math.abs(a - live[1]) < 0.05) : undefined);
-  const liveSpan = $derived<[number, number] | null>(
-    live && liveGap ? [Math.min(live[0], liveGap[0]), liveGap[1]] : null,
-  );
-  // Each gap in the dark, with the edge its shade starts from.
-  const shades = $derived(
-    gaps.map(([a, b]) => ({
-      from: liveSpan && liveGap && a === liveGap[0] ? liveSpan[0] : a,
-      to: b,
-      edge: a,
-      live: !!liveGap && a === liveGap[0],
-      // Only the stretch being heard has an edge, and only until its fill
-      // has begun, whose head is the line from then on. A heard part is
-      // simply not dark: a still fill over every part heard put the head
-      // of a fill, a bright line, at the end of each, and a part a minute
-      // long is three pixels of a four hour track, so all it showed was
-      // the line.
-      waiting: !(liveGap && a === liveGap[0] && live && live[1] <= liveSpan![0] + 0.01),
-    })),
-  );
-  // Whether the edge of the transcript may glide to where it is going. It
-  // is off for the first frame, so the edge is simply where it is when the
-  // track appears, and on from then on, so every step after that reads as
-  // movement rather than a jump.
-  let glide = $state(false);
-
-  onMount(() => {
-    let armed = 0;
-    const arm = () => {
-      cancelAnimationFrame(armed);
-      armed = requestAnimationFrame(() => (glide = true));
-    };
-    const observer = new ResizeObserver(() => {
-      // A track that changes width moves every edge on it at once, and one
-      // that glided while the rest jumped would lag behind the track it
-      // belongs to. So a resize puts the edge where it goes and the glide
-      // comes back on the next frame.
-      glide = false;
-      width = track.clientWidth;
-      arm();
-    });
-    observer.observe(track);
-    arm();
-    return () => {
-      cancelAnimationFrame(armed);
-      observer.disconnect();
-    };
-  });
-
-  // Double-clicking the track takes the window back to the whole episode.
-  function reset() {
-    if (locked) return;
-    from = 0;
-    to = latest(0);
-    onmoved?.("from");
+  // The moment a handle runs into a limit, the marks flash twice in the
+  // colour of a warning, so a hand that keeps pulling knows it is the
+  // limit and not the app that stopped. Once each time it runs in, not for
+  // as long as it is held there. The colour changes outright, on and off,
+  // rather than fading, so no colour is ever mixed half way between the
+  // red and the accent. The window flashed this way before it was taken
+  // away, and Tim missed it.
+  let flashing = $state(false);
+  let flashes: ReturnType<typeof setTimeout>[] = [];
+  function knocked() {
+    flashes.forEach(clearTimeout);
+    flashing = true;
+    flashes = [
+      setTimeout(() => (flashing = false), 90),
+      setTimeout(() => (flashing = true), 170),
+      setTimeout(() => (flashing = false), 260),
+    ];
   }
 
-  function clamp(t: number): number {
-    return Math.max(0, Math.min(t, duration));
+  function resetWindow(event: MouseEvent) {
+    event.stopPropagation();
+    onreset?.();
   }
 
   function timeAt(clientX: number): number {
@@ -261,115 +273,8 @@
     return share * duration;
   }
 
-  // While a window is being drawn or moved it says what it is, because a
-  // step the pointer lands on is worth seeing in seconds.
-  let showing = $state(false);
-
-  // True while the pointer is on the window or on the button beside it.
-  // What can be taken away waits until the window is under the pointer,
-  // the way the trash can on a clip row does.
-  let overWindow = $state(false);
-
-  // True while an edge is under the pointer or holds the keyboard focus.
-  // The edges are the box itself, so the box lights up instead of growing a
-  // second bar beside its own border.
-  let grip = $state(false);
-
-  function drag(kind: "from" | "to" | "move" | "new", event: PointerEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    const startX = timeAt(event.clientX);
-    const target = event.currentTarget as HTMLElement;
-    // Keeping the press from selecting text also keeps it from taking the
-    // focus away, which every other click in the app does. A field that
-    // kept it, Target say, took the I and O meant for the playhead just
-    // put here.
-    const focused = document.activeElement as HTMLElement | null;
-    if (focused && focused !== target && focused !== document.body) focused.blur();
-    target.setPointerCapture(event.pointerId);
-    const startClientX = event.clientX;
-    const startFrom = from;
-    const startTo = to;
-    const span = startTo - startFrom;
-    const grab = startX - startFrom;
-    let dragged = false;
-    let moved: "from" | "to" = kind === "to" ? "to" : "from";
-    const move = (e: PointerEvent) => {
-      if (Math.abs(e.clientX - startClientX) > slack) dragged = true;
-      if (!dragged || locked) return;
-      showing = true;
-      const was = held;
-      held = "";
-      const here = timeAt(e.clientX);
-      // Edges land on the grid, and the ends of the episode win over it,
-      // and what a search can do with the window wins over both.
-      const t = clamp(round(here));
-      if (kind === "from") from = startAt(to, t);
-      else if (kind === "to") to = endAt(from, t);
-      else if (kind === "move") {
-        // The window keeps its length wherever it goes. Its length is
-        // never more than fits anywhere, so moving it is never held back
-        // by the model, only by the ends of the episode.
-        from = Math.max(0, Math.min(round(here - grab), duration - span));
-        to = endAt(from, from + span);
-      } else {
-        const a = Math.min(startX, t);
-        const b = Math.max(startX, t);
-        if (b - a >= minimum) {
-          // Drawn to the right the start stays where the press was, drawn
-          // to the left the end does, and the other edge keeps to the
-          // limits.
-          if (t > startX) {
-            from = Math.min(a, Math.max(duration - shortest, 0));
-            to = endAt(from, b);
-            moved = "to";
-          } else {
-            to = Math.max(b, Math.min(shortest, duration));
-            from = startAt(to, a);
-            moved = "from";
-          }
-        }
-      }
-      if (held && held !== was) knocked();
-    };
-    const up = (e: PointerEvent) => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      showing = false;
-      held = "";
-      // A press that moved a few pixels without changing the window is a
-      // click, not a drag, so the player goes to where it was let go.
-      if (from === startFrom && to === startTo) {
-        onseek?.(timeAt(e.clientX));
-        return;
-      }
-      if (locked) return;
-      onmoved?.(moved);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
-  }
-
-  function nudge(kind: "from" | "to", event: KeyboardEvent) {
-    if (locked) return;
-    const step = grid * (event.shiftKey ? 5 : 1);
-    let delta = 0;
-    if (event.key === "ArrowLeft") delta = -step;
-    else if (event.key === "ArrowRight") delta = step;
-    else return;
-    event.preventDefault();
-    held = "";
-    if (kind === "from") from = startAt(to, clamp(from + delta));
-    else to = endAt(from, clamp(to + delta));
-    // A key pressed against the limit is a hand running into it again.
-    if (held) knocked();
-    held = "";
-    onmoved?.(kind);
-  }
-
-  // Time labels: a round step that leaves room for every label.
+  // A time label every so often, the smallest step that leaves room for
+  // the labels.
   const ticks = $derived.by(() => {
     if (!duration || !width) return [];
     const steps = [60, 300, 600, 900, 1800, 3600, 7200];
@@ -395,107 +300,17 @@
 <div
   class="track asks"
   class:locked
+  class:scrubbing
   bind:this={track}
-  onpointerdown={(e) => drag("new", e)}
-  ondblclick={reset}
+  onpointerdown={scrub}
   aria-label="The range picker"
 >
-
-  <div class="shade" style="left: 0; width: {at(from)}px"></div>
-  <div class="shade" style="left: {at(to)}px; right: 0"></div>
-  <!-- Over the shade, not under it, so what has no transcript yet reads
-       the same wherever it is. What the episode has not been read to is a
-       place waiting to be filled, so while the reading runs it wears the
-       shimmer, the same breath every such place in the app wears, and the
-       line where the reading has got to is the head of a fill, the same
-       head every fill carries. Only while it runs: an episode read half
-       way and left alone is not work in hand, and a track that breathed at
-       it would say there was.
-       Nothing new is drawn here: the track says what the rest of the app
-       says, in the words the rest of the app uses. -->
-  <!-- What has been read wears the fill, and the motes rise through the
-       track: the work in hand of Busy.svelte itself, the one every row and
-       button of the app wears, with no rim because the track has no edge to
-       run round. Not a copy of it, which is what this was and what looked
-       different. Its fill slides by the same transform and the same glide
-       as the shade ahead of it, so the two never part. Only the part being
-       heard wears it: what has been heard is the track without the dark,
-       and stays so. -->
-  {#if liveSpan && live}
-    <span
-      class="busyhost"
-      class:glide={glide && !holding}
-      class:held={holding}
-      style="left: {at(liveSpan[0])}px; width: {at(liveSpan[1]) - at(liveSpan[0])}px"
-      ><Busy
-        fraction={(live[1] - liveSpan[0]) / Math.max(liveSpan[1] - liveSpan[0], 0.001)}
-        rim={false}
-        still={!transcribing}
-      /></span
-    >
+  {#if shown}
+    <div class="shade" style="left: 0; width: {at(from)}px"></div>
+    <div class="shade" style="left: {at(to)}px; right: 0"></div>
   {/if}
-  <!-- Each stretch not heard yet is dark from its edge on. The dark is as
-       wide as the stretch and slides by transform, so the edge of the part
-       being heard is only ever moved, never laid out again. -->
-  {#each shades as g (g.from)}
-    <div class="gap" style="left: {at(g.from)}px; width: {at(g.to) - at(g.from)}px">
-      <div
-        class="pending"
-        class:waiting={g.waiting}
-        class:glide={g.live && glide && !holding}
-        class:held={holding}
-        style="transform: translateX({at(g.edge) - at(g.from)}px)"
-      ></div>
-    </div>
-  {/each}
-  {#each searched as w, i (i)}
-    <div
-      class="done"
-      style="left: {at(w.from)}px; width: {at(w.to) - at(w.from)}px"
-      title="Searched already. Draw a window over it to look again or to remove the clips in it"
-    ></div>
-  {/each}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="window frame"
-    class:waiting={locked}
-    class:whole
-    class:lit={grip}
-    class:xray={covering}
-    class:knock-a={knock === "a"}
-    class:knock-b={knock === "b"}
-    style="left: {at(from)}px; width: {at(to) - at(from)}px"
-    title="Drag it along the range picker"
-    onpointerdown={(e) => drag("move", e)}
-    onpointerenter={() => (overWindow = true)}
-    onpointerleave={() => (overWindow = false)}
-  ></div>
-  <!-- The window is what is acted on, so what can be taken away sits in
-       it: the clips of the searched material it covers. A window too narrow
-       to hold the button wears it just outside its end. -->
-  {#if onremove && !locked && covering}
-    <button
-      class="free quiet danger"
-      class:shown={overWindow}
-      class:beside={at(to) - at(from) < 40}
-      class:tucked={at(to) - at(from) < 40 ? at(to) > width - 50 : at(to) > width - 26}
-      style="left: {at(to) - at(from) < 40 && at(to) > width - 50 ? at(from) : at(to)}px"
-      title="Remove the clips in the window, so the model can read it again"
-      aria-label="Remove the clips from {clock(from)} to {clock(to)}"
-      aria-haspopup="dialog"
-      onpointerdown={(e) => e.stopPropagation()}
-      onpointerenter={() => (overWindow = true)}
-      onpointerleave={() => (overWindow = false)}
-      onclick={() => onremove?.({ from, to })}
-    >
-      <Icon name="trash" size={12} />
-    </button>
-  {/if}
-  <!-- A clip the window lies over is on its way out, so it is not drawn:
-       what the window shows is what the range picker would look like with
-       that part given back. -->
+  <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
-    {#if !(covering && m.end > from && m.start < to)}
     <button
       class="clipmark"
       class:rendered={m.rendered}
@@ -508,7 +323,6 @@
       onpointerdown={(e) => e.stopPropagation()}
       onclick={() => onmark?.(m.pick ?? m.key)}
     ></button>
-    {/if}
   {/each}
   <!-- The ruler, in two layers, and they have to be two.
 
@@ -531,72 +345,102 @@
   {/each}
   <span class="num time start">0:00</span>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <span
-    class="ask corner"
-    onpointerdown={(e) => e.stopPropagation()}
-    ondblclick={(e) => e.stopPropagation()}
-  >
-    <!-- Until the episode is read to the end that is the thing to say, and
-         it is said first, because it is what everything else is waiting on.
-         Short either way: a bubble nobody finishes is a bubble nobody
-         reads. -->
+  <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
-      {#if pending}
-        The whole episode. The dark parts are not read yet. A search reads its window and a clip
-        made by hand the minute around it, first, and while another one finds its clips the reading
-        waits and carries on after.
-      {:else}
-        The whole episode. Drag to draw the window the model will search, or drag the window and
-        its edges. Double-click for all of it. A window is at most as long as the model can read at
-        once, and at least as long as the shortest clip. A shaded part has been searched, and the
-        marks in it are its clips.
-      {/if}
+      The whole episode, with its clips as marks. Press or drag anywhere to move the playhead, and
+      press a mark to work on its clip. The marks at the four corners are where New looks next: drag
+      a bar between them to look somewhere else, drag a triangle to make it shorter or longer, and
+      double-click to put it back. It is at least as long as its clips need and at most as long as
+      the model reads at once, and flashes red when a triangle runs into either. While clips are
+      being found, the window is drawn over the track. How far a search has come is on its cards in
+      the clip list.
     </Info>
   </span>
-  {#if showing}
-    <div class="said">
-      <div class="row num">
-        {clock(from)} to {clock(to)}{#if held === "reach" && reachSays}, {reachSays}{:else if held === "least" && leastSays}, {leastSays}{/if}
-      </div>
-    </div>
-  {/if}
-  <div
-      class="handle"
-      style="left: {at(from)}px"
-      role="slider"
-      tabindex="0"
-      aria-label="Start of the window"
-      aria-valuemin={0}
-      aria-valuemax={duration}
-      aria-valuenow={from}
-      aria-valuetext={clock(from)}
-      onpointerdown={(e) => drag("from", e)}
-      onkeydown={(e) => nudge("from", e)}
-      onpointerenter={() => (grip = true)}
-      onpointerleave={() => (grip = false)}
-      onfocus={() => (grip = true)}
-      onblur={() => (grip = false)}
-    ></div>
-    <div
-      class="handle"
-      style="left: {at(to)}px"
-      role="slider"
-      tabindex="0"
-      aria-label="End of the window"
-      aria-valuemin={0}
-      aria-valuemax={duration}
-      aria-valuenow={to}
-      aria-valuetext={clock(to)}
-      onpointerdown={(e) => drag("to", e)}
-      onkeydown={(e) => nudge("to", e)}
-      onpointerenter={() => (grip = true)}
-      onpointerleave={() => (grip = false)}
-      onfocus={() => (grip = true)}
-      onblur={() => (grip = false)}
-    ></div>
 </div>
+{#if shown}
+  <!-- Only looked at, never taken hold of: which part is searched is the
+       app's to say, and a press on it is a press on the track. Drawn beside
+       the track rather than in it, over its border, because the track
+       clips what is inside it to its round corners and cut into the
+       window and its breath. -->
+  <div
+    class="window frame"
+    class:waiting={locked}
+    class:locked
+    class:whole
+    class:first={frame.first}
+    class:last={frame.last}
+    style="left: {frame.left}px; width: {frame.width}px"
+  >
+    <!-- The motes of work in hand rise through it while its clips are
+         found, the ones every control of the app sheds, with no rim and no
+         fill: how far the search has come is said on the clip cards, and
+         only there. -->
+    {#if locked}<Busy rim={false} />{/if}
+  </div>
+{/if}
+{#if !shown && to > from && duration > 0}
+  <!-- The window at rest, marked at its four corners and not drawn over
+       the track. A bar just outside the top border and one just outside
+       the bottom border join the marks, and only the tips of the
+       triangles reach into the track, so nothing lies over a clip. It is
+       drawn beside the track rather than in it, because the track clips
+       what is inside it. The four triangles are the handles, the left two
+       for where the window starts and the right two for where it ends, and
+       a bar moves the whole of it. -->
+  <div
+    class="aim"
+    class:moving={moving !== ""}
+    class:flashing
+    style="left: {frame.left}px; width: {frame.width}px"
+  >
+    {#each ["top", "bottom"] as side (side)}
+      <div
+        class="bar {side}"
+        class:held={moving === "move"}
+        role="slider"
+        tabindex="-1"
+        aria-label="Where New looks next"
+        aria-valuenow={from}
+        title="Where New looks next, {clock(from)} to {clock(to)}. Drag to look somewhere else, double-click to put it back"
+        onpointerdown={(e) => grabWindow("move", e)}
+        ondblclick={resetWindow}
+      ></div>
+      {#each ["from", "to"] as const as edge (edge)}
+        <div
+          class="tip {side} {edge}"
+          role="slider"
+          tabindex="-1"
+          aria-label={edge === "from" ? "Where the window starts" : "Where the window ends"}
+          aria-valuenow={edge === "from" ? from : to}
+          title="{edge === 'from' ? 'Where the window starts' : 'Where the window ends'}, {clock(
+            edge === 'from' ? from : to,
+          )}. Drag to make it shorter or longer, double-click to put it back. At least {leastSays ||
+            'room for a clip'}, at most {reachSays || 'all the model reads at once'}"
+          onpointerdown={(e) => grabWindow(edge, e)}
+          ondblclick={resetWindow}
+        ></div>
+      {/each}
+    {/each}
+  </div>
+{/if}
 {#if playhead >= 0}
-  <div class="playhead" style="left: {at(playhead)}px"></div>
+  <!-- The line takes the drag as well as its head, the same as on the
+       clip timeline. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="playhead"
+    class:scrubbing
+    style="left: {at(playhead)}px"
+    onpointerdown={scrub}
+    title="Drag to move the playhead"
+  >
+    <!-- The head is its own element, the way it is on the clip timeline,
+         because it stands above the track and a head the hand goes
+         straight through is not a handle. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="head" onpointerdown={scrub} title="Drag to move the playhead"></div>
+  </div>
 {/if}
 </div>
 
@@ -611,84 +455,18 @@
     border: 1px solid var(--line);
     border-radius: var(--radius-m);
     overflow: hidden;
-    cursor: crosshair;
+    cursor: pointer;
     touch-action: none;
   }
 
-  .track.locked,
-  .track.locked .window {
-    cursor: default;
-  }
-
-  /* Removing what the window covers. It sits in the corner of the window,
-     or just outside a window too narrow to hold it. */
-  /* What can be taken away waits until the window is under the pointer,
-     the way the trash can on a clip row does. */
-  .free {
-    position: absolute;
-    top: 4px;
-    opacity: 0;
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    margin-left: -24px;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    background: var(--ink-2);
-    color: var(--muted);
-    z-index: 5;
-  }
-
-  .free.shown,
-  .free:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .free.beside {
-    margin-left: 4px;
-  }
-
-  /* The info mark has the top right corner of the track, so a window that
-     ends there keeps its trash can clear of it: one place further in, or
-     before the start of a window too narrow to hold it. */
-  .free.tucked {
-    margin-left: -50px;
-  }
-
-  .free.beside.tucked {
-    margin-left: -24px;
-  }
-
-  .free:hover:not(:disabled),
-  .free:focus-visible {
-    color: var(--err);
-    border-color: var(--err);
-  }
-
-  /* What has been searched already. A window is never drawn over it, so it
-     reads as the wall it is. */
-  .done {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 1;
-    background: var(--ink-3);
-    border-left: 1px solid var(--line);
-    border-right: 1px solid var(--line);
-    opacity: 0.75;
-    pointer-events: none;
+  .track.scrubbing {
+    cursor: grabbing;
   }
 
   /* The ruler behind the track, the same as on the clip timeline. It is
-     over the searched parts, so the minutes can still be read there,
-     and under the window, because a tick that falls on the edge of the
-     window would paint over half of its border and leave the window
-     looking as if it were behind the wall it sits on. */
+     under the window, because a tick that falls on the edge of the window
+     would paint over half of its border and leave the window looking as if
+     it were behind the track. */
   .tick {
     position: absolute;
     top: 0;
@@ -715,126 +493,10 @@
     pointer-events: none;
   }
 
+  /* Clear of the handle of a window that starts with the episode. */
   .start {
     left: 0;
-    margin-left: 6px;
-  }
-
-  /* What has not been transcribed yet is darker, and the edge between the
-     two is where the transcript has got to.
-     The shade alone could never say where that is. Down at this end of the
-     scale lightness is compressed: the track is #1d1f23, and laying black
-     over it at any strength lands between 1.1 and 1.2 to 1 against it,
-     measured off the pixels. Taking it to near black does not help, it only
-     turns the far end of the track into a hole. Two large areas that close
-     together are one area.
-     An edge is a different thing to see. A line carries its contrast in the
-     step across it rather than in the area, so one pixel of a grey that is
-     plainly lighter says what a whole field of darker grey cannot, and it
-     is the edge that shows the movement: what the eye follows as the
-     transcript grows is the line, not the shade behind it. */
-  /* It is as wide as the whole track and travels by transform, so what is
-     drawn is only ever moved and never laid out again. A left that is
-     animated is worked out by the main thread on every frame, which is the
-     same thread the transcription's own reports land on, so the edge stood
-     still for a frame or two and then caught up in a jump: a step, beside a
-     mark that glided. Measured while transcribing, the distance between the
-     two varied by 1.80 pixels. A transform is carried by the compositor,
-     like the mark's, so the two move as one thing.
-     The track clips what runs past its right edge. */
-  /* A stretch not heard yet. It clips the dark sliding inside it. */
-  .gap {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .pending {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    /* The head of a fill, which is what this edge is: the app fills this
-       track from the left as it reads the episode, so the line where it
-       has got to is the same bright line with a glow ahead of it that the
-       head of every other fill in the app carries. A hairline of --muted
-       said the same thing in a colour that means nothing here, and said it
-       so quietly that Tim could not see the reading move. */
-    /* While the reading runs, the head is the fill's own, the bright line
-       with the glow pushed ahead of it that every fill in the app has, so
-       this is only the dark ahead of it. A reading that was paused has no
-       fill, and a quiet line says where it stopped. */
-    border-left: 1px solid var(--line);
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.34) 28px);
-    pointer-events: none;
-  }
-
-  /* The transcription hands in a chunk of audio at a time, so the edge
-     arrives in steps of about a second. Gliding between them for as long
-     as a step usually takes turns the steps into the one movement they
-     are. The glide is armed a frame after the first edge is drawn, so
-     opening a workspace mid-transcription does not sweep the track. */
-  .pending.waiting {
-    border-left-color: transparent;
-  }
-
-  .pending.glide {
-    transition: transform 1s linear;
-  }
-
-  /* Cancel was pressed, so the edge stops. Taking the glide away should be
-     enough and is not: a transition already on its way carries on to where
-     it was going, which is a second of an edge still sliding after the
-     press. Saying none outright ends it, and the edge lands on the second
-     the work really reached. */
-  /* The host of the work in hand drawn over a part of the track. It lies
-     under the window, the searched parts and the marks, like the track's
-     own shade, and it glides the way the shade's edge does. Square, since
-     a part meets the next one inside the track, and the track clips its
-     own corners. */
-  .busyhost {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    border-radius: 0;
-    pointer-events: none;
-    --fill-glide: 0s;
-  }
-
-  .busyhost.glide {
-    --fill-glide: 1s linear;
-  }
-
-  .pending.held {
-    transition: none;
-  }
-
-  /* In the middle of the track, over everything, and only what is inside it
-     takes the pointer, so the track can still be dragged around it. */
-  .said {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    /* Over everything on the track, the trash can included: it is what
-       the hand is doing right now. */
-    z-index: 8;
-  }
-
-  .said .row {
-    white-space: nowrap;
-    gap: 8px;
-    height: 36px;
-    padding: 0 6px 0 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: rgba(12, 12, 14, 0.88);
-    pointer-events: auto;
+    margin-left: 12px;
   }
 
   .shade {
@@ -858,71 +520,19 @@
     top: 0;
     bottom: 0;
     z-index: 3;
+    /* The motes rise inside it and no further, and lie under nothing
+       outside it. */
+    isolation: isolate;
+    overflow: hidden;
     background: var(--accent-wash);
-    cursor: grab;
+    /* Only looked at: a press on it is a press on the track, which moves
+       the playhead. */
+    pointer-events: none;
   }
 
   .window.whole {
     background: transparent;
     border-color: transparent;
-  }
-
-  /* Two quick flashes of the border in the warning colour. The red is a
-     border of its own lying exactly over the window's, and only how much
-     of it is seen changes, so no colour is ever mixed half way between
-     the red and the accent, which the accent, being mixed itself, makes
-     unpredictable. Two names for one animation, see knock. */
-  .window::after {
-    content: "";
-    position: absolute;
-    inset: calc(-1 * var(--frame-line));
-    border: var(--frame-line) solid var(--err);
-    border-radius: var(--frame-radius);
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .window.knock-a::after {
-    animation: knock-a 170ms ease-out 2;
-  }
-
-  .window.knock-b::after {
-    animation: knock-b 170ms ease-out 2;
-  }
-
-  @keyframes knock-a {
-    0%,
-    45% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-
-  @keyframes knock-b {
-    0%,
-    45% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-
-  /* A window drawn over material that was searched already is a window
-     onto what that part would be without it: the track as it looks
-     where nobody has looked yet, with the clips inside it gone. So what
-     the button in its corner does is plain before it is pressed. */
-  .window.xray {
-    background: var(--ink-1);
-  }
-
-  /* An edge under the pointer lights the whole box, which is the edge you
-     are about to take hold of, the way the frame in app.css is lit. A
-     window over the whole episode draws no frame until then. */
-  .window.whole.lit {
-    border-color: var(--accent-hi);
   }
 
   /* While clips are being found for it, the window cannot be moved. The
@@ -931,13 +541,148 @@
      is: the clips in it are on their way. Stripes were tried and they
      tile badly, the diagonal starts over at the edge of the repeat, which
      shows as a seam down the middle of the window. */
-  .track.locked .window,
-  .track.locked .window.whole {
+  .window.locked,
+  .window.locked.whole {
     background-color: var(--accent-wash);
     border-color: var(--accent);
   }
 
+  /* On the range picker's own edge, its round corner. */
+  .window.first {
+    border-top-left-radius: var(--radius-m);
+    border-bottom-left-radius: var(--radius-m);
+  }
 
+  .window.last {
+    border-top-right-radius: var(--radius-m);
+    border-bottom-right-radius: var(--radius-m);
+  }
+
+  /* The window at rest, marked at its corners. A bar three pixels thick
+     runs just outside the top border and just outside the bottom one, and
+     a triangle hangs from each end of it, its tip reaching seven pixels
+     into the track along the window's edge. The bars and the triangles
+     are what takes the pointer, each more to the hand than it is drawn,
+     and the whole of the mark lights up while any of it is under the
+     pointer or held, because it is one thing. */
+  /* No layer of its own, so its parts take their own places among the
+     track's: the bars under the playhead, whose head would otherwise be
+     lost along them, and the triangles over it, because a playhead
+     standing on the window's start, where a search leaves it, took every
+     press meant for the handles there. */
+  .aim {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    --aim: var(--accent);
+  }
+
+  /* Under :where, so being under the pointer weighs no more than being
+     held, and the flash after it wins over both: the hand is always on a
+     triangle when it runs into a limit. */
+  .aim:where(:has(.bar:hover, .tip:hover)),
+  .aim.moving {
+    --aim: var(--accent-hi);
+  }
+
+  .aim.flashing {
+    --aim: var(--err);
+  }
+
+  .bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 9px;
+    z-index: 5;
+    pointer-events: auto;
+    cursor: grab;
+    background: linear-gradient(var(--aim), var(--aim)) no-repeat;
+    background-size: 100% 3px;
+  }
+
+  .bar.top {
+    top: -6px;
+    background-position: 0 3px;
+  }
+
+  .bar.bottom {
+    bottom: -6px;
+    background-position: 0 3px;
+  }
+
+  .bar.held {
+    cursor: grabbing;
+  }
+
+  /* A handle, fourteen pixels to the hand around a triangle eight wide
+     and ten tall, which starts on the bar and ends seven pixels in. */
+  .tip {
+    position: absolute;
+    width: 14px;
+    height: 16px;
+    z-index: 7;
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .tip::after {
+    content: "";
+    position: absolute;
+    width: 8px;
+    height: 10px;
+    background: var(--aim);
+  }
+
+  .tip.top {
+    top: -6px;
+  }
+
+  .tip.bottom {
+    bottom: -6px;
+  }
+
+  .tip.top::after {
+    top: 3px;
+  }
+
+  .tip.bottom::after {
+    bottom: 3px;
+  }
+
+  .tip.from {
+    left: -6px;
+  }
+
+  .tip.to {
+    right: -6px;
+  }
+
+  .tip.from::after {
+    left: 6px;
+  }
+
+  .tip.to::after {
+    right: 6px;
+  }
+
+  .tip.top.from::after {
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+
+  .tip.top.to::after {
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  .tip.bottom.from::after {
+    clip-path: polygon(0 0, 100% 100%, 0 100%);
+  }
+
+  .tip.bottom.to::after {
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  }
 
   /* The box the playhead is drawn over, exactly the track and nothing
      more, so a position worked out for the track is right here too. */
@@ -956,12 +701,23 @@
     width: 2px;
     margin-left: -1px;
     background: var(--accent-hi);
-    pointer-events: none;
     z-index: 6;
+    /* Dragged left and right, head and line alike, as on the clip
+       timeline, and taken hold of a few pixels either side of the line. */
+    cursor: ew-resize;
+    touch-action: none;
   }
 
   .playhead::before {
     content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
+  }
+
+  .head {
     position: absolute;
     top: 0;
     left: -4px;
@@ -969,21 +725,16 @@
     height: 9px;
     border-radius: 2px 2px 1px 1px;
     background: var(--accent-hi);
-  }
-
-  /* Room to take hold of an edge, and nothing to look at. What you see is
-     the border of the window, which is exactly where the edge is. */
-  .handle {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 10px;
-    margin-left: -5px;
     cursor: ew-resize;
-    z-index: 4;
+    touch-action: none;
   }
 
-  .track.locked .handle {
-    cursor: default;
+  /* Held, the playhead goes white, as it does on the clip timeline. */
+  .playhead.scrubbing,
+  .playhead.scrubbing .head {
+    background: #fff;
   }
+
+
+
 </style>

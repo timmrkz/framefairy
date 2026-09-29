@@ -142,7 +142,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
 // it was asked about and give the same one back.
 const starts: Record<string, [number, string, boolean]> = {
   "01": [57, "Mein Arm ist zersprungen", true],
-  "02": [400, "Der Typ vor mir auf einmal", false],
+  // ?overlap puts the second clip over the end of the first, the way two
+  // clips of a short episode can lie over each other.
+  "02": [location.search.includes("overlap") ? 75 : 400, "Der Typ vor mir auf einmal", false],
   "03": [902, "Warum ich nie wieder", false],
   "04": [1400, "Ein echtes Thema", false],
 };
@@ -1097,21 +1099,31 @@ export const Call = {
         (window as any).__listed = true;
         return answer([
           clip(1, 57, "Mein Arm ist zersprungen", true),
-          clip(2, 400, "Der Typ vor mir auf einmal", false),
+          clip(2, starts["02"][0], "Der Typ vor mir auf einmal", false),
           clip(3, 902, "Warum ich nie wieder", false),
           clip(4, 1400, "Ein echtes Thema", false),
           ...made,
         ].sort((x, y) => x.start - y.start));
       }
-      case "Coverage":
-        if (fresh) {
-          if (!found.length) return Promise.resolve({ searched: [], free: [{ from: 0, to: 14423 }] });
-          return Promise.resolve({ searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: found.length }], free: [{ from: 1800, to: 14423 }] });
-        }
-        return Promise.resolve({
-          searched: [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
-          free: [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
+      case "Coverage": {
+        // The parts searched once and the parts free, and the episode in
+        // passes made of the two, the way the Go side counts them.
+        const view = (searched: { from: number; to: number; plans?: string[]; clips?: number }[], free: { from: number; to: number }[]) => ({
+          searched,
+          free,
+          passes: [...searched.map((w) => ({ from: w.from, to: w.to, times: 1 })), ...free.map((w) => ({ ...w, times: 0 }))].sort((a, b) => a.from - b.from),
         });
+        if (fresh) {
+          if (!found.length) return Promise.resolve(view([], [{ from: 0, to: 14423 }]));
+          return Promise.resolve(view([{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: found.length }], [{ from: 1800, to: 14423 }]));
+        }
+        return Promise.resolve(
+          view(
+            [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
+            [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
+          ),
+        );
+      }
       case "Room":
         // ?uneven is an episode read for its first hour, lighter there than
         // the rest is weighed, the way a real one is: the longest window
@@ -1175,6 +1187,30 @@ export const Call = {
       case "ChooseClip":
         (window as any).__chosen = args[1];
         return Promise.resolve();
+      // Kept across a reload, the way the Go side keeps it across a
+      // restart, so a probe can reload the page and see it come back.
+      case "ChosenWindow":
+        try {
+          return Promise.resolve(JSON.parse(sessionStorage.getItem("__window") ?? "null"));
+        } catch {
+          return Promise.resolve(null);
+        }
+      case "ChooseWindow": {
+        const now = { from: args[1], to: args[2], length: args[3] };
+        let was = null;
+        try {
+          was = JSON.parse(sessionStorage.getItem("__window") ?? "null");
+          sessionStorage.setItem("__window", JSON.stringify(now));
+        } catch {
+          /* nothing to keep it in */
+        }
+        // A window moved by hand is a step, the way the Go side keeps it.
+        if (args[4] && JSON.stringify(was) !== JSON.stringify(now)) {
+          ((window as any).__windowSteps ??= []).push([was, now]);
+          (window as any).__windowRedo = [];
+        }
+        return Promise.resolve();
+      }
       case "GetSettings":
         return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
@@ -1264,6 +1300,23 @@ export const Call = {
       case "Undo":
       case "Redo": {
         ((window as any).__undone ??= []).push(method);
+        // The window's steps first, the way they come last on the Go side
+        // when a probe has just moved it.
+        const back = method === "Undo";
+        const steps = ((window as any).__windowSteps ??= []);
+        const redo = ((window as any).__windowRedo ??= []);
+        const from = back ? steps : redo;
+        const step = from.pop();
+        if (step) {
+          (back ? redo : steps).push(step);
+          const put = back ? step[0] : step[1];
+          try {
+            sessionStorage.setItem("__window", JSON.stringify(put));
+          } catch {
+            /* nothing to keep it in */
+          }
+          return Promise.resolve({ done: true, window: put ?? undefined });
+        }
         return Promise.resolve({ done: true, clip: "clips.json/03" });
       }
       case "Jobs": {
@@ -1482,6 +1535,8 @@ const updNow = () => {
     picked: "",
     follows: local || gone ? "" : "pr-18",
     gone: gone ? "pr-18" : "",
+    // ?unbuilt: a push to the channel whose build has not come yet.
+    building: location.search.includes("unbuilt") ? "6ceea6d1f2a3" : "",
     phase: local ? "" : gone ? "gone" : "current",
     next: "",
     nextName: "",

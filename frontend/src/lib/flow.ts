@@ -117,32 +117,78 @@ export function waitShare(from: number, heard: Parts, to: number): number {
 // A part of the episode, in seconds. The range picker works in these.
 export type Span = { from: number; to: number };
 
-// Where the window goes when it has to choose for itself: the first
-// part nobody has looked at, and at most one window of it, as long as the
-// episode's windows are, see suggestedWindow in suggest.ts.
-// With the whole episode searched there is no free room left, so it rests
-// on the last part that was searched, which is the one whose clips are
-// on screen.
+// The episode in parts, each with how many searches have read it, from
+// its start to its end, the parts nobody has searched too, see
+// SearchPasses in engine/windows.go.
+export type Passes = { from: number; to: number; times: number }[];
+
+// Where the window goes when it has to choose for itself: where the
+// fewest searches have been, earliest first, and at most one window of
+// it, as long as the episode's windows are, see suggestedWindow in
+// suggest.ts. The first round walks the episode from its start, and when
+// every part has been searched once the second starts over at the start,
+// and so on, so New always does the same thing and never runs out. A part
+// shorter than least, too short to hold a clip, is passed over.
 //
-// A window is never left lying on material that has just been searched. It
-// reads as an X-ray there, it hides the clip marks under it, and its trash
-// can offers to throw away the clips that were only just found, which is
-// the opposite of what the search was for.
-export function nextWindow(
-  free: Span[],
-  searched: Span[],
-  duration: number,
-  size: number,
-): Span {
-  const room = free.find((w) => w.to - w.from > 0.5);
-  if (!room) {
-    const last = searched[searched.length - 1];
-    return { from: last?.from ?? 0, to: last?.to ?? duration };
-  }
+// A window is never left lying on material that has just been searched
+// while there is a part searched fewer times: its search made that part
+// one more, so it is not the fewest any more.
+export function nextWindow(passes: Passes, duration: number, size: number, least = 0): Span {
+  const usable = passes.filter((p) => p.to - p.from >= Math.max(least, 0.5));
+  if (!usable.length) return { from: 0, to: duration };
+  const fewest = Math.min(...usable.map((p) => p.times));
+  const room = usable.find((p) => p.times === fewest)!;
   const span = room.to - room.from;
   // A part only a little longer than a window is taken whole, rather than
   // leaving a scrap behind that is too short to search.
   return { from: room.from, to: room.from + (span > size * 1.5 ? size : span) };
+}
+
+// The round step a window's edges land on, on a range picker width pixels
+// wide: the smallest round step still about eight pixels wide, so a window
+// is something that can be said out loud. Five minutes for four hours on
+// a narrow range picker, five seconds for six minutes. A drag lands on it,
+// and so does every window the app places, so the two never disagree by
+// the few seconds that show as a pixel.
+export function gridStep(duration: number, width: number): number {
+  const steps = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
+  const least = (duration / Math.max(width, 1)) * 8;
+  return steps.find((step) => step >= least) ?? 1800;
+}
+
+// A window on the step: its start, and its length, which is never less
+// than one step. The ends of the episode win over the step, and an end
+// that would leave a scrap too short for a clip, least, or shorter than a
+// step, takes it in rather than leaving it behind. With no step, the
+// range picker not measured yet, the window is as it was.
+export function onGrid(w: Span, length: number, duration: number, step: number, least = 0): Span {
+  if (step <= 0) return { from: w.from, to: Math.min(w.from + length, duration) };
+  const from = Math.min(Math.max(Math.round(w.from / step) * step, 0), duration);
+  const size = Math.max(Math.round(length / step) * step, step);
+  let to = Math.min(from + size, duration);
+  if (duration - to < Math.max(least, step)) to = duration;
+  return { from, to };
+}
+
+// Where the window goes after a search: on from where the search ended,
+// as long as the person left the window, so a window made a minute long
+// stays a minute long and the episode is walked in the steps they chose.
+// The last one is cut at the end of the episode, and is only cut: the
+// window after it is as long as the person made it again, so length is
+// what they set and not the window just searched. At the end of the
+// episode it starts over at the start, and a scrap at the end shorter than
+// least, too short for a clip, is passed over the same way.
+export function followingWindow(ended: number, length: number, duration: number, least = 0): Span {
+  let from = ended;
+  if (duration - from < Math.max(least, 0.5)) from = 0;
+  return { from, to: Math.min(from + Math.max(length, 0), duration) };
+}
+
+// How many searches have read any of from..to, the most of them.
+export function timesIn(passes: Passes, from: number, to: number): number {
+  let most = 0;
+  for (const p of passes) if (p.to > from + 0.5 && p.from < to - 0.5) most = Math.max(most, p.times);
+  return most;
 }
 
 // A run of asks where only the newest answer counts.
