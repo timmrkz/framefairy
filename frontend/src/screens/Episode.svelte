@@ -1691,6 +1691,18 @@
     saveSearch();
   }
 
+  // The arrows step from the number the field shows. While it follows the
+  // window that number is only the suggestion, drawn as a placeholder, and
+  // the field itself is empty. A browser steps an empty number field from
+  // zero, so the down arrow on 6 landed on 1, the least it may hold, and
+  // the up arrow did the same. The suggestion becomes the value first, and
+  // the step then goes from there.
+  function stepTarget(e: KeyboardEvent) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    const field = e.currentTarget as HTMLInputElement;
+    if (field.value === "") field.value = String(suggested);
+  }
+
   function newClips() {
     findClips(false);
   }
@@ -2187,6 +2199,7 @@
                   : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
                 value={comingNow && working?.count ? working.count : typed > 0 ? typed : ""}
+                onkeydown={stepTarget}
                 onchange={keepTarget}
               /></span
             >

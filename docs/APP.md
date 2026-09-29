@@ -473,7 +473,10 @@ place.
       suggestion again, and so does the first search the app starts by
       itself when a video is added. Three typed for the six minutes of one
       episode went on asking for three in the half hour of the next.
-      Cleared, the field follows the window again. Twelve
+      Cleared, the field follows the window again. The arrow keys step
+      from the grey number, so the down arrow on a suggested 6 gives 5. A
+      browser steps an empty number field from zero, and the down arrow
+      used to land on 1 however many were suggested. Twelve
       because the model, asked for 8 in half an hour, gave 6: it gives
       fewer when fewer moments are strong enough, and asking for more only
       asks it to fill places with weaker ones. The square root because in
