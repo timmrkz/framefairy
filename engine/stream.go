@@ -196,6 +196,12 @@ func readClaudeStream(r io.Reader, listen *Listener) (*apiReply, bool, error) {
 			}
 			switch frame.Delta.Type {
 			case "text_delta":
+				// Text belongs to a text block. Text sent into a block of
+				// thinking would be heard as the answer and then be missing
+				// from it, since only text blocks make the reply.
+				if reply.Content[frame.Index].Type != "text" {
+					break
+				}
 				reply.Content[frame.Index].Text += frame.Delta.Text
 				if frame.Delta.Text != "" {
 					heard = true

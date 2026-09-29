@@ -1,0 +1,2 @@
+go test fuzz v1
+string("event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"}\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
