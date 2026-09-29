@@ -822,7 +822,13 @@ place.
       any of it puts it back where the app would have it. An edge lands
       on a round step, the smallest one still about eight pixels wide,
       five minutes on a four hour episode and five seconds on a six
-      minute one, and the ends of the episode win over the step. A handle
+      minute one, and the ends of the episode win over the step. Every
+      window the app places itself lands on the same step, its start and
+      its length, so the app's own half hour of a four hour episode is
+      30:00 rather than an even eighth of it, 30:02, which drifted a few
+      seconds off the ruler's lines with every search. The last window of
+      the episode takes in a scrap shorter than a step rather than leaving
+      it behind. A handle
       stops where the window would hold too few clips or more than the
       model reads. Under the pointer the whole mark lights up, a bar shows
       the hand that grabs and a triangle the arrows left and right. The
