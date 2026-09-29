@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Job } from "./api";
-import { arriving } from "./arriving";
+import { arriving, OnTheWay, type Arriving } from "./arriving";
 import { arrivalLine } from "./steps";
 
 function job(over: Partial<Job>): Job {
@@ -80,5 +80,38 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     const [row] = arriving([s], () => true, nothing);
     expect(row.what).toBe("Stopping");
     expect(row.still).toBe(true);
+  });
+});
+
+describe("a card is held from the moment its clip is written until the list has it", () => {
+  const card = (key: string, over: Partial<Arriving> = {}): Arriving => ({
+    key, job: "s", n: 1, start: 10, end: 30, title: "", what: "Placing the crop", left: "", fraction: -1, ...over,
+  });
+
+  test("in the same pass it leaves, not a render later", () => {
+    const way = new OnTheWay();
+    way.cards([card("s/1")], 5, 4);
+    // Written: gone from the job's list, and still on screen in that pass.
+    const now = way.cards([], 5, 4);
+    expect(now.map((a) => [a.key, a.held])).toEqual([["s/1", true]]);
+    expect(way.unread(5)).toBe(true);
+    // A read asked before it left knows nothing of it and keeps it.
+    expect(way.cards([], 6, 4).length).toBe(1);
+    expect(way.unread(6)).toBe(false);
+    // The first read asked after it left holds the clip: it goes.
+    expect(way.cards([], 6, 5)).toEqual([]);
+  });
+
+  test("a card that stopped is not held, it says so where it is", () => {
+    const way = new OnTheWay();
+    way.cards([card("s/1", { stopped: true })], 3, 2);
+    expect(way.cards([], 3, 2)).toEqual([]);
+  });
+
+  test("a card back on the way is live again, not held twice", () => {
+    const way = new OnTheWay();
+    way.cards([card("s/1")], 3, 2);
+    way.cards([], 3, 2);
+    expect(way.cards([card("s/1")], 3, 2).map((a) => a.held)).toEqual([undefined]);
   });
 });

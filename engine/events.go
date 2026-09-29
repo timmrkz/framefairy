@@ -55,6 +55,12 @@ type Underway struct {
 	// ArrivingCaptionsView, so the clip is built in front of the person
 	// rather than appearing whole.
 	Pieces [][2]float64 `json:"pieces,omitempty"`
+	// Clip is the key it will have in the clip list once it is written,
+	// its clip set's file name and its id, from the moment it has an id.
+	// The list keeps one row for it from its card to the clip, so a card
+	// becomes its clip in place rather than one row going and another
+	// coming.
+	Clip string `json:"clip,omitempty"`
 }
 
 // Unknown marks a fraction or a remaining time that cannot be given yet.
@@ -82,10 +88,14 @@ type Event struct {
 	From float64 `json:"from,omitempty"`
 	// Found is how many clips a search has written to its plan so far. The
 	// app reads the list again when it changes, rather than on a timer
-	// that is always a little late.
+	// that is always a little late. On EventUnderway it is how many the
+	// job has written, sent with the clips it has on the way.
 	Found int `json:"found,omitempty"`
 	// Underway is every clip the job has on the way, on EventUnderway.
 	Underway []Underway `json:"underway,omitempty"`
+	// Whole is, on EventUnderway, that every clip still to come is on the
+	// list: a search's answer is read to its end.
+	Whole bool `json:"whole,omitempty"`
 	// Duration is how long a finished or failed step took, in seconds.
 	Duration float64 `json:"duration,omitempty"`
 	// Elapsed is the seconds since the log was made.

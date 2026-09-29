@@ -298,6 +298,7 @@ export type JobStep =
   | "hearing"
   | "finding"
   | "framing"
+  | "fitting"
   | "rendering"
   | "failed"
   | "stopped";
@@ -317,6 +318,8 @@ export interface Underway {
   end: number;
   title?: string;
   step: JobStep;
+  // The key it will have in the clip list once it is written.
+  clip?: string;
 }
 
 export interface Job {
@@ -345,8 +348,15 @@ export interface Job {
   // was O.
   at?: number;
   backward?: boolean;
-  // The clips the job has on the way.
+  // The clips the job has on the way, and how many it has written, from
+  // one event, so the two always add up.
   underway?: Underway[];
+  written?: number;
+  // How many clips a search was asked for.
+  count?: number;
+  // The answer is read to its end: every clip still to come is in
+  // underway, so no row is held open for one the model did not name.
+  whole?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

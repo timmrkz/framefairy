@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -39,7 +41,24 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	log := NewLog(&said, false, false)
+	// The clip held back is on its way from the moment it is named, being
+	// fitted, and keeps its card when it goes to be framed. And once the
+	// answer is whole, the list says so.
+	var steps []string
+	whole := false
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventUnderway {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		whole = whole || ev.Whole
+		for _, u := range ev.Underway {
+			steps = append(steps, fmt.Sprintf("%d:%s", u.N, u.Step))
+		}
+	})
+	e := NewEngine(log)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -55,6 +74,11 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	if len(asks) != 2 {
 		t.Fatalf("the model was asked %d times", len(asks))
 	}
+	mu.Lock()
+	if len(steps) == 0 || steps[0] != "1:fitting" || !slices.Contains(steps, "1:framing") || !whole {
+		t.Errorf("the clip on its way went %v, whole %v", steps, whole)
+	}
+	mu.Unlock()
 	again := asks[1]
 	if len(again) != 4 || again[1].Content != asks[0][1].Content || again[2].Role != "assistant" ||
 		!strings.Contains(again[2].Content, `"kurz"`) {

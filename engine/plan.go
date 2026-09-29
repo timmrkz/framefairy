@@ -434,6 +434,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		}
 		build.rest(raw)
 	}
+	// Every clip of the answer is on its way now, held back to be fitted
+	// or with the framers, so nothing more will be named.
+	build.answerWhole()
 
 	if held := build.holding(); len(held) > 0 {
 		var ask func(string, int) (string, error)

@@ -227,10 +227,15 @@ func (l *Log) showProgress(text string) {
 
 // ClearProgress removes a progress line if one is showing. A sink is told
 // Underway says which clips the work has on the way, all of them, each
-// time that changes. It goes to the app only, since the command line says
-// each clip as it is written.
-func (l *Log) Underway(list []Underway) {
-	l.send(Event{Kind: EventUnderway, Underway: append([]Underway{}, list...)})
+// time that changes, how many it has written, and whether the list is
+// whole: every clip still to come is on it. The two go in one event,
+// so a clip that is written leaves the list in the same event that counts
+// it, and nothing that adds them up ever sees it twice or not at all. It
+// goes to the app only, since the command line says each clip as it is
+// written.
+func (l *Log) Underway(list []Underway, written int, whole bool) {
+	l.send(Event{Kind: EventUnderway, Underway: append([]Underway{}, list...), Found: written,
+		Whole: whole})
 }
 
 // that nothing is in progress any more.
