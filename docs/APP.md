@@ -643,8 +643,13 @@ place.
       grey how many clips the next window suggests: 6 for half an hour of clips of 20 to 30 seconds,
       one for every twelve clip lengths, and other windows in proportion
       to the square root of their length, 3 for six or ten minutes, 8 for
-      an hour. A number typed there is kept, for every episode, until the
-      field is cleared, and then it follows the window again. Twelve
+      an hour. A number typed there is for the window it was typed for, and
+      kept with that window's length. A window of another length, drawn
+      anew or the first window of the next episode, follows its own
+      suggestion again, and so does the first search the app starts by
+      itself when a video is added. Three typed for the six minutes of one
+      episode went on asking for three in the half hour of the next.
+      Cleared, the field follows the window again. Twelve
       because the model, asked for 8 in half an hour, gave 6: it gives
       fewer when fewer moments are strong enough, and asking for more only
       asks it to fill places with weaker ones. The square root because in
