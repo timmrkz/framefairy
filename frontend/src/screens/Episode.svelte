@@ -57,7 +57,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
-  import { arriving, type Arriving } from "../lib/arriving";
+  import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -631,27 +631,25 @@
       (job) => void api.continueJob(job.id).then((j) => jobs.apply(j)),
     ),
   );
+  // Everything that puts the clip list on screen takes a ticket: a read of
+  // the whole list and the answer to an edit alike. A read asked for before
+  // an edit can answer after it, and it knows nothing of the edit, so a clip
+  // removed a moment ago came back, and a trim looked undone, until the list
+  // was read again. Only the newest answer is used.
+  const listed = new Newest();
   // A clip that has just been written keeps its card until the list has
   // read it, so the card becomes the clip in one step: never a gap where
-  // it was, and never the two of them at once. The card goes in the same
-  // assignment that puts the list on screen, and only with a list read
-  // after the clip was written, see refreshClips. It went when its own
-  // read answered, and a read asked a moment later that answered first
-  // put the clip on screen beside its card, a card more than the search
-  // was asked for.
-  let landing = $state<(Arriving & { after: number })[]>([]);
-  let arrivedBefore: Arriving[] = [];
+  // it was, and never the two of them at once. See OnTheWay in
+  // lib/arriving.ts. The card goes in the same step that puts the list on
+  // screen, with the first read asked after the clip was written, whichever
+  // read answers first.
+  const cardsOnTheWay = new OnTheWay();
+  let keptRead = $state(0);
+  const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, listed.next(), keptRead));
   $effect(() => {
-    const now = arrivingNow;
-    const here = new Set(now.map((a) => a.key));
-    const gone = arrivedBefore.filter((a) => !here.has(a.key) && !a.stopped);
-    arrivedBefore = now;
-    if (!gone.length) return;
-    const after = listed.next();
-    landing = [...untrack(() => landing), ...gone.map((a) => ({ ...a, after }))];
-    void refreshClips();
+    void onTheWay;
+    if (cardsOnTheWay.unread(listed.next())) void refreshClips();
   });
-  const onTheWay = $derived([...arrivingNow, ...landing]);
   // The search the list last counted rows for, and how many of its clips
   // the newest read of the list holds: what it had written when the read
   // was asked, because the plan is written before the job says so.
@@ -678,7 +676,7 @@
   const unread = $derived(
     Math.max(
       0,
-      (lastSearch?.written ?? 0) - readWritten - landing.filter((a) => a.job === searchSeen).length,
+      (lastSearch?.written ?? 0) - readWritten - onTheWay.filter((a) => a.held && a.job === searchSeen).length,
     ),
   );
   const coming = $derived(
@@ -802,12 +800,6 @@
     await select(clip.key);
   }
 
-  // Everything that puts the clip list on screen takes a ticket: a read of
-  // the whole list and the answer to an edit alike. A read asked for before
-  // an edit can answer after it, and it knows nothing of the edit, so a clip
-  // removed a moment ago came back, and a trim looked undone, until the list
-  // was read again. Only the newest answer is used.
-  const listed = new Newest();
 
   // One clip as an edit left it.
   function putClip(updated: ClipEntry) {
@@ -821,14 +813,14 @@
     try {
       const list = (await api.clips(path)) ?? [];
       if (listed.keep(ticket)) {
+        // The list, and the cards of the clips it holds going, in one step.
         clips = list;
         readWritten = written;
-        // The cards of clips this read already holds, in the same step.
-        if (landing.some((a) => a.after <= ticket)) landing = landing.filter((a) => a.after > ticket);
+        keptRead = ticket;
       }
     } catch (err) {
       problem = errorText(err);
-      if (landing.some((a) => a.after <= ticket)) landing = landing.filter((a) => a.after > ticket);
+      if (listed.keep(ticket)) keptRead = ticket;
     }
   }
 

@@ -328,12 +328,20 @@ func (b *planBuilder) queueLocked(entry PlanEntry) {
 	b.ids = append(b.ids, id)
 	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
 	b.underway = append(b.underway, Underway{N: position, Start: b.lines[first-1].Start(),
-		End: b.lines[last-1].End(), Title: entry.Title, Step: StepFraming})
+		End: b.lines[last-1].End(), Title: entry.Title, Step: StepFraming, Clip: b.clipKey(id)})
 	b.e.Log.Underway(b.underway, len(b.clips))
 	b.queue <- planJob{index: position, entry: entry, id: id}
 	if b.clock != nil {
 		b.clock.taken()
 	}
+}
+
+// clipKey is the key a clip of this set has in the app's clip list.
+func (b *planBuilder) clipKey(id string) string {
+	if b.opts.PlanPath == "" {
+		return ""
+	}
+	return filepath.Base(b.opts.PlanPath) + "/" + id
 }
 
 // arrived takes a clip off the list of clips on the way, let go. A clip
@@ -670,6 +678,16 @@ func (b *planBuilder) land(index int, clip PlanClip) error {
 			for i, id := range b.ids {
 				if id == clip.ID {
 					b.ids[i] = added.ID
+				}
+			}
+			// Another clip took its id since it was queued, so its key
+			// in the list is another, and it is said before it lands.
+			if added.ID != clip.ID {
+				for i := range b.underway {
+					if b.underway[i].N == index {
+						b.underway[i].Clip = b.clipKey(added.ID)
+						b.e.Log.Underway(b.underway, len(b.clips))
+					}
 				}
 			}
 			b.mu.Unlock()

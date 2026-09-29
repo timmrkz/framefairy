@@ -298,7 +298,19 @@ the way, come from one event and never add a clip up twice. It said it
 had found one more in one event and took the clip off the list in the
 next, and between the two the list showed four cards for a search asked
 for three. A clip written between two job events, never on the way in
-either, holds a row of its own until a read brings it in. A clip made by hand is chosen the moment
+either, holds a row of its own until a read brings it in.
+
+A card and its clip are one row of the list. The card says which clip it
+will be, `Clip` on `Underway`, the clip set's file name and the id the
+builder gave it when it queued it, and the list keeps the card's row for
+the clip. They were two rows, the card's going and the clip's coming, and
+between the two the list was a row short for an instant, which a list
+scrolled down answered by jumping. The card is held from the moment it
+leaves the job's list in the same pass that builds the list, `OnTheWay`
+in `frontend/src/lib/arriving.ts`: an effect held it a render late, so
+every card went away, left a row still to come in its place and slid back
+open before it became its clip, which at the end of a search read as the
+whole list blinking. A clip made by hand is chosen the moment
 the key is pressed, as its card, and the card that is chosen stays chosen
 as the clip, unless another has been chosen since. It was chosen only once
 it landed, so for the seconds it took nothing on the clip timeline said

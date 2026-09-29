@@ -281,6 +281,18 @@ with `rim={false}` where there is no edge to run round, and a change to
 how work looks is made once, in `Busy.svelte` and `app.css`, and is then
 true everywhere. The same goes for the shimmer and the pulse.
 
+**A handover the eye sees as one thing is one row.** A card on its way
+and the clip it became were two rows of a keyed list, one going and one
+coming, and the card was held for its clip by an effect, a render late.
+No frame the harness sampled ever showed the gap: the probe counting rows
+on every frame passed. What gave it away was reading the list's height on
+every forced layout, `getBoundingClientRect` patched to log
+`scrollHeight`: the list went a row short inside one update, the leaving
+row set absolute by `animate:flip`, which clamps a scrolled list, and the
+card came back sliding open. Tim saw it as the whole list blinking at the
+end of a search. When a thing changes what it is, keep its key, and hold
+what must not go in the same pass that builds the list.
+
 ## When the window itself looks wrong, measure it against a real one
 
 The app is a native window. Every other native window is on the same

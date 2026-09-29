@@ -13,6 +13,9 @@ export type Arriving = {
   // The job it is on the way from and which of its clips it is.
   job: string;
   n: number;
+  // The key its clip will have in the list, once the engine has given it
+  // an id. The list keeps one row from the card to the clip by it.
+  clip?: string;
   // What of it is kept, once its pauses are cut.
   pieces?: [number, number][];
   // Where it lies, which is where it goes in the list, and where it ends.
@@ -81,6 +84,7 @@ export function arriving(
         job: job.id,
         n: clip.n,
         pieces: clip.pieces,
+        clip: clip.clip,
         start: clip.start,
         end: clip.end,
         title: clip.title ?? "",
@@ -92,4 +96,41 @@ export function arriving(
     }
   }
   return out;
+}
+
+// A card on the way, or one whose clip was just written and that no read
+// of the list holds yet.
+export type OnTheWayCard = Arriving & { held?: boolean };
+
+// The cards the list shows on the way: every card the jobs have on the
+// way, and every card that left that list without being stopped, until a
+// read of the clip list asked after it left has answered. That read holds
+// its clip, so the card hands over to it in one step.
+//
+// It is worked out in the same pass that builds the list, never after it.
+// An effect held the card one render late, so for that render the card was
+// gone, a row still to come stood in its place, and then the card slid
+// back open before it became its clip: card, gap, card, clip, for every
+// clip, which at the end of a search read as the whole list blinking.
+export class OnTheWay {
+  private live = new Map<string, Arriving>();
+  private held = new Map<string, Arriving & { after: number }>();
+
+  // now is what the jobs have on the way, next the ticket the next read of
+  // the list will get, and read the ticket of the newest read kept.
+  cards(now: Arriving[], next: number, read: number): OnTheWayCard[] {
+    const here = new Set(now.map((a) => a.key));
+    for (const [key, a] of this.live) {
+      if (!here.has(key) && !a.stopped && !this.held.has(key)) this.held.set(key, { ...a, after: next });
+    }
+    for (const key of here) this.held.delete(key);
+    for (const [key, a] of this.held) if (a.after <= read) this.held.delete(key);
+    this.live = new Map(now.map((a) => [a.key, a]));
+    return [...now, ...[...this.held.values()].map(({ after: _, ...a }) => ({ ...a, held: true }))];
+  }
+
+  // Whether a card is held that no read has been asked for since it left.
+  unread(next: number): boolean {
+    return [...this.held.values()].some((a) => a.after >= next);
+  }
 }

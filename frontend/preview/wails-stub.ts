@@ -565,7 +565,7 @@ function searchJob(s: FakeSearch) {
   const k = now.found;
   const underway =
     k < lands.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
-      ? [{ n: k + 1, start: 40 + (lands[k] - 1) * 140, end: 65 + (lands[k] - 1) * 140, title: "Ein Moment " + lands[k], step: "framing" }]
+      ? [{ n: k + 1, start: 40 + (lands[k] - 1) * 140, end: 65 + (lands[k] - 1) * 140, title: "Ein Moment " + lands[k], step: "framing", clip: `clips.json/0${lands[k] + (s.n - 1) * 12 + (freshList() ? 0 : 4)}` }]
       : [];
   // What it has written goes with what it has on the way, in one event,
   // the way the Go side sends them.
@@ -675,7 +675,7 @@ function handJob(h: FakeHand) {
     step: now.step, record: `clip-${h.n}`, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
-    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined }] : undefined,
+    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined, clip: now.step === "framing" ? `clips-hand.json/h0${h.n}` : undefined }] : undefined,
     progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" } : undefined,
   };
 }
@@ -698,6 +698,12 @@ function handClips() {
     });
 }
 
+// Whether the episode's list starts empty, and the searches of this run
+// fill it.
+function freshList(): boolean {
+  const q = location.search;
+  return q.includes("found") || q.includes("growing") || q.includes("interrupted") || q.includes("failed") || q.includes("transcribing");
+}
 function askSearch(from: number, to: number, count?: number): FakeSearch {
   const list = fakeSearches();
   for (const s of list) if (s.stopped || s.cancelledAt !== undefined) s.settled = true;
@@ -712,7 +718,7 @@ export const Call = {
     const method = name.split(".").pop();
     const q = location.search;
     // Episodes whose list starts empty: the searches of this run fill it.
-    const fresh = q.includes("found") || q.includes("growing") || q.includes("interrupted") || q.includes("failed") || q.includes("transcribing");
+    const fresh = freshList();
     const covered = savedCovered();
     const found = foundClips();
     const plans = found.length || !fresh ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [];

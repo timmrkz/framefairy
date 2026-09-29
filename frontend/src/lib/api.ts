@@ -281,6 +281,8 @@ export interface Underway {
   end: number;
   title?: string;
   step: JobStep;
+  // The key it will have in the clip list once it is written.
+  clip?: string;
 }
 
 export interface Job {

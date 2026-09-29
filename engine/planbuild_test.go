@@ -337,6 +337,7 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	var mu sync.Mutex
 	written, most := 0, 0
 	var problems []string
+	named := map[string]bool{}
 	p.engine.Log.SetSink(func(ev Event) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -347,16 +348,31 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 			}
 			written = ev.Found
 			most = max(most, ev.Found+len(ev.Underway))
+			for _, u := range ev.Underway {
+				named[u.Clip] = true
+			}
 		case ev.Kind == EventProgress && ev.Found > written:
 			problems = append(problems, fmt.Sprintf("found %d while the clips on the way had counted %d",
 				ev.Found, written))
 		}
 	})
-	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10}); err != nil {
+	plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
+	if err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	// Every card said which clip it would be, so the list keeps one row
+	// from the card to the clip.
+	_, clips, err := LoadClips(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range clips {
+		if key := filepath.Base(plan) + "/" + c.ID; !named[key] {
+			t.Errorf("no card on the way said it would be %s: %v", key, named)
+		}
+	}
 	for _, problem := range problems {
 		t.Error(problem)
 	}

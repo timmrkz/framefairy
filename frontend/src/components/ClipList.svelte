@@ -72,11 +72,24 @@
 
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
+  //
+  // A clip on its way and the clip it becomes are one row: the row keeps
+  // the card's key from the moment the card knows which clip it will be,
+  // and the clip takes the row over when the list has it. They were two
+  // rows, one going and one coming, and between the two the list was a
+  // row short for a moment, which the browser answered by pulling a list
+  // that was scrolled down back up, every card jumping at once. The keys
+  // are kept for as long as the list is, so a clip never changes rows.
   type Row = { key: string; start: number; clip?: ClipEntry; arriving?: Arriving };
+  const rowOf = new Map<string, string>();
   const rows = $derived.by((): Row[] => {
+    for (const a of arriving) if (a.clip && !rowOf.has(a.clip)) rowOf.set(a.clip, a.key);
+    const here = new Set(clips.map((c) => c.key));
     const all: Row[] = [
-      ...clips.map((clip) => ({ key: clip.key, start: clip.start, clip })),
-      ...arriving.map((a) => ({ key: a.key, start: a.start, arriving: a })),
+      ...clips.map((clip) => ({ key: rowOf.get(clip.key) ?? clip.key, start: clip.start, clip })),
+      ...arriving
+        .filter((a) => !(a.clip && here.has(a.clip)))
+        .map((a) => ({ key: a.key, start: a.start, arriving: a })),
     ];
     return all.sort((a, b) => a.start - b.start);
   });
@@ -88,10 +101,19 @@
     return row.clip ? slide(node, { duration: 200 }) : { duration: 0 };
   }
 
-  // A clip on the way comes in the way a clip that is taken out goes, so a
-  // card appearing among the others is seen appearing.
+  // A clip on the way that makes the list longer comes in the way a clip
+  // that is taken out goes, so a card appearing among the others is seen
+  // appearing. One that takes the place of a row still to come is already
+  // there, the size it will be: it slid open from nothing while the row it
+  // took went at once, so for a moment the list was a row short and every
+  // card under it jumped up and slid back down.
+  let settled = 0;
+  $effect(() => {
+    settled = rows.length + ghosts.length;
+  });
   function enter(node: Element, row: Row) {
-    return row.arriving ? slide(node, { duration: 200 }) : { duration: 0 };
+    const grows = rows.length + ghosts.length > settled;
+    return row.arriving && grows ? slide(node, { duration: 200 }) : { duration: 0 };
   }
 
   // The rows still to come are after the clips there are, so in a list
@@ -154,9 +176,9 @@
       animate:flip={{ duration: 180 }}
       in:enter={row}
       out:leave={row}
-      data-key={row.key}
+      data-key={clip?.key ?? a?.key}
       class:next={!!a}
-      class:current={!!a && row.key === selected}
+      class:current={!!a && a.key === selected}
       class:stopped={!!a?.stopped}
       aria-live={a ? "polite" : undefined}
     >
@@ -416,6 +438,14 @@
     padding: 0 10px;
     background: var(--ink-1);
   }
+  /* The last row has no row after it to show, so it asks for the veil
+     only. Asking for a third of a row that is not there scrolled the list
+     into its own padding as a clip landed, and the next change snapped it
+     back, every card jumping at once. */
+  .next:not(:has(+ li)) {
+    scroll-margin-bottom: var(--veil, 16px);
+  }
+
 
   /* A search that stopped before it was done: the same row, still, in the
      colour of a warning. Not the red of what was taken away, because

@@ -56,6 +56,12 @@ type Underway struct {
 	// in front of the person rather than appearing whole.
 	Pieces [][2]float64 `json:"pieces,omitempty"`
 	Words  []Cue        `json:"-"`
+	// Clip is the key it will have in the clip list once it is written,
+	// its clip set's file name and its id, from the moment it has an id.
+	// The list keeps one row for it from its card to the clip, so a card
+	// becomes its clip in place rather than one row going and another
+	// coming.
+	Clip string `json:"clip,omitempty"`
 }
 
 // Unknown marks a fraction or a remaining time that cannot be given yet.
