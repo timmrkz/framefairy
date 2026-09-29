@@ -3,6 +3,7 @@
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
   import type { Arriving } from "../lib/arriving";
+  import { hoverClip } from "../lib/hover";
 
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
@@ -11,6 +12,8 @@
     clips,
     arriving = [],
     selected,
+    hovered = "",
+    onhover,
     removed = "",
     coming = 0,
     at = Infinity,
@@ -30,6 +33,11 @@
     // it is written.
     arriving?: Arriving[];
     selected: string;
+    // The clip under the hand, here or on either track, and what the hand
+    // on a card says about it. A card lit from elsewhere looks the way it
+    // does under the pointer.
+    hovered?: string;
+    onhover?: (key: string, on: boolean) => void;
     // How many clips are on the way: the number the search was asked for,
     // while the transcript is still coming or the search is running. That
     // many rows wait in place, so the list is already the shape it is
@@ -198,8 +206,10 @@
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next)}
+      class:lit={!!clip && clip.key === hovered}
       title={lead && !next ? stopped?.full : undefined}
       aria-live={a || (lead && next) ? "polite" : undefined}
+      {@attach clip ? hoverClip(clip.key, onhover) : undefined}
     >
       {#if g !== undefined}
         <!-- A row still to come. They are as many as the search was asked
@@ -340,7 +350,8 @@
     text-align: left;
   }
 
-  li:hover .pick {
+  li:hover .pick,
+  li.lit .pick {
     background: var(--ink-2);
   }
 
@@ -349,6 +360,7 @@
      is without reading any of them. */
   .pick.current,
   li:hover .pick.current,
+  li.lit .pick.current,
   .next.current {
     background: var(--ink-3);
     box-shadow: inset 3px 0 var(--accent);
