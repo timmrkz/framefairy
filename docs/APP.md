@@ -520,6 +520,14 @@ place.
       A clip made with I or O comes in the same way, see below, because
       every job says which clips it has on the way the same way, see
       [JOBS.md](JOBS.md).
+    - **The search's fill goes on to the end.** The row still to come
+      wears how far the search has come and how long it has left. Once
+      every clip is named, no row is left to wear it, so the search's
+      cards take it on, each with the fill and the time left, until the
+      search is done. Until then a card wears the beam alone, because it
+      is not as far along as the search it came from. The fill went with
+      the row before, at sixty per cent, and the search went on with
+      nothing to say how far it was.
     - **The rows still to come stand where the window is.** Everything a
       search finds lies in its window, so its rows stand in the list where
       the window ends: after the clips before the window and before the

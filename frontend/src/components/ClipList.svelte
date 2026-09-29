@@ -19,6 +19,7 @@
     at = Infinity,
     waiting = true,
     next = null,
+    carry = null,
     stopped = null,
     onselect,
     onremove,
@@ -59,6 +60,14 @@
     // still is work that has been told to stop and has not said so yet:
     // it keeps its fill and stops moving, the way Busy draws it.
     next?: { what: string; left: string; fraction: number; still?: boolean } | null;
+    // The search's own work, for its cards to wear once no row is left to
+    // come: how far the whole search has come and how long it has left.
+    // The row that said so went as the last clips were named, with the
+    // search at sixty per cent, and its fill went with it, so the search
+    // went on with nothing to say how far it was. Its cards carry it on to
+    // the end, and until then they wear the beam alone, because a card is
+    // not as far along as the search it came from.
+    carry?: { job: string; fraction: number; left: string; still?: boolean } | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
     // have appeared in, the same row that says what a search is doing
@@ -84,6 +93,7 @@
     const n = Math.max(0, coming - clips.length - arriving.length);
     return Array.from({ length: n }, (_, i) => i);
   });
+  const carried = $derived(ghosts.length === 0 ? carry : null);
 
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
@@ -235,9 +245,11 @@
             <span class="meta muted num">{a.left}</span>
           </button>
         {:else}
-          <Busy fraction={a.fraction} still={a.still} />
+          {@const own = carried && carried.job === a.job ? carried : null}
+          {@const left = own ? own.left : a.left}
+          <Busy fraction={own ? own.fraction : a.fraction} still={a.still || own?.still} />
           <span class="title">{a.title || a.what}</span>
-          <span class="meta muted num">{a.title ? a.what : clock(a.start)}{a.left ? `, ${a.left}` : ""}</span>
+          <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
       {:else if clip && clip.key === removed}
         <div class="gone">

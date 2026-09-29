@@ -446,6 +446,14 @@
   // found going up. The fill and the time left follow at once, because
   // they are the same thing moving on. It keeps its own time, in onMount,
   // because an effect that reads the job is set up again on every report.
+  // The search's work for its own cards, once no row is left to say it,
+  // see ClipList.
+  const carry = $derived.by(() => {
+    if (!working) return null;
+    const { fraction, left } = stepLine(working, heardShare);
+    return { job: working.id, fraction, left, still: stopping };
+  });
+
   let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
     null,
   );
@@ -2527,6 +2535,7 @@
               at={stopped ? stopped.to : to}
               waiting={comingNow}
               next={shownNext}
+              {carry}
               {stopped}
               removed={removed?.key ?? ""}
               onselect={select}
