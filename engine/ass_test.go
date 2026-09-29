@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Caption text is whatever the guest said, as heard by the recogniser and
@@ -225,6 +226,26 @@ func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
 	for _, piece := range long {
 		if !room.fits(piece) {
 			t.Errorf("%q does not fit", piece)
+		}
+	}
+	// A caption of thousands of letters in one run is no word, and it is
+	// broken where the line allows, in the time it takes to read it. It
+	// took the better part of a minute: the patterns look at every piece
+	// of what they are given, and every point of the word was measured for
+	// every line. The fuzzer found it, as a hang.
+	huge := strings.Repeat("abcdefghijklmnopqrstuvwxyzäöü", 100)
+	began := time.Now()
+	pieces := breakWord(huge, room, de)
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("a word of %d letters took %s to break", runeLen(huge), took)
+	}
+	if len(pieces) < 2 || strings.Join(pieces, "") == "" {
+		t.Errorf("a word of %d letters broke into %d pieces", runeLen(huge), len(pieces))
+	}
+	for _, piece := range pieces {
+		if !room.fits(piece) {
+			t.Errorf("%q does not fit", piece)
+			break
 		}
 	}
 	// Every language whose patterns are here has a hyphenator, found by the
