@@ -51,6 +51,10 @@ var framers = min(max(runtime.NumCPU()/3, 2), 4)
 
 type planJob struct {
 	index int
+	// card is the clip's number on the list of clips on the way, its place
+	// in the answer. It is given when the model names the clip, so a clip
+	// held back to be fitted keeps its card when it goes to the framers.
+	card  int
 	entry PlanEntry
 	id    string
 }
@@ -96,8 +100,13 @@ type planBuilder struct {
 	order []PlanEntry
 	// fits is whether a clip that does not fit the length may be held back
 	// and asked for again once the answer is in. held is those clips.
-	fits    bool
-	held    []PlanEntry
+	fits bool
+	held []PlanEntry
+	// heldCards are the cards of the held clips, in the same order.
+	heldCards []int
+	// whole is the answer read to its end: every clip still to come is on
+	// the list of clips on the way.
+	whole   bool
 	seen    map[string]bool
 	entries []PlanEntry
 	ids     []string
@@ -209,11 +218,18 @@ func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
 // the framers.
 func (b *planBuilder) acceptLocked(entry PlanEntry) {
 	b.order = append(b.order, entry)
+	card := len(b.order)
 	if b.fits && (b.opts.recipe().Edit || b.outside(b.seconds(entry.Keep))) {
 		b.held = append(b.held, entry)
+		b.heldCards = append(b.heldCards, card)
+		// On its way like any other, being fitted to the length first.
+		first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
+		b.underway = append(b.underway, Underway{N: card, Start: b.lines[first-1].Start(),
+			End: b.lines[last-1].End(), Title: entry.Title, Step: StepFitting})
+		b.sayUnderwayLocked()
 		return
 	}
-	b.queueLocked(entry)
+	b.queueLocked(entry, card)
 }
 
 // seconds is how long a clip that keeps these lines runs, the way it is
@@ -320,17 +336,27 @@ func repeatNote(entry, earlier PlanEntry) string {
 // queueLocked gives an entry its id and hands it to the framers. The id is
 // its place among the usable clips of the answer, as it always was, after
 // the clips a set that grows already has.
-func (b *planBuilder) queueLocked(entry PlanEntry) {
+func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 	position := len(b.entries) + 1
 	uniqueSlug(b.seen, &entry, position)
 	id := fmt.Sprintf("%s%02d", b.prefix, b.base+position)
 	b.entries = append(b.entries, entry)
 	b.ids = append(b.ids, id)
 	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
-	b.underway = append(b.underway, Underway{N: position, Start: b.lines[first-1].Start(),
-		End: b.lines[last-1].End(), Title: entry.Title, Step: StepFraming, Clip: b.clipKey(id)})
-	b.e.Log.Underway(b.underway, len(b.clips))
-	b.queue <- planJob{index: position, entry: entry, id: id}
+	on := Underway{N: card, Start: b.lines[first-1].Start(), End: b.lines[last-1].End(),
+		Title: entry.Title, Step: StepFraming, Clip: b.clipKey(id)}
+	// A clip that was held back already has its card, and keeps it.
+	placed := false
+	for i := range b.underway {
+		if b.underway[i].N == card {
+			b.underway[i], placed = on, true
+		}
+	}
+	if !placed {
+		b.underway = append(b.underway, on)
+	}
+	b.sayUnderwayLocked()
+	b.queue <- planJob{index: position, card: card, entry: entry, id: id}
 	if b.clock != nil {
 		b.clock.taken()
 	}
@@ -349,26 +375,42 @@ func (b *planBuilder) clipKey(id string) string {
 func (b *planBuilder) arrived(job planJob) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.takeOffLocked(job.index)
+	b.takeOffLocked(job.card)
 }
 
-func (b *planBuilder) takeOffLocked(index int) {
+func (b *planBuilder) takeOffLocked(card int) {
 	for i, u := range b.underway {
-		if u.N == index {
+		if u.N == card {
 			b.underway = append(b.underway[:i:i], b.underway[i+1:]...)
-			b.e.Log.Underway(b.underway, len(b.clips))
+			b.sayUnderwayLocked()
 			return
 		}
 	}
 }
 
+// sayUnderwayLocked tells the app the clips on the way, how many are
+// written, and whether the answer is whole.
+func (b *planBuilder) sayUnderwayLocked() {
+	b.e.Log.Underway(b.underway, len(b.clips), b.whole)
+}
+
+// answerWhole is the answer read to its end, the rest of it taken: every
+// clip still to come is on the list of clips on the way, so the app holds
+// no row open for a clip the model did not name.
+func (b *planBuilder) answerWhole() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.whole = true
+	b.sayUnderwayLocked()
+}
+
 // cutDown says what a clip on the way keeps, once its pauses are cut and
 // before its crop is placed, which is the slow part.
-func (b *planBuilder) cutDown(index int, spans []Span) {
+func (b *planBuilder) cutDown(card int, spans []Span) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for i := range b.underway {
-		if b.underway[i].N != index {
+		if b.underway[i].N != card {
 			continue
 		}
 		pieces := make([][2]float64, len(spans))
@@ -376,7 +418,7 @@ func (b *planBuilder) cutDown(index int, spans []Span) {
 			pieces[k] = [2]float64{roundTo(s.Start, 3), roundTo(s.End, 3)}
 		}
 		b.underway[i].Pieces = pieces
-		b.e.Log.Underway(b.underway, len(b.clips))
+		b.sayUnderwayLocked()
 		return
 	}
 }
@@ -532,7 +574,7 @@ func (b *planBuilder) work(job planJob) {
 	if !ok {
 		return
 	}
-	if err := b.land(job.index, clip); err != nil {
+	if err := b.land(job.card, clip); err != nil {
 		b.fail(err)
 	}
 }
@@ -581,7 +623,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	for k, s := range spans {
 		tightSpans[k] = Span{s.Start, s.End}
 	}
-	b.cutDown(index, tightSpans)
+	b.cutDown(job.card, tightSpans)
 
 	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache)
 	if err != nil {
@@ -656,7 +698,7 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 // place of whatever plan was there for this window, and each after it is
 // added through the same edit the app uses. A set that grows is never made
 // anew: every clip is added to it, and the first one there makes it.
-func (b *planBuilder) land(index int, clip PlanClip) error {
+func (b *planBuilder) land(card int, clip PlanClip) error {
 	b.writing.Lock()
 	defer b.writing.Unlock()
 	if b.gone {
@@ -679,9 +721,9 @@ func (b *planBuilder) land(index int, clip PlanClip) error {
 			// in the list is another, and it is said before it lands.
 			if added.ID != clip.ID {
 				for i := range b.underway {
-					if b.underway[i].N == index {
+					if b.underway[i].N == card {
 						b.underway[i].Clip = b.clipKey(added.ID)
-						b.e.Log.Underway(b.underway, len(b.clips))
+						b.sayUnderwayLocked()
 					}
 				}
 			}
@@ -719,7 +761,7 @@ func (b *planBuilder) land(index int, clip PlanClip) error {
 	// before the clock says it found one more.
 	b.mu.Lock()
 	b.clips = append(b.clips, clip)
-	b.takeOffLocked(index)
+	b.takeOffLocked(card)
 	b.mu.Unlock()
 	if b.clock != nil {
 		b.clock.landed()

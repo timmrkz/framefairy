@@ -636,7 +636,7 @@ function searchJob(s: FakeSearch) {
       : [];
   // What it has written goes with what it has on the way, in one event,
   // the way the Go side sends them.
-  return { ...base, underway, written: now.found, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
+  return { ...base, underway, written: now.found, whole: now.found + underway.length >= lands.length, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
 }
 // How far the saved transcript reaches. With ?lagging it is saved every 8 s
 // of work, minutes of audio apart, while the job reports every chunk.

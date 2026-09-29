@@ -75,6 +75,9 @@ type Job struct {
 	// as Underway, so a clip is never counted both as written and as on
 	// the way, or as neither.
 	Written int `json:"written,omitempty"`
+	// Whole is, for a search, that its answer is read to its end, so every
+	// clip still to come is in Underway.
+	Whole bool `json:"whole,omitempty"`
 	// Seq grows with every change to any job, and is set under the queue's
 	// lock, so of two snapshots of a job the later one has the larger
 	// number. News is sent after the lock is let go, so two changes made
@@ -693,7 +696,9 @@ func (q *queue) runJob(job *Job) {
 		}
 		copied := ev
 		if copied.Kind == engine.EventUnderway {
-			q.update(job, nil, func(j *Job) { j.Underway, j.Written = copied.Underway, copied.Found })
+			q.update(job, nil, func(j *Job) {
+				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
+			})
 			return
 		}
 		q.update(job, &copied, func(j *Job) {

@@ -695,7 +695,7 @@
     shown.length +
       onTheWay.length +
       (busy
-        ? Math.max(0, count - searchTook) + unread
+        ? (working?.whole ? 0 : Math.max(0, count - searchTook)) + unread
         : shown.length === 0 && onTheWay.length === 0
           ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row

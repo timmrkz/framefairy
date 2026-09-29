@@ -300,6 +300,16 @@ next, and between the two the list showed four cards for a search asked
 for three. A clip written between two job events, never on the way in
 either, holds a row of its own until a read brings it in.
 
+A clip of the answer well off the length is held back and asked for
+again, `fit`, and it is on its way like any other from the moment it is
+named, its card saying *Fitting to the length*. It keeps its card, a
+number given when the model names it, when it goes to be framed. Once the
+answer is read to its end, the list says it is whole, `Whole` on the event
+and `whole` on the job: every clip still to come has a card, so the list
+holds no row open for a clip the model did not name. That row stood in for
+the held clips and for the ones never named, with the fill of the whole
+search stuck near its end while the cards were framed.
+
 A card and its clip are one row of the list. The card says which clip it
 will be, `Clip` on `Underway`, the clip set's file name and the id the
 builder gave it when it queued it, and the list keeps the card's row for

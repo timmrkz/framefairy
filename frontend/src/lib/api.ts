@@ -289,6 +289,7 @@ export type JobStep =
   | "hearing"
   | "finding"
   | "framing"
+  | "fitting"
   | "rendering"
   | "failed"
   | "stopped";
@@ -342,6 +343,9 @@ export interface Job {
   // one event, so the two always add up.
   underway?: Underway[];
   written?: number;
+  // The answer is read to its end: every clip still to come is in
+  // underway, so no row is held open for one the model did not name.
+  whole?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

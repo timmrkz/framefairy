@@ -93,6 +93,9 @@ type Event struct {
 	Found int `json:"found,omitempty"`
 	// Underway is every clip the job has on the way, on EventUnderway.
 	Underway []Underway `json:"underway,omitempty"`
+	// Whole is, on EventUnderway, that every clip still to come is on the
+	// list: a search's answer is read to its end.
+	Whole bool `json:"whole,omitempty"`
 	// Duration is how long a finished or failed step took, in seconds.
 	Duration float64 `json:"duration,omitempty"`
 	// Elapsed is the seconds since the log was made.
