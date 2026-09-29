@@ -324,7 +324,11 @@ input[type="password"] {
    The clip chosen looks like the clip it is on the clip timeline, a frame
    round the wash, and stands out: nearly three times as tall as the rest,
    and never too narrow to have wash inside its frame. On the clip timeline
-   it has no mark, because it is the frame already. */
+   it has no mark, because it is the frame already.
+
+   A mark is lit, .lit, while the hand is on the same clip somewhere else,
+   its card in the clip list or its mark on the other track, and looks
+   exactly as it does under the pointer. */
 .clipmark {
   --clipmark-h: round(16%, 2px);
   position: absolute;
@@ -340,7 +344,8 @@ input[type="password"] {
   cursor: pointer;
 }
 
-.clipmark:hover:not(:disabled) {
+.clipmark:hover:not(:disabled),
+.clipmark.lit {
   background: var(--accent-hi);
 }
 
@@ -357,7 +362,8 @@ input[type="password"] {
   border-radius: var(--frame-radius);
 }
 
-.clipmark.selected:hover:not(:disabled) {
+.clipmark.selected:hover:not(:disabled),
+.clipmark.selected.lit {
   background: var(--accent-wash);
   border-color: var(--accent-hi);
 }
