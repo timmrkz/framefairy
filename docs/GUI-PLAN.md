@@ -185,6 +185,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.12 | Captions stay the size chosen. A word too long for a line gets a caption of its own and is hyphenated with TeX's patterns for the language of the episode, a German compound where its parts join, instead of one long word making every caption of the clip smaller | `[x]` |
 | 3.13 | The clip timeline zoomed out: every other clip of the episode drawn as the range picker marks it, a click choosing it, and the caption blocks only once they are wide enough to be read | `[x]` |
 | 3.14 | The range picker and the clip timeline on one floor, a step darker than the workspace, with nothing darkened outside the window. Asked for by Tim | `[x]` |
+| 3.15 | The crop frame and the shade round it only while the playhead is in a clip, no grey dashed frame anywhere else. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 
