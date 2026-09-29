@@ -49,8 +49,8 @@ facade the app goes around, and three files too big to hold in one's head.
    leaves only the zip. `publish.yml`, which GitHub always runs from main,
    works out channel, commit and version from GitHub's record of the run,
    signs, and uploads the channel's own two files by name. The key lives
-   in the environment `updates`, which Tim limits to main. **In progress**,
-   until the secret is moved.
+   in the environment `updates`, limited to main, and the repository
+   secret is gone. **Fixed** in #43 and #46.
 2. **A short counts as rendered while it is written, and after it is cut
    off.** Render writes straight to `out/<name>.mp4`
    (`engine/render.go:164`), and a clip counts as rendered as soon as that
