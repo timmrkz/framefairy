@@ -1,0 +1,88 @@
+# Temporary, for the pull request that moves ffmpeg to 7.1.5, and removed
+# before it is merged. The first macOS test run with 7.1.5 hung for six
+# minutes in the ffmpeg that finds camera switches. This asks the question
+# on the machine it happened on: the same command, with and without the
+# system's decoder, against 7.1.1 and 7.1.5, twenty times each, each with a
+# time limit, and the engine tests with a short limit, so the one that
+# hangs says its name.
+name: ffmpeg probe
+
+on:
+  push:
+    branches: [claude/youthful-darwin-791g7i-ffmpeg]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - { name: "7.1.1", commit: db69d06eeeab4f46da15030a80d539efb4503ca8 }
+          - { name: "7.1.5", commit: 3a0867c2bfda4a4d4309ca1a8cbdc6175e67f587 }
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: The version asked about
+        env:
+          VERSION: ${{ matrix.version.name }}
+          COMMIT: ${{ matrix.version.commit }}
+        run: |
+          sed -i '' "s/^FFMPEG_VERSION=.*/FFMPEG_VERSION=$VERSION/; s/^FFMPEG_COMMIT=.*/FFMPEG_COMMIT=$COMMIT/" scripts/build-ffmpeg.sh
+          grep '^FFMPEG_' scripts/build-ffmpeg.sh
+      - id: ffmpeg
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-probe-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build it
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          brew install meson ninja pkg-config nasm cmake
+          sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: A test episode, made the way the tests make one
+        run: |
+          brew install coreutils
+          F=.build/ffmpeg/bin/ffmpeg
+          $F -hide_banner -version | head -1
+          $F -loglevel error -y -f lavfi -i testsrc=s=640x360:r=25:d=40 \
+            -f lavfi -i sine=f=220:d=40 -shortest -c:v mpeg4 -q:v 5 -c:a aac ep.mp4
+      - name: Finding camera switches, twenty times each way
+        run: |
+          F=.build/ffmpeg/bin/ffmpeg
+          run() {
+            label=$1; shift
+            hung=0
+            for i in $(seq 1 20); do
+              set +e
+              gtimeout 30 "$F" -hide_banner -loglevel verbose "$@" >"out-$label.log" 2>&1
+              code=$?
+              set -e
+              if [ "$code" != 0 ]; then
+                hung=$((hung + 1))
+                echo "::warning::$label, run $i, ended with $code"
+                if [ "$code" = 124 ]; then
+                  echo "---- the end of what it said, $label"
+                  tail -25 "out-$label.log"
+                fi
+              fi
+            done
+            echo "$label: $hung of 20 did not finish cleanly"
+          }
+          select="scale=256:-2,select='gt(scene,0.3)',showinfo"
+          run hw-to  -hwaccel auto -ss 9.5 -to 30.5 -i ep.mp4 -vf "$select" -an -fps_mode passthrough -f null -
+          run sw-to               -ss 9.5 -to 30.5 -i ep.mp4 -vf "$select" -an -fps_mode passthrough -f null -
+          run hw     -hwaccel auto -ss 9.5          -i ep.mp4 -vf "$select" -an -fps_mode passthrough -f null -
+          run hw-vt  -hwaccel videotoolbox -ss 9.5 -to 30.5 -i ep.mp4 -vf "$select" -an -fps_mode passthrough -f null -
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: The engine tests, each named as it starts
+        run: |
+          export PATH="$PWD/.build/ffmpeg/bin:$PATH"
+          go test ./engine/ -count=1 -v -timeout 8m 2>&1 | tee engine.log | grep -E '^(=== RUN|--- FAIL|FAIL|ok|panic: test timed out)' | tail -60 || true
+          grep -A3 'panic: test timed out' engine.log || true
