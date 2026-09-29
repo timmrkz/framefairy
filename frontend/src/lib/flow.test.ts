@@ -13,6 +13,8 @@ import {
   nextWindow,
   timesIn,
   followingWindow,
+  gridStep,
+  onGrid,
   pictureIsStale,
   pieceAt,
   insideClip,
@@ -658,5 +660,35 @@ describe("after a search the window walks on as long as it was left", () => {
 
   test("a short episode searched whole is searched whole again", () => {
     expect(followingWindow(six, six, six, 20)).toEqual({ from: 0, to: six });
+  });
+});
+
+describe("every window lands on the range picker's step", () => {
+  const hours = 14423;
+
+  test("the step is the smallest round one still eight pixels wide", () => {
+    expect(gridStep(hours, 915)).toBe(300);
+    expect(gridStep(hours, 1370)).toBe(120);
+    expect(gridStep(360, 915)).toBe(5);
+  });
+
+  test("the app's own window of 30:02 is 30:00 on the step", () => {
+    expect(onGrid({ from: 0, to: 1803 }, 1803, hours, 300, 20)).toEqual({ from: 0, to: 1800 });
+  });
+
+  test("a window after one that ended off the step starts on it", () => {
+    expect(onGrid({ from: 4202, to: 6004 }, 1802, hours, 300, 20)).toEqual({ from: 4200, to: 6000 });
+  });
+
+  test("the last one takes in the scrap after it", () => {
+    expect(onGrid({ from: 12600, to: 14400 }, 1800, hours, 300, 20)).toEqual({ from: 12600, to: hours });
+  });
+
+  test("never shorter than a step", () => {
+    expect(onGrid({ from: 60, to: 62 }, 2, 360, 5, 0)).toEqual({ from: 60, to: 65 });
+  });
+
+  test("with no step it is as it was", () => {
+    expect(onGrid({ from: 7, to: 70 }, 63, 360, 0, 20)).toEqual({ from: 7, to: 70 });
   });
 });

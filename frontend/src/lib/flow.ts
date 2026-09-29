@@ -144,6 +144,32 @@ export function nextWindow(passes: Passes, duration: number, size: number, least
   return { from: room.from, to: room.from + (span > size * 1.5 ? size : span) };
 }
 
+// The round step a window's edges land on, on a range picker width pixels
+// wide: the smallest round step still about eight pixels wide, so a window
+// is something that can be said out loud. Five minutes for four hours on
+// a narrow range picker, five seconds for six minutes. A drag lands on it,
+// and so does every window the app places, so the two never disagree by
+// the few seconds that show as a pixel.
+export function gridStep(duration: number, width: number): number {
+  const steps = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
+  const least = (duration / Math.max(width, 1)) * 8;
+  return steps.find((step) => step >= least) ?? 1800;
+}
+
+// A window on the step: its start, and its length, which is never less
+// than one step. The ends of the episode win over the step, and an end
+// that would leave a scrap too short for a clip, least, or shorter than a
+// step, takes it in rather than leaving it behind. With no step, the
+// range picker not measured yet, the window is as it was.
+export function onGrid(w: Span, length: number, duration: number, step: number, least = 0): Span {
+  if (step <= 0) return { from: w.from, to: Math.min(w.from + length, duration) };
+  const from = Math.min(Math.max(Math.round(w.from / step) * step, 0), duration);
+  const size = Math.max(Math.round(length / step) * step, step);
+  let to = Math.min(from + size, duration);
+  if (duration - to < Math.max(least, step)) to = duration;
+  return { from, to };
+}
+
 // Where the window goes after a search: on from where the search ended,
 // as long as the person left the window, so a window made a minute long
 // stays a minute long and the episode is walked in the steps they chose.

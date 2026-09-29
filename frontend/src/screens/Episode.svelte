@@ -47,6 +47,7 @@
     nextWindow,
     timesIn,
     followingWindow,
+    onGrid,
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
@@ -717,12 +718,37 @@
   // followingWindow.
   function moveWindowOn() {
     const next = nextWindow(coverage.passes, duration, windowSize, min);
-    from = next.from;
-    to = next.to;
-    length = windowSize;
+    placeWindow(next, windowSize);
+  }
+
+  // A window the app places lands on the range picker's step, the one a
+  // drag lands on, so its edges lie on the ruler's lines like a window
+  // placed by hand, and the length it carries on with is a whole number
+  // of steps. The episode's own windows are an even share of it, 30:02 of
+  // four hours, and a window that length drifted a few seconds off the
+  // lines with every search, which shows as a pixel. See onGrid.
+  function placeWindow(w: { from: number; to: number }, size: number) {
+    unplaced = grid <= 0;
+    const placed = onGrid(w, w.to - w.from, duration, grid, min);
+    from = placed.from;
+    to = placed.to;
+    length = grid > 0 ? Math.max(Math.round(size / grid) * grid, grid) : size;
     keepWindow();
     rememberWindow();
   }
+
+  // The step of the range picker, see gridStep, 0 until it is measured.
+  // A window the app placed before then lands on it once it is known, the
+  // first time only: a window placed by hand, or kept from before, stays
+  // where it was put.
+  let grid = $state(0);
+  let unplaced = false;
+  $effect(() => {
+    if (grid > 0 && unplaced && !busy) {
+      unplaced = false;
+      placeWindow({ from, to }, windowSize);
+    }
+  });
 
   // How long the window was made, by the app or by a hand on its marks.
   // A window cut short at the end of the episode is still this long when
@@ -1847,11 +1873,8 @@
       // followingWindow. The search's own window, which the Go side may
       // have started by itself, not whatever the workspace held.
       const searchedTo = ended.to && ended.to > 0 ? ended.to : duration;
-      const next = followingWindow(searchedTo, length || searchedTo - (ended.from ?? 0), duration, min);
-      from = next.from;
-      to = next.to;
-      keepWindow();
-      rememberWindow();
+      const size = length || searchedTo - (ended.from ?? 0);
+      placeWindow(followingWindow(searchedTo, size, duration, min), size);
       // A clip was shown while the search ran, and whatever has been
       // picked since is where the hand is now. Otherwise the search's
       // first clip, the way it always was.
@@ -2039,6 +2062,7 @@
     holding={stoppedAt !== null}
     onmove={moveWindow}
     onreset={moveWindowOn}
+    bind:grid
   />
 {/snippet}
 

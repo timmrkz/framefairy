@@ -17,7 +17,7 @@
   // anything a person has to look after.
   import { onMount } from "svelte";
   import { clock } from "../lib/api";
-  import { gapsIn, type Parts } from "../lib/flow";
+  import { gapsIn, gridStep, type Parts } from "../lib/flow";
   import { hoverClip } from "../lib/hover";
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
@@ -42,6 +42,7 @@
     holding = false,
     onmove,
     onreset,
+    grid = $bindable(0),
   }: {
     duration: number;
     // What of the episode is heard, in parts, the part being heard among
@@ -79,6 +80,9 @@
     // A double-click on the outline, which puts the window back where the
     // app would have it.
     onreset?: () => void;
+    // The round step an edge lands on, see gridStep, 0 until the track has
+    // been measured.
+    grid?: number;
   } = $props();
 
   let track: HTMLDivElement;
@@ -196,14 +200,14 @@
   // wide on the track, five minutes on a four hour episode and five seconds
   // on a six minute one. The ends of the episode win over it. The window
   // snapped this way before it was taken away, and Tim missed it.
-  const grid = $derived.by(() => {
-    const steps = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
-    const least = (duration / Math.max(width, 1)) * 8;
-    return steps.find((step) => step >= least) ?? 1800;
+  // The workspace places its own windows on the same step, see onGrid in
+  // lib/flow.ts, so it is handed back to it.
+  $effect(() => {
+    grid = width > 0 && duration > 0 ? gridStep(duration, width) : 0;
   });
 
   function round(t: number): number {
-    return Math.round(t / grid) * grid;
+    return grid > 0 ? Math.round(t / grid) * grid : Math.round(t);
   }
 
   // Dragging the window at rest by its outline: a bar moves all of it, a
