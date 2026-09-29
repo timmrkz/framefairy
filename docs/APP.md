@@ -290,7 +290,11 @@ marked by its frame and the wash in it, and nothing around it is darkened.
 The range picker used to darken everything outside the window while a
 search ran, so it changed colour as searches came and went and never
 matched the clip timeline. The video preview still darkens what lies
-outside the crop, because that part is cut from the short.
+outside the crop while the playhead is in a clip, because that part is cut
+from the short. Anywhere else, in a cut or between clips, nothing is laid
+over the video preview at all. The crop used to stay there as a grey
+dashed frame with the shade round it, which laid a short over a part of
+the episode that is in none.
 
 All of that is one expression in the stylesheet, worked out from the size
 of the app itself and the tokens in `app.css`. Two things it cannot know
@@ -414,7 +418,8 @@ place.
   captions back** appears under it once it is not the standard 300. A click
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
-  off. The new place applies to every piece of the clip filmed from the same
+  off. The frame is there while the playhead is in the clip, and only
+  then. The new place applies to every piece of the clip filmed from the same
   camera angle. **Automatic crop** appears once a crop was moved and brings
   back the automatic placement for that angle, and **Put the crop back**
   takes that click back again. A click on the frame without dragging plays
