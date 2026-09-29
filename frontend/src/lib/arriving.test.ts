@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Job } from "./api";
-import { arriving, OnTheWay, type Arriving } from "./arriving";
+import { arriving, Carrier, OnTheWay, type Arriving } from "./arriving";
 import { arrivalLine } from "./steps";
 
 function job(over: Partial<Job>): Job {
@@ -113,5 +113,32 @@ describe("a card is held from the moment its clip is written until the list has 
     way.cards([card("s/1")], 3, 2);
     way.cards([], 3, 2);
     expect(way.cards([card("s/1")], 3, 2).map((a) => a.held)).toEqual([undefined]);
+  });
+});
+
+describe("one card carries the search's work, from the first frame to the last", () => {
+  const card = (key: string, start: number, over: Partial<Arriving> & { held?: boolean } = {}) => ({
+    key, job: "s", n: Number(key.split("/")[1]), start, end: start + 25, title: "", what: "Fitting to the length", left: "", fraction: -1, ...over,
+  });
+
+  test("the last of the search's cards in the list, and only that one", () => {
+    const carrier = new Carrier();
+    const cards = [card("s/1", 100), card("s/3", 900), card("s/2", 400), card("h/1", 2000, { job: "h" })];
+    expect(carrier.pick(cards, "s")).toBe("s/3");
+  });
+
+  test("it keeps it while it is on the way, and passes it on once its clip is written", () => {
+    const carrier = new Carrier();
+    carrier.pick([card("s/1", 100), card("s/2", 400)], "s");
+    // A card that lands later in the list does not take it away.
+    expect(carrier.pick([card("s/1", 100), card("s/2", 400), card("s/3", 900)], "s")).toBe("s/2");
+    // Written, and held until the list reads it: its work is done.
+    expect(carrier.pick([card("s/1", 100), card("s/2", 400, { held: true }), card("s/3", 900)], "s")).toBe("s/3");
+    expect(carrier.pick([card("s/1", 100)], "s")).toBe("s/1");
+    expect(carrier.pick([], "s")).toBe("");
+  });
+
+  test("a card that stopped carries nothing", () => {
+    expect(new Carrier().pick([card("s/1", 100), card("s/2", 400, { stopped: true })], "s")).toBe("s/1");
   });
 });

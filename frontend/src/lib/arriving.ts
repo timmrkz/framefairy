@@ -134,3 +134,25 @@ export class OnTheWay {
     return [...this.held.values()].some((a) => a.after >= next);
   }
 }
+
+// Which one card of a search wears the search's own work once no row is
+// left to say it: how far the whole search has come and how long it has
+// left. One card, never all of them: every card of the search wore it
+// once, three fills and three "About 0:10 left" side by side for one
+// piece of work. It is the last of the search's cards in the list, the
+// one nearest where the row that said it stood, and it keeps it for as
+// long as it is on the way, so the work does not jump from card to card
+// as others land. A card whose clip is written has done its work and
+// passes it on.
+export class Carrier {
+  private key = "";
+
+  pick(cards: OnTheWayCard[], job: string): string {
+    const own = cards.filter((a) => a.job === job && !a.stopped && !a.held);
+    if (own.some((a) => a.key === this.key)) return this.key;
+    let last: OnTheWayCard | undefined;
+    for (const a of own) if (!last || a.start >= last.start) last = a;
+    this.key = last?.key ?? "";
+    return this.key;
+  }
+}
