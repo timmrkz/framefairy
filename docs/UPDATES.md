@@ -373,7 +373,11 @@ with its newest build, so one fetch is the whole check:
 
 - **The workflow keeps it true.** A push to a pull request builds it and
   refreshes its entry. A pull request that is merged or closed has its
-  entry taken away, and its builds go an hour later.
+  entry taken away, and its builds go an hour later. Every writing of the
+  list also takes away the entry of any pull request that is not open,
+  because GitHub runs nothing for a pull request that no longer merges
+  into main: #24 was closed in that state, the close was never seen, and
+  the app went on offering it.
 - **Nothing in it is trusted.** Anybody on the way could change the file.
   What makes a build safe is the signature over the zip's checksum, made
   with the development key and checked against the public half built

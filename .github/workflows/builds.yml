@@ -22,7 +22,9 @@
 # 3. list, for all channels at once, writes channels.json again from every
 #    entry. Two of them never run together, and one that is waiting is
 #    replaced by the next, which is safe, because each writes the list from
-#    what is there when it runs.
+#    what is there when it runs. It also takes away the entry of any pull
+#    request that is not open any more, which the close did not take away
+#    itself, see below.
 #
 # Only branches of this repository are built. A build runs whatever the
 # pull request holds, and one from a fork gets no secrets anyway. Until the
@@ -258,6 +260,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      pull-requests: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -277,6 +280,23 @@ jobs:
         run: |
           mkdir -p entries
           gh release download dev --pattern 'channel-*.json' --dir entries || true
+          # The entry of a pull request that is not open any more goes. The
+          # close takes it away by itself, but GitHub runs nothing for a pull
+          # request that no longer merges into main, so one closed in that
+          # state kept its entry for good, and the app went on offering it:
+          # #24. Only when the list of open pull requests could be read, or
+          # a failure to read it would take every entry away.
+          if open=$(gh pr list --state open --limit 1000 --json number --jq '.[].number'); then
+            for entry in entries/channel-pr-*.json; do
+              [ -e "$entry" ] || continue
+              number=${entry#entries/channel-pr-}
+              number=${number%.json}
+              printf '%s\n' "$open" | grep -qxF "$number" && continue
+              echo "taking away the entry of pull request $number, which is not open"
+              gh release delete-asset dev "channel-pr-$number.json" -y || true
+              rm -f "$entry"
+            done
+          fi
           set -- entries/*.json
           [ -e "$1" ] || set --
           go run ./cmd/framefairy-release list -out channels.json "$@"
