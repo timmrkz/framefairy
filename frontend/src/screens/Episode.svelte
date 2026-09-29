@@ -755,20 +755,12 @@
   // it starts over, see followingWindow.
   let length = $state(0);
 
-  // The window dragged by its outline on the range picker, moved whole or
-  // by one edge. An edge stops where the window would hold too few clips
-  // or more than the model reads, the edge that is not held staying where
-  // it is. When the hand lets go it is put inside what a search can do
-  // with it there.
+  // The window dragged by its marks on the range picker, moved whole or by
+  // one edge. An edge stops where the window would hold too few clips or
+  // more than the model reads, which the range picker works out and says,
+  // see least and most on it. When the hand lets go it is put inside what
+  // a search can do with it there.
   function moveWindow(start: number, end: number, done: boolean) {
-    const moved = Math.abs(end - start - (to - from)) > 0.001;
-    if (moved && Math.abs(end - to) < 0.001) {
-      start = Math.min(Math.max(start, end - reachAnywhere), end - leastLong);
-      start = Math.max(start, 0);
-    } else if (moved) {
-      end = Math.max(Math.min(end, start + reachAnywhere), start + leastLong);
-      end = Math.min(end, duration);
-    }
     from = start;
     to = end;
     if (done) {
@@ -2063,6 +2055,14 @@
     onmove={moveWindow}
     onreset={moveWindowOn}
     bind:grid
+    least={leastLong}
+    leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
+    most={reachAnywhere}
+    reachSays={roomView?.by === "budget"
+      ? "all the budget pays for"
+      : roomView?.by === "memory"
+        ? "all this computer's memory holds"
+        : "all the model reads at once"}
   />
 {/snippet}
 

@@ -43,6 +43,10 @@
     onmove,
     onreset,
     grid = $bindable(0),
+    least = 0,
+    leastSays = "",
+    most = Infinity,
+    reachSays = "",
   }: {
     duration: number;
     // What of the episode is heard, in parts, the part being heard among
@@ -83,6 +87,13 @@
     // The round step an edge lands on, see gridStep, 0 until the track has
     // been measured.
     grid?: number;
+    // The shortest the window may be, with room for the clips asked for,
+    // and the longest, as much as the model reads at once, each with what
+    // it is in words, said on the handle that runs into it.
+    least?: number;
+    leastSays?: string;
+    most?: number;
+    reachSays?: string;
   } = $props();
 
   let track: HTMLDivElement;
@@ -227,8 +238,8 @@
     const was = { from, to };
     const place = (clientX: number): [number, number] => {
       const by = (clientX - startX) / Math.max(scale, 1e-9);
-      if (what === "from") return [Math.min(Math.max(round(was.from + by), 0), was.to), was.to];
-      if (what === "to") return [was.from, Math.max(Math.min(round(was.to + by), duration), was.from)];
+      if (what === "from") return [startAt(was.to, Math.max(round(was.from + by), 0)), was.to];
+      if (what === "to") return [was.from, endAt(was.from, Math.min(round(was.to + by), duration))];
       // Moved whole, the start lands on the step and the window keeps
       // its length.
       const size = was.to - was.from;
@@ -236,17 +247,81 @@
       return [start, start + size];
     };
     moving = what;
-    const move = (e: PointerEvent) => onmove?.(...place(e.clientX), false);
+    const move = (e: PointerEvent) => {
+      const was = held;
+      held = "";
+      const placed = place(e.clientX);
+      if (held && held !== was) knocked();
+      onmove?.(...placed, false);
+    };
     const up = (e: PointerEvent) => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       moving = "";
       onmove?.(...place(e.clientX), true);
+      held = "";
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  // The shortest a window may be, never longer than the episode, and the
+  // furthest an end may go from its start, as far as the model reads.
+  const shortest = $derived(Math.min(Math.max(least, 0), duration));
+
+  // What holds a handle back while it is dragged, so the marks can say so.
+  let held = $state<"" | "least" | "reach">("");
+
+  // An edge held back stops exactly at its limit. The limit is a wall, and
+  // a wall wins over the step: stopping at the step before it would give
+  // away room the model has, or leave too little for the clips.
+  function endAt(start: number, want: number): number {
+    const lo = Math.min(start + shortest, duration);
+    const hi = Math.min(start + most, duration);
+    if (want > hi) {
+      held = "reach";
+      return hi;
+    }
+    if (want < lo) {
+      held = "least";
+      return lo;
+    }
+    return want;
+  }
+
+  function startAt(end: number, want: number): number {
+    const lo = Math.max(end - most, 0);
+    const hi = Math.max(end - shortest, 0);
+    if (want < lo) {
+      held = "reach";
+      return lo;
+    }
+    if (want > hi) {
+      held = "least";
+      return hi;
+    }
+    return want;
+  }
+
+  // The moment a handle runs into a limit, the marks flash twice in the
+  // colour of a warning, so a hand that keeps pulling knows it is the
+  // limit and not the app that stopped. Once each time it runs in, not for
+  // as long as it is held there. The colour changes outright, on and off,
+  // rather than fading, so no colour is ever mixed half way between the
+  // red and the accent. The window flashed this way before it was taken
+  // away, and Tim missed it.
+  let flashing = $state(false);
+  let flashes: ReturnType<typeof setTimeout>[] = [];
+  function knocked() {
+    flashes.forEach(clearTimeout);
+    flashing = true;
+    flashes = [
+      setTimeout(() => (flashing = false), 90),
+      setTimeout(() => (flashing = true), 170),
+      setTimeout(() => (flashing = false), 260),
+    ];
   }
 
   function resetWindow(event: MouseEvent) {
@@ -370,7 +445,8 @@
       The whole episode, with its clips as marks. Press or drag anywhere to move the playhead, and
       press a mark to work on its clip. The marks at the four corners are where New looks next: drag
       a bar between them to look somewhere else, drag a triangle to make it shorter or longer, and
-      double-click to put it back. While clips are being found, the part being searched is framed, and the dark part of it
+      double-click to put it back. It is at least as long as its clips need and at most as long as
+      the model reads at once, and flashes red when a triangle runs into either. While clips are being found, the part being searched is framed, and the dark part of it
       is not read yet.
     </Info>
   </span>
@@ -403,6 +479,7 @@
   <div
     class="aim"
     class:moving={moving !== ""}
+    class:flashing
     style="left: {frame.left}px; width: {frame.width}px"
   >
     {#each ["top", "bottom"] as side (side)}
@@ -426,7 +503,8 @@
           aria-valuenow={edge === "from" ? from : to}
           title="{edge === 'from' ? 'Where the window starts' : 'Where the window ends'}, {clock(
             edge === 'from' ? from : to,
-          )}. Drag to make it shorter or longer, double-click to put it back"
+          )}. Drag to make it shorter or longer, double-click to put it back. At least {leastSays ||
+            'room for a clip'}, at most {reachSays || 'all the model reads at once'}"
           onpointerdown={(e) => grabWindow(edge, e)}
           ondblclick={resetWindow}
         ></div>
@@ -676,9 +754,16 @@
     --aim: var(--accent);
   }
 
-  .aim:has(.bar:hover, .tip:hover),
+  /* Under :where, so being under the pointer weighs no more than being
+     held, and the flash after it wins over both: the hand is always on a
+     triangle when it runs into a limit. */
+  .aim:where(:has(.bar:hover, .tip:hover)),
   .aim.moving {
     --aim: var(--accent-hi);
+  }
+
+  .aim.flashing {
+    --aim: var(--err);
   }
 
   .bar {

@@ -829,8 +829,12 @@ place.
       seconds off the ruler's lines with every search. The last window of
       the episode takes in a scrap shorter than a step rather than leaving
       it behind. A handle
-      stops where the window would hold too few clips or more than the
-      model reads. Under the pointer the whole mark lights up, a bar shows
+      stops where the window would hold too few clips, room for the
+      clips typed into Target at the Shortest length or for one, or more
+      than the model reads at once, and the marks flash twice in the
+      colour of a warning as it runs in, so a hand that keeps pulling
+      knows it is the limit and not the app that stopped. The triangles'
+      titles say both limits in words. Under the pointer the whole mark lights up, a bar shows
       the hand that grabs and a triangle the arrows left and right. The
       triangles lie over the playhead, which a search leaves on the
       window's start, and the bars under it. The title of New and the
