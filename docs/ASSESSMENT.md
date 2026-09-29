@@ -228,7 +228,9 @@ facade the app goes around, and three files too big to hold in one's head.
 29. **Settings has a Training data section** (`Settings.svelte:812-834`,
     bindings at `main.go:1571-1609`), while `CLAUDE.md` says no training
     screens in the app and everything about the records in
-    `framefairy-train`. **For Tim.**
+    `framefairy-train`. **Decided:** it stays for now, as not important
+    yet. It comes up again with 5.7 in GUI-PLAN.md, whether customer
+    builds record training data at all.
 30. **Sizes worked out in JavaScript.** `RangeWindow.svelte:114` measures its
     width and places everything in pixels, to land on whole pixels.
     `Player.svelte:702` does the same for the caption scale. CSS `round()`
