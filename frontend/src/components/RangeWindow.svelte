@@ -88,6 +88,23 @@
   }
 
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
+
+  // Where the window is drawn, beside the track rather than in it, in the
+  // box the track and its border fill. An edge on a minute is drawn on
+  // that minute's line: the line is the pixel after the moment's own, the
+  // track's border being the first, so the window reaches over it at its
+  // end and starts on it at its start, and both edges sit on their lines
+  // alike. It was one short at the end, so the end missed its line and
+  // the start did not. A window that starts or ends with the episode
+  // reaches the outside of the border and takes its round corner, so it
+  // lies on the range picker's own edge rather than inside it.
+  const frame = $derived.by(() => {
+    const first = from <= 0.5;
+    const last = to >= duration - 0.5;
+    const left = first ? 0 : at(from) + 1;
+    const right = last ? width + 2 : at(to) + 2;
+    return { left, width: Math.max(right - left, 0), first, last };
+  });
   // What is not heard yet, drawn only while something hears the episode, a
   // search or a clip made by hand, or while a search stands stopped. At rest
   // what has been heard is the engine's to know, like what has been
@@ -302,11 +319,6 @@
       ></div>
     </div>
   {/each}
-  {#if shown}
-    <!-- Only looked at, never taken hold of: which part is searched is the
-         app's to say, and a press on it is a press on the track. -->
-    <div class="window frame" class:waiting={locked} class:whole style="left: {at(from)}px; width: {at(to) - at(from)}px"></div>
-  {/if}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
@@ -350,6 +362,22 @@
     </Info>
   </span>
 </div>
+{#if shown}
+  <!-- Only looked at, never taken hold of: which part is searched is the
+       app's to say, and a press on it is a press on the track. Drawn beside
+       the track rather than in it, over its border, because the track
+       clips what is inside it to its round corners and cut into the
+       window and its breath. -->
+  <div
+    class="window frame"
+    class:waiting={locked}
+    class:locked
+    class:whole
+    class:first={frame.first}
+    class:last={frame.last}
+    style="left: {frame.left}px; width: {frame.width}px"
+  ></div>
+{/if}
 {#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
        the track. A bar just outside the top border and one just outside
@@ -362,7 +390,7 @@
   <div
     class="aim"
     class:moving={moving !== ""}
-    style="left: {at(from) + 1}px; width: {at(to) - at(from)}px"
+    style="left: {frame.left}px; width: {frame.width}px"
   >
     {#each ["top", "bottom"] as side (side)}
       <div
@@ -598,10 +626,21 @@
      is: the clips in it are on their way. Stripes were tried and they
      tile badly, the diagonal starts over at the edge of the repeat, which
      shows as a seam down the middle of the window. */
-  .track.locked .window,
-  .track.locked .window.whole {
+  .window.locked,
+  .window.locked.whole {
     background-color: var(--accent-wash);
     border-color: var(--accent);
+  }
+
+  /* On the range picker's own edge, its round corner. */
+  .window.first {
+    border-top-left-radius: var(--radius-m);
+    border-bottom-left-radius: var(--radius-m);
+  }
+
+  .window.last {
+    border-top-right-radius: var(--radius-m);
+    border-bottom-right-radius: var(--radius-m);
   }
 
   /* The window at rest, marked at its corners. A bar three pixels thick
