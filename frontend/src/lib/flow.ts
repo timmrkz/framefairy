@@ -50,6 +50,18 @@ export function pictureIsStale(s: PictureState): boolean {
   return Math.abs(s.shows - s.at) > 0.5;
 }
 
+// Where the playhead goes while the video plays, from where it stands and
+// what the video's clock says now. On with the clock, never back by a
+// little: a clock that steps back while playing is the clock being put
+// right, not the picture going back, see Player.svelte. A step back of half
+// a second or more is the video really being somewhere else, the same half
+// second pictureIsStale takes for the same place, and is followed, so a
+// playhead can never be held away from a picture that moved.
+export function onward(at: number, clock: number): number {
+  if (clock >= at || at - clock >= 0.5) return clock;
+  return at;
+}
+
 // Where the frame a moment falls in starts: the frame a video element
 // shows when it is sent there, the last one that starts at or before it.
 // The still read from the file while the video preview catches up has to

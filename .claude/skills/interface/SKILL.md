@@ -60,6 +60,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?lagclips` | every clip list comes back 300 ms late, the way a busy machine answers, so a card on its way has to hold its place until the list has the clip it became |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
+| `?webkitclock` | the video's clock while it plays is put back by 0.15 s now and then, the way WebKit's is corrected by reports from the player underneath. Chromium's clock only goes forward, so this is the only way to see what the app does with a clock that steps back |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
@@ -460,6 +461,19 @@ bugs in one afternoon were that one fact read exactly:
   after picking a clip walked the wrong one and jumped out of the clip
 - playing seeked before it played even with nothing to move, and a seek is
   the one thing that can refuse a play
+
+And while it plays, the clock is not the picture either. WebKit works a
+playing video's time out from the wall clock between reports from the
+player underneath, `TimeProgressEstimator` in `MediaPlayerPrivateRemote.cpp`,
+and puts it back whenever a report says the picture is behind, which is
+most of all while playing starts. The playhead followed it back and forth,
+and so did the lit word, the caption and the crop, and Tim saw the video
+preview jump back and forth before it played. The playhead only goes
+forward while a play runs, `onward` in `lib/flow.ts`, and `?webkitclock`
+gives the harness that clock. The same goes for a seek on its way: the
+element answers with where it was sent, while the picture is still the
+frame it had. Taken as the picture, every jump over a cut asked the engine
+for a still in the middle of playing.
 
 So never compare a playhead to a moment. Compare it to a frame, or better,
 do not compare it at all: **decide by the state the playhead is in, not by

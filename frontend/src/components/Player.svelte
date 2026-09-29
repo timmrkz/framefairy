@@ -20,6 +20,7 @@
   import {
     frameStart,
     insideClip,
+    onward,
     pictureIsStale,
     shouldChase,
     pieceAt as pieceIndex,
@@ -312,12 +313,17 @@
   function tick() {
     frame = 0;
     if (!video) return;
+    // Where the video is now. A jump this loop made has just landed when it
+    // is no longer seeking, and then the playhead goes wherever it went,
+    // back to the start of a loop too.
+    let landed = false;
     if (jumping) {
       if (video.seeking) {
         if (!video.paused) frame = requestAnimationFrame(tick);
         return;
       }
       jumping = false;
+      landed = true;
     }
     if (clip && playsClip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
@@ -345,7 +351,17 @@
         return;
       }
     }
-    time = video.currentTime;
+    // Otherwise the playhead only goes forward while the video plays. The
+    // clock WebKit hands out while playing is worked out from the wall clock
+    // between the reports of the player underneath, and it is set back
+    // whenever a report says the picture is behind, which it is while
+    // playing starts and whenever the file is slow to read. Followed as it
+    // is, the playhead, the lit word, the caption and the crop went back
+    // and forth over the picture for as long as playing took to settle.
+    time = landed || video.seeking ? video.currentTime : onward(time, video.currentTime);
+    // Playing, the picture is where the playhead is, once no seek is on its
+    // way, so no still is ever read from the file for it.
+    if (!video.seeking) shows = time;
     if (!video.paused) frame = requestAnimationFrame(tick);
   }
 
@@ -725,7 +741,13 @@
         // following. One that has nothing reports zero, and that would
         // throw away the playhead the moment it is put somewhere.
         if (video.readyState === 0) return;
-        shows = video.currentTime;
+        // While a seek is on its way the element answers with where it was
+        // sent, and the picture is still the frame it had. Taken as the
+        // picture, every jump over a cut read as a picture somewhere else,
+        // and a still was read from the file in the middle of playing. A
+        // jump the playing clip makes is the frame loop's to the end, see
+        // onseeked.
+        if (!video.seeking && !jumping) shows = video.currentTime;
         if (video.paused) time = video.currentTime;
       }}
       onloadedmetadata={() => {
@@ -740,7 +762,10 @@
       }}
       onseeked={() => {
         ready = true;
-        shows = video.currentTime;
+        // A jump the playing clip made by itself moves the playhead and the
+        // picture together, in the frame loop. Moved here, the picture was
+        // a frame ahead of the playhead and read as stale for that frame.
+        if (!jumping) shows = video.currentTime;
         wanted = -1;
       }}
       onemptied={() => {
