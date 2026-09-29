@@ -50,8 +50,8 @@ func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 		t.Errorf("settings came back as %+v", again.Settings())
 	}
 	episodes := again.Episodes()
-	if len(episodes) != 2 || episodes[0] != second || episodes[1] != first {
-		t.Errorf("episodes %v, want them sorted and without the repeat", episodes)
+	if len(episodes) != 2 || episodes[0] != first || episodes[1] != second {
+		t.Errorf("episodes %v, want them in the order added and without the repeat", episodes)
 	}
 	// What the settings become for the engine.
 	// A target typed is the search's to take, for its window, see

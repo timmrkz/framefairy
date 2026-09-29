@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -204,6 +203,12 @@ func (s *store) Episodes() []string {
 // AddEpisodes puts files in the library, leaving out what is already there,
 // and gives back the ones it added.
 //
+// The library keeps the order the episodes were added in, the newest last.
+// It was sorted by path, which lost that order for good: start, youtube and
+// end, added in that order, came back as end, start and youtube. How the
+// list is shown is the sidebar's choice, by name or by when an episode was
+// added, and only the order kept here can say the second.
+//
 // Everything about an episode lives in a folder named after it without its
 // extension, so ep.mp4 and ep.mov side by side would share one: the same
 // transcript, the same clip sets, the same rendered names. The second of
@@ -233,7 +238,6 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		taken[engine.WorkDir(abs)] = abs
 		added = append(added, abs)
 	}
-	sort.Strings(s.episodes)
 	if err := s.save("library.json", s.episodes); err != nil {
 		return nil, err
 	}
