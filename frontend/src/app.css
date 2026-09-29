@@ -4,6 +4,13 @@
   --ink-2: #262930;
   --ink-3: #30343c;
   --line: #3a3f48;
+  /* The floor of the two tracks, the range picker and the clip timeline,
+     which are one episode seen from two distances and so one colour. It
+     is a step below the workspace rather than above it, a well the
+     episode lies in, which is how the editors people know draw a
+     timeline: darker than the panels around it, and never black, so the
+     waveform and the times still stand on a surface. */
+  --well: #131417;
   --text: #ebe8e3;
   --muted: #9a9ea8;
   /* A label that belongs in the background: the times on the range picker

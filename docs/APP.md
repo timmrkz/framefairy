@@ -282,6 +282,16 @@ the height left over goes to the two tracks: the clip timeline grows and the
 range picker stays exactly half of it, so nothing is left empty at the foot
 of the app.
 
+The two tracks are one episode seen from two distances, so they lie on one
+floor, `--well`, a step darker than the workspace around them and never
+black, the way the editors people know draw a timeline. What is chosen on
+them, the window on the range picker and the clip on the clip timeline, is
+marked by its frame and the wash in it, and nothing around it is darkened.
+The range picker used to darken everything outside the window while a
+search ran, so it changed colour as searches came and went and never
+matched the clip timeline. The video preview still darkens what lies
+outside the crop, because that part is cut from the short.
+
 All of that is one expression in the stylesheet, worked out from the size
 of the app itself and the tokens in `app.css`. Two things it cannot know
 come in as custom properties, the shape of the episode and the height of an
@@ -413,8 +423,8 @@ place.
   the range picker under it, every clip found, in time order, with its start
   and length. A green dot marks a rendered clip. Click one to select it,
   which also puts the clip timeline back on it.
-    - The clips lie on a surface of their own, the same grey as the clip
-      timeline, parted from each other by lighter lines than the ones that
+    - The clips lie on a surface of their own, the grey of every row in
+      the app, parted from each other by lighter lines than the ones that
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the Go side asks for its first search, of the first
