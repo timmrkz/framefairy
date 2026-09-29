@@ -67,8 +67,15 @@ message box, and choose **Add cloud environment**:
 | Setup script | the full content of [`scripts/cloud-setup.sh`](../scripts/cloud-setup.sh) |
 
 The setup script installs Go 1.27, ffmpeg and the libraries the app needs to
-compile. It runs once and its result is cached for about a week. When the Go
-version in the script changes, paste the new version and update the variable.
+compile. It also installs the engineering skills from two plugins, Go skills
+from `samber/cc-skills-golang` and general ones from `addyosmani/agent-skills`,
+because plugins added on claude.ai do not reach cloud sessions. Each is pinned
+to a commit in `SKILL_SOURCES` at the top of the script, so a new version is
+read before Claude follows it. Claude Code gives the list of skills about 1%
+of its context by default, which is not enough for 71 more, so
+`.claude/settings.json` raises it to 80000 characters. The script runs once and its result is cached
+for about a week. Whenever the script changes, paste the new version, and when
+the Go version in it changes, update the variable too.
 
 The environment variable makes every `go` command in a session use Go 1.27,
 whatever version the machine came with.

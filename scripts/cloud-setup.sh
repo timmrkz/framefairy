@@ -7,11 +7,22 @@
 # - Go 1.27, downloaded from the Go module proxy, so no Go needs to be there
 # - ffmpeg with libass and libx264, for the tests that render
 # - GTK 4 and WebKitGTK 6, for compiling the app
+# - the engineering skills from the two plugins Tim added on claude.ai, which
+#   do not reach cloud sessions by themselves, as skills Claude loads
 #
 # A failed step never stops the session. Its log stays in /tmp, and running
 # this script again inside a session finishes the job.
 
 GO_VERSION=1.27.1
+
+# Each line is a repository on GitHub and the commit its skills are taken
+# from. A skill is instructions Claude follows with push rights to this
+# repository, so a new version comes in by changing the commit here, where it
+# can be read first, and never by itself.
+SKILL_SOURCES=(
+	"samber/cc-skills-golang 19a0626ae8565d27a7b7bdf59d8d99d94d7e284c"
+	"addyosmani/agent-skills 2686b620fc1fed2e8f60c704839c766b8594c6b6"
+)
 
 log() { echo "[framefairy setup] $*"; }
 
@@ -48,10 +59,59 @@ install_packages() {
 		ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev || return 1
 }
 
+# Every skill goes straight into ~/.claude/skills, the one level Claude Code
+# looks in. Some skills link to a folder of shared notes at the root of their
+# repository, as ../../references, so that folder goes to ~/.claude/references,
+# where the same link finds it. What this script put there is kept in a list,
+# so a skill that a newer commit no longer has is removed rather than left
+# behind, and skills from anywhere else are never touched.
+install_skills() {
+	local base="${HOME:-/root}/.claude"
+	local list="$base/skills/.framefairy-skills"
+	mkdir -p "$base/skills" || return 1
+	local tmp
+	tmp=$(mktemp -d)
+	local entry repo commit
+	for entry in "${SKILL_SOURCES[@]}"; do
+		read -r repo commit <<<"$entry"
+		local src="$tmp/${repo//\//-}"
+		git init -q "$src" &&
+			git -C "$src" fetch -q --depth 1 "https://github.com/$repo.git" "$commit" &&
+			git -C "$src" checkout -q FETCH_HEAD || return 1
+		echo "$repo at $commit: $(find "$src/skills" -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l) skills"
+	done
+	if [ -f "$list" ]; then
+		local path
+		while read -r path; do
+			[ -n "$path" ] && rm -rf "${base:?}/$path"
+		done <"$list"
+	fi
+	: >"$list"
+	local skill name
+	for skill in "$tmp"/*/skills/*/; do
+		[ -f "$skill/SKILL.md" ] || continue
+		name=$(basename "$skill")
+		cp -r "$skill" "$base/skills/$name" || return 1
+		echo "skills/$name" >>"$list"
+	done
+	local notes copied=0
+	for notes in "$tmp"/*/references/; do
+		[ -d "$notes" ] || continue
+		mkdir -p "$base/references" && cp -r "$notes". "$base/references/" || return 1
+		copied=1
+	done
+	if [ "$copied" = 1 ]; then
+		echo "references" >>"$list"
+	fi
+	rm -rf "$tmp"
+}
+
 install_go >/tmp/framefairy-setup-go.log 2>&1 &
 go_job=$!
 install_packages >/tmp/framefairy-setup-packages.log 2>&1 &
 packages_job=$!
+install_skills >/tmp/framefairy-setup-skills.log 2>&1 &
+skills_job=$!
 
 if wait "$go_job"; then
 	log "Go ready: $(/usr/local/go/bin/go version)"
@@ -64,5 +124,11 @@ if wait "$packages_job"; then
 else
 	log "system packages failed, see /tmp/framefairy-setup-packages.log:"
 	tail -n 20 /tmp/framefairy-setup-packages.log
+fi
+if wait "$skills_job"; then
+	log "skills ready: $(grep -c "^skills/" "${HOME:-/root}/.claude/skills/.framefairy-skills")"
+else
+	log "skills failed, see /tmp/framefairy-setup-skills.log:"
+	tail -n 20 /tmp/framefairy-setup-skills.log
 fi
 exit 0

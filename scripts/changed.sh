@@ -20,8 +20,8 @@
 #   frontend/       make interface
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
-#                   tests for the rules, sh -n for a script, a read of the
-#                   YAML for a workflow
+#                   tests for the rules, a read by its own shell for a
+#                   script, a read of the YAML for a workflow
 #   docs            nothing
 #
 # Anything it does not know runs the build, so a file nobody thought of is
@@ -180,7 +180,7 @@ fi
 [ "$rules" = 1 ] && say "rules:     scripts/ci-needs-test.sh"
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
-[ -n "$shells" ] && say "scripts:   sh -n$shells"
+[ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
 if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$build$rules$changed_rules$build_rules" = 00000 ]; then
 	say "only docs changed, so nothing runs"
@@ -291,8 +291,13 @@ fi
 
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
 
+# A script is read by the shell its first line names, so a bash script is not
+# failed for being bash.
 for s in $shells; do
-	sh -n "$s"
+	case $(head -n 1 "$s") in
+	*bash*) bash -n "$s" ;;
+	*) sh -n "$s" ;;
+	esac
 done
 [ -n "$shells" ] && printf 'ok  \tscripts read\n'
 
