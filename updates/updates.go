@@ -78,6 +78,13 @@ type Build struct {
 	// file itself, so the two cannot share a signature.
 	Signature string    `json:"signature"`
 	Published time.Time `json:"published"`
+	// Newest is the channel's newest commit when that is not the one this
+	// build was made from: a push whose build has not come yet. The build
+	// is still the newest there is and can be installed, but it is not
+	// what the channel holds now, so the app says so rather than offering
+	// it as current. Empty when the build is the newest. It is not signed,
+	// like everything else in the entry but the zip.
+	Newest string `json:"newest,omitempty"`
 }
 
 // List is the channel list.
@@ -127,6 +134,18 @@ func (b Build) Check() error {
 	return nil
 }
 
+// Behind is the channel's newest commit when the build is not made from
+// it, or empty. A newest commit that is not a commit is no news, and so is
+// one that is the build's own commit, written longer or shorter: the build
+// is what the list says, and only what is said about it is dropped.
+func (b Build) Behind() string {
+	n := b.Newest
+	if !commitPattern.MatchString(n) || strings.HasPrefix(n, b.Commit) || strings.HasPrefix(b.Commit, n) {
+		return ""
+	}
+	return n
+}
+
 // Parse reads a channel list. A build the list describes badly is left
 // out, so one bad entry does not take every other channel with it. Two
 // entries for one channel keep the newer.
@@ -145,6 +164,7 @@ func Parse(data []byte) (List, error) {
 		if b.Check() != nil {
 			continue
 		}
+		b.Newest = b.Behind()
 		if i, ok := seen[b.Channel]; ok {
 			if b.Published.After(out.Channels[i].Published) {
 				out.Channels[i] = b
