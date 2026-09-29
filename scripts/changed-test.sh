@@ -72,6 +72,12 @@ is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" ""
 is "frontend/src/App.svelte" "interface"
 is "frontend/preview/wails-stub.ts" "interface"
 
+# Except the files of the interface a Go test reads, which are that test's
+# package too. A file a Go test only names in a comment is not one of them.
+has "frontend/src/lib/api.ts" "interface" "go framefairy/cmd/framefairy-app"
+has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
+is "frontend/src/lib/flow.ts" "interface"
+
 # A package reaches every package that imports it, and only those.
 has "updates/updates.go" "go framefairy/updates" "go framefairy/cmd/framefairy-app" \
 	"go framefairy/cmd/framefairy-release"

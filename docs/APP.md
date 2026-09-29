@@ -1188,6 +1188,11 @@ The interface only ever names files it was given, so this is the last line
 rather than the first, but it is the line that holds when something else
 asks.
 
+A plan is checked against its episode too, not only against the library.
+It has to be in that episode's own logs folder, so a plan of one episode
+given with the path of another is refused, rather than edited against the
+wrong video, the wrong words and the wrong history.
+
 ### Activity
 
 Everything that runs in the background, with progress, a log per job and

@@ -129,6 +129,11 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 	return append(cmd, outPath), nil
 }
 
+// partial marks a file still being written, beside the one it becomes:
+// 01_name.part.mp4 for 01_name.mp4. Nothing that counts or finds files
+// takes one for the finished file.
+const partial = ".part"
+
 // RenderClip writes one finished short.
 func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	source SourceInfo, outDir string, cues []LaidCaption, rs RenderSettings,
@@ -165,11 +170,21 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	if err != nil {
 		return "", err
 	}
-	cmd, err := e.BuildCommand(ctx, clip, sourcePath, source, outPath, rs, assName)
+	// ffmpeg writes beside the short, and the short takes its place only
+	// once it is checked. A file under the short's own name counts as a
+	// finished short, so one being written, or cut off by a crash, or a
+	// render that failed its check, would count as one too, and a failed
+	// render again would take the good one before it away.
+	tmp, err := SafeChild(outDir, clip.Basename()+partial+".mp4")
+	if err != nil {
+		return "", err
+	}
+	cmd, err := e.BuildCommand(ctx, clip, sourcePath, source, tmp, rs, assName)
 	if err != nil {
 		return "", err
 	}
 	if dryRun {
+		cmd[len(cmd)-1] = outPath
 		quoted := make([]string, len(cmd))
 		for i, c := range cmd {
 			quoted[i] = shellQuote(c)
@@ -181,13 +196,11 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	code, stderr := e.RunFFmpeg(ctx, cmd[1:], "rendering "+clip.Basename(),
 		clip.Duration(), resolvePath(captionDir))
 	if ctx.Err() != nil {
-		// A truncated mp4 looks like a finished one on disk. Better to have
-		// nothing than something that plays for four seconds and stops.
-		os.Remove(outPath)
+		os.Remove(tmp)
 		return "", ctx.Err()
 	}
 	if code != 0 {
-		os.Remove(outPath)
+		os.Remove(tmp)
 		tail := strip(stderr)
 		if len(tail) > 600 {
 			tail = tail[len(tail)-600:]
@@ -199,15 +212,21 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	// graph that quietly drops a segment still exits cleanly, and the result
 	// looks like a finished file until someone plays it.
 	check := run(ctx, "", e.FFprobe, "-v", "error", "-show_entries",
-		"format=duration", "-of", "csv=p=0", outPath)
+		"format=duration", "-of", "csv=p=0", tmp)
 	written, ok := parsePyFloat(strip(check.Stdout))
 	if !ok {
+		os.Remove(tmp)
 		return "", renderErr("%s was written but has no readable duration", clip.Basename())
 	}
 	if drift := math.Abs(written - clip.Duration()); drift > 0.5 {
+		os.Remove(tmp)
 		return "", renderErr("%s should be %.1fs but came out %.1fs. Something in the "+
 			"filter graph dropped material, so the file is not trustworthy.",
 			clip.Basename(), clip.Duration(), written)
+	}
+	if err := os.Rename(tmp, outPath); err != nil {
+		os.Remove(tmp)
+		return "", err
 	}
 	return outPath, nil
 }
@@ -248,7 +267,7 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		// A moment on the very last frame is held a little inside, because
 		// a seek to the end of a file finds nothing after it to show.
 		t := math.Max(0, math.Min(ClipTime(clip, at), clip.Duration()-0.05))
-		tmp := path + ".part.jpg"
+		tmp := path + partial + ".jpg"
 		res := run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
 			"-ss", fixed(t, 3), "-i", short, "-frames:v", "1", "-update", "1",
 			"-vf", "scale=out_range=full,format=yuvj420p", "-q:v", "2", tmp)
