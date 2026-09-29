@@ -108,6 +108,7 @@ has "scripts/ci-needs.sh" "rules"
 has ".github/workflows/ci.yml" "rules" "workflow .github/workflows/ci.yml"
 has "scripts/changed.sh" "changed-rules"
 is ".github/workflows/builds.yml" "build-rules workflow .github/workflows/builds.yml"
+is ".github/workflows/publish.yml" "build-rules workflow .github/workflows/publish.yml"
 is "scripts/needs-build.sh" "build-rules script scripts/needs-build.sh"
 
 # A file nobody thought of builds, rather than being passed over.

@@ -133,10 +133,11 @@ for file in $changed; do
 	.github/workflows/*)
 		workflows="$workflows $file"
 		# The CI workflow runs the rules, so a change to it runs them too,
-		# and the builds workflow is what the rule for a build is for.
+		# and the builds and publish workflows are what the rule for a
+		# build is for.
 		case $file in
 		*/ci.yml) rules=1 ;;
-		*/builds.yml) build_rules=1 ;;
+		*/builds.yml | */publish.yml) build_rules=1 ;;
 		esac
 		;;
 	.github/*) ;;
