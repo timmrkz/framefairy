@@ -139,20 +139,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	if opts.TrainingDir != "" {
 		SetTrainingDir(opts.TrainingDir)
 	}
-	if opts.FFmpeg != "" {
-		e.FFmpeg = opts.FFmpeg
-	}
-	if opts.FFprobe != "" {
-		e.FFprobe = opts.FFprobe
-	} else if opts.FFmpeg != "" {
-		name := "ffprobe"
-		if strings.EqualFold(filepath.Ext(opts.FFmpeg), ".exe") {
-			name = "ffprobe.exe"
-		}
-		if guess := filepath.Join(filepath.Dir(opts.FFmpeg), name); exists(guess) {
-			e.FFprobe = guess
-		}
-	}
+	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
 	if !exists(opts.Source) {
 		log.Error("source not found: %s", opts.Source)

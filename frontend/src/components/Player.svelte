@@ -789,12 +789,14 @@
       onerror={onError}
       onclick={toggle}
     ></video>
-    {#if crop}
+    <!-- The crop is drawn only while the playhead stands in the clip. Anywhere
+         else the picture is the episode, not the short, so nothing is laid
+         over it. -->
+    {#if crop?.inside}
       <div class="shade" style="left: 0; width: {crop.left}%"></div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="frame"
-        class:outside={!crop.inside}
         class:lit={dragLeft !== null}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
@@ -967,11 +969,6 @@
 
   .frame.lit {
     cursor: grabbing;
-  }
-
-  .frame.outside {
-    border-style: dashed;
-    border-color: var(--muted);
   }
 
   /* The captions, drawn where the render burns them into the crop. */

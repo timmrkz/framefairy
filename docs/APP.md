@@ -293,6 +293,20 @@ the height left over goes to the two tracks: the clip timeline grows and the
 range picker stays exactly half of it, so nothing is left empty at the foot
 of the app.
 
+The two tracks are one episode seen from two distances, so they lie on one
+floor, `--well`, a step darker than the workspace around them and never
+black, the way the editors people know draw a timeline. What is chosen on
+them, the window on the range picker and the clip on the clip timeline, is
+marked by its frame and the wash in it, and nothing around it is darkened.
+The range picker used to darken everything outside the window while a
+search ran, so it changed colour as searches came and went and never
+matched the clip timeline. The video preview still darkens what lies
+outside the crop while the playhead is in a clip, because that part is cut
+from the short. Anywhere else, in a cut or between clips, nothing is laid
+over the video preview at all. The crop used to stay there as a grey
+dashed frame with the shade round it, which laid a short over a part of
+the episode that is in none.
+
 All of that is one expression in the stylesheet, worked out from the size
 of the app itself and the tokens in `app.css`. Two things it cannot know
 come in as custom properties, the shape of the episode and the height of an
@@ -415,7 +429,8 @@ place.
   captions back** appears under it once it is not the standard 300. A click
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
-  off. The new place applies to every piece of the clip filmed from the same
+  off. The frame is there while the playhead is in the clip, and only
+  then. The new place applies to every piece of the clip filmed from the same
   camera angle. **Automatic crop** appears once a crop was moved and brings
   back the automatic placement for that angle, and **Put the crop back**
   takes that click back again. A click on the frame without dragging plays
@@ -424,8 +439,8 @@ place.
   the range picker under it, every clip found, in time order, with its start
   and length. A green dot marks a rendered clip. Click one to select it,
   which also puts the clip timeline back on it.
-    - The clips lie on a surface of their own, the same grey as the clip
-      timeline, parted from each other by lighter lines than the ones that
+    - The clips lie on a surface of their own, the grey of every row in
+      the app, parted from each other by lighter lines than the ones that
       part one area of the workspace from another.
     - **A new episode finds its first clips by itself.** Adding a video is
       all it takes: the Go side asks for its first search, of the first
@@ -514,7 +529,12 @@ place.
       shrink as it does. The first clip found is put on screen as soon as
       it lands, unless another clip was picked after the search began: a
       clip taken away from the hand that is working on it is worse than
-      one shown a little later. A clip that has landed can be played,
+      one shown a little later. When the search is over, the earliest of
+      the clips it found, the first of them in the list, is the one chosen,
+      with the playhead at its start, as long as the clip chosen is still
+      the one the search chose and the video is paused. The model names its
+      clips strongest first, so the first to land is often not the first
+      in the list. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
       search keeps the clips it had found.
     - **A clip on its way is a card in its place.** A clip the model has
@@ -526,8 +546,25 @@ place.
       A clip made with I or O comes in the same way, see below, because
       every job says which clips it has on the way the same way, see
       [JOBS.md](JOBS.md).
-    - **A search starts in sight.** The rows still to come are after the
-      clips there are, so in a long list a search began out of sight and
+    - **The search's fill goes on to the end.** The row still to come
+      wears how far the search has come and how long it has left. Once
+      every clip is named, no row is left to wear it, so the search's
+      cards take it on, each with the fill and the time left, until the
+      search is done. Until then a card wears the beam alone, because it
+      is not as far along as the search it came from. The fill went with
+      the row before, at sixty per cent, and the search went on with
+      nothing to say how far it was.
+    - **The rows still to come stand where the window is.** Everything a
+      search finds lies in its window, so its rows stand in the list where
+      the window ends: after the clips before the window and before the
+      clips after it. A window drawn between the second clip and the third
+      opens its rows between the two, and each card that comes takes a
+      row's place, so the clips after the window move down once, when the
+      search starts, and not again. Within the window the cards land in
+      the order of the episode, and the model names them strongest first,
+      so a card can land above one that came before it.
+    - **A search starts in sight.** The rows still to come are often after
+      the clips there are, so in a long list a search began out of sight and
       all anyone saw was New turning into Cancel. The row the next clip
       will appear in, the one wearing the work, is brought to the top of
       the column the moment it is there, and back into view every time a

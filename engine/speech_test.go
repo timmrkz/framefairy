@@ -338,3 +338,26 @@ func TestTheRecommendedModelIsTheOneTheAppLooksFor(t *testing.T) {
 		t.Errorf("the catalogue installs %s and the engine opens %s", recommended.Name, want)
 	}
 }
+
+// A speech model folder is ready once its tokens.txt is there and not
+// empty. The app checked the same thing its own way and took an empty
+// file, which a download cut short leaves, for a model.
+func TestASpeechModelIsReadyByItsTokens(t *testing.T) {
+	dir := t.TempDir()
+	if SpeechModelReady(dir) {
+		t.Error("an empty folder is ready")
+	}
+	tokens := filepath.Join(dir, "tokens.txt")
+	if err := os.WriteFile(tokens, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if SpeechModelReady(dir) {
+		t.Error("an empty tokens.txt is ready")
+	}
+	if err := os.WriteFile(tokens, []byte("a 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !SpeechModelReady(dir) {
+		t.Error("a model with its tokens is not ready")
+	}
+}

@@ -771,10 +771,12 @@ fit: an ask that needs another model, or more room, waits for the one in
 memory to be let go of and then takes its place. A warm-up gives way to a
 model in use instead of waiting, and the search it was for loads the model
 when its turn comes. The app stops the model when it closes, also one
-that is still loading. A running server is written down in
-`~/.framefairy/llama-server.json`, so one left behind by an app that
-crashed is stopped the next time the app starts, if that process is still
-exactly that server, with the same port and the same model. The server runs one ask at a time (`-np 1`) with
+that is still loading. A running server is written down, one note a
+server in `~/.framefairy/llama-servers/`, with the process that started
+it, so one left behind by a run that crashed is stopped the next time the
+app starts, once the program that started it has gone and if that process
+is still exactly that server, with the same port and the same model. A
+server the command line is still using is left alone. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks
@@ -843,7 +845,9 @@ a part back leaves it alone.
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
 queued to be framed until it is written or let go, and a clip made by hand
-from the moment it is asked for, at the playhead. The app puts the list on
+from the moment it is asked for, at the playhead. Each list carries how
+many clips the job has written, and a clip that is written leaves the list
+in the event that counts it, before the search says it found one more. The app puts the list on
 the job, and a record gives it back after a restart.
 
 ## The code

@@ -493,6 +493,9 @@ type FakeSearch = {
   error?: string;
   settled?: boolean;
   said?: string;
+  // How many clips it was asked for. It finds that many and no more, the
+  // way the Go side does.
+  count?: number;
 };
 const fullLength = 14423;
 
@@ -561,8 +564,10 @@ function measuredNow(): number {
 // a probe has time to look at the hearing.
 const hearsPerSecond = Number(/hear=(\d+)/.exec(location.search)?.[1] ?? 600);
 const landEvery = () => (location.search.includes("slow") ? 2000 : 350);
-const findFor = () => 700 + 12 * landEvery() + 1000;
+const findFor = (s?: FakeSearch) => 700 + landsOf(s).length * landEvery() + 1000;
 const landOrder = [3, 1, 7, 2, 12, 5, 4, 9, 6, 11, 8, 10];
+// The clips a search lands, in the order it lands them.
+const landsOf = (s?: FakeSearch) => landOrder.slice(0, s?.count ?? 12);
 const fakeSearches = (): FakeSearch[] => {
   const w = window as any;
   if (!w.__searches) {
@@ -578,7 +583,11 @@ const fakeSearches = (): FakeSearch[] => {
       });
     }
     if (q.includes("growing")) {
-      w.__searches.push({ id: "s1", n: 1, from: 0, to: 1800, heardFrom: 600, wall: (w.__started ??= now) });
+      // ?asked=4 is a first search the Go side asked for another number
+      // than the workspace would, the way a target typed for a window of
+      // this length, or none, can make it.
+      const asked = Number(/asked=(\d+)/.exec(q)?.[1] ?? 0) || undefined;
+      w.__searches.push({ id: "s1", n: 1, from: 0, to: 1800, heardFrom: 600, wall: (w.__started ??= now), count: asked });
     }
   }
   return w.__searches;
@@ -620,17 +629,17 @@ function searchAt(s: FakeSearch, now = Date.now()) {
       : { state: "running", step: "hearing", covered: Math.max(covered, s.heardFrom), found: 0, since };
   }
   const finding = since - hearFor;
-  const found = landOrder.filter((_, k) => finding >= 700 + k * landEvery()).length;
-  if (finding < findFor()) {
+  const found = landsOf(s).filter((_, k) => finding >= 700 + k * landEvery()).length;
+  if (finding < findFor(s)) {
     return byHand
       ? { state: stoppedState, step: "stopped", covered: end, found, since: finding }
       : { state: "running", step: "finding", covered: end, found, since: finding };
   }
-  return { state: "done", step: "", covered: end, found: 12, since: finding };
+  return { state: "done", step: "", covered: end, found: landsOf(s).length, since: finding };
 }
 function searchJob(s: FakeSearch) {
   const now = searchAt(s);
-  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, record: "search", from: s.from, to: s.to, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
+  const base = { id: s.id, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: now.state, step: now.step, record: "search", from: s.from, to: s.to, count: s.count, queued: "", lane: now.step === "hearing" ? "hearing" : "finding", error: s.error, result: now.state === "done" ? "/eps/ep.framefairy/logs/clips.json" : undefined };
   if (now.state !== "running") return base;
   if (now.step === "hearing") {
     // How far and how long, to the end of the window it hears for, the way
@@ -642,17 +651,22 @@ function searchJob(s: FakeSearch) {
     const remaining = Math.max(end - covered, 0) / hearsPerSecond;
     return { ...base, progress: { kind: "progress", stage: "asr", text: "Listening", fraction: share, remaining, from: s.heardFrom, covered, elapsed: 1, time: "" } };
   }
-  const lasts = findFor();
-  const text = now.found ? `${now.found} of 12 found` : "Finding clips";
+  const lasts = findFor(s);
+  const lands = landsOf(s);
+  const text = now.found ? `${now.found} of ${lands.length} found` : "Finding clips";
   // The next clip is named a moment before it lands, and is on its way
   // until it does, the way the plan builder says so while it places the
   // crop.
+  // Named two and a half landings before it lands, so up to three are on
+  // their way at once, the way several framers work on a real machine.
   const k = now.found;
-  const underway =
-    k < landOrder.length && now.since >= 700 + k * landEvery() - landEvery() * 0.6
-      ? [{ n: k + 1, start: 40 + (landOrder[k] - 1) * 140, end: 65 + (landOrder[k] - 1) * 140, title: "Ein Moment " + landOrder[k], step: "framing" }]
-      : [];
-  return { ...base, underway, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
+  const underway = lands
+    .map((n, j) => ({ n, j }))
+    .filter(({ j }) => j >= k && now.since >= Math.max(300, 700 + j * landEvery() - landEvery() * 2.5))
+    .map(({ n, j }) => ({ n: j + 1, start: placeOf(s, n), end: placeOf(s, n) + 25, title: "Ein Moment " + n, step: "framing", clip: `clips.json/0${n + (s.n - 1) * 12 + (freshList() ? 0 : 4)}` }));
+  // What it has written goes with what it has on the way, in one event,
+  // the way the Go side sends them.
+  return { ...base, underway, written: now.found, whole: now.found + underway.length >= lands.length, progress: { kind: "progress", stage: "plan", text, fraction: Math.min(now.since / lasts, 0.99), remaining: Math.max((lasts - now.since) / 1000, 0), found: now.found, elapsed: now.since / 1000, time: "" } };
 }
 // How far the saved transcript reaches. With ?lagging it is saved every 8 s
 // of work, minutes of audio apart, while the job reports every chunk.
@@ -671,15 +685,22 @@ function savedCovered(): number {
 }
 // The clips the searches of this run have found, numbered after the ones
 // the episode had, in the order they land.
-function foundClips(): number[] {
-  const out: number[] = [];
+function foundClips(): { n: number; start: number }[] {
+  const out: { n: number; start: number }[] = [];
   for (const s of fakeSearches()) {
     if (s.stopped || !s.n) continue;
     const now = searchAt(s);
-    const landed = now.step === "finding" || now.state === "done" ? landOrder.slice(0, now.found) : [];
-    out.push(...landed.map((k) => k + (s.n - 1) * 12));
+    const landed = now.step === "finding" || now.state === "done" ? landsOf(s).slice(0, now.found) : [];
+    out.push(...landed.map((k) => ({ n: k + (s.n - 1) * 12, start: placeOf(s, k) })));
   }
   return out;
+}
+// Where the k-th of the twelve moments a search can find starts: in its
+// window, the way the model can only name what the window holds, a
+// twelfth of the window apart.
+function placeOf(s: FakeSearch, k: number): number {
+  const end = s.to > 0 ? s.to : fullLength;
+  return Math.max(s.from, s.from + ((end - s.from) * (k - 0.5)) / 12 - 12.5);
 }
 // Clips made by hand with I and O, the way the Go side makes them: a job
 // each, any number at once, which hears first where the transcript does
@@ -758,7 +779,7 @@ function handJob(h: FakeHand) {
     step: now.step, record: `clip-${h.n}`, at: h.at, backward: h.backward, queued: "",
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
-    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined }] : undefined,
+    underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined, clip: now.step === "framing" ? `clips-hand.json/h0${h.n}` : undefined }] : undefined,
     progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" } : undefined,
   };
 }
@@ -781,11 +802,17 @@ function handClips() {
     });
 }
 
-function askSearch(from: number, to: number): FakeSearch {
+// Whether the episode's list starts empty, and the searches of this run
+// fill it.
+function freshList(): boolean {
+  const q = location.search;
+  return q.includes("found") || q.includes("growing") || q.includes("interrupted") || q.includes("failed") || q.includes("transcribing");
+}
+function askSearch(from: number, to: number, count?: number): FakeSearch {
   const list = fakeSearches();
   for (const s of list) if (s.stopped || s.cancelledAt !== undefined) s.settled = true;
   const n = list.filter((s) => s.n > 0).length + 1;
-  const made = { id: `s${n}`, n, from, to, heardFrom: savedCovered(), wall: Date.now() };
+  const made = { id: `s${n}`, n, from, to, heardFrom: savedCovered(), wall: Date.now(), count };
   list.push(made);
   return made;
 }
@@ -795,7 +822,7 @@ export const Call = {
     const method = name.split(".").pop();
     const q = location.search;
     // Episodes whose list starts empty: the searches of this run fill it.
-    const fresh = q.includes("found") || q.includes("growing") || q.includes("interrupted") || q.includes("failed") || q.includes("transcribing");
+    const fresh = freshList();
     const covered = savedCovered();
     const found = foundClips();
     const plans = found.length || !fresh ? [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }] : [];
@@ -1034,8 +1061,8 @@ export const Call = {
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
-        const req = args[1] as { From: number; To: number };
-        const made = askSearch(req.From, req.To);
+        const req = args[1] as { From: number; To: number; Count?: number };
+        const made = askSearch(req.From, req.To, req.Count);
         return Promise.resolve(searchJob(made));
       }
       case "MakeClip": {
@@ -1068,14 +1095,19 @@ export const Call = {
         return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
       case "Clips": {
         const made = [
-          ...found.map((n) => clip(n + (fresh ? 0 : 4), 40 + (n - 1) * 140, "Ein Moment " + n, false)),
+          ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),
           ...handClips(),
         ];
         // ?lagclips answers every list 300 ms late, the way a busy machine
         // does, so a card on its way has to hold its place until the list
         // has the clip it became.
+        // ?crossclips answers one read late and the next at once, so a
+        // read asked later can answer first, the way two reads in the air
+        // together do on a busy machine.
+        const reads = ((window as any).__reads = ((window as any).__reads ?? 0) + 1);
+        const late = location.search.includes("lagclips") ? 300 : location.search.includes("crossclips") && reads % 2 ? 400 : 0;
         const answer = <T,>(list: T): Promise<T> =>
-          location.search.includes("lagclips") ? new Promise((done) => setTimeout(() => done(list), 300)) : Promise.resolve(list);
+          late ? new Promise((done) => setTimeout(() => done(list), late)) : Promise.resolve(list);
         if (fresh) return answer(made.sort((x, y) => x.start - y.start));
         // A list that is slow to come, the way it is while the machine is
         // busy, and that knows nothing of what was done since it was asked

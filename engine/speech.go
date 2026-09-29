@@ -95,7 +95,14 @@ func (m SpeechModel) Installed(dir string) bool {
 	if dir == "" {
 		dir = ModelsDir()
 	}
-	info, err := os.Stat(filepath.Join(dir, m.Name, "tokens.txt"))
+	return SpeechModelReady(filepath.Join(dir, m.Name))
+}
+
+// SpeechModelReady says whether the speech model in dir is there and
+// usable: its tokens.txt, the file the recogniser opens first, is there
+// and not empty.
+func SpeechModelReady(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "tokens.txt"))
 	return err == nil && !info.IsDir() && info.Size() > 0
 }
 

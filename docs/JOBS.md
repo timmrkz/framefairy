@@ -289,7 +289,52 @@ another. When it is written, the same blocks stay.
 
 A card hands over to the clip it becomes in one step: it keeps its place
 until the list has read the clip, so there is never a gap where it was and
-never the two of them at once. A clip made by hand is chosen the moment
+never the two of them at once. It goes in the same assignment that puts
+the list on screen, from the first read asked after the clip was written,
+whichever read answers first. The event that takes a written clip off the
+list also counts it, `written` on the job, so the rows a search holds
+open, the number asked for less what it has written and what it has on
+the way, come from one event and never add a clip up twice. It said it
+had found one more in one event and took the clip off the list in the
+next, and between the two the list showed four cards for a search asked
+for three. A clip written between two job events, never on the way in
+either, holds a row of its own until a read brings it in.
+
+A clip of the answer well off the length is held back and asked for
+again, `fit`, and it is on its way like any other from the moment it is
+named, its card saying *Fitting to the length*. It keeps its card, a
+number given when the model names it, when it goes to be framed. Once the
+answer is read to its end, the list says it is whole, `Whole` on the event
+and `whole` on the job: every clip still to come has a card, so the list
+holds no row open for a clip the model did not name. That row stood in for
+the held clips and for the ones never named, with the fill of the whole
+search stuck near its end while the cards were framed.
+
+A clip on its way is marked on the range picker and the clip timeline
+from the moment its card has its place, where the card says it lies,
+breathing the way everything not there yet does, and it keeps its mark
+when it is written, because the mark is known by the clip it will be. The
+marks came only with the written clip, so the two tracks said where a
+clip lay long after its card did.
+
+A search says how many clips it was asked for, `count` on the job, and
+the rows it holds open and the target in the workspace follow that number
+while it runs, not the one the workspace would ask for now. The first
+search of an episode is asked for by the Go side, and the workspace worked
+out another number, so the list opened three rows for a search that looked
+for six.
+
+A card and its clip are one row of the list. The card says which clip it
+will be, `Clip` on `Underway`, the clip set's file name and the id the
+builder gave it when it queued it, and the list keeps the card's row for
+the clip. They were two rows, the card's going and the clip's coming, and
+between the two the list was a row short for an instant, which a list
+scrolled down answered by jumping. The card is held from the moment it
+leaves the job's list in the same pass that builds the list, `OnTheWay`
+in `frontend/src/lib/arriving.ts`: an effect held it a render late, so
+every card went away, left a row still to come in its place and slid back
+open before it became its clip, which at the end of a search read as the
+whole list blinking. A clip made by hand is chosen the moment
 the key is pressed, as its card, and the card that is chosen stays chosen
 as the clip, unless another has been chosen since. It was chosen only once
 it landed, so for the seconds it took nothing on the clip timeline said
