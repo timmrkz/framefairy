@@ -139,10 +139,15 @@ facade the app goes around, and three files too big to hold in one's head.
     moved. `pack-source.sh` fetches the "corresponding source" separately,
     also unchecked, so nothing proves it is what was built, which LGPL asks
     for. `speech-libs.sh` already does it right. Fix: a sha256 per tarball
-    and a commit per tag, checked in both scripts. **Open.**
+    and a commit per tag, checked in both scripts. **Fixed** in #51: the four archives are
+    checked against a sha256, ffmpeg and llama.cpp against the commit of
+    their tag, in the build and in `pack-source.sh` alike. ffmpeg is now
+    always taken from git, since ffmpeg.org publishes no checksum to hold
+    its archive to.
 12. **ffmpeg 7.1.1 is four point releases behind.** 7.1.5 is out on the same
     branch, with security fixes in code that reads the user's video.
-    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Open.**
+    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Fixed** in #51: ffmpeg 7.1.5.
+    harfbuzz 10.1.0 and libass 0.17.3 stay for now.
 13. **Workflows are not hardened.** `ci.yml` and `speechbench.yml` have no
     `permissions:` block, every action is pinned by tag rather than by
     commit, and `tools.yml` puts `inputs.tag` straight into a shell line.
