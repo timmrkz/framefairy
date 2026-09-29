@@ -792,14 +792,12 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 	if info, err := s.probe(ctx, path); err == nil {
 		duration = info.Duration
 	}
-	p := engine.NewProject(nil, path, s.store.Settings().options())
-	logs := engine.ResolvePath(p.LogsDir())
 	gone := 0
 	err := s.edit(path, func() error {
 		for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
 			// A plan of this episode, named the way plans are named.
 			// Nothing else is touched, whatever the interface asks for.
-			if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
+			if !s.store.PlanOf(path, plan.Path) {
 				continue
 			}
 			n, err := engine.RemoveRange(plan.Path, from, to, duration)
@@ -817,7 +815,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 // the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.
 func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsView, error) {
-	if !s.store.Known(path) || !s.store.Known(planPath) {
+	if !s.store.PlanOf(path, planPath) {
 		return nil, os.ErrNotExist
 	}
 	t, err := s.words(path)
@@ -1024,7 +1022,7 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 }
 
 func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, start float64, text string) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	p := engine.NewProject(nil, path, s.store.Settings().options())
@@ -1045,7 +1043,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
 // left edge in source pixels, and returns the clip as it is now.
 func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at float64, left int) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	info, err := s.probe(ctx, path)
@@ -1066,7 +1064,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 // SetCaptionStyle changes the face and the size of the captions of a whole
 // clip set, which is what the workspace offers next to the clip.
 func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font string, size float64) error {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return os.ErrNotExist
 	}
 	values := map[string]any{}
@@ -1086,7 +1084,7 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text string,
 	textOpacity float64, box string, boxOpacity float64, highlight string,
 	highlightOpacity float64) error {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return os.ErrNotExist
 	}
 	values := map[string]any{}
@@ -1119,7 +1117,7 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 // box behind them, and "highlight", the pill behind the word being spoken
 // and the bounce it makes. Anything else is refused.
 func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which string, on bool) error {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return os.ErrNotExist
 	}
 	switch which {
@@ -1200,10 +1198,8 @@ func hold(n, low, high float64) float64 {
 // followTheHeight takes the hand-placed caption line off the clips of an
 // episode, so every one of them sits where the setting says.
 func (s *FrameFairy) followTheHeight(path string) error {
-	p := engine.NewProject(nil, path, s.store.Settings().options())
-	logs := engine.ResolvePath(p.LogsDir())
 	for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
-		if !s.store.Known(plan.Path) || filepath.Dir(engine.ResolvePath(plan.Path)) != logs {
+		if !s.store.PlanOf(path, plan.Path) {
 			continue
 		}
 		if _, err := engine.ClearCaptionY(plan.Path); err != nil {
@@ -1218,7 +1214,7 @@ func (s *FrameFairy) followTheHeight(path string) error {
 // clip as it is now. A from below nought adds one at to, and a to below
 // nought removes the one at from.
 func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string, from, to float64) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	if err := s.edit(path, func() error {
@@ -1233,7 +1229,7 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 // to appear or go at a moment of the episode. A moment below nought puts it
 // back where its words put it, because JSON has no way to say not a number.
 func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	if at < 0 {
@@ -1252,7 +1248,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 }
 
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	if err := s.edit(path, func() error { return engine.ResetCrop(plan, clipID, at) }); err != nil {
@@ -1472,7 +1468,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 // in the plan either way, so putting it back loses nothing of what was done
 // to it. A render of the whole plan leaves a removed clip out.
 func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, removed bool) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	if err := s.edit(path, func() error { return engine.SetRejected(plan, clipID, removed) }); err != nil {
@@ -1485,7 +1481,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 // with its captions, while the hand moves, and writes nothing. See
 // engine/shape.go.
 func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine.ShapedView, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return nil, os.ErrNotExist
 	}
 	t, err := s.words(path)
@@ -1499,7 +1495,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 // Reshape makes the change a gesture on the clip timeline showed while the
 // hand moved, and returns the clip as it is now.
 func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g engine.Gesture) (ClipEntry, error) {
-	if !s.store.Known(path) || !s.store.Known(plan) {
+	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
 	}
 	t, err := s.words(path)

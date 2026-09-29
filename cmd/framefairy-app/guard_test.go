@@ -250,3 +250,61 @@ func TestTwoEpisodesCannotShareAWorkFolder(t *testing.T) {
 		}
 	}
 }
+
+// A plan is edited only with the episode it belongs to. Both are in the
+// library, so being known is not enough: a plan of one episode given with
+// the path of another would be edited against the wrong video, the wrong
+// words and the wrong history. A file of the episode's own that is not in
+// its logs folder is no plan of it either.
+func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
+	svc, mine, home := library(t)
+	ctx := context.Background()
+	theirs := filepath.Join(home, "theirs.mp4")
+	if err := os.WriteFile(theirs, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.store.AddEpisodes([]string{theirs}); err != nil {
+		t.Fatal(err)
+	}
+	plan := `{"clips": [{"id": "01", "start": 0, "end": 20, "title": "t"}]}`
+	logs := filepath.Join(engine.WorkDir(theirs), "logs")
+	notLogs := filepath.Join(engine.WorkDir(mine), "captions")
+	for _, dir := range []string{logs, notLogs} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, wrong := range []string{
+		filepath.Join(logs, "clips-0-600.json"),
+		filepath.Join(notLogs, "clips-0-600.json"),
+	} {
+		if err := os.WriteFile(wrong, []byte(plan), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		g := engine.Gesture{Kind: "trim", Edge: "start", From: 1}
+		errs := map[string]error{}
+		_, errs["SetWord"] = svc.SetWord(ctx, mine, wrong, "01", 1, "word")
+		_, errs["SetCrop"] = svc.SetCrop(ctx, mine, wrong, "01", 1, 10)
+		errs["SetCaptionStyle"] = svc.SetCaptionStyle(ctx, mine, wrong, "Inter", 60)
+		errs["SetCaptionColours"] = svc.SetCaptionColours(ctx, mine, wrong, "#ffffff", 1, "", 0, "", 0)
+		errs["SetCaptionSwitch"] = svc.SetCaptionSwitch(ctx, mine, wrong, "text", false)
+		_, errs["SetThumbnail"] = svc.SetThumbnail(ctx, mine, wrong, "01", 1, 2)
+		_, errs["SetCaptionTime"] = svc.SetCaptionTime(ctx, mine, wrong, "01", 1, "start", 1.1)
+		_, errs["ResetCrop"] = svc.ResetCrop(ctx, mine, wrong, "01", 1)
+		_, errs["RemoveClip"] = svc.RemoveClip(ctx, mine, wrong, "01", true)
+		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g)
+		_, errs["Reshape"] = svc.Reshape(ctx, mine, wrong, "01", g)
+		_, errs["Captions"] = svc.Captions(mine, wrong, "01")
+		for name, err := range errs {
+			if err == nil {
+				t.Errorf("%s took %s for a plan of %s", name, wrong, mine)
+			}
+		}
+		if job := svc.Render(mine, engine.RenderRequest{Plan: wrong}); job.State != JobFailed {
+			t.Errorf("Render took %s for a plan of %s: %s", wrong, mine, job.State)
+		}
+		if got, _ := os.ReadFile(wrong); string(got) != plan {
+			t.Errorf("%s was written to: %s", wrong, got)
+		}
+	}
+}
