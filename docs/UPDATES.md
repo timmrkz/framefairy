@@ -259,7 +259,20 @@ How it would work:
 - **Every push to a pull request builds the app**, in CI, on a macOS
   runner, the same workflow a release will use. It takes ffmpeg and
   llama-server from the tools archive rather than building them. The
-  repository is public, so the runner costs nothing.
+  repository is public, so the runner costs nothing. It is built on the
+  push itself, which finds the branch's open pull request, and not on
+  the pull request's own event: GitHub runs no workflow for a pull
+  request while it is in conflict with main, and a commit pushed to #35
+  in that state got no build. A branch with no open pull request builds
+  nothing, and a pull request opened on a branch pushed before is built
+  when it is opened. The build is of the branch as it is, not merged with
+  main, so a pull request in conflict can still be tested.
+- **A commit gets one build.** One that is built already, or that only
+  changes the docs against the build there is, gets none of its own.
+  `scripts/needs-build.sh` decides it, for the build and for the list
+  alike. It measures against what is built, not against the push before,
+  so a push of the docs that stops the build of a push of code before it
+  does not leave that code without a build.
 - **Each pull request is a channel**, `pr-18`, and main is one too. All
   their builds are files of one pre-release, `dev`. A version reads like
   `0.3.0-pr18.a1b2c3d`, where `a1b2c3d` is the commit it was built from,
@@ -365,14 +378,21 @@ with its newest build, so one fetch is the whole check:
       "size": 187000000,
       "sha256": "…",
       "signature": "…",
-      "published": "2026-09-25T20:54:46Z"
+      "published": "2026-09-25T20:54:46Z",
+      "newest": "6ceea6d1f2a3"
     }
   ]
 }
 ```
 
 - **The workflow keeps it true.** A push to a pull request builds it and
-  refreshes its entry. A pull request that is merged or closed has its
+  refreshes its entry. `newest` is there while a pull request has a
+  commit whose build has not come yet: the list is written again the
+  moment a push starts, beside its build, and once more when the build is
+  published, which takes it away. The page then says **A newer commit is
+  being built** and names it, rather than offering the build before as
+  the newest. That build can still be installed. A commit that only
+  changes the docs has no build coming and is never named. A pull request that is merged or closed has its
   entry taken away, and its builds go an hour later. Every writing of the
   list also takes away the entry of any pull request that is not open,
   because GitHub runs nothing for a pull request that no longer merges
@@ -410,10 +430,14 @@ with its newest build, so one fetch is the whole check:
    gets a dot. Tim clicks **Relaunch**, and the app comes back as pull
    request 18. The sidebar says `0.3.0-pr18.a1b2c3d`, and the page adds
    the commit, which opens on GitHub.
-4. **Claude pushes to pull request 18.** A few minutes later the workflow
+4. **Claude pushes to pull request 18.** About a minute later the list
+   says a newer commit is being built, and the page says so, naming it,
+   the next time it looks. A few minutes later the workflow
    has built `0.3.0-pr18.e4f5a6b`, signed it, and put it in the channel list.
    The app looks by itself the moment it starts and every ten minutes
-   after, downloads it quietly and puts the dot on Updates. One click,
+   after, and every twenty seconds while a commit is being built, so the
+   build is found soon after it lands. It downloads it quietly and puts
+   the dot on Updates. One click,
    one restart. Check looks at once.
 5. **Tim picks #20**, or main. The app downloads that channel's newest
    build, sideways, and says it is ready. A pick while another channel's
@@ -468,10 +492,10 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | --- | --- | --- |
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. The builds downloaded are kept in the user's caches, so a channel picked again has its build at once, and whatever the list stops naming is removed each time it is read |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
-| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
-| The workflow | `.github/workflows/builds.yml` | builds main and every pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list. A push that only changes docs gets no build |
+| The workflow | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, signs, publishes to the `dev` release and writes the list, at the start of a push and when its build is done. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 
 The signature is Ed25519 over the SHA-256 of the zip, which is what Wails'

@@ -40,6 +40,21 @@ var updateKeyText string
 // a few minutes after each push.
 const checkEvery = 10 * time.Minute
 
+// checkBuilding is how often it looks while the channel followed has a
+// commit being built. A build takes a few minutes, and at the pace above
+// it was found up to ten minutes after it was there. A look is one small
+// file, and only a build it does not have yet is downloaded, so looking
+// this often costs nothing.
+const checkBuilding = 20 * time.Second
+
+// nextCheck is how long to wait before looking again.
+func nextCheck(s UpdateState) time.Duration {
+	if s.Building != "" {
+		return checkBuilding
+	}
+	return checkEvery
+}
+
 func runningVersion() string {
 	if buildVersion != "" {
 		return buildVersion
@@ -65,6 +80,10 @@ type UpdateState struct {
 	// pull request merged or closed. Nothing is downloaded for it, and
 	// nothing else is either until another channel is picked.
 	Gone string `json:"gone"`
+	// Building is the newest commit of the channel followed when its build
+	// has not come yet, so the page does not offer the build there is as
+	// the newest. Empty when the build is the newest.
+	Building string `json:"building"`
 	// Phase is "", checking, current, gone, downloading, ready or failed.
 	Phase      string `json:"phase"`
 	Next       string `json:"next"`
@@ -208,7 +227,7 @@ func (c *updating) start() {
 	go func() {
 		for {
 			c.check()
-			time.Sleep(checkEvery)
+			time.Sleep(nextCheck(c.State()))
 		}
 	}()
 }
@@ -245,9 +264,10 @@ func (c *updating) seen(l updates.List) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Channels = chans
-	c.state.Follows, c.state.Gone = "", ""
+	c.state.Follows, c.state.Gone, c.state.Building = "", "", ""
 	if b, ok := l.Follow(c.state.Picked, buildChannel); ok {
 		c.state.Follows = b.Channel
+		c.state.Building = b.Newest
 	} else {
 		c.state.Gone = updates.Followed(c.state.Picked, buildChannel)
 	}

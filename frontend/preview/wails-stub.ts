@@ -1507,6 +1507,8 @@ const updNow = () => {
     picked: "",
     follows: local || gone ? "" : "pr-18",
     gone: gone ? "pr-18" : "",
+    // ?unbuilt: a push to the channel whose build has not come yet.
+    building: location.search.includes("unbuilt") ? "6ceea6d1f2a3" : "",
     phase: local ? "" : gone ? "gone" : "current",
     next: "",
     nextName: "",

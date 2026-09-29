@@ -959,6 +959,9 @@ export interface UpdateState {
   // The channel followed when it is not on the list any more, a pull
   // request merged or closed. Nothing downloads until another is picked.
   gone: string;
+  // The newest commit of the channel followed when its build has not come
+  // yet, empty when the build is the newest.
+  building: string;
   phase: "" | "checking" | "current" | "gone" | "downloading" | "ready" | "failed";
   next: string;
   nextName: string;
