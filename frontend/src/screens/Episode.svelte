@@ -711,11 +711,27 @@
   );
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
-  const marks = $derived(
-    shown
+  //
+  // A clip on its way has its mark from the moment its card has its place,
+  // where the card says it lies, breathing the way everything not there
+  // yet does, and it keeps the mark when it is written: the mark is known
+  // by the clip it will be. The marks came only with the written clip, so
+  // the range picker and the clip timeline said where a clip lay long
+  // after its card did.
+  const marks = $derived.by(() => {
+    const written = shown
       .filter((c) => c.key !== removed?.key)
-      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered })),
-  );
+      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered }));
+    const here = new Set(written.map((m) => m.key));
+    const coming = onTheWay
+      .filter((a) => !(a.clip && here.has(a.clip)))
+      .map((a) => {
+        const first = a.pieces?.[0]?.[0] ?? a.start;
+        const last = a.pieces?.[a.pieces.length - 1]?.[1] ?? a.end;
+        return { key: a.clip ?? a.key, start: first, end: last, rendered: false, arriving: true, pick: a.key };
+      });
+    return [...written, ...coming];
+  });
   // Whether the render running is of this clip. The job says what it is
   // of from the moment it is queued: its result only says so once it is
   // over, which is how the button never saw its own render running.

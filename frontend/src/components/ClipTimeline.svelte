@@ -135,7 +135,16 @@
     // Every clip of the episode, the way the range picker has them, so
     // the timeline zoomed out shows where the others are. The chosen one
     // is the frame and has no mark.
-    marks?: { key: string; start: number; end: number; rendered: boolean }[];
+    marks?: {
+      key: string;
+      start: number;
+      end: number;
+      rendered: boolean;
+      // A clip on its way, where its card says it lies, and the key that
+      // chooses its card. It keeps its mark when it is written.
+      arriving?: boolean;
+      pick?: string;
+    }[];
     // A mark clicked, which chooses that clip, as on the range picker.
     onmark?: (key: string) => void;
     // The clip under the hand, here, on the range picker or in the clip
@@ -993,7 +1002,9 @@
 
   // The other clips in view, as marks across the middle of the track.
   const shownMarks = $derived(
-    marks.filter((m) => m.key !== clip?.key && m.end > view.from && m.start < view.to),
+    marks.filter(
+      (m) => m.key !== clip?.key && m.pick !== clip?.key && m.end > view.from && m.start < view.to,
+    ),
   );
 
   // A caption block is detail for working inside a clip, and it is drawn
@@ -1335,12 +1346,13 @@
         class="clipmark"
         class:rendered={m.rendered}
         class:lit={m.key === hovered}
+        class:waiting={m.arriving}
         style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
         aria-label="Clip at {clock(m.start)}"
         title="Choose the clip at {clock(m.start)}"
         {@attach hoverClip(m.key, onhover)}
         onpointerdown={(e) => e.stopPropagation()}
-        onclick={() => onmark?.(m.key)}
+        onclick={() => onmark?.(m.pick ?? m.key)}
       ></button>
     {/each}
     {#if clip && !locked}

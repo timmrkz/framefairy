@@ -310,6 +310,13 @@ holds no row open for a clip the model did not name. That row stood in for
 the held clips and for the ones never named, with the fill of the whole
 search stuck near its end while the cards were framed.
 
+A clip on its way is marked on the range picker and the clip timeline
+from the moment its card has its place, where the card says it lies,
+breathing the way everything not there yet does, and it keeps its mark
+when it is written, because the mark is known by the clip it will be. The
+marks came only with the written clip, so the two tracks said where a
+clip lay long after its card did.
+
 A card and its clip are one row of the list. The card says which clip it
 will be, `Clip` on `Underway`, the clip set's file name and the id the
 builder gave it when it queued it, and the list keeps the card's row for

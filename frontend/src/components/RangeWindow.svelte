@@ -44,7 +44,16 @@
     from: number;
     to: number;
     onmoved?: (edge: "from" | "to") => void;
-    marks?: { key: string; start: number; end: number; rendered: boolean }[];
+    marks?: {
+      key: string;
+      start: number;
+      end: number;
+      rendered: boolean;
+      // A clip on its way, where its card says it lies, and the key that
+      // chooses its card. It keeps its mark when it is written.
+      arriving?: boolean;
+      pick?: string;
+    }[];
     selected?: string;
     // The clip under the hand, here, on the clip timeline or in the clip
     // list. Its mark is lit the way it is under the pointer.
@@ -490,13 +499,14 @@
     <button
       class="clipmark"
       class:rendered={m.rendered}
-      class:selected={m.key === selected}
+      class:selected={(m.pick ?? m.key) === selected}
       class:lit={m.key === hovered}
+      class:waiting={m.arriving}
       style="left: {at(m.start)}px; width: {Math.max(at(m.end) - at(m.start), 4)}px"
       aria-label="Clip at {clock(m.start)}"
       {@attach hoverClip(m.key, onhover)}
       onpointerdown={(e) => e.stopPropagation()}
-      onclick={() => onmark?.(m.key)}
+      onclick={() => onmark?.(m.pick ?? m.key)}
     ></button>
     {/if}
   {/each}
