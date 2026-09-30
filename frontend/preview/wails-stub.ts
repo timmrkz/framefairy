@@ -1252,10 +1252,13 @@ export const Call = {
         return Promise.resolve({ ffmpeg: "", llmServer: "", llmModel: "", asrModel: "", planner: (window as any).__planner || "local", apiModel: "claude-sonnet-5", target: 0, min: 20, max: 30, highlightColour: "#b4236f", appColour: "#942192", outputDir: "", captionY: 240, trainingDir: "", ...((window as any).__settings ?? {}) });
       // What the settings page saves, kept, so a probe can read what was
       // saved and a page opened again reads it back.
+      // Only what changed comes, and it is laid over what is kept, the way
+      // the Go side does it.
       case "SaveSettings":
-        (window as any).__settings = args[0];
+        (window as any).__settings = { ...((window as any).__settings ?? {}), ...(args[0] as object) };
         (window as any).__saves = ((window as any).__saves ?? 0) + 1;
-        (window as any).__planner = (args[0] as any).planner;
+        (window as any).__saved = [...((window as any).__saved ?? []), args[0]];
+        if ((args[0] as any).planner) (window as any).__planner = (args[0] as any).planner;
         return Promise.resolve(null);
       case "ChooseFolder":
         return Promise.resolve("/Users/tim/Movies/Shorts");

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -69,7 +70,7 @@ func TestProjectSteps(t *testing.T) {
 	source := testEpisode(t, "40")
 	// The records of every episode go in one folder. This test counts
 	// them, so it gets a folder of its own.
-	SetTrainingDir(t.TempDir())
+	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -291,5 +292,38 @@ func TestProjectReportsErrors(t *testing.T) {
 	cancel()
 	if err := p.Transcribe(ctx); !errors.Is(err, ErrCancelled) {
 		t.Errorf("cancelled run gave %v", err)
+	}
+}
+
+// What went wrong reaches whoever asked as the error it is, kept under
+// ErrStepFailed, where it was once only the last line of the log. The
+// command line still says it in the log, and exits with 1.
+func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "20")
+	broken := errors.New("the speech model is broken")
+	var logged bytes.Buffer
+	e := NewEngine(NewLog(&logged, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return nil, broken }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	err := p.Transcribe(context.Background())
+	if !errors.Is(err, ErrStepFailed) || !errors.Is(err, broken) {
+		t.Fatalf("the step failed with %v, which is not the speech model's error", err)
+	}
+	if !strings.Contains(p.LastError(), broken.Error()) {
+		t.Errorf("LastError is %q", p.LastError())
+	}
+
+	opts := base
+	opts.Source = source
+	opts.TranscribeOnly = true
+	logged.Reset()
+	if code := e.Run(context.Background(), opts); code != 1 {
+		t.Errorf("the command line exited with %d", code)
+	}
+	if !strings.Contains(logged.String(), broken.Error()) {
+		t.Errorf("the log does not say why: %s", logged.String())
 	}
 }

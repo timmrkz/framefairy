@@ -87,6 +87,13 @@ func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 	if len(peaks) != 200 || loud < 190 {
 		t.Errorf("%d buckets, %d of them the tone", len(peaks), loud)
 	}
+	// The interface is told after the waveform is written, so it can come
+	// a moment after the file says it is done. It came too late for a read
+	// straight after on a busy machine.
+	deadline := time.Now().Add(5 * time.Second)
+	for told.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if told.Load() == 0 {
 		t.Error("the interface was never told the waveform grew")
 	}

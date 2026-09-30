@@ -524,7 +524,8 @@ export const api = {
   getSettings: () => call<Settings>("GetSettings"),
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
-  saveSettings: (s: Settings) => call<void>("SaveSettings", s),
+  // What changed in the settings, and only that, see SaveSettings.
+  saveSettings: (changed: Partial<Settings>) => call<void>("SaveSettings", changed),
   // How many clips a search looks for and how long they may be. They are
   // set in the workspace, beside the episode they are about, and kept for
   // the next one.
