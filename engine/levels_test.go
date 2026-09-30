@@ -199,11 +199,10 @@ func sweep(t *testing.T, seconds string) string {
 // part not measured yet, the measuring follows it there. What comes out is
 // the same loudness a measuring from the start gives, joins and all.
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
+	t.Parallel()
 	source := sweep(t, "300")
-	saved := levelsEvery
-	levelsEvery = 50 * time.Millisecond
-	defer func() { levelsEvery = saved }()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.levelsEvery = 50 * time.Millisecond
 	e.FFmpeg = "ffmpeg"
 
 	// The playhead near the end when the episode is added, and then moved
@@ -273,11 +272,10 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 // A measuring cut off keeps what it has, and the next carries on from
 // there rather than starting again.
 func TestMeasureLevelsCarriesOn(t *testing.T) {
+	t.Parallel()
 	source := sweep(t, "120")
-	saved := levelsEvery
-	levelsEvery = 20 * time.Millisecond
-	defer func() { levelsEvery = saved }()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.levelsEvery = 20 * time.Millisecond
 	e.FFmpeg = "ffmpeg"
 	// Cut off at the first write, which is part of what the clip timeline
 	// shows and on from there.
@@ -291,7 +289,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 		}); err == nil {
 		t.Fatal("a measuring cut off said it finished")
 	}
-	levelsEvery = saved
+	e.levelsEvery = 0
 	had := ReadLevels(source)
 	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(60/FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)

@@ -60,15 +60,14 @@ func (s *sideBySide) Close() {}
 // copy hears it, and every save on the way reaches only as far as all of
 // it has been heard, never past a piece still being heard.
 func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = 0
-	defer func() { checkpointEvery = saved }()
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 
 	var calls int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	one := NewProject(e, source, base)
 	if err := one.Transcribe(context.Background()); err != nil {
@@ -142,6 +141,7 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 // Side by side, a part is heard exactly, with nothing missed on the way
 // and no audio heard past what it reads around the part.
 func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
 	heard := 0.0
 	copies := &sideBySide{inner: straddlingRecognizer{&heard}, copies: 3}
@@ -181,10 +181,8 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 // Stopped part way, side by side, what every copy heard before the stop is
 // written down, and nothing is left hearing after it has returned.
 func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = time.Hour
-	defer func() { checkpointEvery = saved }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -205,6 +203,7 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	var calls int32
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4}
 	e := NewEngine(log)
+	e.checkpointEvery = time.Hour
 	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -227,6 +226,7 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 // A copy that panics does so where the transcription was called, the way
 // the one copy did, so the job around it fails and the app does not.
 func TestACopyThatPanicsFailsTheTranscription(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
 	var calls int32
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 3, fail: 2}

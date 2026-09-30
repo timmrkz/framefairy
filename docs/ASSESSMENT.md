@@ -205,7 +205,14 @@ facade the app goes around, and three files too big to hold in one's head.
     `planFailed` has two identical branches (`run.go:767-773`). Fix: `Run`
     returns an error and the command line turns it into an exit code. Split
     `Run` into steps `Project` calls directly instead of filling `Options`
-    with strings. **Open.**
+    with strings. **Half fixed** in #59: the run
+    returns an error, kept as the kind it is with `%w`, and only `Run`,
+    for the command line, turns it into an exit code and a line. `Project`
+    and the recipe comparison take the error rather than hooking the last
+    error line, and the hook is gone. The messages no longer name flags,
+    `planFailed` has one branch, and a speech model that will not load
+    keeps its error. **Open:** `Run` split into steps `Project` calls
+    directly.
 19. **`Project` covers part of what the app needs.** The app calls 92 engine
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
@@ -229,7 +236,18 @@ facade the app goes around, and three files too big to hold in one's head.
     inside `Run` (`run.go:140`), there is a package-level model host and
     several test hooks, and `DefaultStyle` is an exported map anyone can
     change. No engine test runs in parallel, and the engine tests take four
-    minutes. **Open.**
+    minutes. **Fixed** in #59, the part that
+    held the tests up: `Run` no longer sets the training folder, the command
+    line does, once. The test helpers no longer move it, and the tests that
+    read their own records get one of their own with `ownTrainingDir`. How
+    often a transcription and the loudness measure save is a field of the
+    engine, not a package variable. 46 of the slow tests run side by side,
+    and the engine tests take 155 s rather than 270 s on four cores, more
+    on a machine with more. What stays: the model host is global on
+    purpose, since one model fits in memory at a time, and `DefaultStyle`
+    is read in too many places to change here. Tests that set `framing`,
+    `launch`, `healthWait`, `shotLimit` or the speed file, or the
+    environment, still run one at a time.
 23. **`Episode.svelte` is 3,100 lines.** Its script has 45 `$state`, 86
     `$derived` and 17 `$effect`. Most effects watch for a job to end by
     keeping the value before in a plain variable, which makes the job's
@@ -250,9 +268,9 @@ facade the app goes around, and three files too big to hold in one's head.
     has to carve out `Chosen` by hand (`main.go:367-373`), while other calls
     change one field. Each new field the Go side owns needs another carve
     out or is lost to the last save. Fix: saves that change only what
-    changed. **Open.**
+    changed. **Fixed** in #59: the settings page sends only the keys it changed, and the Go side lays them over what it holds.
 27. **One name, two things.** `engine.Compare` compares two undo snapshots,
-    `Engine.Compare` compares recipes. **Open.**
+    `Engine.Compare` compares recipes. **Fixed** in #59: the one for two snapshots is `engine.ChangeBetween`.
 
 ## Against the project's own rules
 

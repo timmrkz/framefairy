@@ -469,7 +469,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 		rec, err := e.OpenRecognizer(modelDir)
 		e.Log.ClearProgress()
 		if err != nil {
-			return renderErr("%s\n%s", err, ModelHelp(modelDir))
+			return fmt.Errorf("%w\n%s", err, ModelHelp(modelDir))
 		}
 		defer rec.Close()
 		started := time.Now()

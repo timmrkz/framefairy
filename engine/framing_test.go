@@ -55,6 +55,7 @@ func TestFrameDifference(t *testing.T) {
 }
 
 func TestAClipThatComesBackToItsCameraIsOneShot(t *testing.T) {
+	t.Parallel()
 	path, source := twoCameras(t)
 	e := framingEngine()
 	ctx := context.Background()
@@ -103,6 +104,7 @@ func fmtCrop(x *int) string {
 // A system decoder that will not take the file is gone round, not failed
 // on: the same work is done on the processor, and so is everything after.
 func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in ffmpeg is a shell script")
 	}

@@ -158,6 +158,7 @@ func TestAClipMadeByHand(t *testing.T) {
 // Clips made by hand at the same moment each go in, each with a number of
 // its own, taken where the set is written.
 func TestClipsMadeByHandAtOnce(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
 	log, _ := underwayLog()
 	p := handProject(t, source, log)
@@ -198,6 +199,7 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 // clip would have appeared, saying it stopped, and keeps its record, to be
 // carried on like any job.
 func TestAClipMadeByHandCalledOff(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
 	log, told := underwayLog()
 	p := handProject(t, source, log)

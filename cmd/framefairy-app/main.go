@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -370,17 +371,33 @@ func (s *FrameFairy) Chrome() Chrome {
 // GetSettings returns the saved settings.
 func (s *FrameFairy) GetSettings() Settings { return s.store.Settings() }
 
-// SaveSettings takes the whole settings object back from the interface, so
-// anything the interface does not know about would be lost on every save.
-// Chosen is one of those: it is not a setting anybody edits, it is the
-// record that the one setup question was answered, and losing it would put
-// a customer back in the setup screen every time they changed a colour.
-func (s *FrameFairy) SaveSettings(v Settings) error {
-	return s.store.UpdateSettings(func(set *Settings) {
-		chosen := set.Chosen
-		*set = v
-		set.Chosen = chosen
+// SaveSettings takes what the interface changed in the settings, and only
+// that, as JSON keys and their values, and lays it over what is saved. It
+// took the whole object once, and whatever the Go side had changed since
+// the interface last read it was lost on the next save, unless it was
+// carved out by hand, the way Chosen was. Chosen is still never taken from
+// the interface: it is not a setting anybody edits, it is the record that
+// the one setup question was answered. A key the settings do not have is
+// refused, so a misspelt one is not quietly dropped.
+func (s *FrameFairy) SaveSettings(changed map[string]json.RawMessage) error {
+	delete(changed, "chosen")
+	patch, err := json.Marshal(changed)
+	if err != nil {
+		return err
+	}
+	var bad error
+	err = s.store.UpdateSettings(func(set *Settings) {
+		next := *set
+		dec := json.NewDecoder(bytes.NewReader(patch))
+		dec.DisallowUnknownFields()
+		if bad = dec.Decode(&next); bad == nil {
+			*set = next
+		}
 	})
+	if bad != nil {
+		return fmt.Errorf("the settings were not saved: %w", bad)
+	}
+	return err
 }
 
 // Check is one line of the setup check.

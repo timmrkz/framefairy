@@ -17,7 +17,7 @@ func edited(t *testing.T, logs string, edit func() error) *Change {
 	if err := edit(); err != nil {
 		t.Fatal(err)
 	}
-	change := Compare(before, TakeSnapshot(logs))
+	change := ChangeBetween(before, TakeSnapshot(logs))
 	if change == nil {
 		t.Fatal("the edit changed nothing")
 	}

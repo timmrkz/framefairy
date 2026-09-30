@@ -31,14 +31,13 @@ func (c countingRecognizer) Recognize(samples []float32, rate int) []Token {
 }
 
 func TestTranscriptionResumes(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = 0
-	defer func() { checkpointEvery = saved }()
 
 	var calls int32
 	heard := 0.0
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return countingRecognizer{fakeRecognizer{&calls}, &heard}, nil
 	}
@@ -416,15 +415,14 @@ func (w watchingRecognizer) Recognize(samples []float32, rate int) []Token {
 // first clips, so an episode of four hours must not keep its progress to
 // itself until the end.
 func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = 0
-	defer func() { checkpointEvery = saved }()
 
 	model := t.TempDir()
 	var calls int32
 	var seen []float64
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
 			st := Status(source, model)
@@ -457,10 +455,8 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 // the file alone would step across the window instead of moving with the
 // work.
 func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = time.Hour
-	defer func() { checkpointEvery = saved }()
 
 	var mu sync.Mutex
 	var reached []float64
@@ -475,6 +471,7 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 	})
 	var calls int32
 	e := NewEngine(log)
+	e.checkpointEvery = time.Hour
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -504,10 +501,8 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 // on afterwards has to start where the work really got to, or minutes of
 // audio are heard twice and the range picker's edge stands still for them.
 func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = time.Hour
-	defer func() { checkpointEvery = saved }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -527,6 +522,7 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	})
 	var calls int32
 	e := NewEngine(log)
+	e.checkpointEvery = time.Hour
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -549,12 +545,11 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 // after the other, so a machine that stops in between, or a copy made by
 // hand, can leave them out of step.
 func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = 0
-	defer func() { checkpointEvery = saved }()
 	var calls int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -607,6 +602,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 // A transcript that cannot be read, cut short or damaged, is started again
 // rather than failing the episode.
 func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
 	var calls int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
@@ -646,12 +642,11 @@ func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
 // drawing it. A reader never sees a file half written: what it reads only
 // ever grows, and a read is never taken for the end of the transcription.
 func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	saved := checkpointEvery
-	checkpointEvery = 0
-	defer func() { checkpointEvery = saved }()
 	var calls int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -758,6 +753,7 @@ func (beatRecognizer) Close() {}
 // so each join has a word across it, heard whole on one side and in part
 // on the other.
 func TestPartsMeetWithEveryWordOnce(t *testing.T) {
+	t.Parallel()
 	source := beatEpisode(t, "12")
 	heard := 0.0
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))

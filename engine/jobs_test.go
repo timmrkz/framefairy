@@ -17,7 +17,6 @@ import (
 func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project, *int32) {
 	t.Helper()
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
@@ -36,6 +35,7 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 }
 
 func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
+	t.Parallel()
 	p, asked := searchProject(t, nil)
 	var turns []string
 	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
@@ -97,6 +97,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 
 // The whole episode is heard to its end, and the transcript is finished.
 func TestASearchOfTheWholeEpisodeFinishesTheTranscript(t *testing.T) {
+	t.Parallel()
 	p, _ := searchProject(t, nil)
 	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
@@ -121,6 +122,7 @@ func (s stops) Recognize(samples []float32, rate int) []Token {
 // Stopped from outside while it hears, the record says it was hearing, so
 // an app that starts reads it as cut off. What was heard stays.
 func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var heard int32
@@ -146,6 +148,7 @@ func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 
 // Stopped while it waits for the model's lane, the record says waiting.
 func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
+	t.Parallel()
 	p, asked := searchProject(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
@@ -167,6 +170,7 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 }
 
 func TestASearchThatFailsSaysWhy(t *testing.T) {
+	t.Parallel()
 	t.Run("while it hears", func(t *testing.T) {
 		p, _ := searchProject(t, func(string) (Recognizer, error) {
 			return nil, errors.New("the speech model is not there")
@@ -207,6 +211,7 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 // A render renders its clips one at a time and keeps a record of the ones
 // it finished, so one that was cut off carries on with the rest.
 func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
+	t.Parallel()
 	p, _ := searchProject(t, nil)
 	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
 	if err != nil {
@@ -344,6 +349,7 @@ func (s takenBack) Recognize(samples []float32, rate int) []Token {
 // A search whose hearing lane is taken back waits for its turn again and
 // carries on from what it heard.
 func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
+	t.Parallel()
 	var take context.CancelFunc
 	var heard int32
 	p, asked := searchProject(t, func(string) (Recognizer, error) {
@@ -414,6 +420,7 @@ func (c counting) Recognize(samples []float32, rate int) []Token {
 // search of the half hour after a half hour already heard say almost six
 // minutes left.
 func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
+	t.Parallel()
 	var heard int32
 	seconds := 0.0
 	p, _ := searchProject(t, func(string) (Recognizer, error) {
@@ -448,6 +455,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 // Captions switched off in the captions column render a short without any:
 // no caption file is made for it, and the short is there.
 func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
+	t.Parallel()
 	p, _ := searchProject(t, nil)
 	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
 	if err != nil {
@@ -472,6 +480,7 @@ func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 // recovers the panic and fails the job, but a lane held for good would
 // leave every later search waiting for a turn that never comes.
 func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
+	t.Parallel()
 	p, _ := searchProject(t, func(string) (Recognizer, error) {
 		panic("the speech model broke")
 	})
@@ -494,6 +503,7 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 // the new one. ffmpeg here writes a few bytes where it was told to and
 // fails, the way a render cut off halfway leaves a file behind.
 func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
+	t.Parallel()
 	p, _ := searchProject(t, nil)
 	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
 	if err != nil {
@@ -544,6 +554,7 @@ func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 // named one second apart on either side, and the search answered with a
 // plan that was not there.
 func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
+	t.Parallel()
 	p, _ := searchProject(t, nil)
 	plan, err := p.Search(context.Background(), PlanRequest{From: 9.9996, To: 39.9996, Count: 1, Min: 5}, nil)
 	if err != nil {

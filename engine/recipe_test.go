@@ -142,8 +142,8 @@ func TestStoriesSaysTheLengthInWords(t *testing.T) {
 // of its own, the episode's plan and captions are left alone, nothing is
 // rendered and nothing is recorded for training.
 func TestAnExperimentKeepsToItself(t *testing.T) {
+	ownTrainingDir(t)
 	source := testEpisode(t, "20")
-	SetTrainingDir(t.TempDir())
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -194,8 +194,8 @@ func TestAnExperimentKeepsToItself(t *testing.T) {
 // experiment, the default recipe included, and writes a report that holds
 // every one of them.
 func TestAComparisonReportsEveryRecipe(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "20")
-	SetTrainingDir(t.TempDir())
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -250,8 +250,8 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 // A comparison in which every search failed has nothing to report, and says
 // so rather than pointing at a report of failures.
 func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "20")
-	SetTrainingDir(t.TempDir())
 	var heard int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -278,6 +278,7 @@ func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 // tokens. The same recipe then runs twice, each in a folder of its own,
 // and the model is told the budget of each.
 func TestAComparisonOfThinkingBudgets(t *testing.T) {
+	t.Parallel()
 	if v, err := ParseVariant("stories@1024"); err != nil || v.Recipe != "stories" || v.Think == nil || *v.Think != 1024 {
 		t.Errorf("stories@1024 read as %+v %v", v, err)
 	}
@@ -298,7 +299,6 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	}
 
 	source := testEpisode(t, "20")
-	SetTrainingDir(t.TempDir())
 	var mu sync.Mutex
 	var budgets, seeds []float64
 	var temperatures []any
