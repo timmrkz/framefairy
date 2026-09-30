@@ -252,6 +252,7 @@
 
   function play() {
     if (!video) return;
+    endCorrection();
     // The clip plays when the playhead stands in it, when it has just played
     // to its end, which is where the playhead is left, and when it loops.
     // Anywhere else the playhead was put there to look at that part of the
@@ -532,6 +533,20 @@
       // landed.
       if (savingWord === was.at) savingWord = null;
     }
+  }
+
+  // Playing ends a correction. The word lets go of the caret, which saves
+  // what was typed the way Enter does, and whatever was selected in the
+  // caption box goes with it, so the captions follow the picture again.
+  // A click on the video preview lands on the crop frame, and the frame
+  // refuses the pointer so a drag moves the crop, which also stops the
+  // browser taking the focus away. So the word kept the caret while the
+  // video played, with the caption held on the moment it was clicked.
+  function endCorrection() {
+    const on = document.activeElement;
+    if (on instanceof HTMLElement && on.classList.contains("word") && screen?.contains(on)) on.blur();
+    const selected = window.getSelection();
+    if (selected?.rangeCount && screen?.contains(selected.anchorNode)) selected.removeAllRanges();
   }
 
   function wordKey(event: KeyboardEvent) {
