@@ -1533,17 +1533,28 @@ func (s *FrameFairy) Reveal(path string) error {
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", "-R", path).Start()
+		return startReaped(exec.Command("open", "-R", path))
 	case "windows":
 		// One argument, not two: with a space after the comma Explorer
 		// opens its default folder and selects nothing.
-		return exec.Command("explorer", "/select,"+path).Start()
+		return startReaped(exec.Command("explorer", "/select,"+path))
 	}
 	dir := path
 	if fileExists(path) {
 		dir = filepath.Dir(path)
 	}
-	return exec.Command("xdg-open", dir).Start()
+	return startReaped(exec.Command("xdg-open", dir))
+}
+
+// startReaped starts a program that finishes by itself and waits for it
+// out of the way. A program started and never waited for stays in the
+// process table as a zombie until the app quits, one for every Reveal.
+func startReaped(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // TrainingStatus is the one folder the records live in and how much is in

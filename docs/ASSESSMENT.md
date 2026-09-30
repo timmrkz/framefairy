@@ -278,11 +278,11 @@ facade the app goes around, and three files too big to hold in one's head.
 31. Dead code: `wrapText` (`ass.go:295`), `captionLayout`
     (`highlight.go:66`), `storedForm` (`transcript.go:358`, with a comment
     that says it matters), `medianIndex` (`util.go:304`), the `ReadPlan`
-    binding and `api.readPlan`, and the `tslib` dev dependency. **Open.**
+    binding and `api.readPlan`, and the `tslib` dev dependency. **Fixed** in #58.
 32. Errors worded like Python reach the user: `'start'` (`clips.go:311`) and
-    "could not convert string to float" (`clips.go:161`). **Open.**
+    "could not convert string to float" (`clips.go:161`). **Fixed** in #58.
 33. Failures in the app come back as `os.ErrNotExist`, "file does not
-    exist", where `notInLibrary` says what happened. **Open.**
+    exist", where `notInLibrary` says what happened. **Fixed** in #58.
 34. `make help` prints lines 1 to 39 of the Makefile (line 117) and the
     header runs to 45, so it stops mid-sentence. **Open.**
 35. Docs that drifted: the fuzz target count and the `TIDY=0` step in
@@ -293,7 +293,7 @@ facade the app goes around, and three files too big to hold in one's head.
     `tools-beside` copies only the binaries, so the loop in
     `bundle-macos.sh:61` finds nothing. **Open.**
 37. Tests that wait on time: `remove_test.go:169, 190, 236` sleep a fixed
-    300 ms for a 200 ms job. Poll with a deadline instead. **Open.**
+    300 ms for a 200 ms job. Poll with a deadline instead. **Fixed** in #58.
 38. When our ffmpeg build fails, `tools.sh:104` unlinks the user's Homebrew
     ffmpeg and installs the tap's, a change to the machine nobody would
     expect. **Open.**
@@ -301,14 +301,14 @@ facade the app goes around, and three files too big to hold in one's head.
     `cmd/framefairy-release`, which signs updates. No check that `go.mod` is
     tidy in CI, since make tidies it quietly. **Open.**
 40. `Reveal` (`main.go:1547`) and the other `.Start()` calls never `Wait`,
-    so each leaves a zombie until the app quits. **Open.**
+    so each leaves a zombie until the app quits. **Fixed** in #58.
 41. Colours and heights outside the tokens: `rgba(224,96,90,.14)` in
     `ClipList.svelte:344` is `--err` written out, `--wave` is defined in
     `ClipTimeline.svelte` with two different values, the backdrop
     `rgba(0,0,0,.55)` is repeated in three components, and the card height
     `56px` four times in `ClipList.svelte`. **Open.**
 42. Doc comments in the wrong place: `ResetCrop`'s above `SetCaptionStyle`
-    (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Open.**
+    (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Fixed** in #58.
 43. `make changed` runs no Go test for a change to a build script.
     `notices_test.go` checks the versions in `notices.json` against the pins
     in `build-ffmpeg.sh` and `build-llama.sh`, but it names them without
