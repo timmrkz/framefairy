@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Job } from "./api";
-import { arriving, OnTheWay, type Arriving } from "./arriving";
+import { arriving, beams, OnTheWay, type Arriving } from "./arriving";
 import { arrivalLine } from "./steps";
 
 function job(over: Partial<Job>): Job {
@@ -113,5 +113,39 @@ describe("a card is held from the moment its clip is written until the list has 
     way.cards([card("s/1")], 3, 2);
     way.cards([], 3, 2);
     expect(way.cards([card("s/1")], 3, 2).map((a) => a.held)).toEqual([undefined]);
+  });
+});
+
+describe("a search is one beam, and it moves down its cards", () => {
+  test("of each job's rows, only the first wears the work", () => {
+    const worn = beams([
+      { key: "clip-a", job: null },
+      { key: "s/2", job: "s" },
+      { key: "h/1", job: "h" },
+      { key: "s/1", job: "s" },
+      { key: "s/3", job: "s" },
+      { key: "ghost-0", job: "s" },
+    ]);
+    expect([...worn]).toEqual(["s/2", "h/1"]);
+  });
+
+  test("as the first card is written, the next one takes it on", () => {
+    const worn = beams([
+      { key: "clip-a", job: null },
+      { key: "clip-b", job: null },
+      { key: "s/1", job: "s" },
+      { key: "s/3", job: "s" },
+    ]);
+    expect([...worn]).toEqual(["s/1"]);
+  });
+
+  test("the row still to come wears it while no card stands above it", () => {
+    expect([
+      ...beams([
+        { key: "clip-a", job: null },
+        { key: "ghost-0", job: "s" },
+        { key: "ghost-1", job: null },
+      ]),
+    ]).toEqual(["ghost-0"]);
   });
 });

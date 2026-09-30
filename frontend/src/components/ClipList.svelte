@@ -2,7 +2,7 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
-  import type { Arriving } from "../lib/arriving";
+  import { beams, type Arriving } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
 
   import Busy from "./Busy.svelte";
@@ -64,9 +64,9 @@
     // come: how far the whole search has come and how long it has left.
     // The row that said so went as the last clips were named, with the
     // search at sixty per cent, and its fill went with it, so the search
-    // went on with nothing to say how far it was. Its cards carry it on to
-    // the end, and until then they wear the beam alone, because a card is
-    // not as far along as the search it came from.
+    // went on with nothing to say how far it was. The first of its cards
+    // still on its way carries it on to the end, see beams, and the time
+    // left with it once no row is left to say that.
     carry?: { job: string; fraction: number; left: string; still?: boolean } | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
@@ -122,6 +122,20 @@
     // window ends, and the rows still to come keep their own order.
     const rank = (r: Row) => (r.ghost !== undefined ? r.ghost - 1e6 : 0);
     return all.sort((a, b) => a.start - b.start || rank(a) - rank(b));
+  });
+
+  // The rows that wear the work, see beams: the first row of each job still
+  // on its way. The other cards of a search say what is being done to them
+  // and nothing more. The row saying what the search does belongs to the
+  // search, so it wears it only while no card of the search stands above.
+  const worn = $derived.by(() => {
+    const search = carry?.job ?? "";
+    return beams(
+      rows.map((r) => ({
+        key: r.key,
+        job: r.ghost === 0 && next ? search : r.arriving && !r.arriving.stopped ? r.arriving.job : null,
+      })),
+    );
   });
 
   // A clip taken out slides away. A clip on the way does not: it becomes
@@ -231,7 +245,7 @@
              round exactly once. The first says what the search is doing,
              or how it ended. -->
         {#if g === 0 && next}
-          <Busy fraction={next.fraction} still={next.still} />
+          {#if worn.has(row.key)}<Busy fraction={next.fraction} still={next.still} />{/if}
           <span class="title">{next.what}</span>
           <span class="meta muted num">{next.left}</span>
         {:else if g === 0 && stopped}
@@ -245,9 +259,13 @@
             <span class="meta muted num">{a.left}</span>
           </button>
         {:else}
-          {@const own = carried && carried.job === a.job ? carried : null}
+          {@const wears = worn.has(row.key)}
+          {@const search = wears && carry && carry.job === a.job ? carry : null}
+          {@const own = search && carried ? carried : null}
           {@const left = own ? own.left : a.left}
-          <Busy fraction={own ? own.fraction : a.fraction} still={a.still || own?.still} />
+          {#if wears}
+            <Busy fraction={search ? search.fraction : a.fraction} still={a.still || search?.still} />
+          {/if}
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}

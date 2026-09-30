@@ -134,3 +134,20 @@ export class OnTheWay {
     return [...this.held.values()].some((a) => a.after >= next);
   }
 }
+
+// beams is the rows that wear the work, one for each job: of the rows of a
+// job, in the order of the list, the first. job is whose work a row shows,
+// or null for a row that shows none. A search's batch is one piece of work,
+// so it is one beam and one fill, and it moves down the batch from the
+// first card to the last as each is written. Every card wore its own, and
+// a search fitting four clips to the length lit four cards the same.
+export function beams(rows: { key: string; job: string | null }[]): Set<string> {
+  const jobs = new Set<string>();
+  const keys = new Set<string>();
+  for (const { key, job } of rows) {
+    if (job === null || jobs.has(job)) continue;
+    jobs.add(job);
+    keys.add(key);
+  }
+  return keys;
+}
