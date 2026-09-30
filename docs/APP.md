@@ -1586,8 +1586,12 @@ Homebrew's ffmpeg and llama-server even when it is started from Finder.
 | Built interface | `cmd/framefairy-app/dist/app/` | made by make from `frontend/`, embedded into the program, not in git |
 
 The Go side uses Wails v3, pinned to v3.0.0-beta.23. The interface calls the
-methods of the `FrameFairy` type in `cmd/framefairy-app/main.go` by name, through the
-typed wrappers in `frontend/src/lib/api.ts`.
+methods of the `FrameFairy` type by name, through the typed wrappers in
+`frontend/src/lib/api.ts`. The type is declared in
+`cmd/framefairy-app/main.go`, and its methods sit in files by what they
+are for, named like their tests: `library.go`, `media.go`, `views.go`,
+`words.go`, `edits.go`, `chosen.go`, `training.go`, `settings.go`,
+`setup.go`, `jobs.go`, `search.go` and `updates.go`.
 
 The built interface lives next to the Go code because Go can only embed files
 from its own folder. It is generated, so never edit it by hand.
