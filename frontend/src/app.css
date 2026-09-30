@@ -395,95 +395,32 @@ input[type="password"] {
   gap: 8px;
 }
 
-/* How far work has come: the fill. It is the same thing wherever it is,
-   a capsule of the app's colour with a bright head at the front and a
-   light travelling over what is already done, so it lives even while the
-   number stands still. Here it is a bar of its own, for work with no
-   control to sit in. Inside a control it is the fill in Busy.svelte. */
+/* How far work has come, as a bar of its own, for work with no control to
+   sit in: the jobs in Activity. The bar is only the track. What runs in it
+   is Busy's fill, with no rim and no motes, the same fill New and Render
+   wear, so the two can never drift apart. With no words standing over it,
+   the fill is the app's colour itself rather than a wash of it. */
 .progress {
-  position: relative;
   height: 6px;
   border-radius: 3px;
   background: var(--ink-2);
   box-shadow: inset 0 0 0 1px var(--line);
-  overflow: hidden;
 }
 
-.progress > i {
-  display: block;
-  position: relative;
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hi) 100%);
-  /* The head of the fill, a line of light with a glow around it, so where
-     the work has got to is something to look at rather than a change of
-     shade to squint at. */
-  box-shadow:
-    inset -2px 0 var(--accent-lit),
-    0 0 10px var(--accent-wash);
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+.progress.busyhost:has(> .beam) {
+  --wash-from: var(--accent);
+  --wash-to: var(--accent-hi);
+  --sheen: 0.28;
+  --fill-round: 3px;
 }
 
-/* The light over what is done. */
-.progress > i::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.28) 50%,
-    transparent 100%
-  );
-  animation: sheen 2.4s cubic-bezier(0.45, 0, 0.2, 1) infinite;
-}
-
+/* The light over what is done, in Busy's fill. */
 @keyframes sheen {
   from {
     transform: translateX(-100%);
   }
   to {
     transform: translateX(100%);
-  }
-}
-
-/* Work that cannot say how far it has come: the capsule shuttles across
-   the track and stretches as it goes, so the bar is never a number that
-   is missing, it is a thing in motion. */
-.progress.unknown > i {
-  width: 38% !important;
-  transform-origin: left center;
-  animation: shuttle 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-  transition: none;
-}
-
-.progress.unknown > i::after {
-  animation: none;
-  opacity: 0;
-}
-
-@keyframes shuttle {
-  0% {
-    transform: translateX(-105%) scaleX(0.55);
-  }
-  50% {
-    transform: translateX(75%) scaleX(1.35);
-  }
-  100% {
-    transform: translateX(270%) scaleX(0.55);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .progress > i::after,
-  .progress.unknown > i {
-    animation: none;
-  }
-
-  .progress.unknown > i {
-    width: 100% !important;
-    opacity: 0.4;
   }
 }
 

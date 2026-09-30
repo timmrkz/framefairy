@@ -161,14 +161,16 @@
     <h2>The fill, as a track</h2>
     <p class="muted">
       The same fill where a job has no control of its own, which is Activity.
-      A light travels over what is already done, so it lives even when the
-      number stands still. Work that cannot say how far it has come shuttles
-      across the track instead of standing at a number it does not have.
+      It is Busy with no rim and no motes, in a track, so it is the fill
+      above and cannot become another. A light travels over what is
+      already done, so it lives even when the number stands still. Work
+      that cannot say how far it has come shuttles across the track instead
+      of standing at a number it does not have.
     </p>
     <div class="tracks">
-      <div class="progress"><i style="width: {share * 100}%"></i></div>
-      <div class="progress"><i style="width: 35%"></i></div>
-      <div class="progress unknown"><i></i></div>
+      <div class="progress busyhost"><Busy rim={false} motes={false} shuttle fraction={share} /></div>
+      <div class="progress busyhost"><Busy rim={false} motes={false} shuttle fraction={0.35} /></div>
+      <div class="progress busyhost"><Busy rim={false} motes={false} shuttle /></div>
     </div>
   </section>
 
