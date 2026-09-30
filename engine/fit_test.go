@@ -20,8 +20,8 @@ import (
 // with the reply, so a search that reuses the reply fits it the same way
 // and asks nothing.
 func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	var mu sync.Mutex
 	var asks [][]chatMessage
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,13 +121,13 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 // ones off the length, splits the thinking between the two asks, and takes
 // the edit as long as it runs no further off the length.
 func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
+	// Not beside the others: it adds a recipe to the package's list.
 	edit := linesRecipe
 	edit.Name, edit.Edit = "lines-edit", true
 	recipes[edit.Name] = edit
 	defer delete(recipes, edit.Name)
 
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	var mu sync.Mutex
 	var asks []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -190,8 +190,8 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 // mirrors. That is no answer about the clip asked for, so it is asked for
 // once more, alone. A reused reply replays both answers and asks nothing.
 func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
-	SetTrainingDir(t.TempDir())
 	var mu sync.Mutex
 	var asks [][]chatMessage
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

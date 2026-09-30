@@ -69,7 +69,7 @@ func TestProjectSteps(t *testing.T) {
 	source := testEpisode(t, "40")
 	// The records of every episode go in one folder. This test counts
 	// them, so it gets a folder of its own.
-	SetTrainingDir(t.TempDir())
+	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()

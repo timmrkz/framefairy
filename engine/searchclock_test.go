@@ -282,7 +282,7 @@ func TestTimingsKeptFromSeveralSearchesAtOnce(t *testing.T) {
 func TestASearchSaysHowFarItIs(t *testing.T) {
 	useSpeedFile(t)
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
+	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()

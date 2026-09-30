@@ -137,6 +137,7 @@ func TestAFailedWriteLeavesThePlanThatWasThere(t *testing.T) {
 // app that edits one. They take the same lock, so an edit always reads
 // a whole plan and a search never lands in the middle of one.
 func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
+	t.Parallel()
 	path, body := planOnDisk(t, 4)
 	var bad, edits int64
 	var wg sync.WaitGroup
@@ -193,6 +194,7 @@ func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 // so this is a second pair of eyes on the test above rather than the
 // guard itself.
 func TestTheWindowReadsAWholePlanWhileASearchWrites(t *testing.T) {
+	t.Parallel()
 	path, body := planOnDisk(t, 12)
 	logs := filepath.Dir(path)
 	var torn, reads int64

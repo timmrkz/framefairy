@@ -98,7 +98,8 @@ type Options struct {
 	// NoRecord stops training records from being written.
 	NoRecord bool
 	// TrainingDir is the one folder the records go in. Empty means the
-	// default, ~/.framefairy/training.
+	// default, ~/.framefairy/training. The program sets it with
+	// SetTrainingDir before anything runs, see cmd/framefairy.
 	TrainingDir     string
 	HighlightColour string
 	NoHighlight     bool
@@ -136,9 +137,6 @@ func isFile(path string) bool {
 func (e *Engine) Run(ctx context.Context, opts Options) int {
 	log := e.Log
 	e.Prefill = opts.Prefill
-	if opts.TrainingDir != "" {
-		SetTrainingDir(opts.TrainingDir)
-	}
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
 	if !exists(opts.Source) {

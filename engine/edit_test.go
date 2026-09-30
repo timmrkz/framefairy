@@ -988,6 +988,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 // An edit waits for another program editing the same file, the command
 // line or a second copy of the app, and goes ahead once it is done.
 func TestAnEditWaitsForAnotherProgram(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("no lock across programs on Windows yet")
 	}

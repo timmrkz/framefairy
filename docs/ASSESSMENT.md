@@ -229,7 +229,18 @@ facade the app goes around, and three files too big to hold in one's head.
     inside `Run` (`run.go:140`), there is a package-level model host and
     several test hooks, and `DefaultStyle` is an exported map anyone can
     change. No engine test runs in parallel, and the engine tests take four
-    minutes. **Open.**
+    minutes. **Fixed** in #59, the part that
+    held the tests up: `Run` no longer sets the training folder, the command
+    line does, once. The test helpers no longer move it, and the tests that
+    read their own records get one of their own with `ownTrainingDir`. How
+    often a transcription and the loudness measure save is a field of the
+    engine, not a package variable. 46 of the slow tests run side by side,
+    and the engine tests take 155 s rather than 270 s on four cores, more
+    on a machine with more. What stays: the model host is global on
+    purpose, since one model fits in memory at a time, and `DefaultStyle`
+    is read in too many places to change here. Tests that set `framing`,
+    `launch`, `healthWait`, `shotLimit` or the speed file, or the
+    environment, still run one at a time.
 23. **`Episode.svelte` is 3,100 lines.** Its script has 45 `$state`, 86
     `$derived` and 17 `$effect`. Most effects watch for a job to end by
     keeping the value before in a plain variable, which makes the job's
