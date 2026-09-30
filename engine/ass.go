@@ -292,30 +292,6 @@ func SnapCaptionY(y float64) float64 {
 	return math.Max(CaptionYMin, math.Min(y, CaptionYMax))
 }
 
-func wrapText(text string, limit, pad int) string {
-	var lines []string
-	current := ""
-	for _, word := range fields(text) {
-		candidate := strip(current + " " + word)
-		if runeLen(candidate) > limit && current != "" {
-			lines = append(lines, current)
-			current = word
-		} else {
-			current = candidate
-		}
-	}
-	if current != "" {
-		lines = append(lines, current)
-	}
-	if pad > 0 {
-		spaces := strings.Repeat(`\h`, pad)
-		for i, line := range lines {
-			lines[i] = spaces + line + spaces
-		}
-	}
-	return strings.Join(lines, `\N`)
-}
-
 // Caption measures are authored against a frame this wide. Everything is
 // scaled from there when the output size differs.
 const captionFrameW = 1080.0

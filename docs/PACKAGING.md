@@ -569,7 +569,7 @@ tools archive rather than building it. In order:
 | Step | What happens |
 | --- | --- |
 | 1 | Build the interface, then the Go binary for arm64. One architecture, no `lipo`, see the first decision above |
-| 2 | Assemble `framefairy.app`: `Info.plist`, the icon, the speech libraries into `Contents/Frameworks/` with their paths fixed, ffmpeg, ffprobe and llama-server into `Contents/MacOS/` with their licence texts |
+| 2 | Assemble `framefairy.app`: `Info.plist`, the icon, the speech libraries into `Contents/Frameworks/` with their paths fixed, ffmpeg, ffprobe and llama-server into `Contents/MacOS/`, and their licence texts into `Contents/Resources/`, because codesign takes anything in `Contents/MacOS/` for code and an app with a text file there goes out unsigned |
 | 3 | Sign inside-out with the Developer ID: every library, then the three bundled programs, then the app, with the hardened runtime |
 | 4 | Make the `.dmg`, the `.app` beside a shortcut to Applications |
 | 5 | Send it to Apple to notarise, wait, and staple the ticket to it |

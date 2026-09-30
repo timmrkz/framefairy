@@ -577,7 +577,7 @@
     z-index: 1000;
     display: grid;
     place-items: center;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--backdrop);
   }
 
   /* The words on a dark ground of their own, the way macOS shows the

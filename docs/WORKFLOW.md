@@ -120,12 +120,23 @@ separate areas of the code, so the pull requests don't conflict.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`:
+request and every push to `main`, as six jobs at the same time, so the
+answer comes back in the time the slowest takes:
 
-- **Linux:** installs the system packages, runs `make` and `make test`,
-  including the tests that render.
-- **macOS:** runs `make` and fails if the build prints any warning, then runs
-  `make test`.
+- **interface:** `make interface`, the type check and the interface's own
+  tests.
+- **build:** the rules that decide what runs, then `make` on Linux, which
+  proves the programs still link with the interface built into them.
+- **linux:** the Go tests under the race detector, `make unit`, including
+  the tests that render.
+- **fuzz:** `make fuzz` on Linux.
+- **macos:** builds our own ffmpeg, runs `make` and fails if the build prints
+  any warning, then runs the Go tests.
+- **macos-fuzz:** `make fuzz` on macOS.
+
+On a pull request each job first asks `scripts/ci-needs.sh` whether the
+change gives it anything to do, and does nothing when it does not. A push to
+`main` narrows nothing.
 
 ### When main moves
 

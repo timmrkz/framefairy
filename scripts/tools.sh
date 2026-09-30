@@ -94,12 +94,20 @@ if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
 			echo
 			echo "That did not work, so framefairy will use the ffmpeg on the search path."
 			echo "Try it again on its own with: make ffmpeg"
-			if ! command -v ffmpeg >/dev/null 2>&1 ||
-				! ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' ass '; then
-				echo "There is no ffmpeg with libass on the search path either, so installing one."
+			# An ffmpeg that is missing is installed, the way make installs
+			# whatever else this machine lacks. One that is there but cannot
+			# burn in captions belongs to whoever put it there, so it is not
+			# unlinked and replaced behind their back: make says what to run.
+			if ! command -v ffmpeg >/dev/null 2>&1; then
+				echo "There is no ffmpeg on the search path either, so installing one with libass."
 				brew tap homebrew-ffmpeg/ffmpeg
-				brew list --formula ffmpeg >/dev/null 2>&1 && brew unlink ffmpeg
 				brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+			elif ! ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' ass '; then
+				echo "The ffmpeg on the search path has no libass, so it cannot burn in captions."
+				echo "Either fix the build with make ffmpeg, or replace that ffmpeg with one that has it:"
+				echo "  brew tap homebrew-ffmpeg/ffmpeg"
+				echo "  brew unlink ffmpeg"
+				echo "  brew install homebrew-ffmpeg/ffmpeg/ffmpeg"
 			fi
 		fi
 	fi

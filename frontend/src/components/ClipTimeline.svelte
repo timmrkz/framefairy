@@ -877,7 +877,7 @@
     canvas.height = h;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--wave").trim() || "#6b7080";
+    ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--wave").trim();
 
     // The level to draw in each column, in decibels. Nothing at all where
     // no reading falls, so a column past the end of the transcript stays
@@ -1517,7 +1517,6 @@
 
 <style>
   .clip-timeline {
-    --wave: #555a66;
     display: flex;
     flex-direction: column;
     gap: 6px;
