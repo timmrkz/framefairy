@@ -1292,7 +1292,9 @@ The first press only asks, Press ⌘Q again to quit, for three seconds, the
 way Chrome does. It does so on every page and whether work runs or not:
 it asked only while work ran, so the workspace, where something nearly
 always runs, took two presses and the settings page quit on the first. A
-click or Escape takes the question away. The second press says Quitting
+click or Escape takes the question away, and the next press asks again:
+the press behind a question taken away still counted once, so ⌘Q,
+Escape and ⌘Q on the next page quit at once. The second press says Quitting
 while the app stops everything it started, and then it goes. Closing the
 app's window quits without asking, and so does **Relaunch** on the
 Updates page, which was asked for with a click. The stopping happens away

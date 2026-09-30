@@ -677,6 +677,8 @@ export const api = {
   followChannel: (channel: string) => call<void>("FollowChannel", channel),
   checkForUpdates: () => call<void>("CheckForUpdates"),
   restartToUpdate: () => call<void>("RestartToUpdate"),
+  // The question Cmd+Q asked taken away: the next Cmd+Q asks again.
+  stayOpen: () => call<void>("StayOpen"),
   // Opens the commit the running build was made from, on GitHub.
   openCommit: () => call<void>("OpenCommit"),
 };

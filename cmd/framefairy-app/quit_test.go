@@ -149,3 +149,25 @@ func TestCmdQPressedOverAndOverStopsOnce(t *testing.T) {
 		t.Errorf("stopped %d times", p.stopped.Load())
 	}
 }
+
+// Cmd+Q, the question taken away with Escape or a click, and Cmd+Q again
+// asks again. The second press counted though the question had gone, so
+// Cmd+Q on one page, Escape, and Cmd+Q on the next quit at once.
+func TestCmdQAfterTheQuestionWasTakenAwayAsksAgain(t *testing.T) {
+	l, p := newLeaving(false, 0)
+	l.shouldQuit()
+	l.stay()
+	if l.shouldQuit() {
+		t.Fatal("quit")
+	}
+	if got := p.words(); len(got) != 2 || got[1] != "ask" {
+		t.Fatalf("the interface heard %v", got)
+	}
+	if p.stopped.Load() != 0 {
+		t.Fatal("stopped everything")
+	}
+	// Once on its way out, taking the question away changes nothing.
+	l.shouldQuit()
+	l.stay()
+	p.quitWithin(t, 2*time.Second)
+}
