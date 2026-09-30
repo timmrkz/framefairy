@@ -12,9 +12,10 @@ import (
 // ---------------------------------------------------------------------------
 // How far a search has come
 //
-// A search is five parts one after the other: loading the model, the model
+// A search is six parts one after the other: loading the model, the model
 // reading the transcript, the model thinking, the model writing its clips,
-// and the framing of the last of them once it has stopped. How long each
+// a local model asked again about the clips well off the length, and the
+// framing of the last of them once that is done. How long each
 // takes depends on the machine, the model and the window, so the parts are
 // timed on every search that finishes and kept, per model, and the next
 // search on this machine is measured against them. Inside a part, whatever
@@ -33,7 +34,9 @@ import (
 
 // speedVersion is raised whenever what a record measures changes. A record
 // of another version measured something else and is no record.
-const speedVersion = 2
+// 3 gave fitting a part of its own. Before, the tail ran from the end of
+// the answer and held the fitting too.
+const speedVersion = 3
 
 // searchSpeed is how long the parts of a search took on this machine, for
 // one model.
@@ -50,8 +53,12 @@ type searchSpeed struct {
 	Rate    float64 `json:"rate"`
 	// Clip is the seconds each clip took to write.
 	Clip float64 `json:"clip"`
-	// Tail is the seconds from the end of the answer to the last clip in
-	// the plan, which is the framing still going when the model stops.
+	// Fit is the seconds it took a local model to answer about the clips
+	// held back to be fitted to the length, when it was asked.
+	Fit float64 `json:"fit"`
+	// Tail is the seconds from the end of the answer, and of the fitting
+	// where there was one, to the last clip in the plan, which is the
+	// framing still going when the model stops.
 	Tail float64 `json:"tail"`
 	Runs int     `json:"runs"`
 }
@@ -59,8 +66,10 @@ type searchSpeed struct {
 // measuredLocal stands in for a local model this machine has not timed yet:
 // Gemma 4 26B A4B on an M2 Max with 32 GB, reading a half hour window of
 // German, 16,000 tokens.
+// The 28 seconds after the answer were timed with the fitting in them, and
+// are split between the fitting and the framing after it.
 var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 1170,
-	Thought: 260, Rate: 47, Clip: 1.1, Tail: 28, Runs: 1}
+	Thought: 260, Rate: 47, Clip: 1.1, Fit: 12, Tail: 16, Runs: 1}
 
 // measuredCloud stands in for a model in the cloud this machine has not
 // timed yet. It is a guess, not a measurement: a half hour window read in
@@ -139,8 +148,8 @@ func pastSpeed(model string, local bool) (searchSpeed, bool) {
 // could have measured, is no record.
 func (s searchSpeed) usable() bool {
 	return s.Version == speedVersion && s.Runs > 0 && s.Read > 0 && s.Clip > 0 &&
-		s.Load >= 0 && s.Tail >= 0 && s.Thought >= 0 && s.Rate >= 0 &&
-		s.Read < 1e9 && s.Clip < 1e6 && s.Load < 1e5 && s.Tail < 1e5 &&
+		s.Load >= 0 && s.Tail >= 0 && s.Thought >= 0 && s.Rate >= 0 && s.Fit >= 0 &&
+		s.Read < 1e9 && s.Clip < 1e6 && s.Load < 1e5 && s.Tail < 1e5 && s.Fit < 1e5 &&
 		s.Thought < 1e5 && s.Rate < 1e6
 }
 
@@ -176,6 +185,7 @@ func keepSpeed(model string, took searchSpeed, loaded bool) {
 		Thought: blend(was.Thought, took.Thought, known),
 		Rate:    was.Rate,
 		Clip:    blend(was.Clip, took.Clip, known),
+		Fit:     was.Fit,
 		Tail:    blend(was.Tail, took.Tail, known),
 		Runs:    was.Runs + 1,
 	}
@@ -187,6 +197,10 @@ func keepSpeed(model string, took searchSpeed, loaded bool) {
 	}
 	if took.Rate > 0 {
 		now.Rate = blend(was.Rate, took.Rate, known && was.Rate > 0)
+	}
+	// Nor does one that asked nothing again about how long asking takes.
+	if took.Fit > 0 {
+		now.Fit = blend(was.Fit, took.Fit, known && was.Fit > 0)
 	}
 	speeds[model] = now
 	body, err := json.MarshalIndent(speeds, "", "  ")
@@ -215,10 +229,12 @@ const (
 	partReading  = "reading"
 	partThinking = "thinking"
 	partWriting  = "writing"
+	partFitting  = "fitting"
 	partFraming  = "framing"
 )
 
-var partOrder = []string{partLoading, partReading, partThinking, partWriting, partFraming}
+var partOrder = []string{partLoading, partReading, partThinking, partWriting, partFitting,
+	partFraming}
 
 func partIndex(part string) int {
 	for i, p := range partOrder {
@@ -235,7 +251,9 @@ type searchNow struct {
 	// InPart is the seconds since the part began.
 	InPart float64
 	// Local is a model on this machine, which has to be loaded first. One
-	// that was running already skips it.
+	// that was running already skips it. Only a local model is asked again
+	// about the clips well off the length, so only its search has a part
+	// for the fitting.
 	Local, Loads bool
 	// ReadDone and ReadOf are the tokens read and to read, where the model
 	// says. The API does not.
@@ -263,8 +281,21 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	if now.Local && now.Budget >= 0 && past.Rate > 0 {
 		think = min(think, float64(now.Budget)/past.Rate)
 	}
+	// The fitting is counted from the start, whether or not a clip will
+	// need it, because a share that learned of it only once the answer was
+	// in would go back. A search with nothing to fit steps over it. It was
+	// not counted at all, so a search reached the end of its fill with the
+	// model still being asked about two clips, and stood there full for as
+	// long as that took.
+	fit := 0.0
+	if now.Local {
+		fit = past.Fit
+		if fit <= 0 {
+			fit = measuredLocal.Fit
+		}
+	}
 	took := []float64{0, float64(now.Chars) / past.Read, think,
-		float64(now.Count) * past.Clip, past.Tail}
+		float64(now.Count) * past.Clip, fit, past.Tail}
 	if now.Local && now.Loads {
 		took[0] = past.Load
 	}
@@ -334,7 +365,7 @@ func searchLabel(now searchNow) string {
 		switch now.Part {
 		case partWriting:
 			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Count, now.Landed))
-		case partFraming:
+		case partFitting, partFraming:
 			// The answer is whole, so what it holds is what there will be.
 			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Taken, now.Landed))
 		}
@@ -356,6 +387,8 @@ type searchClock struct {
 	partAt   time.Time
 	took     map[string]float64
 	answered time.Time
+	// fitAsked is that the model was asked again about clips held back.
+	fitAsked bool
 	lastLand time.Time
 	stopped  chan struct{}
 	once     sync.Once
@@ -486,12 +519,28 @@ func (c *searchClock) landed() {
 }
 
 // answerDone is the model finished, with the framing of its last clips
-// still going.
+// still going. A local model may be asked again first, see fitted.
 func (c *searchClock) answerDone() {
-	c.enter(partFraming)
+	c.mu.Lock()
+	local := c.now.Local
+	c.mu.Unlock()
+	if local {
+		c.enter(partFitting)
+	} else {
+		c.enter(partFraming)
+	}
 	c.mu.Lock()
 	c.answered = time.Now()
 	c.mu.Unlock()
+}
+
+// fitted is the clips held back fitted to the length, asked is whether the
+// model was asked about any, and what is left is the framing.
+func (c *searchClock) fitted(asked bool) {
+	c.mu.Lock()
+	c.fitAsked = c.fitAsked || asked
+	c.mu.Unlock()
+	c.enter(partFraming)
 }
 
 // finish stops the clock and, for a search that went through every part,
@@ -508,9 +557,19 @@ func (c *searchClock) finish(complete bool) {
 	if !read || !wrote || readTook <= 0 || writeTook <= 0 {
 		return
 	}
+	// The tail runs from where the framing began, which is after the
+	// fitting where there was one.
+	framed := c.answered
+	if c.now.Part == partFraming && c.partAt.After(framed) {
+		framed = c.partAt
+	}
 	tail := 0.0
-	if !c.answered.IsZero() && c.lastLand.After(c.answered) {
-		tail = c.lastLand.Sub(c.answered).Seconds()
+	if !framed.IsZero() && c.lastLand.After(framed) {
+		tail = c.lastLand.Sub(framed).Seconds()
+	}
+	fit := 0.0
+	if c.fitAsked {
+		fit = c.took[partFitting]
 	}
 	thought := c.took[partThinking]
 	took := searchSpeed{
@@ -518,6 +577,7 @@ func (c *searchClock) finish(complete bool) {
 		Read:    float64(c.now.Chars) / readTook,
 		Thought: thought,
 		Clip:    writeTook / float64(c.now.Taken),
+		Fit:     fit,
 		Tail:    tail,
 		Runs:    1,
 	}

@@ -3,7 +3,7 @@
 // its place, wearing what is being done to it, until it is written. A clip
 // the model named and a clip made by hand with I or O come in the same way,
 // because nothing here asks which it is.
-import { clock, type Job } from "./api";
+import { clock, type Job, type JobStep } from "./api";
 import { arrivalLine } from "./steps";
 
 export type Arriving = {
@@ -24,7 +24,9 @@ export type Arriving = {
   end: number;
   // What it is called, once that is known.
   title: string;
-  // What is being done to it, how long is left, and how far it has come.
+  // What is being done to it, in the engine's word and in the words shown,
+  // how long is left, and how far it has come.
+  step?: JobStep;
   what: string;
   left: string;
   fraction: number;
@@ -88,6 +90,7 @@ export function arriving(
         start: clip.start,
         end: clip.end,
         title: clip.title ?? "",
+        step: clip.step,
         what: stopping(job) ? "Stopping" : line.what,
         left: line.left,
         fraction: line.fraction,
@@ -135,19 +138,25 @@ export class OnTheWay {
   }
 }
 
-// beams is the rows that wear the work, one for each job: of the rows of a
-// job, in the order of the list, the first. job is whose work a row shows,
-// or null for a row that shows none. A search's batch is one piece of work,
-// so it is one beam and one fill, and it moves down the batch from the
-// first card to the last as each is written. Every card wore its own, and
-// a search fitting four clips to the length lit four cards the same.
-export function beams(rows: { key: string; job: string | null }[]): Set<string> {
-  const jobs = new Set<string>();
-  const keys = new Set<string>();
-  for (const { key, job } of rows) {
-    if (job === null || jobs.has(job)) continue;
-    jobs.add(job);
-    keys.add(key);
+// Which one card of a search wears the search's work: the beam, the fill
+// for how far the whole search has come and, once no row is left to say
+// it, the time left. A search is one piece of work, so it is one card,
+// and every other card of the search says what is being done to it and
+// nothing more. Every card wore the beam, and a search fitting four clips
+// to the length lit four cards the same. It is the first of the search's
+// cards in the list, and it keeps it for as long as it is on the way, so
+// a card named above it does not take it away. A card whose clip is
+// written has done its work and passes it on to the first card left, so
+// the work starts at the first card of the batch and ends at the last.
+export class Carrier {
+  private key = "";
+
+  pick(cards: OnTheWayCard[], job: string): string {
+    const own = cards.filter((a) => a.job === job && !a.stopped && !a.held);
+    if (own.some((a) => a.key === this.key)) return this.key;
+    let first: OnTheWayCard | undefined;
+    for (const a of own) if (!first || a.start < first.start) first = a;
+    this.key = first?.key ?? "";
+    return this.key;
   }
-  return keys;
 }

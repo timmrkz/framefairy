@@ -2,7 +2,7 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
-  import { beams, type Arriving } from "../lib/arriving";
+  import { Carrier, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
 
   import Busy from "./Busy.svelte";
@@ -32,7 +32,7 @@
     // is pressed, and a clip the model named is one from the moment it is
     // named. Each hands over to the clip itself, in the same place, when
     // it is written.
-    arriving?: Arriving[];
+    arriving?: OnTheWayCard[];
     selected: string;
     // The clip under the hand, here or on either track, and what the hand
     // on a card says about it. A card lit from elsewhere looks the way it
@@ -64,9 +64,9 @@
     // come: how far the whole search has come and how long it has left.
     // The row that said so went as the last clips were named, with the
     // search at sixty per cent, and its fill went with it, so the search
-    // went on with nothing to say how far it was. The first of its cards
-    // still on its way carries it on to the end, see beams, and the time
-    // left with it once no row is left to say that.
+    // went on with nothing to say how far it was. One of its cards carries
+    // it on to the end, see Carrier, and the others wear nothing, because
+    // a search is one piece of work.
     carry?: { job: string; fraction: number; left: string; still?: boolean } | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
@@ -94,6 +94,10 @@
     return Array.from({ length: n }, (_, i) => i);
   });
   const carried = $derived(ghosts.length === 0 ? carry : null);
+  // The one card of the search that wears its work, see Carrier. While no
+  // card of the search is on its way, the row still to come wears it.
+  const carrier = new Carrier();
+  const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
@@ -105,7 +109,7 @@
   // row short for a moment, which the browser answered by pulling a list
   // that was scrolled down back up, every card jumping at once. The keys
   // are kept for as long as the list is, so a clip never changes rows.
-  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: Arriving; ghost?: number };
+  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: OnTheWayCard; ghost?: number };
   const rowOf = new Map<string, string>();
   const rows = $derived.by((): Row[] => {
     for (const a of arriving) if (a.clip && !rowOf.has(a.clip)) rowOf.set(a.clip, a.key);
@@ -122,20 +126,6 @@
     // window ends, and the rows still to come keep their own order.
     const rank = (r: Row) => (r.ghost !== undefined ? r.ghost - 1e6 : 0);
     return all.sort((a, b) => a.start - b.start || rank(a) - rank(b));
-  });
-
-  // The rows that wear the work, see beams: the first row of each job still
-  // on its way. The other cards of a search say what is being done to them
-  // and nothing more. The row saying what the search does belongs to the
-  // search, so it wears it only while no card of the search stands above.
-  const worn = $derived.by(() => {
-    const search = carry?.job ?? "";
-    return beams(
-      rows.map((r) => ({
-        key: r.key,
-        job: r.ghost === 0 && next ? search : r.arriving && !r.arriving.stopped ? r.arriving.job : null,
-      })),
-    );
   });
 
   // A clip taken out slides away. A clip on the way does not: it becomes
@@ -245,7 +235,7 @@
              round exactly once. The first says what the search is doing,
              or how it ended. -->
         {#if g === 0 && next}
-          {#if worn.has(row.key)}<Busy fraction={next.fraction} still={next.still} />{/if}
+          {#if !carrying}<Busy fraction={next.fraction} still={next.still} />{/if}
           <span class="title">{next.what}</span>
           <span class="meta muted num">{next.left}</span>
         {:else if g === 0 && stopped}
@@ -259,12 +249,13 @@
             <span class="meta muted num">{a.left}</span>
           </button>
         {:else}
-          {@const wears = worn.has(row.key)}
-          {@const search = wears && carry && carry.job === a.job ? carry : null}
-          {@const own = search && carried ? carried : null}
+          {@const search = carry && carry.job === a.job ? carry : null}
+          {@const own = carried && a.key === carrying ? carried : null}
           {@const left = own ? own.left : a.left}
-          {#if wears}
-            <Busy fraction={search ? search.fraction : a.fraction} still={a.still || search?.still} />
+          {#if !search && !a.held}
+            <Busy fraction={a.fraction} still={a.still} />
+          {:else if search && a.key === carrying}
+            <Busy fraction={search.fraction} still={a.still || search.still} />
           {/if}
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>

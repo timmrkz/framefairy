@@ -507,12 +507,13 @@ func (c *cropCache) put(key float64, crop *int) {
 // answer better than those two frames: whether the clip comes back to the
 // camera it left.
 func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
-	source SourceInfo, cropW int, cache *cropCache) ([]Segment, error) {
+	source SourceInfo, cropW int, cache *cropCache, work *cropWork) ([]Segment, error) {
 	if len(spans) == 0 {
 		return nil, nil
 	}
 	ordered := append([]Span(nil), spans...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
+	work.start(ordered)
 	e.decoderUsed(ctx, path, ordered[0].Start)
 
 	type shot struct {
@@ -521,6 +522,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 	}
 	var shots []*shot
 	for i, span := range ordered {
+		work.part(span.End - span.Start)
 		cuts, err := e.DetectShots(ctx, path, span.Start, span.End)
 		if err != nil {
 			return nil, err
@@ -531,6 +533,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		work.partDone()
 		bounds := append(append([]float64{span.Start}, cuts...), span.End)
 		for j := 0; j+1 < len(bounds); j++ {
 			part := Span{bounds[j], bounds[j+1]}
@@ -548,6 +551,11 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 
 	var segments []Segment
 	for _, s := range shots {
+		kept := 0.0
+		for _, part := range s.parts {
+			kept += part.End - part.Start
+		}
+		work.part(kept)
 		crop, known := cache.get(s.key)
 		if !known {
 			// Measured once per shot, not per piece, so removing a pause
@@ -562,6 +570,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 			}
 			cache.put(s.key, crop)
 		}
+		work.partDone()
 		for _, part := range s.parts {
 			segments = append(segments, Segment{Start: part.Start, End: part.End, CropX: crop})
 		}
