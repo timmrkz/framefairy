@@ -158,7 +158,7 @@ func ParseTime(value any) (float64, error) {
 		if !strings.Contains(text, ":") {
 			f, ok := parsePyFloat(text)
 			if !ok {
-				return 0, fmt.Errorf("could not convert string to float: %s", pyRepr(text))
+				return 0, renderErr("not a time: %s", pyRepr(text))
 			}
 			seconds = f
 		} else {
@@ -170,7 +170,7 @@ func ParseTime(value any) (float64, error) {
 			for _, p := range parts {
 				f, ok := parsePyFloat(p)
 				if !ok {
-					return 0, fmt.Errorf("could not convert string to float: %s", pyRepr(p))
+					return 0, renderErr("invalid timecode: %s", pyReprAny(value))
 				}
 				numbers = append(numbers, f)
 			}
@@ -308,10 +308,10 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			startAny, okS := seg["start"]
 			endAny, okE := seg["end"]
 			if !okS {
-				return Plan{}, nil, fmt.Errorf("'start'")
+				return Plan{}, nil, renderErr(`clip %d: a segment has no "start"`, index)
 			}
 			if !okE {
-				return Plan{}, nil, fmt.Errorf("'end'")
+				return Plan{}, nil, renderErr(`clip %d: a segment has no "end"`, index)
 			}
 			start, err := ParseTime(startAny)
 			if err != nil {
