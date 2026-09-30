@@ -309,3 +309,9 @@ facade the app goes around, and three files too big to hold in one's head.
     `56px` four times in `ClipList.svelte`. **Open.**
 42. Doc comments in the wrong place: `ResetCrop`'s above `SetCaptionStyle`
     (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Open.**
+43. `make changed` runs no Go test for a change to a build script.
+    `notices_test.go` checks the versions in `notices.json` against the pins
+    in `build-ffmpeg.sh` and `build-llama.sh`, but it names them without
+    their folder, so the rule that finds a Go test by the path it reads a
+    file by never finds it. Raising ffmpeg in #54 passed `make changed` and
+    failed the notices test in CI. **Open.**
