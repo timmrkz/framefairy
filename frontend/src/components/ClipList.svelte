@@ -99,7 +99,7 @@
     onforget?: (key: string) => void;
     // A clip's row has closed and is gone from the list.
     onclosed?: (key: string) => void;
-    // How much time a clip taken out has left, read when the hand leaves
+    // How much time a clip taken out has left, told when the hand leaves
     // its row, because the time stood still while the hand was on it.
     onheld?: (key: string, left: number) => void;
   } = $props();
@@ -116,15 +116,6 @@
   // card of the search is on its way, the row still to come wears it, and
   // once one is, that row wears the beam alone, so there is one fill.
   const carrier = new Carrier();
-
-  // The time a clip taken out has left, as its fill has it. The fill is
-  // the time, and it stood still while the hand was on the row, so the
-  // time is read from it rather than worked out beside it.
-  function held(e: Event, key: string) {
-    const run = (e.currentTarget as HTMLElement).querySelector(".fill i")?.getAnimations()[0];
-    const done = run?.effect?.getComputedTiming().progress;
-    if (typeof done === "number") onheld?.(key, secondThoughts * (1 - done));
-  }
   const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
   // The clips there are and the clips on the way, in the order they are
@@ -290,18 +281,19 @@
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
       {:else if clip && clip.key in removed}
-        <div
-          class="gone busyhost"
-          onpointerleave={(e) => held(e, clip.key)}
-          onfocusout={(e) => held(e, clip.key)}
-        >
+        <div class="gone busyhost">
           <Icon name="trash" />
           <span class="what">Removed</span>
           <span class="grow"></span>
           <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
           <!-- How long it can still be put back, in the one fill the app
                has, running down to nothing, see Busy. -->
-          <Busy drain={secondThoughts} spent={removed[clip.key]} onend={() => onforget?.(clip.key)} />
+          <Busy
+            drain={secondThoughts}
+            spent={removed[clip.key]}
+            onend={() => onforget?.(clip.key)}
+            onresume={(left) => onheld?.(clip.key, left)}
+          />
         </div>
       {:else if clip}
         <button

@@ -1257,6 +1257,15 @@ Measured in headless Chromium: 60 frames a second with 114 of them running
 at once on the bench, 60 with a search running in the workspace, and no
 animation at all at rest.
 
+The one exception is time running out, the fill of a removed clip. Its
+animation is still the compositor's, but it is started, held and let go
+from `Busy.svelte`, and a clock there decides when the time is over. The
+hold was the stylesheet's, a play state flipped by `:hover`, and WebKit,
+which draws the app on a Mac, gave time back as the pointer passed over
+the row, so the fill ran up again and the row stayed longer than it
+said. Now the clock is the time, and the fill is set from it each time
+it stops or runs on.
+
 `frontend/src/components/Busy.svelte` is the whole of the beam, the motes
 and the fill inside a control. The track, the shimmer and the pulse are in
 `frontend/src/app.css`, because they are worn by things that are not
