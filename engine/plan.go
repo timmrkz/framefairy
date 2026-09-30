@@ -487,6 +487,12 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			}
 		}
 		build.fit(ask)
+		if build.clock != nil {
+			build.clock.fitted(ask != nil)
+		}
+	}
+	if build.clock != nil {
+		build.clock.fitted(false)
 	}
 
 	clips, entries, ids, err := build.finish()

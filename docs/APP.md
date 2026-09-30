@@ -518,7 +518,10 @@ place.
       search that is done, measured against how long the same parts took
       the last time on this machine. Inside a part, what the model counts
       itself beats the clock: the transcript it has read, what it has
-      thought against its budget, the clips it has written. A local model
+      thought against its budget, the clips it has written. Asking a local
+      model again about the clips well off the length is a part of its
+      own, so the fill is not full while the cards still say *Fitting to
+      the length*. A local model
       this machine has never timed is measured against a search timed on
       an M2 Max until its own first search has finished. A model in the
       cloud the app knows by name is measured against a first guess the
@@ -552,12 +555,15 @@ place.
       [JOBS.md](JOBS.md).
     - **The search's fill goes on to the end.** The row still to come
       wears how far the search has come and how long it has left. Once
-      every clip is named, no row is left to wear it, so the search's
-      cards take it on, each with the fill and the time left, until the
-      search is done. Until then a card wears the beam alone, because it
-      is not as far along as the search it came from. The fill went with
-      the row before, at sixty per cent, and the search went on with
-      nothing to say how far it was.
+      every clip is named, no row is left to wear it, so one of the
+      search's cards takes it on, with the fill and the time left, until
+      the search is done: the last of its cards in the list, nearest where
+      the row stood. It keeps it until its own clip is written, and only
+      then does the next card take it. Every other card wears the beam
+      alone, because it is not as far along as the search it came from.
+      The fill went with the row before, at sixty per cent, and the search
+      went on with nothing to say how far it was. Then every card of the
+      search wore it, the same fill and time left three times over.
     - **The rows still to come stand where the window is.** Everything a
       search finds lies in its window, so its rows stand in the list where
       the window ends: after the clips before the window and before the
@@ -988,7 +994,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     wearing the beam, and it is the chosen card, so it is brought into
     view wherever the list was scrolled to. Where the transcript does not
     reach far enough yet it says Transcribing and fills as the part
-    around the playhead is heard, then Placing the crop. Any number can
+    around the playhead is heard, then Placing the crop, and fills again
+    as the crop is placed, with the time left. It wore the beam alone
+    while its crop was placed, which is most of its wait. Any number can
     be on their way at once, beside a search too, and none waits for a
     search to finish finding.
   - **Its frame is on the clip timeline at once**, fitted, first as long
