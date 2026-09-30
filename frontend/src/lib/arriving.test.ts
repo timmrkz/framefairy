@@ -53,6 +53,14 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     expect(arrivalLine(waiting, waiting.underway![0]).what).toBe("Waiting to place the crop");
   });
 
+  test("a clip made by hand fills while its crop is placed, a search's clip does not", () => {
+    const progress = { kind: "progress", text: "placing the crop", fraction: 0.6, remaining: 2, elapsed: 1, time: "" };
+    const hand = job({ kind: "clip", lane: "framing", step: "framing", progress, underway: [{ n: 1, start: 1000, end: 1025, step: "framing" }] });
+    expect(arrivalLine(hand, hand.underway![0])).toEqual({ what: "Placing the crop", left: "About 0:05 left", fraction: 0.6 });
+    const search = job({ step: "finding", progress, underway: [{ n: 1, start: 1000, end: 1025, step: "framing" }] });
+    expect(arrivalLine(search, search.underway![0]).fraction).toBe(-1);
+  });
+
   test("a clip whose job was cut off or failed stays, still, and carries on with a click", () => {
     let carried = "";
     const cut = job({ id: "c", kind: "clip", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "hearing" }] });

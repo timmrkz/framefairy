@@ -80,6 +80,9 @@ type planBuilder struct {
 	planID string
 	// clock hears every clip taken and landed. Nil when no model was asked.
 	clock *searchClock
+	// placing counts how far placing the crop has come, for a clip made by
+	// hand, which says so on its own. Nil for a search's clips.
+	placing *cropWork
 
 	queue chan planJob
 	done  sync.WaitGroup
@@ -698,7 +701,8 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	}
 	b.cutDown(job.card, tightSpans)
 
-	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache)
+	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache,
+		b.placing)
 	if err != nil {
 		return PlanClip{}, false, err
 	}

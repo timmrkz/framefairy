@@ -990,7 +990,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     wearing the beam, and it is the chosen card, so it is brought into
     view wherever the list was scrolled to. Where the transcript does not
     reach far enough yet it says Transcribing and fills as the part
-    around the playhead is heard, then Placing the crop. Any number can
+    around the playhead is heard, then Placing the crop, and fills again
+    as the crop is placed, with the time left. It wore the beam alone
+    while its crop was placed, which is most of its wait. Any number can
     be on their way at once, beside a search too, and none waits for a
     search to finish finding.
   - **Its frame is on the clip timeline at once**, fitted, first as long

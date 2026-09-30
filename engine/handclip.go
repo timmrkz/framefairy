@@ -127,6 +127,20 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn
 	if err != nil {
 		return "", err
 	}
+	// Placing the crop says how far it has come, the way hearing does, so
+	// the card fills while the crop is placed rather than only wearing the
+	// beam. It holds the progress line until the clip is written.
+	build.placing = newCropWork()
+	stopWork := make(chan struct{})
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		build.placing.report(log, stopWork)
+	}()
+	defer func() {
+		close(stopWork)
+		<-reported
+	}()
 	build.propose(entry)
 	clips, _, _, err := build.finish()
 	if err != nil {

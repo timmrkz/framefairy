@@ -732,8 +732,13 @@ function handAt(h: FakeHand, now = Date.now()) {
   if (since < hearFor) return { state: "running", step: "hearing", start: h.at, end: h.at, since, share: since / hearFor };
   if (since < hearFor + handTakes()) {
     // Its sentences are known a moment into the step.
+    // Placing the crop says how far it is once it is under way, a quarter
+    // of a second after it has the clip's pieces, the way the engine's
+    // report ticks.
     const known = since - hearFor > 200;
-    return { state: "running", step: "framing", start: known ? start : h.at, end: known ? start + 25 : h.at, since, share: -1 };
+    const placing = since - hearFor - 450;
+    const share = placing > 0 ? Math.min(placing / (handTakes() - 450), 0.99) : -1;
+    return { state: "running", step: "framing", start: known ? start : h.at, end: known ? start + 25 : h.at, since, share };
   }
   return { state: "done", step: "", start, end: start + 25, since, share: 1 };
 }
@@ -780,7 +785,11 @@ function handJob(h: FakeHand) {
     lane: now.step === "hearing" ? "hearing" : "framing",
     result: now.state === "done" ? `clips-hand.json/h0${h.n}` : undefined,
     underway: now.state === "interrupted" ? [{ n: 1, start: h.at, end: h.at, step: "stopped" }] : running ? [{ n: 1, start: now.start, end: now.end, title: now.step === "framing" && now.start !== now.end ? `Von ${clock(now.start)} an` : undefined, step: now.step, pieces: now.step === "framing" && now.start !== now.end ? handPieces(h, now.start) : undefined, clip: now.step === "framing" ? `clips-hand.json/h0${h.n}` : undefined }] : undefined,
-    progress: running && now.step === "hearing" ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" } : undefined,
+    progress: running && now.step === "hearing"
+      ? { kind: "progress", stage: "asr", text: "Listening", fraction: now.share, remaining: (handTakes() - now.since) / 1000, from: reach[0], covered: reach[0] + (reach[1] - reach[0]) * now.share, elapsed: 1, time: "" }
+      : running && now.step === "framing" && now.share >= 0
+        ? { kind: "progress", text: "placing the crop", fraction: now.share, remaining: (handTakes() * (1 - now.share)) / 1000, elapsed: 1, time: "" }
+        : undefined,
   };
 }
 // What a clip made by hand keeps once its pauses are cut, a moment into
