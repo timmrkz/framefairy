@@ -872,15 +872,23 @@ Everything else is in `engine/`:
 ```
   audio.go      reading the audio, word timing, loudness
   transcript.go the transcript cache and the speech model location
+  words.go      the one list of words an episode says, see WORDS.md
+  speech.go     the speech models there are, and installing one
   lines.go      lines, cuts and captions, all built from words
   highlight.go  word timings for captions and the bouncing highlight
   recipe.go     ways of asking for clips, and reading the answer back
                 into lines. recipe_stories.go is the stories recipe
+  recipe_stories2.go the lines brief with the transcript written as stories
   compare.go    one window searched with several recipes, and the report
+  windows.go    where the model has already looked, and the passes over
+                a window searched again
   fit.go        clips well off the length asked for again, measured
   edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine
+  language.go   the language models there are, and installing one
+  remove_model.go taking a model off the machine again
+  leftover.go   a llama-server left behind by an app that crashed
   stream.go     answers read as they are written, and each clip taken
                 the moment it is whole
   plan.go       building the plan: the prompt, the call, the whole answer
@@ -892,6 +900,7 @@ Everything else is in `engine/`:
   undo.go       an edit remembered as the files before and after it, and
                 put back clip by clip, so what landed since stays
   analysis.go   camera switches and framing
+  cropwork.go   how far placing the crop of one clip has come
   faces.go      the built-in face detector
   clips.go      the plan file and crop geometry
   captions.go   srt reading and writing, time formats
@@ -899,12 +908,18 @@ Everything else is in `engine/`:
   metrics.go    how wide a caption comes out, read from the font file
   ass.go        the burned-in caption track and its measured boxes
   render.go     filter graph and ffmpeg command per clip
+  encode.go     which encoder writes the H.264 in a finished short
   ffmpeg.go     running ffmpeg, preflight checks, probing
+  tools.go      where a bundled ffmpeg or llama-server is looked for first
   api.go        the APIs in the cloud, costs and usage
   provider.go   the companies in the cloud, Anthropic and OpenAI, their
                 addresses, keys and the models the app offers by name
+  keys_darwin.go the keys in the cloud, kept in the macOS keychain.
+                keys_other.go is the rest, from the environment only
   run.go        the run loop
   log.go        the timestamped terminal log
+  util.go       counting characters, summing and rounding the same way on
+                every platform, so plans are reproducible
   events.go     the same log as structured events, for the app. Every
                 event goes to the app through one door, and that door
                 answers for what an event may carry: a share or a time
@@ -920,6 +935,8 @@ Everything else is in `engine/`:
                 reject, trimming, correcting words, the caption look, moving
                 the crop and the caption line by hand and back, and letting
                 go of a whole plan
+  filelock_unix.go a lock every program of ours takes before it edits a
+                plan or a transcript. filelock_windows.go keeps none yet
   frames.go     still frames, and deleting everything made for an episode
   corrections.go word corrections for captions
   training.go   training records of plans and decisions

@@ -149,6 +149,26 @@ func waitForRunning(t *testing.T, s *FrameFairy, source string) {
 	t.Fatal("no job ever started")
 }
 
+// waitForSettled waits until no job of an episode is queued or running,
+// for as long as a slow machine may take and no longer. A fixed sleep was
+// either longer than the work needed or, on a busy machine, shorter.
+func waitForSettled(t *testing.T, s *FrameFairy, source string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		busy := false
+		for _, j := range s.jobs.list() {
+			if j.Episode == source && (j.State == JobQueued || j.State == JobRunning) {
+				busy = true
+			}
+		}
+		if !busy {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // hearing puts a search in the queue that hears the episode until it is
 // told to stop, and then takes a moment to save what it heard, the way a
 // real one does.
@@ -187,7 +207,7 @@ func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
 	if _, err := os.Stat(work); !os.IsNotExist(err) {
 		t.Error("the work folder is still there")
 	}
-	time.Sleep(300 * time.Millisecond)
+	waitForSettled(t, s, source)
 	for _, j := range s.jobs.list() {
 		if j.Episode == source && (j.State == JobQueued || j.State == JobRunning) {
 			t.Errorf("%s is %s on an episode that was removed", j.Kind, j.State)
@@ -233,7 +253,7 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("removing an episode that work kept being asked for: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	waitForSettled(t, s, source)
 	refused := 0
 	for _, j := range s.jobs.list() {
 		if j.Episode != source {

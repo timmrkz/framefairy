@@ -381,18 +381,6 @@ func inParts(parts [][2]float64, at float64) bool {
 	return len(parts) > 0 && at < 0.005 && parts[0][0] <= 0.005
 }
 
-// storedForm is the transcript as it is written to disk. A fresh
-// transcription goes through the same rounding, so a run that transcribes
-// and a later run that reads the cache produce the same prompt, and a reply
-// already paid for is found again.
-func storedForm(t *Transcript) ([][3]any, float64) {
-	raw := make([][3]any, len(t.RawWords))
-	for i, w := range t.RawWords {
-		raw[i] = [3]any{PyFloat(roundTo(w.Start, 3)), PyFloat(roundTo(w.End, 3)), w.Text}
-	}
-	return raw, roundTo(t.Mean, 3)
-}
-
 func fromStored(words []Cue, frames []float32, start, mean float64, silenceDB *float64) *Transcript {
 	t := &Transcript{Frames: frames, Start: start, Mean: mean}
 	t.Floor = NoiseFloor(mean)

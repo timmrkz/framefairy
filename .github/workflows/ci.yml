@@ -95,6 +95,12 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+      # make tidies go.mod and go.sum quietly, so a change that leaves them
+      # untidy builds everywhere and is committed that way. This says so,
+      # before make has had the chance to tidy them.
+      - name: go.mod is tidy
+        if: steps.needs.outputs.run == 'true'
+        run: go mod tidy -diff
       - name: Build
         if: steps.needs.outputs.run == 'true'
         run: make

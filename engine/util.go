@@ -301,8 +301,6 @@ func (f PyFloat) MarshalJSON() ([]byte, error) {
 	return []byte(pyFloatRepr(x)), nil
 }
 
-func medianIndex(n int) int { return n / 2 }
-
 // A note on arm64, which is what Apple Silicon runs. The Go compiler may fuse
 // a multiplication and an addition into one instruction there, and a fused
 // result can round differently from Python, which computes them one after

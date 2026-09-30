@@ -54,6 +54,12 @@
      control does as well as that the pointer is on it, which is what the
      warning outline does on a button in a box. */
   --lift-err: color-mix(in srgb, var(--err) 22%, transparent);
+  /* What lies over the workspace behind a box or a note that holds it,
+     so the box is what is read. */
+  --backdrop: rgba(0, 0, 0, 0.55);
+  /* The bars of a waveform, on the clip timeline and wherever else the
+     sound of the episode is drawn. */
+  --wave: #555a66;
 
   --radius-s: 4px;
   --radius-m: 8px;
@@ -81,6 +87,9 @@
      was chosen on two lines, and it is that tall whether a clip is chosen
      or not, so selecting one never moves the tracks above it. */
   --row-h: 44px;
+  /* A card in the clip list: a clip, one on its way and one taken out,
+     so a card becomes its clip, and a clip its note, without a jump. */
+  --card-h: 56px;
   /* The sidebar when it is closed, which is the column the workspace keeps
      clear for it. */
   --rail: 44px;

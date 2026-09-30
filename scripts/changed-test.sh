@@ -102,6 +102,10 @@ has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train
 is "Makefile" "build"
 has "scripts/build-ffmpeg.sh" "build" "script scripts/build-ffmpeg.sh"
 lacks "scripts/build-ffmpeg.sh" "go framefairy/engine"
+# Except for the Go test that reads it: the notices test checks the
+# versions the build scripts pin.
+has "scripts/build-ffmpeg.sh" "go framefairy/notices"
+has "scripts/build-llama.sh" "go framefairy/notices"
 
 # The rules test their own rules.
 has "scripts/ci-needs.sh" "rules"

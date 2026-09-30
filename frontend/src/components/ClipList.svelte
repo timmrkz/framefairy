@@ -376,7 +376,7 @@
     justify-content: center;
     gap: 2px;
     width: 100%;
-    height: 56px;
+    height: var(--card-h);
     padding: 0 10px;
     border: none;
     border-radius: 0;
@@ -408,9 +408,9 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 56px;
+    height: var(--card-h);
     padding: 0 8px;
-    background: rgba(224, 96, 90, 0.14);
+    background: color-mix(in srgb, var(--err) 14%, transparent);
     color: var(--err);
     animation: swept 0.18s ease-out;
   }
@@ -470,7 +470,7 @@
   /* A card that is not there yet: the size of a clip, wearing the same
      shimmer as every other place in the app waiting to be filled. */
   .ghost {
-    height: 56px;
+    height: var(--card-h);
     background: var(--ink-2);
   }
 
@@ -491,13 +491,13 @@
   .next {
     /* As tall as a clip, whatever it says, so a clip on its way and the
        clip it becomes are the same card. */
-    height: 56px;
+    height: var(--card-h);
     /* Part of the row after it shows below it when it is brought into
        view: a third of a row, past the veil over the foot of the list. */
     scroll-margin-bottom: calc(var(--veil, 16px) + var(--gap) + 20px);
     /* And the clip that landed just above it, which is the one that was
        chosen, stays in view with it. */
-    scroll-margin-top: calc(var(--veil, 16px) + var(--gap) + 56px);
+    scroll-margin-top: calc(var(--veil, 16px) + var(--gap) + var(--card-h));
     display: flex;
     flex-direction: column;
     justify-content: center;
