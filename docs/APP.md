@@ -383,7 +383,12 @@ place.
   typed and taken out from there, Enter saves and Escape leaves the word as
   it was. Clicking a word stops the picture, because a caption that moved on
   under the caret would leave the hand correcting a word that is no longer
-  there. The frame and the caret belong to the interface and not to the
+  there. Playing the other way round ends the correction: a click on the
+  video preview or anything else that plays saves the word the way Enter
+  does, takes the caret and any highlighted letters out of it, and lets the
+  captions follow the picture again. A click on the video preview lands on
+  the crop frame, which refuses the pointer so it can be dragged, so the
+  word used to keep the caret while the video played. The frame and the caret belong to the interface and not to the
   render: nothing of them is ever burned into a short, and **the frame is
   all the interface adds**. A word being corrected takes no background of
   its own. One would read as a second highlight pill, in the app's colour,
