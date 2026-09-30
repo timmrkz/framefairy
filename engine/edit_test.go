@@ -1,14 +1,18 @@
 package engine
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Every edit the app makes goes through editPlan, and the app has no save
@@ -978,5 +982,50 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	}
 	if shaped.Playhead < half.Start || shaped.Playhead >= half.End {
 		t.Errorf("the playhead is at %v, outside %+v", shaped.Playhead, half)
+	}
+}
+
+// An edit waits for another program editing the same file, the command
+// line or a second copy of the app, and goes ahead once it is done.
+func TestAnEditWaitsForAnotherProgram(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no lock across programs on Windows yet")
+	}
+	path := filepath.Join(t.TempDir(), "clips.json")
+	other := exec.Command(os.Args[0])
+	other.Env = append(os.Environ(), "FRAMEFAIRY_HOLD_LOCK="+path)
+	stdin, err := other.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := other.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stdin.Close(); _ = other.Wait() })
+	line, err := bufio.NewReader(out).ReadString('\n')
+	if err != nil || strings.TrimSpace(line) != "held" {
+		t.Fatalf("the other program said %q, %v", line, err)
+	}
+
+	got := make(chan struct{})
+	go func() {
+		release := lockFile(path)
+		release()
+		close(got)
+	}()
+	select {
+	case <-got:
+		t.Fatal("the lock was taken while another program held it")
+	case <-time.After(300 * time.Millisecond):
+	}
+	stdin.Close()
+	select {
+	case <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lock was not taken once the other program let go")
 	}
 }

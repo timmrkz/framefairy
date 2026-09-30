@@ -34,6 +34,10 @@ SYSTEM=$(uname -s 2>/dev/null)
 # Pinned, because a build nobody can repeat is not a build. Raising this is
 # a deliberate act with a real plan generated after it.
 LLAMA_VERSION=b11105
+# The commit the tag names, checked after the clone, since a tag can be
+# moved. Raising the version means raising this beside it: git ls-remote
+# of the tag.
+LLAMA_COMMIT=348f853b7adc7374a4dec989750eaa6ea563535e
 LLAMA_REPO=https://github.com/ggml-org/llama.cpp
 
 mkdir -p "$WORK"
@@ -74,6 +78,14 @@ if [ ! -d "$SRC" ]; then
 	# branch and the fourteen lines saying so belong nowhere.
 	git -c advice.detachedHead=false clone --depth 1 --branch "$LLAMA_VERSION" \
 		-q "$LLAMA_REPO" "$SRC" >>"$LOG" 2>&1
+	got=$(git -C "$SRC" rev-parse HEAD)
+	if [ "$got" != "$LLAMA_COMMIT" ]; then
+		rm -rf "$SRC"
+		echo "build-llama.sh: $LLAMA_VERSION of $LLAMA_REPO is not the commit pinned here." >&2
+		echo "  expected $LLAMA_COMMIT" >&2
+		echo "  got      $got" >&2
+		exit 1
+	fi
 fi
 
 # Every one of these is a decision, and the first two are the ones that

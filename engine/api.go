@@ -294,8 +294,12 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			delay = min(delay*2, 60)
 			continue
 		}
-		body, readErr := io.ReadAll(response.Body)
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxReplyBytes+1))
 		response.Body.Close()
+		if readErr == nil && len(body) > maxReplyBytes {
+			return nil, nil, renderErr("the API's answer was larger than %s, which no answer to this is",
+				inMB(maxReplyBytes))
+		}
 		if readErr != nil {
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
@@ -688,6 +692,11 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 	}
 	return text, nil
 }
+
+// maxReplyBytes is the most of an answer that is read whole. The longest
+// the model may write is a few hundred kilobytes, so anything past this is
+// not an answer, and reading it all would only fill memory.
+const maxReplyBytes = 16 << 20
 
 // errSpentThinking marks a reply that was thinking and nothing else, so
 // the code that gives more room asks errors.Is rather than reading the

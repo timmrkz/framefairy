@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -851,5 +852,31 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 		filepath.Base(base.ASRModel))
 	if len(words) != 25 {
 		t.Errorf("%d words for the 25 beats from 2 s on: %v", len(words), words)
+	}
+}
+
+// A file is replaced whole or not at all: a write its check refuses
+// leaves the file that was there, and nothing beside it.
+func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan.json")
+	if err := writeAtomic(path, []byte("before")); err != nil {
+		t.Fatal(err)
+	}
+	refuse := func(string) error { return errors.New("not a plan") }
+	if err := replaceFile(path, ".plan-*", []byte("after"), refuse); err == nil {
+		t.Fatal("a refused write went through")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "before" {
+		t.Errorf("the file is now %q", got)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".*")); len(left) != 0 {
+		t.Errorf("left beside it: %v", left)
+	}
+	if err := writeAtomic(path, []byte("after")); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "after" {
+		t.Errorf("the file is now %q", got)
 	}
 }

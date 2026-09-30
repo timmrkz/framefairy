@@ -17,9 +17,9 @@
 # each needing its own signing and its own search path inside the bundle,
 # which is the sherpa-onnx runpath problem four more times over.
 #
-# This is not run by make. It takes many minutes and its answer changes
-# only when this file does, so it is run by hand or by the workflow that
-# makes a release, and what it leaves behind is kept as an archive.
+# make runs it through scripts/tools.sh when .build/ffmpeg is missing or
+# this file has changed. It takes many minutes, and its answer changes only
+# when this file does, so CI keeps what it leaves behind in a cache.
 set -e
 
 # Every library below is built from a folder of its own, with a cd into it,
@@ -39,11 +39,26 @@ SYSTEM=$(uname -s 2>/dev/null)
 
 # Pinned, because a build nobody can repeat is not a build. Raising one of
 # these is a deliberate act with a test render after it.
+#
+# And pinned by content, not only by name. An archive is checked against
+# its sha256 and a clone against its commit, so a file changed on a mirror,
+# or a tag moved, stops the build rather than going into what customers
+# get. scripts/pack-source.sh checks the same pins, so the source that
+# travels with the app is the source it was built from. ffmpeg is taken
+# from git, the tag's own commit: ffmpeg.org publishes no checksum to hold
+# its archive to, and answers nothing from some networks. Raising a
+# version means raising its pin beside it: sha256sum of the archive, or
+# git ls-remote of the tag, the line ending ^{}.
 FFMPEG_VERSION=7.1.1
+FFMPEG_COMMIT=db69d06eeeab4f46da15030a80d539efb4503ca8
 FREETYPE_VERSION=2.13.3
+FREETYPE_SHA256=0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289
 FRIBIDI_VERSION=1.0.16
+FRIBIDI_SHA256=1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c
 HARFBUZZ_VERSION=10.1.0
+HARFBUZZ_SHA256=6ce3520f2d089a33cef0fc48321334b8e0b72141f6a763719aaaecd2779ecb82
 LIBASS_VERSION=0.17.3
+LIBASS_SHA256=eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
 
 mkdir -p "$WORK" "$PREFIX"
 # Only our own libraries, and nothing this machine happens to have.
@@ -97,33 +112,58 @@ finish() {
 }
 trap finish EXIT
 
-# $1 url, $2 the folder it unpacks to, $3 a git repository and $4 its tag,
-# for when the archive cannot be reached.
-#
-# The second route is not belt and braces. A cloud session reaches GitHub
-# and SourceForge and little else, so ffmpeg's own site answers nothing
-# there, and a build script that only works on a machine with the open
-# internet is a build script nobody can check before a release.
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | cut -d' ' -f1
+	else
+		shasum -a 256 "$1" | cut -d' ' -f1
+	fi
+}
+
+# $1 url, $2 the folder it unpacks to, $3 the archive's sha256. An archive
+# that is not the one pinned is thrown away and the build stops.
 fetch() {
 	if [ -d "$WORK/$2" ]; then return 0; fi
 	echo "  fetching the source of $2"
-	if curl -sSL --fail --retry 2 --max-time 300 -o "$WORK/$2.tar" "$1" 2>/dev/null; then
-		tar -xf "$WORK/$2.tar" -C "$WORK"
-		rm "$WORK/$2.tar"
-		return 0
+	if ! curl -sSL --fail --retry 2 --max-time 300 -o "$WORK/$2.tar" "$1" 2>/dev/null; then
+		rm -f "$WORK/$2.tar"
+		echo "build-ffmpeg.sh: cannot fetch $2 from $1" >&2
+		exit 1
 	fi
-	rm -f "$WORK/$2.tar"
-	if [ -n "$3" ]; then
-		echo "  the archive is unreachable, taking $4 from git instead"
-		# advice.detachedHead off: fourteen lines about a state nobody
-		# here is going to commit in, on the screen, in the middle of a
-		# build.
-		git -c advice.detachedHead=false clone --depth 1 --branch "$4" -q \
-			"$3" "$WORK/$2" >>"$LOG" 2>&1
-		return 0
+	got=$(sha256 "$WORK/$2.tar")
+	if [ "$got" != "$3" ]; then
+		rm -f "$WORK/$2.tar"
+		echo "build-ffmpeg.sh: $1 is not the archive pinned here." >&2
+		echo "  expected sha256 $3" >&2
+		echo "  got      sha256 $got" >&2
+		exit 1
 	fi
-	echo "build-ffmpeg.sh: cannot fetch $2 from $1" >&2
-	exit 1
+	tar -xf "$WORK/$2.tar" -C "$WORK"
+	rm "$WORK/$2.tar"
+}
+
+# $1 a git repository, $2 its tag, $3 the commit the tag has to be, $4 the
+# folder. A tag can be moved, a commit cannot, so a clone that is not at
+# the commit is thrown away and the build stops.
+#
+# git and not ffmpeg.org, for ffmpeg, also because a cloud session reaches
+# GitHub and little else, and a build script that only works with the open
+# internet is one nobody can check before a release.
+fetch_git() {
+	if [ -d "$WORK/$4" ]; then return 0; fi
+	echo "  fetching the source of $4, $2 from git"
+	# advice.detachedHead off: fourteen lines about a state nobody here is
+	# going to commit in, on the screen, in the middle of a build.
+	git -c advice.detachedHead=false clone --depth 1 --branch "$2" -q \
+		"$1" "$WORK/$4" >>"$LOG" 2>&1
+	got=$(git -C "$WORK/$4" rev-parse HEAD)
+	if [ "$got" != "$3" ]; then
+		rm -rf "$WORK/$4"
+		echo "build-ffmpeg.sh: $2 of $1 is not the commit pinned here." >&2
+		echo "  expected $3" >&2
+		echo "  got      $got" >&2
+		exit 1
+	fi
 }
 
 # freetype and harfbuzz each want the other. The way out is to build
@@ -131,21 +171,24 @@ fetch() {
 # freetype again so text is shaped properly. Skipping the second pass is
 # how captions come out with the wrong kerning.
 say "freetype, first pass"
-fetch "https://downloads.sourceforge.net/freetype/freetype-$FREETYPE_VERSION.tar.xz" "freetype-$FREETYPE_VERSION"
+fetch "https://downloads.sourceforge.net/freetype/freetype-$FREETYPE_VERSION.tar.xz" "freetype-$FREETYPE_VERSION" \
+	"$FREETYPE_SHA256"
 (cd "$WORK/freetype-$FREETYPE_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
 		--with-harfbuzz=no --with-brotli=no --with-png=no --with-bzip2=no &&
 	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "fribidi"
-fetch "https://github.com/fribidi/fribidi/releases/download/v$FRIBIDI_VERSION/fribidi-$FRIBIDI_VERSION.tar.xz" "fribidi-$FRIBIDI_VERSION"
+fetch "https://github.com/fribidi/fribidi/releases/download/v$FRIBIDI_VERSION/fribidi-$FRIBIDI_VERSION.tar.xz" "fribidi-$FRIBIDI_VERSION" \
+	"$FRIBIDI_SHA256"
 (cd "$WORK/fribidi-$FRIBIDI_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
 		--disable-docs &&
 	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "harfbuzz"
-fetch "https://github.com/harfbuzz/harfbuzz/releases/download/$HARFBUZZ_VERSION/harfbuzz-$HARFBUZZ_VERSION.tar.xz" "harfbuzz-$HARFBUZZ_VERSION"
+fetch "https://github.com/harfbuzz/harfbuzz/releases/download/$HARFBUZZ_VERSION/harfbuzz-$HARFBUZZ_VERSION.tar.xz" "harfbuzz-$HARFBUZZ_VERSION" \
+	"$HARFBUZZ_SHA256"
 (cd "$WORK/harfbuzz-$HARFBUZZ_VERSION" &&
 	rm -rf build &&
 	meson setup build --prefix="$PREFIX" --libdir=lib --buildtype=release \
@@ -163,7 +206,8 @@ say "freetype, second pass, this time with harfbuzz"
 	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "libass"
-fetch "https://github.com/libass/libass/releases/download/$LIBASS_VERSION/libass-$LIBASS_VERSION.tar.xz" "libass-$LIBASS_VERSION"
+fetch "https://github.com/libass/libass/releases/download/$LIBASS_VERSION/libass-$LIBASS_VERSION.tar.xz" "libass-$LIBASS_VERSION" \
+	"$LIBASS_SHA256"
 (cd "$WORK/libass-$LIBASS_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
 		--disable-fontconfig --disable-require-system-font-provider &&
@@ -175,8 +219,8 @@ fetch "https://github.com/libass/libass/releases/download/$LIBASS_VERSION/libass
 # binary is the proof, and this script checks it below rather than trusting
 # the flags.
 say "ffmpeg $FFMPEG_VERSION"
-fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" "ffmpeg-$FFMPEG_VERSION" \
-	"https://github.com/FFmpeg/FFmpeg.git" "n$FFMPEG_VERSION"
+fetch_git "https://github.com/FFmpeg/FFmpeg.git" "n$FFMPEG_VERSION" "$FFMPEG_COMMIT" \
+	"ffmpeg-$FFMPEG_VERSION"
 EXTRA=""
 if [ "$SYSTEM" = Darwin ]; then
 	EXTRA="--enable-videotoolbox --enable-audiotoolbox"

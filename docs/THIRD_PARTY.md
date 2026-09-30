@@ -97,8 +97,9 @@ Shipping an unmodified LGPL binary asks for two things and we do both. The
 licence text travels with it, as `LICENSE-ffmpeg.txt`, together with the
 notices of the four libraries built into it. And the source it
 was built from is published as `framefairy-tools-source.tar.gz` on the same
-release as the binary, holding the upstream archives at the pinned versions
-and the script that configured them.
+release as the binary, holding the upstream archives at the pinned versions,
+each checked against the sha256 or the commit the build pins, and the
+script that configured them.
 
 It is built by `scripts/build-ffmpeg.sh`, which also carries the versions
 of the four libraries inside it: freetype, fribidi, harfbuzz and libass.
