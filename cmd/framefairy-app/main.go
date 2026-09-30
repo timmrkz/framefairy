@@ -1515,14 +1515,6 @@ func (s *FrameFairy) CancelJob(id string) {
 // ClearJobs forgets finished jobs.
 func (s *FrameFairy) ClearJobs() { s.jobs.clear() }
 
-// ReadPlan loads a plan for the candidates screen.
-func (s *FrameFairy) ReadPlan(planPath string) (*engine.PlanView, error) {
-	if !s.store.Known(planPath) {
-		return nil, os.ErrNotExist
-	}
-	return engine.ReadPlan(planPath)
-}
-
 // Reveal shows a file in Finder, Explorer or the file manager.
 func (s *FrameFairy) Reveal(path string) error {
 	if !s.store.Known(path) {

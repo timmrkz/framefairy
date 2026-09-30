@@ -261,11 +261,6 @@ export interface ClipEntry extends ClipView {
   cropLefts: number[];
 }
 
-export interface PlanView {
-  summary: PlanSummary;
-  clips: ClipView[] | null;
-}
-
 export interface EngineEvent {
   kind: string;
   stage?: string;
@@ -674,7 +669,6 @@ export const api = {
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
   clearJobs: () => call<void>("ClearJobs"),
-  readPlan: (path: string) => call<PlanView>("ReadPlan", path),
   reveal: (path: string) => call<void>("Reveal", path),
   // Updates, see docs/UPDATES.md. Following a channel looks at once, and a
   // newer build downloads by itself and waits for a restart.
