@@ -46,9 +46,7 @@
     <span class="label grow">{named ? job.label : ""}</span>
     <span class="muted num">{left}</span>
   </div>
-  <div class="progress" class:unknown={fraction < 0}>
-    <i style="width: {Math.max(fraction, 0) * 100}%"></i>
-  </div>
+  <div class="progress busyhost"><Busy rim={false} motes={false} shuttle {fraction} /></div>
   <div class="row bottom">
     <span class="muted grow line">{line}</span>
     <button class="stop" onclick={stop} disabled={stopping}
