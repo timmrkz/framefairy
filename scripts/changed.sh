@@ -87,6 +87,17 @@ package_of() {
 	done
 }
 
+# read_by_tests adds the package of every Go test that reads a file that
+# is not Go, the way the bindings test reads api.ts and the notices test
+# reads the build scripts. A test is found by the path it reads the file
+# by, "../frontend/..." in quotes, so a file a test only names in a
+# comment does not count. The same rule as scripts/ci-needs.sh.
+read_by_tests() {
+	for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git -- "../$1\"" . 2>/dev/null); do
+		gopkgs="$gopkgs $(package_of "${t#./}")"
+	done
+}
+
 gopkgs=""
 gofiles=""
 all_go=0
@@ -103,14 +114,7 @@ for file in $changed; do
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
 	frontend/*)
 		interface=1
-		# A file of the interface a Go test reads, the way the bindings
-		# test reads api.ts, is that test's package too. It is found by
-		# the path the test reads it by, "../frontend/..." in quotes, so a
-		# file a test only names in a comment does not count. The same
-		# rule as scripts/ci-needs.sh.
-		for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git -- "../$file\"" . 2>/dev/null); do
-			gopkgs="$gopkgs $(package_of "${t#./}")"
-		done
+		read_by_tests "$file"
 		;;
 	go.mod | go.sum) all_go=1 ;;
 	Makefile) build=1 ;;
@@ -129,6 +133,9 @@ for file in $changed; do
 	*.sh)
 		shells="$shells $file"
 		build=1
+		# The notices test reads the build scripts for the versions they
+		# pin, and a raised version passed here and failed in CI.
+		read_by_tests "$file"
 		;;
 	.github/workflows/*)
 		workflows="$workflows $file"

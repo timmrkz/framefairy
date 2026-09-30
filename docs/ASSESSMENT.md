@@ -284,22 +284,22 @@ facade the app goes around, and three files too big to hold in one's head.
 33. Failures in the app come back as `os.ErrNotExist`, "file does not
     exist", where `notInLibrary` says what happened. **Fixed** in #58.
 34. `make help` prints lines 1 to 39 of the Makefile (line 117) and the
-    header runs to 45, so it stops mid-sentence. **Open.**
+    header runs to 45, so it stops mid-sentence. **Fixed** in #58.
 35. Docs that drifted: the fuzz target count and the `TIDY=0` step in
     BUILD.md, the header of `build-ffmpeg.sh` that says make does not run
     it, the two CI jobs in WORKFLOW.md where there are six, and 18 files
-    missing from the code map in ENGINE.md. **Open.**
+    missing from the code map in ENGINE.md. **Fixed** in #58.
 36. The ffmpeg and llama.cpp licence files never reach the bundle:
     `tools-beside` copies only the binaries, so the loop in
-    `bundle-macos.sh:61` finds nothing. **Open.**
+    `bundle-macos.sh:61` finds nothing. **Fixed** in #58.
 37. Tests that wait on time: `remove_test.go:169, 190, 236` sleep a fixed
     300 ms for a 200 ms job. Poll with a deadline instead. **Fixed** in #58.
 38. When our ffmpeg build fails, `tools.sh:104` unlinks the user's Homebrew
     ffmpeg and installs the tap's, a change to the machine nobody would
-    expect. **Open.**
+    expect. **Fixed** in #58.
 39. No tests in `cmd/framefairy`, `cmd/framefairy-train` or
     `cmd/framefairy-release`, which signs updates. No check that `go.mod` is
-    tidy in CI, since make tidies it quietly. **Open.**
+    tidy in CI, since make tidies it quietly. **Fixed** in #58.
 40. `Reveal` (`main.go:1547`) and the other `.Start()` calls never `Wait`,
     so each leaves a zombie until the app quits. **Fixed** in #58.
 41. Colours and heights outside the tokens: `rgba(224,96,90,.14)` in
@@ -314,4 +314,4 @@ facade the app goes around, and three files too big to hold in one's head.
     in `build-ffmpeg.sh` and `build-llama.sh`, but it names them without
     their folder, so the rule that finds a Go test by the path it reads a
     file by never finds it. Raising ffmpeg in #54 passed `make changed` and
-    failed the notices test in CI. **Open.**
+    failed the notices test in CI. **Fixed** in #58.
