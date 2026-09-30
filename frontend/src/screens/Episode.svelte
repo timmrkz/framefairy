@@ -569,6 +569,11 @@
   }
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
   const current = $derived(clips.find((c) => c.key === selected) ?? null);
+  // The rows of removed clips whose time is over and which are still
+  // closing. Until the last of them has closed, the list opens no row
+  // still to come: they came at once and stood above the row still
+  // closing, which went down the column as it went.
+  let closing = $state<string[]>([]);
   // A removed clip stays in the plan, it only leaves the list.
   // The clip just removed keeps its place in the list for a moment, so the
   // rows do not jump and there is somewhere to put it back from.
@@ -699,14 +704,13 @@
   // Every clip the episode had was removed, and nothing is on its way:
   // the first row still to come says so, in the words a row that says how
   // work ended uses, rather than leaving empty rows that look like nothing
-  // happened or something broke.
+  // happened or something broke. It gives no number: the plan keeps every
+  // clip ever removed, from earlier searches and earlier days too, so a
+  // count of them was more than the list had just shown.
   const emptied = $derived.by(() => {
-    if (busy || stopped || shown.length > 0 || onTheWay.length > 0) return null;
+    if (busy || stopped || shown.length > 0 || onTheWay.length > 0 || closing.length > 0) return null;
     if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
-    return {
-      what: clips.length === 1 ? "The one clip removed" : `All ${clips.length} clips removed`,
-      left: "New finds others",
-    };
+    return { what: "All clips removed", left: "New finds others" };
   });
   const coming = $derived(
     shown.length +
@@ -716,7 +720,7 @@
           // workspace would ask for now: the first search of an episode
           // is asked for by the Go side.
           (working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)) + unread
-        : shown.length === 0 && onTheWay.length === 0
+        : shown.length === 0 && onTheWay.length === 0 && closing.length === 0
           ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
@@ -1007,10 +1011,16 @@
     if (!(key in removed)) return;
     const { [key]: _, ...rest } = removed;
     removed = rest;
+    closing = [...closing, key];
+  }
+
+  function closed(key: string) {
+    closing = closing.filter((k) => k !== key);
   }
 
   function forgetAll() {
     removed = {};
+    closing = [];
   }
 
   async function removeClip(clip: ClipEntry) {
@@ -2555,6 +2565,7 @@
               removed={Object.keys(removed)}
               {emptied}
               onforget={forget}
+              onclosed={closed}
               onselect={select}
               onremove={removeClip}
               onputback={putClipBack}

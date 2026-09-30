@@ -615,8 +615,12 @@ place.
       search on its way, the rows New will fill stand there as many as
       Target says, following it as it changes, and still, because nothing
       is filling them yet. When every clip there was has been removed, the
-      first of them says so, **All 3 clips removed**, **New finds others**,
-      so the empty rows read as something that happened. An episode whose first search was stopped, by
+      first of them says so, **All clips removed**, **New finds others**,
+      so the empty rows read as something that happened. It gives no
+      number, because the plan keeps every clip ever removed, and a count
+      of them was more than the list had just shown. The empty rows open
+      only once the last removed row has closed, so they never push it
+      down the column as it goes. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and

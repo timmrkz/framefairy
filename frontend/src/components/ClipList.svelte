@@ -26,6 +26,7 @@
     onremove,
     onputback,
     onforget,
+    onclosed,
   }: {
     clips: ClipEntry[];
     // The clips on their way, whoever proposed them, each in its place in
@@ -93,6 +94,8 @@
     onputback?: (key: string) => void;
     // A clip taken out whose time to be put back has run out.
     onforget?: (key: string) => void;
+    // A clip's row has closed and is gone from the list.
+    onclosed?: (key: string) => void;
   } = $props();
 
   // A search writes each clip the moment it is found, so the list fills in
@@ -223,6 +226,7 @@
       animate:flip={{ duration: 180 }}
       in:enter={row}
       out:leave={row}
+      onoutroend={() => clip && onclosed?.(clip.key)}
       data-key={clip?.key ?? a?.key}
       class:ghost={g !== undefined}
       class:waiting={g !== undefined && !lead && waiting}
