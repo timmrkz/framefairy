@@ -1681,13 +1681,13 @@
   }
 
   // A number typed past what the window can hold is taken back to the
-  // most it can, the way a field's own arrows stop there. An empty field
-  // follows the window again.
+  // most it can, the way a field's own arrows stop there. A field cleared
+  // follows the window again, and shows its suggestion.
   function keepTarget(e: Event) {
     const entry = (e.currentTarget as HTMLInputElement).value.trim();
     target = entry === "" ? 0 : Math.min(Math.max(Math.round(Number(entry)) || 1, 1), clipsAtMost);
     targetWindow = target > 0 ? to - from : 0;
-    (e.currentTarget as HTMLInputElement).value = target > 0 ? String(target) : "";
+    (e.currentTarget as HTMLInputElement).value = String(target > 0 ? target : suggested);
     saveSearch();
   }
 
@@ -2181,12 +2181,11 @@
                 type="number"
                 min="1"
                 max={clipsAtMost}
-                placeholder={String(suggested)}
                 title={comingNow
                   ? "The search on its way looks for this many. Change it for the next one"
-                  : `How many clips the model looks for. Empty, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
+                  : `How many clips the model looks for. Until you change it, it follows the window: ${suggested} for this one, 6 for half an hour and by the square root of its length for others. Type a number to set your own for this window, and clear it to follow the window again. A window of another length follows its own. The model gives fewer when fewer moments are strong enough. At most ${clipsAtMost}, as many as fit at ${min} s each in the longest window the model can read`}
                 disabled={comingNow}
-                value={comingNow && working?.count ? working.count : typed > 0 ? typed : ""}
+                value={comingNow && working?.count ? working.count : typed > 0 ? typed : suggested}
                 onchange={keepTarget}
               /></span
             >
