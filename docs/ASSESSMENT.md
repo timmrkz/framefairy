@@ -306,7 +306,7 @@ facade the app goes around, and three files too big to hold in one's head.
     `ClipList.svelte:344` is `--err` written out, `--wave` is defined in
     `ClipTimeline.svelte` with two different values, the backdrop
     `rgba(0,0,0,.55)` is repeated in three components, and the card height
-    `56px` four times in `ClipList.svelte`. **Open.**
+    `56px` four times in `ClipList.svelte`. **Fixed** in #58.
 42. Doc comments in the wrong place: `ResetCrop`'s above `SetCaptionStyle`
     (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Fixed** in #58.
 43. `make changed` runs no Go test for a change to a build script.
