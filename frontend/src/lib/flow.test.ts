@@ -15,6 +15,7 @@ import {
   followingWindow,
   gridStep,
   onGrid,
+  onward,
   pictureIsStale,
   pieceAt,
   insideClip,
@@ -320,6 +321,35 @@ describe("pictureIsStale", () => {
     // a black element reports a good picture, so no frame is asked for and
     // nothing is drawn over the black.
     expect(pictureIsStale({ ready: true, shows: 12, at: 12.2 })).toBe(false);
+  });
+});
+
+// WebKit works the clock of a playing video out from the wall clock between
+// the reports of the player underneath, and sets it back when a report says
+// the picture is behind. It does that most while playing starts, and the
+// playhead, the lit word, the caption and the crop followed it back and
+// forth. Chromium's clock never steps back, so the harness cannot show
+// this: it is held here as a rule.
+describe("onward", () => {
+  test("follows the clock forward", () => {
+    expect(onward(55.0, 55.04)).toBe(55.04);
+    expect(onward(55.0, 55.0)).toBe(55.0);
+  });
+
+  test("stands still while the clock is put back by a little", () => {
+    expect(onward(55.3, 55.1)).toBe(55.3);
+    expect(onward(55.3, 55.29)).toBe(55.3);
+  });
+
+  test("and goes on once the clock is past it again", () => {
+    let at = 55.3;
+    for (const clock of [55.1, 55.2, 55.31, 55.35]) at = onward(at, clock);
+    expect(at).toBe(55.35);
+  });
+
+  test("follows a clock that is really somewhere else", () => {
+    expect(onward(70.2, 57)).toBe(57);
+    expect(onward(55.5, 55.0)).toBe(55.0);
   });
 });
 

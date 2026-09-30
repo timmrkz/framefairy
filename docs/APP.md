@@ -242,6 +242,17 @@ the app catches up it takes over by itself. The engine keeps one frame per
 second of an episode in its work folder, so going back over a part costs
 nothing.
 
+While the video plays, the picture is the video's alone. No frame is read
+from the file for it and none is drawn over it, not while playing starts and
+not while a clip jumps over a cut, because the video is already on its way
+to the frame. And the playhead only goes forward while it plays. The clock
+WebKit gives a playing video is worked out between reports from the player
+underneath and is put back a little whenever a report says the picture is
+behind, and followed as it was, the playhead, the lit word, the caption and
+the crop went back and forth over the picture while playing got going. A
+jump the app makes itself, over a cut or back to the start of a loop, still
+takes the playhead with it.
+
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The
 playhead goes to the start of that clip, because that is what choosing a

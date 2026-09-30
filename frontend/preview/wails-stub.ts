@@ -8,6 +8,28 @@ const noticeTexts = import.meta.glob("../../notices/texts/*.txt", {
   eager: true,
 }) as Record<string, string>;
 
+// ?webkitclock gives the video the clock WebKit gives it while it plays.
+// WebKit works the time out from the wall clock between the reports of the
+// player underneath, and puts it back whenever a report says the picture
+// is behind, which is most of all while playing starts and whenever the
+// file is slow to read. See TimeProgressEstimator in WebKit's
+// MediaPlayerPrivateRemote.cpp. Chromium's clock only goes forward, so
+// without this a playhead going back and forth over the picture could not
+// be made here at all. It is put back by 0.15 s for 60 ms of every 400.
+if (location.search.includes("webkitclock")) {
+  const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
+  Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+    get(this: HTMLMediaElement) {
+      const t = real.get!.call(this) as number;
+      if (this.paused || this.seeking || performance.now() % 400 >= 60) return t;
+      return Math.max(0, t - 0.15);
+    },
+    set(this: HTMLMediaElement, t: number) {
+      real.set!.call(this, t);
+    },
+  });
+}
+
 // The words of the whole episode, on one clock, made once.
 //
 // They used to be made from wherever a call asked to start, so a call
