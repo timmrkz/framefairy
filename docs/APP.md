@@ -474,8 +474,9 @@ place.
       the work folder makes the episode new, and then it starts over as a
       new one does. The rule is `firstSearch` in
       `cmd/framefairy-app/search.go`, and the path tests follow it.
-    - **The target follows the window.** Target, left empty, shows in
-      grey how many clips the next window suggests: 6 for half an hour of clips of 20 to 30 seconds,
+    - **The target follows the window.** Until it is changed, Target
+      holds how many clips the next window suggests, as a number like any
+      other: 6 for half an hour of clips of 20 to 30 seconds,
       one for every twelve clip lengths, and other windows in proportion
       to the square root of their length, 3 for six or ten minutes, 8 for
       an hour. A number typed there is for the window it was typed for, and
@@ -484,7 +485,10 @@ place.
       suggestion again, and so does the first search the app starts by
       itself when a video is added. Three typed for the six minutes of one
       episode went on asking for three in the half hour of the next.
-      Cleared, the field follows the window again. Twelve
+      Cleared, the field follows the window again and shows its
+      suggestion. The suggestion used to be a grey placeholder in an empty
+      field, and a browser steps an empty number field from zero, so the
+      down arrow on a suggested 6 landed on 1. Twelve
       because the model, asked for 8 in half an hour, gave 6: it gives
       fewer when fewer moments are strong enough, and asking for more only
       asks it to fill places with weaker ones. The square root because in
