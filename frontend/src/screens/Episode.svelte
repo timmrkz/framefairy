@@ -62,6 +62,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
@@ -936,7 +937,6 @@
 
   async function load() {
     try {
-      forgetAll();
       const ticket = statusRead.send();
       const now = await api.episode(path);
       if (statusRead.keep(ticket)) status = now;
@@ -951,6 +951,7 @@
         await openWindow();
       }
       await refreshClips();
+      keepRemovedTrue();
       if (first) await openOnAClip();
     } catch (err) {
       problem = errorText(err);
@@ -999,13 +1000,42 @@
   }
 
   // Removing a clip is one click, so putting it back is one click too, for
-  // as long as the list is on screen. Every clip removed keeps its own row
-  // and its own time, and removing another leaves them alone: there was one
-  // for the whole list, and the second clip removed took the first one's
-  // way back with it. The time is the row's own, see ClipList: it runs down
-  // along the foot of the row, stands still under the pointer, and the row
-  // says when it is over.
-  let removed = $state<Record<string, ClipEntry>>({});
+  // a few seconds. Every clip removed keeps its own row and its own
+  // time, and removing another leaves them alone: there was one for the
+  // whole list, and the second clip removed took the first one's way back
+  // with it. The time is the row's own, see ClipList: it runs down along
+  // the foot of the row, stands still under the pointer, and the row says
+  // when it is over. It is the episode's time, see lib/removed.ts, so it
+  // runs on while another episode is open and the rows are there again on
+  // coming back. A list read again, after a search, a render or an undo,
+  // leaves them as they are: it used to take every one of them away.
+  let removed = $state<Record<string, Removed>>({});
+
+  onMount(() => {
+    removed = takeUp(path);
+    return () => setAside(path, $state.snapshot(removed));
+  });
+
+  // What the clip list is told about the clips removed: how much of its
+  // time each has used, for the ones the plan still has removed. An undo
+  // that put one back leaves it a clip again, not a row to put back.
+  const removedRows = $derived(
+    Object.fromEntries(
+      clips.filter((c) => c.rejected && c.key in removed).map((c) => [c.key, spent(removed[c.key])]),
+    ),
+  );
+
+  // The clips an undo or a redo has put back, or removed again, are no
+  // longer waiting to be put back.
+  function keepRemovedTrue() {
+    const still = Object.entries(removed).filter(([k]) => clips.some((c) => c.key === k && c.rejected));
+    if (still.length < Object.keys(removed).length) removed = Object.fromEntries(still);
+  }
+
+  function held(key: string, left: number) {
+    if (!(key in removed)) return;
+    removed = { ...removed, [key]: { ...removed[key], until: Date.now() + left * 1000 } };
+  }
 
   function forget(key: string) {
     if (!(key in removed)) return;
@@ -1018,25 +1048,23 @@
     closing = closing.filter((k) => k !== key);
   }
 
-  function forgetAll() {
-    removed = {};
-    closing = [];
-  }
-
   async function removeClip(clip: ClipEntry) {
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
       if (selected === updated.key) selected = "";
-      removed = { ...removed, [updated.key]: updated };
+      removed = {
+        ...removed,
+        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000 },
+      };
     } catch (err) {
       problem = errorText(err);
     }
   }
 
   async function putClipBack(key: string) {
-    const clip = removed[key];
+    const clip = removed[key]?.clip;
     if (!clip) return;
     problem = "";
     try {
@@ -2562,9 +2590,10 @@
               next={shownNext}
               {carry}
               {stopped}
-              removed={Object.keys(removed)}
+              removed={removedRows}
               {emptied}
               onforget={forget}
+              onheld={held}
               onclosed={closed}
               onselect={select}
               onremove={removeClip}

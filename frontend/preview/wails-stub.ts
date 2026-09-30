@@ -1138,7 +1138,9 @@ export const Call = {
           clip(3, 902, "Warum ich nie wieder", false),
           clip(4, 1400, "Ein echtes Thema", false),
           ...made,
-        ].sort((x, y) => x.start - y.start));
+        ]
+          .map((c) => ({ ...c, rejected: !!(window as any).__gone?.[Number(c.id)] }))
+          .sort((x, y) => x.start - y.start));
       }
       case "Coverage": {
         // The parts searched once and the parts free, and the episode in
@@ -1297,6 +1299,9 @@ export const Call = {
       case "RemoveClip": {
         const [, , id, gone] = args as [string, string, string, boolean];
         const n = Number(id);
+        // Kept, the way the plan keeps it, so a list read again has the
+        // clip removed still.
+        ((window as any).__gone ??= {})[n] = !!gone;
         const made = clip(n, [57, 400, 902, 1400][n - 1] ?? 60, ["Mein Arm ist zersprungen", "Der Typ vor mir auf einmal", "Warum ich nie wieder", "Ein echtes Thema"][n - 1] ?? "Clip", n === 1);
         return Promise.resolve({ ...made, rejected: !!gone });
       }

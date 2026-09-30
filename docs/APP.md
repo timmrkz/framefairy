@@ -674,8 +674,15 @@ place.
       over it. Every clip removed has its own row and its own ten seconds:
       removing another, or putting one back, leaves the others as they
       are. There was one for the whole list, and a second clip removed took
-      the first one's way back with it. The clip stays in the plan with
-      everything done to it, and a render of the whole plan leaves it out.
+      the first one's way back with it. The ten seconds are the episode's,
+      not the screen's: they run on while another episode or page is open,
+      and coming back within them finds the row again with the time it has
+      left. Time the pointer held it still is kept too. A list read again,
+      after a search, a render or an undo, leaves the rows as they are, and
+      an undo that puts the clip back makes it a clip again. Leaving the
+      episode, or any of those, used to take every way back with it. The
+      clip stays in the plan with everything done to it, and a render of
+      the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part
@@ -1252,6 +1259,15 @@ again, and the one curve that is not a plain ease is a CSS `linear()`.
 Measured in headless Chromium: 60 frames a second with 114 of them running
 at once on the bench, 60 with a search running in the workspace, and no
 animation at all at rest.
+
+The one exception is time running out, the fill of a removed clip. Its
+animation is still the compositor's, but it is started, held and let go
+from `Busy.svelte`, and a clock there decides when the time is over. The
+hold was the stylesheet's, a play state flipped by `:hover`, and WebKit,
+which draws the app on a Mac, gave time back as the pointer passed over
+the row, so the fill ran up again and the row stayed longer than it
+said. Now the clock is the time, and the fill is set from it each time
+it stops or runs on.
 
 `frontend/src/components/Busy.svelte` is the whole of the beam, the motes
 and the fill, in a control and in the track. The track itself, the shimmer

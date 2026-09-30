@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+
   // Work running in the control it was started from. Everything in the app
   // that runs wears this, so running work looks the same wherever it is:
   //
@@ -31,11 +33,12 @@
   // The same fill tells time running out: given drain, a number of
   // seconds, it starts full and runs down to nothing over that time, and
   // says so with onend. There is no beam and no motes then, because
-  // nothing is being worked on. It is the time itself, not a picture of a
-  // timer kept somewhere else, so the two cannot part, and it stands still
-  // while the pointer or the keyboard is on the control, so nobody is
-  // rushed. The control gives it its colour, the same way it does for
-  // work, through --lit, --wash-from and --wash-to.
+  // nothing is being worked on. It stands still while the pointer or the
+  // keyboard is on the control, so nobody is rushed, and onresume tells
+  // the time left each time it runs on. The control gives it its colour,
+  // the same way it does for work, through --lit, --wash-from and
+  // --wash-to. Given spent, it starts that many seconds in, for time that
+  // ran on while it was not on screen.
   let {
     fraction = -1,
     rim = true,
@@ -43,7 +46,9 @@
     shuttle = false,
     still = false,
     drain = 0,
+    spent = 0,
     onend,
+    onresume,
   }: {
     fraction?: number;
     rim?: boolean;
@@ -51,8 +56,78 @@
     shuttle?: boolean;
     still?: boolean;
     drain?: number;
+    spent?: number;
     onend?: () => void;
+    onresume?: (left: number) => void;
   } = $props();
+
+  // The time running out, kept here and nowhere else. The clock is the
+  // time: it decides when the time is over and how much is left, and the
+  // fill is set from it every time it stops or runs on. The pause was the
+  // stylesheet's, a play state flipped by :hover, and each engine kept the
+  // time of a paused animation its own way: in WebKit, which draws the app
+  // on a Mac, a pointer passing over the row gave the time back, so the
+  // fill ran up again and the row stayed longer than it said. The
+  // animation is still carried by the compositor, it is only started,
+  // held and let go from here.
+  function runDown(node: HTMLElement) {
+    return untrack(() => {
+      const host = node.closest(".beam")?.parentElement;
+      const whole = drain * 1000;
+      let left = Math.max(0, whole - spent * 1000);
+      let since = performance.now();
+      let timer = 0;
+      let held = false;
+      const fill = node.animate([{ transform: "translateX(0)" }, { transform: "translateX(-100%)" }], {
+        duration: whole,
+        easing: "linear",
+        fill: "forwards",
+      });
+      const show = () => (fill.currentTime = whole - left);
+      const over = () => onend?.();
+      const hold = () => {
+        if (held) return;
+        held = true;
+        left = Math.max(0, left - (performance.now() - since));
+        clearTimeout(timer);
+        fill.pause();
+        show();
+      };
+      const go = () => {
+        if (!held) return;
+        held = false;
+        since = performance.now();
+        show();
+        fill.play();
+        timer = window.setTimeout(over, left);
+        onresume?.(left / 1000);
+      };
+      // Held while the pointer or the keyboard is anywhere on the control.
+      const out = () => {
+        if (!host?.matches(":hover") && !host?.contains(document.activeElement)) go();
+      };
+      const leftFocus = (e: FocusEvent) => {
+        if (!host?.contains(e.relatedTarget as Node | null) && !host?.matches(":hover")) go();
+      };
+      show();
+      timer = window.setTimeout(over, left);
+      // A row that appears under the pointer, as a removed clip's row
+      // does under the trash can just pressed, starts held.
+      if (host?.matches(":hover")) hold();
+      host?.addEventListener("pointerenter", hold);
+      host?.addEventListener("pointerleave", out);
+      host?.addEventListener("focusin", hold);
+      host?.addEventListener("focusout", leftFocus);
+      return () => {
+        clearTimeout(timer);
+        fill.cancel();
+        host?.removeEventListener("pointerenter", hold);
+        host?.removeEventListener("pointerleave", out);
+        host?.removeEventListener("focusin", hold);
+        host?.removeEventListener("focusout", leftFocus);
+      };
+    });
+  }
 
   // Where the motes rise and how long each one takes. Fixed rather than
   // drawn at random, because a random number would be a new one on every
@@ -68,15 +143,7 @@
 
 <span class="beam" class:still aria-hidden="true">
   {#if drain > 0}
-    <span class="fill"
-      ><i
-        class="run"
-        style="animation-duration: {drain}s"
-        onanimationend={(e) => {
-          if (e.target === e.currentTarget && e.animationName.endsWith("drain")) onend?.();
-        }}
-      ></i></span
-    >
+    <span class="fill"><i class="run" {@attach runDown}></i></span>
   {/if}
   {#if rim && !still && drain <= 0}<span class="ring"></span>{/if}
   {#if motes && !still && drain <= 0}
@@ -354,27 +421,9 @@
   }
 
   /* Time running out: the fill from full to nothing, carried by the
-     compositor like every other fill, and held while the hand or the
-     keyboard is on the control. */
+     compositor like every other fill, see runDown. */
   .fill i.run {
     transition: none;
-    animation-name: drain;
-    animation-timing-function: linear;
-    animation-fill-mode: forwards;
-  }
-
-  :global(:hover) > .beam .fill i.run,
-  :global(:focus-within) > .beam .fill i.run {
-    animation-play-state: paused;
-  }
-
-  @keyframes drain {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(-100%);
-    }
   }
 
   /* Paused: the fill and the line at its head, and nothing that moves. */
