@@ -146,13 +146,15 @@ facade the app goes around, and three files too big to hold in one's head.
     its archive to.
 12. **ffmpeg 7.1.1 is four point releases behind.** 7.1.5 is out on the same
     branch, with security fixes in code that reads the user's video.
-    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Open.** Tried in #51: the
-    first macOS test run with 7.1.5 hung for six minutes in an ffmpeg
-    that finds camera switches, with the system's decoder
-    (`-hwaccel auto`, VideoToolbox), where 7.1.1 passed every run. Only a
-    Mac can say why, so the update goes on its own, and 7.1.1 stays,
-    now pinned by its commit. harfbuzz 10.1.0 and libass 0.17.3 stay
-    too.
+    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Fixed** in #54: ffmpeg 7.1.5.
+    The hang did not come back: on a macOS runner, 80 runs of the command
+    and three rounds of the engine tests under the race detector, with
+    7.1.1 and with 7.1.5 alike, never hung, and the macOS CI passed with
+    7.1.5. So it was rare rather than new. What made it matter was ours:
+    nothing ended an ffmpeg that had stopped. Looking for camera switches
+    now has a time limit, falls back to the processor when the system's
+    decoder runs out of it, and frames a span without switches, with a
+    warning, when both do. harfbuzz 10.1.0 and libass 0.17.3 stay.
 13. **Workflows are not hardened.** `ci.yml` and `speechbench.yml` have no
     `permissions:` block, every action is pinned by tag rather than by
     commit, and `tools.yml` puts `inputs.tag` straight into a shell line.
@@ -307,3 +309,9 @@ facade the app goes around, and three files too big to hold in one's head.
     `56px` four times in `ClipList.svelte`. **Open.**
 42. Doc comments in the wrong place: `ResetCrop`'s above `SetCaptionStyle`
     (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Open.**
+43. `make changed` runs no Go test for a change to a build script.
+    `notices_test.go` checks the versions in `notices.json` against the pins
+    in `build-ffmpeg.sh` and `build-llama.sh`, but it names them without
+    their folder, so the rule that finds a Go test by the path it reads a
+    file by never finds it. Raising ffmpeg in #54 passed `make changed` and
+    failed the notices test in CI. **Open.**

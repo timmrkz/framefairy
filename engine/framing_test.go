@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // twoCameras is an episode shot on two cameras: the first for ten seconds,
@@ -151,5 +152,66 @@ func TestHwaccelsIn(t *testing.T) {
 	}
 	if DecoderName("videotoolbox") != "VideoToolbox" || DecoderName("vaapi") != "VA-API" {
 		t.Error("the names are not the ones a person knows")
+	}
+}
+
+// stuckFFmpeg is an ffmpeg that never finishes when it decodes through the
+// system's decoder, and, if always is set, never finishes at all. When it
+// does finish it reports one camera switch, at 5 s into what it read.
+func stuckFFmpeg(t *testing.T, always bool) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("a shell script stands in for ffmpeg")
+	}
+	hang := `case " $* " in *" -hwaccel "*) exec sleep 600 ;; esac`
+	if always {
+		hang = "exec sleep 600"
+	}
+	path := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\n" + hang + "\n" +
+		"echo '[Parsed_showinfo_2 @ 0x0] n:   0 pts:  125 pts_time:5      duration:1' >&2\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// An ffmpeg that stops working while it looks for camera switches is
+// ended, and the switches are looked for again with the processor
+// decoding. The first macOS test run with ffmpeg 7.1.5 had one hang there
+// for six minutes, and nothing ended it: the search would have waited
+// for good.
+func TestShotDetectionThatHangsIsEnded(t *testing.T) {
+	was := shotLimit
+	shotLimit = func(float64) time.Duration { return 300 * time.Millisecond }
+	t.Cleanup(func() { shotLimit = was })
+
+	e := NewEngine(NewLog(io.Discard, false, false))
+	e.FFmpeg = stuckFFmpeg(t, false)
+	began := time.Now()
+	cuts, err := e.DetectShots(context.Background(), "episode.mp4", 10, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("finding camera switches took %s", took)
+	}
+	if len(cuts) != 1 || math.Abs(cuts[0]-14.5) > 0.01 {
+		t.Errorf("switches %v, want one at 14.5", cuts)
+	}
+	if !e.softDecode.Load() {
+		t.Error("the system's decoder is still used after it hung")
+	}
+
+	// One that hangs either way gives no switches rather than no clip.
+	e = NewEngine(NewLog(io.Discard, false, false))
+	e.FFmpeg = stuckFFmpeg(t, true)
+	began = time.Now()
+	cuts, err = e.DetectShots(context.Background(), "episode.mp4", 10, 20)
+	if err != nil || len(cuts) != 0 {
+		t.Errorf("an ffmpeg that always hangs: %v, %v", cuts, err)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("giving up took %s", took)
 	}
 }

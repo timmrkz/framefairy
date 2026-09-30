@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func tailRunes(s string, n int) string {
@@ -121,6 +122,13 @@ func decoderIn(stderr string) string {
 	return DecoderName(words[0])
 }
 
+// shotLimit is how long finding the camera switches of a span of so many
+// seconds may take before it is ended: a minute, and four times the span on
+// top, where an honest run takes a few seconds. Tests make it shorter.
+var shotLimit = func(span float64) time.Duration {
+	return time.Minute + time.Duration(4*span*float64(time.Second))
+}
+
 // DetectShots finds camera switches inside one span, as absolute times.
 //
 // Only the spans a clip keeps get scanned. The switches are hard cuts
@@ -128,6 +136,11 @@ func decoderIn(stderr string) string {
 func (e *Engine) DetectShots(ctx context.Context, path string, start, end float64) ([]float64, error) {
 	const threshold = 0.30
 	from := math.Max(0, start-0.5)
+	// A scan that runs out of time is ended. ffmpeg has hung here once,
+	// decoding through the system's decoder, and a search waited on it for
+	// good. It takes seconds, so the limit is far past any honest run.
+	limit := shotLimit(end - start)
+	timedOut := false
 	scan := func(flags []string) (int, string) {
 		args := append([]string{"-hide_banner"}, flags...)
 		args = append(args,
@@ -135,17 +148,32 @@ func (e *Engine) DetectShots(ctx context.Context, path string, start, end float6
 			"-i", path,
 			"-vf", fmt.Sprintf("scale=256:-2,select='gt(scene,%s)',showinfo", pyFloatRepr(threshold)),
 			"-an", "-fps_mode", "passthrough", "-f", "null", "-")
-		return e.RunFFmpeg(ctx, args, "finding camera switches", end-start+1.0, "")
+		scanCtx, cancel := context.WithTimeout(ctx, limit)
+		defer cancel()
+		code, stderr := e.RunFFmpeg(scanCtx, args, "finding camera switches", end-start+1.0, "")
+		timedOut = ctx.Err() == nil && scanCtx.Err() != nil
+		return code, stderr
 	}
 	flags := e.decodeFlags()
 	code, stderr := scan(flags)
 	if code != 0 && flags != nil && ctx.Err() == nil {
 		e.softDecode.Store(true)
-		e.Log.Detail("the system's video decoder did not take this file, decoding on the processor")
+		if timedOut {
+			e.Log.Warn("finding camera switches stopped moving with the system's video decoder, decoding on the processor from now on")
+		} else {
+			e.Log.Detail("the system's video decoder did not take this file, decoding on the processor")
+		}
 		code, stderr = scan(nil)
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if code != 0 && timedOut {
+		// No switches found is a crop that does not follow a camera change.
+		// No clip at all is far worse.
+		e.Log.Warn("finding camera switches between %s and %s took longer than %s and was ended, so none are used there",
+			HMS(start), HMS(end), limit)
+		return nil, nil
 	}
 	if code != 0 {
 		return nil, renderErr("shot detection failed:\n%s", tailRunes(strip(stderr), 400))
