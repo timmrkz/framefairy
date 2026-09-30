@@ -81,7 +81,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
 
-`make TIDY=0` skips step 2, for a machine without network whose modules are
+`make TIDY=0` skips step 4, for a machine without network whose modules are
 already in place.
 
 A new Mac, from nothing to a running app:

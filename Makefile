@@ -127,7 +127,9 @@ endif
 # did not work, the search path answers instead.
 #
 # This is what makes the development build use the ffmpeg a customer will
-# use, rather than whatever Homebrew happens to have installed.
+# use, rather than whatever Homebrew happens to have installed. Their
+# licence texts come with them, because scripts/bundle-macos.sh carries
+# whatever LICENSE-* it finds here into the app, and it found nothing.
 tools-beside:
 	@if [ -x $(STAMPS)/ffmpeg/bin/ffmpeg ]; then \
 		cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(BIN)/ && \
@@ -137,9 +139,13 @@ tools-beside:
 		cp $(STAMPS)/llama/bin/llama-server $(BIN)/ && \
 		echo "Using our own llama-server, from make llama"; \
 	fi
+	@for licence in $(STAMPS)/ffmpeg/bin/LICENSE-ffmpeg.txt $(STAMPS)/llama/bin/LICENSE-llama.cpp; do \
+		if [ -f $$licence ]; then cp $$licence $(BIN)/; fi; \
+	done
 
+# The comment at the top of this file, however long it grows.
 help:
-	@sed -n '1,39p' Makefile | sed 's/^# \{0,1\}//'
+	@awk '!/^#/ { exit } { sub(/^# ?/, ""); print }' Makefile
 
 # Go and a C compiler, checked before anything is built.
 toolchain:
