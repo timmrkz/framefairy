@@ -56,4 +56,21 @@ set -- "$entries"/*.json
 # shellcheck disable=SC2086
 go run ./cmd/framefairy-release list -out channels.json $newest "$@"
 cat channels.json
-gh release upload dev channels.json --clobber
+
+# The new list goes up under a name of its own and is then renamed into
+# place. GitHub cannot replace a release file in one step, and gh release
+# upload --clobber deletes the old one before it uploads the new, so every
+# app that checked during the upload was answered 404. Now the list is
+# missing only between the delete and the rename, two calls, and the app
+# waits out a 404 anyway, see Fetch in updates/source.go. If the rename
+# fails the list is uploaded the old way, so it is never left missing.
+cp channels.json channels.next.json
+gh release upload dev channels.next.json --clobber
+next=$(gh api 'repos/{owner}/{repo}/releases/tags/dev' \
+	--jq '.assets[] | select(.name == "channels.next.json") | .id')
+gh release delete-asset dev channels.json -y || true
+if ! gh api -X PATCH "repos/{owner}/{repo}/releases/assets/$next" -f name=channels.json >/dev/null; then
+	echo "renaming the list failed, uploading it in place instead"
+	gh release upload dev channels.json --clobber
+	gh release delete-asset dev channels.next.json -y || true
+fi

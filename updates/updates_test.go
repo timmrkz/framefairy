@@ -402,7 +402,7 @@ func TestADownloadLargerThanPromisedStops(t *testing.T) {
 func TestAMissingListIsAnError(t *testing.T) {
 	key := testKey(t)
 	srv := serve(t, &served{})
-	src := &Source{URL: srv.URL + "/nowhere.json", Client: srv.Client()}
+	src := &Source{URL: srv.URL + "/nowhere.json", Client: srv.Client(), Retries: quick}
 	if _, err := newUpdater(t, src, "1", key).Check(context.Background()); err == nil {
 		t.Error("no error")
 	}

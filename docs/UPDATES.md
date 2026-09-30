@@ -372,6 +372,18 @@ The address is built into the app. What is in the file is not: the build
 workflow writes it again whenever a channel gets a new build, so a build
 made today finds a pull request opened tomorrow.
 
+GitHub cannot replace a release file in one step. `gh release upload
+--clobber` deletes the old file before it uploads the new one, so for the
+length of an upload there was no list, and an app that checked then was
+answered 404 and said the check did not get through. The list is written
+twice on every push to a pull request, so Tim ran into it. Now
+`scripts/channel-list.sh` uploads the new list as `channels.next.json`,
+deletes the old one and renames the new one into place, so the list is
+missing only for the rename. If the rename fails, it uploads the list the
+old way. And the app waits out a 404 on the list, trying again after one,
+two and four seconds, before it says anything, see `Fetch` in
+`updates/source.go`. Any other answer is said at once.
+
 The app fetches it the way it fetches any file. It does not call GitHub's
 API and has no idea what a pull request is. The file lists every channel
 with its newest build, so one fetch is the whole check:

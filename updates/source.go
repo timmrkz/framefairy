@@ -37,13 +37,50 @@ type Source struct {
 	// a channel picked again has its build at once. Empty keeps nothing.
 	// See cache.go.
 	Cache string
+	// Retries is how long to wait before each new try when the channel
+	// list answers 404. Nil is listRetries.
+	Retries []time.Duration
 }
+
+// listRetries are the waits between tries while the channel list answers
+// 404, seven seconds in all. The publish workflow puts a new list in the
+// place of the old one, and GitHub cannot replace a release file in one
+// step, so for a moment there is none. A check that lands in that moment
+// waits it out rather than showing an error.
+var listRetries = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
+
+// statusError is a channel list that answered anything but 200.
+type statusError struct {
+	code   int
+	status string
+}
+
+func (e *statusError) Error() string { return "the channel list answered " + e.status }
 
 // Name implements updater.Provider.
 func (s *Source) Name() string { return "channels" }
 
-// Fetch reads the channel list.
+// Fetch reads the channel list, and tries again while it answers 404.
 func (s *Source) Fetch(ctx context.Context) (List, error) {
+	waits := s.Retries
+	if waits == nil {
+		waits = listRetries
+	}
+	for try := 0; ; try++ {
+		list, err := s.fetch(ctx)
+		var status *statusError
+		if !errors.As(err, &status) || status.code != http.StatusNotFound || try == len(waits) {
+			return list, err
+		}
+		select {
+		case <-ctx.Done():
+			return List{}, err
+		case <-time.After(waits[try]):
+		}
+	}
+}
+
+func (s *Source) fetch(ctx context.Context) (List, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
@@ -57,7 +94,7 @@ func (s *Source) Fetch(ctx context.Context) (List, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return List{}, fmt.Errorf("the channel list answered %s", resp.Status)
+		return List{}, &statusError{code: resp.StatusCode, status: resp.Status}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxList+1))
 	if err != nil {
