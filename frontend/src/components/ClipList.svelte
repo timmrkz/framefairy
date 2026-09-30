@@ -15,6 +15,7 @@
     hovered = "",
     onhover,
     removed = [],
+    emptied = null,
     coming = 0,
     at = Infinity,
     waiting = true,
@@ -24,6 +25,7 @@
     onselect,
     onremove,
     onputback,
+    onforget,
   }: {
     clips: ClipEntry[];
     // The clips on their way, whoever proposed them, each in its place in
@@ -79,11 +81,18 @@
     // moment, showing what happened to it and offering it back, so the rows
     // do not jump out from under the pointer.
     removed?: string[];
+    // What became of the clips there were, when every one of them was
+    // removed and nothing is on its way: said in the first row still to
+    // come, the way a search that stopped says so there, so an empty list
+    // reads as something that happened rather than something broken.
+    emptied?: { what: string; left: string } | null;
     onselect: (key: string) => void;
     // Takes a clip out of the list. It stays in the plan, so it can come
     // back.
     onremove?: (clip: ClipEntry) => void;
     onputback?: (key: string) => void;
+    // A clip taken out whose time to be put back has run out.
+    onforget?: (key: string) => void;
   } = $props();
 
   // A search writes each clip the moment it is found, so the list fills in
@@ -207,7 +216,7 @@
     {@const clip = row.clip}
     {@const a = row.arriving}
     {@const g = row.ghost}
-    {@const lead = g === 0 && !!(next || stopped)}
+    {@const lead = g === 0 && !!(next || stopped || emptied)}
     <li
       animate:flip={{ duration: 180 }}
       in:enter={row}
@@ -218,7 +227,7 @@
       style={g !== undefined && !lead ? `--wait-in: ${g * 800}ms` : undefined}
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
-      class:stopped={!!a?.stopped || (lead && !next)}
+      class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
       class:lit={!!clip && clip.key === hovered}
       title={lead && !next ? stopped?.full : undefined}
       aria-live={a || (lead && next) ? "polite" : undefined}
@@ -242,6 +251,9 @@
         {:else if g === 0 && stopped}
           <span class="title">{stopped.what}</span>
           <span class="meta muted num">{stopped.left}</span>
+        {:else if g === 0 && emptied}
+          <span class="title">{emptied.what}</span>
+          <span class="meta muted num">{emptied.left}</span>
         {/if}
       {:else if a}
         {#if a.stopped}
@@ -264,6 +276,12 @@
           <span class="what">Removed</span>
           <span class="grow"></span>
           <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
+          <!-- How long it can still be put back: a line along the foot of
+               the row that runs down to nothing, and the row closes when it
+               has. It is the time itself, not a picture of it, so the two
+               cannot part, and it stands still while the pointer or the
+               keyboard is on the row, so nobody is rushed. -->
+          <span class="left" aria-hidden="true" onanimationend={() => onforget?.(clip.key)}></span>
         </div>
       {:else if clip}
         <button
@@ -388,6 +406,10 @@
      the way the clip went, so the eye sees it leave rather than find a gap
      later. */
   .gone {
+    /* How long a clip taken out can be put back. */
+    --second-thoughts: 10s;
+    position: relative;
+    overflow: hidden;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -396,6 +418,33 @@
     background: rgba(224, 96, 90, 0.14);
     color: var(--err);
     animation: swept 0.18s ease-out;
+  }
+
+  /* The time left, running down from the full width, by transform so it
+     is carried by the compositor and never laid out again. */
+  .gone .left {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--err);
+    transform-origin: left center;
+    animation: drain var(--second-thoughts) linear forwards;
+  }
+
+  .gone:hover .left,
+  .gone:focus-within .left {
+    animation-play-state: paused;
+  }
+
+  @keyframes drain {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
   }
 
   .gone .what {

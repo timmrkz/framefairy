@@ -696,6 +696,18 @@
       (lastSearch?.written ?? 0) - readWritten - onTheWay.filter((a) => a.held && a.job === searchSeen).length,
     ),
   );
+  // Every clip the episode had was removed, and nothing is on its way:
+  // the first row still to come says so, in the words a row that says how
+  // work ended uses, rather than leaving empty rows that look like nothing
+  // happened or something broke.
+  const emptied = $derived.by(() => {
+    if (busy || stopped || shown.length > 0 || onTheWay.length > 0) return null;
+    if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
+    return {
+      what: clips.length === 1 ? "The one clip removed" : `All ${clips.length} clips removed`,
+      left: "New finds others",
+    };
+  });
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -986,28 +998,18 @@
   // as long as the list is on screen. Every clip removed keeps its own row
   // and its own time, and removing another leaves them alone: there was one
   // for the whole list, and the second clip removed took the first one's
-  // way back with it.
+  // way back with it. The time is the row's own, see ClipList: it runs down
+  // along the foot of the row, stands still under the pointer, and the row
+  // says when it is over.
   let removed = $state<Record<string, ClipEntry>>({});
-  // How long a row stays behind before the list closes over it.
-  const secondThoughts = 10000;
-  const forgetting = new Map<string, ReturnType<typeof setTimeout>>();
 
   function forget(key: string) {
-    clearTimeout(forgetting.get(key));
-    forgetting.delete(key);
     if (!(key in removed)) return;
     const { [key]: _, ...rest } = removed;
     removed = rest;
   }
 
-  function forgetSoon(key: string) {
-    clearTimeout(forgetting.get(key));
-    forgetting.set(key, setTimeout(() => forget(key), secondThoughts));
-  }
-
   function forgetAll() {
-    for (const timer of forgetting.values()) clearTimeout(timer);
-    forgetting.clear();
     removed = {};
   }
 
@@ -1018,7 +1020,6 @@
       putClip(updated);
       if (selected === updated.key) selected = "";
       removed = { ...removed, [updated.key]: updated };
-      forgetSoon(updated.key);
     } catch (err) {
       problem = errorText(err);
     }
@@ -1027,7 +1028,6 @@
   async function putClipBack(key: string) {
     const clip = removed[key];
     if (!clip) return;
-    clearTimeout(forgetting.get(key));
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
@@ -2117,7 +2117,6 @@
       captionY = settings.captionY || captionYDefault;
     });
     load();
-    return forgetAll;
   });
 </script>
 
@@ -2554,6 +2553,8 @@
               {carry}
               {stopped}
               removed={Object.keys(removed)}
+              {emptied}
+              onforget={forget}
               onselect={select}
               onremove={removeClip}
               onputback={putClipBack}
