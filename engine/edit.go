@@ -189,7 +189,7 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 		return renderErr("clip plan must be a JSON object")
 	}
 	var clips []*object
-	if list, ok := top.values["clips"].([]any); ok {
+	if list, ok := top.values[keyClips].([]any); ok {
 		for _, item := range list {
 			if c, ok := item.(*object); ok {
 				clips = append(clips, c)
@@ -200,10 +200,10 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 		return err
 	}
 	revision := 0
-	if raw, ok := top.get("revision"); ok {
+	if raw, ok := top.get(keyRevision); ok {
 		revision, _ = toInt(raw)
 	}
-	top.set("revision", revision+1)
+	top.set(keyRevision, revision+1)
 
 	body, err := MarshalPlan(top)
 	if err != nil {
@@ -289,8 +289,8 @@ func appendClipLocked(path string, clip PlanClip) error {
 	}
 	refused := false
 	err = editPlanLocked(path, func(top *object, clips []*object) error {
-		if made, ok := top.values["planned_with"].(*object); ok {
-			for _, hole := range orderedWindows(made.values["removed"]) {
+		if made, ok := top.values[keyPlannedWith].(*object); ok {
+			for _, hole := range orderedWindows(made.values[keyRemoved]) {
 				if end > hole.Start && start < hole.End {
 					refused = true
 					return errNotAdded
@@ -300,7 +300,7 @@ func appendClipLocked(path string, clip PlanClip) error {
 		for i, c := range clips {
 			fallback := twoDigits(i + 1)
 			text := fallback
-			if raw, ok := c.get("id"); ok {
+			if raw, ok := c.get(keyID); ok {
 				text = pyStr(raw)
 			}
 			if SanitiseName(text, fallback) == clip.ID {
@@ -310,8 +310,8 @@ func appendClipLocked(path string, clip PlanClip) error {
 				return errNotAdded
 			}
 		}
-		list, _ := top.values["clips"].([]any)
-		top.set("clips", append(list, added))
+		list, _ := top.values[keyClips].([]any)
+		top.set(keyClips, append(list, added))
 		return nil
 	})
 	if refused {
@@ -346,7 +346,7 @@ func findClip(clips []*object, id string) (*object, error) {
 	for i, c := range clips {
 		fallback := twoDigits(i + 1)
 		text := fallback
-		if raw, ok := c.get("id"); ok {
+		if raw, ok := c.get(keyID); ok {
 			text = pyStr(raw)
 		}
 		if SanitiseName(text, fallback) == id {
@@ -371,9 +371,9 @@ func SetRejected(planPath, clipID string, rejected bool, reasons ...string) erro
 			return err
 		}
 		if rejected {
-			c.set("rejected", true)
+			c.set(keyRejected, true)
 		} else {
-			c.remove("rejected")
+			c.remove(keyRejected)
 		}
 		return nil
 	})
@@ -452,7 +452,7 @@ func copyObject(o *object) *object {
 func segmentAt(pieces []*object, at float64) int {
 	best, bestDistance := -1, math.Inf(1)
 	for i, seg := range pieces {
-		start, end := number(seg.values["start"]), number(seg.values["end"])
+		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
 		distance := 0.0
 		if at < start {
 			distance = start - at
@@ -468,15 +468,15 @@ func segmentAt(pieces []*object, at float64) int {
 
 // autoCrop is the crop the framing analysis chose for a piece.
 func autoCrop(seg *object) any {
-	if value, ok := seg.get("crop_x_auto"); ok {
+	if value, ok := seg.get(keyCropXAuto); ok {
 		return value
 	}
-	value, _ := seg.get("crop_x")
+	value, _ := seg.get(keyCropX)
 	return value
 }
 
 func segmentObjects(c *object) []*object {
-	list, _ := c.values["segments"].([]any)
+	list, _ := c.values[keySegments].([]any)
 	var pieces []*object
 	for _, item := range list {
 		if seg, ok := item.(*object); ok {
@@ -515,7 +515,7 @@ func ClipCuts(c Clip) []Cut {
 func pieceSpan(pieces []*object) float64 {
 	lengths := make([]float64, len(pieces))
 	for i, seg := range pieces {
-		lengths[i] = number(seg.values["end"]) - number(seg.values["start"])
+		lengths[i] = number(seg.values[keyEnd]) - number(seg.values[keyStart])
 	}
 	return pysum(lengths)
 }
@@ -540,7 +540,7 @@ func editPieces(planPath, clipID string, change func(pieces []*object) ([]*objec
 		for i, seg := range out {
 			kept[i] = seg
 		}
-		c.set("segments", kept)
+		c.set(keySegments, kept)
 		return nil
 	})
 	if err != nil {
@@ -617,7 +617,7 @@ func snapCut(words []Cue, from, to, keepPause float64) (float64, float64) {
 func applyCut(pieces []*object, from, to float64) []*object {
 	var out []*object
 	for _, seg := range pieces {
-		start, end := number(seg.values["start"]), number(seg.values["end"])
+		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
 		if from <= start && to >= end {
 			continue
 		}
@@ -627,12 +627,12 @@ func applyCut(pieces []*object, from, to float64) []*object {
 		}
 		if from > start {
 			head := copyObject(seg)
-			head.set("end", roundTo(from, 3))
+			head.set(keyEnd, roundTo(from, 3))
 			out = append(out, head)
 		}
 		if to < end {
 			tail := copyObject(seg)
-			tail.set("start", roundTo(to, 3))
+			tail.set(keyStart, roundTo(to, 3))
 			out = append(out, tail)
 		}
 	}
@@ -664,11 +664,11 @@ func SetCrop(planPath, clipID string, at float64, left int) error {
 			if fmt.Sprint(autoCrop(seg)) != angle {
 				continue
 			}
-			if _, moved := seg.get("crop_x_auto"); !moved {
-				value, _ := seg.get("crop_x")
-				seg.set("crop_x_auto", value)
+			if _, moved := seg.get(keyCropXAuto); !moved {
+				value, _ := seg.get(keyCropX)
+				seg.set(keyCropXAuto, value)
 			}
-			seg.set("crop_x", left)
+			seg.set(keyCropX, left)
 		}
 		return nil
 	})
@@ -728,11 +728,11 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 		}
 	}
 	return editPlan(planPath, func(top *object, _ []*object) error {
-		style, _ := top.get("caption_style")
+		style, _ := top.get(keyCaptionStyle)
 		into, ok := style.(*object)
 		if !ok {
 			into = &object{values: map[string]any{}}
-			top.set("caption_style", into)
+			top.set(keyCaptionStyle, into)
 		}
 		for key, value := range values {
 			into.set(key, value)
@@ -753,7 +753,7 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 		if err != nil {
 			return err
 		}
-		c.set("caption_y", SnapCaptionY(y))
+		c.set(keyCaptionY, SnapCaptionY(y))
 		return nil
 	})
 }
@@ -797,7 +797,7 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 		if err != nil {
 			return err
 		}
-		times, _ := c.values["caption_times"].(*object)
+		times, _ := c.values[keyCaptionTimes].(*object)
 		if times == nil {
 			times = newObject()
 		}
@@ -816,9 +816,9 @@ func SetCaptionTime(planPath, clipID string, word float64, edge string, at float
 			times.set(key, edges)
 		}
 		if len(times.keys) == 0 {
-			c.remove("caption_times")
+			c.remove(keyCaptionTimes)
 		} else {
-			c.set("caption_times", times)
+			c.set(keyCaptionTimes, times)
 		}
 		return nil
 	})
@@ -850,7 +850,7 @@ func SetThumbnail(planPath, clipID string, from, to float64) error {
 		if err != nil {
 			return err
 		}
-		list, _ := c.values["thumbnails"].([]any)
+		list, _ := c.values[keyThumbnails].([]any)
 		var kept []any
 		found := false
 		for _, item := range list {
@@ -868,8 +868,8 @@ func SetThumbnail(planPath, clipID string, from, to float64) error {
 			for _, seg := range segmentObjects(c) {
 				// A piece can be written as a timecode, the way LoadClips
 				// reads it.
-				start, err1 := ParseTime(seg.values["start"])
-				end, err2 := ParseTime(seg.values["end"])
+				start, err1 := ParseTime(seg.values[keyStart])
+				end, err2 := ParseTime(seg.values[keyEnd])
 				if err1 == nil && err2 == nil {
 					pieces = append(pieces, Segment{Start: start, End: end})
 				}
@@ -889,9 +889,9 @@ func SetThumbnail(planPath, clipID string, from, to float64) error {
 		}
 		sort.SliceStable(kept, func(a, b int) bool { return number(kept[a]) < number(kept[b]) })
 		if len(kept) == 0 {
-			c.remove("thumbnails")
+			c.remove(keyThumbnails)
 		} else {
-			c.set("thumbnails", kept)
+			c.set(keyThumbnails, kept)
 		}
 		return nil
 	})
@@ -905,7 +905,7 @@ func ResetCaptionY(planPath, clipID string) error {
 		if err != nil {
 			return err
 		}
-		c.remove("caption_y")
+		c.remove(keyCaptionY)
 		return nil
 	})
 }
@@ -917,8 +917,8 @@ func ClearCaptionY(planPath string) (int, error) {
 	changed := 0
 	err := editPlan(planPath, func(_ *object, clips []*object) error {
 		for _, c := range clips {
-			if _, ok := c.get("caption_y"); ok {
-				c.remove("caption_y")
+			if _, ok := c.get(keyCaptionY); ok {
+				c.remove(keyCaptionY)
 				changed++
 			}
 		}
@@ -943,12 +943,12 @@ func ResetCrop(planPath, clipID string, at float64) error {
 		}
 		angle := fmt.Sprint(autoCrop(pieces[target]))
 		for _, seg := range pieces {
-			auto, moved := seg.get("crop_x_auto")
+			auto, moved := seg.get(keyCropXAuto)
 			if !moved || fmt.Sprint(auto) != angle {
 				continue
 			}
-			seg.set("crop_x", auto)
-			seg.remove("crop_x_auto")
+			seg.set(keyCropX, auto)
+			seg.remove(keyCropXAuto)
 		}
 		return nil
 	})
@@ -1024,7 +1024,7 @@ func RemoveRange(planPath string, from, to, duration float64) (int, error) {
 		}
 	}
 	// Nothing of the window is left, so the plan itself goes.
-	if len(Without(window, append(readWindows(plan.PlannedWith()["removed"]), Window{start, end}))) == 0 {
+	if len(Without(window, append(readWindows(plan.PlannedWith()[keyRemoved]), Window{start, end}))) == 0 {
 		return len(going), RemovePlan(planPath)
 	}
 	gone := map[string]bool{}
@@ -1038,7 +1038,7 @@ func RemoveRange(planPath string, from, to, duration float64) (int, error) {
 			// plan file is untrusted and may not be there at all.
 			fallback := twoDigits(i + 1)
 			text := fallback
-			if raw, ok := c.get("id"); ok {
+			if raw, ok := c.get(keyID); ok {
 				text = pyStr(raw)
 			}
 			if gone[SanitiseName(text, fallback)] {
@@ -1046,18 +1046,18 @@ func RemoveRange(planPath string, from, to, duration float64) (int, error) {
 			}
 			kept = append(kept, c)
 		}
-		top.set("clips", kept)
-		made, ok := top.values["planned_with"].(*object)
+		top.set(keyClips, kept)
+		made, ok := top.values[keyPlannedWith].(*object)
 		if !ok {
 			made = newObject()
-			top.set("planned_with", made)
+			top.set(keyPlannedWith, made)
 		}
-		holes := append(orderedWindows(made.values["removed"]), Window{start, end})
+		holes := append(orderedWindows(made.values[keyRemoved]), Window{start, end})
 		list := make([]any, 0, len(holes))
 		for _, h := range MergeWindows(holes) {
 			list = append(list, map[string]any{"from": h.Start, "to": h.End})
 		}
-		made.set("removed", list)
+		made.set(keyRemoved, list)
 		return nil
 	})
 	if err != nil {
@@ -1079,8 +1079,8 @@ func orderedWindows(raw any) []Window {
 		if !ok {
 			continue
 		}
-		start, okS := toFloat(o.values["from"])
-		end, okE := toFloat(o.values["to"])
+		start, okS := toFloat(o.values[keyFrom])
+		end, okE := toFloat(o.values[keyTo])
 		if !okS || !okE || end <= start {
 			continue
 		}
@@ -1092,8 +1092,8 @@ func orderedWindows(raw any) []Window {
 // planWindow is the window a plan was made over, see madeOver.
 func planWindow(plan Plan, duration float64) Window {
 	made := plan.PlannedWith()
-	from, _ := toFloat(made["from"])
-	to, okTo := toFloat(made["to"])
+	from, _ := toFloat(made[keyFrom])
+	to, okTo := toFloat(made[keyTo])
 	by, _ := made["by"].(string)
 	return madeOver(from, to, okTo && to > from, by, duration)
 }

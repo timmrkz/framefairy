@@ -892,6 +892,8 @@ Everything else is in `engine/`:
   stream.go     answers read as they are written, and each clip taken
                 the moment it is whole
   plan.go       building the plan: the prompt, the call, the whole answer
+  plankeys.go   the names of a plan's parts, which every read and edit
+                of a plan reaches it by
   planbuild.go  clips framed and written as they are proposed
   handclip.go   clips made by hand with I and O
   searchclock.go how far a search has come, against how long it took before

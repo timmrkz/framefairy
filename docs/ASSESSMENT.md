@@ -223,7 +223,12 @@ facade the app goes around, and three files too big to hold in one's head.
     `Plan.Raw` and `PlanEntry` (`select.go:247`), with key names written out
     as strings in nine files. The ordered object is needed to keep unknown
     fields, the rest goes against "one primitive per thing". Fix: the key
-    names as constants and one way to read and write a clip. **Open.**
+    names as constants and one way to read and write a clip. **Half fixed**
+    in #68: the names of a plan's parts are constants in
+    `engine/plankeys.go`, and every read and edit of the ordered object,
+    `LoadClips` included, reaches the plan by them. The tags of the
+    structs that write a new plan are held to the same names by a test.
+    **Open:** one way to read and write a clip.
 21. **The engine is one package of 57 files and 21,000 lines**, with 248
     exported names, 53 of the functions used nowhere outside it. Core types
     sit in unrelated files (`Engine` in `ffmpeg.go`, `Transcript` in
