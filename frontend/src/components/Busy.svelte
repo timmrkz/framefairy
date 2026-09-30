@@ -383,6 +383,13 @@
     transition: none;
   }
 
+  /* The light over it runs the way the time does, right to left. Carried
+     over from the fill of work, it ran left to right, against the fill
+     it lay on. */
+  .fill i.run::after {
+    animation-direction: reverse;
+  }
+
   /* Paused: the fill and the line at its head, and nothing that moves. */
   .still .fill i {
     box-shadow: inset -2px 0 var(--lit, var(--accent-lit));
