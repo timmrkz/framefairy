@@ -18,10 +18,11 @@ func useSpeedFile(t *testing.T) {
 }
 
 // A search measured against the one before it: 20 seconds loading, 30
-// reading, 30 thinking at 50 tokens a second, 4 a clip for twelve clips, 3
-// of framing at the end. 131 in all.
+// reading, 30 thinking at 50 tokens a second, 4 a clip for twelve clips, 10
+// asking again about the clips well off the length, 3 of framing at the
+// end. 141 in all.
 var lastTime = searchSpeed{Version: speedVersion, Load: 20, Read: 1000, Thought: 30, Rate: 50,
-	Clip: 4, Tail: 3, Runs: 1}
+	Clip: 4, Fit: 10, Tail: 3, Runs: 1}
 
 func TestASearchWithNothingToGoOnSaysNoShare(t *testing.T) {
 	f, r := searchProgress(searchNow{Part: partReading, Chars: 30000, Count: 12, Local: true}, searchSpeed{}, false)
@@ -79,11 +80,59 @@ func TestTheShareOnlyGrows(t *testing.T) {
 		}
 		check("a clip taken")
 	}
+	// Two clips held back and asked for again, which takes far longer than
+	// before, and the framing of what was taken goes on meanwhile.
+	now.Taken, now.Landed = 10, 9
+	now.Part, now.InPart = partFitting, 0
+	for _, wait := range []float64{0, 5, 10, 60, 600} {
+		now.InPart += wait
+		check("fitting")
+	}
+	now.Landed, now.Taken = 10, 12
 	now.Part, now.InPart = partFraming, 0
 	for now.Landed < 12 {
 		now.Landed++
 		now.InPart++
 		check("framing")
+	}
+}
+
+// The model asked again about clips well off the length is part of the
+// search, and the fill says so: every clip it took has landed and the
+// fill is still short of its end by the fitting and the framing after it.
+// It went to its end the moment the last clip taken had landed, and stood
+// there full while the model was asked about the two it held back.
+func TestAFitKeepsTheFillShortOfTheEnd(t *testing.T) {
+	past := lastTime
+	past.Fit = 20
+	now := searchNow{Part: partFitting, Chars: 30000, Count: 12, Local: true, Budget: -1,
+		Taken: 10, Landed: 10}
+	f, left := searchProgress(now, past, true)
+	// 23 of 131 seconds are still to go, the fitting and the framing, with
+	// nothing to load.
+	if left < 22.9 || left > 23.1 {
+		t.Errorf("left %.1f, want 23", left)
+	}
+	if f > 0.86 {
+		t.Errorf("share %.3f with the fitting still to do", f)
+	}
+	// Halfway through the fitting by the clock is halfway through its part.
+	now.InPart = 10
+	half, _ := searchProgress(now, past, true)
+	if want := (108 + 10) / 131.0; half < want-0.01 || half > want+0.01 {
+		t.Errorf("share %.3f, want %.3f", half, want)
+	}
+	// A model this machine has never timed at a fit is measured against
+	// the stand-in's, never against nothing.
+	past.Fit = 0
+	if _, left := searchProgress(searchNow{Part: partFitting, Chars: 30000, Count: 12,
+		Local: true, Taken: 10, Landed: 10}, past, true); left < measuredLocal.Fit {
+		t.Errorf("left %.1f without a timed fit", left)
+	}
+	// A model in the cloud is never asked again, so it has no fitting.
+	cloud := searchNow{Part: partFraming, Chars: 30000, Count: 12, Taken: 12, Landed: 11}
+	if _, left := searchProgress(cloud, past, true); left > 3 {
+		t.Errorf("left %.1f in the cloud", left)
 	}
 }
 
@@ -111,25 +160,26 @@ func TestWritingNeverRunsPastTheClipBeingWritten(t *testing.T) {
 func TestAServerAlreadyRunningHasNothingToLoad(t *testing.T) {
 	now := searchNow{Part: partReading, Chars: 30000, Count: 12, Local: true, Loads: false, Budget: -1}
 	_, left := searchProgress(now, lastTime, true)
-	// 30 reading, 30 thinking, 48 writing, 3 framing, and none of the 20
-	// loading.
-	if left < 110 || left > 112 {
+	// 30 reading, 30 thinking, 48 writing, 10 fitting, 3 framing, and none
+	// of the 20 loading.
+	if left < 120 || left > 122 {
 		t.Errorf("left %.1f", left)
 	}
 }
 
 // A budget is the most the model will think, however long it thought the
-// time before. 500 tokens at 50 a second is 10 seconds, not 30.
+// time before. 500 tokens at 50 a second is 10 seconds, not 30, so 101
+// are left: 30 reading, 10 thinking, 48 writing, 10 fitting and 3 framing.
 func TestABudgetShortensTheThinking(t *testing.T) {
 	now := searchNow{Part: partReading, Chars: 30000, Count: 12, Local: true, Budget: 500}
-	if _, left := searchProgress(now, lastTime, true); left < 90 || left > 92 {
-		t.Errorf("left %.1f, want 91", left)
+	if _, left := searchProgress(now, lastTime, true); left < 100 || left > 102 {
+		t.Errorf("left %.1f, want 101", left)
 	}
 	// Halfway through the budget by its own count is halfway through the
 	// thinking, whatever the clock says.
 	now.Part, now.Thought, now.InPart = partThinking, 250, 1
 	f, _ := searchProgress(now, lastTime, true)
-	want := (30 + 5) / 91.0
+	want := (30 + 5) / 101.0
 	if f < want-0.01 || f > want+0.01 {
 		t.Errorf("share %.3f, want %.3f", f, want)
 	}
@@ -178,6 +228,14 @@ func TestTimingsAreKeptPerModelAndBlended(t *testing.T) {
 	}
 	if got, _ := pastSpeed("claude-sonnet-5", false); got != measuredCloud {
 		t.Error("one model's timings were taken for another's")
+	}
+
+	// A search that asked again times the fit. One that did not keeps it.
+	keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Fit: 10, Runs: 1}, false)
+	keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Fit: 20, Runs: 1}, false)
+	keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Runs: 1}, false)
+	if got, _ := pastSpeed("gemma", false); got.Fit != 15 {
+		t.Errorf("fit %.1f, want 15", got.Fit)
 	}
 
 	// A record nobody could have measured is no record.

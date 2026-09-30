@@ -710,7 +710,9 @@ func (q *queue) runJob(job *Job) {
 			j.Last = &copied
 			if copied.Kind == engine.EventProgress {
 				j.Progress = &copied
-			} else if copied.Kind == engine.EventIdle || copied.Kind == engine.EventStepDone {
+			} else if copied.Kind == engine.EventIdle {
+				// Only the log says when nothing is in progress: a step
+				// that ends inside a search leaves the search's line.
 				j.Progress = nil
 			}
 		})

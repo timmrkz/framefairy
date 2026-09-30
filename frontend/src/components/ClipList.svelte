@@ -2,7 +2,7 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
-  import type { Arriving } from "../lib/arriving";
+  import { Carrier, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
 
   import Busy from "./Busy.svelte";
@@ -32,7 +32,7 @@
     // is pressed, and a clip the model named is one from the moment it is
     // named. Each hands over to the clip itself, in the same place, when
     // it is written.
-    arriving?: Arriving[];
+    arriving?: OnTheWayCard[];
     selected: string;
     // The clip under the hand, here or on either track, and what the hand
     // on a card says about it. A card lit from elsewhere looks the way it
@@ -64,9 +64,9 @@
     // come: how far the whole search has come and how long it has left.
     // The row that said so went as the last clips were named, with the
     // search at sixty per cent, and its fill went with it, so the search
-    // went on with nothing to say how far it was. Its cards carry it on to
-    // the end, and until then they wear the beam alone, because a card is
-    // not as far along as the search it came from.
+    // went on with nothing to say how far it was. One of its cards carries
+    // it on to the end, see Carrier, and the others wear the beam alone,
+    // because a card is not as far along as the search it came from.
     carry?: { job: string; fraction: number; left: string; still?: boolean } | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
@@ -94,6 +94,8 @@
     return Array.from({ length: n }, (_, i) => i);
   });
   const carried = $derived(ghosts.length === 0 ? carry : null);
+  const carrier = new Carrier();
+  const carrying = $derived(carried ? carrier.pick(arriving, carried.job) : "");
 
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
@@ -105,7 +107,7 @@
   // row short for a moment, which the browser answered by pulling a list
   // that was scrolled down back up, every card jumping at once. The keys
   // are kept for as long as the list is, so a clip never changes rows.
-  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: Arriving; ghost?: number };
+  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: OnTheWayCard; ghost?: number };
   const rowOf = new Map<string, string>();
   const rows = $derived.by((): Row[] => {
     for (const a of arriving) if (a.clip && !rowOf.has(a.clip)) rowOf.set(a.clip, a.key);
@@ -245,7 +247,7 @@
             <span class="meta muted num">{a.left}</span>
           </button>
         {:else}
-          {@const own = carried && carried.job === a.job ? carried : null}
+          {@const own = carried && a.key === carrying ? carried : null}
           {@const left = own ? own.left : a.left}
           <Busy fraction={own ? own.fraction : a.fraction} still={a.still || own?.still} />
           <span class="title">{a.title || a.what}</span>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Job } from "./api";
-import { arriving, OnTheWay, type Arriving } from "./arriving";
+import { arriving, Carrier, OnTheWay, type Arriving } from "./arriving";
 import { arrivalLine } from "./steps";
 
 function job(over: Partial<Job>): Job {
@@ -51,6 +51,14 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     });
     const waiting = job({ kind: "clip", lane: "framing", step: "waiting", underway: [{ n: 1, start: 5000, end: 5000, step: "waiting" }] });
     expect(arrivalLine(waiting, waiting.underway![0]).what).toBe("Waiting to place the crop");
+  });
+
+  test("a clip made by hand fills while its crop is placed, a search's clip does not", () => {
+    const progress = { kind: "progress", text: "placing the crop", fraction: 0.6, remaining: 2, elapsed: 1, time: "" };
+    const hand = job({ kind: "clip", lane: "framing", step: "framing", progress, underway: [{ n: 1, start: 1000, end: 1025, step: "framing" }] });
+    expect(arrivalLine(hand, hand.underway![0])).toEqual({ what: "Placing the crop", left: "About 0:05 left", fraction: 0.6 });
+    const search = job({ step: "finding", progress, underway: [{ n: 1, start: 1000, end: 1025, step: "framing" }] });
+    expect(arrivalLine(search, search.underway![0]).fraction).toBe(-1);
   });
 
   test("a clip whose job was cut off or failed stays, still, and carries on with a click", () => {
@@ -113,5 +121,41 @@ describe("a card is held from the moment its clip is written until the list has 
     way.cards([card("s/1")], 3, 2);
     way.cards([], 3, 2);
     expect(way.cards([card("s/1")], 3, 2).map((a) => a.held)).toEqual([undefined]);
+  });
+});
+
+describe("one card carries the search's work, from the first frame to the last", () => {
+  const card = (key: string, start: number, over: Partial<Arriving> & { held?: boolean } = {}) => ({
+    key, job: "s", n: Number(key.split("/")[1]), start, end: start + 25, title: "", what: "Fitting to the length", left: "", fraction: -1, ...over,
+  });
+
+  test("the last of the search's cards in the list, and only that one", () => {
+    const carrier = new Carrier();
+    const cards = [card("s/1", 100), card("s/3", 900), card("s/2", 400), card("h/1", 2000, { job: "h" })];
+    expect(carrier.pick(cards, "s")).toBe("s/3");
+  });
+
+  test("it keeps it while it is on the way, and passes it on once its clip is written", () => {
+    const carrier = new Carrier();
+    carrier.pick([card("s/1", 100), card("s/2", 400)], "s");
+    // A card that lands later in the list does not take it away.
+    expect(carrier.pick([card("s/1", 100), card("s/2", 400), card("s/3", 900)], "s")).toBe("s/2");
+    // Written, and held until the list reads it: its work is done.
+    expect(carrier.pick([card("s/1", 100), card("s/2", 400, { held: true }), card("s/3", 900)], "s")).toBe("s/3");
+    expect(carrier.pick([card("s/1", 100)], "s")).toBe("s/1");
+    expect(carrier.pick([], "s")).toBe("");
+  });
+
+  test("a card still being fitted carries it, because it lands last", () => {
+    const cards = [
+      card("s/1", 100, { step: "fitting" }),
+      card("s/2", 400, { step: "framing" }),
+      card("s/3", 900, { step: "framing" }),
+    ];
+    expect(new Carrier().pick(cards, "s")).toBe("s/1");
+  });
+
+  test("a card that stopped carries nothing", () => {
+    expect(new Carrier().pick([card("s/1", 100), card("s/2", 400, { stopped: true })], "s")).toBe("s/1");
   });
 });
