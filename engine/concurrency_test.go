@@ -15,9 +15,7 @@ import (
 // themselves are all reached from several places at once. make test runs
 // this with the race detector.
 func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
-	dir := t.TempDir()
-	SetTrainingDir(dir)
-	t.Cleanup(func() { SetTrainingDir(dir) })
+	dir := ownTrainingDir(t)
 
 	source := filepath.Join(t.TempDir(), "ep.mp4")
 	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {

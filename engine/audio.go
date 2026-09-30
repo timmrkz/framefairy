@@ -285,9 +285,18 @@ func (e *Engine) Transcribe(ctx context.Context, path string, window Window,
 	return e.transcribe(ctx, path, window, rec, silenceDB, nil, hearingShare{window, 0, window.End - window.Start})
 }
 
-// checkpointEvery is how often, in wall time, a long transcription saves what
-// it has so far.
-var checkpointEvery = 8 * time.Second
+// checkpointDefault is how often, in wall time, a long transcription saves
+// what it has so far, unless the engine says otherwise, see
+// Engine.checkpointEvery.
+const checkpointDefault = 8 * time.Second
+
+// checkpoint is how often this engine's transcriptions save.
+func (e *Engine) checkpoint() time.Duration {
+	if e.checkpointEvery > 0 {
+		return e.checkpointEvery
+	}
+	return checkpointDefault
+}
 
 // checkpoint receives the words and loudness frames of everything up to
 // covered, which always falls on a chunk boundary.
@@ -427,7 +436,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		raw = append(raw, p.words...)
 		covered := p.at + float64(p.samples)/SampleRate
 		heardTo = covered
-		if save != nil && time.Since(lastSave) >= checkpointEvery {
+		if save != nil && time.Since(lastSave) >= e.checkpoint() {
 			lastSave = time.Now()
 			keep(covered)
 		}

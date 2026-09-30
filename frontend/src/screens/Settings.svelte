@@ -110,12 +110,20 @@
     saveTimer = setTimeout(() => save(now), SAVE_AFTER);
   });
 
+  // Only what changed goes to the Go side, key by key. The whole object
+  // went once, and it put back whatever the Go side had changed since the
+  // page last read the settings.
   async function save(text: string) {
     if (!settings || text === lastSaved) return;
+    const before: Record<string, unknown> = lastSaved ? JSON.parse(lastSaved) : {};
+    const after: Record<string, unknown> = JSON.parse(text);
     lastSaved = text;
     problem = "";
+    const changed = Object.fromEntries(
+      Object.entries(after).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key])),
+    );
     try {
-      await api.saveSettings(JSON.parse(text));
+      await api.saveSettings(changed);
       await Promise.all([readTraining(), readModels(), check()]);
     } catch (err) {
       problem = errorText(err);

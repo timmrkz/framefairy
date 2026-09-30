@@ -61,7 +61,6 @@ func clipAnswer(keeps ...string) string {
 func passProject(t *testing.T, url string) *Project {
 	t.Helper()
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	var heard int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -76,6 +75,7 @@ func passProject(t *testing.T, url string) *Project {
 // clips of the first stay as they are, the model is told which lines are
 // clips already, and a clip that keeps them all the same is left out.
 func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
+	t.Parallel()
 	server, asked := answering(t, clipAnswer("[[1, 1]]"), clipAnswer("[[1, 1]]", "[[2, 2]]"))
 	p := passProject(t, server.URL)
 	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
@@ -113,6 +113,7 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 // A search carried on writes to the plan it began, not to a pass of its
 // own: the pass is in its record.
 func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
+	t.Parallel()
 	server, _ := answering(t, clipAnswer("[[1, 1]]"), clipAnswer("[[2, 2]]"))
 	p := passProject(t, server.URL)
 	req := PlanRequest{From: 10, To: 30, Count: 1, Min: 1, Max: 30}

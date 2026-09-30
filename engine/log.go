@@ -40,7 +40,6 @@ type Log struct {
 
 	sinkMu  sync.Mutex
 	sink    Sink
-	onError func(string)
 	busy    bool
 	stageMu sync.Mutex
 	stages  []string
@@ -121,21 +120,7 @@ func (l *Log) Warn(format string, a ...any) {
 
 // Error is a failure.
 func (l *Log) Error(format string, a ...any) {
-	text := sprintf(format, a...)
-	l.emit(EventError, "x", text, "31", true)
-	l.sinkMu.Lock()
-	hook := l.onError
-	l.sinkMu.Unlock()
-	if hook != nil {
-		hook(text)
-	}
-}
-
-// SetErrorHook calls fn with the text of every error line. Nil removes it.
-func (l *Log) SetErrorHook(fn func(string)) {
-	l.sinkMu.Lock()
-	defer l.sinkMu.Unlock()
-	l.onError = fn
+	l.emit(EventError, "x", sprintf(format, a...), "31", true)
 }
 
 // Detail is only shown with --verbose. Use it for anything you would want in

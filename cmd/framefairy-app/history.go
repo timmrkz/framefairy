@@ -84,7 +84,7 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
 	// A search can land a clip while the edit runs. It is not the edit's.
-	change := engine.Compare(before, engine.TakeSnapshot(logs)).LeaveOutNewClips()
+	change := engine.ChangeBetween(before, engine.TakeSnapshot(logs)).LeaveOutNewClips()
 	heightNow := s.store.Settings().CaptionY
 	st := step{change: change}
 	if heightWas != heightNow {

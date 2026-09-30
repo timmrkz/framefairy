@@ -45,10 +45,19 @@ import (
 // to 1 the frames ran from the start with no gaps.
 const levelsVersion = 2
 
-// levelsEvery is how often the frames measured so far are written, so the
-// waveform grows while the measuring runs, and how often the measuring
-// asks where the clip timeline is looking. A test makes it shorter.
-var levelsEvery = 500 * time.Millisecond
+// levelsDefault is how often the frames measured so far are written, so
+// the waveform grows while the measuring runs, and how often the measuring
+// asks where the clip timeline is looking, unless the engine says
+// otherwise, see Engine.levelsEvery.
+const levelsDefault = 500 * time.Millisecond
+
+// levelsStep is how often this engine's measuring writes and asks.
+func (e *Engine) levelsStep() time.Duration {
+	if e.levelsEvery > 0 {
+		return e.levelsEvery
+	}
+	return levelsDefault
+}
 
 // levelsFile is what logs/levels.json holds. The frames are in
 // logs/levels.frames, written before it, so a reader never sees a part the
@@ -467,7 +476,7 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 		if err != nil {
 			return false, err
 		}
-		if time.Since(last) >= levelsEvery {
+		if time.Since(last) >= e.levelsStep() {
 			last = time.Now()
 			if !tick() {
 				return false, nil
