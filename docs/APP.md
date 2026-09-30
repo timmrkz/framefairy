@@ -1192,8 +1192,7 @@ things and no others, and each one means one thing.
   control it is a wash of the app's colour, 30 percent at the start and 50
   at the head, with a bright line at the front, so what is done can be told
   from what is left with daylight on the screen, and a light passes over
-  what is done, the one the bar in Activity carries, so a fill is never a
-  flat wash. The fill slides by a transform rather than growing, so it
+  what is done, so a fill is never a flat wash. The fill slides by a transform rather than growing, so it
   moves with whatever moves beside it. The range picker draws the reading
   of the episode with `Busy.svelte` itself, fill, head, glow and motes,
   without the rim, and the row of the clip list that waits for the
@@ -1206,9 +1205,13 @@ things and no others, and each one means one thing.
   movement. The range picker shows a transcription stopped at a window,
   or waiting while a search has the machine, this way. In
   Activity, where a job has no control of its own, the same fill lies in a
-  track of its own, with a light travelling over what is already done. Work that cannot
-  say how far it has come shuttles across that track instead of standing at
-  a number it does not have.
+  track of its own. It is `Busy.svelte` with no rim and no motes, not a
+  bar drawn apart, so it cannot drift from the fill in New and Render.
+  With no words over it, the track sets the wash to the app's colour
+  itself, a brighter light over it and a rounded head, and nothing else
+  about it is its own. Work that cannot say how far it has come shuttles
+  across that track instead of standing at a number it does not have,
+  which is Busy's `shuttle`.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, which are already rows of the list and brighten under the
   pointer the way a clip's row does while they go on breathing, the part of the clip timeline the transcript has not reached,
@@ -1268,11 +1271,13 @@ said. Now the clock is the time, and the fill is set from it each time
 it stops or runs on.
 
 `frontend/src/components/Busy.svelte` is the whole of the beam, the motes
-and the fill inside a control. The track, the shimmer and the pulse are in
-`frontend/src/app.css`, because they are worn by things that are not
-controls. The track is `.progress` there and not `.bar`, because the bar is
-the one across the top of the app, and while the two shared a name the
-bar was picking up the track's rounded corners.
+and the fill, in a control and in the track. The track itself, the shimmer
+and the pulse are in `frontend/src/app.css`, because they are worn by
+things that are not controls. The track is `.progress` there and not
+`.bar`, because the bar is the one across the top of the app, and while
+the two shared a name the bar was picking up the track's rounded corners.
+A way of showing work that looks like one of these is one of these, given
+what differs as a prop or a colour its host sets, never a copy.
 
 ### What the interface may ask for
 
