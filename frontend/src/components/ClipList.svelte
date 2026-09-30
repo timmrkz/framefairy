@@ -4,6 +4,7 @@
   import { clock, type ClipEntry } from "../lib/api";
   import { Carrier, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
+  import { secondThoughts } from "../lib/removed";
 
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
@@ -14,7 +15,7 @@
     selected,
     hovered = "",
     onhover,
-    removed = [],
+    removed = {},
     emptied = null,
     coming = 0,
     at = Infinity,
@@ -27,6 +28,7 @@
     onputback,
     onforget,
     onclosed,
+    onheld,
   }: {
     clips: ClipEntry[];
     // The clips on their way, whoever proposed them, each in its place in
@@ -81,7 +83,8 @@
     // The clips just taken out. Each keeps its place in the list for a
     // moment, showing what happened to it and offering it back, so the rows
     // do not jump out from under the pointer.
-    removed?: string[];
+    // With how many seconds of their time each has used.
+    removed?: Record<string, number>;
     // What became of the clips there were, when every one of them was
     // removed and nothing is on its way: said in the first row still to
     // come, the way a search that stopped says so there, so an empty list
@@ -96,6 +99,9 @@
     onforget?: (key: string) => void;
     // A clip's row has closed and is gone from the list.
     onclosed?: (key: string) => void;
+    // How much time a clip taken out has left, read when the hand leaves
+    // its row, because the time stood still while the hand was on it.
+    onheld?: (key: string, left: number) => void;
   } = $props();
 
   // A search writes each clip the moment it is found, so the list fills in
@@ -109,9 +115,16 @@
   // The one card of the search that wears its fill, see Carrier. While no
   // card of the search is on its way, the row still to come wears it, and
   // once one is, that row wears the beam alone, so there is one fill.
-  // How long a clip taken out can be put back, in seconds.
-  const secondThoughts = 10;
   const carrier = new Carrier();
+
+  // The time a clip taken out has left, as its fill has it. The fill is
+  // the time, and it stood still while the hand was on the row, so the
+  // time is read from it rather than worked out beside it.
+  function held(e: Event, key: string) {
+    const run = (e.currentTarget as HTMLElement).querySelector(".fill i")?.getAnimations()[0];
+    const done = run?.effect?.getComputedTiming().progress;
+    if (typeof done === "number") onheld?.(key, secondThoughts * (1 - done));
+  }
   const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
   // The clips there are and the clips on the way, in the order they are
@@ -276,15 +289,19 @@
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
-      {:else if clip && removed.includes(clip.key)}
-        <div class="gone busyhost">
+      {:else if clip && clip.key in removed}
+        <div
+          class="gone busyhost"
+          onpointerleave={(e) => held(e, clip.key)}
+          onfocusout={(e) => held(e, clip.key)}
+        >
           <Icon name="trash" />
           <span class="what">Removed</span>
           <span class="grow"></span>
           <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
           <!-- How long it can still be put back, in the one fill the app
                has, running down to nothing, see Busy. -->
-          <Busy drain={secondThoughts} onend={() => onforget?.(clip.key)} />
+          <Busy drain={secondThoughts} spent={removed[clip.key]} onend={() => onforget?.(clip.key)} />
         </div>
       {:else if clip}
         <button

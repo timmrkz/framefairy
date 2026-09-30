@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+
   // Work running in the control it was started from. Everything in the app
   // that runs wears this, so running work looks the same wherever it is:
   //
@@ -31,15 +33,27 @@
   // timer kept somewhere else, so the two cannot part, and it stands still
   // while the pointer or the keyboard is on the control, so nobody is
   // rushed. The control gives it its colour, the same way it does for
-  // work, through --lit, --wash-from and --wash-to.
+  // work, through --lit, --wash-from and --wash-to. Given spent, it starts
+  // that many seconds in, for time that ran on while it was not on screen.
   let {
     fraction = -1,
     rim = true,
     still = false,
     drain = 0,
+    spent = 0,
     onend,
-  }: { fraction?: number; rim?: boolean; still?: boolean; drain?: number; onend?: () => void } =
-    $props();
+  }: {
+    fraction?: number;
+    rim?: boolean;
+    still?: boolean;
+    drain?: number;
+    spent?: number;
+    onend?: () => void;
+  } = $props();
+
+  // Where the time starts, read once. A start that followed the prop would
+  // move the fill every time the number was worked out again.
+  const from = untrack(() => spent);
 
   // Where the motes rise and how long each one takes. Fixed rather than
   // drawn at random, because a random number would be a new one on every
@@ -58,7 +72,7 @@
     <span class="fill"
       ><i
         class="run"
-        style="animation-duration: {drain}s"
+        style="animation-duration: {drain}s; animation-delay: -{from}s"
         onanimationend={(e) => {
           if (e.target === e.currentTarget && e.animationName.endsWith("drain")) onend?.();
         }}

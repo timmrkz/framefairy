@@ -674,8 +674,15 @@ place.
       over it. Every clip removed has its own row and its own ten seconds:
       removing another, or putting one back, leaves the others as they
       are. There was one for the whole list, and a second clip removed took
-      the first one's way back with it. The clip stays in the plan with
-      everything done to it, and a render of the whole plan leaves it out.
+      the first one's way back with it. The ten seconds are the episode's,
+      not the screen's: they run on while another episode or page is open,
+      and coming back within them finds the row again with the time it has
+      left. Time the pointer held it still is kept too. A list read again,
+      after a search, a render or an undo, leaves the rows as they are, and
+      an undo that puts the clip back makes it a clip again. Leaving the
+      episode, or any of those, used to take every way back with it. The
+      clip stays in the plan with everything done to it, and a render of
+      the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part
