@@ -7,7 +7,6 @@ export type { RoomView } from "./room";
 const call = <T>(method: string, ...args: unknown[]): Promise<T> =>
   Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
 
-// Where the training records are and how much there is of them.
 // One piece of other people's work the app is made of or brings with it,
 // and its licence. The texts are asked for one at a time, by name.
 export interface Notice {

@@ -1049,8 +1049,6 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, and returns the clip as it is now.
 // SetCaptionStyle changes the face and the size of the captions of a whole
 // clip set, which is what the workspace offers next to the clip.
 func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font string, size float64) error {
@@ -1237,6 +1235,8 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
+// ResetCrop brings back the automatic crop for the shot at a moment of a
+// clip, and returns the clip as it is now.
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, os.ErrNotExist
