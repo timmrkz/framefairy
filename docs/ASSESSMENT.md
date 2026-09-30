@@ -250,9 +250,9 @@ facade the app goes around, and three files too big to hold in one's head.
     has to carve out `Chosen` by hand (`main.go:367-373`), while other calls
     change one field. Each new field the Go side owns needs another carve
     out or is lost to the last save. Fix: saves that change only what
-    changed. **Open.**
+    changed. **Fixed** in #59: the settings page sends only the keys it changed, and the Go side lays them over what it holds.
 27. **One name, two things.** `engine.Compare` compares two undo snapshots,
-    `Engine.Compare` compares recipes. **Fixed** in the pull request after #58: the one for two snapshots is `engine.ChangeBetween`.
+    `Engine.Compare` compares recipes. **Fixed** in #59: the one for two snapshots is `engine.ChangeBetween`.
 
 ## Against the project's own rules
 
