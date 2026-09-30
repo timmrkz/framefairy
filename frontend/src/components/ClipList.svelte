@@ -94,8 +94,11 @@
     return Array.from({ length: n }, (_, i) => i);
   });
   const carried = $derived(ghosts.length === 0 ? carry : null);
+  // The one card of the search that wears its fill, see Carrier. While no
+  // card of the search is on its way, the row still to come wears it, and
+  // once one is, that row wears the beam alone, so there is one fill.
   const carrier = new Carrier();
-  const carrying = $derived(carried ? carrier.pick(arriving, carried.job) : "");
+  const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
@@ -233,7 +236,7 @@
              round exactly once. The first says what the search is doing,
              or how it ended. -->
         {#if g === 0 && next}
-          <Busy fraction={next.fraction} still={next.still} />
+          <Busy fraction={carrying ? -1 : next.fraction} still={next.still} />
           <span class="title">{next.what}</span>
           <span class="meta muted num">{next.left}</span>
         {:else if g === 0 && stopped}
@@ -247,9 +250,11 @@
             <span class="meta muted num">{a.left}</span>
           </button>
         {:else}
+          {@const search = carry && carry.job === a.job ? carry : null}
           {@const own = carried && a.key === carrying ? carried : null}
           {@const left = own ? own.left : a.left}
-          <Busy fraction={own ? own.fraction : a.fraction} still={a.still || own?.still} />
+          {@const fill = search && a.key === carrying ? search : null}
+          <Busy fraction={fill ? fill.fraction : a.fraction} still={a.still || fill?.still} />
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}

@@ -124,38 +124,38 @@ describe("a card is held from the moment its clip is written until the list has 
   });
 });
 
-describe("one card carries the search's work, from the first frame to the last", () => {
+describe("one card carries the search's work, from the first card to the last", () => {
   const card = (key: string, start: number, over: Partial<Arriving> & { held?: boolean } = {}) => ({
     key, job: "s", n: Number(key.split("/")[1]), start, end: start + 25, title: "", what: "Fitting to the length", left: "", fraction: -1, ...over,
   });
 
-  test("the last of the search's cards in the list, and only that one", () => {
+  test("the first of the search's cards in the list, and only that one", () => {
     const carrier = new Carrier();
-    const cards = [card("s/1", 100), card("s/3", 900), card("s/2", 400), card("h/1", 2000, { job: "h" })];
-    expect(carrier.pick(cards, "s")).toBe("s/3");
+    const cards = [card("s/3", 900), card("s/2", 400), card("s/1", 100), card("h/1", 50, { job: "h" })];
+    expect(carrier.pick(cards, "s")).toBe("s/1");
   });
 
-  test("it keeps it while it is on the way, and passes it on once its clip is written", () => {
+  test("it keeps it while it is on the way, and passes it down once its clip is written", () => {
     const carrier = new Carrier();
-    carrier.pick([card("s/1", 100), card("s/2", 400)], "s");
-    // A card that lands later in the list does not take it away.
+    carrier.pick([card("s/2", 400), card("s/3", 900)], "s");
+    // A card named above it does not take it away.
     expect(carrier.pick([card("s/1", 100), card("s/2", 400), card("s/3", 900)], "s")).toBe("s/2");
     // Written, and held until the list reads it: its work is done.
-    expect(carrier.pick([card("s/1", 100), card("s/2", 400, { held: true }), card("s/3", 900)], "s")).toBe("s/3");
-    expect(carrier.pick([card("s/1", 100)], "s")).toBe("s/1");
+    expect(carrier.pick([card("s/1", 100), card("s/2", 400, { held: true }), card("s/3", 900)], "s")).toBe("s/1");
+    expect(carrier.pick([card("s/3", 900)], "s")).toBe("s/3");
     expect(carrier.pick([], "s")).toBe("");
   });
 
-  test("a card still being fitted carries it, because it lands last", () => {
+  test("a card still being fitted is a card like any other", () => {
     const cards = [
-      card("s/1", 100, { step: "fitting" }),
-      card("s/2", 400, { step: "framing" }),
-      card("s/3", 900, { step: "framing" }),
+      card("s/1", 100, { step: "framing" }),
+      card("s/2", 400, { step: "fitting" }),
+      card("s/3", 900, { step: "fitting" }),
     ];
     expect(new Carrier().pick(cards, "s")).toBe("s/1");
   });
 
   test("a card that stopped carries nothing", () => {
-    expect(new Carrier().pick([card("s/1", 100), card("s/2", 400, { stopped: true })], "s")).toBe("s/1");
+    expect(new Carrier().pick([card("s/1", 100, { stopped: true }), card("s/2", 400)], "s")).toBe("s/2");
   });
 });

@@ -138,27 +138,25 @@ export class OnTheWay {
   }
 }
 
-// Which one card of a search wears the search's own work once no row is
-// left to say it: how far the whole search has come and how long it has
-// left. One card, never all of them: every card of the search wore it
-// once, three fills and three "About 0:10 left" side by side for one
-// piece of work. It is a card still being fitted to the length when
-// there is one, because those land last, after the model is asked about
-// them again, while the others only wait for their crop. Of those, the
-// last in the list, the one nearest where the row that said it stood. It
-// keeps it for as long as it is on the way, so the work does not jump from
-// card to card as others land. A card whose clip is written has done its
-// work and passes it on.
+// Which one card of a search wears the search's fill: how far the whole
+// search has come and, once no row is left to say it, the time left. One
+// card, never all of them: every card of the search wore it once, three
+// fills and three "About 0:10 left" side by side for one piece of work.
+// Every card keeps its beam, because each is still being worked on. It is
+// the first of the search's cards in the list, and it keeps the fill for
+// as long as it is on the way, so a card named above it does not take it
+// away. A card whose clip is written has done its work and passes it on
+// to the first card left, so the fill starts at the first card of the
+// batch and ends at the last.
 export class Carrier {
   private key = "";
 
   pick(cards: OnTheWayCard[], job: string): string {
     const own = cards.filter((a) => a.job === job && !a.stopped && !a.held);
     if (own.some((a) => a.key === this.key)) return this.key;
-    const fitting = own.filter((a) => a.step === "fitting");
-    let last: OnTheWayCard | undefined;
-    for (const a of fitting.length ? fitting : own) if (!last || a.start >= last.start) last = a;
-    this.key = last?.key ?? "";
+    let first: OnTheWayCard | undefined;
+    for (const a of own) if (!first || a.start < first.start) first = a;
+    this.key = first?.key ?? "";
     return this.key;
   }
 }

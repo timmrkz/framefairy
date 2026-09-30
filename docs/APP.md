@@ -552,7 +552,8 @@ place.
     - **A clip on its way is a card in its place.** A clip the model has
       named is in the list, among the clips of the episode where it lies,
       from the moment it is named until it is written: the card of a clip
-      with the beam round it, its title and "Placing the crop". It hands
+      with the beam round it, its title and what is being done to it,
+      "Placing the crop" or "Fitting to the length". It hands
       over to the clip itself in one step, holding its place until the
       list has read the clip, so there is never a gap and never two cards.
       A clip made with I or O comes in the same way, see below, because
@@ -562,13 +563,21 @@ place.
       wears how far the search has come and how long it has left. Once
       every clip is named, no row is left to wear it, so one of the
       search's cards takes it on, with the fill and the time left, until
-      the search is done: the last of its cards in the list, nearest where
-      the row stood. It keeps it until its own clip is written, and only
-      then does the next card take it. Every other card wears the beam
-      alone, because it is not as far along as the search it came from.
-      The fill went with the row before, at sixty per cent, and the search
-      went on with nothing to say how far it was. Then every card of the
-      search wore it, the same fill and time left three times over.
+      the search is done. The fill went with the row before, at sixty per
+      cent, and the search went on with nothing to say how far it was.
+      Then every card of the search wore it, the same fill and time left
+      three times over.
+    - **A search is one fill, and it moves down its cards.** Every card
+      on its way wears the beam, because each is still being worked on,
+      but a search is one piece of work, so only one of its cards wears
+      the fill: the first of its cards in the list. It keeps it until its
+      own clip is written, even when a card is named above it, and then
+      the first card left takes it on, so the fill starts at the first
+      card of the batch and ends at the last. While no card of the search
+      is on its way, the row still to come wears it, and once one is, that
+      row wears the beam alone. The last card in the list wore it before,
+      so the fill stood at the foot of the batch while the cards above it
+      landed.
     - **The rows still to come stand where the window is.** Everything a
       search finds lies in its window, so its rows stand in the list where
       the window ends: after the clips before the window and before the
