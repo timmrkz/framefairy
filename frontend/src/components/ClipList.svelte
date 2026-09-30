@@ -65,8 +65,8 @@
     // The row that said so went as the last clips were named, with the
     // search at sixty per cent, and its fill went with it, so the search
     // went on with nothing to say how far it was. One of its cards carries
-    // it on to the end, see Carrier, and the others wear nothing, because
-    // a search is one piece of work.
+    // it on to the end, see Carrier, and the others wear the beam alone,
+    // because a card is not as far along as the search it came from.
     carry?: { job: string; fraction: number; left: string; still?: boolean } | null;
     // How the last search ended, when it stopped before it was done and
     // nothing is running now. It is said in the row its next clip would
@@ -94,8 +94,9 @@
     return Array.from({ length: n }, (_, i) => i);
   });
   const carried = $derived(ghosts.length === 0 ? carry : null);
-  // The one card of the search that wears its work, see Carrier. While no
-  // card of the search is on its way, the row still to come wears it.
+  // The one card of the search that wears its fill, see Carrier. While no
+  // card of the search is on its way, the row still to come wears it, and
+  // once one is, that row wears the beam alone, so there is one fill.
   const carrier = new Carrier();
   const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
@@ -235,7 +236,7 @@
              round exactly once. The first says what the search is doing,
              or how it ended. -->
         {#if g === 0 && next}
-          {#if !carrying}<Busy fraction={next.fraction} still={next.still} />{/if}
+          <Busy fraction={carrying ? -1 : next.fraction} still={next.still} />
           <span class="title">{next.what}</span>
           <span class="meta muted num">{next.left}</span>
         {:else if g === 0 && stopped}
@@ -252,11 +253,8 @@
           {@const search = carry && carry.job === a.job ? carry : null}
           {@const own = carried && a.key === carrying ? carried : null}
           {@const left = own ? own.left : a.left}
-          {#if !search && !a.held}
-            <Busy fraction={a.fraction} still={a.still} />
-          {:else if search && a.key === carrying}
-            <Busy fraction={search.fraction} still={a.still || search.still} />
-          {/if}
+          {@const fill = search && a.key === carrying ? search : null}
+          <Busy fraction={fill ? fill.fraction : a.fraction} still={a.still || fill?.still} />
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}

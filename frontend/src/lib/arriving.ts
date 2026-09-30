@@ -138,16 +138,16 @@ export class OnTheWay {
   }
 }
 
-// Which one card of a search wears the search's work: the beam, the fill
-// for how far the whole search has come and, once no row is left to say
-// it, the time left. A search is one piece of work, so it is one card,
-// and every other card of the search says what is being done to it and
-// nothing more. Every card wore the beam, and a search fitting four clips
-// to the length lit four cards the same. It is the first of the search's
-// cards in the list, and it keeps it for as long as it is on the way, so
-// a card named above it does not take it away. A card whose clip is
-// written has done its work and passes it on to the first card left, so
-// the work starts at the first card of the batch and ends at the last.
+// Which one card of a search wears the search's fill: how far the whole
+// search has come and, once no row is left to say it, the time left. One
+// card, never all of them: every card of the search wore it once, three
+// fills and three "About 0:10 left" side by side for one piece of work.
+// Every card keeps its beam, because each is still being worked on. It is
+// the first of the search's cards in the list, and it keeps the fill for
+// as long as it is on the way, so a card named above it does not take it
+// away. A card whose clip is written has done its work and passes it on
+// to the first card left, so the fill starts at the first card of the
+// batch and ends at the last.
 export class Carrier {
   private key = "";
 
