@@ -354,6 +354,25 @@ it was Tim asking how VS Code does it. A counterexample beats reasoning:
 three applications were on screen doing the thing we had written down as
 impossible.
 
+## When it only goes wrong on the Mac, try WebKit
+
+The harness is Chromium, and the app on a Mac is WebKit. Where the two
+keep time or paint differently, a probe in Chromium passes and Tim still
+sees the bug. The fill of a removed row grew back under the pointer on
+his Mac for two rounds while every Chromium probe said it held still:
+WebKit plays a paused animation on from its timeline's last frame, and
+Chromium from now.
+
+WebKit is in the cloud session: WebKitGTK 6.0 with its Python bindings
+for `/usr/bin/python3.12` (not the default `python3`), `xvfb-run` for a
+screen, and `libXtst` for a real pointer. Serve `frontend/preview/dist`
+over http, open it in a `WebKit.WebView` in a `Gtk.ApplicationWindow`
+with `set_decorated(False)` under `GDK_BACKEND=x11`, move the pointer
+with `XTestFakeMotionEvent` from `ctypes`, and read the page back with
+`evaluate_javascript`. A synthetic event from inside the page does not
+set `:hover`, a pointer moved by XTest does. Read what is on screen, a
+transform or a box, not what an animation says its progress is.
+
 ## What goes wrong here in particular
 
 These are the traps this interface has actually fallen into. Each cost at
