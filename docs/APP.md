@@ -661,10 +661,11 @@ place.
       says whether it looks somewhere new or again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
-      can, saying **Removed** and offering **Put it back**. A thin red line
-      along its foot runs down to nothing over those ten seconds, and it
-      stands still while the pointer or the keyboard is on the row, so the
-      time to change your mind is seen and nobody is rushed. Nothing above or
+      can, saying **Removed** and offering **Put it back**. The time left is
+      the app's one fill, in red, running down to nothing over those ten
+      seconds, see `Busy.svelte`, and it stands still while the pointer or
+      the keyboard is on the row, so the time to change your mind is seen
+      and nobody is rushed. Nothing above or
       below it moves while it is there, and when it goes the list closes
       over it. Every clip removed has its own row and its own ten seconds:
       removing another, or putting one back, leaves the others as they

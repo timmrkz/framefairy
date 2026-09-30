@@ -23,11 +23,23 @@
   // its line and loses the glow thrown ahead of it, because nothing is
   // going ahead. So running and paused are told apart by movement, and a
   // paused piece of work reads as the same thing, stopped.
+  //
+  // The same fill tells time running out: given drain, a number of
+  // seconds, it starts full and runs down to nothing over that time, and
+  // says so with onend. There is no beam and no motes then, because
+  // nothing is being worked on. It is the time itself, not a picture of a
+  // timer kept somewhere else, so the two cannot part, and it stands still
+  // while the pointer or the keyboard is on the control, so nobody is
+  // rushed. The control gives it its colour, the same way it does for
+  // work, through --lit, --wash-from and --wash-to.
   let {
     fraction = -1,
     rim = true,
     still = false,
-  }: { fraction?: number; rim?: boolean; still?: boolean } = $props();
+    drain = 0,
+    onend,
+  }: { fraction?: number; rim?: boolean; still?: boolean; drain?: number; onend?: () => void } =
+    $props();
 
   // Where the motes rise and how long each one takes. Fixed rather than
   // drawn at random, because a random number would be a new one on every
@@ -42,8 +54,19 @@
 </script>
 
 <span class="beam" class:still aria-hidden="true">
-  {#if rim && !still}<span class="ring"></span>{/if}
-  {#if !still}
+  {#if drain > 0}
+    <span class="fill"
+      ><i
+        class="run"
+        style="animation-duration: {drain}s"
+        onanimationend={(e) => {
+          if (e.target === e.currentTarget && e.animationName.endsWith("drain")) onend?.();
+        }}
+      ></i></span
+    >
+  {/if}
+  {#if rim && !still && drain <= 0}<span class="ring"></span>{/if}
+  {#if !still && drain <= 0}
     {#each motes as m (m.at)}
       <i
         class="mote"
@@ -280,6 +303,30 @@
       transparent 100%
     );
     animation: sheen 2.4s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+  }
+
+  /* Time running out: the fill from full to nothing, carried by the
+     compositor like every other fill, and held while the hand or the
+     keyboard is on the control. */
+  .fill i.run {
+    transition: none;
+    animation-name: drain;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  :global(:hover) > .beam .fill i.run,
+  :global(:focus-within) > .beam .fill i.run {
+    animation-play-state: paused;
+  }
+
+  @keyframes drain {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
   }
 
   /* Paused: the fill and the line at its head, and nothing that moves. */

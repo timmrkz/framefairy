@@ -106,6 +106,8 @@
   // The one card of the search that wears its fill, see Carrier. While no
   // card of the search is on its way, the row still to come wears it, and
   // once one is, that row wears the beam alone, so there is one fill.
+  // How long a clip taken out can be put back, in seconds.
+  const secondThoughts = 10;
   const carrier = new Carrier();
   const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
@@ -271,17 +273,14 @@
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
       {:else if clip && removed.includes(clip.key)}
-        <div class="gone">
+        <div class="gone busyhost">
           <Icon name="trash" />
           <span class="what">Removed</span>
           <span class="grow"></span>
           <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
-          <!-- How long it can still be put back: a line along the foot of
-               the row that runs down to nothing, and the row closes when it
-               has. It is the time itself, not a picture of it, so the two
-               cannot part, and it stands still while the pointer or the
-               keyboard is on the row, so nobody is rushed. -->
-          <span class="left" aria-hidden="true" onanimationend={() => onforget?.(clip.key)}></span>
+          <!-- How long it can still be put back, in the one fill the app
+               has, running down to nothing, see Busy. -->
+          <Busy drain={secondThoughts} onend={() => onforget?.(clip.key)} />
         </div>
       {:else if clip}
         <button
@@ -406,10 +405,6 @@
      the way the clip went, so the eye sees it leave rather than find a gap
      later. */
   .gone {
-    /* How long a clip taken out can be put back. */
-    --second-thoughts: 10s;
-    position: relative;
-    overflow: hidden;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -420,31 +415,12 @@
     animation: swept 0.18s ease-out;
   }
 
-  /* The time left, running down from the full width, by transform so it
-     is carried by the compositor and never laid out again. */
-  .gone .left {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 2px;
-    background: var(--err);
-    transform-origin: left center;
-    animation: drain var(--second-thoughts) linear forwards;
-  }
-
-  .gone:hover .left,
-  .gone:focus-within .left {
-    animation-play-state: paused;
-  }
-
-  @keyframes drain {
-    from {
-      transform: scaleX(1);
-    }
-    to {
-      transform: scaleX(0);
-    }
+  /* The fill that runs down wears the colour of what was taken away,
+     over the light app.css gives every control that holds a Busy. */
+  .gone.busyhost {
+    --lit: var(--err);
+    --wash-from: color-mix(in srgb, var(--err) 12%, transparent);
+    --wash-to: color-mix(in srgb, var(--err) 24%, transparent);
   }
 
   .gone .what {
