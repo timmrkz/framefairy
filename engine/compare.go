@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -139,24 +139,13 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 			o.Seed = compareSeed
 		}
 		began := time.Now()
-		// The hook can be called from the goroutines that frame the clips.
-		var mu sync.Mutex
-		failed := ""
-		e.Log.SetErrorHook(func(text string) {
-			mu.Lock()
-			failed = text
-			mu.Unlock()
-		})
-		code := e.Run(ctx, o)
-		e.Log.SetErrorHook(nil)
+		err := e.execute(ctx, o)
 		run := RecipeRun{Recipe: name, Seconds: time.Since(began).Seconds()}
-		if code != 0 {
-			mu.Lock()
-			run.Failed = failed
-			mu.Unlock()
-			if run.Failed == "" {
-				run.Failed = "the search failed"
+		if err != nil {
+			if !errors.Is(err, ErrCancelled) {
+				e.Log.Error("%s", err)
 			}
+			run.Failed = err.Error()
 		}
 		// What was asked and what came back are kept beside the plan, where
 		// the next recipe's search does not write over them.

@@ -91,8 +91,8 @@ func TestSuggestedThink(t *testing.T) {
 // window suggests and thinks what its window suggests, and says so in its
 // plan.
 func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	var heard int32
 	var mu sync.Mutex
 	var budgets []float64

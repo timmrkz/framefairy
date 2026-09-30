@@ -328,7 +328,7 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 // the only thing that is not real being the far end of the call.
 func TestProjectPlansWithOpenAI(t *testing.T) {
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
+	ownTrainingDir(t)
 	plan := `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`
 	fake, e := cloud(t, openAIStream([]string{plan[:30], plan[30:]}, "stop",
 		`{"prompt_tokens":900,"completion_tokens":60}`))

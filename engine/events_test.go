@@ -233,6 +233,7 @@ func TestLinesForSegments(t *testing.T) {
 // records are not in there: they live in one folder of their own, so they
 // are not touched by this and outlive every episode.
 func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
+	ownTrainingDir(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "ep.mp4")
 	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {

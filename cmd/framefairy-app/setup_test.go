@@ -319,9 +319,7 @@ func TestTheKeyIsTheCloudModelsProviders(t *testing.T) {
 
 	// GPT, with only the Anthropic key: not ready, and the check says whose
 	// key is missing.
-	set := s.store.Settings()
-	set.APIModel = "gpt-6-sol"
-	if err := s.SaveSettings(set); err != nil {
+	if err := s.SaveSettings(changed(`{"apiModel": "gpt-6-sol"}`)); err != nil {
 		t.Fatal(err)
 	}
 	state = s.Setup(context.Background())
@@ -373,19 +371,16 @@ func TestTheKeyIsTheCloudModelsProviders(t *testing.T) {
 	}
 }
 
-// The interface hands the whole settings object back on every save, and it
-// does not know about Chosen. Without care that turns every colour change
-// into another round of the setup screen.
+// The interface once handed the whole settings object back on every save,
+// and it does not know about Chosen. Without care that turned every colour
+// change into another round of the setup screen.
 func TestSavingSettingsKeepsTheAnswer(t *testing.T) {
 	s := emptyMachine(t)
 	if err := s.ChoosePlanner("api"); err != nil {
 		t.Fatal(err)
 	}
-	// What an interface that has never heard of Chosen would send.
-	set := s.store.Settings()
-	set.Chosen = false
-	set.AppColour = "#112233"
-	if err := s.SaveSettings(set); err != nil {
+	// Chosen is never the interface's to change, whatever it sends.
+	if err := s.SaveSettings(changed(`{"chosen": false, "appColour": "#112233"}`)); err != nil {
 		t.Fatal(err)
 	}
 	after := s.store.Settings()
@@ -395,6 +390,39 @@ func TestSavingSettingsKeepsTheAnswer(t *testing.T) {
 	if after.AppColour != "#112233" {
 		t.Errorf("the colour did not save: %q", after.AppColour)
 	}
+}
+
+// A save changes what the interface changed and nothing else, so what the
+// Go side changed meanwhile, the search settings here, is not put back by a
+// save from a page that read the settings before.
+func TestASaveChangesOnlyWhatChanged(t *testing.T) {
+	s := emptyMachine(t)
+	if err := s.SetSearch(7, 1800, 25, 35); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSettings(changed(`{"appColour": "#112233"}`)); err != nil {
+		t.Fatal(err)
+	}
+	after := s.store.Settings()
+	if after.Target != 7 || after.AppColour != "#112233" {
+		t.Errorf("target %d and colour %q, want 7 and #112233", after.Target, after.AppColour)
+	}
+	// A key the settings do not have is refused, and nothing is saved.
+	if err := s.SaveSettings(changed(`{"appColor": "#445566"}`)); err == nil {
+		t.Error("a misspelt setting was taken")
+	}
+	if got := s.store.Settings().AppColour; got != "#112233" {
+		t.Errorf("a refused save changed the colour to %q", got)
+	}
+}
+
+// changed is what the settings page sends: the keys it changed.
+func changed(text string) map[string]json.RawMessage {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(text), &m); err != nil {
+		panic(err)
+	}
+	return m
 }
 
 // Pretends a language model is installed, by putting there what Installed

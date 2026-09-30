@@ -35,6 +35,19 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// ownTrainingDir gives a test the training folder to itself, for a test
+// that reads back the records it wrote, and puts back the one before when
+// it ends. The tests that run side by side write into the package's one
+// folder, and a test that points it elsewhere cannot run beside them.
+func ownTrainingDir(t *testing.T) string {
+	t.Helper()
+	was := TrainingDir()
+	dir := t.TempDir()
+	SetTrainingDir(dir)
+	t.Cleanup(func() { SetTrainingDir(was) })
+	return dir
+}
+
 // stubbornServer is this test binary run as a llama-server that says it is
 // ready and ignores being asked to stop, the way a real one can hang on the
 // way out while one of its threads waits for an answer.

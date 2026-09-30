@@ -67,6 +67,13 @@ type Engine struct {
 	// use, so it is looked up and reported once.
 	decoders sync.Map
 
+	// checkpointEvery and levelsEvery are how often a transcription and the
+	// loudness measure save what they have, when not the defaults. A test
+	// sets them on its own engine, so it can still run beside the others,
+	// where a package variable made every test that changed it wait.
+	checkpointEvery time.Duration
+	levelsEvery     time.Duration
+
 	mu               sync.Mutex
 	encoder          Encoder
 	subtitleTemplate string

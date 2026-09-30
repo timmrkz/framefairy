@@ -25,8 +25,8 @@ type Project struct {
 	last   string
 }
 
-// ErrStepFailed is returned when a step ended with an error that was already
-// reported as an event. LastError gives its text.
+// ErrStepFailed is what every step that failed is, with the reason wrapped
+// in it. LastError gives the reason's text.
 var ErrStepFailed = errors.New("step failed")
 
 // ErrCancelled is returned when a step was stopped through its context.
@@ -59,25 +59,26 @@ func (p *Project) LastError() string {
 	return p.last
 }
 
+// run is one step, and what went wrong is the error the engine returned,
+// not the last line it logged. That line is still logged, for the app's
+// activity and anything else that reads the log. The error keeps its kind
+// under ErrStepFailed.
 func (p *Project) run(ctx context.Context, opts Options) error {
 	p.mu.Lock()
 	p.last = ""
 	p.mu.Unlock()
-	log := p.engine.Log
-	log.SetErrorHook(func(text string) {
-		p.mu.Lock()
-		p.last = text
-		p.mu.Unlock()
-	})
-	defer log.SetErrorHook(nil)
-	code := p.engine.Run(ctx, opts)
+	err := p.engine.execute(ctx, opts)
 	switch {
-	case code == 0:
+	case err == nil:
 		return nil
-	case code == 130 || ctx.Err() != nil:
+	case errors.Is(err, ErrCancelled) || ctx.Err() != nil:
 		return ErrCancelled
 	}
-	return ErrStepFailed
+	p.engine.Log.Error("%s", err)
+	p.mu.Lock()
+	p.last = err.Error()
+	p.mu.Unlock()
+	return fmt.Errorf("%w: %w", ErrStepFailed, err)
 }
 
 // Transcribe makes sure the whole episode has a transcript. It is cached, so

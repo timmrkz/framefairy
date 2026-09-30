@@ -46,7 +46,6 @@ func pausedModel(t *testing.T, letGo <-chan struct{}) *httptest.Server {
 func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 	t.Helper()
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	server := pausedModel(t, letGo)
 	t.Cleanup(server.Close)
 	var heard int32
@@ -78,6 +77,7 @@ func landed(t *testing.T, path string, n int) []Clip {
 }
 
 func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
+	ownTrainingDir(t)
 	letGo := make(chan struct{})
 	p, path := searching(t, letGo)
 
@@ -166,6 +166,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 }
 
 func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
+	t.Parallel()
 	letGo := make(chan struct{})
 	defer close(letGo)
 	p, path := searching(t, letGo)
@@ -186,6 +187,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 }
 
 func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
+	t.Parallel()
 	letGo := make(chan struct{})
 	p, path := searching(t, letGo)
 	finished := make(chan error, 1)
@@ -268,6 +270,7 @@ func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 // The second is left out, said once, and the clips after it keep their
 // places, both when the answer streams in and when it is read whole.
 func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
+	t.Parallel()
 	entry := func(title string, keep ...[2]int) PlanEntry { return PlanEntry{Title: title, Keep: keep} }
 	kept, repeats := distinctMoments([]PlanEntry{
 		entry("Spiegel", [2]int{347, 352}),
@@ -288,7 +291,6 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	}
 
 	source := testEpisode(t, "40")
-	SetTrainingDir(t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeLocalStream(w, `{"clips": [`+
 			`{"slug": "a", "title": "Erste", "reason": "r", "keep": [[1, 2]]}, `+
@@ -331,6 +333,7 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 // list read the clip while its card was still on the way, a row more than
 // the search was asked for.
 func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
+	t.Parallel()
 	letGo := make(chan struct{})
 	close(letGo)
 	p, _ := searching(t, letGo)

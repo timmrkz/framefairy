@@ -78,10 +78,10 @@ type Change struct {
 	after  map[string]fileState
 }
 
-// Compare says what changed between two snapshots of one episode. Nothing
-// changed is nil. A file in either is compared, so a plan an edit removed
-// and a plan that appeared are both part of it.
-func Compare(before, after *Snapshot) *Change {
+// ChangeBetween says what changed between two snapshots of one episode.
+// Nothing changed is nil. A file in either is compared, so a plan an edit
+// removed and a plan that appeared are both part of it.
+func ChangeBetween(before, after *Snapshot) *Change {
 	c := &Change{logsDir: before.logsDir, before: map[string]fileState{}, after: map[string]fileState{}}
 	seen := map[string]bool{}
 	for _, snap := range []*Snapshot{before, after} {
