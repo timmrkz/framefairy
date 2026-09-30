@@ -597,7 +597,11 @@ cut out. The decoding is asked of the system's own video decoder,
 VideoToolbox on macOS, and falls back to the processor by itself where
 there is none, which today is every Windows and Linux build. If the system
 decoder refuses a file, the same work is done again on the processor and
-everything after it goes there too. Which decoder does the work is found
+everything after it goes there too. The same happens when looking for
+camera switches runs out of time, a minute and four times the span: ffmpeg
+has hung there once, and a search waited on it for good. If the processor
+runs out of time as well, the span is framed without switches, with a
+warning, rather than the clip failing. Which decoder does the work is found
 once per episode file, by decoding one frame the way framing does and
 reading what ffmpeg says, and written to the log as `framing decodes
 video on VideoToolbox` or `on the processor`. The crop
