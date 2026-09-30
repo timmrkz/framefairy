@@ -614,7 +614,13 @@ place.
     - **An empty list is never empty.** With nothing in the list and no
       search on its way, the rows New will fill stand there as many as
       Target says, following it as it changes, and still, because nothing
-      is filling them yet. An episode whose first search was stopped, by
+      is filling them yet. When every clip there was has been removed, the
+      first of them says so, **All clips removed**, **New finds others**,
+      so the empty rows read as something that happened. It gives no
+      number, because the plan keeps every clip ever removed, and a count
+      of them was more than the list had just shown. The empty rows open
+      only once the last removed row has closed, so they never push it
+      down the column as it goes. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and
@@ -659,10 +665,17 @@ place.
       says whether it looks somewhere new or again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
-      can, saying **Removed** and offering **Put it back**. Nothing above or
+      can, saying **Removed** and offering **Put it back**. The time left is
+      the app's one fill, in red, running down to nothing over those ten
+      seconds, see `Busy.svelte`, and it stands still while the pointer or
+      the keyboard is on the row, so the time to change your mind is seen
+      and nobody is rushed. Nothing above or
       below it moves while it is there, and when it goes the list closes
-      over it. The clip stays in the plan with everything done to it, and a
-      render of the whole plan leaves it out.
+      over it. Every clip removed has its own row and its own ten seconds:
+      removing another, or putting one back, leaves the others as they
+      are. There was one for the whole list, and a second clip removed took
+      the first one's way back with it. The clip stays in the plan with
+      everything done to it, and a render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part

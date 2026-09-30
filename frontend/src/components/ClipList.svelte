@@ -14,7 +14,8 @@
     selected,
     hovered = "",
     onhover,
-    removed = "",
+    removed = [],
+    emptied = null,
     coming = 0,
     at = Infinity,
     waiting = true,
@@ -24,6 +25,8 @@
     onselect,
     onremove,
     onputback,
+    onforget,
+    onclosed,
   }: {
     clips: ClipEntry[];
     // The clips on their way, whoever proposed them, each in its place in
@@ -75,15 +78,24 @@
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
     stopped?: { what: string; left: string; full: string } | null;
-    // The clip just taken out. It keeps its place in the list for a moment,
-    // showing what happened to it and offering it back, so the rows do not
-    // jump out from under the pointer.
-    removed?: string;
+    // The clips just taken out. Each keeps its place in the list for a
+    // moment, showing what happened to it and offering it back, so the rows
+    // do not jump out from under the pointer.
+    removed?: string[];
+    // What became of the clips there were, when every one of them was
+    // removed and nothing is on its way: said in the first row still to
+    // come, the way a search that stopped says so there, so an empty list
+    // reads as something that happened rather than something broken.
+    emptied?: { what: string; left: string } | null;
     onselect: (key: string) => void;
     // Takes a clip out of the list. It stays in the plan, so it can come
     // back.
     onremove?: (clip: ClipEntry) => void;
-    onputback?: () => void;
+    onputback?: (key: string) => void;
+    // A clip taken out whose time to be put back has run out.
+    onforget?: (key: string) => void;
+    // A clip's row has closed and is gone from the list.
+    onclosed?: (key: string) => void;
   } = $props();
 
   // A search writes each clip the moment it is found, so the list fills in
@@ -97,6 +109,8 @@
   // The one card of the search that wears its fill, see Carrier. While no
   // card of the search is on its way, the row still to come wears it, and
   // once one is, that row wears the beam alone, so there is one fill.
+  // How long a clip taken out can be put back, in seconds.
+  const secondThoughts = 10;
   const carrier = new Carrier();
   const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
 
@@ -207,18 +221,19 @@
     {@const clip = row.clip}
     {@const a = row.arriving}
     {@const g = row.ghost}
-    {@const lead = g === 0 && !!(next || stopped)}
+    {@const lead = g === 0 && !!(next || stopped || emptied)}
     <li
       animate:flip={{ duration: 180 }}
       in:enter={row}
       out:leave={row}
+      onoutroend={() => clip && onclosed?.(clip.key)}
       data-key={clip?.key ?? a?.key}
       class:ghost={g !== undefined}
       class:waiting={g !== undefined && !lead && waiting}
       style={g !== undefined && !lead ? `--wait-in: ${g * 800}ms` : undefined}
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
-      class:stopped={!!a?.stopped || (lead && !next)}
+      class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
       class:lit={!!clip && clip.key === hovered}
       title={lead && !next ? stopped?.full : undefined}
       aria-live={a || (lead && next) ? "polite" : undefined}
@@ -242,6 +257,9 @@
         {:else if g === 0 && stopped}
           <span class="title">{stopped.what}</span>
           <span class="meta muted num">{stopped.left}</span>
+        {:else if g === 0 && emptied}
+          <span class="title">{emptied.what}</span>
+          <span class="meta muted num">{emptied.left}</span>
         {/if}
       {:else if a}
         {#if a.stopped}
@@ -258,12 +276,15 @@
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
-      {:else if clip && clip.key === removed}
-        <div class="gone">
+      {:else if clip && removed.includes(clip.key)}
+        <div class="gone busyhost">
           <Icon name="trash" />
           <span class="what">Removed</span>
           <span class="grow"></span>
-          <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
+          <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
+          <!-- How long it can still be put back, in the one fill the app
+               has, running down to nothing, see Busy. -->
+          <Busy drain={secondThoughts} onend={() => onforget?.(clip.key)} />
         </div>
       {:else if clip}
         <button
@@ -396,6 +417,14 @@
     background: color-mix(in srgb, var(--err) 14%, transparent);
     color: var(--err);
     animation: swept 0.18s ease-out;
+  }
+
+  /* The fill that runs down wears the colour of what was taken away,
+     over the light app.css gives every control that holds a Busy. */
+  .gone.busyhost {
+    --lit: var(--err);
+    --wash-from: color-mix(in srgb, var(--err) 12%, transparent);
+    --wash-to: color-mix(in srgb, var(--err) 24%, transparent);
   }
 
   .gone .what {

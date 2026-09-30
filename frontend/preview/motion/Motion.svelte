@@ -16,6 +16,8 @@
   // than read at a number somebody typed. It runs to the end and starts
   // over, the way a job does.
   let share = $state(0);
+  // How many times the fill that runs out has run out, so it starts again.
+  let drained = $state(0);
   onMount(() => {
     const timer = setInterval(() => (share = share >= 1 ? 0 : Math.min(share + 0.01, 1)), 70);
     return () => clearInterval(timer);
@@ -136,6 +138,22 @@
       <button><Busy fraction={0.6} />60%</button>
       <button><Busy fraction={1} />100%</button>
       <button class="primary"><Busy fraction={share} />Rendering</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>The fill, running out</h2>
+    <p class="muted">
+      The same fill telling time rather than work: it starts full and runs
+      down to nothing, with no beam and no motes, because nothing is being
+      worked on. It stands still while the pointer is on it. A clip taken
+      out of the list wears it in red for the ten seconds it can be put
+      back. This one runs for ten seconds and starts again.
+    </p>
+    <div class="row wrap">
+      {#key drained}
+        <div class="busyhost gone"><Busy drain={10} onend={() => drained++} /><span>Removed</span></div>
+      {/key}
     </div>
   </section>
 
@@ -287,6 +305,23 @@
     justify-content: center;
     width: var(--control-h);
     padding: 0;
+  }
+
+  /* A row the size of a card in the clip list, in the red of a clip
+     taken out, the way the list wears it. */
+  .gone {
+    --lit: var(--err);
+    --wash-from: color-mix(in srgb, var(--err) 12%, transparent);
+    --wash-to: color-mix(in srgb, var(--err) 24%, transparent);
+    display: flex;
+    align-items: center;
+    width: 320px;
+    height: 56px;
+    padding: 0 12px;
+    border-radius: var(--radius-m);
+    background: color-mix(in srgb, var(--err) 14%, transparent);
+    color: var(--err);
+    font-weight: 600;
   }
 
   .tracks {
