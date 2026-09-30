@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -122,7 +121,7 @@ func (s *FrameFairy) Redo(path string) (Undone, error) {
 
 func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 	if !s.store.Known(path) {
-		return Undone{}, os.ErrNotExist
+		return Undone{}, errNotInLibrary
 	}
 	h := s.historyOf(path)
 	h.mu.Lock()
@@ -141,7 +140,7 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 	if st.change != nil {
 		for _, file := range st.change.Files() {
 			if !s.store.Known(file) {
-				return Undone{}, os.ErrNotExist
+				return Undone{}, errNotInLibrary
 			}
 		}
 	}

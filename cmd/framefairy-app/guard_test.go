@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -49,6 +51,10 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	}
 	if _, err := svc.Source(ctx, other); err == nil {
 		t.Error("Source answered for a file that is not in the library")
+	} else if err.Error() != notInLibrary || !errors.Is(err, fs.ErrNotExist) {
+		// It says why, and it is still a file that does not exist to
+		// whatever asks that way.
+		t.Errorf("Source was refused with %q", err)
 	}
 	if _, err := svc.Clips(ctx, other); err == nil {
 		t.Error("Clips answered for a file that is not in the library")

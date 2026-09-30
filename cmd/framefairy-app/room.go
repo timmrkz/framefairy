@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"os"
 
 	"framefairy/engine"
 )
@@ -28,7 +27,7 @@ type RoomView struct {
 // is an answer and not a failure.
 func (s *FrameFairy) Room(path string) (RoomView, error) {
 	if !s.store.Known(path) {
-		return RoomView{}, os.ErrNotExist
+		return RoomView{}, errNotInLibrary
 	}
 	opts := s.store.Settings().options()
 	p := engine.NewProject(nil, path, opts)
