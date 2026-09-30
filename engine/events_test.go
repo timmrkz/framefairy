@@ -636,3 +636,38 @@ func TestCropByHand(t *testing.T) {
 		t.Errorf("a negative crop was accepted")
 	}
 }
+
+// While a search holds the progress line, nothing that runs inside it ends
+// the line: not a step that finishes, not ffmpeg clearing its own progress
+// when it is done with a clip. Each did, the app took the search's fill
+// away, and it came back with the search's next report.
+func TestAHeldLineIsOnlyEverLetGoByWhoHoldsIt(t *testing.T) {
+	log := NewLog(&bytes.Buffer{}, false, false)
+	rec := &recorder{}
+	log.SetSink(rec.sink)
+	log.HoldProgress(true)
+	log.ProgressFound("Finding clips", 0.4, 30, 2)
+	_ = log.Step("fitting 2 clip(s) to the length", func() error {
+		log.ProgressOf("finding camera switches", 0.5, 1)
+		log.ClearProgress()
+		return nil
+	})
+	log.ClearProgress()
+	if got, want := strings.Join(rec.kinds(), " "), "progress step-start step-done"; got != want {
+		t.Fatalf("kinds while held\n got %s\nwant %s", got, want)
+	}
+	log.HoldProgress(false)
+	log.ClearProgress()
+	if got := rec.kinds(); got[len(got)-1] != "idle" {
+		t.Errorf("let go, the line was not cleared: %v", got)
+	}
+	// Outside a hold a step that ends still ends its progress.
+	rec.events = nil
+	_ = log.Step("rendering", func() error {
+		log.ProgressOf("rendering", 0.5, 1)
+		return nil
+	})
+	if got, want := strings.Join(rec.kinds(), " "), "step-start progress idle step-done"; got != want {
+		t.Errorf("kinds\n got %s\nwant %s", got, want)
+	}
+}

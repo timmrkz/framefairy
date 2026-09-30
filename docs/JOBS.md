@@ -287,6 +287,16 @@ way that is chosen is drawn on the clip timeline the way a clip is: its
 frame, then its pieces, then its caption blocks coming in one after
 another. When it is written, the same blocks stay.
 
+A clip made by hand says how far placing its crop has come, see
+`engine/cropwork.go`. The work is twice what the clip keeps in seconds,
+once scanned for camera switches and once sampled for faces, and each
+piece scanned and each shot sampled is that much of it done. Between two
+of them the share moves on by the clock, at the speed the work has gone so
+far, never past the piece in hand. The job holds the progress line while
+it does, so the scans inside it neither show their own progress nor clear
+it. A search's clips count nothing of their own: the search says how far
+it has come as a whole, and one of its cards carries that.
+
 A card hands over to the clip it becomes in one step: it keeps its place
 until the list has read the clip, so there is never a gap where it was and
 never the two of them at once. It goes in the same assignment that puts

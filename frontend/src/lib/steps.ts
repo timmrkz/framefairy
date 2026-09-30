@@ -53,13 +53,14 @@ export function stepLine(job: Job, hearing = -1): StepLine {
 // The line for a clip on its way, the same for every clip whichever job
 // has it: the step the clip itself is in, which for a search's clip is
 // placing its crop while the search goes on finding. A clip made by hand
-// that waits for the words at the playhead says how far they are heard.
+// says how far its own work has come: the words at the playhead heard,
+// then its crop placed.
 export function arrivalLine(job: Job, clip: Underway): StepLine {
-  // The job's progress is the clip's own only while the job hears for it.
-  // A search's is the whole search's, and its clips on their way are not
-  // that far along.
-  if (clip.step !== "hearing") return { ...stepLine({ ...job, step: clip.step }), left: "", fraction: -1 };
-  return stepLine({ ...job, step: clip.step }, job.progress?.fraction ?? -1);
+  // The job's progress is the clip's own when the job is the one clip. A
+  // search's is the whole search's, and its clips on their way are not
+  // that far along, see Carrier.
+  if (job.kind === "clip") return stepLine({ ...job, step: clip.step }, job.progress?.fraction ?? -1);
+  return { ...stepLine({ ...job, step: clip.step }), left: "", fraction: -1 };
 }
 
 // A line of the engine's, where one is shown as it is, as a sentence: the

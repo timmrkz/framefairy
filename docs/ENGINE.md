@@ -732,13 +732,22 @@ while the search runs is recorded against the plan it was made about.
 Stopping a search keeps what it had written.
 
 How far a search has come is measured, not guessed, in
-`engine/searchclock.go`. A search is five parts one after the other:
+`engine/searchclock.go`. A search is six parts one after the other:
 loading the model, the model reading the transcript, the model thinking,
-the model writing its clips, and the framing still going when it stops.
+the model writing its clips, a local model asked again about the clips well
+off the length, and the framing still going after that.
 Every search that finishes keeps how long each part took, per model, in
 `~/.framefairy/speed.json`: the seconds to load, the transcript characters
 read per second, the seconds of thinking and the tokens thought a second,
-the seconds per clip, and the seconds of framing after the answer. Each
+the seconds per clip, the seconds the model took to answer about the
+clips held back, and the seconds of framing after the answer and the
+fitting. The fitting is counted from the start of a local search, whether
+a clip will need it or not, because a share that learned of it once the
+answer was in would go back, and a search with nothing to fit steps over
+it. It was not counted at all once, and the fill stood full for as long
+as the model was asked about two clips. While a search runs it holds the
+progress line: a step inside it that ends, or ffmpeg done with one clip,
+does not clear it, so the fill never goes and comes back. Each
 new timing counts half, so one slow search on a busy machine moves the
 next estimate without taking it over. The next search reports its share
 and the time left against those, about twice a second. Inside a part,
@@ -757,7 +766,8 @@ silent until the answer begins, so the search could not tell thinking from
 hanging. There is no thinking budget in the cloud: these models refuse
 one, and `effort` is the only lever, left at its default. A
 search against a server that was already running loaded nothing, and
-leaves the loading time as it was. A record from before the thinking was
+leaves the loading time as it was, and one that asked nothing again leaves
+the fitting time. A record from before the thinking or the fitting was
 timed on its own measured something else, and is replaced.
 
 **The model is loaded before the search needs it.** Loading takes

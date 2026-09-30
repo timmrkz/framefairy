@@ -62,7 +62,7 @@ func TestAClipThatComesBackToItsCameraIsOneShot(t *testing.T) {
 	// Out of the first camera, over everything on the second, and back to
 	// the first: one shot, measured once, framed the same on both sides.
 	cache := newCropCache()
-	segments, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {22, 28}}, source, 202, cache)
+	segments, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {22, 28}}, source, 202, cache, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestAClipThatComesBackToItsCameraIsOneShot(t *testing.T) {
 
 	// Out of the first camera and back on the second: two shots.
 	cache = newCropCache()
-	if _, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {12, 18}}, source, 202, cache); err != nil {
+	if _, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {12, 18}}, source, 202, cache, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(cache.crops) != 2 {
@@ -84,7 +84,7 @@ func TestAClipThatComesBackToItsCameraIsOneShot(t *testing.T) {
 
 	// A kept span with a switch inside it is split at the switch.
 	cache = newCropCache()
-	segments, err = e.ClipSegments(ctx, path, []Span{{7, 13}}, source, 202, cache)
+	segments, err = e.ClipSegments(ctx, path, []Span{{7, 13}}, source, 202, cache, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	}
 	e := framingEngine()
 	e.FFmpeg = refusing
-	segments, err := e.ClipSegments(context.Background(), path, []Span{{7, 13}}, source, 202, newCropCache())
+	segments, err := e.ClipSegments(context.Background(), path, []Span{{7, 13}}, source, 202, newCropCache(), nil)
 	if err != nil {
 		t.Fatalf("framing failed instead of going round: %v", err)
 	}

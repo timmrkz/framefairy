@@ -238,8 +238,14 @@ func (l *Log) Underway(list []Underway, written int, whole bool) {
 		Whole: whole})
 }
 
-// that nothing is in progress any more.
+// that nothing is in progress any more. While the line is held, it is not
+// this work's to clear: ffmpeg finding the camera switches of one clip
+// cleared a search's line every time it finished, and the search's fill
+// went and came back half a second later, over and over.
 func (l *Log) ClearProgress() {
+	if l.held.Load() {
+		return
+	}
 	l.mu.Lock()
 	l.clearProgressLocked()
 	l.mu.Unlock()
@@ -271,6 +277,11 @@ func (l *Log) Step(name string, fn func() error) error {
 		return err
 	}
 	l.writeLine("+", name+" "+l.c("2", fmt.Sprintf("(%.1fs)", took)), "32")
+	// A step that is done has nothing more in progress, unless the line is
+	// held by the work the step is part of. The app cleared the line on
+	// every step that ended, so a search lost its fill each time a step
+	// inside it did, the model's answer and the fitting after it.
+	l.ClearProgress()
 	l.send(Event{Kind: EventStepDone, Stage: name, Text: name,
 		Duration: took, Fraction: 1, Remaining: 0})
 	return nil
