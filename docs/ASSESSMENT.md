@@ -291,7 +291,11 @@ facade the app goes around, and three files too big to hold in one's head.
     missing from the code map in ENGINE.md. **Fixed** in #58.
 36. The ffmpeg and llama.cpp licence files never reach the bundle:
     `tools-beside` copies only the binaries, so the loop in
-    `bundle-macos.sh:61` finds nothing. **Fixed** in #58.
+    `bundle-macos.sh:61` finds nothing. **Fixed** in #58. They go in
+    `Contents/Resources`: in `Contents/MacOS` they made the signing fail,
+    and the first build of #58 was an app macOS would not open. A signing
+    that fails now stops the build, and the bundle is checked with
+    `codesign --verify`.
 37. Tests that wait on time: `remove_test.go:169, 190, 236` sleep a fixed
     300 ms for a 200 ms job. Poll with a deadline instead. **Fixed** in #58.
 38. When our ffmpeg build fails, `tools.sh:104` unlinks the user's Homebrew
