@@ -280,6 +280,17 @@ func mediaMiddleware(st *store) application.Middleware {
 // it was given, so this is the last line rather than the first.
 const notInLibrary = "this file does not belong to an episode in the library"
 
+// errNotInLibrary is notInLibrary as the error a call returns. It says
+// what happened, where os.ErrNotExist said "file does not exist" about a
+// file that may well exist, and it is still a file that does not exist to
+// errors.Is, so nothing that asks that way changes.
+var errNotInLibrary error = libraryError{}
+
+type libraryError struct{}
+
+func (libraryError) Error() string        { return notInLibrary }
+func (libraryError) Is(target error) bool { return target == fs.ErrNotExist }
+
 // FrameFairy is everything the interface can ask for.
 type FrameFairy struct {
 	app *application.App
@@ -587,7 +598,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 // nothing. The episode file itself always stays.
 func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	if !s.store.Known(path) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	// Its work stops, and nothing new starts on it until it is out of the
 	// library, whether its files go or stay. A removed episode that went on
@@ -670,7 +681,7 @@ func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo,
 // Source probes an episode.
 func (s *FrameFairy) Source(ctx context.Context, path string) (SourceView, error) {
 	if !s.store.Known(path) {
-		return SourceView{}, os.ErrNotExist
+		return SourceView{}, errNotInLibrary
 	}
 	info, err := s.probe(ctx, path)
 	if err != nil {
@@ -694,7 +705,7 @@ type ClipEntry struct {
 // Clips lists the clips of every clip set of an episode, in time order.
 func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error) {
 	if !s.store.Known(path) {
-		return nil, os.ErrNotExist
+		return nil, errNotInLibrary
 	}
 	info, err := s.probe(ctx, path)
 	if err != nil {
@@ -753,7 +764,7 @@ type PassView struct {
 // too short to hold a clip of least seconds.
 func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (CoverageView, error) {
 	if !s.store.Known(path) {
-		return CoverageView{}, os.ErrNotExist
+		return CoverageView{}, errNotInLibrary
 	}
 	info, err := s.probe(ctx, path)
 	if err != nil {
@@ -787,7 +798,7 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (
 // It answers with how many clips went.
 func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to float64) (int, error) {
 	if !s.store.Known(path) {
-		return 0, os.ErrNotExist
+		return 0, errNotInLibrary
 	}
 	if to <= from {
 		return 0, nil
@@ -823,7 +834,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 // picture while the clip plays.
 func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsView, error) {
 	if !s.store.PlanOf(path, planPath) {
-		return nil, os.ErrNotExist
+		return nil, errNotInLibrary
 	}
 	t, err := s.words(path)
 	if err != nil {
@@ -858,7 +869,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 			continue
 		}
 		if !s.store.Known(j.Episode) {
-			return nil, os.ErrNotExist
+			return nil, errNotInLibrary
 		}
 		logs := filepath.Join(engine.WorkDir(j.Episode), "logs")
 		plan := filepath.Join(logs, engine.HandPlanName)
@@ -947,7 +958,7 @@ func (s *FrameFairy) words(path string) (*engine.Transcript, error) {
 // finer.
 func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
 	if !s.store.Known(path) {
-		return nil, os.ErrNotExist
+		return nil, errNotInLibrary
 	}
 	// An episode shown is an episode measured: one added before the
 	// loudness had a job of its own is measured the first time it is
@@ -987,7 +998,7 @@ func windowLength(req engine.PlanRequest) float64 {
 // Still returns a frame of the episode at a moment, as a media path.
 func (s *FrameFairy) Still(ctx context.Context, path string, at float64, width int) (string, error) {
 	if !s.store.Known(path) {
-		return "", os.ErrNotExist
+		return "", errNotInLibrary
 	}
 	// The frame rate says which frame the moment falls in, the one the
 	// video preview shows there. It is read once per episode and kept.
@@ -1014,7 +1025,7 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 // empty answer and not a failure.
 func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, error) {
 	if !s.store.Known(path) {
-		return nil, os.ErrNotExist
+		return nil, errNotInLibrary
 	}
 	t, err := s.words(path)
 	if err != nil {
@@ -1030,7 +1041,7 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 
 func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, start float64, text string) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	p := engine.NewProject(nil, path, s.store.Settings().options())
 	// Read fresh, not from what Waveform and Words keep: an edit works on
@@ -1051,7 +1062,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 // left edge in source pixels, and returns the clip as it is now.
 func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at float64, left int) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	info, err := s.probe(ctx, path)
 	if err != nil {
@@ -1066,13 +1077,11 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, and returns the clip as it is now.
 // SetCaptionStyle changes the face and the size of the captions of a whole
 // clip set, which is what the workspace offers next to the clip.
 func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font string, size float64) error {
 	if !s.store.PlanOf(path, plan) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	values := map[string]any{}
 	if font != "" {
@@ -1092,7 +1101,7 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 	textOpacity float64, box string, boxOpacity float64, highlight string,
 	highlightOpacity float64) error {
 	if !s.store.PlanOf(path, plan) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	values := map[string]any{}
 	if text != "" {
@@ -1125,7 +1134,7 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 // and the bounce it makes. Anything else is refused.
 func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which string, on bool) error {
 	if !s.store.PlanOf(path, plan) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	switch which {
 	case "text", "box", "highlight":
@@ -1146,7 +1155,7 @@ func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which str
 // would say one thing and the render do another.
 func (s *FrameFairy) SetCaptionsHeight(path string, y float64) error {
 	if !s.store.Known(path) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	return s.edit(path, func() error {
 		if err := s.store.UpdateSettings(func(set *Settings) { set.CaptionY = engine.SnapCaptionY(y) }); err != nil {
@@ -1159,7 +1168,7 @@ func (s *FrameFairy) SetCaptionsHeight(path string, y float64) error {
 // ResetCaptionsHeight puts the captions back where the app puts them.
 func (s *FrameFairy) ResetCaptionsHeight(path string) error {
 	if !s.store.Known(path) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	return s.edit(path, func() error {
 		if err := s.store.UpdateSettings(func(set *Settings) { set.CaptionY = engine.DefaultCaptionY }); err != nil {
@@ -1222,7 +1231,7 @@ func (s *FrameFairy) followTheHeight(path string) error {
 // nought removes the one at from.
 func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string, from, to float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	if err := s.edit(path, func() error {
 		return engine.SetThumbnail(plan, clipID, from, to)
@@ -1237,7 +1246,7 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 // back where its words put it, because JSON has no way to say not a number.
 func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	if at < 0 {
 		at = math.NaN()
@@ -1254,9 +1263,11 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
+// ResetCrop brings back the automatic crop for the shot at a moment of a
+// clip, and returns the clip as it is now.
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	if err := s.edit(path, func() error { return engine.ResetCrop(plan, clipID, at) }); err != nil {
 		return ClipEntry{}, err
@@ -1267,7 +1278,7 @@ func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, a
 // ClipPlayed records that a clip was watched in the app.
 func (s *FrameFairy) ClipPlayed(plan, clipID string) error {
 	if !s.store.Known(plan) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	return engine.RecordDecision(plan, clipID, engine.DecisionViewed, nil)
 }
@@ -1380,7 +1391,7 @@ func changeChosen(path string, change func(*chosen)) error {
 // carrying anything a key never carries, is refused rather than stored.
 func (s *FrameFairy) ChooseClip(path, key string) error {
 	if !s.store.Known(path) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	if !looksLikeClipKey(key) {
 		return errors.New("that is not the key of a clip")
@@ -1406,7 +1417,7 @@ func (s *FrameFairy) ChosenClip(path string) string {
 // takes back. One the app moved by itself, after a search, is not.
 func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand bool) error {
 	if !s.store.Known(path) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	w := KeptWindow{From: from, To: to, Length: length}
 	if !w.ok() {
@@ -1468,7 +1479,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 			return c, nil
 		}
 	}
-	return ClipEntry{}, os.ErrNotExist
+	return ClipEntry{}, fmt.Errorf("the clip %s is not in this episode's clips any more: %w", clipID, os.ErrNotExist)
 }
 
 // RemoveClip takes a clip out of the list, or puts it back. The clip stays
@@ -1476,7 +1487,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 // to it. A render of the whole plan leaves a removed clip out.
 func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, removed bool) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	if err := s.edit(path, func() error { return engine.SetRejected(plan, clipID, removed) }); err != nil {
 		return ClipEntry{}, err
@@ -1489,7 +1500,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 // engine/shape.go.
 func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine.ShapedView, error) {
 	if !s.store.PlanOf(path, plan) {
-		return nil, os.ErrNotExist
+		return nil, errNotInLibrary
 	}
 	t, err := s.words(path)
 	if err != nil {
@@ -1503,7 +1514,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 // hand moved, and returns the clip as it is now.
 func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g engine.Gesture) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, os.ErrNotExist
+		return ClipEntry{}, errNotInLibrary
 	}
 	t, err := s.words(path)
 	if err != nil {
@@ -1532,32 +1543,35 @@ func (s *FrameFairy) CancelJob(id string) {
 // ClearJobs forgets finished jobs.
 func (s *FrameFairy) ClearJobs() { s.jobs.clear() }
 
-// ReadPlan loads a plan for the candidates screen.
-func (s *FrameFairy) ReadPlan(planPath string) (*engine.PlanView, error) {
-	if !s.store.Known(planPath) {
-		return nil, os.ErrNotExist
-	}
-	return engine.ReadPlan(planPath)
-}
-
 // Reveal shows a file in Finder, Explorer or the file manager.
 func (s *FrameFairy) Reveal(path string) error {
 	if !s.store.Known(path) {
-		return os.ErrNotExist
+		return errNotInLibrary
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", "-R", path).Start()
+		return startReaped(exec.Command("open", "-R", path))
 	case "windows":
 		// One argument, not two: with a space after the comma Explorer
 		// opens its default folder and selects nothing.
-		return exec.Command("explorer", "/select,"+path).Start()
+		return startReaped(exec.Command("explorer", "/select,"+path))
 	}
 	dir := path
 	if fileExists(path) {
 		dir = filepath.Dir(path)
 	}
-	return exec.Command("xdg-open", dir).Start()
+	return startReaped(exec.Command("xdg-open", dir))
+}
+
+// startReaped starts a program that finishes by itself and waits for it
+// out of the way. A program started and never waited for stays in the
+// process table as a zombie until the app quits, one for every Reveal.
+func startReaped(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // TrainingStatus is the one folder the records live in and how much is in

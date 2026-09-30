@@ -57,9 +57,12 @@ for tool in ffmpeg ffprobe llama-server; do
 	fi
 done
 # Their licence texts travel with them. LGPL asks for it and MIT asks for
-# it, and it is two files.
+# it, and it is two files. They go in Resources, not beside the programs:
+# codesign takes everything in Contents/MacOS for code to be signed, so a
+# text file there made the signing fail, the app went out unsigned, and
+# macOS would not open it at all.
 for licence in "$BINDIR"/LICENSE-*; do
-	[ -f "$licence" ] && cp "$licence" "$APP/Contents/MacOS/"
+	if [ -f "$licence" ]; then cp "$licence" "$APP/Contents/Resources/"; fi
 done
 
 # The speech libraries. carry-libs.sh has already rewritten the program to
@@ -158,7 +161,13 @@ printf 'APPL????' >"$APP/Contents/PkgInfo"
 # on some systems, so it is made again. Ad hoc, the same as carry-libs.sh:
 # enough to run here, and Developer ID signing is its own step later.
 codesign --remove-signature "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
-codesign -s - -f "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
+# Signing the program signs the bundle it is the program of. A signing that
+# fails leaves an app macOS refuses to open, with nothing to say why, so it
+# stops the build here, and the bundle is read back as macOS will read it.
+# It was allowed to fail quietly, and a build nobody could open was
+# published as an update.
+codesign -s - -f "$APP/Contents/MacOS/$EXE"
+codesign --verify --strict "$APP"
 
 # And read back, because everything above is a copy that is allowed to fail
 # quietly and a bundle that is wrong looks exactly like one that is right

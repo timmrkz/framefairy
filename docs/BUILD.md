@@ -81,7 +81,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
 
-`make TIDY=0` skips step 2, for a machine without network whose modules are
+`make TIDY=0` skips step 4, for a machine without network whose modules are
 already in place.
 
 A new Mac, from nothing to a running app:
@@ -104,7 +104,7 @@ committed or not, new files included, and runs what those files can reach:
 | Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below |
 | `go.mod`, `go.sum` | every package and every fuzz target |
 | `frontend/` | `make interface`, and for a file a Go test reads, like `api.ts`, that test's package too |
-| `Makefile`, a build script | `make` |
+| `Makefile`, a build script | `make`, and for a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | a workflow | a read of its YAML |
@@ -197,7 +197,7 @@ needs any of the rest:
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
-| `build` | Linux | `make`. The programs and the interface, which is what proves they still link |
+| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make`. The programs and the interface, which is what proves they still link |
 | `linux` | Linux | `make unit` |
 | `fuzz` | Linux | `make fuzz` |
 | `macos` | macOS | the ffmpeg we ship, built by `scripts/build-ffmpeg.sh` and kept until that script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |

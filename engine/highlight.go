@@ -47,8 +47,6 @@ const (
 	pillPeak   = 1.15
 )
 
-// captionLayout splits a caption's words into lines the same way the plain
-// caption wraps, as lists of word indices.
 // lineIndices turns laid out lines back into the word numbers they hold,
 // which is what the tagging below works with.
 func lineIndices(lines [][]Cue) [][]int {
@@ -61,10 +59,6 @@ func lineIndices(lines [][]Cue) [][]int {
 		}
 	}
 	return out
-}
-
-func captionLayout(words []string, limit int) [][]int {
-	return wrapWords(words, func(text string) bool { return runeLen(text) <= limit })
 }
 
 // WebColour turns an ASS colour, &HAABBGGRR or &HBBGGRR&, into the CSS

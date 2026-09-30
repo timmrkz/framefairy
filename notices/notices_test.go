@@ -106,8 +106,10 @@ func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
 // scripts, and the notices are for exactly those versions.
 func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 	list := all(t)
+	// The scripts are named by their whole path, so make changed finds
+	// this test when either of them changes, see scripts/changed.sh.
 	pinned := func(key, script string) string {
-		body, err := os.ReadFile("../scripts/" + script)
+		body, err := os.ReadFile(script)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +124,7 @@ func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 		"HarfBuzz": "HARFBUZZ_VERSION", "libass": "LIBASS_VERSION",
 	} {
 		n, ok := find(list, name)
-		if want := pinned(key, "build-ffmpeg.sh"); !ok || n.Version != want {
+		if want := pinned(key, "../scripts/build-ffmpeg.sh"); !ok || n.Version != want {
 			t.Errorf("ffmpeg is built with %s %s, and the notice is for %q", name, want, n.Version)
 		}
 	}
@@ -137,7 +139,7 @@ func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 		}
 	}
 	n, ok := find(list, "llama.cpp")
-	if want := pinned("LLAMA_VERSION", "build-llama.sh"); !ok || n.Version != want {
+	if want := pinned("LLAMA_VERSION", "../scripts/build-llama.sh"); !ok || n.Version != want {
 		t.Errorf("llama-server is built from %s, and the notice is for %q", want, n.Version)
 	}
 }

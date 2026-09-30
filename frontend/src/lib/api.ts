@@ -7,7 +7,6 @@ export type { RoomView } from "./room";
 const call = <T>(method: string, ...args: unknown[]): Promise<T> =>
   Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
 
-// Where the training records are and how much there is of them.
 // One piece of other people's work the app is made of or brings with it,
 // and its licence. The texts are asked for one at a time, by name.
 export interface Notice {
@@ -260,11 +259,6 @@ export interface ClipEntry extends ClipView {
   key: string;
   plan: string;
   cropLefts: number[];
-}
-
-export interface PlanView {
-  summary: PlanSummary;
-  clips: ClipView[] | null;
 }
 
 export interface EngineEvent {
@@ -676,7 +670,6 @@ export const api = {
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
   clearJobs: () => call<void>("ClearJobs"),
-  readPlan: (path: string) => call<PlanView>("ReadPlan", path),
   reveal: (path: string) => call<void>("Reveal", path),
   // Updates, see docs/UPDATES.md. Following a channel looks at once, and a
   // newer build downloads by itself and waits for a restart.
