@@ -109,7 +109,7 @@ func main() {
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
 	leave := &leaving{
-		busy: svc.jobs.busy,
+		asked: func() bool { return svc.updates.relaunchingNow() },
 		say: func(what string) {
 			if app != nil {
 				app.Event.Emit("quit", what)
@@ -134,6 +134,7 @@ func main() {
 		ShouldQuit: leave.shouldQuit,
 	})
 	svc.app = app
+	svc.leave = leave
 	svc.updates = newUpdating(app.Updater, st, svc.jobs.busy, func(u UpdateState) {
 		app.Event.Emit("updates", u)
 	})
@@ -305,8 +306,10 @@ type FrameFairy struct {
 	levels *measuring
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
-	mu      sync.Mutex
-	probed  map[string]engine.SourceInfo
+	// What Cmd+Q does, see quit.go.
+	leave  *leaving
+	mu     sync.Mutex
+	probed map[string]engine.SourceInfo
 	// The transcript of the episode being worked on, kept while the files
 	// it was read from stay as they were.
 	said   *engine.Transcript
@@ -342,6 +345,14 @@ func (s *FrameFairy) OpenCommit() error {
 		return errors.New("there is no app to open it from")
 	}
 	return s.app.Browser.OpenURL(u)
+}
+
+// StayOpen is the question Cmd+Q asked taken away, with Escape or a click,
+// so the next Cmd+Q asks again rather than quitting.
+func (s *FrameFairy) StayOpen() {
+	if s.leave != nil {
+		s.leave.stay()
+	}
 }
 
 // RestartToUpdate quits into the build that is ready.

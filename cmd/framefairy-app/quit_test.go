@@ -15,10 +15,11 @@ type leaveProbe struct {
 	quit    chan struct{}
 }
 
-func newLeaving(busy bool, stopTakes time.Duration) (*leaving, *leaveProbe) {
+// asked is quitting asked for in the app already, the way Relaunch does.
+func newLeaving(asked bool, stopTakes time.Duration) (*leaving, *leaveProbe) {
 	p := &leaveProbe{quit: make(chan struct{}, 4)}
 	l := &leaving{
-		busy: func() bool { return busy },
+		asked: func() bool { return asked },
 		say: func(what string) {
 			p.mu.Lock()
 			p.said = append(p.said, what)
@@ -58,6 +59,7 @@ func (p *leaveProbe) quitWithin(t *testing.T, d time.Duration) {
 // wheel for five seconds with nothing to say the key had been heard.
 func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
 	l, p := newLeaving(false, 300*time.Millisecond)
+	l.shouldQuit()
 	began := time.Now()
 	if l.shouldQuit() {
 		t.Fatal("quit before anything was stopped")
@@ -65,7 +67,7 @@ func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
 	if took := time.Since(began); took > 50*time.Millisecond {
 		t.Errorf("Cmd+Q took %s to answer", took)
 	}
-	if got := p.words(); len(got) != 1 || got[0] != "going" {
+	if got := p.words(); len(got) != 2 || got[1] != "going" {
 		t.Errorf("the interface heard %v", got)
 	}
 	p.quitWithin(t, 2*time.Second)
@@ -74,17 +76,19 @@ func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
 	}
 }
 
-// While work runs the first Cmd+Q only asks, and the second quits.
-func TestCmdQWhileWorkRunsAsksFirst(t *testing.T) {
-	l, p := newLeaving(true, 0)
+// The first Cmd+Q only asks, and the second quits. Always, whether work
+// runs or not: it asked only while work ran, so the workspace took two
+// presses and the settings page quit on the first.
+func TestTheFirstCmdQAlwaysAsks(t *testing.T) {
+	l, p := newLeaving(false, 0)
 	if l.shouldQuit() {
-		t.Fatal("the first Cmd+Q quit while a search ran")
+		t.Fatal("the first Cmd+Q quit")
 	}
 	if got := p.words(); len(got) != 1 || got[0] != "ask" {
 		t.Fatalf("the interface heard %v", got)
 	}
 	if p.stopped.Load() != 0 {
-		t.Fatal("the first Cmd+Q stopped the work")
+		t.Fatal("the first Cmd+Q stopped everything")
 	}
 	l.shouldQuit()
 	p.quitWithin(t, 2*time.Second)
@@ -95,7 +99,7 @@ func TestCmdQWhileWorkRunsAsksFirst(t *testing.T) {
 
 // A second Cmd+Q long after the first asks again.
 func TestALateSecondCmdQAsksAgain(t *testing.T) {
-	l, p := newLeaving(true, 0)
+	l, p := newLeaving(false, 0)
 	l.shouldQuit()
 	l.mu.Lock()
 	l.askedAt = time.Now().Add(-2 * quitAgain)
@@ -109,10 +113,21 @@ func TestALateSecondCmdQAsksAgain(t *testing.T) {
 // Closing the app's window quits without asking: there is no window left to
 // press Cmd+Q into a second time.
 func TestClosingTheWindowQuitsWithoutAsking(t *testing.T) {
-	l, p := newLeaving(true, 0)
+	l, p := newLeaving(false, 0)
 	l.closing()
 	l.shouldQuit()
 	p.quitWithin(t, 2*time.Second)
+}
+
+// Relaunch on the Updates page quits into the new build without asking: it
+// was asked for with a click, and the question would stand in its way.
+func TestRelaunchQuitsWithoutAsking(t *testing.T) {
+	l, p := newLeaving(true, 0)
+	l.shouldQuit()
+	p.quitWithin(t, 2*time.Second)
+	if got := p.words(); len(got) != 1 || got[0] != "going" {
+		t.Errorf("the interface heard %v", got)
+	}
 }
 
 // Cmd+Q pressed again and again while the app stops stops it once and
@@ -133,4 +148,26 @@ func TestCmdQPressedOverAndOverStopsOnce(t *testing.T) {
 	if p.stopped.Load() != 1 {
 		t.Errorf("stopped %d times", p.stopped.Load())
 	}
+}
+
+// Cmd+Q, the question taken away with Escape or a click, and Cmd+Q again
+// asks again. The second press counted though the question had gone, so
+// Cmd+Q on one page, Escape, and Cmd+Q on the next quit at once.
+func TestCmdQAfterTheQuestionWasTakenAwayAsksAgain(t *testing.T) {
+	l, p := newLeaving(false, 0)
+	l.shouldQuit()
+	l.stay()
+	if l.shouldQuit() {
+		t.Fatal("quit")
+	}
+	if got := p.words(); len(got) != 2 || got[1] != "ask" {
+		t.Fatalf("the interface heard %v", got)
+	}
+	if p.stopped.Load() != 0 {
+		t.Fatal("stopped everything")
+	}
+	// Once on its way out, taking the question away changes nothing.
+	l.shouldQuit()
+	l.stay()
+	p.quitWithin(t, 2*time.Second)
 }
