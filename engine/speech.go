@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -220,6 +221,27 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 		have = 0
 	}
 
+	// A connection can go quiet without closing, and a download on it
+	// would wait for the next byte until Cancel. Every byte that arrives
+	// puts the watch back, and one that stays quiet for downloadStall
+	// ends the download, with what came kept to carry on from.
+	outer := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var quiet atomic.Bool
+	watch := time.AfterFunc(downloadStall, func() {
+		quiet.Store(true)
+		cancel()
+	})
+	defer watch.Stop()
+	stalled := func(err error) error {
+		if quiet.Load() && outer.Err() == nil {
+			return renderErr("%s stopped arriving for %s. What came is kept, so trying again carries on from there.",
+				what, downloadStall)
+		}
+		return err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -229,9 +251,13 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if e := stalled(nil); e != nil {
+			return "", e
+		}
 		return "", renderErr("could not reach %s: %s", what, err)
 	}
 	defer res.Body.Close()
+	body := watchedReader{res.Body, func() { watch.Reset(downloadStall) }}
 	switch res.StatusCode {
 	case http.StatusPartialContent:
 		// Carrying on.
@@ -264,9 +290,9 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 	if res.ContentLength <= 0 {
 		total = expect
 	}
-	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), res.Body, have, total, "fetching")
+	done, err := copyWithProgress(ctx, log, io.MultiWriter(file, sum), body, have, total, "fetching")
 	if err != nil {
-		return "", err
+		return "", stalled(err)
 	}
 	if total > 0 && done < total {
 		return "", renderErr("%s stopped after %s of %s.", what, inMB(done), inMB(total))
@@ -275,6 +301,25 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// downloadStall is how long a download may go without a byte before it is
+// taken for dead. Long enough for a server that is slow to begin, short
+// enough that nobody sits in front of a bar that no longer moves.
+var downloadStall = time.Minute
+
+// watchedReader calls arrived each time bytes come.
+type watchedReader struct {
+	io.Reader
+	arrived func()
+}
+
+func (r watchedReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if n > 0 {
+		r.arrived()
+	}
+	return n, err
 }
 
 // hashInto feeds the first n bytes of a file to a checksum.

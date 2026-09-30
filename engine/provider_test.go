@@ -461,3 +461,16 @@ func TestAReplyOfThinkingAloneIsAskedAgain(t *testing.T) {
 		t.Errorf("a reply of a tool call alone was asked %d times", n)
 	}
 }
+
+// An answer read whole is read to a limit. One past it is no answer, and
+// reading it all would only fill memory.
+func TestAnAnswerPastTheLimitIsRefused(t *testing.T) {
+	huge := func(w http.ResponseWriter) {
+		w.Write(bytes.Repeat([]byte(" "), maxReplyBytes+1024))
+	}
+	_, e := cloud(t, huge)
+	_, err := e.RepairJSON(context.Background(), `{"clips": [`, "gpt-6-sol", "")
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("an answer past the limit: %v", err)
+	}
+}

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +16,10 @@ import (
 func TestMain(m *testing.M) {
 	if os.Getenv("FRAMEFAIRY_STUBBORN_SERVER") != "" {
 		stubbornServer()
+		return
+	}
+	if path := os.Getenv("FRAMEFAIRY_HOLD_LOCK"); path != "" {
+		holdLock(path)
 		return
 	}
 	dir, err := os.MkdirTemp("", "framefairy-training")
@@ -42,4 +48,13 @@ func stubbornServer() {
 	}
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {})
 	_ = http.ListenAndServe("127.0.0.1:"+port, nil)
+}
+
+// holdLock is this test binary run as another program that edits a file:
+// it takes the file's lock, says so, and holds it until its input closes.
+func holdLock(path string) {
+	release := lockFile(path)
+	fmt.Println("held")
+	_, _ = io.Copy(io.Discard, os.Stdin)
+	release()
 }

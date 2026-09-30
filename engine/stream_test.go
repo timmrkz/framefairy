@@ -272,3 +272,63 @@ func (r *flushRecorder) Header() http.Header {
 }
 func (r *flushRecorder) WriteHeader(int) {}
 func (r *flushRecorder) Flush()          {}
+
+// Claude's streamed answer is untrusted: whatever arrives, reading it
+// never panics, and an answer read without an error is exactly the text
+// that was heard as it came.
+func FuzzReadClaudeStream(f *testing.F) {
+	f.Add("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n" +
+		"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"{\"}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"}\"}}\n\n" +
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	f.Add("event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\n")
+	f.Add("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\n")
+	f.Add("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}}\n\n")
+	f.Add("data: not json\n\n")
+	f.Fuzz(func(t *testing.T, stream string) {
+		var heard strings.Builder
+		reply, _, err := readClaudeStream(strings.NewReader(stream), &Listener{
+			Text:     func(p string) { heard.WriteString(p) },
+			Thinking: func(int) {},
+		})
+		if err == nil && replyText(reply) != heard.String() {
+			t.Errorf("heard %q, the reply says %q", heard.String(), replyText(reply))
+		}
+	})
+}
+
+// llama-server's streamed answer is read the same way: never a panic, and
+// an answer read without an error is the text that was heard, with no
+// count below nought.
+func FuzzReadLocalStream(f *testing.F) {
+	rec := &flushRecorder{}
+	writeLocalStream(rec, `{"clips": []}`, 3)
+	f.Add(rec.String())
+	f.Add("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hm\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n")
+	f.Add("data: {\"prompt_progress\":{\"total\":10,\"cache\":4,\"processed\":2}}\n\n")
+	f.Add("data: {\"error\":{\"message\":\"out of memory\"}}\n\n")
+	f.Add("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}],\"timings\":{\"prompt_n\":5,\"predicted_n\":7}}\n\n")
+	f.Fuzz(func(t *testing.T, stream string) {
+		var heard strings.Builder
+		answer, err := readLocalStream(strings.NewReader(stream), &Listener{
+			Text: func(p string) { heard.WriteString(p) },
+			Reading: func(done, total int) {
+				if done < 0 || total < 0 {
+					t.Errorf("read %d of %d", done, total)
+				}
+			},
+			Thinking: func(int) {},
+		})
+		if err != nil {
+			return
+		}
+		if answer.Content != heard.String() {
+			t.Errorf("heard %q, the answer says %q", heard.String(), answer.Content)
+		}
+		if answer.Reasoning < 0 {
+			t.Errorf("reasoning %d", answer.Reasoning)
+		}
+	})
+}

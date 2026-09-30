@@ -137,23 +137,53 @@ func writeTranscript(path string, file transcriptFile, frames []float32) error {
 	return writeAtomic(path, body)
 }
 
+// writeAtomic replaces the file at path with body in one step as far as
+// any reader is concerned, see replaceFile.
 func writeAtomic(path string, body []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	return replaceFile(path, "."+filepath.Base(path)+"-*", body, nil)
+}
+
+// replaceFile writes body beside path, under a temporary name made from
+// pattern, and moves it onto path. check, if there is one, reads the
+// temporary file first, and a file it refuses is never moved.
+//
+// The file is flushed to the disk before it is moved, and the folder after,
+// so that after a power cut path holds either what was there or all of
+// body. Without the flush the move can reach the disk before the bytes do,
+// and a plan or a transcript comes back empty. On macOS Go's Sync is a
+// full flush, F_FULLFSYNC, which is the one the drive does not keep in
+// its own cache.
+func replaceFile(path, pattern string, body []byte, check func(tmp string) error) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return err
 	}
 	name := tmp.Name()
 	_, err = tmp.Write(body)
+	if err == nil {
+		err = tmp.Sync()
+	}
 	if closeErr := tmp.Close(); err == nil {
 		err = closeErr
+	}
+	if err == nil && check != nil {
+		err = check(name)
 	}
 	if err == nil {
 		err = os.Rename(name, path)
 	}
 	if err != nil {
 		os.Remove(name)
+		return err
 	}
-	return err
+	// The move is kept by the folder, so the folder is flushed too. A
+	// system that cannot open a folder for that, Windows, keeps it anyway.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 // meanOfFrames is the mean level over loudness frames, in dB.

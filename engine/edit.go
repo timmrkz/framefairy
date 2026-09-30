@@ -150,11 +150,22 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // not be the one that disappears.
 var fileLocks sync.Map
 
+// lockFile holds the lock of the file at path until the function it
+// returns is called. Edits are one at a time inside the program, and one
+// program at a time as well, the command line and the app, see
+// lockAcrossProcesses. The lock inside the program is taken first, so two
+// edits in one program wait for each other without both waiting on the
+// system.
 func lockFile(path string) func() {
-	held, _ := fileLocks.LoadOrStore(resolvePath(path), &sync.Mutex{})
+	key := resolvePath(path)
+	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := held.(*sync.Mutex)
 	mu.Lock()
-	return mu.Unlock
+	release := lockAcrossProcesses(key)
+	return func() {
+		release()
+		mu.Unlock()
+	}
 }
 
 func editPlan(path string, change func(top *object, clips []*object) error) error {
@@ -234,23 +245,10 @@ func writePlanFile(path string, body []byte) error {
 // plans of an episode globs for clips*.json and a half written plan must
 // never be one of them.
 func replacePlan(path string, body []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".clips-*.json")
-	if err != nil {
+	return replaceFile(path, ".clips-*.json", body, func(tmp string) error {
+		_, _, err := LoadClips(tmp)
 		return err
-	}
-	name := tmp.Name()
-	_, err = tmp.Write(body)
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		_, _, err = LoadClips(name)
-	}
-	if err != nil {
-		os.Remove(name)
-		return err
-	}
-	return os.Rename(name, path)
+	})
 }
 
 // errNotAdded is a clip that was not added because the plan no longer has

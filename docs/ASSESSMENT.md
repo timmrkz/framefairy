@@ -139,34 +139,58 @@ facade the app goes around, and three files too big to hold in one's head.
     moved. `pack-source.sh` fetches the "corresponding source" separately,
     also unchecked, so nothing proves it is what was built, which LGPL asks
     for. `speech-libs.sh` already does it right. Fix: a sha256 per tarball
-    and a commit per tag, checked in both scripts. **Open.**
+    and a commit per tag, checked in both scripts. **Fixed** in #51: the four archives are
+    checked against a sha256, ffmpeg and llama.cpp against the commit of
+    their tag, in the build and in `pack-source.sh` alike. ffmpeg is now
+    always taken from git, since ffmpeg.org publishes no checksum to hold
+    its archive to.
 12. **ffmpeg 7.1.1 is four point releases behind.** 7.1.5 is out on the same
     branch, with security fixes in code that reads the user's video.
-    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Open.**
+    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Open.** Tried in #51: the
+    first macOS test run with 7.1.5 hung for six minutes in an ffmpeg
+    that finds camera switches, with the system's decoder
+    (`-hwaccel auto`, VideoToolbox), where 7.1.1 passed every run. Only a
+    Mac can say why, so the update goes on its own, and 7.1.1 stays,
+    now pinned by its commit. harfbuzz 10.1.0 and libass 0.17.3 stay
+    too.
 13. **Workflows are not hardened.** `ci.yml` and `speechbench.yml` have no
     `permissions:` block, every action is pinned by tag rather than by
     commit, and `tools.yml` puts `inputs.tag` straight into a shell line.
     Fix: `contents: read` by default, pins by commit or Dependabot for
-    actions, inputs through `env:`. **Open.**
+    actions, inputs through `env:`. **Fixed** in #51: every
+    workflow has a `permissions:` block, every action is pinned to the
+    commit its tag named on 29 September 2026, with the tag beside it,
+    and the release tag reaches the shell through `env:`. Pinned actions
+    do not update themselves. Dependabot could propose updates as pull
+    requests, which is left for Tim to decide.
 14. **Writes that replace a file are not flushed.** `writeAtomic`
     (`engine/transcript.go:140`) and `replacePlan` (`engine/edit.go:236`)
     write a temporary file and rename it, but never sync it. After a power
     loss a plan or transcript can come back empty. `transcript.go:134-137`
     also writes the frames file and the JSON as two steps. Fix: sync before
-    the rename, and make the two one function. **Open.**
+    the rename, and make the two one function. **Fixed** in #51: one
+    `replaceFile`, which flushes the file before the move and the folder
+    after, and which `writeAtomic` and `replacePlan` both go through. The
+    frames and the transcript stay two files written one after the other.
 15. **Plan locks hold only inside one process.** `lockFile`
     (`engine/edit.go:151`) is a map of mutexes, so the CLI and the app
     editing one plan at once can lose an edit. Unlikely, but it should be
-    written down or closed with a file lock. **Open.**
+    written down or closed with a file lock. **Fixed** in
+    #51 on macOS and Linux: `flock` on a hidden file beside the plan or
+    transcript, taken after the lock inside the program. Windows keeps
+    only the lock inside the program until it is shipped.
 16. **Some reads and downloads have no bound.** The speech model download
     uses `http.DefaultClient` (`engine/speech.go:223`), so a stalled
     connection waits for Cancel. `api.go:297` reads a reply with
     `io.ReadAll` and no limit. Fix: a timeout for stalls, and
-    `io.LimitReader` of a few MB. **Open.**
+    `io.LimitReader` of a few MB. **Fixed** in #51: a download that gets no
+    byte for a minute ends, with what came kept to carry on from, and an
+    answer read whole is read to 16 MB.
 17. **No fuzz target for the model's streamed answers.** `readClaudeStream`
     (`engine/stream.go:135`) and `readLocalStream` (`:417`) read what a model
     sends, on the default paths, and have unit tests only. `CLAUDE.md` asks
-    for fuzz targets on everything that reads a model answer. **Open.**
+    for fuzz targets on everything that reads a model answer. **Fixed** in #51:
+    `FuzzReadClaudeStream` and `FuzzReadLocalStream`.
 
 ## Design debt
 

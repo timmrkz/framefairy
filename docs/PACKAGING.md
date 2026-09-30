@@ -479,7 +479,14 @@ built both, which is how it is tried before the workflow runs it.
 The whole licence position rests on one sentence: the ffmpeg we ship is
 LGPL because it was built without libx264. That is worth nothing unless the
 file inside the app can be shown to be the file that was built that way.
-Four separate things make that so, and none of them is our word for it.
+Five separate things make that so, and none of them is our word for it.
+
+**The build takes only the source it pins.** Every archive is checked
+against its sha256 and every clone against its commit, ffmpeg and
+llama.cpp included, both taken from git at the tag's own commit. A file
+changed on a mirror or a tag moved stops the build. `scripts/pack-source.sh`
+checks the same pins, so the source that travels with the app is provably
+the source it was built from.
 
 **The build refuses to produce a wrong answer.** `scripts/build-ffmpeg.sh`
 reads the finished binary back and stops if the licence comes out GPL, if
