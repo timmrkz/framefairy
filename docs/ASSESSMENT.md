@@ -252,7 +252,7 @@ facade the app goes around, and three files too big to hold in one's head.
     out or is lost to the last save. Fix: saves that change only what
     changed. **Open.**
 27. **One name, two things.** `engine.Compare` compares two undo snapshots,
-    `Engine.Compare` compares recipes. **Open.**
+    `Engine.Compare` compares recipes. **Fixed** in the pull request after #58: the one for two snapshots is `engine.ChangeBetween`.
 
 ## Against the project's own rules
 
