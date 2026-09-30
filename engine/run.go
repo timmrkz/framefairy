@@ -133,39 +133,52 @@ func isFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// Run executes one complete run and returns the process exit code.
+// Run executes one complete run and returns the process exit code: 0 when
+// it worked, 130 when it was interrupted, and 1 with the reason as the last
+// line of the log otherwise. What went wrong is an error from execute, and
+// only here, for the command line, does it become a number and a line.
 func (e *Engine) Run(ctx context.Context, opts Options) int {
+	err := e.execute(ctx, opts)
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, ErrCancelled):
+		return 130
+	}
+	e.Log.Error("%s", err)
+	return 1
+}
+
+// execute is one complete run, and says what went wrong as an error, kept
+// as the kind it is, so the app and the command line hear the same thing
+// and the app is not left reading the last line of a log.
+func (e *Engine) execute(ctx context.Context, opts Options) error {
 	log := e.Log
 	e.Prefill = opts.Prefill
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
 	if !exists(opts.Source) {
-		log.Error("source not found: %s", opts.Source)
-		return 1
+		return fmt.Errorf("source not found: %s", opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
-		log.Error("--planner must be local or api")
-		return 1
+		return errors.New("the planner must be local or api")
 	}
 	// A shortest longer than the longest leaves nothing a clip could be, and
 	// the model would be asked for clips between thirty and twenty seconds.
 	if opts.Max > 0 && opts.Min > opts.Max {
-		log.Error("the shortest clip cannot be longer than the longest: %s over %s",
+		return fmt.Errorf("the shortest clip cannot be longer than the longest: %s over %s",
 			trimFloat(opts.Min), trimFloat(opts.Max))
-		return 1
 	}
 	// No count is the count the window suggests, see SuggestedCount.
 	if opts.Count < 0 {
-		log.Error("a search has to look for at least one clip")
-		return 1
+		return errors.New("a search has to look for at least one clip")
 	}
 	for _, dim := range []struct {
 		name  string
 		value int
 	}{{"width", opts.Width}, {"height", opts.Height}} {
 		if dim.value < 16 || dim.value > 8192 || dim.value%2 != 0 {
-			log.Error("--%s must be an even number between 16 and 8192", dim.name)
-			return 1
+			return fmt.Errorf("the %s must be an even number between 16 and 8192", dim.name)
 		}
 	}
 
@@ -176,8 +189,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 	captionDir := filepath.Join(work, "captions")
 	if err := os.MkdirAll(work, 0o755); err != nil {
-		log.Error("cannot create %s: %s", work, err)
-		return 1
+		return fmt.Errorf("cannot create %s: %w", work, err)
 	}
 
 	e.SkipCaptions = opts.NoCaptions
@@ -193,8 +205,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		if ctx.Err() != nil {
 			return e.fail(ctx, ctx.Err())
 		}
-		log.Error("cannot read %s: %s", opts.Source, err)
-		return 1
+		return fmt.Errorf("cannot read %s: %w", opts.Source, err)
 	}
 
 	rs := RenderSettings{OutW: opts.Width, OutH: opts.Height, CRF: opts.CRF,
@@ -219,30 +230,26 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		startAt, endAt := 0.0, source.Duration
 		if opts.From != "" {
 			if startAt, err = ParseTime(opts.From); err != nil {
-				log.Error("%s", err)
-				return 1
+				return err
 			}
 		}
 		if opts.To != "" {
 			if endAt, err = ParseTime(opts.To); err != nil {
-				log.Error("%s", err)
-				return 1
+				return err
 			}
 		}
 		if source.Duration > 0 {
 			endAt = math.Min(endAt, source.Duration)
 		}
 		if endAt <= startAt {
-			log.Error("--to must be later than --from, and --from inside the video")
-			return 1
+			return errors.New("the end of the window must be later than its start, and its start inside the video")
 		}
 		window = &Window{startAt, endAt}
 		span = *window
 		log.Info("window %s to %s", HMS(startAt), HMS(endAt))
 	}
 	if span.End <= span.Start {
-		log.Error("%s reports no duration, so there is no audio to work with", opts.Source)
-		return 1
+		return fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
 	}
 	// How many clips to look for and how long to think follow the window,
 	// unless they were given. See suggest.go.
@@ -309,13 +316,13 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			planPath = existing[0]
 			log.Info("using the existing plan %s", filepath.Base(planPath))
 		} else if len(existing) > 1 {
-			log.Error("no %s, but several plans exist in %s:", planName, logsDir)
-			for _, candidate := range existing {
-				log.Error("    %s", filepath.Base(candidate))
+			names := make([]string, len(existing))
+			for i, candidate := range existing {
+				names[i] = filepath.Base(candidate)
 			}
-			log.Error("choose one with --clips, or repeat the --from and --to it was " +
-				"made with. Add --replan to make a new one.")
-			return 1
+			return fmt.Errorf("no %s, but several plans exist in %s: %s. Choose one with --clips, "+
+				"or repeat the --from and --to it was made with. Add --replan to make a new one",
+				planName, logsDir, strings.Join(names, ", "))
 		}
 	}
 
@@ -329,16 +336,14 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		if !opts.TranscribeOnly && opts.Planner == "local" {
 			local, err = resolveLocal(opts)
 			if err != nil {
-				log.Error("%s", err)
-				return 1
+				return err
 			}
 		}
 		if !opts.TranscribeOnly && opts.Planner == "api" {
 			if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
 				saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
 				if len(saved) == 0 || opts.Replan {
-					log.Error("%s", err)
-					return 1
+					return err
 				}
 				log.Warn("no API key found. Planning only works if a saved reply matches.")
 			}
@@ -347,10 +352,9 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		// window, or the model is asked for more than is there. This is
 		// the same sum the app holds its settings to, see Holds.
 		if !opts.TranscribeOnly && !Holds(span, opts.Count, opts.Min) {
-			log.Error("%d clips of at least %ss need %s, and the window is %s. Ask for fewer "+
-				"clips, shorter ones, or a longer window.", opts.Count, trimFloat(opts.Min),
+			return fmt.Errorf("%d clips of at least %ss need %s, and the window is %s. Ask for fewer "+
+				"clips, shorter ones, or a longer window", opts.Count, trimFloat(opts.Min),
 				HMS(float64(opts.Count)*opts.Min), HMS(span.End-span.Start))
-			return 1
 		}
 		modelDir := opts.ASRModel
 		if modelDir == "" {
@@ -362,24 +366,21 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			if ctx.Err() != nil {
 				return e.fail(ctx, err)
 			}
-			log.Error("transcription failed: %s", err)
-			return 1
+			return fmt.Errorf("transcription failed: %w", err)
 		}
 		if opts.TranscribeOnly {
 			name := strings.TrimSuffix(TranscriptName(window), ".json") + ".srt"
 			readable := filepath.Join(logsDir, name)
 			if err := WriteTranscriptSRT(transcript, readable); err != nil {
-				log.Error("cannot write %s: %s", readable, err)
-				return 1
+				return fmt.Errorf("cannot write %s: %w", readable, err)
 			}
 			log.OK("transcript written to %s", readable)
-			return 0
+			return nil
 		}
 		plannedNow = true
 		lines := BuildLines(transcript.Words, transcript.Levels(), opts.MaxPause)
 		if len(lines) == 0 {
-			log.Error("no speech was found in the audio")
-			return 1
+			return errors.New("no speech was found in the audio")
 		}
 		e.SummariseLines(transcript, lines, span)
 		plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
@@ -402,8 +403,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 
 	if !exists(planPath) {
-		log.Error("clip plan not found: %s", planPath)
-		return 1
+		return fmt.Errorf("clip plan not found: %s", planPath)
 	}
 
 	plan, clips, err := LoadClips(planPath)
@@ -440,28 +440,26 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		}
 	}
 	if err != nil {
-		log.Error("clip plan is invalid: %s", err)
-		return 1
+		return fmt.Errorf("clip plan is invalid: %w", err)
 	}
 	if len(clips) == 0 && plannedNow && len(opts.Taken) > 0 && opts.PlanOnly {
 		// A window searched again that held nothing new, see BuildPlan.
-		return 0
+		return nil
 	}
 	if len(clips) == 0 {
-		log.Error("clip plan contains no clips")
-		return 1
+		return errors.New("clip plan contains no clips")
 	}
 
 	if opts.PlanOnly {
 		log.Info("plan only, nothing rendered. Edit %s and run again.", planPath)
-		return 0
+		return nil
 	}
 	// An experiment is there to be compared, not published. Rendering it
 	// would put its shorts beside the episode's own.
 	if experiment {
 		log.Info("an experiment with the %s recipe, nothing rendered. The plan is %s.",
 			opts.Recipe, planPath)
-		return 0
+		return nil
 	}
 
 	if len(opts.Clip) == 0 {
@@ -474,8 +472,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			}
 		}
 		if len(kept) == 0 {
-			log.Error("every clip in the plan is marked rejected")
-			return 1
+			return errors.New("every clip in the plan is marked rejected")
 		}
 		clips = kept
 	} else {
@@ -495,8 +492,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				names = append(names, name)
 			}
 			sort.Strings(names)
-			log.Error("no clip matched %s", pyListRepr(names))
-			return 1
+			return fmt.Errorf("no clip matched %s", pyListRepr(names))
 		}
 		clips = picked
 	}
@@ -513,8 +509,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	}
 	if opts.HighlightColour != "" {
 		if highlightColour(opts.HighlightColour, "") == "" {
-			log.Error("--highlight-colour must look like #942192")
-			return 1
+			return errors.New("the highlight colour must look like #942192")
 		}
 		// A plan given a highlight colour of its own, in the captions
 		// column of the app, keeps it. This is the colour for the rest.
@@ -539,22 +534,30 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			fixed(factor, 2), direction)
 	}
 
+	// Every clip that cannot be made is said on its own line as it is
+	// found, and the run ends with how many and the first reason.
 	failures := 0
+	var first error
+	failed := func(err error) {
+		log.Warn("%s", err)
+		if first == nil {
+			first = err
+		}
+		failures++
+	}
 	for _, clip := range clips {
 		for _, seg := range clip.Segments {
 			if seg.End <= seg.Start {
-				log.Error("%s: segment end is not after start", clip.Basename())
-				failures++
+				failed(fmt.Errorf("%s: segment end is not after start", clip.Basename()))
 			}
 		}
 		last := clip.Segments[len(clip.Segments)-1]
 		if source.Duration != 0 && last.End > source.Duration+0.5 {
-			log.Error("%s: segment runs past the end of the source", clip.Basename())
-			failures++
+			failed(fmt.Errorf("%s: segment runs past the end of the source", clip.Basename()))
 		}
 	}
 	if failures > 0 {
-		return 1
+		return failedClips(failures, len(clips), first)
 	}
 
 	// The captions are made from the words the episode says, the same words
@@ -582,8 +585,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 			if ctx.Err() != nil {
 				return e.fail(ctx, ctx.Err())
 			}
-			log.Error("%s failed: %s", clip.Basename(), err)
-			failures++
+			failed(fmt.Errorf("%s failed: %w", clip.Basename(), err))
 			continue
 		}
 		// The pictures belong to the short, so they are taken from it and
@@ -593,8 +595,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 				if ctx.Err() != nil {
 					return e.fail(ctx, ctx.Err())
 				}
-				log.Error("%s: %s", clip.Basename(), err)
-				failures++
+				failed(fmt.Errorf("%s: %w", clip.Basename(), err))
 				continue
 			}
 			if n := len(clip.Thumbnails); n > 0 {
@@ -633,9 +634,19 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 		}
 	}
 	if failures > 0 {
-		return 1
+		return failedClips(failures, len(clips), first)
 	}
-	return 0
+	return nil
+}
+
+// failedClips is the end of a run in which some clips could not be made:
+// the one reason when there is one, and how many and the first when there
+// are more.
+func failedClips(failures, of int, first error) error {
+	if failures == 1 {
+		return first
+	}
+	return fmt.Errorf("%d of %d clips failed, the first: %w", failures, of, first)
 }
 
 // resolveLocal finds the local model and server before anything slow starts.
@@ -735,27 +746,23 @@ func writeProof(path string, clips []Clip, cueMap map[string][]LaidCaption) erro
 const Interrupted = "interrupted. Anything already finished is kept, whatever was in " +
 	"progress is discarded, and the clips a search had already found stay in its plan."
 
-func (e *Engine) fail(ctx context.Context, err error) int {
+// fail is a run that ended on err: ErrCancelled when it was interrupted,
+// said so in the log, and err itself otherwise.
+func (e *Engine) fail(ctx context.Context, err error) error {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		e.Log.ClearProgress()
 		e.Log.Warn(Interrupted)
-		return 130
+		return ErrCancelled
 	}
-	e.Log.Error("%s", err)
-	return 1
+	return err
 }
 
-func (e *Engine) planFailed(ctx context.Context, err error) int {
+// planFailed is a search that ended on err.
+func (e *Engine) planFailed(ctx context.Context, err error) error {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		return e.fail(ctx, err)
 	}
-	var re *RenderError
-	if errors.As(err, &re) {
-		e.Log.Error("planning failed: %s", err)
-		return 1
-	}
-	e.Log.Error("planning failed: %s", err)
-	return 1
+	return fmt.Errorf("planning failed: %w", err)
 }
 
 // folder is what an experiment's plan folder is named after: the name a

@@ -205,7 +205,14 @@ facade the app goes around, and three files too big to hold in one's head.
     `planFailed` has two identical branches (`run.go:767-773`). Fix: `Run`
     returns an error and the command line turns it into an exit code. Split
     `Run` into steps `Project` calls directly instead of filling `Options`
-    with strings. **Open.**
+    with strings. **Half fixed** in #59: the run
+    returns an error, kept as the kind it is with `%w`, and only `Run`,
+    for the command line, turns it into an exit code and a line. `Project`
+    and the recipe comparison take the error rather than hooking the last
+    error line, and the hook is gone. The messages no longer name flags,
+    `planFailed` has one branch, and a speech model that will not load
+    keeps its error. **Open:** `Run` split into steps `Project` calls
+    directly.
 19. **`Project` covers part of what the app needs.** The app calls 92 engine
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
