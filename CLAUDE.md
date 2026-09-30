@@ -357,7 +357,8 @@ messages, pull request text, code comments and chat replies.
   its own transcript, its own file, its own job and its own card, and each
   needed special cases wherever clips, transcripts and jobs were handled.
 - **One engine, two front ends.** The app drives the engine through
-  `engine.Project`, which calls the same `Run` as the command line. Never
+  `engine.Project`, which takes the same steps as `Run` on the command
+  line, in `engine/run.go`. Never
   duplicate engine logic in the app. Keep every command-line flag working.
 - **Plain files, no database.** Settings and the episode list in the user's
   config folder, everything about an episode in `<episode>.framefairy/`.
