@@ -14,7 +14,7 @@
     selected,
     hovered = "",
     onhover,
-    removed = "",
+    removed = [],
     coming = 0,
     at = Infinity,
     waiting = true,
@@ -75,15 +75,15 @@
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
     stopped?: { what: string; left: string; full: string } | null;
-    // The clip just taken out. It keeps its place in the list for a moment,
-    // showing what happened to it and offering it back, so the rows do not
-    // jump out from under the pointer.
-    removed?: string;
+    // The clips just taken out. Each keeps its place in the list for a
+    // moment, showing what happened to it and offering it back, so the rows
+    // do not jump out from under the pointer.
+    removed?: string[];
     onselect: (key: string) => void;
     // Takes a clip out of the list. It stays in the plan, so it can come
     // back.
     onremove?: (clip: ClipEntry) => void;
-    onputback?: () => void;
+    onputback?: (key: string) => void;
   } = $props();
 
   // A search writes each clip the moment it is found, so the list fills in
@@ -258,12 +258,12 @@
           <span class="title">{a.title || a.what}</span>
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
-      {:else if clip && clip.key === removed}
+      {:else if clip && removed.includes(clip.key)}
         <div class="gone">
           <Icon name="trash" />
           <span class="what">Removed</span>
           <span class="grow"></span>
-          <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
+          <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
         </div>
       {:else if clip}
         <button

@@ -661,8 +661,11 @@ place.
       once, and its row stays in place for ten seconds, in red with a trash
       can, saying **Removed** and offering **Put it back**. Nothing above or
       below it moves while it is there, and when it goes the list closes
-      over it. The clip stays in the plan with everything done to it, and a
-      render of the whole plan leaves it out.
+      over it. Every clip removed has its own row and its own ten seconds:
+      removing another, or putting one back, leaves the others as they
+      are. There was one for the whole list, and a second clip removed took
+      the first one's way back with it. The clip stays in the plan with
+      everything done to it, and a render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part

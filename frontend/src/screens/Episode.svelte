@@ -572,7 +572,7 @@
   // A removed clip stays in the plan, it only leaves the list.
   // The clip just removed keeps its place in the list for a moment, so the
   // rows do not jump and there is somewhere to put it back from.
-  const shown = $derived(clips.filter((c) => !c.rejected || c.key === removed?.key));
+  const shown = $derived(clips.filter((c) => !c.rejected || c.key in removed));
   // The rows the list holds, counted from the clips it shows. A search
   // waiting for the transcript opens as many more as it will look for, the
   // same as one that runs. It used to open that many in all, so a list that
@@ -725,7 +725,7 @@
   // after its card did.
   const marks = $derived.by(() => {
     const written = shown
-      .filter((c) => c.key !== removed?.key)
+      .filter((c) => !(c.key in removed))
       .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered }));
     const here = new Set(written.map((m) => m.key));
     const coming = onTheWay
@@ -920,7 +920,7 @@
 
   async function load() {
     try {
-      removed = null;
+      forgetAll();
       const ticket = statusRead.send();
       const now = await api.episode(path);
       if (statusRead.keep(ticket)) status = now;
@@ -983,15 +983,32 @@
   }
 
   // Removing a clip is one click, so putting it back is one click too, for
-  // as long as the list is on screen.
-  let removed = $state<ClipEntry | null>(null);
-  // How long the row stays behind before the list closes over it.
+  // as long as the list is on screen. Every clip removed keeps its own row
+  // and its own time, and removing another leaves them alone: there was one
+  // for the whole list, and the second clip removed took the first one's
+  // way back with it.
+  let removed = $state<Record<string, ClipEntry>>({});
+  // How long a row stays behind before the list closes over it.
   const secondThoughts = 10000;
-  let forgetting = 0;
+  const forgetting = new Map<string, ReturnType<typeof setTimeout>>();
 
-  function forgetSoon() {
-    clearTimeout(forgetting);
-    forgetting = setTimeout(() => (removed = null), secondThoughts);
+  function forget(key: string) {
+    clearTimeout(forgetting.get(key));
+    forgetting.delete(key);
+    if (!(key in removed)) return;
+    const { [key]: _, ...rest } = removed;
+    removed = rest;
+  }
+
+  function forgetSoon(key: string) {
+    clearTimeout(forgetting.get(key));
+    forgetting.set(key, setTimeout(() => forget(key), secondThoughts));
+  }
+
+  function forgetAll() {
+    for (const timer of forgetting.values()) clearTimeout(timer);
+    forgetting.clear();
+    removed = {};
   }
 
   async function removeClip(clip: ClipEntry) {
@@ -1000,22 +1017,22 @@
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
       if (selected === updated.key) selected = "";
-      removed = updated;
-      forgetSoon();
+      removed = { ...removed, [updated.key]: updated };
+      forgetSoon(updated.key);
     } catch (err) {
       problem = errorText(err);
     }
   }
 
-  async function putClipBack() {
-    const clip = removed;
+  async function putClipBack(key: string) {
+    const clip = removed[key];
     if (!clip) return;
-    clearTimeout(forgetting);
+    clearTimeout(forgetting.get(key));
     problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
       putClip(updated);
-      removed = null;
+      forget(key);
       select(updated.key);
     } catch (err) {
       problem = errorText(err);
@@ -1995,7 +2012,7 @@
     // for themselves.
     if (on?.getAttribute("role") === "slider") return;
     if (document.querySelector("dialog[open]")) return;
-    const list = shown.filter((c) => c.key !== removed?.key);
+    const list = shown.filter((c) => !(c.key in removed));
     if (!list.length) return;
     event.preventDefault();
     const here = list.findIndex((c) => c.key === selected);
@@ -2023,7 +2040,7 @@
   let landOn = $state<{ key: string; last: boolean } | null>(null);
 
   function walkClip(back: boolean) {
-    const list = shown.filter((c) => c.key !== removed?.key);
+    const list = shown.filter((c) => !(c.key in removed));
     const here = list.findIndex((c) => c.key === selected);
     if (here < 0) return;
     const next = list[here + (back ? -1 : 1)];
@@ -2100,7 +2117,7 @@
       captionY = settings.captionY || captionYDefault;
     });
     load();
-    return () => clearTimeout(forgetting);
+    return forgetAll;
   });
 </script>
 
@@ -2536,7 +2553,7 @@
               next={shownNext}
               {carry}
               {stopped}
-              removed={removed?.key ?? ""}
+              removed={Object.keys(removed)}
               onselect={select}
               onremove={removeClip}
               onputback={putClipBack}
