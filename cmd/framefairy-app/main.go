@@ -108,7 +108,7 @@ func main() {
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever
 	// ends the app without asking, a signal from the terminal among them.
 	leave := &leaving{
-		busy: svc.jobs.busy,
+		asked: func() bool { return svc.updates.relaunchingNow() },
 		say: func(what string) {
 			if app != nil {
 				app.Event.Emit("quit", what)

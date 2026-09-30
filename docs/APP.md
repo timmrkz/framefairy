@@ -1288,12 +1288,14 @@ it runs for ever. Quitting the app stops the model and every job before
 the app goes.
 
 **Quitting.** Cmd+Q dims the app at once and says what happens next.
-While work runs, a search, a render or a transcription, the first press
-only asks, Press ⌘Q again to quit, for three seconds, the way Chrome does,
-because quitting stops that work half way. A click or Escape takes the
-question away. The second press, or the first with nothing running, says
-Quitting while the app stops everything it started, and then it goes.
-Closing the app's window quits without asking. The stopping happens away
+The first press only asks, Press ⌘Q again to quit, for three seconds, the
+way Chrome does. It does so on every page and whether work runs or not:
+it asked only while work ran, so the workspace, where something nearly
+always runs, took two presses and the settings page quit on the first. A
+click or Escape takes the question away. The second press says Quitting
+while the app stops everything it started, and then it goes. Closing the
+app's window quits without asking, and so does **Relaunch** on the
+Updates page, which was asked for with a click. The stopping happens away
 from the main thread, see `cmd/framefairy-app/quit.go`: done on it, it
 froze the app under the spinning wheel for five seconds.
 
