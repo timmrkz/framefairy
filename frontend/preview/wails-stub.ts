@@ -851,6 +851,9 @@ export const Call = {
       case "RestartToUpdate":
         (window as any).__restarted = true;
         return Promise.resolve(null);
+      case "StayOpen":
+        (window as any).__stayed = ((window as any).__stayed ?? 0) + 1;
+        return Promise.resolve(null);
       case "OpenCommit":
         (window as any).__openedCommit = true;
         return Promise.resolve(null);

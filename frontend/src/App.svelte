@@ -150,6 +150,15 @@
   // quit.go for why the first press only asks while work runs.
   let leaving = $state<"ask" | "going" | null>(null);
   const quitKey = /Mac/.test(navigator.userAgent) ? "⌘Q" : "Ctrl+Q";
+  // The question taken away, with Escape or a click. The Go side hears it
+  // too, so the next Cmd+Q asks again: the question went from the screen
+  // and the press still counted, so the next one quit on what looked like
+  // the first press.
+  function stayOpen() {
+    if (leaving !== "ask") return;
+    leaving = null;
+    api.stayOpen().catch(() => {});
+  }
 
   // Removing an episode belongs to the episode in the list, not to the
   // workspace, which is about the clips.
@@ -288,7 +297,7 @@
     // press, quitAgain in quit.go.
     let asked: ReturnType<typeof setTimeout> | undefined;
     const dismiss = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && leaving === "ask") leaving = null;
+      if (e.key === "Escape") stayOpen();
     };
     window.addEventListener("keydown", dismiss);
     const noQuit = onQuit((what) => {
@@ -517,7 +526,7 @@
     <div
       class="leaving"
       role="status"
-      onpointerdown={() => leaving === "ask" && (leaving = null)}
+      onpointerdown={stayOpen}
     >
       <p>{leaving === "ask" ? `Press ${quitKey} again to quit` : "Quitting"}</p>
     </div>

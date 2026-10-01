@@ -498,6 +498,17 @@ func (c *updating) Restart() error {
 	return nil
 }
 
+// relaunchingNow says whether Relaunch is putting a new build in place, so
+// the app quits into it without asking first.
+func (c *updating) relaunchingNow() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.relaunching
+}
+
 // installOnQuit puts a build that is ready in place once the app has
 // quit, the way Chrome does, so the next start is the new build and
 // nothing opens by itself in between. Nothing is done when no build is
