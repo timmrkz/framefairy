@@ -153,7 +153,8 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 	}
 	c := made[0]
 	ctx := context.Background()
-	if _, err := d.svc.Reshape(ctx, ep, c.Plan, c.ID, engine.Gesture{Kind: "trim", Edge: "start", From: c.Start + 2}); err != nil {
+	if _, err := d.svc.Reshape(ctx, ep, c.Plan, c.ID, engine.Gesture{Kind: "trim", Edge: "start", From: c.Start + 2},
+		[2]float64{c.Start + 7, c.Start + 2}); err != nil {
 		t.Fatal(err)
 	}
 	if done := d.waitFor(d.in(ep, 150).ID); done.State != JobDone {
@@ -171,14 +172,24 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 	if math.Abs(start()-(c.Start+2)) > 0.5 {
 		t.Fatalf("trimmed to %.2f, from %.2f", start(), c.Start)
 	}
-	if done, err := d.svc.Undo(ep); err != nil || !done.Done {
+	// The edge took the playhead along, so taking the edge back takes the
+	// playhead back to where the hand found it.
+	done, err := d.svc.Undo(ep)
+	if err != nil || !done.Done {
 		t.Fatalf("undo %+v %v", done, err)
+	}
+	if done.Playhead == nil || *done.Playhead != c.Start+7 {
+		t.Errorf("undo put the playhead at %v, want %.2f", done.Playhead, c.Start+7)
 	}
 	if math.Abs(start()-c.Start) > 0.05 {
 		t.Errorf("undone to %.2f, want %.2f", start(), c.Start)
 	}
-	if done, err := d.svc.Redo(ep); err != nil || !done.Done {
+	done, err = d.svc.Redo(ep)
+	if err != nil || !done.Done {
 		t.Fatalf("redo %+v %v", done, err)
+	}
+	if done.Playhead == nil || *done.Playhead != c.Start+2 {
+		t.Errorf("redo put the playhead at %v, want %.2f", done.Playhead, c.Start+2)
 	}
 	if math.Abs(start()-(c.Start+2)) > 0.5 {
 		t.Errorf("redone to %.2f", start())

@@ -589,8 +589,10 @@ export const api = {
   // so what is drawn is what is saved. See engine/shape.go.
   shape: (path: string, plan: string, clip: string, g: Gesture) =>
     call<Shaped>("Shape", path, plan, clip, g),
-  reshape: (path: string, plan: string, clip: string, g: Gesture) =>
-    call<ClipEntry>("Reshape", path, plan, clip, g),
+  // The playhead where the hand took hold and where the gesture left it,
+  // so an undo takes the playhead back with the clip.
+  reshape: (path: string, plan: string, clip: string, g: Gesture, playhead: [number, number]) =>
+    call<ClipEntry>("Reshape", path, plan, clip, g, playhead),
   fonts: () => call<CaptionFont[]>("Fonts"),
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
@@ -719,6 +721,8 @@ export interface Undone {
   clip?: string;
   // Where it put the window on the range picker, when it moved it.
   window?: KeptWindow;
+  // Where it put the playhead, when the step was a gesture that moved it.
+  playhead?: number;
 }
 
 // Undo and Redo in the Edit menu. The menu has the keys, so this is how

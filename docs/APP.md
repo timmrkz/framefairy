@@ -1187,6 +1187,11 @@ editor.
   than change them. Moving the playhead, choosing a clip and zooming are
   not edits. The settings are not in it, apart from the caption height,
   which is moved in the workspace like everything else here.
+- **The playhead goes back with the edge it moved.** Dragging an edge or a
+  cut on the clip timeline takes the playhead along, so the hand moved
+  both, and taking the edge back puts the playhead back where it stood
+  when the hand took hold. Redo puts it where the drag left it. Moving the
+  playhead alone is still no step.
 - **A field keeps its own undo.** While a word in the caption box or a
   number beside the clip is being typed in, Cmd-Z takes back the typing,
   the way it does in any text field. Once it is saved, the key goes to the

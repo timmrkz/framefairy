@@ -254,8 +254,10 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 }
 
 // Reshape makes the change a gesture on the clip timeline showed while the
-// hand moved, and returns the clip as it is now.
-func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g engine.Gesture) (ClipEntry, error) {
+// hand moved, and returns the clip as it is now. Playhead is where the
+// playhead stood when the hand took hold and where the gesture left it, so
+// an undo puts both the clip and the playhead back.
+func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g engine.Gesture, playhead [2]float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
@@ -263,7 +265,7 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := s.edit(path, func() error {
+	if err := s.editMoving(path, &playhead, func() error {
 		return engine.Reshape(plan, clipID, g, t, s.store.Settings().options().KeepPause)
 	}); err != nil {
 		return ClipEntry{}, err

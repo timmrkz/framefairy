@@ -215,6 +215,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 4.8 | Playing ends a word correction: the word is saved as with Enter, the caret and any highlighted letters leave it, and the captions follow the picture again. Asked for by Tim | `[x]` |
 | 4.9 | Caption timing that follows the sound: a word ends where its sound does, when that is within 0.4 s of the speech model's end and before the next word, and the video preview lights a word until the next one starts, the way the render and the clip timeline do. Asked for by Tim | `[x]` |
 | 4.10 | The render proved against its own frames and sound: a caption or a highlight due on a frame is on that frame, not the one after, and the captions no longer run ahead of the words by a little more at every cut. Asked for by Tim | `[x]` |
+| 4.11 | Undo of a dragged edge puts the playhead back too, because the drag moved both. Asked for by Tim | `[x]` |
 
 ## Phase 5: packaging
 
