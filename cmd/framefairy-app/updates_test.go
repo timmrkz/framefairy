@@ -46,6 +46,8 @@ type channelServer struct {
 	// slowOnly holds back only the builds whose path has this in it.
 	slowOnly string
 	hits     atomic.Int32
+	// fetched counts the downloads of each build, by its path.
+	fetched map[string]int
 	// newest is a channel's commit still to be built, as the list says it.
 	newest map[string]string
 }
@@ -56,11 +58,14 @@ func newChannelServer(t *testing.T) *channelServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cs := &channelServer{key: key, zips: map[string][]byte{}}
+	cs := &channelServer{key: key, zips: map[string][]byte{}, fetched: map[string]int{}}
 	cs.srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cs.mu.Lock()
 		list, data, ok := cs.list, cs.zips[r.URL.Path], false
 		_, ok = cs.zips[r.URL.Path]
+		if ok {
+			cs.fetched[r.URL.Path]++
+		}
 		slow := cs.slow
 		if cs.slowOnly != "" && !strings.Contains(r.URL.Path, cs.slowOnly) {
 			slow = nil
@@ -437,5 +442,121 @@ func TestTheSettingsListTheChannelsWithoutDownloading(t *testing.T) {
 	}
 	if n := cs.hits.Load(); n != 1 {
 		t.Errorf("read the list %d times", n)
+	}
+}
+
+// fetches is how often a build was downloaded.
+func (cs *channelServer) fetches(path string) int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.fetched[path]
+}
+
+// A build downloaded once is kept: picking another channel and coming back
+// has it at once, with nothing downloaded again. Tim went from a channel
+// whose build was ready to another and back, nothing pushed in between,
+// and downloaded it a second time.
+func TestABuildDownloadedIsKeptAcrossPicks(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	ready := func(version string) {
+		t.Helper()
+		waitFor(t, c, "ready with "+version, func(s UpdateState) bool { return s.Phase == "ready" && s.Next == version })
+	}
+	_ = c.Follow("pr-20")
+	ready("0.3.0-pr20.9")
+	_ = c.Follow("main")
+	ready("0.3.0-main.5")
+	_ = c.Follow("pr-20")
+	ready("0.3.0-pr20.9")
+	_ = c.Follow("main")
+	ready("0.3.0-main.5")
+	if n := cs.fetches("/pr-20-0.3.0-pr20.9.zip"); n != 1 {
+		t.Errorf("pull request 20 downloaded %d times", n)
+	}
+	if n := cs.fetches("/main-0.3.0-main.5.zip"); n != 1 {
+		t.Errorf("main downloaded %d times", n)
+	}
+	if got, _ := os.ReadFile(filepath.Join(c.u.DownloadedPath(), "Contents/MacOS/framefairy-app")); string(got) != "main" {
+		t.Errorf("staged %q", got)
+	}
+}
+
+// A download let go of because another channel was picked goes on, and
+// coming back to its channel has it without downloading it again. Tim
+// looked at another channel while one downloaded, came back, and it
+// downloaded from the start.
+func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	release := make(chan struct{})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = release, "/main-"
+	cs.mu.Unlock()
+	let := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(let)
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	_ = c.Follow("main")
+	waitFor(t, c, "downloading main", func(s UpdateState) bool {
+		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
+	})
+	_ = c.Follow("pr-20")
+	waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	})
+	// Main's download was waiting on the server all along, and arrives.
+	let()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		kept, _ := filepath.Glob(filepath.Join(c.src.Cache, "*.zip"))
+		if len(kept) == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("main's download was not kept, the cache holds %v", kept)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	_ = c.Follow("main")
+	waitFor(t, c, "ready with main", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-main.5"
+	})
+	if n := cs.fetches("/main-0.3.0-main.5.zip"); n != 1 {
+		t.Errorf("main downloaded %d times", n)
+	}
+	if got, _ := os.ReadFile(filepath.Join(c.u.DownloadedPath(), "Contents/MacOS/framefairy-app")); string(got) != "main" {
+		t.Errorf("staged %q", got)
+	}
+}
+
+// Check reads the channel list at once, even while a download is waited
+// for, so a channel made a moment ago is on the list. It waited for the
+// check already running.
+func TestCheckReadsTheListAtOnce(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	release := make(chan struct{})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = release, "/main-"
+	cs.mu.Unlock()
+	t.Cleanup(func() { close(release) })
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	_ = c.Follow("main")
+	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-21", "0.3.0-pr21.1", "twenty-one"})
+	c.checkNow()
+	var ids []string
+	for _, ch := range c.State().Channels {
+		ids = append(ids, ch.ID)
+	}
+	if strings.Join(ids, " ") != "main pr-21" {
+		t.Errorf("the list after Check: %v", ids)
 	}
 }

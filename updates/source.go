@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/updater"
@@ -40,6 +41,11 @@ type Source struct {
 	// Retries is how long to wait before each new try when the channel
 	// list answers 404. Nil is listRetries.
 	Retries []time.Duration
+
+	// fetches are the builds on their way into the cache, by SHA-256, see
+	// fetch.go.
+	fetchMu sync.Mutex
+	fetches map[string]*fetching
 }
 
 // listRetries are the waits between tries while the channel list answers
@@ -163,10 +169,11 @@ func Release(b Build) (*updater.Release, error) {
 	}, nil
 }
 
-// Download implements updater.Provider. It refuses more bytes than the
-// list said there would be, so a server that never stops sending fills
-// nothing.
-func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer, onProgress func(written, total int64)) (err error) {
+// Download implements updater.Provider. A build kept in the cache is
+// handed over at once. Any other goes into the cache first, and from there
+// to the updater, so a download that is waited for no more still arrives,
+// see fetch.go.
+func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
 	where, _ := r.Metadata["url"].(string)
 	if where == "" {
 		return errors.New("the build has no address")
@@ -181,51 +188,14 @@ func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer
 	if r.Verification != nil {
 		sum = hex.EncodeToString(r.Verification.Digest)
 	}
-	if found, err := s.fromCache(sum, r.Artifact.Size, dst, report); found {
-		return err
-	}
-	k := s.keep(sum)
-	defer func() { k.done(err == nil) }()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, where, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := s.client().Do(req)
-	if err != nil {
-		return fmt.Errorf("the build could not be downloaded: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("the build answered %s", resp.Status)
-	}
 	total := r.Artifact.Size
-	body := io.LimitReader(resp.Body, total+1)
-	buf := make([]byte, 256<<10)
-	var written int64
-	for {
-		n, rerr := body.Read(buf)
-		if n > 0 {
-			if written+int64(n) > total {
-				return errors.New("the build is larger than the channel list says")
-			}
-			if _, err := dst.Write(buf[:n]); err != nil {
-				return err
-			}
-			k.write(buf[:n])
-			written += int64(n)
-			report(written, total)
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return fmt.Errorf("the download stopped: %w", rerr)
-		}
+	if found, err := s.fromCache(sum, total, dst, report); found {
+		return err
 	}
-	if written != total {
-		return fmt.Errorf("the download stopped after %d of %d bytes", written, total)
+	if f := s.fetchOf(sum, where, total); f != nil {
+		return s.await(ctx, f, sum, dst, report)
 	}
-	return nil
+	return s.stream(ctx, where, total, writerSink{dst}, func(written int64) { report(written, total) })
 }
 
 func (s *Source) client() *http.Client {

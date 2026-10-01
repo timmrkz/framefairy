@@ -211,8 +211,12 @@ facade the app goes around, and three files too big to hold in one's head.
     and the recipe comparison take the error rather than hooking the last
     error line, and the hook is gone. The messages no longer name flags,
     `planFailed` has one branch, and a speech model that will not load
-    keeps its error. **Open:** `Run` split into steps `Project` calls
-    directly.
+    keeps its error. **Fixed** in #67: the run is split into steps,
+    prepare, hear, plan, read the plan back and render, held on one
+    `runner`. `Run` takes them in order for the command line, and
+    `Project` calls the ones it needs with the window as numbers, so no
+    window goes from a number to text and back on its way into the
+    engine.
 19. **`Project` covers part of what the app needs.** The app calls 92 engine
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
@@ -223,7 +227,12 @@ facade the app goes around, and three files too big to hold in one's head.
     `Plan.Raw` and `PlanEntry` (`select.go:247`), with key names written out
     as strings in nine files. The ordered object is needed to keep unknown
     fields, the rest goes against "one primitive per thing". Fix: the key
-    names as constants and one way to read and write a clip. **Open.**
+    names as constants and one way to read and write a clip. **Half fixed**
+    in #68: the names of a plan's parts are constants in
+    `engine/plankeys.go`, and every read and edit of the ordered object,
+    `LoadClips` included, reaches the plan by them. The tags of the
+    structs that write a new plan are held to the same names by a test.
+    **Open:** one way to read and write a clip.
 21. **The engine is one package of 57 files and 21,000 lines**, with 248
     exported names, 53 of the functions used nowhere outside it. Core types
     sit in unrelated files (`Engine` in `ffmpeg.go`, `Transcript` in
@@ -258,7 +267,12 @@ facade the app goes around, and three files too big to hold in one's head.
 24. **`cmd/framefairy-app/main.go` is 1,600 lines with 70 bindings.** The
     tests are already split by the right seams, the code is not. Fix: media,
     views, words, edits, chosen and training in files of their own,
-    `CheckSetup` into `setup.go`. **Open.**
+    `CheckSetup` into `setup.go`. **Fixed** in #66: `main.go` keeps the
+    start of the app, the media handler and the `FrameFairy` type, 373
+    lines, and the bindings moved unchanged to `library.go`, `media.go`,
+    `views.go`, `words.go`, `edits.go`, `chosen.go` and `training.go`, with
+    `CheckSetup` in `setup.go`, the settings bindings in `settings.go` and
+    the job bindings in `jobs.go`.
 25. **The TypeScript types are written by hand.** The binding test checks
     names and argument counts, not fields. Constants copied from the engine,
     the caption heights and `snapCaptionY`, the caption defaults, `Reach`

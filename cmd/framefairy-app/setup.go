@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -408,4 +410,130 @@ func (s *FrameFairy) RemoveSpeechModel(name string) error {
 		return fmt.Errorf("an episode is being transcribed. Remove %s once that is done", model.Title)
 	}
 	return engine.RemoveSpeechModel(model, engine.ModelsDir())
+}
+
+// Check is one line of the setup check.
+type Check struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"`
+}
+
+// CheckSetup looks for the tools and models the engine needs.
+func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
+	set := s.store.Settings()
+	opts := set.options()
+	var out []Check
+
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	e.UseTools(opts.FFmpeg, "")
+	ff := Check{Name: "ffmpeg"}
+	if err := e.Preflight(ctx); err != nil {
+		ff.Detail = err.Error()
+	} else {
+		ff.OK = true
+		ff.Detail = lookPath(e.FFmpeg)
+	}
+	out = append(out, ff)
+
+	// Which of the system's own video decoders framing can use. It is not
+	// a requirement, the processor decodes where there is none, so it is
+	// never a problem. What a file really went through is in the log of
+	// its search.
+	decoding := Check{Name: "Video decoding", OK: true, Detail: "on the processor"}
+	if ff.OK {
+		var names []string
+		for _, name := range e.SystemDecoders(ctx) {
+			names = append(names, engine.DecoderName(name))
+		}
+		if len(names) > 0 {
+			decoding.Detail = strings.Join(names, ", ") + ", falling back to the processor for a " +
+				"file it does not take. The log of a search says which one it used"
+		}
+	}
+	out = append(out, decoding)
+
+	// Nothing to install: the faces are inside the program and are written
+	// out next to the captions before every render.
+	fonts := Check{Name: "Caption fonts", OK: true}
+	var names []string
+	for _, font := range engine.CaptionFonts() {
+		names = append(names, font.Name)
+	}
+	fonts.Detail = "built in: " + strings.Join(names, ", ")
+	out = append(out, fonts)
+
+	asrDir := opts.ASRModel
+	if asrDir == "" {
+		asrDir = engine.DefaultModelDir()
+	}
+	speech := Check{Name: "Speech model", Detail: asrDir}
+	speech.OK = engine.SpeechModelReady(asrDir)
+	if !speech.OK {
+		speech.Detail = "not found in " + asrDir + "\n" + engine.ModelHelp(asrDir)
+	}
+	out = append(out, speech)
+
+	if opts.Planner == "api" {
+		// The key of whichever company the model in the settings belongs to.
+		p := engine.ProviderFor(opts.Model)
+		key := Check{Name: p.Title + " API key"}
+		if err := engine.CheckAPIKey(p); err != nil {
+			key.Detail = err.Error()
+		} else {
+			key.OK, key.Detail = true, "found in the "+engine.KeySource(p)
+		}
+		return append(out, key)
+	}
+
+	server := opts.LLMServer
+	if server == "" {
+		server = engine.LlamaServerPath()
+	}
+	ls := Check{Name: "llama-server"}
+	if found := lookPath(server); found != "" {
+		ls.OK, ls.Detail = true, found
+	} else {
+		ls.Detail = server + " was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path."
+	}
+	out = append(out, ls)
+
+	lm := Check{Name: "Language model"}
+	model := opts.LLMModel
+	// Said in the app's own words: the engine's are for the command line,
+	// and a flag to pass means nothing to somebody using the app.
+	if model == "" {
+		switch found := engine.LocalModelFiles(engine.ModelsDir()); len(found) {
+		case 0:
+			lm.Detail = "None is installed. Install one under Finding clips, or use the Claude API."
+		case 1:
+			model = found[0]
+		default:
+			lm.Detail = fmt.Sprintf("%d are installed and none is in use. Choose the one to find "+
+				"clips with under Finding clips.", len(found))
+		}
+	}
+	if model != "" {
+		lm.OK = fileExists(model)
+		lm.Detail = model
+		// Chosen and not fetched yet, which is a step still to take rather
+		// than a file gone missing.
+		if known, ok := engine.LanguageModelByName(filepath.Base(model)); !lm.OK && ok {
+			lm.Detail = known.Title + " is not downloaded yet."
+		}
+	}
+	return append(out, lm)
+}
+
+func lookPath(name string) string {
+	found, err := exec.LookPath(name)
+	if err != nil {
+		return ""
+	}
+	return found
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }

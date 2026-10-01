@@ -59,15 +59,15 @@ func (p *Project) LastError() string {
 	return p.last
 }
 
-// run is one step, and what went wrong is the error the engine returned,
-// not the last line it logged. That line is still logged, for the app's
-// activity and anything else that reads the log. The error keeps its kind
-// under ErrStepFailed.
-func (p *Project) run(ctx context.Context, opts Options) error {
+// step runs one step of the engine, and what went wrong is the error the
+// engine returned, not the last line it logged. That line is still logged,
+// for the app's activity and anything else that reads the log. The error
+// keeps its kind under ErrStepFailed.
+func (p *Project) step(ctx context.Context, do func() error) error {
 	p.mu.Lock()
 	p.last = ""
 	p.mu.Unlock()
-	err := p.engine.execute(ctx, opts)
+	err := do()
 	switch {
 	case err == nil:
 		return nil
@@ -94,10 +94,26 @@ func (p *Project) Hear(ctx context.Context, span Window) error {
 	opts := p.Base
 	opts.TranscribeOnly = true
 	opts.From, opts.To = "", ""
+	var ask *Window
 	if span.End > 0 {
-		opts.From, opts.To = fixed(span.Start, 3), fixed(span.End, 3)
+		ask = inMilliseconds(&span)
 	}
-	return p.run(ctx, opts)
+	return p.step(ctx, func() error {
+		r, err := p.engine.prepare(ctx, opts, ask)
+		if err != nil {
+			return err
+		}
+		return r.hear(ctx)
+	})
+}
+
+// inMilliseconds is a window with its edges on the millisecond, the way a
+// plan and a transcript name a window.
+func inMilliseconds(w *Window) *Window {
+	if w == nil {
+		return nil
+	}
+	return &Window{toMillisecond(w.Start), toMillisecond(w.End)}
 }
 
 // PlanRequest is what the app asks the planner for.
@@ -142,16 +158,22 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	window = inMilliseconds(window)
 	name := PassName(window, req.Pass)
-	if window != nil {
-		opts.From, opts.To = fixed(window.Start, 3), fixed(window.End, 3)
-	}
 	opts.Pass = max(req.Pass, 1)
 	// Every search is told what the searches before it proposed, so a
 	// window searched again brings other moments rather than the same
 	// ones, see Taken.
 	opts.Taken = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name))
-	if err := p.run(ctx, opts); err != nil {
+	err = p.step(ctx, func() error {
+		r, err := p.engine.prepare(ctx, opts, window)
+		if err != nil {
+			return err
+		}
+		_, _, err = r.planned(ctx)
+		return err
+	})
+	if err != nil {
 		return "", err
 	}
 	return PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name), nil
@@ -330,5 +352,15 @@ func (p *Project) Render(ctx context.Context, req RenderRequest) error {
 	opts.Clip = append([]string(nil), req.Clips...)
 	opts.Preview = req.Preview
 	opts.From, opts.To = "", ""
-	return p.run(ctx, opts)
+	return p.step(ctx, func() error {
+		r, err := p.engine.prepare(ctx, opts, nil)
+		if err != nil {
+			return err
+		}
+		plan, clips, err := r.clips(false)
+		if err != nil || clips == nil {
+			return err
+		}
+		return r.finish(ctx, plan, clips)
+	})
 }

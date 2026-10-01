@@ -212,7 +212,7 @@ type Plan struct {
 
 // CaptionStyle is the plan's caption_style object, or nil.
 func (p Plan) CaptionStyle() map[string]any {
-	style, _ := p.Raw["caption_style"].(map[string]any)
+	style, _ := p.Raw[keyCaptionStyle].(map[string]any)
 	out := map[string]any{}
 	for k, v := range style {
 		out[k] = v
@@ -222,7 +222,7 @@ func (p Plan) CaptionStyle() map[string]any {
 
 // PlannedWith is the settings stamp a plan was made under, or nil.
 func (p Plan) PlannedWith() map[string]any {
-	made, _ := p.Raw["planned_with"].(map[string]any)
+	made, _ := p.Raw[keyPlannedWith].(map[string]any)
 	return made
 }
 
@@ -252,7 +252,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 	if !ok {
 		return Plan{}, nil, renderErr("clip plan must be a JSON object")
 	}
-	entriesAny, present := raw["clips"]
+	entriesAny, present := raw[keyClips]
 	if !present {
 		entriesAny = []any{}
 	}
@@ -272,7 +272,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 		if !ok {
 			return Plan{}, nil, renderErr("clip %d is not an object", index)
 		}
-		rawSegmentsAny, present := entry["segments"]
+		rawSegmentsAny, present := entry[keySegments]
 		if !present {
 			rawSegmentsAny = []any{}
 		}
@@ -291,7 +291,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 				return Plan{}, nil, renderErr("clip %d: segment is not an object", index)
 			}
 			var cropX *int
-			if value, present := seg["crop_x"]; present && value != nil {
+			if value, present := seg[keyCropX]; present && value != nil {
 				text, isText := value.(string)
 				lowered := strings.ToLower(text)
 				if !(isText && (lowered == "center" || lowered == "centre" || lowered == "auto")) {
@@ -305,8 +305,8 @@ func LoadClips(path string) (Plan, []Clip, error) {
 					cropX = &n
 				}
 			}
-			startAny, okS := seg["start"]
-			endAny, okE := seg["end"]
+			startAny, okS := seg[keyStart]
+			endAny, okE := seg[keyEnd]
 			if !okS {
 				return Plan{}, nil, renderErr(`clip %d: a segment has no "start"`, index)
 			}
@@ -335,7 +335,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 				return Plan{}, nil, renderErr("clip %d: a segment lies outside the episode, "+
 					"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
 			}
-			_, moved := seg["crop_x_auto"]
+			_, moved := seg[keyCropXAuto]
 			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved})
 		}
 		if len(segments) == 0 {
@@ -343,22 +343,22 @@ func LoadClips(path string) (Plan, []Clip, error) {
 		}
 
 		fallback := fmt.Sprintf("%02d", index)
-		idValue, present := entry["id"]
+		idValue, present := entry[keyID]
 		idText := fallback
 		if present {
 			idText = pyStr(idValue)
 		}
 		slugText := ""
-		if value, present := entry["slug"]; present {
+		if value, present := entry[keySlug]; present {
 			slugText = pyStr(value)
 		}
 		titleText := ""
-		if value, present := entry["title"]; present {
+		if value, present := entry[keyTitle]; present {
 			titleText = pyStr(value)
 		}
-		rejected, _ := entry["rejected"].(bool)
+		rejected, _ := entry[keyRejected].(bool)
 		var captionY *float64
-		if value, present := entry["caption_y"]; present {
+		if value, present := entry[keyCaptionY]; present {
 			if y, ok := toFloat(value); ok && isFinite(y) {
 				snapped := SnapCaptionY(y)
 				captionY = &snapped
@@ -367,8 +367,8 @@ func LoadClips(path string) (Plan, []Clip, error) {
 		clips = append(clips, Clip{
 			Rejected:     rejected,
 			CaptionY:     captionY,
-			CaptionTimes: readCaptionTimes(entry["caption_times"]),
-			Thumbnails:   readThumbnails(entry["thumbnails"], segments),
+			CaptionTimes: readCaptionTimes(entry[keyCaptionTimes]),
+			Thumbnails:   readThumbnails(entry[keyThumbnails], segments),
 			ID:           SanitiseName(idText, fallback),
 			Slug:         SanitiseName(slugText, ""),
 			Title:        Scrub(titleText, 200),
