@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -304,4 +305,36 @@ func (s Settings) targetFor(window float64) int {
 		return s.Target
 	}
 	return 0
+}
+
+// GetSettings returns the saved settings.
+func (s *FrameFairy) GetSettings() Settings { return s.store.Settings() }
+
+// SaveSettings takes what the interface changed in the settings, and only
+// that, as JSON keys and their values, and lays it over what is saved. It
+// took the whole object once, and whatever the Go side had changed since
+// the interface last read it was lost on the next save, unless it was
+// carved out by hand, the way Chosen was. Chosen is still never taken from
+// the interface: it is not a setting anybody edits, it is the record that
+// the one setup question was answered. A key the settings do not have is
+// refused, so a misspelt one is not quietly dropped.
+func (s *FrameFairy) SaveSettings(changed map[string]json.RawMessage) error {
+	delete(changed, "chosen")
+	patch, err := json.Marshal(changed)
+	if err != nil {
+		return err
+	}
+	var bad error
+	err = s.store.UpdateSettings(func(set *Settings) {
+		next := *set
+		dec := json.NewDecoder(bytes.NewReader(patch))
+		dec.DisallowUnknownFields()
+		if bad = dec.Decode(&next); bad == nil {
+			*set = next
+		}
+	})
+	if bad != nil {
+		return fmt.Errorf("the settings were not saved: %w", bad)
+	}
+	return err
 }
