@@ -628,12 +628,14 @@ with, offline, before every render.
   `make changed` runs 100 seeds of 400 steps, and `-seeds` and `-steps`
   run more. Before it was merged it ran 5,000 seeds and 500 seeds of
   2,000 steps.
-- **What it found**, each now a rule of the code above: a batch handed
-  over again after a restore sold keys a second time (the pool
-  generation), a letter given up while the database lost its answer left
-  us untold (we are told before the letter leaves the queue), and a
-  failed letter retried by a database's second run counted its try twice
-  (a transaction works everything out before it starts).
+- **What these tests found**, each now a rule of the code above. The
+  simulation: a batch handed over again after a restore sold keys a
+  second time (the pool generation), and a letter given up while the
+  database lost its answer left us untold (we are told before the letter
+  leaves the queue). The store that runs every transaction twice: a
+  failed letter counted its try twice and warned us twice (a transaction
+  works everything out before it starts). Both simulation bugs come back
+  as failing seeds when their fix is taken out.
 - The whole sale runs once against Paddle's sandbox before launch.
 
 ## Binding a key to a machine
