@@ -211,8 +211,12 @@ facade the app goes around, and three files too big to hold in one's head.
     and the recipe comparison take the error rather than hooking the last
     error line, and the hook is gone. The messages no longer name flags,
     `planFailed` has one branch, and a speech model that will not load
-    keeps its error. **Open:** `Run` split into steps `Project` calls
-    directly.
+    keeps its error. **Fixed** in #67: the run is split into steps,
+    prepare, hear, plan, read the plan back and render, held on one
+    `runner`. `Run` takes them in order for the command line, and
+    `Project` calls the ones it needs with the window as numbers, so no
+    window goes from a number to text and back on its way into the
+    engine.
 19. **`Project` covers part of what the app needs.** The app calls 92 engine
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
