@@ -41,7 +41,18 @@ type memoryDB struct {
 	notes   map[string]string
 }
 
+// clone copies all of it, for a backup.
 func (db memoryDB) clone() memoryDB {
+	c := db.begin()
+	c.record = slices.Clone(db.record)
+	return c
+}
+
+// begin copies what a transaction may change in place. The record is only
+// ever appended to, so a transaction shares it: what it appends lies past
+// the end the store knows until it commits, and a transaction that does
+// not commit leaves the store's end where it was.
+func (db memoryDB) begin() memoryDB {
 	c := memoryDB{
 		pool:    slices.Clone(db.pool),
 		byKey:   maps.Clone(db.byKey),
@@ -50,7 +61,7 @@ func (db memoryDB) clone() memoryDB {
 		held:    maps.Clone(db.held),
 		holder:  maps.Clone(db.holder),
 		revoked: maps.Clone(db.revoked),
-		record:  slices.Clone(db.record),
+		record:  db.record,
 		mail:    slices.Clone(db.mail),
 		mailID:  db.mailID,
 		notes:   maps.Clone(db.notes),
@@ -77,10 +88,10 @@ func (m *Memory) Update(ctx context.Context, fn func(Tx) error) error {
 		return err
 	}
 	if m.Twice {
-		throwaway := &memoryTx{db: m.db.clone()}
+		throwaway := &memoryTx{db: m.db.begin()}
 		_ = fn(throwaway)
 	}
-	tx := &memoryTx{db: m.db.clone()}
+	tx := &memoryTx{db: m.db.begin()}
 	if err := fn(tx); err != nil {
 		return err
 	}
@@ -95,7 +106,8 @@ func (m *Memory) View(ctx context.Context, fn func(Tx) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return fn(&memoryTx{db: m.db.clone(), readOnly: true})
+	// Nothing in a View writes, and everything it hands out is a copy.
+	return fn(&memoryTx{db: m.db, readOnly: true})
 }
 
 type memoryTx struct {

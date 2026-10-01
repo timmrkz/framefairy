@@ -31,15 +31,6 @@ type Mailer interface {
 	Us(ctx context.Context, subject, body string) error
 }
 
-// Orders is what the dispenser asks the shop: the address a sale's letters
-// go to, and the sales an address has bought. The dispenser keeps neither.
-type Orders interface {
-	// Email is the buyer's address of a Paddle sale.
-	Email(ctx context.Context, ref string) (string, error)
-	// Refs are the Paddle sales an address has bought.
-	Refs(ctx context.Context, email string) ([]string, error)
-}
-
 // How long a letter is tried before it is given up and we are told, and
 // how long a run that took a letter has before another run may take it.
 const (
@@ -115,7 +106,16 @@ func (e *Engine) deliver(ctx context.Context, id int64, to string) error {
 	after.Tries++
 	after.Due = now.Add(backoff(after.Tries))
 	givenUp := sendErr != nil && now.Sub(m.Since) >= GiveUpAfter
-	err = e.store.Update(ctx, func(tx Tx) error {
+	if givenUp {
+		// We are told before the letter leaves the queue, so a crash in
+		// between tells us twice rather than never. If telling us fails,
+		// the letter stays and is given up on the next run.
+		if err := e.mailer.Us(ctx, "A letter was given up",
+			fmt.Sprintf("The %s letter of %s %s failed for %s: %v", m.Kind, m.Source, m.Ref, now.Sub(m.Since).Round(time.Minute), sendErr)); err != nil {
+			return e.store.Update(ctx, func(tx Tx) error { return tx.UpdateMail(after) })
+		}
+	}
+	return e.store.Update(ctx, func(tx Tx) error {
 		if sendErr == nil || givenUp {
 			err := tx.RemoveMail(m.ID)
 			if errors.Is(err, ErrNotFound) {
@@ -125,14 +125,6 @@ func (e *Engine) deliver(ctx context.Context, id int64, to string) error {
 		}
 		return tx.UpdateMail(after)
 	})
-	if err != nil || !givenUp {
-		return err
-	}
-	// We are told last, and if that fails the letter is gone anyway: the
-	// keys are still on the thank-you and lost-key pages.
-	_ = e.mailer.Us(ctx, "A letter was given up",
-		fmt.Sprintf("The %s letter of %s %s failed for %s: %v", m.Kind, m.Source, m.Ref, now.Sub(m.Since).Round(time.Minute), sendErr))
-	return nil
 }
 
 var errTaken = errors.New("the letter is being sent by another run")
@@ -142,10 +134,11 @@ func (e *Engine) send(ctx context.Context, to string, m Mail, keys []licence.Key
 		if e.orders == nil {
 			return errors.New("no address, and no shop to ask for it")
 		}
-		var err error
-		if to, err = e.orders.Email(ctx, m.Ref); err != nil {
+		sale, err := e.orders.Sale(ctx, m.Ref)
+		if err != nil {
 			return fmt.Errorf("asking the shop for the address: %w", err)
 		}
+		to = sale.Email
 		if err := checkEmail(to); err != nil {
 			return fmt.Errorf("the shop's address for %s: %w", m.Ref, err)
 		}
@@ -234,10 +227,11 @@ const Warning = 0.2
 // once a day, every day until it is refilled. A sale and the daily run
 // call it.
 func (e *Engine) CheckPool(ctx context.Context) error {
-	left, batch, err := e.PoolLevel(ctx)
+	level, err := e.PoolLevel(ctx)
 	if err != nil {
 		return err
 	}
+	left, batch := level.Left, level.Batch
 	if float64(left) >= Warning*float64(batch) {
 		return nil
 	}
