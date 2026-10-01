@@ -395,6 +395,22 @@ place.
   on a word nobody is speaking, and on the word that is being spoken it
   would take away the colour the render really burns in. The picture goes
   on showing what the render will show while a word in it is being typed.
+  - **From the keyboard:** Shift and the arrows walk the playhead from
+    word to word, and the word at the playhead wears the same frame the
+    pointer puts on a word. Enter opens that word with the whole of it
+    selected, the way Enter renames what is chosen in the Finder, so
+    typing replaces it. Enter again saves it. The frame is the Mac's focus
+    ring: it shows where the keyboard is while the keyboard is used, and
+    goes with playing and with a press of the pointer. It is the same with
+    the highlight off, and that is what it is for there: with no pill
+    nothing else says which word is spoken, and Enter would open a word
+    nobody could see. A clip card takes no keyboard from a click, the way
+    a button on the Mac does not, so Enter after picking a clip opens a
+    word rather than pressing the card again.
+  - **A word saved wears no frame**, not even the one under the pointer,
+    until the pointer or the keyboard moves again. The frame left on a
+    word after Enter said it was still open, and the eye went back to
+    check.
   - The correction applies to every clip with that word, because it belongs
     to the episode and not to the clip. It is kept in
     `<episode>.framefairy/logs/corrections.json` and applied every time the

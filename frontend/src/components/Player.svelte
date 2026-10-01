@@ -253,6 +253,8 @@
   function play() {
     if (!video) return;
     endCorrection();
+    // Playing moves the playhead on, so the keyboard's word goes.
+    keyed = false;
     // The clip plays when the playhead stands in it, when it has just played
     // to its end, which is where the playhead is left, and when it loops.
     // Anywhere else the playhead was put there to look at that part of the
@@ -437,6 +439,21 @@
 
   const spoken = $derived(inClipTime(shown));
 
+  // The keyboard's word: the word at the playhead wears the frame while
+  // the keyboard moves the playhead, so it is the word Enter opens. It is
+  // the focus ring of the Mac, which shows where the keyboard is while the
+  // keyboard is used and goes the moment the pointer is: the frame comes
+  // with an arrow key, goes with playing and with a press of the pointer,
+  // and is the same with the highlight on or off. With it off nothing else
+  // in the picture says which word is spoken, and Enter would open a word
+  // nobody could see.
+  let keyed = $state(false);
+  // A word just saved with Enter, or let go of with Escape, wears no frame,
+  // not even the one under the pointer, until the pointer or the keyboard
+  // moves again. The frame that stayed after Enter said the word was still
+  // open, and the eye went back to it to check.
+  let settled = $state(false);
+
   // Words are corrected in the picture, where they are read. A correction
   // belongs to the episode, so it takes a clip to know which words these
   // are and somewhere to send it.
@@ -555,13 +572,43 @@
       // A caption word is one line and stays one line, so Enter is what
       // finishes it rather than what breaks it.
       event.preventDefault();
+      // Handled here, so the Enter that saves a word is not also the Enter
+      // that opens the word at the playhead again.
+      event.stopPropagation();
+      settled = true;
+      keyed = false;
       node.blur();
     } else if (event.key === "Escape") {
       event.preventDefault();
       if (fixing) node.textContent = fixing.piece;
       fixing = null;
+      settled = true;
+      keyed = false;
       node.blur();
     }
+  }
+
+  // Enter opens the word at the playhead for correcting, the way Enter
+  // renames the item chosen in the Finder: the whole of it is selected, so
+  // typing replaces it and the arrows move inside it. Shift and the arrows
+  // walk the playhead from word to word, so the two together correct a
+  // caption without the pointer. Between two words, which is where a
+  // pause leaves the playhead, it is the word just spoken.
+  function openSpoken(): boolean {
+    const words = [...(screen?.querySelectorAll<HTMLElement>(".word.correctable") ?? [])];
+    let pick: HTMLElement | null = null;
+    for (const node of words) {
+      if (Number(node.dataset.at) <= spoken + 1e-6) pick = node;
+    }
+    pick ??= words[0] ?? null;
+    if (!pick) return false;
+    pick.focus();
+    const range = document.createRange();
+    range.selectNodeContents(pick);
+    const at = window.getSelection();
+    at?.removeAllRanges();
+    at?.addRange(range);
+    return true;
   }
 
   // The frame the captions sit in: the crop, or the whole preview when there
@@ -706,20 +753,54 @@
   }
 
   // The space bar plays and pauses, as in every video tool, unless a field
-  // has the keyboard.
+  // has the keyboard. The arrows bring the keyboard's word, and Enter opens
+  // it.
   function onKey(event: KeyboardEvent) {
-    if (event.code !== "Space" || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      // The clip timeline moves the playhead. A slider holding the
+      // keyboard, an edge of the clip, takes the arrows for itself.
+      if (on?.getAttribute("role") === "slider" || document.querySelector("dialog[open]")) return;
+      keyed = true;
+      settled = false;
+      return;
+    }
+    if (event.key === "Enter") {
+      if (event.defaultPrevented || event.shiftKey || event.repeat) return;
+      // A button or a link holding the keyboard is pressed by Enter, and a
+      // box asking something takes it for its answer.
+      if (tag === "BUTTON" || tag === "A" || on?.getAttribute("role") === "option") return;
+      if (document.querySelector("dialog[open]")) return;
+      if (openSpoken()) {
+        event.preventDefault();
+        keyed = false;
+      }
+      return;
+    }
+    if (event.code !== "Space" || event.shiftKey) return;
     event.preventDefault();
     toggle();
   }
 
+  // A press of the pointer anywhere takes the keyboard's word away, the way
+  // the focus ring goes, and the pointer moving over the picture gives the
+  // words their frame under it back.
+  function pointerTakes() {
+    keyed = false;
+  }
+  function pointerMoves() {
+    settled = false;
+  }
+
   onMount(() => {
     window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", pointerTakes, true);
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", pointerTakes, true);
       cancelAnimationFrame(frame);
     };
   });
@@ -736,7 +817,8 @@
       <Info label="What you can do with the picture" side="right">
         The space bar plays and pauses, and so does a click on the picture. Drag the crop frame
         sideways to place it, and the black box up or down for the captions. Click a word in the
-        caption box to correct it: Enter saves it, Escape leaves it, and two words split it in two.
+        caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
+        saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
     <!-- Only the still of the frame the playhead is in. A still of a
@@ -842,6 +924,8 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="box"
+          class:settled
+          onpointermove={pointerMoves}
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
@@ -890,6 +974,11 @@
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
+                    class:keyed={keyed &&
+                      !fixing &&
+                      !!said &&
+                      spoken >= word.start &&
+                      spoken < word.end}
                     class:now={captions.style.highlight &&
                       spoken >= word.start &&
                       spoken < word.end}
@@ -1052,7 +1141,8 @@
     outline: 1px solid transparent;
   }
 
-  .word.correctable:hover {
+  .box:not(.settled) .word.correctable:hover,
+  .word.keyed {
     outline-color: var(--accent-hi);
   }
 
@@ -1065,14 +1155,10 @@
      render will show, and the frame is the only thing the interface adds.
 
      It is the hover frame twice over, which is the whole difference
-     between the two. A frame under the pointer says a word can be
-     corrected, and it goes on saying it after Enter because it goes on
-     being true: the pointer is still there. What has to change at Enter is
-     the frame that said this word is being typed in, and a frame that is
-     the same weight as the one underneath it changes nothing anyone can
-     see. Suppressing the hover instead would be the interface lying about
-     where the pointer is, and it would come back the moment the hand
-     twitched. */
+     between the two. After Enter no frame is left at all, not even the one
+     under the pointer, until the pointer or the keyboard moves again,
+     see settled: Tim read the hover frame that stayed as the word still
+     being open. */
   .word.fixing {
     outline-width: 2px;
     outline-color: var(--accent-hi);

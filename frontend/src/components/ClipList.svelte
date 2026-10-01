@@ -296,9 +296,14 @@
           />
         </div>
       {:else if clip}
+        <!-- A card takes no keyboard from a click, the way a button on the
+             Mac does not. Chromium gives it the keyboard, and then Enter,
+             which opens the word at the playhead, pressed the card again
+             instead. -->
         <button
           class="pick"
           class:current={clip.key === selected}
+          onmousedown={(e) => e.preventDefault()}
           onclick={() => onselect(clip.key)}
         >
           <span class="title">{clip.title || clip.slug}</span>
