@@ -218,12 +218,13 @@ it.
 | 12 | Pool running low | The signer asks for the pool level | signer `Batch`, dispenser `Stock` | Below the line, the signer signs a batch and the dispenser takes it. The dispenser checks every key's signature before it takes it |
 | 13 | Pool nearly empty | Dispenser, after any sale | email to us | Below 20 % of a batch, an email, every day until it is refilled |
 | 14 | Dispenser's database stolen | Command line | dispenser `RevokeUnsold`, then 12 | Every key still in the pool is revoked and the pool is refilled. Sold keys keep working |
-| 15 | Planned key rotation | Signer switches to the next key | signer | The next public key shipped in a release first. Keys of the old signer, sold or in the pool, still check |
-| 16 | Leaked signing key | Command line | dispenser `Genuine`, signer | Keys of that signer check only if their fingerprint is on its genuine list: every one sold or issued by hand. Its unsold pool keys are dropped and the pool refilled from the next signer. No buyer acts |
-| 17 | Publish revocations | Release workflow | dispenser `Revocations` | The feed carries the list, signed with the update key, which neither program holds |
-| 18 | Daily check | CRON trigger on the dispenser | dispenser `Reconcile` | Every completed Paddle transaction and adjustment of the last days is in the record. Anything missing is run through as if its webhook had come |
-| 19 | Sandbox | Paddle sandbox and the test signer | both | The whole sale works end to end. No shipped build accepts the test signer |
-| 20 | Mail fails | Mailer error | dispenser | Sending is retried. The thank-you page and the lost-key page still deliver |
+| 15 | Dispenser's database restored from a backup | Command line | dispenser `Retire`, then 12, then `Reconcile` | Every key unsold in the backup is set aside, not revoked, and never handed out again. Sales missing from the backup get fresh keys. No key is ever held by two sales |
+| 16 | Planned key rotation | Signer switches to the next key | signer | The next public key shipped in a release first. Keys of the old signer, sold or in the pool, still check |
+| 17 | Leaked signing key | Command line | dispenser `Genuine`, signer | Keys of that signer check only if their fingerprint is on its genuine list: every one sold or issued by hand. Its unsold pool keys are dropped and the pool refilled from the next signer. No buyer acts |
+| 18 | Publish revocations | Release workflow | dispenser `Revocations` | The feed carries the list, signed with the update key, which neither program holds |
+| 19 | Daily check | CRON trigger on the dispenser | dispenser `Reconcile` | Every completed Paddle transaction and adjustment of the last days is in the record. Anything missing is run through as if its webhook had come |
+| 20 | Sandbox | Paddle sandbox and the test signer | both | The whole sale works end to end. No shipped build accepts the test signer |
+| 21 | Mail fails | Mailer error | dispenser | Sending is retried. The thank-you page and the lost-key page still deliver |
 
 ## Architecture
 
@@ -290,6 +291,7 @@ func (e *Engine) Restore(ctx context.Context, t Target, why string) error
 func (e *Engine) Stock(ctx context.Context, batch []licence.Key) error
 func (e *Engine) PoolLevel(ctx context.Context) (left, batch int, err error)
 func (e *Engine) RevokeUnsold(ctx context.Context, why string) error
+func (e *Engine) Retire(ctx context.Context, why string) error // set the unsold pool aside, revoke nothing
 func (e *Engine) Revocations(ctx context.Context) ([]licence.Fingerprint, error)
 func (e *Engine) Genuine(ctx context.Context, signer uint8) ([]licence.Fingerprint, error)
 func (e *Engine) Reconcile(ctx context.Context, since time.Time) error
@@ -320,7 +322,7 @@ What reaches it, and who may call what:
 | Signer | The pool level and batches, with the signer's token | `PoolLevel`, `Stock` |
 | Release workflow | A request for the list, with its own read-only token | `Revocations`, `Genuine` |
 | CRON | The daily trigger | `Reconcile`, the warning, the export |
-| Admin | Us, with a token kept offline | `Replace`, `Revoke`, `Restore`, `RevokeUnsold` |
+| Admin | Us, with a token kept offline | `Replace`, `Revoke`, `Restore`, `RevokeUnsold`, `Retire` |
 
 ### Signer: `cmd/framefairy-signer`
 
@@ -382,12 +384,29 @@ a second provider, in a bucket that keeps every version and locks each one
 for a year. The dispenser's credentials there can add versions but not
 delete them.
 
-**Restoring.** Restore the newest backup, check the record's chain against
-the last published feed, then run `Reconcile` from the backup's last line.
-A sale that happened after the backup and is missing gets the next pool
-key and an email with it. The key it had before still works: it was
-signed, and nothing revoked it. So a lost hour of records costs at most a
-second key for a few buyers, never a buyer without one.
+**Restoring.** Restore the newest backup and check the record's chain
+against the last published feed. Then, before anything is sold:
+
+1. **Set the whole pool aside.** Every key still marked unsold in the
+   backup is retired: never handed out again, and not revoked. Some of them
+   were sold after the backup was taken and are in buyers' hands now, and
+   the backup cannot say which.
+2. **Refill.** The signer signs a fresh batch, and only fresh keys are
+   handed out from then on.
+3. **Catch up.** `Reconcile` runs from the backup's last line. A sale Paddle
+   knows about and the record does not gets the next fresh key, by email,
+   with a line saying any key it had before still works.
+
+An example. The backup runs at 10:00. At 10:30 Anna buys, gets key K1 on
+her thank-you page and by email. At 11:00 the database is lost and the
+10:00 backup comes back, in which K1 is still unsold and Anna's sale does
+not exist. K1 is set aside with the rest of the pool, so no one else is
+ever given it. The catch-up finds Anna's sale at Paddle and sends her K2.
+She has two working keys, and no key belongs to two people.
+
+So a restore can give a buyer a second key, never leave one without a key,
+and never give two buyers the same key. At worst it retires a pool's worth
+of keys nobody holds.
 
 ## When something is down
 
