@@ -156,12 +156,15 @@ current list, signed with the update key:
   "revoked": [
     "307dcf717b5fc2c26b3949a4dd12dfe1"
   ],
-  "genuine": {}
+  "genuine": {},
+  "ledger": {"seq": 1043, "head": "e7d19a…"}
 }
 ```
 
 `revoked` holds fingerprints, here the first example key above, as it would read after its key was posted in public. `genuine` is empty until a signing key leaks,
 and then holds that signer's genuine fingerprints under its number.
+`ledger` is the newest link of the ledger's chain when the feed was
+published, shortened here, see [The ledger](#the-ledger).
 
 1. The app fetches the feed and checks the feed's signature.
 2. If it holds, the app keeps the licence list in a file in its own
@@ -270,7 +273,7 @@ func (e *Engine) Genuine(ctx context.Context, signer uint8) ([]licence.Fingerpri
 | Port | Does | First implementation |
 | --- | --- | --- |
 | `Signer` | Signs with the current key and names it | A key file readable only by the service. A hardware key later, same interface |
-| `Ledger` | Appends events and reads them back | JSON lines: `issue`, `reissue`, `revoke`, `restore`. A file, with a copy in object storage that keeps versions |
+| `Ledger` | Appends events and reads them back | One file of JSON lines, see [The ledger](#the-ledger) |
 | `Orders` | Finds the orders of an email address | Paddle's API |
 | `Mailer` | Sends keys | A European mail service |
 
@@ -302,6 +305,91 @@ POST /v1/orders/{ref}/revoke   {why}                              -> {}
 Each partner has its own token, which reaches only its own orders. The
 same `ref` twice gives the same keys. A partner with its own webhook
 format gets an adapter that turns it into these calls.
+
+## The ledger
+
+The ledger is the service's memory: one file, one line for every event,
+in the order they happened. Nothing is ever changed or removed in it. A
+correction is a new line, a `restore` after a `revoke`.
+
+```json
+{"seq":1042,"at":"2026-11-03T14:22:07Z","op":"issue","source":"paddle","ref":"txn_01k6x8m2c4p9qz7t3w5v8n1b2d","seat":1,"id":"36A3CE90838C1499","issue":0,"signer":0,"fp":"307dcf717b5fc2c26b3949a4dd12dfe1","prev":"5b0e…"}
+{"seq":1043,"at":"2026-12-09T08:01:44Z","op":"revoke","id":"36A3CE90838C1499","issue":0,"fp":"307dcf717b5fc2c26b3949a4dd12dfe1","why":"posted on a forum","prev":"c41a…"}
+```
+
+The `prev` values are shortened here. In the file each is a whole SHA-256.
+
+**What it holds.** Licence IDs, issue numbers, signers, fingerprints,
+sources, references, seats, dates and reasons. No keys, no names, no email
+addresses. A key can always be signed again from its line, and the buyer's
+details stay at Paddle.
+
+**Replaying it.** Everything the service knows is worked out by reading
+the ledger from the first line to the last when it starts: which IDs
+exist, the next issue number of each licence, what is revoked, which keys
+each signer issued. There is no second store to drift from it. At 300 bytes
+a line, 100,000 sales and their events are about 40 MB and read in about
+a second, so it never needs compacting.
+
+**Integrity.** Every line carries `prev`, the SHA-256 of the line before
+it, so the lines form a chain. A line changed, removed or slipped in breaks
+the chain from that point on, and the service refuses to start on a broken
+chain. The newest link of the chain is also written into every update feed
+the release workflow publishes, as `licences.ledger`, with its `seq`. The
+feed is signed with the update key, on another machine, and every feed
+stays in this repository's releases. So even someone who takes over the
+server cannot rewrite history before the last published feed without it
+showing.
+
+**Writing it.** One process writes, holding a lock, so two copies of the
+service can never both append. A line is appended and flushed to disk
+before the service answers anyone, Paddle included, so nothing is
+answered that is not recorded.
+
+**Securing it.** The server runs the service and nothing else, reached
+only over SSH with keys. The file belongs to the service's own user and no
+one else can read it. It holds no personal data and no secrets: what an
+intruder could do with it is read which transactions bought a licence.
+The signing key is what an intruder would want, and it never touches the
+ledger.
+
+**Backing it up.** After every line, the file goes to object storage at a
+second provider, in a bucket that keeps every version and locks each one
+for a year. The service's credentials can write versions but not delete
+them, so a taken-over server cannot destroy the backups. Two more copies
+exist without anyone keeping them: Paddle knows every sale, and the
+published feeds hold every revocation.
+
+**Restoring it.** Take the newest backup, check its chain, and check its
+newest link against the last published feed. Then the service asks
+Paddle for every transaction and adjustment since the backup's last line
+and runs each through the engine again. Keys are the same every time, so
+replaying a sale recreates exactly the key the buyer already has, and
+nothing is sent twice. Only partner orders and manual licences issued
+after the last backup could be lost, and a backup after every line makes
+that window seconds long.
+
+**Checking itself every day.** Once a day the service compares Paddle's
+completed transactions and adjustments with the ledger and runs anything
+missing through the engine. That catches a webhook Paddle gave up on, and
+a mistake of our own.
+
+## When the service is down
+
+The service does not need to be always up, and it is not built to be.
+
+| What | While the service is down |
+| --- | --- |
+| The app | Unaffected. Keys are checked offline and never expire |
+| A buyer paying | The payment completes at Paddle. The thank-you page says the key is on its way by email |
+| The key for that sale | Paddle retries its webhook 60 times over 3 days. The first retry that lands issues the key and sends it. The daily check catches anything later |
+| A lost key | The page answers once the service is back |
+| Partners | Their calls fail and they retry, or they sell from keys made in advance |
+| Revocations | Wait for the service. The last published list stays in force |
+
+An outside check calls the service every few minutes and emails us when it
+does not answer. Back within a day is good enough, and a server restarted
+by the operating system after a crash is back within seconds.
 
 ## How the app checks a key
 
@@ -344,10 +432,10 @@ offline, before every render.
 
 - Every engine call is safe to repeat. Paddle retries webhooks, and a
   retry never makes a second key or a second email.
-- The ledger is one JSON line per event, appended and flushed, with a copy
-  in object storage that keeps versions.
-- If the service is down, sales still complete at Paddle. Keys follow when
-  it is back, from the webhook retries.
+- The ledger is one chained JSON line per event, flushed before any
+  answer, and backed up after every line, see [The ledger](#the-ledger).
+- If the service is down, sales still complete at Paddle, see
+  [When the service is down](#when-the-service-is-down).
 
 **Testing**
 
@@ -359,12 +447,42 @@ offline, before every render.
   the race detector with concurrent calls.
 - The whole sale runs once against Paddle's sandbox before launch.
 
+## Binding a key to a machine
+
+Possible, and decided against. It would work like this: the app sends an
+identifier of the Mac to the service, the service answers with a signed
+activation for that Mac, and the app only accepts the key alongside an
+activation for the Mac it runs on. "One place at a time" needs more: the
+app has to ask the service again every few days, or the activation runs
+out.
+
+Why not:
+
+- **It breaks the product's promise.** The app would need the network to
+  stay licensed, and would tell us which Mac uses which licence.
+- **It stops honest buyers first.** A new Mac, a reinstall, a repaired
+  logic board or a laptop beside a desktop all need a deactivation and a
+  support email.
+- **It stops almost no one else.** The code is public, so taking the check
+  out is a deleted line, and the people who would share a key are the ones
+  who would delete it.
+- **An IP address is worse.** It changes at home, on mobile, on a train and
+  behind a VPN, and one address is shared by many people behind the same
+  router or carrier.
+
+What we do instead: the name on the key, the licence ID support can look
+up, and revoking a key posted in public. If this is ever wanted, the gentle
+form is an activation count, for example three Macs per licence, each
+activated once online and then offline for good, with the list of Macs
+shown to the buyer so they can remove one. It would be an engine call and
+an adapter more, and the key format would not change.
+
 ## Out of scope and open questions
 
 **Out of scope**
 
 - Machine binding, activation limits, seat enforcement, and any check that
-  needs the network.
+  needs the network, see [Binding a key to a machine](#binding-a-key-to-a-machine).
 - Subscriptions and expiring keys.
 - Affiliate tracking and payouts, which are Tolt's.
 - Payment, tax and invoices, which are Paddle's.
@@ -373,8 +491,8 @@ offline, before every render.
 
 - The price, and whether there is ever a second edition.
 - The mail service: Brevo or Mailjet.
-- Where the service runs: a small European server or a serverless
-  function.
+- Which European host runs the service. It is a small server, not a
+  serverless function, because the ledger is a file that has to stay.
 - The business the Paddle account belongs to.
 - Whether partners are wanted at launch, or the partner API waits for the
   first one.
