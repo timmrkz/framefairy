@@ -176,14 +176,18 @@ func isPunctuation(s string) bool {
 	return true
 }
 
+// holdOn is the furthest a word's end is moved on to follow its sound.
+const holdOn = 0.8
+
 // SnapWords moves each word onto the sound it belongs to.
 //
 // The recogniser works on an 80 ms grid and folds silence into the words
 // around it, so a word after a pause tends to start early and a word before
 // one tends to end late. The loudness frames know where the sound actually
 // is. A start that lands in silence moves forward to where the sound begins,
-// a start just after a real onset moves back onto it, and an end that runs
-// into a pause is pulled back to where the sound stopped.
+// a start just after a real onset moves back onto it, an end that runs
+// into a pause is pulled back to where the sound stopped, and an end that
+// stops while the sound goes on follows it to where it stops.
 func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 	if len(frames) == 0 {
 		return words
@@ -260,6 +264,22 @@ func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 			}
 		} else if frameAt(end)-(last+1) >= 12 {
 			end = timeAt(last + 1)
+		}
+		// And the other way round: a word ends where its last sound does
+		// when that sound runs on past the recogniser's end. The recogniser
+		// gives a word's last piece a duration of at most four of its 80 ms
+		// steps, however long the sound is held, so a word before a pause
+		// ended while it was still being said. Its caption went early and
+		// its block on the clip timeline stopped short of its own waveform.
+		// The sound is followed to where it stops, never into the next word
+		// and never more than holdOn past the recogniser's end.
+		end = math.Max(end, begin)
+		reach := end + holdOn
+		if next < reach {
+			reach = next
+		}
+		for g := frameAt(end); loud(g) && timeAt(g+1) <= reach+1e-9; g++ {
+			end = timeAt(g + 1)
 		}
 		begin = math.Max(begin, low)
 		if next > begin+0.02 {
