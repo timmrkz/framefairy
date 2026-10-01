@@ -81,7 +81,17 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		if err != nil {
 			return "", "", "", err
 		}
-		parts = append(parts, videoLabel+subtitleChain(template, assName)+"[vout];")
+		// The subtitle filter hands libass the frame's time in whole
+		// milliseconds, worked out in floating point and cut down rather
+		// than rounded (vf_subtitles.c). After concat the clock counts in
+		// microseconds, and 200000 of them come out as 199.999... ms, so
+		// a caption or a highlight due on the frame at 0.20 s showed on
+		// the frame after it. That was one frame boundary in three. The
+		// clock is put in microseconds for every clip and moved on half a
+		// millisecond while libass reads it, then back, so every frame
+		// reads as the millisecond it is.
+		parts = append(parts, videoLabel+"settb=1/1000000,setpts=PTS+500,"+
+			subtitleChain(template, assName)+",setpts=PTS-500[vout];")
 		videoLabel = "[vout]"
 	}
 	graph = strings.TrimRight(strings.Join(parts, ""), ";")
@@ -127,6 +137,32 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		cmd = append(cmd, "-"+tag[0], tag[1])
 	}
 	return append(cmd, outPath), nil
+}
+
+// OnFrames is a clip with every edge of its pieces moved to the nearest
+// frame of the source, which is how it is rendered and how its captions
+// for the render are made.
+//
+// A piece becomes a whole number of frames in the short, so a piece that
+// was not one came out longer than its own length, and its sound with it.
+// The captions add the pieces up as they are, so at every cut they ran a
+// little more ahead of the words they show: a tenth of a second by the
+// sixth piece. On the frames, the two add up to the same. An edge moves by
+// half a frame at most, and a piece keeps at least one frame.
+func (s SourceInfo) OnFrames(clip Clip) Clip {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return clip
+	}
+	fps := s.FPS()
+	frame := func(t float64) float64 { return math.Round(t*fps) / fps }
+	out := clip
+	out.Segments = make([]Segment, len(clip.Segments))
+	for i, seg := range clip.Segments {
+		seg.Start = frame(seg.Start)
+		seg.End = math.Max(frame(seg.End), seg.Start+1/fps)
+		out.Segments[i] = seg
+	}
+	return out
 }
 
 // partial marks a file still being written, beside the one it becomes:

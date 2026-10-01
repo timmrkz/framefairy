@@ -454,6 +454,37 @@ window with holes in it. `RemoveRange` makes a hole: the clips inside the
 part go, and a plan with nothing
 left of its window goes altogether.
 
+## Captions on the frames they belong to
+
+A short is checked for its timing the way a viewer sees it.
+`TestTheShortShowsItsCaptionsWhenItSaysThem` and
+`TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts` in
+`engine/rendertiming_test.go` render a clip of a black episode with a tone
+where each word is said, read every frame and the sound back, and check
+that each caption and each move of the pill lands on the first frame at
+or after the moment the subtitle file gives it, and that each word is
+heard within 15 ms of the moment it is shown. One clip has a cut that
+does not fall on a frame, the other six pieces none of which is a whole
+number of frames long. They found two things, both fixed:
+
+- **A frame late, one boundary in three.** ffmpeg's subtitle filter hands
+  libass the frame's time in whole milliseconds, worked out in floating
+  point and cut down rather than rounded (`vf_subtitles.c`). After the
+  concat that joins a clip's pieces the clock counts in microseconds, and
+  200000 of them come out as 199.999... ms, so a caption due on the frame
+  at 0.20 s showed on the frame after it. Of the 15,000 frames of a ten
+  minute short at 25 fps, 4544 read a millisecond early. The render puts
+  the clock in microseconds and moves it on half a millisecond while
+  libass reads it, and back after, so every frame reads as the millisecond
+  it is.
+- **Drift at every cut.** A piece becomes a whole number of frames in the
+  short, so a piece that was not one came out longer, and its sound with
+  it, while the captions added the pieces up as they are. By the sixth
+  piece a word was heard 0.10 s after it was shown. The render now takes a
+  clip with every edge on the nearest frame of the source,
+  `SourceInfo.OnFrames`, and makes its captions from that same clip, so
+  the two add up to the same. An edge moves by half a frame at most.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and
