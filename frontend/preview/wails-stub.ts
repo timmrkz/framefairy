@@ -1194,10 +1194,13 @@ export const Call = {
         });
       }
       case "Captions":
-        return Promise.resolve({
+        // ?slowcaptions answers a second and a half late, the way a busy
+        // machine can, which is longer than a walk into the next clip
+        // waits for anything else.
+        return (location.search.includes("slowcaptions") ? new Promise((done) => setTimeout(done, 1500)) : Promise.resolve()).then(() => ({
           captions: captionCues(String(args[2])),
           style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
-        });
+        }));
       case "Fonts":
         return Promise.resolve([
           { name: "Inter Black", about: "", file: "Inter-Black.ttf" },

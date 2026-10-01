@@ -16,7 +16,7 @@
   // a clip selected it jumps the clip's cuts and stops where the clip ends.
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
-  import { onMount, type Snippet } from "svelte";
+  import { onMount, untrack, type Snippet } from "svelte";
   import {
     frameStart,
     insideClip,
@@ -254,6 +254,9 @@
   function play() {
     if (!video) return;
     endCorrection();
+    // Playing moves the playhead on, so the keyboard's word goes.
+    keyed = null;
+    walked = 0;
     // The clip plays when the playhead stands in it, when it has just played
     // to its end, which is where the playhead is left, and when it loops.
     // Anywhere else the playhead was put there to look at that part of the
@@ -452,6 +455,56 @@
     return out;
   });
 
+  // The keyboard's word: the word Shift and an arrow walked to wears the
+  // frame the pointer puts on a word, so it is the word Enter opens. It is
+  // the same with the highlight on or off, and with it off nothing else in
+  // the picture says which word is spoken. It is the caption holding the
+  // keyboard: it stays on a word saved with Enter, and goes with anything
+  // else, see forget, and when the playhead leaves the word, the clip
+  // playing among them.
+  let keyed = $state<{ start: number; end: number } | null>(null);
+  // When Shift and an arrow were pressed. The next move of the playhead is
+  // the walk landing, and its word becomes the keyboard's word.
+  let walked = 0;
+  // A frame's worth of give at the edges of the word, because the picture
+  // answers a seek with the frame it shows, which can begin a hair before
+  // the word does.
+  const give = 0.05;
+  $effect(() => {
+    const at = spoken;
+    untrack(() => {
+      if (walked && Date.now() - walked < 1000) {
+        walked = 0;
+        const word = wordAt(at);
+        keyed = word ? { start: word.start, end: word.end } : null;
+        return;
+      }
+      if (keyed && (at < keyed.start - give || at >= keyed.end + give)) keyed = null;
+    });
+  });
+
+  // The keyboard's word put where a walk into the clip beside landed. The
+  // walk cannot catch that landing itself: the clip changes first, with no
+  // words yet, and the playhead only reaches the word once its captions
+  // have arrived, which can be any time later. So the workspace says where
+  // it put the playhead, and that word takes the frame.
+  export function keyAt(t: number) {
+    walked = 0;
+    const word = wordAt(inClipTime(t));
+    keyed = word ? { start: word.start, end: word.end } : null;
+  }
+
+  // The word of the caption box at a moment of the clip's clock, among the
+  // words that can be corrected.
+  function wordAt(at: number): { start: number; end: number } | null {
+    for (const line of rows) {
+      for (const { word, said } of line) {
+        if (said && at >= word.start - give && at < word.end) return word;
+      }
+    }
+    return null;
+  }
+
   // Words are corrected in the picture, where they are read. A correction
   // belongs to the episode, so it takes a clip to know which words these
   // are and somewhere to send it.
@@ -570,13 +623,53 @@
       // A caption word is one line and stays one line, so Enter is what
       // finishes it rather than what breaks it.
       event.preventDefault();
-      node.blur();
+      // Handled here, so the Enter that saves a word is not also the Enter
+      // that opens the word at the playhead again.
+      event.stopPropagation();
+      letGo(node);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      // Handled here too: Escape leaves the word as it was and goes back to
+      // the word chosen, and only a second Escape lets that go.
+      event.stopPropagation();
       if (fixing) node.textContent = fixing.piece;
       fixing = null;
-      node.blur();
+      letGo(node);
     }
+  }
+
+  // A word let go of with Enter or Escape keeps the keyboard's frame, since
+  // the playhead is still on it, and gives up the caret. The caret went on
+  // blinking in a word already saved: WebKit keeps the selection in a field
+  // the keyboard has left, and draws the caret where it is.
+  function letGo(node: HTMLElement) {
+    keyed = { start: Number(node.dataset.at), end: Number(node.dataset.to) };
+    node.blur();
+    const selected = window.getSelection();
+    if (selected?.rangeCount && node.contains(selected.anchorNode)) selected.removeAllRanges();
+  }
+
+  // Enter opens the word at the playhead for correcting, the way Enter
+  // renames the item chosen in the Finder: the whole of it is selected, so
+  // typing replaces it and the arrows move inside it. Shift and the arrows
+  // walk the playhead from word to word, so the two together correct a
+  // caption without the pointer. Between two words, which is where a
+  // pause leaves the playhead, it is the word just spoken.
+  function openSpoken(): boolean {
+    const words = [...(screen?.querySelectorAll<HTMLElement>(".word.correctable") ?? [])];
+    let pick: HTMLElement | null = null;
+    for (const node of words) {
+      if (Number(node.dataset.at) <= spoken + 1e-6) pick = node;
+    }
+    pick ??= words[0] ?? null;
+    if (!pick) return false;
+    pick.focus();
+    const range = document.createRange();
+    range.selectNodeContents(pick);
+    const at = window.getSelection();
+    at?.removeAllRanges();
+    at?.addRange(range);
+    return true;
   }
 
   // The frame the captions sit in: the crop, or the whole preview when there
@@ -721,20 +814,70 @@
   }
 
   // The space bar plays and pauses, as in every video tool, unless a field
-  // has the keyboard.
+  // has the keyboard. The arrows bring the keyboard's word, and Enter opens
+  // it.
   function onKey(event: KeyboardEvent) {
-    if (event.code !== "Space" || event.metaKey || event.ctrlKey || event.altKey) return;
+    // Any key but the ones that walk and open takes the keyboard's word
+    // away, the arrows without Shift and Escape among them. A key held on
+    // its own to make a shortcut takes nothing yet.
+    if (!["Shift", "Meta", "Control", "Alt", "CapsLock"].includes(event.key)) {
+      const walking =
+        event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight");
+      if (!walking && event.key !== "Enter") forget();
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      // The clip timeline moves the playhead. A slider holding the
+      // keyboard, an edge of the clip, takes the arrows for itself.
+      if (on?.getAttribute("role") === "slider" || document.querySelector("dialog[open]")) return;
+      // Shift walks by words, and the word it lands on becomes the
+      // keyboard's.
+      if (event.shiftKey) walked = Date.now();
+      return;
+    }
+    if (event.key === "Enter") {
+      if (event.defaultPrevented || event.shiftKey || event.repeat) return;
+      // A button or a link holding the keyboard is pressed by Enter, and a
+      // box asking something takes it for its answer.
+      if (tag === "BUTTON" || tag === "A" || on?.getAttribute("role") === "option") return;
+      if (document.querySelector("dialog[open]")) return;
+      if (openSpoken()) event.preventDefault();
+      return;
+    }
+    if (event.code !== "Space" || event.shiftKey) return;
     event.preventDefault();
     toggle();
   }
 
+  // The keyboard's word is the caption holding the keyboard, so whatever
+  // takes the keyboard or the pointer anywhere else takes it away: a press
+  // of the pointer, wherever it lands, and a field getting the keyboard,
+  // the target among them. It stayed through all of them, and read as a
+  // word still chosen while the hand was busy somewhere else.
+  function forget() {
+    keyed = null;
+    walked = 0;
+  }
+  function focusMoves(event: FocusEvent) {
+    const to = event.target as HTMLElement | null;
+    if (!to?.classList?.contains("word")) forget();
+  }
+
   onMount(() => {
     window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", forget, true);
+    window.addEventListener("focusin", focusMoves);
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", forget, true);
+      window.removeEventListener("focusin", focusMoves);
       cancelAnimationFrame(frame);
     };
   });
@@ -751,7 +894,8 @@
       <Info label="What you can do with the picture" side="right">
         The space bar plays and pauses, and so does a click on the picture. Drag the crop frame
         sideways to place it, and the black box up or down for the captions. Click a word in the
-        caption box to correct it: Enter saves it, Escape leaves it, and two words split it in two.
+        caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
+        saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
     <!-- Only the still of the frame the playhead is in. A still of a
@@ -905,6 +1049,7 @@
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
+                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start}
                     class:now={captions.style.highlight && firstOfRow[row] + i === lit}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"
@@ -1065,7 +1210,8 @@
     outline: 1px solid transparent;
   }
 
-  .word.correctable:hover {
+  .word.correctable:hover,
+  .word.keyed {
     outline-color: var(--accent-hi);
   }
 
@@ -1078,14 +1224,9 @@
      render will show, and the frame is the only thing the interface adds.
 
      It is the hover frame twice over, which is the whole difference
-     between the two. A frame under the pointer says a word can be
-     corrected, and it goes on saying it after Enter because it goes on
-     being true: the pointer is still there. What has to change at Enter is
-     the frame that said this word is being typed in, and a frame that is
-     the same weight as the one underneath it changes nothing anyone can
-     see. Suppressing the hover instead would be the interface lying about
-     where the pointer is, and it would come back the moment the hand
-     twitched. */
+     between the two. After Enter the word goes back to the frame of the
+     two it had before it was opened: the one under the pointer, or the
+     keyboard's, which stays on it while the playhead does. */
   .word.fixing {
     outline-width: 2px;
     outline-color: var(--accent-hi);
