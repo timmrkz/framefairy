@@ -395,6 +395,39 @@ place.
   on a word nobody is speaking, and on the word that is being spoken it
   would take away the colour the render really burns in. The picture goes
   on showing what the render will show while a word in it is being typed.
+  - **From the keyboard:** Shift and the arrows walk the playhead from
+    word to word, and the word walked to wears the same frame the pointer
+    puts on a word. Enter opens that word with the whole of it selected,
+    the way Enter renames what is chosen in the Finder, so typing replaces
+    it. Enter again saves it, the caret goes, and the frame stays on the
+    word. Escape in an open word leaves it as it was and goes back to the
+    frame. The frame is the caption holding the keyboard: anything else
+    takes it away, a press of the pointer wherever it lands, a field
+    getting the keyboard, Escape, any other key, the arrows without Shift
+    among them, and the clip playing. It is the same with the highlight
+    off, and that is what it is for there: with no pill nothing else says
+    which word is spoken.
+    The caret went on blinking in a word already saved, because WebKit
+    keeps the selection in a field the keyboard has left, so a word let go
+    of takes its selection with it.
+    A walk past the last word of a clip lands on the first word of the
+    next, and past the first word on the last of the one before, and that
+    word wears the frame too. The walk could not catch that landing by
+    itself, because the clip changes first with no words in it, and the
+    playhead only reaches the word once the clip's captions have arrived,
+    so the frame was lost on the way. The workspace now tells the video
+    preview where it landed, see `keyAt` in `Player.svelte`.
+  - **A colour field lets go of the keyboard once a colour is chosen**,
+    see `letColourGo` in `App.svelte`. It kept it, and every shortcut
+    stands aside while a field has the keyboard, so Shift and the arrows
+    did nothing after a caption colour was picked. It lets go on change,
+    which comes once the picking is over, so the system's colour panel is
+    never taken away in the middle of it.
+  - **A button pressed with the pointer keeps no keyboard**, the way a
+    button on the Mac does not, see `letButtonGo` in `App.svelte`. In
+    Chromium, on Windows and in the preview, a clicked button kept it, and
+    Enter then pressed the button again instead of opening a word: a click
+    on Highlight and then Enter switched the highlight back on.
   - The correction applies to every clip with that word, because it belongs
     to the episode and not to the clip. It is kept in
     `<episode>.framefairy/logs/corrections.json` and applied every time the
