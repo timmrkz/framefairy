@@ -60,7 +60,7 @@
     type RoomView,
   } from "../lib/room";
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
-  import { joinColour, splitColour } from "../lib/colour";
+  import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
@@ -73,6 +73,7 @@
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Pick from "../components/Pick.svelte";
+  import Colour from "../components/Colour.svelte";
 
   let { path, onchange }: { path: string; onchange: () => void } = $props();
 
@@ -1335,7 +1336,14 @@
   // they come back changed, so the caption box never flashes back to the
   // colour it had while the saved colour is on its way.
   let colourHeld: CaptionsView | null = null;
-  let colourSaving = false;
+  // Watched, not only read: the draft is let go of once the saving is over
+  // and the captions have come back. Read without being watched, the draft
+  // outlived the save, and the next colour drawn was let go of instead, the
+  // moment it was drawn, because the captions it was held against were the
+  // ones from before the save. The colour field drew again with every
+  // movement and hid it. A pick from the video preview draws once per
+  // colour, and showed nothing.
+  let colourSaving = $state(false);
   $effect(() => {
     if (colourDraft && !colourSaving && captions !== colourHeld) colourDraft = null;
   });
@@ -1435,6 +1443,18 @@
   }) {
     if (!colourDraft) colourHeld = captions;
     colourDraft = { ...colourDraft, ...part };
+  }
+
+  // A colour that was only being looked at, a pick from the video preview
+  // that was left, goes back to what is saved.
+  function dropColourDraft() {
+    if (!colourSaving) colourDraft = null;
+  }
+
+  // A colour picker asking the video preview for a colour.
+  function sampleColour(over: (hex: string | null) => void, done: (hex: string | null) => void) {
+    if (!player) return done(null);
+    player.sampleColour(over, done);
   }
 
   // A colour and how much of it is seen, for the text and for the box, the
@@ -2371,15 +2391,15 @@
                 onclick={() => setCaptionSwitch("text", !textOn)}>Text</button
               >
               <span class="field pair" class:off={!textOn}>
-                <input
-                  class="swatch"
-                  type="color"
+                <Colour
                   title="The colour the captions are written in"
-                  aria-label="Text colour"
+                  label="Text colour"
                   value={textColour}
-                  oninput={(e) =>
-                    drawColour({ primary: joinColour(e.currentTarget.value, textOpacity / 100), textOn: true })}
-                  onchange={(e) => setTextColour(e.currentTarget.value, textOpacity)}
+                  presets={captionColours}
+                  oninput={(hex) =>
+                    hex ? drawColour({ primary: joinColour(hex, textOpacity / 100), textOn: true }) : dropColourDraft()}
+                  onchange={(hex) => setTextColour(hex, textOpacity)}
+                  onsample={sampleColour}
                 />
                 <input
                   class="num"
@@ -2414,15 +2434,15 @@
                 onclick={() => flipPart("box", boxOn)}>Box</button
               >
               <span class="field pair" class:off={!boxShown}>
-                <input
-                  class="swatch"
-                  type="color"
+                <Colour
                   title="The colour of the box behind the captions"
-                  aria-label="Box colour"
+                  label="Box colour"
                   value={boxColour.hex}
-                  oninput={(e) =>
-                    drawColour({ box: joinColour(e.currentTarget.value, boxOpacity / 100), boxOn: true })}
-                  onchange={(e) => setBoxColour(e.currentTarget.value, boxOpacity)}
+                  presets={captionColours}
+                  oninput={(hex) =>
+                    hex ? drawColour({ box: joinColour(hex, boxOpacity / 100), boxOn: true }) : dropColourDraft()}
+                  onchange={(hex) => setBoxColour(hex, boxOpacity)}
+                  onsample={sampleColour}
                 />
                 <input
                   class="num"
@@ -2463,19 +2483,17 @@
                 onclick={() => flipPart("highlight", highlightOn)}>Highlight</button
               >
               <span class="field pair" class:off={!highlightShown}>
-                <input
-                  class="swatch"
-                  type="color"
+                <Colour
                   title="The colour of the pill behind the word being spoken"
-                  aria-label="Highlight colour"
+                  label="Highlight colour"
                   value={highlightColour}
-                  oninput={(e) =>
-                    drawColour({
-                      highlight: joinColour(e.currentTarget.value, highlightOpacity / 100),
-                      highlightOn: true,
-                    })}
-                  onchange={(e) =>
-                    setHighlightColour(e.currentTarget.value, highlightOpacity)}
+                  presets={captionColours}
+                  oninput={(hex) =>
+                    hex
+                      ? drawColour({ highlight: joinColour(hex, highlightOpacity / 100), highlightOn: true })
+                      : dropColourDraft()}
+                  onchange={(hex) => setHighlightColour(hex, highlightOpacity)}
+                  onsample={sampleColour}
                 />
                 <input
                   class="num"
@@ -3089,16 +3107,6 @@
     padding-right: 29px;
   }
 
-  /* A colour field is the colour and nothing else, as wide as every other
-     field in the column, so the column ends in one place. */
-  .setting input.swatch {
-    display: block;
-    box-sizing: border-box;
-    height: var(--control-h);
-    padding: 3px;
-    cursor: pointer;
-  }
-
   /* The box and its opacity share the width one field has, the colour
      first and the number after it, which still ends where every other
      number in the column ends. */
@@ -3107,25 +3115,9 @@
     gap: 4px;
   }
 
-  /* The colour is a square as tall as the row, so the number beside it
-     has room for 100 and its unit. */
-  .pair .swatch {
-    width: var(--control-h);
-    flex: none;
-  }
-
   .pair input.num {
     flex: 1;
     min-width: 0;
-  }
-
-  .swatch::-webkit-color-swatch-wrapper {
-    padding: 0;
-  }
-
-  .swatch::-webkit-color-swatch {
-    border: none;
-    border-radius: calc(var(--radius-s) - 1px);
   }
 
   /* The unit stands in a place of its own, as wide as the longest one and
