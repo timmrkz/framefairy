@@ -877,7 +877,7 @@ func (b *planBuilder) settle(planID string) error {
 		return nil
 	}
 	err := editPlan(b.opts.PlanPath, func(top *object, _ []*object) error {
-		top.set("plan_id", planID)
+		top.set(keyPlanID, planID)
 		return nil
 	})
 	if os.IsNotExist(err) {

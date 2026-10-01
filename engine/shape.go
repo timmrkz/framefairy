@@ -76,7 +76,7 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 		return Shaped{}, renderErr("clip plan must be a JSON object")
 	}
 	var clips []*object
-	if list, ok := top.values["clips"].([]any); ok {
+	if list, ok := top.values[keyClips].([]any); ok {
 		for _, item := range list {
 			if c, ok := item.(*object); ok {
 				clips = append(clips, c)
@@ -94,7 +94,7 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 	shaped := Shaped{Playhead: playhead, Clip: clip}
 	shaped.Clip.Segments = nil
 	for _, seg := range out {
-		start, end := number(seg.values["start"]), number(seg.values["end"])
+		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
 		shaped.Pieces = append(shaped.Pieces, PieceView{start, end})
 		shaped.Clip.Segments = append(shaped.Clip.Segments, Segment{Start: start, End: end})
 	}
@@ -218,9 +218,9 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			}
 			out := append([]*object{}, pieces...)
 			out[i] = copyObject(pieces[i])
-			out[i].set("end", from)
+			out[i].set(keyEnd, from)
 			out[i+1] = copyObject(pieces[i+1])
-			out[i+1].set("start", to)
+			out[i+1].set(keyStart, to)
 			return out, nil
 		}, -1, nil
 
@@ -228,11 +228,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		at := g.From
 		return func(pieces []*object) ([]*object, error) {
 			for i := 0; i+1 < len(pieces); i++ {
-				end := number(pieces[i].values["end"])
-				next := number(pieces[i+1].values["start"])
+				end := number(pieces[i].values[keyEnd])
+				next := number(pieces[i+1].values[keyStart])
 				if at >= end && at <= next {
 					joined := copyObject(pieces[i])
-					joined.set("end", pieces[i+1].values["end"])
+					joined.set(keyEnd, pieces[i+1].values[keyEnd])
 					out := append([]*object{}, pieces[:i]...)
 					out = append(out, joined)
 					return append(out, pieces[i+2:]...), nil
@@ -371,7 +371,7 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 func trimPieces(pieces []*object, start, end float64) ([]*object, error) {
 	var kept []*object
 	for _, seg := range pieces {
-		if number(seg.values["end"]) <= start || number(seg.values["start"]) >= end {
+		if number(seg.values[keyEnd]) <= start || number(seg.values[keyStart]) >= end {
 			continue
 		}
 		kept = append(kept, copyObject(seg))
@@ -379,8 +379,8 @@ func trimPieces(pieces []*object, start, end float64) ([]*object, error) {
 	if len(kept) == 0 {
 		var nearest *object
 		for _, seg := range pieces {
-			if nearest == nil || math.Abs(number(seg.values["start"])-start) <
-				math.Abs(number(nearest.values["start"])-start) {
+			if nearest == nil || math.Abs(number(seg.values[keyStart])-start) <
+				math.Abs(number(nearest.values[keyStart])-start) {
 				nearest = seg
 			}
 		}
@@ -389,7 +389,7 @@ func trimPieces(pieces []*object, start, end float64) ([]*object, error) {
 		}
 		kept = []*object{copyObject(nearest)}
 	}
-	kept[0].set("start", start)
-	kept[len(kept)-1].set("end", end)
+	kept[0].set(keyStart, start)
+	kept[len(kept)-1].set(keyEnd, end)
 	return kept, nil
 }
