@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // install checks the list and downloads the channel's build, the way the
@@ -140,11 +141,57 @@ func TestKeptBuildsGoWhenTheListDropsThem(t *testing.T) {
 	}
 }
 
-// A download let go of half way, because another channel was picked,
-// leaves nothing behind.
-func TestACancelledDownloadKeepsNothing(t *testing.T) {
+// A download let go of half way, because another channel was picked, goes
+// on to the end and is kept, so going back has the build at once. It used
+// to be stopped and thrown away, and a look at another channel cost the
+// whole download again.
+func TestADownloadLetGoOfGoesOnAndIsKept(t *testing.T) {
 	key := testKey(t)
-	// Big enough to arrive in many reads, so the cancel lands half way.
+	// Big enough to arrive in many reads, so the wait ends half way.
+	noise := make([]byte, 4<<20)
+	_, _ = rand.Read(noise)
+	s := &served{zip: appZip(t, string(noise))}
+	srv := serve(t, s)
+	b := build(t, key, "pr-30", "0.3.0-pr30.abc1234", srv.URL+"/dev/app.zip", s.zip)
+	s.list = listJSON(t, b)
+	src := cachedSource(t, srv.URL)
+	src.Client = srv.Client()
+	src.Picked = func() string { return "pr-30" }
+	// Let go of before a byte has arrived: the download has begun all the
+	// same, and goes on.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	u := newUpdater(t, src, "0.3.0-main.4", key)
+	if _, err := u.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.DownloadAndInstall(ctx); err == nil {
+		t.Fatal("the wait was not cut off")
+	}
+	kept := filepath.Join(src.Cache, b.SHA256+".zip")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(kept); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			left, _ := os.ReadDir(src.Cache)
+			t.Fatalf("the download let go of was never kept, the cache holds %v", left)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := install(t, src, key); got != string(noise) {
+		t.Fatal("the kept build is not the build")
+	}
+	if n := s.zips.Load(); n != 1 {
+		t.Errorf("the build was downloaded %d times", n)
+	}
+}
+
+// Asked for again while it is still on its way, a build is not downloaded
+// a second time: the wait joins the download there is.
+func TestADownloadOnItsWayIsJoined(t *testing.T) {
+	key := testKey(t)
 	noise := make([]byte, 4<<20)
 	_, _ = rand.Read(noise)
 	s := &served{zip: appZip(t, string(noise))}
@@ -154,6 +201,32 @@ func TestACancelledDownloadKeepsNothing(t *testing.T) {
 	src.Client = srv.Client()
 	src.Picked = func() string { return "pr-30" }
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	u := newUpdater(t, src, "0.3.0-main.4", key)
+	if _, err := u.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_ = u.DownloadAndInstall(ctx)
+	if got := install(t, src, key); got != string(noise) {
+		t.Fatal("the build is not the build")
+	}
+	if n := s.zips.Load(); n != 1 {
+		t.Errorf("the build was downloaded %d times", n)
+	}
+}
+
+// Without a cache to go on into, a download is the wait, and a wait let go
+// of stops it.
+func TestWithoutACacheAWaitLetGoOfStopsTheDownload(t *testing.T) {
+	key := testKey(t)
+	noise := make([]byte, 4<<20)
+	_, _ = rand.Read(noise)
+	s := &served{zip: appZip(t, string(noise))}
+	srv := serve(t, s)
+	s.list = listJSON(t, build(t, key, "pr-30", "0.3.0-pr30.abc1234", srv.URL+"/dev/app.zip", s.zip))
+	src := &Source{URL: srv.URL + "/dev/channels.json", Own: "main", Client: srv.Client()}
+	src.Picked = func() string { return "pr-30" }
+	ctx, cancel := context.WithCancel(context.Background())
 	src.Progress = func(int64, int64) { cancel() }
 	u := newUpdater(t, src, "0.3.0-main.4", key)
 	if _, err := u.Check(context.Background()); err != nil {
@@ -161,8 +234,5 @@ func TestACancelledDownloadKeepsNothing(t *testing.T) {
 	}
 	if err := u.DownloadAndInstall(ctx); err == nil {
 		t.Fatal("the download was not cut off")
-	}
-	if left, _ := os.ReadDir(src.Cache); len(left) != 0 {
-		t.Errorf("kept %v", left)
 	}
 }

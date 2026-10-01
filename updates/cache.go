@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"os"
@@ -93,9 +94,9 @@ func hashOf(path string) string {
 }
 
 // keeper writes a download into the cache as it arrives, and keeps it only
-// once all of it is there and it hashes to what the list said. The cache
-// is a convenience: when it cannot be written, the download goes on and
-// nothing is kept.
+// once all of it is there and it hashes to what the list said. When the
+// cache cannot be written at all, there is no keeper and the build is
+// downloaded straight to the updater, see fetch.go.
 type keeper struct {
 	f          *os.File
 	h          hash.Hash
@@ -118,14 +119,21 @@ func (s *Source) keep(sum string) *keeper {
 	return &keeper{f: f, h: sha256.New(), part: part, kept: kept, sum: sum}
 }
 
-func (k *keeper) write(b []byte) {
+func (k *keeper) write(b []byte) error {
 	if k == nil || k.f == nil {
-		return
+		return errors.New("the build could not be written to the cache")
 	}
 	k.h.Write(b)
 	if _, err := k.f.Write(b); err != nil {
 		k.drop()
+		return fmt.Errorf("the build could not be written to the cache: %w", err)
 	}
+	return nil
+}
+
+// whole says whether what arrived hashes to what the list said.
+func (k *keeper) whole() bool {
+	return k != nil && k.f != nil && hex.EncodeToString(k.h.Sum(nil)) == k.sum
 }
 
 // done keeps the build when the download arrived whole, and drops it when
@@ -166,7 +174,8 @@ func (s *Source) prune(l List) {
 	}
 	for _, e := range entries {
 		sum := strings.TrimSuffix(strings.TrimSuffix(e.Name(), ".zip"), ".part")
-		if !named[sum] {
+		// A build on its way is left to arrive, whatever the list says.
+		if !named[sum] && !s.inFlight(sum) {
 			_ = os.RemoveAll(filepath.Join(s.Cache, e.Name()))
 		}
 	}

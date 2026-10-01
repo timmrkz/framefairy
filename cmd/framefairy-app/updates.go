@@ -127,7 +127,9 @@ type updating struct {
 	// once another channel is picked, whatever it goes on to find is thrown
 	// away rather than shown: a download of the channel before, finishing
 	// after the pick, would otherwise have the last word. stop cancels the
-	// check in hand, so a download nobody wants any more ends at once.
+	// check in hand, so the new channel's check starts at once. The
+	// download it waited for goes on into the cache, see updates/fetch.go,
+	// and going back to that channel finds it there or on its way.
 	round int
 	stop  context.CancelFunc
 	emit  func(UpdateState)
@@ -313,9 +315,10 @@ func (c *updating) refreshList() {
 	c.change(func(*UpdateState) {})
 }
 
-// Follow picks a channel and looks at once. A download of the channel
-// before is stopped and what it found forgotten, and the state shown is
-// the new channel's from this moment: a click shows at once.
+// Follow picks a channel and looks at once. The wait for a download of the
+// channel before is stopped and what it found forgotten, and the state
+// shown is the new channel's from this moment: a click shows at once. The
+// download itself goes on, so going back has it.
 func (c *updating) Follow(channel string) error {
 	if channel != "" && !updates.ValidChannel(channel) {
 		return fmt.Errorf("%q is not a channel", channel)
@@ -365,6 +368,28 @@ func (c *updating) changeIn(round int, f func(*UpdateState)) {
 			f(s)
 		}
 	})
+}
+
+// checkNow is Check on the Updates page and in the app menu: it reads the
+// channel list at once, so a channel made a moment ago is on the list
+// whatever else is going on, and then looks for the followed channel's
+// build. The list used to be read only by the check, which waited for a
+// check already running, and by the page at most once a minute.
+func (c *updating) checkNow() {
+	if c.u == nil {
+		return
+	}
+	c.mu.Lock()
+	c.listed = time.Now()
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	if _, err := c.src.Fetch(ctx); err != nil {
+		log.Printf("update channels: %v", err)
+	} else {
+		c.change(func(*UpdateState) {})
+	}
+	cancel()
+	c.check()
 }
 
 // check looks for the followed channel's build, and downloads it when it
@@ -455,7 +480,8 @@ func (c *updating) checkOnce() {
 	})
 	if err := c.u.DownloadAndInstall(ctx); err != nil {
 		// Let go of because another channel was picked: nothing went
-		// wrong, and the next check is already on its way.
+		// wrong, the download goes on into the cache, and the next check
+		// is already on its way.
 		if ctx.Err() == context.Canceled {
 			return
 		}

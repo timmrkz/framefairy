@@ -461,18 +461,25 @@ with its newest build, so one fetch is the whole check:
    after, and every twenty seconds while a commit is being built, so the
    build is found soon after it lands. It downloads it quietly and puts
    the dot on Updates. One click,
-   one restart. Check looks at once.
+   one restart. **Check** looks at once, and reads the channel list again
+   first, whatever else is going on, so a pull request whose first build
+   has just been published is on the list the moment Check is clicked. It
+   used to wait for a check already running, a download among them.
 5. **Tim picks #20**, or main. The app downloads that channel's newest
    build, sideways, and says it is ready. A pick while another channel's
-   build is downloading stops that download at once, and the page shows
-   the new channel from the moment of the pick. Whatever the download
-   before says after that, its progress or that it finished, is thrown
-   away rather than shown: every pick starts a round of its own, and a
-   check only speaks for the round it began in. Going back to a channel
-   whose build was downloaded before does not download it again: every
-   build that arrives whole is kept, under its SHA-256, in
-   `~/Library/Caches/FrameFairy/builds`, and a pick that comes back to it
-   has it ready in the time it takes to unpack. A kept build is used only
+   build is downloading takes over at once, and the page shows the new
+   channel from the moment of the pick. The download before goes on, out
+   of sight, to the end: every build goes into the cache first,
+   `~/Library/Caches/FrameFairy/builds`, under its SHA-256, and from there
+   to the updater, so a download nobody waits for any more still arrives,
+   see `updates/fetch.go`. It used to be stopped with the wait, and what
+   it had was thrown away, so a look at another channel cost the whole
+   download again. Whatever the download before says on the way, its
+   progress or that it finished, is not shown: every pick starts a round
+   of its own, and a check only speaks for the round it began in. Going
+   back to a channel finds its build kept and ready in the time it takes
+   to unpack, or still on its way, and the fill goes on from where it is.
+   A build is never downloaded twice at once. A kept build is used only
    while it still hashes to what the list says, and the updater checks it
    again, checksum and signature, as it checks a download.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
@@ -513,7 +520,7 @@ Otherwise every `make run` would fetch a build to replace itself with.
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. The builds downloaded are kept in the user's caches, so a channel picked again has its build at once, and whatever the list stops naming is removed each time it is read |
+| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the user's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
