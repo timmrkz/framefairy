@@ -322,7 +322,7 @@ func (e *Engine) Resend(ctx context.Context, email string) error
 func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string) (licence.Key, error)
 func (e *Engine) Revoke(ctx context.Context, t Target, why string) error
 func (e *Engine) Restore(ctx context.Context, t Target, why string) error
-func (e *Engine) Stock(ctx context.Context, batch []licence.Key) error
+func (e *Engine) Stock(ctx context.Context, batch []licence.Key) (added int, err error)
 func (e *Engine) PoolLevel(ctx context.Context) (left, batch int, err error)
 func (e *Engine) RevokeUnsold(ctx context.Context, why string) error
 func (e *Engine) Retire(ctx context.Context, why string) error // set the unsold pool aside, revoke nothing
@@ -344,6 +344,16 @@ Handing out a key is one database transaction: take the oldest unsold key,
 mark it sold to this order and seat, write the record line. A unique rule
 on order and seat makes a second webhook for the same sale find the keys
 already given instead of taking new ones.
+
+`Store` is plain storage, `Update` and `View` around a transaction that
+adds, finds and moves rows, and every rule is the engine's. A database may
+run a transaction twice when it collides with another, so the engine keeps
+nothing from a run that did not commit. The store in memory has a mode
+that runs every transaction twice, and every engine test runs in it.
+
+Built so far: `Assign`, `Keys`, `Stock`, `PoolLevel` and `VerifyRecord`,
+on the store in memory. A batch handed over twice adds its keys once, and
+a key whose ID the pool already has is refused.
 
 What reaches it, and who may call what:
 
