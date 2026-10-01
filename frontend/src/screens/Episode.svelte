@@ -2096,7 +2096,10 @@
     if (!want || current?.key !== want.key || !lit.length) return;
     landOn = null;
     const word = want.last ? lit[lit.length - 1] : lit[0];
-    seekTo(intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+    const at = intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+    seekTo(at);
+    // The word landed on is the keyboard's word, as any word walked to is.
+    untrack(() => player?.keyAt(at));
   });
 
   onMount(() => {
