@@ -63,13 +63,18 @@
 
   // The time running out, kept here and nowhere else. The clock is the
   // time: it decides when the time is over and how much is left, and the
-  // fill is set from it every time it stops or runs on. The pause was the
-  // stylesheet's, a play state flipped by :hover, and each engine kept the
-  // time of a paused animation its own way: in WebKit, which draws the app
-  // on a Mac, a pointer passing over the row gave the time back, so the
-  // fill ran up again and the row stayed longer than it said. The
-  // animation is still carried by the compositor, it is only started,
-  // held and let go from here.
+  // fill is drawn from it. Held, the fill stands where the clock says, as
+  // a plain transform with no animation at all. Let go, it is a new
+  // animation from there to nothing over the time left, carried by the
+  // compositor.
+  //
+  // An animation is never paused and played again. WebKit, which draws the
+  // app on a Mac, plays a paused animation on from its timeline's last
+  // frame rather than from now, so the fill jumped ahead as the pointer
+  // left the row and back again as it came in: a fill that grew back
+  // under the hand. Pausing it with a play state in the stylesheet did
+  // the same and gave the time back as well. Seen in WebKitGTK 2.52 under
+  // a pointer moved by XTest, and gone with this.
   function runDown(node: HTMLElement) {
     return untrack(() => {
       const host = node.closest(".beam")?.parentElement;
@@ -78,27 +83,35 @@
       let since = performance.now();
       let timer = 0;
       let held = false;
-      const fill = node.animate([{ transform: "translateX(0)" }, { transform: "translateX(-100%)" }], {
-        duration: whole,
-        easing: "linear",
-        fill: "forwards",
-      });
-      const show = () => (fill.currentTime = whole - left);
+      let fill: Animation | null = null;
+      // Where the fill stands with this much time left.
+      const at = () => `translateX(${((whole > 0 ? left / whole : 0) - 1) * 100}%)`;
+      const stand = () => {
+        fill?.cancel();
+        fill = null;
+        node.style.transform = at();
+      };
+      const run = () => {
+        stand();
+        fill = node.animate([{ transform: at() }, { transform: "translateX(-100%)" }], {
+          duration: left,
+          easing: "linear",
+          fill: "forwards",
+        });
+      };
       const over = () => onend?.();
       const hold = () => {
         if (held) return;
         held = true;
         left = Math.max(0, left - (performance.now() - since));
         clearTimeout(timer);
-        fill.pause();
-        show();
+        stand();
       };
       const go = () => {
         if (!held) return;
         held = false;
         since = performance.now();
-        show();
-        fill.play();
+        run();
         timer = window.setTimeout(over, left);
         onresume?.(left / 1000);
       };
@@ -109,7 +122,7 @@
       const leftFocus = (e: FocusEvent) => {
         if (!host?.contains(e.relatedTarget as Node | null) && !host?.matches(":hover")) go();
       };
-      show();
+      run();
       timer = window.setTimeout(over, left);
       // A row that appears under the pointer, as a removed clip's row
       // does under the trash can just pressed, starts held.
@@ -120,7 +133,7 @@
       host?.addEventListener("focusout", leftFocus);
       return () => {
         clearTimeout(timer);
-        fill.cancel();
+        fill?.cancel();
         host?.removeEventListener("pointerenter", hold);
         host?.removeEventListener("pointerleave", out);
         host?.removeEventListener("focusin", hold);
