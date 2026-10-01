@@ -174,7 +174,7 @@ func withoutNewClips(was, now fileState) (fileState, bool) {
 	if list == nil {
 		list = []any{}
 	}
-	after.top.values["clips"] = list
+	after.top.values[keyClips] = list
 	body, err := marshalNoEscape(after.top)
 	if err != nil {
 		return now, false
@@ -267,7 +267,7 @@ func splitPlan(state fileState) (*planParts, error) {
 		return nil, renderErr("clip plan must be a JSON object")
 	}
 	parts := &planParts{top: top, clips: map[string]*object{}}
-	list, _ := top.values["clips"].([]any)
+	list, _ := top.values[keyClips].([]any)
 	for i, item := range list {
 		c, ok := item.(*object)
 		if !ok {
@@ -275,7 +275,7 @@ func splitPlan(state fileState) (*planParts, error) {
 		}
 		fallback := twoDigits(i + 1)
 		id := fallback
-		if raw, ok := c.get("id"); ok {
+		if raw, ok := c.get(keyID); ok {
 			id = pyStr(raw)
 		}
 		id = SanitiseName(id, fallback)
@@ -327,7 +327,7 @@ func fieldsOf(p *planParts) map[string]any {
 		return out
 	}
 	for _, k := range p.top.keys {
-		if k != "clips" && k != "revision" {
+		if k != keyClips && k != keyRevision {
 			out[k] = p.top.values[k]
 		}
 	}
@@ -379,7 +379,7 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 	}
 	var fields []string
 	for _, k := range append(append([]string(nil), src.top.keys...), dst.top.keys...) {
-		if k == "clips" || k == "revision" {
+		if k == keyClips || k == keyRevision {
 			continue
 		}
 		if equalJSON(fromFields[k], toFields[k]) || contains(fields, k) {
@@ -415,11 +415,11 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 				top.remove(k)
 			}
 		}
-		list, _ := top.values["clips"].([]any)
+		list, _ := top.values[keyClips].([]any)
 		for _, id := range ids {
 			list = putClip(list, id, dst)
 		}
-		top.set("clips", list)
+		top.set(keyClips, list)
 		return nil
 	})
 	if err != nil {
@@ -463,7 +463,7 @@ func putClip(list []any, id string, to *planParts) []any {
 		}
 		fallback := twoDigits(i + 1)
 		cid := fallback
-		if raw, ok := c.get("id"); ok {
+		if raw, ok := c.get(keyID); ok {
 			cid = pyStr(raw)
 		}
 		if SanitiseName(cid, fallback) == id {
@@ -507,14 +507,14 @@ func recordRestored(planPath string, ids []string, from, to *planParts) {
 			if c == nil {
 				return false
 			}
-			v, ok := c.get("rejected")
+			v, ok := c.get(keyRejected)
 			return ok && v == true
 		}
 		segments := func(c *object) any {
 			if c == nil {
 				return nil
 			}
-			v, _ := c.get("segments")
+			v, _ := c.get(keySegments)
 			return v
 		}
 		switch {

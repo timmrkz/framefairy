@@ -154,10 +154,10 @@ func PlanSummaries(logs string) []PlanSummary {
 		s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 			Modified: info.ModTime()}
 		made := plan.PlannedWith()
-		if v, ok := toFloat(made["from"]); ok {
+		if v, ok := toFloat(made[keyFrom]); ok {
 			s.From = v
 		}
-		if v, ok := toFloat(made["to"]); ok {
+		if v, ok := toFloat(made[keyTo]); ok {
 			s.To = v
 		}
 		if v, ok := made["model"].(string); ok {
@@ -166,7 +166,7 @@ func PlanSummaries(logs string) []PlanSummary {
 		if v, ok := made["by"].(string); ok {
 			s.By = v
 		}
-		s.Removed = readWindows(made["removed"])
+		s.Removed = readWindows(made[keyRemoved])
 		out = append(out, s)
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].Modified.After(out[b].Modified) })
@@ -412,7 +412,7 @@ func ReadPlan(path string) (*PlanView, error) {
 	view.Summary.Path, view.Summary.Name = path, filepath.Base(path)
 
 	extras := map[string]map[string]any{}
-	if list, ok := plan.Raw["clips"].([]any); ok {
+	if list, ok := plan.Raw[keyClips].([]any); ok {
 		for i, item := range list {
 			entry, ok := item.(map[string]any)
 			if !ok {
@@ -420,7 +420,7 @@ func ReadPlan(path string) (*PlanView, error) {
 			}
 			fallback := twoDigits(i + 1)
 			id := fallback
-			if value, present := entry["id"]; present {
+			if value, present := entry[keyID]; present {
 				id = pyStr(value)
 			}
 			extras[SanitiseName(id, fallback)] = entry
@@ -439,7 +439,7 @@ func ReadPlan(path string) (*PlanView, error) {
 			v.CaptionY = *c.CaptionY
 		}
 		if extra := extras[c.ID]; extra != nil {
-			if reason, ok := extra["reason"].(string); ok {
+			if reason, ok := extra[keyReason].(string); ok {
 				v.Reason = Scrub(reason, 300)
 			}
 		}
