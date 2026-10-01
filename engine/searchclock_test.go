@@ -367,3 +367,27 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 		t.Error("the answer was written twice")
 	}
 }
+
+// A part that runs longer than it did before does not hold the time left
+// still. The fitting was timed at 10 seconds and 3 of framing follow it,
+// so for a minute past its estimate the search said About 0:05 left, and
+// went on saying it. Past the estimate, with nothing counted, the clock no
+// longer knows how long is left and says no time at all.
+func TestTimeLeftDoesNotStandStillPastTheEstimate(t *testing.T) {
+	now := searchNow{Part: partFitting, Chars: 30000, Count: 6, Local: true, Budget: -1,
+		Taken: 5, Landed: 1}
+	var lefts []float64
+	for _, at := range []float64{5, 15, 30, 60} {
+		now.InPart = at
+		_, left := searchProgress(now, lastTime, true)
+		lefts = append(lefts, left)
+	}
+	if lefts[0] <= 0 {
+		t.Errorf("halfway through the fitting by the clock says no time left: %.1f", lefts[0])
+	}
+	for i, left := range lefts[1:] {
+		if left >= 0 {
+			t.Errorf("%d: %.1f seconds left past the estimate, with nothing counted", i+1, left)
+		}
+	}
+}
