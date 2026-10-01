@@ -387,6 +387,16 @@ The service does not need to be always up, and it is not built to be.
 | Partners | Their calls fail and they retry, or they sell from keys made in advance |
 | Revocations | Wait for the service. The last published list stays in force |
 
+**Why there is no pool of keys made in advance.** Some shops hand out keys
+from a list uploaded beforehand, so a sale never waits on the seller.
+FastSpring still does, and Paddle Classic did. Paddle Billing does not:
+Paddle dropped all fulfilment of its own and leaves it to webhooks, see
+[Paddle's comparison](https://developer.paddle.com/migrate/learn/feature-comparison/).
+A pool would also cost the name on the key, the ID that comes from the
+sale, and keys that can always be made again, and it would leave live,
+unsold keys in someone else's system. Retries and the daily check cover a
+short outage without any of that.
+
 An outside check calls the service every few minutes and emails us when it
 does not answer. Back within a day is good enough, and a server restarted
 by the operating system after a crash is back within seconds.
