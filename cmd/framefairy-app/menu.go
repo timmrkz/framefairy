@@ -6,8 +6,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// appMenu is the menu Wails gives every app, with two changes: Undo and
-// Redo in Edit belong to the app, and so does Help.
+// appMenu is the menu Wails gives every app, with three changes: Undo and
+// Redo in Edit belong to the app, so does Help, and Go is added.
 //
 // The stock ones hand the keys to the web view, whose undo only knows about
 // text being typed. On macOS the menu takes Cmd-Z before the page ever sees
@@ -55,6 +55,21 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	edit.AddRole(application.Delete)
 	edit.AddRole(application.SelectAll)
 	menu.AddRole(application.ViewMenu)
+	// Go takes the playhead back to where it was and forward again, the
+	// way Back and Forward do in Finder's Go menu and in a browser. Undo is
+	// for edits, and a playhead put somewhere is not one. The keys are
+	// Finder's on the Mac and File Explorer's elsewhere.
+	back, forward := "CmdOrCtrl+[", "CmdOrCtrl+]"
+	if runtime.GOOS != "darwin" {
+		back, forward = "Alt+Left", "Alt+Right"
+	}
+	goMenu := menu.AddSubmenu("Go")
+	goMenu.Add("Back").SetAccelerator(back).OnClick(func(*application.Context) {
+		app.Event.Emit("go", "back")
+	})
+	goMenu.Add("Forward").SetAccelerator(forward).OnClick(func(*application.Context) {
+		app.Event.Emit("go", "forward")
+	})
 	menu.AddRole(application.WindowMenu)
 	// Help holds what apps keep out of the way and within reach, the
 	// notices of the work Frame Fairy is made with. The stock Help menu
