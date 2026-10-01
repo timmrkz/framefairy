@@ -92,7 +92,7 @@ func TestSnapWords(t *testing.T) {
 // It ends where its sound does, but never inside the next word and never
 // more than holdOn past where the recogniser ended it.
 func TestSnapWordsFollowsAWordToTheEndOfItsSound(t *testing.T) {
-	sound := frames(8, Span{1.00, 1.90}, Span{2.00, 2.40}, Span{3.00, 7.00})
+	sound := frames(8, Span{1.00, 1.75}, Span{2.00, 2.40}, Span{3.00, 7.00})
 	got := SnapWords([]Cue{
 		{1.00, 1.40, "held"},  // said until 1.90, a pause follows
 		{2.00, 2.10, "zwei"},  // said until 2.40, ended at 2.10
@@ -100,7 +100,7 @@ func TestSnapWordsFollowsAWordToTheEndOfItsSound(t *testing.T) {
 		{3.50, 3.70, "vier"},  // and on and on, room noise or music
 		{6.50, 6.60, "fuenf"}, // a word far away in that noise
 	}, sound, 0, -40)
-	want := []Span{{1.00, 1.90}, {2.00, 2.40}, {3.00, 3.50}, {3.50, 3.70 + holdOn}, {6.50, 7.00}}
+	want := []Span{{1.00, 1.75}, {2.00, 2.40}, {3.00, 3.50}, {3.50, 3.70 + holdOn}, {6.50, 6.60 + holdOn}}
 	for i, w := range want {
 		if !near(got[i].Start, w.Start) || !near(got[i].End, w.End) {
 			t.Errorf("%s = %.2f-%.2f, want %.2f-%.2f", got[i].Text, got[i].Start, got[i].End, w.Start, w.End)

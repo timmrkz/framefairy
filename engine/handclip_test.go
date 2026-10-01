@@ -149,8 +149,13 @@ func TestAClipMadeByHand(t *testing.T) {
 	if len(view.Clips) != 2 {
 		t.Fatalf("%d clips", len(view.Clips))
 	}
+	// It ends with the sentence the playhead stands in. The test's words
+	// have no punctuation, so that sentence is the line, which runs until
+	// it is maxLineSeconds long, and where lines fall moves with how long
+	// each word is. So the clip ends at 60 s or after, by no more than a
+	// line, and is as long as it may be.
 	o := view.Clips[1]
-	if o.End < 60-0.01 || o.Start > 60-20 || o.Duration > 30.5 {
+	if o.End < 60-0.01 || o.End > 60+maxLineSeconds || o.Duration < 20 || o.Duration > 30.5 {
 		t.Errorf("O at 60 s made %.1f to %.1f s", o.Start, o.Start+o.Duration)
 	}
 }

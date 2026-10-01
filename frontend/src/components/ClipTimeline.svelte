@@ -32,6 +32,7 @@
     inClip,
     inEpisode,
     insideClip,
+    litWord,
     type CaptionDraft,
     type Parts,
   } from "../lib/flow";
@@ -1045,15 +1046,7 @@
   // keys pops both at once.
   const spokenAt = $derived(clip && cuePieces.length ? inClip(cuePieces, time) : -1);
   function wordNow(c: CaptionCue): number {
-    let k = -1;
-    let n = 0;
-    for (const line of c.lines ?? []) {
-      for (const w of line.words ?? []) {
-        if (spokenAt >= w.start) k = n;
-        n++;
-      }
-    }
-    return k;
+    return litWord(c.lines ?? [], spokenAt);
   }
 
   // Where a click on a caption puts the playhead: a frame into its first

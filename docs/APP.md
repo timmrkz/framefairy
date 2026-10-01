@@ -1114,7 +1114,15 @@ moved by hand, on the clip timeline.
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
-  screen from the clip's first frame, before its first word. The edge
+  screen from the clip's first frame, before its first word.
+- **A word is lit from its start until the next word starts**, and the
+  last word of a caption until the caption goes, in the video preview, on
+  the clip timeline and in the render alike: `litWord` in
+  `frontend/src/lib/flow.ts` for the two in the app and the highlight in
+  `engine/highlight.go` for the short. The video preview used to light a
+  word only until its own end, so the highlight went out while a word was
+  still being said and between every two words, where the short and the
+  clip timeline went on showing it. The edge
   under the pointer, or the one being dragged, is a white line with a dark
   edge that goes again when the hand lets go. Two captions that meet have
   a gap of two pixels between them.

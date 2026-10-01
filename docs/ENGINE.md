@@ -178,14 +178,28 @@ has measured. They are the same numbers where both exist.
 ## How words get their timing
 
 The recogniser gives every word a start and a duration, on an 80 ms grid. It
-also folds pauses into the words around them, so a word after a pause tends
-to start early and a word before one tends to end late.
+can fold a pause into the words around it, so a word after a pause may start
+early and a word before one may end late. More often a word before a pause
+ends early: the recogniser gives a word's last piece a duration of at most
+four of its steps, 320 ms, however long the sound is held. Measured with the
+speech model on its own test recordings, 7 of 64 words, nearly all of them
+the last word before a pause, ended while their sound went on for 30 to
+160 ms more.
 
-The loudness measured every 10 ms corrects that. A word stamped inside a
-real pause moves forward to where its sound starts. A word stamped just after
-an onset moves back onto it. A word running into a pause ends where the sound
-stopped. A single quiet frame at a word start is left alone, because many
-words begin softly.
+The loudness measured every 10 ms corrects all of that. A word stamped inside
+a real pause moves forward to where its sound starts. A word stamped just
+after an onset moves back onto it. A word running into a pause ends where the
+sound stopped, and a word whose sound goes on past its end follows it to
+where it stops, never into the next word and never more than 0.4 s, the most
+the recogniser can be short by. That limit is there because the end of a
+word is also where a pause begins, and pauses decide where a clip cuts dead
+air and where a caption breaks: under music loud enough to count as sound,
+an end with no limit would run on through every pause. A single quiet frame
+at a word start is left alone, because many words begin softly.
+
+A word that ended early was more than a caption that went early. A clip's
+pieces keep 0.1 s of air after their last word, so the render cut off the
+end of the last word of a piece while it was still being said.
 
 Measured on test audio with known word starts, a typical start ends up 6 ms
 off and 9 in 10 are within 15 ms. Inside continuous speech there is no pause
@@ -403,7 +417,8 @@ light are the halves an edge dragged with shift lands on.
 The recogniser's word timings are moved onto the sound when a transcript
 is read, `SnapWords` in `engine/audio.go`. A word ends where its last
 sound does, when 120 ms or more of silence follow it before the
-recogniser's end. A silence with more of the word after it is not the
+recogniser's end, and when its sound goes on past that end, up to 0.4 s
+and never into the next word. A silence with more of the word after it is not the
 end: the recogniser hears a compound, or words said as one, as one word,
 and "sweet-grundschulliebe" used to be cut off at the breath before
 "liebe", which then had no caption and was never lit. The raw timings are

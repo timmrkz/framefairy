@@ -212,6 +212,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 4.6 | The caption fonts built into the binary, so nothing has to be installed | `[x]` |
 | 4.7 | Lines broken by measured width, and the size brought down when a word will not fit | `[x]` |
 | 4.8 | Playing ends a word correction: the word is saved as with Enter, the caret and any highlighted letters leave it, and the captions follow the picture again. Asked for by Tim | `[x]` |
+| 4.9 | Caption timing that follows the sound: a word ends where its sound does, up to 0.4 s past the speech model's end, and the video preview lights a word until the next one starts, the way the render and the clip timeline do. Asked for by Tim | `[x]` |
 
 ## Phase 5: packaging
 

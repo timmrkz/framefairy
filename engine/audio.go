@@ -176,8 +176,14 @@ func isPunctuation(s string) bool {
 	return true
 }
 
-// holdOn is the furthest a word's end is moved on to follow its sound.
-const holdOn = 0.8
+// holdOn is the furthest a word's end is moved on to follow its sound:
+// the most the recogniser can have cut it short by, a last piece of four
+// 80 ms steps and one step more. It is no further because the end of a
+// word is also where a pause begins, and pauses decide where a clip cuts
+// dead air and where a caption breaks. Under music or room noise loud
+// enough to count as sound, an end that followed the sound without a
+// limit would run on through every pause.
+const holdOn = 0.4
 
 // SnapWords moves each word onto the sound it belongs to.
 //
