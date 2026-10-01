@@ -131,7 +131,7 @@ func main() {
 		app.Event.Emit("updates", u)
 	})
 	app.Menu.Set(appMenu(app, func() {
-		go svc.updates.check()
+		go svc.updates.checkNow()
 		app.Event.Emit("show-updates", nil)
 	}))
 	// The commit of the build on the Updates page is a link, so a right
@@ -324,8 +324,9 @@ func (s *FrameFairy) Updates() UpdateState {
 // and looks at once. Empty goes back to the channel the build came from.
 func (s *FrameFairy) FollowChannel(channel string) error { return s.updates.Follow(channel) }
 
-// CheckForUpdates looks for a newer build now, and downloads it.
-func (s *FrameFairy) CheckForUpdates() { go s.updates.check() }
+// CheckForUpdates reads the channel list again and looks for a newer build
+// now, and downloads it.
+func (s *FrameFairy) CheckForUpdates() { go s.updates.checkNow() }
 
 // OpenCommit opens the commit the running build was made from, on
 // GitHub, in the browser. Only that commit, never one the interface names.
