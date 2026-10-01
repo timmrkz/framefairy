@@ -190,8 +190,14 @@ The loudness measured every 10 ms corrects all of that. A word stamped inside
 a real pause moves forward to where its sound starts. A word stamped just
 after an onset moves back onto it. A word running into a pause ends where the
 sound stopped, and a word whose sound goes on past its end follows it to
-where it stops, never into the next word and never more than 0.4 s, the most
-the recogniser can be short by. That limit is there because the end of a
+where it stops, when it stops before the next word and within 0.4 s, the most
+the recogniser can be short by. Sound that runs on into the next word is left
+to that word: it is the next word said early, not this one held. In Tim's
+episode "ich." ended a sentence and "Also," followed with no pause, and a
+word end that followed the sound gave "Also"'s first sound to "ich.", so a
+clip starting at "Also" opened its captions with "ich.". Of 11,074 words,
+743 used to run on 50 ms or more past the recogniser's end, and 58 do now,
+each one into a pause, and no start moved. That limit is there because the end of a
 word is also where a pause begins, and pauses decide where a clip cuts dead
 air and where a caption breaks: under music loud enough to count as sound,
 an end with no limit would run on through every pause. A single quiet frame
@@ -417,8 +423,8 @@ light are the halves an edge dragged with shift lands on.
 The recogniser's word timings are moved onto the sound when a transcript
 is read, `SnapWords` in `engine/audio.go`. A word ends where its last
 sound does, when 120 ms or more of silence follow it before the
-recogniser's end, and when its sound goes on past that end, up to 0.4 s
-and never into the next word. A silence with more of the word after it is not the
+recogniser's end, and when its sound goes on past that end and stops
+within 0.4 s and before the next word starts. A silence with more of the word after it is not the
 end: the recogniser hears a compound, or words said as one, as one word,
 and "sweet-grundschulliebe" used to be cut off at the breath before
 "liebe", which then had no caption and was never lit. The raw timings are

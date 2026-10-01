@@ -89,22 +89,37 @@ func TestSnapWords(t *testing.T) {
 
 // The recogniser gives a word's last piece at most four of its 80 ms
 // steps, so a word held before a pause ends while it is still being said.
-// It ends where its sound does, but never inside the next word and never
-// more than holdOn past where the recogniser ended it.
+// It ends where its sound does, when that sound stops before the next
+// word and within holdOn of where the recogniser ended it.
 func TestSnapWordsFollowsAWordToTheEndOfItsSound(t *testing.T) {
-	sound := frames(8, Span{1.00, 1.75}, Span{2.00, 2.40}, Span{3.00, 7.00})
+	sound := frames(8, Span{1.00, 1.75}, Span{2.00, 2.40}, Span{3.00, 6.20}, Span{6.50, 6.95})
 	got := SnapWords([]Cue{
-		{1.00, 1.40, "held"},  // said until 1.90, a pause follows
+		{1.00, 1.40, "held"},  // said until 1.75, a pause follows
 		{2.00, 2.10, "zwei"},  // said until 2.40, ended at 2.10
 		{3.00, 3.20, "drei"},  // the sound goes on into the next word
-		{3.50, 3.70, "vier"},  // and on and on, room noise or music
-		{6.50, 6.60, "fuenf"}, // a word far away in that noise
+		{3.50, 3.70, "vier"},  // and on past holdOn, room noise or music
+		{6.50, 6.60, "fuenf"}, // said until 6.95, within holdOn
 	}, sound, 0, -40)
-	want := []Span{{1.00, 1.75}, {2.00, 2.40}, {3.00, 3.50}, {3.50, 3.70 + holdOn}, {6.50, 6.60 + holdOn}}
+	want := []Span{{1.00, 1.75}, {2.00, 2.40}, {3.00, 3.20}, {3.50, 3.70}, {6.50, 6.95}}
 	for i, w := range want {
 		if !near(got[i].Start, w.Start) || !near(got[i].End, w.End) {
 			t.Errorf("%s = %.2f-%.2f, want %.2f-%.2f", got[i].Text, got[i].Start, got[i].End, w.Start, w.End)
 		}
+	}
+}
+
+// The word before a clip ran on into the word the clip began with: "ich."
+// ended where the clip began, its sound faded straight into "Also", and
+// the clip's captions began with "ich.". From Tim's episode, 34:18.
+func TestSnapWordsLeavesSoundThatRunsIntoTheNextWord(t *testing.T) {
+	sound := frames(3, Span{1.00, 2.30})
+	got := SnapWords([]Cue{{1.00, 1.23, "ich."}, {1.31, 1.47, "Also,"}}, sound, 0, -40)
+	if !near(got[0].End, 1.23) {
+		t.Errorf("ich. ends at %.2f, want 1.23", got[0].End)
+	}
+	clip := Clip{Segments: []Segment{{Start: 1.23, End: 2.3}}}
+	if said := cueTexts(Said(clip, got)); said != "Also," {
+		t.Errorf("the clip says %q", said)
 	}
 }
 

@@ -193,7 +193,8 @@ const holdOn = 0.4
 // is. A start that lands in silence moves forward to where the sound begins,
 // a start just after a real onset moves back onto it, an end that runs
 // into a pause is pulled back to where the sound stopped, and an end that
-// stops while the sound goes on follows it to where it stops.
+// stops while the sound goes on follows it to where it stops, when it
+// stops before the next word.
 func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 	if len(frames) == 0 {
 		return words
@@ -279,13 +280,25 @@ func SnapWords(words []Cue, frames []float32, start, floor float64) []Cue {
 		// its block on the clip timeline stopped short of its own waveform.
 		// The sound is followed to where it stops, never into the next word
 		// and never more than holdOn past the recogniser's end.
+		//
+		// Only when it does stop. Sound that runs on without a break into
+		// the next word is as likely that word's beginning as this word's
+		// end, and then the recogniser's end stands. Taken for this word,
+		// "ich." at the end of a sentence ran on into the "Also" that
+		// began a clip, and the clip's captions began with a word its
+		// sound did not hold. Sound that never stops within holdOn, music
+		// or room noise, is left alone the same way.
 		end = math.Max(end, begin)
 		reach := end + holdOn
 		if next < reach {
 			reach = next
 		}
-		for g := frameAt(end); loud(g) && timeAt(g+1) <= reach+1e-9; g++ {
-			end = timeAt(g + 1)
+		g := frameAt(end)
+		for loud(g) && timeAt(g+1) <= reach+1e-9 {
+			g++
+		}
+		if !loud(g) {
+			end = math.Max(end, timeAt(g))
 		}
 		begin = math.Max(begin, low)
 		if next > begin+0.02 {
