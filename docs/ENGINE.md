@@ -739,20 +739,32 @@ off the length, and the framing still going after that.
 Every search that finishes keeps how long each part took, per model, in
 `~/.framefairy/speed.json`: the seconds to load, the transcript characters
 read per second, the seconds of thinking and the tokens thought a second,
-the seconds per clip, the seconds the model took to answer about the
-clips held back, and the seconds of framing after the answer and the
-fitting. The fitting is counted from the start of a local search, whether
-a clip will need it or not, because a share that learned of it once the
-answer was in would go back, and a search with nothing to fit steps over
-it. It was not counted at all once, and the fill stood full for as long
-as the model was asked about two clips. While a search runs it holds the
+the seconds per clip, the seconds the model took to answer about each
+clip held back, and the seconds of framing after the answer and the
+fitting for each round of the framers, which frame up to four clips at
+once. The fitting and the framing after it take as long as the clips
+they wait on, so they are estimated from how many there are: one clip to
+fit until the answer says how many are held back, and the clips not yet
+framed when the model stops. One number for each said About 0:05 left
+for a minute while the model was asked about four clips. The fitting is
+counted from the start of a local search, whether a clip will need it or
+not, and a search with nothing to fit steps over it. It was not counted
+at all once, and the fill stood full for as long as the model was asked
+about two clips. An estimate that grows once the answer is in never
+takes the fill back: the fill waits until the work catches up. While a search runs it holds the
 progress line: a step inside it that ends, or ffmpeg done with one clip,
 does not clear it, so the fill never goes and comes back. Each
 new timing counts half, so one slow search on a busy machine moves the
 next estimate without taking it over. The next search reports its share
 and the time left against those, about twice a second. Inside a part,
-what the model counts beats the clock: llama-server's count of the prompt
-it has read, and the tokens it has thought against its budget. A local
+what the work counts beats the clock: llama-server's count of the prompt
+it has read, the tokens it has thought against its budget, the clips it
+has written, the clips it has given again when asked about them, and the
+clips framed. A part that runs past its estimate does not hold the time
+left still. It was held at what was left of the estimate, which said
+About 0:05 left for a minute. Past the estimate, the time left is worked
+out from how fast the part's own count has gone, and a part that counts
+nothing, like loading, says no time left until it is over. A local
 model this machine has not timed yet is measured against a search timed on
 an M2 Max with Gemma 4, which is close enough to say how far it is and is
 replaced by the first search that finishes. A model in the cloud listed
@@ -766,9 +778,12 @@ silent until the answer begins, so the search could not tell thinking from
 hanging. There is no thinking budget in the cloud: these models refuse
 one, and `effort` is the only lever, left at its default. A
 search against a server that was already running loaded nothing, and
-leaves the loading time as it was, and one that asked nothing again leaves
-the fitting time. A record from before the thinking or the fitting was
-timed on its own measured something else, and is replaced.
+leaves the loading time as it was, one that asked nothing again leaves
+the fitting time, and one that had framed every clip by the time the
+model stopped leaves the framing time. It was kept as no time at all,
+which halved the record on every such search. A record from before the
+fitting and the framing were timed per clip measured something else, and
+is replaced.
 
 **The model is loaded before the search needs it.** Loading takes
 llama-server about 24 seconds. The running server belongs to the

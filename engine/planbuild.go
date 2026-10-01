@@ -237,7 +237,11 @@ func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
 func (b *planBuilder) acceptLocked(entry PlanEntry) {
 	b.order = append(b.order, entry)
 	card := len(b.order)
-	if b.fits && (b.opts.recipe().Edit || b.outside(b.seconds(entry.Keep))) {
+	hold := b.fits && (b.opts.recipe().Edit || b.outside(b.seconds(entry.Keep)))
+	if b.clock != nil {
+		b.clock.named(hold)
+	}
+	if hold {
 		b.held = append(b.held, entry)
 		b.heldCards = append(b.heldCards, card)
 		// On its way like any other, being fitted to the length first.
@@ -439,6 +443,9 @@ func (b *planBuilder) clipKey(id string) string {
 // arrived takes a clip off the list of clips on the way, let go. A clip
 // that is written is taken off by land, in the same event that counts it.
 func (b *planBuilder) arrived(job planJob) {
+	if b.clock != nil {
+		b.clock.framed()
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.takeOffLocked(job.card)

@@ -35,8 +35,9 @@ import (
 // speedVersion is raised whenever what a record measures changes. A record
 // of another version measured something else and is no record.
 // 3 gave fitting a part of its own. Before, the tail ran from the end of
-// the answer and held the fitting too.
-const speedVersion = 3
+// the answer and held the fitting too. 4 measures the fitting and the
+// tail per clip, because both take as long as the clips they wait on.
+const speedVersion = 4
 
 // searchSpeed is how long the parts of a search took on this machine, for
 // one model.
@@ -53,12 +54,13 @@ type searchSpeed struct {
 	Rate    float64 `json:"rate"`
 	// Clip is the seconds each clip took to write.
 	Clip float64 `json:"clip"`
-	// Fit is the seconds it took a local model to answer about the clips
+	// Fit is the seconds it took a local model to answer about each clip
 	// held back to be fitted to the length, when it was asked.
 	Fit float64 `json:"fit"`
-	// Tail is the seconds from the end of the answer, and of the fitting
-	// where there was one, to the last clip in the plan, which is the
-	// framing still going when the model stops.
+	// Tail is the seconds the framing took after the answer, and after
+	// the fitting where there was one, for each round of the framers: the
+	// clips still to frame then, as many at a time as there are framers.
+	// It is the framing still going when the model stops.
 	Tail float64 `json:"tail"`
 	Runs int     `json:"runs"`
 }
@@ -66,10 +68,11 @@ type searchSpeed struct {
 // measuredLocal stands in for a local model this machine has not timed yet:
 // Gemma 4 26B A4B on an M2 Max with 32 GB, reading a half hour window of
 // German, 16,000 tokens.
-// The 28 seconds after the answer were timed with the fitting in them, and
-// are split between the fitting and the framing after it.
+// The 28 seconds after the answer were timed with the fitting of two clips
+// in them and one round of framing after it, and are split between the
+// two.
 var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 1170,
-	Thought: 260, Rate: 47, Clip: 1.1, Fit: 12, Tail: 16, Runs: 1}
+	Thought: 260, Rate: 47, Clip: 1.1, Fit: 6, Tail: 16, Runs: 1}
 
 // measuredCloud stands in for a model in the cloud this machine has not
 // timed yet. It is a guess, not a measurement: a half hour window read in
@@ -77,7 +80,7 @@ var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 1170,
 // framing on this machine as long as it takes after a local model. The
 // first search that finishes replaces half of it, and the next the rest.
 var measuredCloud = searchSpeed{Version: speedVersion, Load: 0, Read: 20000,
-	Thought: 60, Rate: 0, Clip: 3, Tail: 28, Runs: 1}
+	Thought: 60, Rate: 0, Clip: 3, Tail: 16, Runs: 1}
 
 var (
 	// speedMu guards where the file is. speedWrite is held while it is
@@ -186,7 +189,7 @@ func keepSpeed(model string, took searchSpeed, loaded bool) {
 		Rate:    was.Rate,
 		Clip:    blend(was.Clip, took.Clip, known),
 		Fit:     was.Fit,
-		Tail:    blend(was.Tail, took.Tail, known),
+		Tail:    was.Tail,
 		Runs:    was.Runs + 1,
 	}
 	// A search against a server that was already running loaded nothing,
@@ -201,6 +204,13 @@ func keepSpeed(model string, took searchSpeed, loaded bool) {
 	// Nor does one that asked nothing again about how long asking takes.
 	if took.Fit > 0 {
 		now.Fit = blend(was.Fit, took.Fit, known && was.Fit > 0)
+	}
+	// Nor does one that had every clip framed by the time the model
+	// stopped about how long a clip still to frame takes. It was taken as
+	// no time at all, and halved the record each time, until a search
+	// with four clips to frame after the fitting expected none.
+	if took.Tail > 0 {
+		now.Tail = blend(was.Tail, took.Tail, known && was.Tail > 0)
 	}
 	speeds[model] = now
 	body, err := json.MarshalIndent(speeds, "", "  ")
@@ -262,13 +272,34 @@ type searchNow struct {
 	// Thought is the tokens the model has thought so far, and Budget the
 	// most it may think, negative for no limit. Only a local model counts.
 	Thought, Budget int
-	Taken, Landed   int
-	Count           int
+	// Named is the clips read out of the answer so far, and Held those of
+	// them held back to be fitted to the length. Taken is the clips handed
+	// to the framers, Framed those done with, and Landed those written to
+	// the plan. A clip held back is taken once it is fitted.
+	Named, Held           int
+	Taken, Framed, Landed int
+	// FitOf is the clips the model was asked about again so far, and
+	// FitDone those it has given again.
+	FitOf, FitDone int
+	// FramedAt is how many clips were framed when the framing began, so
+	// what is framed after it is what the framing part waits on. Framers
+	// is how many clips are framed at once.
+	FramedAt int
+	Framers  int
+	Count    int
+}
+
+// rounds is how many turns the framers take over clips, as many at a time
+// as there are of them.
+func rounds(clips, framers int) int {
+	framers = max(framers, 1)
+	return (max(clips, 0) + framers - 1) / framers
 }
 
 // searchProgress says how far a search is, as a share and the seconds
 // left, against how long the same parts took before. Without a past search
-// neither can be known.
+// neither can be known. A part that runs past what it took before has no
+// time left to say by the clock, see partLeft.
 func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float64) {
 	if !known || now.Count <= 0 || past.Read <= 0 {
 		return Unknown, Unknown
@@ -281,21 +312,49 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	if now.Local && now.Budget >= 0 && past.Rate > 0 {
 		think = min(think, float64(now.Budget)/past.Rate)
 	}
+	answered := at >= partIndex(partFitting)
 	// The fitting is counted from the start, whether or not a clip will
 	// need it, because a share that learned of it only once the answer was
-	// in would go back. A search with nothing to fit steps over it. It was
-	// not counted at all, so a search reached the end of its fill with the
-	// model still being asked about two clips, and stood there full for as
-	// long as that took.
-	fit := 0.0
+	// in would jump. Until the answer is whole it is taken as one clip, or
+	// as many as are held back already. A search with nothing to fit steps
+	// over it. It takes as long as the clips the model is asked about: one
+	// constant for it said About 0:05 left for a minute while the model
+	// was asked about four.
+	fitClips := 0
 	if now.Local {
-		fit = past.Fit
-		if fit <= 0 {
-			fit = measuredLocal.Fit
+		switch {
+		case now.FitOf > 0:
+			fitClips = now.FitOf
+		case answered:
+			fitClips = now.Held
+		default:
+			fitClips = max(now.Held, 1)
 		}
 	}
+	// The framing after the answer waits on the clips not yet framed when
+	// the model stops: the ones the framers have not caught up with and
+	// the ones held back to be fitted. While the model writes, the framers
+	// catch up with all but the last clip it writes, so that one is
+	// counted.
+	frameClips := 0
+	switch {
+	case now.Part == partFraming:
+		frameClips = max(now.Taken-now.FramedAt, 0)
+	case answered:
+		frameClips = max(now.Taken-now.Framed, 0) + fitClips
+	default:
+		frameClips = 1 + fitClips
+	}
+	fit, tail := past.Fit, past.Tail
+	if fit <= 0 {
+		fit = measuredLocal.Fit
+	}
+	if tail <= 0 {
+		tail = measuredLocal.Tail
+	}
 	took := []float64{0, float64(now.Chars) / past.Read, think,
-		float64(now.Count) * past.Clip, fit, past.Tail}
+		float64(now.Count) * past.Clip, float64(fitClips) * fit,
+		float64(rounds(frameClips, now.Framers)) * tail}
 	if now.Local && now.Loads {
 		took[0] = past.Load
 	}
@@ -306,39 +365,52 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	if total <= 0 {
 		return Unknown, Unknown
 	}
-	// Each part gives its share done. A share never reaches the whole of a
-	// part by the clock alone: a part that runs longer than it did before
-	// waits at the end of its share rather than running into the next.
-	byClock := func(took float64, whole float64) float64 {
-		if whole <= 0 {
-			return 1
-		}
-		return min(took/whole, 0.95)
-	}
 	part := took[at]
-	share := byClock(now.InPart, part)
+	// counted is the share of the part the work counts itself, where it
+	// does, and below 0 where it does not.
+	counted := -1.0
 	switch now.Part {
 	case partReading:
 		if now.ReadOf > 0 {
-			// The model's own count, which beats the clock.
-			share = max(share, 0.97*float64(now.ReadDone)/float64(now.ReadOf))
+			counted = float64(now.ReadDone) / float64(now.ReadOf)
 		}
 	case partThinking:
 		if now.Local && past.Rate > 0 && part > 0 {
 			// The tokens thought against the tokens it thought before, or
 			// may think at most.
-			share = max(share, min(float64(now.Thought)/(part*past.Rate), 0.97))
+			counted = float64(now.Thought) / (part * past.Rate)
 		}
 	case partWriting:
-		written := float64(now.Taken) / float64(now.Count)
+		counted = float64(now.Named) / float64(now.Count)
+	case partFitting:
+		if now.FitOf > 0 {
+			counted = float64(now.FitDone) / float64(now.FitOf)
+		}
+	case partFraming:
+		if frameClips > 0 {
+			counted = float64(now.Framed-now.FramedAt) / float64(frameClips)
+		}
+	}
+	counted = min(counted, 1)
+	// Each part gives its share done. A share never reaches the whole of a
+	// part by the clock alone: a part that runs longer than it did before
+	// waits at the end of its share rather than running into the next.
+	share := 1.0
+	if part > 0 {
+		share = min(now.InPart/part, 0.95)
+	}
+	switch now.Part {
+	case partWriting:
 		// Between two clips the clock moves the share on, never past the
 		// clip that is being written.
-		share = min(max(written, share), float64(now.Taken+1)/float64(now.Count)-0.001)
-		share = max(share, written)
-	case partFraming:
-		if now.Taken > 0 {
-			share = max(share, float64(now.Landed)/float64(now.Taken))
-		}
+		share = min(max(counted, share), float64(now.Named+1)/float64(now.Count)-0.001)
+		share = max(share, counted)
+	case partReading, partThinking:
+		// The model's own count, which beats the clock, short of the whole
+		// until the next part begins.
+		share = max(share, min(0.97*counted, 0.97))
+	default:
+		share = max(share, counted)
 	}
 	share = min(max(share, 0), 1)
 	before, after := 0.0, 0.0
@@ -350,8 +422,33 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 		}
 	}
 	done := before + share*part
-	left := (1-share)*part + after
-	return min(done/total, 0.99), max(left, 0)
+	fraction := min(done/total, 0.99)
+	left := partLeft(now.InPart, part, share, counted)
+	if left < 0 {
+		return fraction, Unknown
+	}
+	return fraction, left + after
+}
+
+// partLeft is the seconds left of a part estimated at part seconds, in
+// it for inPart, with share done and counted done by its own count, below
+// 0 where nothing is counted. Inside its estimate, what is left of it is
+// left. Past it the estimate was wrong, and holding what was left of it
+// said About 0:05 left for a minute: what is left is then worked out from
+// how fast the count has gone, and without a count it cannot be said.
+func partLeft(inPart, part, share, counted float64) float64 {
+	if part <= 0 {
+		// A part with nothing to wait on, like the framing when every clip
+		// is framed already, is over as it begins.
+		return 0
+	}
+	if inPart <= part {
+		return (1 - share) * part
+	}
+	if counted > 0 {
+		return inPart * (1 - counted) / counted
+	}
+	return Unknown
 }
 
 // searchLabel is what the search is doing, in the words the app shows. It
@@ -367,7 +464,7 @@ func searchLabel(now searchNow) string {
 			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Count, now.Landed))
 		case partFitting, partFraming:
 			// The answer is whole, so what it holds is what there will be.
-			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Taken, now.Landed))
+			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Named, now.Landed))
 		}
 	}
 	return "Finding clips"
@@ -382,16 +479,21 @@ type searchClock struct {
 	past  searchSpeed
 	known bool
 
-	mu       sync.Mutex
-	now      searchNow
-	partAt   time.Time
-	took     map[string]float64
-	answered time.Time
+	mu     sync.Mutex
+	now    searchNow
+	partAt time.Time
+	took   map[string]float64
+	// framingAt is when the framing began, and lastFramed when the last
+	// clip was framed.
+	framingAt, lastFramed time.Time
 	// fitAsked is that the model was asked again about clips held back.
 	fitAsked bool
-	lastLand time.Time
-	stopped  chan struct{}
-	once     sync.Once
+	// shown is the share reported last. An estimate that grows, once the
+	// answer says how many clips are held back, does not take the fill
+	// back: it waits there until the work catches up.
+	shown   float64
+	stopped chan struct{}
+	once    sync.Once
 }
 
 // newSearchClock starts watching a search of chars characters of
@@ -401,7 +503,7 @@ func newSearchClock(log *Log, model string, local bool, chars, count, budget int
 	past, known := pastSpeed(model, local)
 	c := &searchClock{log: log, model: model, past: past, known: known,
 		took: map[string]float64{}, stopped: make(chan struct{})}
-	c.now = searchNow{Local: local, Chars: chars, Count: count, Budget: budget}
+	c.now = searchNow{Local: local, Chars: chars, Count: count, Budget: budget, Framers: framers}
 	return c
 }
 
@@ -452,8 +554,20 @@ func (c *searchClock) report() {
 	if now.Part == "" {
 		return
 	}
-	fraction, remaining := searchProgress(now, c.past, c.known)
+	fraction, remaining := c.measure(now)
 	c.log.ProgressFound(searchLabel(now), fraction, remaining, now.Landed)
+}
+
+// measure is searchProgress with a share that never goes back.
+func (c *searchClock) measure(now searchNow) (float64, float64) {
+	fraction, remaining := searchProgress(now, c.past, c.known)
+	if fraction == Unknown {
+		return fraction, remaining
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.shown = max(c.shown, fraction)
+	return c.shown, remaining
 }
 
 // enter begins a part. Parts only go forward: a word of thought that comes
@@ -470,6 +584,9 @@ func (c *searchClock) enter(part string) {
 	}
 	if part == partLoading {
 		c.now.Loads = true
+	}
+	if part == partFraming {
+		c.now.FramedAt, c.framingAt = c.now.Framed, at
 	}
 	c.now.Part, c.partAt = part, at
 }
@@ -502,20 +619,57 @@ func (c *searchClock) listen(inner *Listener) *Listener {
 	}
 }
 
-// taken is a clip read out of the answer, and landed one written to the
-// plan.
+// named is a clip read out of the answer, held back to be fitted or not,
+// taken one handed to the framers, framed one done with, written or left
+// out, and landed one written to the plan.
+func (c *searchClock) named(held bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now.Named++
+	if held {
+		c.now.Held++
+	}
+}
+
 func (c *searchClock) taken() {
 	c.mu.Lock()
 	c.now.Taken++
 	c.mu.Unlock()
 }
 
+func (c *searchClock) framed() {
+	c.mu.Lock()
+	c.now.Framed++
+	c.lastFramed = time.Now()
+	c.mu.Unlock()
+}
+
 func (c *searchClock) landed() {
 	c.mu.Lock()
 	c.now.Landed++
-	c.lastLand = time.Now()
 	c.mu.Unlock()
 	c.report()
+}
+
+// fitAsk is the model asked again about count clips, and what it hears
+// counts the clips it gives again as they are written.
+func (c *searchClock) fitAsk(count int) *Listener {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	c.now.FitOf += count
+	c.mu.Unlock()
+	var scanner clipScanner
+	return &Listener{Text: func(piece string) {
+		whole := len(scanner.feed(piece))
+		if whole == 0 {
+			return
+		}
+		c.mu.Lock()
+		c.now.FitDone = min(c.now.FitDone+whole, c.now.FitOf)
+		c.mu.Unlock()
+	}}
 }
 
 // answerDone is the model finished, with the framing of its last clips
@@ -529,9 +683,6 @@ func (c *searchClock) answerDone() {
 	} else {
 		c.enter(partFraming)
 	}
-	c.mu.Lock()
-	c.answered = time.Now()
-	c.mu.Unlock()
 }
 
 // fitted is the clips held back fitted to the length, asked is whether the
@@ -549,7 +700,7 @@ func (c *searchClock) finish(complete bool) {
 	c.stop()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !complete || c.now.Taken == 0 || c.now.Chars == 0 {
+	if !complete || c.now.Taken == 0 || c.now.Named == 0 || c.now.Chars == 0 {
 		return
 	}
 	readTook, read := c.took[partReading]
@@ -558,25 +709,23 @@ func (c *searchClock) finish(complete bool) {
 		return
 	}
 	// The tail runs from where the framing began, which is after the
-	// fitting where there was one.
-	framed := c.answered
-	if c.now.Part == partFraming && c.partAt.After(framed) {
-		framed = c.partAt
-	}
+	// fitting where there was one, and is kept per round of the framers
+	// it waited on.
 	tail := 0.0
-	if !framed.IsZero() && c.lastLand.After(framed) {
-		tail = c.lastLand.Sub(framed).Seconds()
+	if waited := rounds(c.now.Taken-c.now.FramedAt, c.now.Framers); waited > 0 &&
+		!c.framingAt.IsZero() && c.lastFramed.After(c.framingAt) {
+		tail = c.lastFramed.Sub(c.framingAt).Seconds() / float64(waited)
 	}
 	fit := 0.0
-	if c.fitAsked {
-		fit = c.took[partFitting]
+	if c.fitAsked && c.now.FitOf > 0 {
+		fit = c.took[partFitting] / float64(c.now.FitOf)
 	}
 	thought := c.took[partThinking]
 	took := searchSpeed{
 		Load:    c.took[partLoading],
 		Read:    float64(c.now.Chars) / readTook,
 		Thought: thought,
-		Clip:    writeTook / float64(c.now.Taken),
+		Clip:    writeTook / float64(c.now.Named),
 		Fit:     fit,
 		Tail:    tail,
 		Runs:    1,
