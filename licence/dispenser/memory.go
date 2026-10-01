@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 
 	"framefairy/licence"
@@ -26,22 +27,26 @@ type Memory struct {
 }
 
 type memoryDB struct {
-	pool   []PoolKey // in the order they came in
-	byKey  map[licence.Fingerprint]int
-	byID   map[licence.ID]bool
-	seats  map[string][]Seat // by source and ref
-	held   map[licence.Fingerprint]bool
-	record []Line
+	pool    []PoolKey // in the order they came in
+	byKey   map[licence.Fingerprint]int
+	byID    map[licence.ID]bool
+	seats   map[string][]Seat              // by source and ref
+	held    map[licence.Fingerprint]bool   // held by a seat, now or before
+	holder  map[licence.Fingerprint]string // the seat holding it now, seatKey and number
+	revoked map[licence.Fingerprint]Revocation
+	record  []Line
 }
 
 func (db memoryDB) clone() memoryDB {
 	c := memoryDB{
-		pool:   slices.Clone(db.pool),
-		byKey:  maps.Clone(db.byKey),
-		byID:   maps.Clone(db.byID),
-		seats:  make(map[string][]Seat, len(db.seats)),
-		held:   maps.Clone(db.held),
-		record: slices.Clone(db.record),
+		pool:    slices.Clone(db.pool),
+		byKey:   maps.Clone(db.byKey),
+		byID:    maps.Clone(db.byID),
+		seats:   make(map[string][]Seat, len(db.seats)),
+		held:    maps.Clone(db.held),
+		holder:  maps.Clone(db.holder),
+		revoked: maps.Clone(db.revoked),
+		record:  slices.Clone(db.record),
 	}
 	for k, v := range db.seats {
 		c.seats[k] = slices.Clone(v)
@@ -50,6 +55,8 @@ func (db memoryDB) clone() memoryDB {
 		c.byKey = map[licence.Fingerprint]int{}
 		c.byID = map[licence.ID]bool{}
 		c.held = map[licence.Fingerprint]bool{}
+		c.holder = map[licence.Fingerprint]string{}
+		c.revoked = map[licence.Fingerprint]Revocation{}
 	}
 	return c
 }
@@ -167,9 +174,99 @@ func (t *memoryTx) AddSeat(s Seat) error {
 		return ErrExists
 	}
 	t.db.held[s.Key] = true
+	t.db.holder[s.Key] = holderOf(s.Source, s.Ref, s.Seat)
 	t.db.seats[k] = append(t.db.seats[k], s)
 	slices.SortFunc(t.db.seats[k], func(a, b Seat) int { return a.Seat - b.Seat })
 	return nil
+}
+
+func holderOf(source, ref string, seat int) string {
+	return fmt.Sprintf("%s\x00%d", seatKey(source, ref), seat)
+}
+
+func (t *memoryTx) SeatOf(f licence.Fingerprint) (Seat, error) {
+	h, ok := t.db.holder[f]
+	if !ok {
+		return Seat{}, ErrNotFound
+	}
+	for _, seats := range t.db.seats {
+		for _, s := range seats {
+			if s.Key == f && holderOf(s.Source, s.Ref, s.Seat) == h {
+				return s, nil
+			}
+		}
+	}
+	return Seat{}, ErrNotFound
+}
+
+func (t *memoryTx) SetSeatKey(source, ref string, seat int, f licence.Fingerprint) error {
+	if err := t.write(); err != nil {
+		return err
+	}
+	if t.db.held[f] {
+		return ErrExists
+	}
+	seats := t.db.seats[seatKey(source, ref)]
+	for i := range seats {
+		if seats[i].Seat == seat {
+			delete(t.db.holder, seats[i].Key)
+			seats[i].Key = f
+			t.db.held[f] = true
+			t.db.holder[f] = holderOf(source, ref, seat)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (t *memoryTx) AllSeats() ([]Seat, error) {
+	var out []Seat
+	for _, seats := range t.db.seats {
+		out = append(out, seats...)
+	}
+	slices.SortFunc(out, func(a, b Seat) int {
+		if c := strings.Compare(a.Source+"\x00"+a.Ref, b.Source+"\x00"+b.Ref); c != 0 {
+			return c
+		}
+		return a.Seat - b.Seat
+	})
+	return out, nil
+}
+
+func (t *memoryTx) Pool() ([]PoolKey, error) { return slices.Clone(t.db.pool), nil }
+
+func (t *memoryTx) Revoke(f licence.Fingerprint, kind Revocation) error {
+	if err := t.write(); err != nil {
+		return err
+	}
+	if _, ok := t.db.revoked[f]; ok {
+		return ErrExists
+	}
+	t.db.revoked[f] = kind
+	return nil
+}
+
+func (t *memoryTx) Unrevoke(f licence.Fingerprint) error {
+	if err := t.write(); err != nil {
+		return err
+	}
+	if _, ok := t.db.revoked[f]; !ok {
+		return ErrNotFound
+	}
+	delete(t.db.revoked, f)
+	return nil
+}
+
+func (t *memoryTx) Revocation(f licence.Fingerprint) (Revocation, error) {
+	r, ok := t.db.revoked[f]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return r, nil
+}
+
+func (t *memoryTx) Revoked() (map[licence.Fingerprint]Revocation, error) {
+	return maps.Clone(t.db.revoked), nil
 }
 
 func (t *memoryTx) Head() (Line, error) {

@@ -33,6 +33,21 @@ type PoolKey struct {
 	State       State
 }
 
+// Revocation is why a key is on the revocation list.
+type Revocation string
+
+const (
+	// Revoked is a sold key taken back, after a chargeback or a refund.
+	// Restore takes it off the list again.
+	Revoked Revocation = "revoked"
+	// Replaced is a sold key that was posted in public and replaced by
+	// another. It stays on the list.
+	Replaced Revocation = "replaced"
+	// BurnedKey is an unsold key revoked with the rest of the pool. It
+	// stays on the list.
+	BurnedKey Revocation = "burned"
+)
+
 // Seat is one seat of one sale and the key it holds now.
 type Seat struct {
 	Source string // "paddle" or "partner:<name>"
@@ -82,6 +97,26 @@ type Tx interface {
 	// AddSeat records a seat. ErrExists when that seat of that sale is
 	// there already, or when another seat holds the same key.
 	AddSeat(s Seat) error
+
+	// SeatOf is the seat that holds key f now. ErrNotFound when none does.
+	SeatOf(f licence.Fingerprint) (Seat, error)
+	// SetSeatKey gives a seat another key. ErrNotFound when there is no
+	// such seat, ErrExists when the key is or was held by any seat.
+	SetSeatKey(source, ref string, seat int, f licence.Fingerprint) error
+	// AllSeats are every seat of every sale.
+	AllSeats() ([]Seat, error)
+	// Pool is every key in the pool, in the order they came in.
+	Pool() ([]PoolKey, error)
+
+	// Revoke puts a key on the revocation list for a reason of kind.
+	// ErrExists when it is on it already.
+	Revoke(f licence.Fingerprint, kind Revocation) error
+	// Unrevoke takes a key off the list. ErrNotFound when it is not on it.
+	Unrevoke(f licence.Fingerprint) error
+	// Revocation says why a key is on the list. ErrNotFound when it is not.
+	Revocation(f licence.Fingerprint) (Revocation, error)
+	// Revoked is the whole list.
+	Revoked() (map[licence.Fingerprint]Revocation, error)
 
 	// Head is the newest line of the record. ErrNotFound when it is empty.
 	Head() (Line, error)
