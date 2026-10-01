@@ -151,8 +151,9 @@ func (e *Engine) Restore(ctx context.Context, t Target, why string) (int, error)
 }
 
 // Replace revokes a sold key that was posted in public and gives its seat
-// the next key in the pool, which it returns with the seat. A key whose
-// sale was revoked is not replaced: the buyer has no claim to a new one.
+// the next key in the pool, which it returns with the seat. A Paddle
+// buyer gets the new key by mail. A key whose sale was revoked is not
+// replaced: the buyer has no claim to a new one.
 func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string) (licence.Key, Seat, error) {
 	if err := checkWhy(why); err != nil {
 		return "", Seat{}, err
@@ -160,8 +161,9 @@ func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string)
 	now := e.now()
 	var key licence.Key
 	var seat Seat
+	var mail int64
 	err := e.store.Update(ctx, func(tx Tx) error {
-		key, seat = "", Seat{}
+		key, seat, mail = "", Seat{}, 0
 		s, err := tx.SeatOf(f)
 		if errors.Is(err, ErrNotFound) {
 			return notHeld(tx, f)
@@ -199,11 +201,16 @@ func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string)
 		key = next.Key
 		seat = s
 		seat.Key = next.Fingerprint
-		return nil
+		mail, err = queueMail(tx, now, s.Source, s.Ref, MailReplaced)
+		return err
 	})
 	if err != nil {
 		return "", Seat{}, err
 	}
+	if mail > 0 {
+		_ = e.deliver(ctx, mail, "")
+	}
+	_ = e.CheckPool(ctx)
 	return key, seat, nil
 }
 

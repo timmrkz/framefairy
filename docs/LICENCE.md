@@ -312,13 +312,15 @@ keys for the same order, what may be revoked and restored, when to warn.
 type Order struct {
 	Source, Ref string // "paddle" | "partner:<name>", and its reference
 	Seats       int
-	Email       string // used to send, never stored
+	Email       string // where the keys go first. Used to send, never stored
 	At          time.Time
 }
 
 func (e *Engine) Assign(ctx context.Context, o Order) ([]licence.Key, error)
 func (e *Engine) Keys(ctx context.Context, source, ref string) ([]licence.Key, error)
 func (e *Engine) Resend(ctx context.Context, email string) error
+func (e *Engine) SendMail(ctx context.Context) (sent, failed int, err error)
+func (e *Engine) CheckPool(ctx context.Context) error
 func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string) (licence.Key, Seat, error)
 func (e *Engine) Revoke(ctx context.Context, t Target, why string) (int, error)
 func (e *Engine) Restore(ctx context.Context, t Target, why string) (int, error)
@@ -337,8 +339,24 @@ engine is tested with memory and a fixed clock:
 | Port | Does | First implementation |
 | --- | --- | --- |
 | `Store` | The pool, the sales and the record, each change in one transaction | Scaleway Serverless SQL Database |
-| `Orders` | Paddle's transactions and adjustments, and a buyer's orders by email | Paddle's API |
-| `Mailer` | Sends keys and warnings | A European mail service |
+| `Orders` | Paddle's transactions and adjustments, the address of a sale, and the sales of an address | Paddle's API |
+| `Mailer` | Sends keys to buyers and warnings to us | A European mail service |
+
+**Mail.** A Paddle sale's letter is queued in the same transaction that
+assigns its keys, then sent at once to the address in the webhook. If that
+fails, it waits in the queue and `SendMail`, which runs every few
+minutes, tries it again after 1, 5 and 30 minutes, 2 hours, then every 6
+hours, with the address Paddle has. After three days it is given up and
+we are told: the keys are on the thank-you and lost-key pages meanwhile.
+The queue holds no address, only which sale a letter is for, so no
+buyer's address is ever kept. A run takes a letter for ten minutes before
+it sends it, so two runs never send the same one, and a crash between
+sending and ticking it off sends it again later: a buyer can get a letter
+twice, never no letter. A partner's buyer gets one try when the partner
+gave an address, and nothing waits, because the partner has the keys in
+its answer. `Resend` asks Paddle which sales an address bought and sends
+their keys to that address only. `CheckPool` warns us once a day while
+the pool is below a fifth of a batch.
 
 Handing out a key is one database transaction: take the oldest unsold key,
 mark it sold to this order and seat, write the record line. A unique rule
@@ -353,7 +371,8 @@ that runs every transaction twice, and every engine test runs in it.
 
 Built so far, on the store in memory: `Assign`, `Keys`, `Stock`,
 `PoolLevel`, `Revoke`, `Restore`, `Replace`, `RevokeUnsold`, `Retire`,
-`Revocations`, `Genuine`, `VerifyRecord` and `Audit`. A batch handed over
+`Revocations`, `Genuine`, `VerifyRecord`, `Audit`, `SendMail`, `Resend`
+and `CheckPool`. A batch handed over
 twice adds its keys once, and a key whose ID the pool already has is
 refused. A key that was replaced or burned stays revoked whatever happens
 to its sale, because the key itself got out. A key whose sale was revoked

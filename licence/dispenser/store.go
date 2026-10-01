@@ -57,6 +57,19 @@ type Seat struct {
 	At     time.Time
 }
 
+// Mail is a letter waiting to be sent. It holds no address: the address is
+// read from the shop when the letter goes, so no buyer's address is ever
+// kept here.
+type Mail struct {
+	ID     int64
+	Source string
+	Ref    string
+	Kind   string // MailKeys or MailReplaced
+	Tries  int
+	Since  time.Time // when it was queued
+	Due    time.Time // when it is tried next
+}
+
 // Errors the store answers with. A store returns these, wrapped or not,
 // and the engine tells them apart with errors.Is.
 var (
@@ -117,6 +130,25 @@ type Tx interface {
 	Revocation(f licence.Fingerprint) (Revocation, error)
 	// Revoked is the whole list.
 	Revoked() (map[licence.Fingerprint]Revocation, error)
+
+	// AddMail queues a letter and gives it its number.
+	AddMail(m Mail) (int64, error)
+	// DueMail are up to limit letters whose time has come, oldest first.
+	DueMail(now time.Time, limit int) ([]Mail, error)
+	// Mail finds a letter. ErrNotFound when it is not queued.
+	Mail(id int64) (Mail, error)
+	// UpdateMail stores a letter's tries and when it is next due.
+	// ErrNotFound when it is not queued.
+	UpdateMail(m Mail) error
+	// RemoveMail takes a letter off the queue. ErrNotFound when it is not
+	// on it.
+	RemoveMail(id int64) error
+
+	// Note reads a small value the engine keeps, like the day it last
+	// warned. ErrNotFound when it was never set.
+	Note(name string) (string, error)
+	// SetNote sets one.
+	SetNote(name, value string) error
 
 	// Head is the newest line of the record. ErrNotFound when it is empty.
 	Head() (Line, error)

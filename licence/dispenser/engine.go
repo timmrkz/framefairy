@@ -43,6 +43,11 @@ type Config struct {
 	Batch int
 	// Now is the clock. time.Now when nil.
 	Now func() time.Time
+	// Mailer sends the keys to buyers and warnings to us.
+	Mailer Mailer
+	// Orders asks the shop for a buyer's address. Without it, a letter
+	// whose first try failed waits until it is set.
+	Orders Orders
 }
 
 // Engine holds every rule about sales and keys.
@@ -51,6 +56,8 @@ type Engine struct {
 	signers map[uint8]ed25519.PublicKey
 	batch   int
 	now     func() time.Time
+	mailer  Mailer
+	orders  Orders
 }
 
 // New makes an engine on store.
@@ -66,10 +73,13 @@ func New(store Store, c Config) (*Engine, error) {
 			return nil, fmt.Errorf("signer %d has a public key of %d bytes", n, len(pub))
 		}
 	}
+	if c.Mailer == nil {
+		return nil, errors.New("an engine needs a mailer")
+	}
 	if c.Batch < 1 || c.Batch > MaxStock {
 		return nil, fmt.Errorf("a batch is 1 to %d keys, not %d", MaxStock, c.Batch)
 	}
-	e := &Engine{store: store, signers: maps.Clone(c.Signers), batch: c.Batch, now: c.Now}
+	e := &Engine{store: store, signers: maps.Clone(c.Signers), batch: c.Batch, now: c.Now, mailer: c.Mailer, orders: c.Orders}
 	if e.now == nil {
 		e.now = time.Now
 	}
@@ -87,22 +97,39 @@ type Order struct {
 
 // Assign hands one key from the pool to every seat of the order. An order
 // that is already there gets the keys it was given before, so a webhook
-// that comes twice changes nothing. Either every seat gets a key or none
-// does.
+// that comes twice changes nothing and sends nothing. Either every seat
+// gets a key or none does.
+//
+// The keys of a Paddle sale are queued for mail in the same transaction,
+// then sent at once to the address of the order. If that fails, the
+// letter waits in the queue, and SendMail tries it again with the address
+// Paddle has. A partner's buyer gets one try, when the partner gave an
+// address: the partner has the keys in its answer. Neither failure fails
+// the sale, which is done once its keys are recorded.
 func (e *Engine) Assign(ctx context.Context, o Order) ([]licence.Key, error) {
-	keys, _, err := e.assign(ctx, o)
-	return keys, err
+	keys, fresh, mail, err := e.assign(ctx, o)
+	if err != nil || !fresh {
+		return keys, err
+	}
+	switch {
+	case mail > 0:
+		_ = e.deliver(ctx, mail, o.Email)
+	case o.Email != "":
+		_ = e.mailer.Keys(ctx, o.Email, Letter{Kind: MailKeys, Source: o.Source, Ref: o.Ref, Keys: keys})
+	}
+	_ = e.CheckPool(ctx)
+	return keys, nil
 }
 
 // assign also says whether the keys are new, which decides whether they
-// are mailed.
-func (e *Engine) assign(ctx context.Context, o Order) (keys []licence.Key, fresh bool, err error) {
+// are mailed, and which letter was queued for them.
+func (e *Engine) assign(ctx context.Context, o Order) (keys []licence.Key, fresh bool, mail int64, err error) {
 	if err := checkOrder(o); err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	now := e.now()
 	err = e.store.Update(ctx, func(tx Tx) error {
-		keys, fresh = nil, false
+		keys, fresh, mail = nil, false, 0
 		seats, err := tx.Seats(o.Source, o.Ref)
 		if err != nil {
 			return err
@@ -134,12 +161,13 @@ func (e *Engine) assign(ctx context.Context, o Order) (keys []licence.Key, fresh
 			}
 			keys = append(keys, k.Key)
 		}
-		return nil
+		mail, err = queueMail(tx, now, o.Source, o.Ref, MailKeys)
+		return err
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
-	return keys, fresh, nil
+	return keys, fresh, mail, nil
 }
 
 // Keys are the keys a sale holds now, by seat. ErrNotFound when the sale

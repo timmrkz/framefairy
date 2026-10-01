@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"framefairy/licence"
 )
@@ -35,6 +36,9 @@ type memoryDB struct {
 	holder  map[licence.Fingerprint]string // the seat holding it now, seatKey and number
 	revoked map[licence.Fingerprint]Revocation
 	record  []Line
+	mail    []Mail
+	mailID  int64
+	notes   map[string]string
 }
 
 func (db memoryDB) clone() memoryDB {
@@ -47,6 +51,9 @@ func (db memoryDB) clone() memoryDB {
 		holder:  maps.Clone(db.holder),
 		revoked: maps.Clone(db.revoked),
 		record:  slices.Clone(db.record),
+		mail:    slices.Clone(db.mail),
+		mailID:  db.mailID,
+		notes:   maps.Clone(db.notes),
 	}
 	for k, v := range db.seats {
 		c.seats[k] = slices.Clone(v)
@@ -57,6 +64,7 @@ func (db memoryDB) clone() memoryDB {
 		c.held = map[licence.Fingerprint]bool{}
 		c.holder = map[licence.Fingerprint]string{}
 		c.revoked = map[licence.Fingerprint]Revocation{}
+		c.notes = map[string]string{}
 	}
 	return c
 }
@@ -267,6 +275,83 @@ func (t *memoryTx) Revocation(f licence.Fingerprint) (Revocation, error) {
 
 func (t *memoryTx) Revoked() (map[licence.Fingerprint]Revocation, error) {
 	return maps.Clone(t.db.revoked), nil
+}
+
+func (t *memoryTx) AddMail(m Mail) (int64, error) {
+	if err := t.write(); err != nil {
+		return 0, err
+	}
+	t.db.mailID++
+	m.ID = t.db.mailID
+	t.db.mail = append(t.db.mail, m)
+	return m.ID, nil
+}
+
+func (t *memoryTx) DueMail(now time.Time, limit int) ([]Mail, error) {
+	var out []Mail
+	for _, m := range t.db.mail {
+		if !m.Due.After(now) && len(out) < limit {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+func (t *memoryTx) mailAt(id int64) int {
+	for i, m := range t.db.mail {
+		if m.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (t *memoryTx) Mail(id int64) (Mail, error) {
+	i := t.mailAt(id)
+	if i < 0 {
+		return Mail{}, ErrNotFound
+	}
+	return t.db.mail[i], nil
+}
+
+func (t *memoryTx) UpdateMail(m Mail) error {
+	if err := t.write(); err != nil {
+		return err
+	}
+	i := t.mailAt(m.ID)
+	if i < 0 {
+		return ErrNotFound
+	}
+	t.db.mail[i].Tries, t.db.mail[i].Due = m.Tries, m.Due
+	return nil
+}
+
+func (t *memoryTx) RemoveMail(id int64) error {
+	if err := t.write(); err != nil {
+		return err
+	}
+	i := t.mailAt(id)
+	if i < 0 {
+		return ErrNotFound
+	}
+	t.db.mail = slices.Delete(t.db.mail, i, i+1)
+	return nil
+}
+
+func (t *memoryTx) Note(name string) (string, error) {
+	v, ok := t.db.notes[name]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return v, nil
+}
+
+func (t *memoryTx) SetNote(name, value string) error {
+	if err := t.write(); err != nil {
+		return err
+	}
+	t.db.notes[name] = value
+	return nil
 }
 
 func (t *memoryTx) Head() (Line, error) {

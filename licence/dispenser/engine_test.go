@@ -57,6 +57,9 @@ type fixture struct {
 	store  *Memory
 	engine *Engine
 	ctx    context.Context
+	clock  *clock
+	mail   *fakeMail
+	shop   *fakeShop
 }
 
 // stores runs a test once on a plain memory store and once on one that
@@ -70,16 +73,20 @@ func stores(t *testing.T, test func(t *testing.T, f *fixture)) {
 }
 
 func newFixture(t testing.TB, twice bool) *fixture {
-	store := &Memory{Twice: twice}
-	e, err := New(store, Config{
+	f := &fixture{t: t, store: &Memory{Twice: twice}, ctx: context.Background(),
+		clock: &clock{at: now}, mail: &fakeMail{}, shop: &fakeShop{}}
+	e, err := New(f.store, Config{
 		Signers: map[uint8]ed25519.PublicKey{0: testSigner().Public().(ed25519.PublicKey)},
 		Batch:   1000,
-		Now:     func() time.Time { return now },
+		Now:     f.clock.now,
+		Mailer:  f.mail,
+		Orders:  f.shop,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{t: t, store: store, engine: e, ctx: context.Background()}
+	f.engine = e
+	return f
 }
 
 func (f *fixture) stock(n int) []licence.Key {
@@ -120,7 +127,7 @@ func order(ref string, seats int) Order {
 func TestBoughtThroughPaddle(t *testing.T) {
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(5)
-		keys, fresh, err := f.engine.assign(f.ctx, order("txn_01", 1))
+		keys, fresh, _, err := f.engine.assign(f.ctx, order("txn_01", 1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,7 +135,7 @@ func TestBoughtThroughPaddle(t *testing.T) {
 			t.Fatalf("got %v, fresh %v, want the first key in the pool", keys, fresh)
 		}
 		// The same webhook again: the same key, and not fresh, so no mail.
-		again, fresh, err := f.engine.assign(f.ctx, order("txn_01", 1))
+		again, fresh, _, err := f.engine.assign(f.ctx, order("txn_01", 1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -373,11 +380,15 @@ func TestNewRefuses(t *testing.T) {
 		"no batch":        {Signers: map[uint8]ed25519.PublicKey{1: pub}},
 		"too big a batch": {Signers: map[uint8]ed25519.PublicKey{1: pub}, Batch: MaxStock + 1},
 	} {
+		c.Mailer = &fakeMail{}
 		if _, err := New(&Memory{}, c); err == nil {
 			t.Errorf("%s: made an engine", name)
 		}
 	}
-	if _, err := New(nil, Config{Signers: map[uint8]ed25519.PublicKey{1: pub}, Batch: 1}); err == nil {
+	if _, err := New(&Memory{}, Config{Signers: map[uint8]ed25519.PublicKey{1: pub}, Batch: 1}); err == nil {
+		t.Error("made an engine without a mailer")
+	}
+	if _, err := New(nil, Config{Signers: map[uint8]ed25519.PublicKey{1: pub}, Batch: 1, Mailer: &fakeMail{}}); err == nil {
 		t.Error("made an engine without a store")
 	}
 }
@@ -492,7 +503,7 @@ func TestManySalesAtOnce(t *testing.T) {
 						return
 					}
 					j := jobs[i]
-					keys, isNew, err := f.engine.assign(f.ctx, order(j.ref, j.seats))
+					keys, isNew, _, err := f.engine.assign(f.ctx, order(j.ref, j.seats))
 					if err != nil {
 						t.Error(err)
 						return
