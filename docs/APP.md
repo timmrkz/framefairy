@@ -400,15 +400,22 @@ place.
     puts on a word. Enter opens that word with the whole of it selected,
     the way Enter renames what is chosen in the Finder, so typing replaces
     it. Enter again saves it, the caret goes, and the frame stays on the
-    word, since the playhead is still on it. The frame belongs to the word
-    and not to the keyboard: it stays while the playhead stays in the word,
-    whatever else is clicked, the highlight switch among them, and goes
-    when the playhead leaves the word any other way than walking, or the
-    clip plays. It is the same with the highlight off, and that is what it
-    is for there: with no pill nothing else says which word is spoken.
+    word. Escape in an open word leaves it as it was and goes back to the
+    frame. The frame is the caption holding the keyboard: anything else
+    takes it away, a press of the pointer wherever it lands, a field
+    getting the keyboard, Escape, any other key, the arrows without Shift
+    among them, and the clip playing. It is the same with the highlight
+    off, and that is what it is for there: with no pill nothing else says
+    which word is spoken.
     The caret went on blinking in a word already saved, because WebKit
     keeps the selection in a field the keyboard has left, so a word let go
     of takes its selection with it.
+  - **A colour field lets go of the keyboard once a colour is chosen**,
+    see `letColourGo` in `App.svelte`. It kept it, and every shortcut
+    stands aside while a field has the keyboard, so Shift and the arrows
+    did nothing after a caption colour was picked. It lets go on change,
+    which comes once the picking is over, so the system's colour panel is
+    never taken away in the middle of it.
   - **A button pressed with the pointer keeps no keyboard**, the way a
     button on the Mac does not, see `letButtonGo` in `App.svelte`. In
     Chromium, on Windows and in the preview, a clicked button kept it, and

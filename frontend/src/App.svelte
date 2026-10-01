@@ -255,6 +255,18 @@
     button.blur();
   }
 
+  // A colour field lets go of the keyboard once a colour is chosen. It kept
+  // it, and every shortcut stands aside while a field has the keyboard, so
+  // Shift and the arrows did nothing after a caption colour was picked.
+  // change comes once the picking is over, when the system's colour panel
+  // is let go of, so the panel is never taken away in the middle of it.
+  function letColourGo(event: Event) {
+    const field = event.target;
+    if (field instanceof HTMLInputElement && field.type === "color" && field === document.activeElement) {
+      field.blur();
+    }
+  }
+
   // Where macOS put the title bar and its buttons. All zeros away from
   // macOS, where the system draws its own title bar, and then the bar is
   // an ordinary header and the stylesheet keeps its own numbers.
@@ -322,12 +334,14 @@
     });
     window.addEventListener("pointerdown", handOverFocus);
     window.addEventListener("click", letButtonGo);
+    window.addEventListener("change", letColourGo);
     return () => {
       clearTimeout(asked);
       window.removeEventListener("keydown", dismiss);
       noQuit();
       window.removeEventListener("pointerdown", handOverFocus);
       window.removeEventListener("click", letButtonGo);
+      window.removeEventListener("change", letColourGo);
       noChrome();
       noAcknowledgements();
       noUpdates();

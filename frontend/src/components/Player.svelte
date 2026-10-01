@@ -443,13 +443,10 @@
   // The keyboard's word: the word Shift and an arrow walked to wears the
   // frame the pointer puts on a word, so it is the word Enter opens. It is
   // the same with the highlight on or off, and with it off nothing else in
-  // the picture says which word is spoken. It is the word, on the clip's
-  // clock, and not the moment: it stays while the playhead stays in it,
-  // whatever else is clicked, the highlight switched off among them, which
-  // took the frame away when any press of the pointer did. It goes when
-  // the playhead leaves the word by any other way than walking, and when
-  // the clip plays. And it stays on a word saved with Enter, which is
-  // still the word the playhead is on.
+  // the picture says which word is spoken. It is the caption holding the
+  // keyboard: it stays on a word saved with Enter, and goes with anything
+  // else, see forget, and when the playhead leaves the word, the clip
+  // playing among them.
   let keyed = $state<{ start: number; end: number } | null>(null);
   // When Shift and an arrow were pressed. The next move of the playhead is
   // the walk landing, and its word becomes the keyboard's word.
@@ -606,6 +603,9 @@
       letGo(node);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      // Handled here too: Escape leaves the word as it was and goes back to
+      // the word chosen, and only a second Escape lets that go.
+      event.stopPropagation();
       if (fixing) node.textContent = fixing.piece;
       fixing = null;
       letGo(node);
@@ -791,6 +791,18 @@
   // has the keyboard. The arrows bring the keyboard's word, and Enter opens
   // it.
   function onKey(event: KeyboardEvent) {
+    // Any key but the ones that walk and open takes the keyboard's word
+    // away, the arrows without Shift and Escape among them. A key held on
+    // its own to make a shortcut takes nothing yet.
+    if (!["Shift", "Meta", "Control", "Alt", "CapsLock"].includes(event.key)) {
+      const walking =
+        event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight");
+      if (!walking && event.key !== "Enter") forget();
+    }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
@@ -800,8 +812,7 @@
       // keyboard, an edge of the clip, takes the arrows for itself.
       if (on?.getAttribute("role") === "slider" || document.querySelector("dialog[open]")) return;
       // Shift walks by words, and the word it lands on becomes the
-      // keyboard's. Without Shift the playhead steps a frame, and the frame
-      // goes once it has stepped out of the word.
+      // keyboard's.
       if (event.shiftKey) walked = Date.now();
       return;
     }
@@ -819,10 +830,28 @@
     toggle();
   }
 
+  // The keyboard's word is the caption holding the keyboard, so whatever
+  // takes the keyboard or the pointer anywhere else takes it away: a press
+  // of the pointer, wherever it lands, and a field getting the keyboard,
+  // the target among them. It stayed through all of them, and read as a
+  // word still chosen while the hand was busy somewhere else.
+  function forget() {
+    keyed = null;
+    walked = 0;
+  }
+  function focusMoves(event: FocusEvent) {
+    const to = event.target as HTMLElement | null;
+    if (!to?.classList?.contains("word")) forget();
+  }
+
   onMount(() => {
     window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", forget, true);
+    window.addEventListener("focusin", focusMoves);
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", forget, true);
+      window.removeEventListener("focusin", focusMoves);
       cancelAnimationFrame(frame);
     };
   });
