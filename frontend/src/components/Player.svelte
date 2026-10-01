@@ -35,6 +35,7 @@
     type ClipEntry,
     type SourceView,
   } from "../lib/api";
+  import { rgbToHex } from "../lib/colour";
 
   let {
     path,
@@ -479,6 +480,109 @@
     keyed = word ? { start: word.start, end: word.end } : null;
   }
 
+  // A colour taken from the picture, for the captions column's colour
+  // pickers. While it is asked for, the video preview is a place to point
+  // at: a loupe follows the pointer the way the Mac's own colour sampler
+  // does, the pixels under it drawn large and the one in its middle the
+  // colour, the captions are drawn in that colour as the pointer moves,
+  // a click takes it, and Escape or a click anywhere else leaves the
+  // colour as it was.
+  //
+  // What is read is the episode's own frame, from the video or the still
+  // drawn over it, not the screen: the crop, its shade and the captions
+  // lie over the picture, and a colour read through them would be the
+  // app's and not the episode's.
+  let sampling = $state<{ over: (hex: string | null) => void; done: (hex: string | null) => void } | null>(null);
+  let loupe = $state<{ x: number; y: number; hex: string } | null>(null);
+  let lens = $state<HTMLCanvasElement>();
+  let stillImage = $state<HTMLImageElement>();
+
+  export function sampleColour(over: (hex: string | null) => void, done: (hex: string | null) => void) {
+    finishSampling(null);
+    loupe = null;
+    sampling = { over, done };
+  }
+
+  function finishSampling(hex: string | null) {
+    const was = sampling;
+    sampling = null;
+    loupe = null;
+    was?.done(hex);
+  }
+
+  // The colour of the frame under a point of the screen, and where that
+  // point is in the video preview, or nothing off the picture. The lens
+  // is drawn on the way, nine pixels by nine around it.
+  function pixelAt(clientX: number, clientY: number): { x: number; y: number; hex: string } | null {
+    if (!lens || !screen) return null;
+    const source: HTMLVideoElement | HTMLImageElement =
+      stillImage && stillImage.complete && stillImage.naturalWidth > 0 ? stillImage : video;
+    const w = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
+    const h = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
+    if (!w || !h || (source instanceof HTMLVideoElement && source.readyState < 2)) return null;
+    // The picture is contained in the screen and keeps its shape, so it is
+    // as large as the side that runs out first allows, in the middle.
+    const r = screen.getBoundingClientRect();
+    const scale = Math.min(r.width / w, r.height / h);
+    const left = r.left + (r.width - w * scale) / 2;
+    const top = r.top + (r.height - h * scale) / 2;
+    const fx = Math.floor((clientX - left) / scale);
+    const fy = Math.floor((clientY - top) / scale);
+    if (fx < 0 || fy < 0 || fx >= w || fy >= h) return null;
+    const ctx = lens.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, 9, 9);
+    try {
+      ctx.drawImage(source, fx - 4, fy - 4, 9, 9, 0, 0, 9, 9);
+      const [red, green, blue] = ctx.getImageData(4, 4, 1, 1).data;
+      return { x: clientX - r.left, y: clientY - r.top, hex: rgbToHex(red, green, blue) };
+    } catch {
+      return null;
+    }
+  }
+
+  function sampleMove(event: PointerEvent) {
+    const at = pixelAt(event.clientX, event.clientY);
+    if (at?.hex !== loupe?.hex) sampling?.over(at?.hex ?? null);
+    loupe = at;
+  }
+
+  function sampleLeave() {
+    if (loupe) sampling?.over(null);
+    loupe = null;
+  }
+
+  function sampleTake(event: PointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0) return;
+    const at = pixelAt(event.clientX, event.clientY);
+    if (at) finishSampling(at.hex);
+  }
+
+  // Escape leaves the colour as it was, before any other shortcut hears
+  // it, and a press anywhere but the picture does the same and goes on to
+  // do whatever it was for.
+  $effect(() => {
+    if (!sampling) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishSampling(null);
+    };
+    const elsewhere = (event: PointerEvent) => {
+      if (!(event.target as Element | null)?.closest?.(".sampler")) finishSampling(null);
+    };
+    window.addEventListener("keydown", escape, true);
+    window.addEventListener("pointerdown", elsewhere, true);
+    return () => {
+      window.removeEventListener("keydown", escape, true);
+      window.removeEventListener("pointerdown", elsewhere, true);
+    };
+  });
+
   // The word of the caption box at a moment of the clip's clock, among the
   // words that can be corrected.
   function wordAt(at: number): { start: number; end: number } | null {
@@ -887,7 +991,7 @@
          frame near it was allowed, which was a second picture for one
          spot, and a different one again once the video landed. -->
     {#if still && stale && Math.abs(stillAt - frameStart(time, source.fps)) < 1e-6}
-      <img src={still} alt="" />
+      <img src={still} alt="" bind:this={stillImage} />
     {/if}
     <!-- svelte-ignore a11y_media_has_caption -->
     <video
@@ -1056,6 +1160,31 @@
                   >{/if}{/each}
             </div>
           {/each}
+        </div>
+      </div>
+    {/if}
+    <!-- The video preview giving a colour: over everything else on it, so
+         the crop, the captions and the info mark take no clicks while it
+         does, with the loupe centred on the pointer in place of the
+         pointer itself. -->
+    {#if sampling}
+      <div
+        class="sampler"
+        role="application"
+        aria-label="Take a colour from the video preview"
+        title="Click to take this colour. Escape leaves it as it was"
+        onpointermove={sampleMove}
+        onpointerleave={sampleLeave}
+        onpointerdown={sampleTake}
+      >
+        <div
+          class="loupe"
+          class:shown={!!loupe}
+          style="left: {loupe?.x ?? 0}px; top: {loupe?.y ?? 0}px; --colour: {loupe?.hex ?? 'transparent'}"
+        >
+          <canvas bind:this={lens} width="9" height="9"></canvas>
+          <span class="aim"></span>
+          <span class="said num">{loupe?.hex.slice(1).toUpperCase() ?? ""}</span>
         </div>
       </div>
     {/if}
@@ -1260,4 +1389,65 @@
     }
   }
 
+
+  /* The video preview giving a colour. The pointer is the loupe. */
+  .sampler {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    cursor: none;
+  }
+
+  /* The loupe of the Mac's colour sampler: a round lens over the pointer,
+     the pixels under it drawn ten times over and not smoothed, so each one
+     is seen, the one in the middle marked, and a ring in the colour it
+     would take. Its hex under it, the way the colour panel says it. */
+  .loupe {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    margin: -45px 0 0 -45px;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .loupe.shown {
+    visibility: visible;
+  }
+
+  .loupe canvas {
+    display: block;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    image-rendering: pixelated;
+    box-shadow:
+      0 0 0 4px var(--colour),
+      0 0 0 5px rgba(255, 255, 255, 0.85),
+      0 4px 14px 5px rgba(0, 0, 0, 0.5);
+  }
+
+  .aim {
+    position: absolute;
+    left: 40px;
+    top: 40px;
+    width: 10px;
+    height: 10px;
+    box-sizing: border-box;
+    border: 1px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+
+  .loupe .said {
+    position: absolute;
+    left: 50%;
+    top: 100px;
+    transform: translateX(-50%);
+    padding: 2px 6px;
+    border-radius: var(--radius-s);
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    font-size: var(--size-s);
+    white-space: nowrap;
+  }
 </style>

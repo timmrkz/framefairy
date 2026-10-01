@@ -40,6 +40,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
+  import Colour from "../components/Colour.svelte";
   import Pick from "../components/Pick.svelte";
 
   let settings = $state<Settings | null>(null);
@@ -805,10 +806,18 @@
                   onclick={() => settings && (settings.appColour = c.hex)}
                 ></button>
               {/each}
-              <!-- Any other colour, in the system's own colour picker. -->
-              <label class="swatch well" class:on={custom} title="Another colour">
-                <input type="color" bind:value={settings.appColour} aria-label="Another colour" />
-              </label>
+              <!-- Any other colour, in the app's own colour picker. The
+                   round colours before it are its presets, so it offers
+                   none of its own. -->
+              <Colour
+                face="well"
+                on={custom}
+                label="Another colour"
+                title="Another colour"
+                value={settings.appColour ?? ""}
+                oninput={(hex) => hex && settings && (settings.appColour = hex)}
+                onchange={(hex) => settings && (settings.appColour = hex)}
+              />
             </div>
           </div>
         </div>
@@ -1069,27 +1078,6 @@
     box-shadow:
       0 0 0 2px var(--ink-1),
       0 0 0 4px var(--swatch, var(--accent));
-  }
-
-  /* Any other colour: the wheel the Mac draws for the same thing. */
-  .well {
-    background: conic-gradient(#e0605a, #d9b83c, #5fa37a, #3c9fd9, #8a5cd9, #d95cb5, #e0605a);
-    cursor: pointer;
-  }
-
-  .well.on {
-    --swatch: var(--accent);
-  }
-
-  .well input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    padding: 0;
-    border: none;
   }
 
   /* Advanced opens and closes like a disclosure in Finder: a chevron that
