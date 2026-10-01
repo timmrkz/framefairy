@@ -410,6 +410,13 @@ place.
     The caret went on blinking in a word already saved, because WebKit
     keeps the selection in a field the keyboard has left, so a word let go
     of takes its selection with it.
+    A walk past the last word of a clip lands on the first word of the
+    next, and past the first word on the last of the one before, and that
+    word wears the frame too. The walk could not catch that landing by
+    itself, because the clip changes first with no words in it, and the
+    playhead only reaches the word once the clip's captions have arrived,
+    so the frame was lost on the way. The workspace now tells the video
+    preview where it landed, see `keyAt` in `Player.svelte`.
   - **A colour field lets go of the keyboard once a colour is chosen**,
     see `letColourGo` in `App.svelte`. It kept it, and every shortcut
     stands aside while a field has the keyboard, so Shift and the arrows

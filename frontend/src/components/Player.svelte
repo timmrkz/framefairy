@@ -468,6 +468,17 @@
     });
   });
 
+  // The keyboard's word put where a walk into the clip beside landed. The
+  // walk cannot catch that landing itself: the clip changes first, with no
+  // words yet, and the playhead only reaches the word once its captions
+  // have arrived, which can be any time later. So the workspace says where
+  // it put the playhead, and that word takes the frame.
+  export function keyAt(t: number) {
+    walked = 0;
+    const word = wordAt(inClipTime(t));
+    keyed = word ? { start: word.start, end: word.end } : null;
+  }
+
   // The word of the caption box at a moment of the clip's clock, among the
   // words that can be corrected.
   function wordAt(at: number): { start: number; end: number } | null {
