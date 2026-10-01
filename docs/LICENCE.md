@@ -1,294 +1,272 @@
 # Licences
 
-How Frame Fairy is sold, how a licence key is made and checked, and what
-the licence service is built from. The licence is batch 5.8 in
-[GUI-PLAN.md](GUI-PLAN.md), and it is built last. The reasons behind the
-update policy and the public code are in [UPDATES.md](UPDATES.md).
+The spec for selling Frame Fairy: how a licence is made and checked, every
+way one is issued or changed, and the service that does it. It is batch
+5.8 in [GUI-PLAN.md](GUI-PLAN.md), built last. The update policy and why
+the code is public are in [UPDATES.md](UPDATES.md).
 
-## What is decided
+## Objective
 
-- **A licence is bought once and gets every update, for ever.** The key
-  only decides whether a render carries the Frame Fairy mark.
-- **Paddle sells the licence**, as merchant of record: payment, VAT and
-  sales tax in every country, invoices, chargebacks.
-- **We make the keys ourselves.** A key is a licence signed with our
-  Ed25519 private key. The app checks it offline against the public key
-  built into it. No network, no machine binding, no activation count.
-- **No refunds once the key has been delivered.** The buyer agrees at
-  checkout that delivery starts at once and that the right of withdrawal
-  ends with it, the way Paddle's buyer terms put it. The app never phones
-  home, so whether a key was entered is something we cannot know, and
-  delivery is the moment the policy can stand on.
-- **Revocation is narrow.** A chargeback and a key posted in public are
-  revoked, nothing else. The list travels in the signed update feed.
-- **Affiliates are Tolt's**, on top of Paddle. The licence service knows
-  nothing about them.
+The licence service turns every sale of Frame Fairy into a licence key,
+and keeps those keys trustworthy for as long as the product lives. It is
+a small Go program beside the app.
 
-## What a licence is
+Who it serves:
 
-A licence is a few fields, signed.
+- **Buyers** get their key within seconds of paying, can get it back when
+  it is lost, and never need the network to use it.
+- **Partners**, bundles, deal sites and resellers, sell Frame Fairy
+  through a small, stable API, or with keys made in advance.
+- **We** issue keys by hand for press and giveaways, revoke abused keys,
+  and replace a signing key without any buyer noticing.
 
-| field | size | what it is |
+It is done when every use case below passes its acceptance criteria
+against Paddle's sandbox, and the app accepts exactly the keys the service
+issued and did not revoke.
+
+## Decisions already made
+
+| Topic | Decision |
+| --- | --- |
+| What a licence buys | Bought once, every update for ever. Without a key the app does everything, and renders carry the Frame Fairy mark |
+| Who sells | Paddle, as merchant of record: payment, VAT and sales tax everywhere, invoices, chargebacks |
+| Who makes keys | We do. A key is a licence signed with our Ed25519 private key |
+| How the app checks | Offline, against public keys built into the app. No network, no machine binding, no activation count |
+| Refunds | None once the key has been delivered. The buyer agrees at checkout that delivery starts at once and ends the right of withdrawal, as Paddle's buyer terms allow |
+| Revocation | Only chargebacks and keys posted in public. The list travels in the signed update feed |
+| Affiliates | Tolt, on top of Paddle. The licence service knows nothing about them |
+
+On refunds: the decision was no refunds for verified keys. The app never
+phones home, so whether a key was entered is something we cannot know.
+Delivery is the moment we can see, and the one Paddle's terms rest on.
+
+## The licence and the key
+
+A licence is seven fields, signed. The key is `FF1-` followed by the
+fields and a 64-byte signature in base64url, about 200 characters, pasted
+and never typed.
+
+| Field | Size | Meaning |
 | --- | --- | --- |
-| format | 1 byte | the key format, 1 today. A later format is a superset, and every format ever issued is read |
-| signer | 1 byte | which signing key signed it, so a key pair can be replaced |
-| number | 8 bytes | the licence, derived from where it came from, see below |
-| issue | 2 bytes | 0 for the first key of a licence, one more for every key issued again for it |
-| edition | 1 byte | what the licence unlocks. 0 is Frame Fairy as it is sold today |
-| issued | 2 bytes | the day it was issued, counted from 2026-01-01 |
-| name | up to 64 bytes | who it is licensed to, as the settings show it. Empty is allowed |
+| format | 1 byte | Key format, 1 today. A later format is a superset, and every format ever issued stays readable |
+| signer | 1 byte | Which signing key signed it, so a key pair can be replaced |
+| number | 8 bytes | The licence, derived from the sale, see below |
+| issue | 2 bytes | 0 for a licence's first key, one more each time it is issued again |
+| edition | 1 byte | What it unlocks. 0 is Frame Fairy as sold today |
+| issued | 2 bytes | Day of issue, counted from 2026-01-01 |
+| name | 0 to 64 bytes | Who it is licensed to, shown in the settings. May be empty |
 
-The signature is 64 bytes over all of it. The key is `FF1-` followed by
-the fields and the signature in base64url, about 200 characters. Nobody
-types it, it is pasted.
+**The number comes from the sale, not from a counter.** It is the first 8
+bytes of SHA-256 over the source, the reference and the seat: `paddle` and
+the transaction, `partner:<name>` and its order, or `manual` and a name we
+choose. An Ed25519 signature over the same bytes is always the same
+signature. So the same sale always yields the same key, issuing is safe to
+repeat, and a lost key can always be made again.
 
-**The number comes from the sale, not from a counter.** It is the first
-8 bytes of SHA-256 over where the licence came from: `paddle` and the
-transaction, `partner`, the partner and its order, or `manual` and the
-name it was given, each with the seat. The same sale always gives the
-same number, and an Ed25519 signature over the same fields is always the
-same signature, so the same sale always gives the same key. That is what
-makes issuing safe to repeat and a lost key easy to give back.
+**A fingerprint** is the first 8 bytes of SHA-256 over the whole key. The
+ledger, the revocation list and the genuine lists hold fingerprints, never
+keys.
 
-A **fingerprint** is the first 8 bytes of SHA-256 over the whole key. It
-is what the ledger, the revocation list and the list of genuine keys
-hold, never the key itself.
+## Use cases
 
-## Every way a licence comes into being or changes
+Eighteen use cases cover everything the service does. Each row is one
+requirement, and its last column is the test that proves it.
 
-Everything the licence service does is one of these.
+| # | Use case | Starts with | Engine call | Accepted when |
+| --- | --- | --- | --- | --- |
+| 1 | Bought through Paddle | Paddle `transaction.completed` | `Issue` | One key per seat is recorded and emailed. The same webhook twice yields the same keys and no second email. A price ID that is not ours is refused |
+| 2 | Key on the thank-you page | Our page, with the transaction | `Keys` | The page shows the keys once Paddle has reported the sale, and says it is waiting until then |
+| 3 | Several seats | A purchase with quantity n | `Issue` | n licences, n different numbers, all sent to the buyer |
+| 4 | A gift | Checkout field for the licensee's name | `Issue` | The key carries that name. Empty means the buyer's own name |
+| 5 | Sold by a partner, live | Partner API `POST /v1/orders` | `Issue` | Keys come back in the response. The same partner order twice gives the same keys. Another partner's token cannot reach them |
+| 6 | Sold by a partner, in advance | Command line: a batch for a partner | `Issue` per seat | A file of n keys, each recorded with the partner and its index |
+| 7 | Given away | Command line: a named manual licence | `Issue` | A key from the source `manual`, recorded with its purpose |
+| 8 | Lost key | Our lost-key page, an email address | `Resend` | Keys go only to that address. The page answers the same whether or not the address bought anything. Limited per address and per caller |
+| 9 | Wrong name | Command line | `Reissue` | A new key with the next issue number. The old key keeps working |
+| 10 | Chargeback | Paddle adjustment, action chargeback | `Revoke` | Every key of that transaction is on the next revocation list |
+| 11 | Chargeback reversed | Paddle adjustment updated | `Restore` | Those keys leave the next revocation list |
+| 12 | Key posted in public | Command line | `Revoke` and `Reissue` | That key is revoked. The buyer gets a new key, same licence number, next issue number |
+| 13 | Refund made anyway | Paddle adjustment, action refund | `Revoke` | Handled exactly like a chargeback |
+| 14 | Planned key rotation | Config switch to the next signer | none | The next public key shipped in a release first. Keys of the old signer still check |
+| 15 | Leaked signing key | Command line | `Genuine` | The genuine fingerprints of that signer are published. Keys of that signer check only if listed. No buyer acts |
+| 16 | Publish revocations | Release workflow | `Revocations` | The feed carries the list, signed with the update key, which the licence service never holds |
+| 17 | Sandbox | Paddle sandbox and a test signer | as above | The whole sale works end to end. No shipped build accepts the test signer |
+| 18 | Mail fails | Mailer error | retry | Sending is retried. The thank-you page and the lost-key page still deliver |
 
-**Selling**
+## Architecture
 
-1. **Bought through Paddle.** Paddle's `transaction.completed` arrives.
-   The service checks Paddle's signature on it and that the price is one
-   of ours, by price ID and not by amount, because a discount changes the
-   amount. It issues one licence per seat, records them and emails them.
-   The same message arriving twice gives the same keys and sends nothing
-   twice.
-2. **Shown on the thank-you page.** Checkout sends the buyer to our page
-   with the transaction. The page asks the service for the keys of that
-   transaction, which answers once Paddle has reported the sale, and a
-   few seconds of waiting are shown as waiting. The email is the second
-   copy, not the only one.
-3. **Several seats in one purchase.** An agency buying five gets five
-   licences, one key each, all sent to the buyer, each with its own
-   number. Nothing enforces seats, a seat is a key.
-4. **Bought as a gift.** Checkout asks whose name goes on the licence, and
-   leaves it empty when it is the buyer's own.
-5. **Sold by a partner.** A bundle, a deal site or a reseller sells
-   Frame Fairy with its own checkout. Either it calls our partner API on
-   every sale, with its order and a token of its own, or it takes a batch
-   of keys made in advance. Both are licences like any other, from the
-   source `partner`.
-6. **Given away.** Press, reviewers, affiliates who want to try it,
-   giveaways on a podcast. We issue them by hand, from the source
-   `manual`, with a name that says what they were for.
+One Go program, `cmd/framefairy-licence`, in three layers. A new shop or
+partner is a new adapter, and the engine never changes for it.
 
-**After the sale**
+```
+Paddle webhook   our website   partner API call   command line
+      \               |               |                /
+       adapters: check Paddle's signature, the partner's token
+                 and the price, then call the engine
+                              |
+       engine, licence/sell: Issue, Keys, Resend, Reissue,
+                 Revoke, Restore, Revocations, Genuine
+                              |
+          Signer        Ledger        Orders        Mailer
 
-7. **A lost key.** The buyer enters their email on our website. The page
-   always answers the same thing, that the keys have been sent if there
-   are any, so it never says whether an address bought anything. The
-   service asks Paddle for the transactions of that address and emails
-   their keys to it, never to anyone else and never on screen.
-8. **A name that is wrong.** The licence is issued again with the right
-   name and the next issue number. The old key keeps working, because
-   nothing about it was wrong in a way that matters.
-9. **A chargeback.** Paddle reports an adjustment with the action
-   chargeback. Every key of that transaction is revoked.
-10. **A chargeback reversed.** The bank decides for us, Paddle reports it,
-    and the revocation is taken back.
-11. **A key posted in public.** We revoke that key by hand and issue the
-    licence again with the next issue number, and the buyer gets the new
-    key by email. The number stays, so everything about the licence stays
-    one licence.
-12. **A refund made anyway.** Paddle may still refund, for example before
-    the key was delivered. It is revoked like a chargeback.
+key package, licence/: Sign and Check, the same code in the service and the app
+```
 
-**Keys and trust**
+### Key package: `licence/`
 
-13. **A new signing key, planned.** The next public key goes into a
-    release long before it signs anything. Then the service switches to
-    it. Every key signed before keeps working.
-14. **A signing key that leaked.** The ledger lists every key that key
-    really signed. The service writes their fingerprints out, the feed
-    carries them, and from then on a key of that signer counts only if
-    its fingerprint is on that list. The service switches to the next
-    signing key. No buyer does anything.
-15. **The revocation list.** The service writes it out from the ledger.
-    The release workflow puts it into the update feed and signs the feed
-    with the update key, which the licence service never holds.
-
-**Running it**
-
-16. **Paddle's sandbox.** A test of the whole sale goes through Paddle's
-    sandbox and a test signing key. No build we ship accepts the test
-    key, because its private half is in this repository for the tests.
-17. **Mail that failed.** Sending is retried, and the thank-you page and
-    the lost-key page are always there as well.
-18. **Personal data.** The ledger holds numbers, fingerprints, sources and
-    dates, and no email address. Paddle holds the buyer. A request to
-    delete someone's data is Paddle's to carry out, and nothing of ours
-    needs changing.
-
-## The licence service
-
-One Go program, `cmd/framefairy-licence`, in this repository. It is two
-layers: an engine that knows what a licence is and what may happen to
-one, and adapters that turn whatever arrives, a Paddle webhook, a
-partner's call, a command typed by us, into a call to the engine. A new
-partner or a new shop is a new adapter. The engine does not change.
-
-### The key package
-
-`licence/` holds the format and nothing else, and it is the one package
-both the app and the service use, so a key is made and checked by the
-same code.
+The format and nothing else, shared by the app and the service, so making
+a key and checking one are the same code.
 
 ```go
-package licence
-
 type Licence struct {
-	Format  uint8
-	Signer  uint8
-	Number  uint64
-	Issue   uint16
-	Edition uint8
-	Issued  time.Time // a day
-	Name    string
+	Format, Signer, Edition uint8
+	Number                  uint64
+	Issue                   uint16
+	Issued                  time.Time // a day
+	Name                    string
 }
 
-// Sign makes the key. The same licence and the same key give the same
-// key, every time.
-func Sign(l Licence, key ed25519.PrivateKey) (Key, error)
-
-// Check reads a key and says what it licenses, or why it does not. It is
-// what the app calls. Trust holds the public keys, the revocation list
-// and, for a signer that leaked, the genuine fingerprints.
-func Check(k Key, trust Trust) (Licence, error)
-
-// NumberFor is where a licence number comes from.
+func Sign(l Licence, key ed25519.PrivateKey) (Key, error) // same input, same key
+func Check(k Key, t Trust) (Licence, error)                // public keys, revocations, genuine lists
 func NumberFor(source, ref string, seat int) uint64
-
 func (k Key) Fingerprint() Fingerprint
 ```
 
-`Check` reads untrusted text, so it has a fuzz target.
+### Engine: `licence/sell/`
 
-### The engine
-
-`licence/sell/` is everything a sale can do, behind one type. It holds
-the rules: idempotence, one licence per seat, the next issue number,
-what may be revoked and taken back.
+Every rule lives here: idempotence, one licence per seat, the next issue
+number, what may be revoked and restored.
 
 ```go
-package sell
-
-// An order is a sale from anywhere, already checked by the adapter that
-// received it.
 type Order struct {
-	Source  string // "paddle", "partner:<name>", "manual"
-	Ref     string // the transaction, the partner's order, our own name for it
-	Seats   int
-	Edition uint8
-	Name    string // on the licence, may be empty
-	Email   string // where the keys go, never stored
-	At      time.Time
+	Source, Ref string // "paddle" | "partner:<name>" | "manual", and its reference
+	Seats       int
+	Edition     uint8
+	Name, Email string // Email is used to send, never stored
+	At          time.Time
 }
 
-type Engine struct{ /* the ports below */ }
-
-// Issue gives the keys of an order, issuing them the first time.
-// Calling it again gives the same keys and sends nothing again.
 func (e *Engine) Issue(ctx context.Context, o Order) ([]licence.Key, error)
-
-// Keys gives the keys of an order that was issued, for the thank-you
-// page and for support.
 func (e *Engine) Keys(ctx context.Context, source, ref string) ([]licence.Key, error)
-
-// Resend emails every key bought with an address to that address.
 func (e *Engine) Resend(ctx context.Context, email string) error
-
-// Reissue gives a licence a new key, with a new name or after its key
-// was posted in public.
-func (e *Engine) Reissue(ctx context.Context, number uint64, name string, why string) (licence.Key, error)
-
-// Revoke and Restore act on every key of an order, or on one key.
+func (e *Engine) Reissue(ctx context.Context, number uint64, name, why string) (licence.Key, error)
 func (e *Engine) Revoke(ctx context.Context, t Target, why string) error
 func (e *Engine) Restore(ctx context.Context, t Target, why string) error
-
-// Revocations and Genuine are what the release workflow publishes.
 func (e *Engine) Revocations(ctx context.Context) ([]licence.Fingerprint, error)
 func (e *Engine) Genuine(ctx context.Context, signer uint8) ([]licence.Fingerprint, error)
 ```
 
-### What the engine needs from outside
+### Ports: what the engine needs from outside
 
-Four small interfaces, so the engine is tested with nothing but memory
-and a clock, and so where things live can change without the engine
-knowing.
-
-| port | what it does | first implementation |
+| Port | Does | First implementation |
 | --- | --- | --- |
-| `Signer` | signs with the current key and says which one it is | a key file readable only by the service. A hardware key or a cloud key service later, behind the same interface |
-| `Ledger` | appends what happened and reads it back | one JSON line per event, `issue`, `reissue`, `revoke`, `restore`, in a file on the server with a copy in object storage that keeps versions |
-| `Orders` | finds the orders of an email address | Paddle's API |
-| `Mailer` | sends the keys | a European mail service, Brevo or Mailjet |
+| `Signer` | Signs with the current key and names it | A key file readable only by the service. A hardware key later, same interface |
+| `Ledger` | Appends events and reads them back | JSON lines: `issue`, `reissue`, `revoke`, `restore`. A file, with a copy in object storage that keeps versions |
+| `Orders` | Finds the orders of an email address | Paddle's API |
+| `Mailer` | Sends keys | A European mail service |
 
-The ledger is not needed to make a Paddle key, which can always be made
-again from the transaction. It is needed for what only a record can do:
-the revocation list, the genuine fingerprints after a leak, the next
-issue number of a licence, and the orders of partners and giveaways,
-which Paddle knows nothing about.
+A Paddle key can always be made again from its transaction. The ledger is
+for what only a record can do: revocations, genuine lists after a leak,
+the next issue number, and orders Paddle never saw.
 
-### The adapters
+### Adapters: the network layer
 
-| adapter | what arrives | what it calls |
+| Adapter | Receives | Calls |
 | --- | --- | --- |
 | Paddle | `transaction.completed`, `adjustment.created`, `adjustment.updated`, signed by Paddle | `Issue`, `Revoke`, `Restore` |
-| thank-you page | a transaction, from our website | `Keys` |
-| lost key | an email address, from our website, limited per address and per caller | `Resend` |
-| partner API | an order, with the partner's own token | `Issue`, `Keys`, `Revoke` |
-| the command line on the server | us | everything, and batches of keys for a partner |
+| Thank-you page | A transaction, from our website | `Keys` |
+| Lost key | An email address, from our website | `Resend` |
+| Partner API | An order, with the partner's own token | `Issue`, `Keys`, `Revoke` |
+| Command line | Us, on the server | Everything, and batches for partners |
 
-**The partner API** is the one other programs build against, so it is
-small, versioned and the same for everyone.
+### Partner API
+
+The one surface other programs build against: small, versioned, the same
+for everyone.
 
 ```
-POST /v1/orders            {ref, seats, name, email, edition}  -> {keys}
-GET  /v1/orders/{ref}                                          -> {keys}
-POST /v1/orders/{ref}/revoke  {why}                            -> {}
+POST /v1/orders                {ref, seats, name, email, edition} -> {keys}
+GET  /v1/orders/{ref}                                             -> {keys}
+POST /v1/orders/{ref}/revoke   {why}                              -> {}
 ```
 
-Each partner gets its own token, which only reaches its own orders. The
+Each partner has its own token, which reaches only its own orders. The
 same `ref` twice gives the same keys. A partner with its own webhook
-format, as deal sites tend to have, gets an adapter of its own that
-turns it into these calls, and the engine never sees the difference.
-
-Nothing reaches the engine over the network without being checked
-first: Paddle's signature, the partner's token, the price ID, the size
-of every field.
+format gets an adapter that turns it into these calls.
 
 ## How the app checks a key
 
-- The Licence row in the settings takes a pasted key and calls `Check`
-  at once. A key that is refused shakes the field and keeps what was
-  typed, the way a refused API key does.
-- The key is kept where the API key is kept, in the keychain on macOS.
-- The engine asks `Check` before every render, so the command line and
-  the app obey the same rule, and the mark goes on or it does not.
-- The public keys are built into the app. The revocation list and any
-  genuine fingerprints come with the update feed, and only a feed whose
-  signature holds is read. A feed that is missing, broken or unsigned
-  changes nothing: the last list that held stays.
-- Development builds need a key like any customer, and no switch in any
-  build turns the check off.
+The app calls the same `licence.Check` the service is tested against,
+offline, before every render.
 
-## What is left open
+- **Entering it.** A Licence row in the settings takes a pasted key and
+  checks it at once. A refused key shakes the field and keeps what was
+  typed, like a refused API key. A good key shows "Licensed to …".
+- **Keeping it.** Where the API key is kept: the keychain on macOS.
+- **Using it.** The engine checks before every render, so the app and the
+  command line obey one rule: the mark goes on, or it does not.
+- **Trust.** Public keys are built into the app. The revocation list and
+  any genuine lists arrive with the update feed, and only a feed whose
+  signature holds is read. A missing, broken or unsigned feed changes
+  nothing: the last list that held stays.
+- **No way around it in our own code.** Development builds need a key like
+  any customer. No switch in any build turns the check off.
+
+## Security, privacy, reliability, testing
+
+**Security**
+
+- The private signing key exists only in the service's `Signer`. Never in
+  the repository, never in CI, never in the app. The update-signing key is
+  a different key pair, held by the release workflow.
+- Nothing reaches the engine unchecked: Paddle's webhook signature, the
+  partner's token, the price ID, and the size of every field.
+- The admin surface is the command line on the server, not an HTTP
+  endpoint.
+- The next signer's public key ships in a release before it is ever used.
+
+**Privacy**
+
+- The ledger holds licence numbers, fingerprints, sources, references and
+  dates. No email addresses.
+- Paddle holds the buyer's data. A deletion request is carried out there,
+  and nothing of ours changes.
+
+**Reliability**
+
+- Every engine call is safe to repeat. Paddle retries webhooks, and a
+  retry never makes a second key or a second email.
+- The ledger is one JSON line per event, appended and flushed, with a copy
+  in object storage that keeps versions.
+- If the service is down, sales still complete at Paddle. Keys follow when
+  it is back, from the webhook retries.
+
+**Testing**
+
+- The engine is tested with the ports in memory and a fixed clock. No
+  network, no Paddle, no mail.
+- `licence.Check` has a fuzz target, as the repository requires for
+  everything that reads untrusted text.
+- Every use case has a test named after it. Asynchronous parts run under
+  the race detector with concurrent calls.
+- The whole sale runs once against Paddle's sandbox before launch.
+
+## Out of scope and open questions
+
+**Out of scope**
+
+- Machine binding, activation limits, seat enforcement, and any check that
+  needs the network.
+- Subscriptions and expiring keys.
+- Affiliate tracking and payouts, which are Tolt's.
+- Payment, tax and invoices, which are Paddle's.
+
+**Open questions**
 
 - The price, and whether there is ever a second edition.
-- The mail service, Brevo or Mailjet, and where the service runs.
+- The mail service: Brevo or Mailjet.
+- Where the service runs: a small European server or a serverless
+  function.
 - The business the Paddle account belongs to.
-- Whether partners are wanted at launch, or the partner API waits for
-  the first one.
+- Whether partners are wanted at launch, or the partner API waits for the
+  first one.
