@@ -916,7 +916,9 @@ Everything else is in `engine/`:
                 addresses, keys and the models the app offers by name
   keys_darwin.go the keys in the cloud, kept in the macOS keychain.
                 keys_other.go is the rest, from the environment only
-  run.go        the run loop
+  run.go        a run in its steps: prepare, hear, plan, read the plan
+                back, render. Run takes them in order for the command
+                line and returns an exit code
   log.go        the timestamped terminal log
   util.go       counting characters, summing and rounding the same way on
                 every platform, so plans are reproducible
@@ -926,7 +928,8 @@ Everything else is in `engine/`:
                 that is not a number becomes Unknown, because JSON
                 cannot say NaN and an event nobody can encode is a job
                 the app stops hearing about altogether
-  project.go    one episode driven step by step, as the app does it
+  project.go    one episode driven step by step, as the app does it:
+                the same steps as Run, with the window as numbers
   episode.go    status, waveform, silences and plan views for the app,
                 and the note that an episode has been searched once
   levels.go     the loudness of the whole episode, measured on its own in
