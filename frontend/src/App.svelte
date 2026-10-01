@@ -240,6 +240,21 @@
     on.blur();
   }
 
+  // A button pressed with the pointer does not keep the keyboard, the way
+  // a button on the Mac does not. WebKit on the Mac gives it none, and
+  // Chromium, on Windows and in the preview, does, and then Enter, which
+  // opens the word at the playhead, pressed the button again instead: a
+  // click on Highlight, then Enter, switched the highlight back on. A
+  // button pressed with the keyboard keeps it, and so does one that opens
+  // a list, which hands the keyboard on to the list itself.
+  function letButtonGo(event: MouseEvent) {
+    if (event.detail === 0) return;
+    const button = (event.target as Element | null)?.closest?.("button");
+    if (!button || button !== document.activeElement) return;
+    if (button.hasAttribute("aria-haspopup")) return;
+    button.blur();
+  }
+
   // Where macOS put the title bar and its buttons. All zeros away from
   // macOS, where the system draws its own title bar, and then the bar is
   // an ordinary header and the stylesheet keeps its own numbers.
@@ -306,11 +321,13 @@
       if (what === "ask") asked = setTimeout(() => (leaving = null), 3000);
     });
     window.addEventListener("pointerdown", handOverFocus);
+    window.addEventListener("click", letButtonGo);
     return () => {
       clearTimeout(asked);
       window.removeEventListener("keydown", dismiss);
       noQuit();
       window.removeEventListener("pointerdown", handOverFocus);
+      window.removeEventListener("click", letButtonGo);
       noChrome();
       noAcknowledgements();
       noUpdates();
