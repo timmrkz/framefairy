@@ -803,3 +803,35 @@ func (q *queue) update(job *Job, ev *engine.Event, change func(*Job)) {
 	q.mu.Unlock()
 	q.emit(JobUpdate{Job: snapshot, Event: ev})
 }
+
+// windowLength is how long the window of a search is, in seconds. A search
+// of the whole episode is taken as an hour, which only sizes the model's
+// memory, and the search starts it again if it needs more.
+func windowLength(req engine.PlanRequest) float64 {
+	if req.To > req.From {
+		return req.To - req.From
+	}
+	return 3600
+}
+
+// Render queues rendering clips of a plan. The render keeps a record of
+// the clips it has finished, so one that is cut off carries on with the
+// rest, see search.go.
+func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
+	return s.render(path, req, nil)
+}
+
+// Jobs lists queued, running and finished jobs.
+func (s *FrameFairy) Jobs() []Job { return s.jobs.list() }
+
+// CancelJob stops a job, or takes it out of the queue.
+func (s *FrameFairy) CancelJob(id string) {
+	// A search or a render takes its record with it, see search.go.
+	if s.cancelSteps(id) {
+		return
+	}
+	s.jobs.cancel(id)
+}
+
+// ClearJobs forgets finished jobs.
+func (s *FrameFairy) ClearJobs() { s.jobs.clear() }
