@@ -211,8 +211,12 @@ facade the app goes around, and three files too big to hold in one's head.
     and the recipe comparison take the error rather than hooking the last
     error line, and the hook is gone. The messages no longer name flags,
     `planFailed` has one branch, and a speech model that will not load
-    keeps its error. **Open:** `Run` split into steps `Project` calls
-    directly.
+    keeps its error. **Fixed** in #67: the run is split into steps,
+    prepare, hear, plan, read the plan back and render, held on one
+    `runner`. `Run` takes them in order for the command line, and
+    `Project` calls the ones it needs with the window as numbers, so no
+    window goes from a number to text and back on its way into the
+    engine.
 19. **`Project` covers part of what the app needs.** The app calls 92 engine
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
@@ -263,7 +267,12 @@ facade the app goes around, and three files too big to hold in one's head.
 24. **`cmd/framefairy-app/main.go` is 1,600 lines with 70 bindings.** The
     tests are already split by the right seams, the code is not. Fix: media,
     views, words, edits, chosen and training in files of their own,
-    `CheckSetup` into `setup.go`. **Open.**
+    `CheckSetup` into `setup.go`. **Fixed** in #66: `main.go` keeps the
+    start of the app, the media handler and the `FrameFairy` type, 373
+    lines, and the bindings moved unchanged to `library.go`, `media.go`,
+    `views.go`, `words.go`, `edits.go`, `chosen.go` and `training.go`, with
+    `CheckSetup` in `setup.go`, the settings bindings in `settings.go` and
+    the job bindings in `jobs.go`.
 25. **The TypeScript types are written by hand.** The binding test checks
     names and argument counts, not fields. Constants copied from the engine,
     the caption heights and `snapCaptionY`, the caption defaults, `Reach`

@@ -1264,11 +1264,14 @@ animation at all at rest.
 The one exception is time running out, the fill of a removed clip. Its
 animation is still the compositor's, but it is started, held and let go
 from `Busy.svelte`, and a clock there decides when the time is over. The
-hold was the stylesheet's, a play state flipped by `:hover`, and WebKit,
-which draws the app on a Mac, gave time back as the pointer passed over
-the row, so the fill ran up again and the row stayed longer than it
-said. Now the clock is the time, and the fill is set from it each time
-it stops or runs on.
+clock is the time. Held, the fill stands where the clock says, a plain
+transform with no animation. Let go, it is a new animation from there to
+nothing over the time left. An animation is never paused and played
+again: WebKit, which draws the app on a Mac, plays a paused animation on
+from its timeline's last frame rather than from now, so the fill jumped
+ahead as the pointer left the row and back as it came in, and read as
+time given back. A play state flipped by `:hover` in the stylesheet did
+the same and really gave the time back.
 
 `frontend/src/components/Busy.svelte` is the whole of the beam, the motes
 and the fill, in a control and in the track. The track itself, the shimmer
@@ -1586,8 +1589,12 @@ Homebrew's ffmpeg and llama-server even when it is started from Finder.
 | Built interface | `cmd/framefairy-app/dist/app/` | made by make from `frontend/`, embedded into the program, not in git |
 
 The Go side uses Wails v3, pinned to v3.0.0-beta.23. The interface calls the
-methods of the `FrameFairy` type in `cmd/framefairy-app/main.go` by name, through the
-typed wrappers in `frontend/src/lib/api.ts`.
+methods of the `FrameFairy` type by name, through the typed wrappers in
+`frontend/src/lib/api.ts`. The type is declared in
+`cmd/framefairy-app/main.go`, and its methods sit in files by what they
+are for, named like their tests: `library.go`, `media.go`, `views.go`,
+`words.go`, `edits.go`, `chosen.go`, `training.go`, `settings.go`,
+`setup.go`, `jobs.go`, `search.go` and `updates.go`.
 
 The built interface lives next to the Go code because Go can only embed files
 from its own folder. It is generated, so never edit it by hand.

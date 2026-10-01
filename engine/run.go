@@ -149,36 +149,133 @@ func (e *Engine) Run(ctx context.Context, opts Options) int {
 	return 1
 }
 
+// A run, one episode and one set of options, in the steps it takes.
+// prepare checks what was asked for and finds the episode, its window and
+// its plan. hear makes the transcript of the window, plan asks for clips,
+// clips reads the plan back, and render makes the shorts. execute takes
+// them in order for the command line, and Project takes the one it asks
+// for, with the window as numbers, see project.go.
+type runner struct {
+	e    *Engine
+	opts Options
+	// logsDir is where the episode's records go, and outDir and
+	// captionDir where its shorts and their captions go.
+	logsDir, outDir, captionDir string
+	source                      SourceInfo
+	rs                          RenderSettings
+	// window is the part of the episode asked for, nil for all of it, and
+	// span is that part or the whole episode.
+	window *Window
+	span   Window
+	// planPath is the plan this run reads or writes.
+	planPath   string
+	experiment bool
+}
+
 // execute is one complete run, and says what went wrong as an error, kept
 // as the kind it is, so the app and the command line hear the same thing
 // and the app is not left reading the last line of a log.
 func (e *Engine) execute(ctx context.Context, opts Options) error {
+	ask, err := askedWindow(opts)
+	if err != nil {
+		return err
+	}
+	r, err := e.prepare(ctx, opts, ask)
+	if err != nil {
+		return err
+	}
+	if r.opts.TranscribeOnly {
+		return r.hear(ctx)
+	}
+	plan, clips, err := r.planned(ctx)
+	if err != nil || clips == nil {
+		return err
+	}
+	return r.finish(ctx, plan, clips)
+}
+
+// planned is the plan of the run and its clips: the plan given, or the one
+// for the window, made first when there is none or a new one is asked for.
+func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
+	plannedNow := false
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.planPath)) {
+		if err := r.plan(ctx); err != nil {
+			return Plan{}, nil, err
+		}
+		plannedNow = true
+	}
+	return r.clips(plannedNow)
+}
+
+// finish is the end of a run with its clips: nothing more for a plan asked
+// for on its own or an experiment, and the shorts for anything else.
+func (r *runner) finish(ctx context.Context, plan Plan, clips []Clip) error {
+	opts, log, planPath, experiment := r.opts, r.e.Log, r.planPath, r.experiment
+	if opts.PlanOnly {
+		log.Info("plan only, nothing rendered. Edit %s and run again.", planPath)
+		return nil
+	}
+	// An experiment is there to be compared, not published. Rendering it
+	// would put its shorts beside the episode's own.
+	if experiment {
+		log.Info("an experiment with the %s recipe, nothing rendered. The plan is %s.",
+			opts.Recipe, planPath)
+		return nil
+	}
+	return r.render(ctx, plan, clips)
+}
+
+// askedWindow is the window --from and --to ask for: nil when neither is
+// given, and an end at infinity when only the start is.
+func askedWindow(opts Options) (*Window, error) {
+	if opts.From == "" && opts.To == "" {
+		return nil, nil
+	}
+	ask := &Window{0, math.Inf(1)}
+	var err error
+	if opts.From != "" {
+		if ask.Start, err = ParseTime(opts.From); err != nil {
+			return nil, err
+		}
+	}
+	if opts.To != "" {
+		if ask.End, err = ParseTime(opts.To); err != nil {
+			return nil, err
+		}
+	}
+	return ask, nil
+}
+
+// prepare checks what a run is asked for, finds the episode and the part
+// of it asked for, ask, nil for all of it, and the plan the run reads or
+// writes. An end at infinity is the end of the episode.
+func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runner, error) {
 	log := e.Log
 	e.Prefill = opts.Prefill
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
 	if !exists(opts.Source) {
-		return fmt.Errorf("source not found: %s", opts.Source)
+		return nil, fmt.Errorf("source not found: %s", opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
-		return errors.New("the planner must be local or api")
+		return nil, errors.New("the planner must be local or api")
 	}
 	// A shortest longer than the longest leaves nothing a clip could be, and
 	// the model would be asked for clips between thirty and twenty seconds.
 	if opts.Max > 0 && opts.Min > opts.Max {
-		return fmt.Errorf("the shortest clip cannot be longer than the longest: %s over %s",
+		return nil, fmt.Errorf("the shortest clip cannot be longer than the longest: %s over %s",
 			trimFloat(opts.Min), trimFloat(opts.Max))
 	}
 	// No count is the count the window suggests, see SuggestedCount.
 	if opts.Count < 0 {
-		return errors.New("a search has to look for at least one clip")
+		return nil, errors.New("a search has to look for at least one clip")
 	}
 	for _, dim := range []struct {
 		name  string
 		value int
 	}{{"width", opts.Width}, {"height", opts.Height}} {
 		if dim.value < 16 || dim.value > 8192 || dim.value%2 != 0 {
-			return fmt.Errorf("the %s must be an even number between 16 and 8192", dim.name)
+			return nil, fmt.Errorf("the %s must be an even number between 16 and 8192", dim.name)
 		}
 	}
 
@@ -189,7 +286,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	}
 	captionDir := filepath.Join(work, "captions")
 	if err := os.MkdirAll(work, 0o755); err != nil {
-		return fmt.Errorf("cannot create %s: %w", work, err)
+		return nil, fmt.Errorf("cannot create %s: %w", work, err)
 	}
 
 	e.SkipCaptions = opts.NoCaptions
@@ -197,15 +294,15 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	log.Info("%s", filepath.Base(opts.Source))
 
 	if err := e.Preflight(ctx); err != nil {
-		return e.fail(ctx, err)
+		return nil, e.fail(ctx, err)
 	}
 
 	source, err := e.Probe(ctx, opts.Source)
 	if err != nil {
 		if ctx.Err() != nil {
-			return e.fail(ctx, ctx.Err())
+			return nil, e.fail(ctx, ctx.Err())
 		}
-		return fmt.Errorf("cannot read %s: %w", opts.Source, err)
+		return nil, fmt.Errorf("cannot read %s: %w", opts.Source, err)
 	}
 
 	rs := RenderSettings{OutW: opts.Width, OutH: opts.Height, CRF: opts.CRF,
@@ -226,30 +323,23 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	// file so the passes accumulate instead of overwriting each other.
 	var window *Window
 	span := Window{0, source.Duration}
-	if opts.From != "" || opts.To != "" {
-		startAt, endAt := 0.0, source.Duration
-		if opts.From != "" {
-			if startAt, err = ParseTime(opts.From); err != nil {
-				return err
-			}
-		}
-		if opts.To != "" {
-			if endAt, err = ParseTime(opts.To); err != nil {
-				return err
-			}
+	if ask != nil {
+		startAt, endAt := ask.Start, ask.End
+		if math.IsInf(endAt, 1) {
+			endAt = source.Duration
 		}
 		if source.Duration > 0 {
 			endAt = math.Min(endAt, source.Duration)
 		}
 		if endAt <= startAt {
-			return errors.New("the end of the window must be later than its start, and its start inside the video")
+			return nil, errors.New("the end of the window must be later than its start, and its start inside the video")
 		}
 		window = &Window{startAt, endAt}
 		span = *window
 		log.Info("window %s to %s", HMS(startAt), HMS(endAt))
 	}
 	if span.End <= span.Start {
-		return fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
+		return nil, fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
 	}
 	// How many clips to look for and how long to think follow the window,
 	// unless they were given. See suggest.go.
@@ -320,90 +410,120 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 			for i, candidate := range existing {
 				names[i] = filepath.Base(candidate)
 			}
-			return fmt.Errorf("no %s, but several plans exist in %s: %s. Choose one with --clips, "+
+			return nil, fmt.Errorf("no %s, but several plans exist in %s: %s. Choose one with --clips, "+
 				"or repeat the --from and --to it was made with. Add --replan to make a new one",
 				planName, logsDir, strings.Join(names, ", "))
 		}
 	}
 
-	outW, outH := rs.OutW, rs.OutH
-	plannedNow := false
-	if opts.TranscribeOnly || (opts.ClipsPath == "" && (opts.Replan || !exists(planPath))) {
-		// Transcription takes minutes, so a missing key is reported before it
-		// rather than after. A saved reply can make the key unnecessary, so
-		// with one around this is only a warning.
-		var local *LocalModel
-		if !opts.TranscribeOnly && opts.Planner == "local" {
-			local, err = resolveLocal(opts)
-			if err != nil {
+	return &runner{e: e, opts: opts, logsDir: logsDir, outDir: outDir, captionDir: captionDir,
+		source: source, rs: rs, window: window, span: span, planPath: planPath,
+		experiment: experiment}, nil
+}
+
+// transcript is the transcript of the run's window, heard where it was not.
+func (r *runner) transcript(ctx context.Context) (*Transcript, error) {
+	e, opts, source, span, logsDir := r.e, r.opts, r.source, r.span, r.logsDir
+	modelDir := opts.ASRModel
+	if modelDir == "" {
+		modelDir = DefaultModelDir()
+	}
+	transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, modelDir,
+		opts.SilenceDB)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, e.fail(ctx, err)
+		}
+		return nil, fmt.Errorf("transcription failed: %w", err)
+	}
+	return transcript, nil
+}
+
+// hear makes the transcript of the window and writes it out to be read.
+func (r *runner) hear(ctx context.Context) error {
+	log, window, logsDir := r.e.Log, r.window, r.logsDir
+	transcript, err := r.transcript(ctx)
+	if err != nil {
+		return err
+	}
+	name := strings.TrimSuffix(TranscriptName(window), ".json") + ".srt"
+	readable := filepath.Join(logsDir, name)
+	if err := WriteTranscriptSRT(transcript, readable); err != nil {
+		return fmt.Errorf("cannot write %s: %w", readable, err)
+	}
+	log.OK("transcript written to %s", readable)
+	return nil
+}
+
+// plan asks the model for clips in the window and writes them to the plan.
+func (r *runner) plan(ctx context.Context) error {
+	e, opts, log, source, span, window := r.e, r.opts, r.e.Log, r.source, r.span, r.window
+	logsDir, planPath, experiment := r.logsDir, r.planPath, r.experiment
+	outW, outH := r.rs.OutW, r.rs.OutH
+	var err error
+	// Transcription takes minutes, so a missing key is reported before it
+	// rather than after. A saved reply can make the key unnecessary, so
+	// with one around this is only a warning.
+	var local *LocalModel
+	if opts.Planner == "local" {
+		local, err = resolveLocal(opts)
+		if err != nil {
+			return err
+		}
+	}
+	if opts.Planner == "api" {
+		if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
+			saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
+			if len(saved) == 0 || opts.Replan {
 				return err
 			}
+			log.Warn("no API key found. Planning only works if a saved reply matches.")
 		}
-		if !opts.TranscribeOnly && opts.Planner == "api" {
-			if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
-				saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
-				if len(saved) == 0 || opts.Replan {
-					return err
-				}
-				log.Warn("no API key found. Planning only works if a saved reply matches.")
-			}
-		}
-		// Clips at their shortest, one after another, have to fit in the
-		// window, or the model is asked for more than is there. This is
-		// the same sum the app holds its settings to, see Holds.
-		if !opts.TranscribeOnly && !Holds(span, opts.Count, opts.Min) {
-			return fmt.Errorf("%d clips of at least %ss need %s, and the window is %s. Ask for fewer "+
-				"clips, shorter ones, or a longer window", opts.Count, trimFloat(opts.Min),
-				HMS(float64(opts.Count)*opts.Min), HMS(span.End-span.Start))
-		}
-		modelDir := opts.ASRModel
-		if modelDir == "" {
-			modelDir = DefaultModelDir()
-		}
-		transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, modelDir,
-			opts.SilenceDB)
-		if err != nil {
-			if ctx.Err() != nil {
-				return e.fail(ctx, err)
-			}
-			return fmt.Errorf("transcription failed: %w", err)
-		}
-		if opts.TranscribeOnly {
-			name := strings.TrimSuffix(TranscriptName(window), ".json") + ".srt"
-			readable := filepath.Join(logsDir, name)
-			if err := WriteTranscriptSRT(transcript, readable); err != nil {
-				return fmt.Errorf("cannot write %s: %w", readable, err)
-			}
-			log.OK("transcript written to %s", readable)
-			return nil
-		}
-		plannedNow = true
-		lines := BuildLines(transcript.Words, transcript.Levels(), opts.MaxPause)
-		if len(lines) == 0 {
-			return errors.New("no speech was found in the audio")
-		}
-		e.SummariseLines(transcript, lines, span)
-		plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
-			PlanOptions{
-				Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
-				Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
-				MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
-				Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
-				Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
-				Pass: opts.Pass, Taken: opts.Taken,
-				Recipe:   opts.Recipe,
-				PlanPath: planPath,
-			})
-		if err != nil {
-			return e.planFailed(ctx, err)
-		}
-		// Each clip was written to the plan the moment it was framed, so
-		// there is nothing left to write.
-		log.OK("plan written to %s with %d clip(s)", planPath, len(plan.Clips))
 	}
+	// Clips at their shortest, one after another, have to fit in the
+	// window, or the model is asked for more than is there. This is
+	// the same sum the app holds its settings to, see Holds.
+	if !Holds(span, opts.Count, opts.Min) {
+		return fmt.Errorf("%d clips of at least %ss need %s, and the window is %s. Ask for fewer "+
+			"clips, shorter ones, or a longer window", opts.Count, trimFloat(opts.Min),
+			HMS(float64(opts.Count)*opts.Min), HMS(span.End-span.Start))
+	}
+	transcript, err := r.transcript(ctx)
+	if err != nil {
+		return err
+	}
+	lines := BuildLines(transcript.Words, transcript.Levels(), opts.MaxPause)
+	if len(lines) == 0 {
+		return errors.New("no speech was found in the audio")
+	}
+	e.SummariseLines(transcript, lines, span)
+	plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
+		PlanOptions{
+			Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
+			Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
+			MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
+			Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
+			Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
+			Pass: opts.Pass, Taken: opts.Taken,
+			Recipe:   opts.Recipe,
+			PlanPath: planPath,
+		})
+	if err != nil {
+		return e.planFailed(ctx, err)
+	}
+	// Each clip was written to the plan the moment it was framed, so
+	// there is nothing left to write.
+	log.OK("plan written to %s with %d clip(s)", planPath, len(plan.Clips))
+	return nil
+}
 
+// clips reads the plan back, and says when it was made with other
+// settings than these. No clips and no error is a window searched again
+// that held nothing new.
+func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
+	opts, log, planPath := r.opts, r.e.Log, r.planPath
 	if !exists(planPath) {
-		return fmt.Errorf("clip plan not found: %s", planPath)
+		return Plan{}, nil, fmt.Errorf("clip plan not found: %s", planPath)
 	}
 
 	plan, clips, err := LoadClips(planPath)
@@ -440,28 +560,25 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("clip plan is invalid: %w", err)
+		return Plan{}, nil, fmt.Errorf("clip plan is invalid: %w", err)
 	}
 	if len(clips) == 0 && plannedNow && len(opts.Taken) > 0 && opts.PlanOnly {
 		// A window searched again that held nothing new, see BuildPlan.
-		return nil
+		return plan, nil, nil
 	}
 	if len(clips) == 0 {
-		return errors.New("clip plan contains no clips")
+		return Plan{}, nil, errors.New("clip plan contains no clips")
 	}
 
-	if opts.PlanOnly {
-		log.Info("plan only, nothing rendered. Edit %s and run again.", planPath)
-		return nil
-	}
-	// An experiment is there to be compared, not published. Rendering it
-	// would put its shorts beside the episode's own.
-	if experiment {
-		log.Info("an experiment with the %s recipe, nothing rendered. The plan is %s.",
-			opts.Recipe, planPath)
-		return nil
-	}
+	return plan, clips, nil
+}
 
+// render makes the shorts of the clips, all of them but the rejected ones,
+// or the ones asked for.
+func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
+	e, opts, log, source := r.e, r.opts, r.e.Log, r.source
+	outDir, captionDir, logsDir, rs := r.outDir, r.captionDir, r.logsDir, r.rs
+	outW, outH := rs.OutW, rs.OutH
 	if len(opts.Clip) == 0 {
 		var kept []Clip
 		for _, c := range clips {
