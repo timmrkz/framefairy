@@ -1219,7 +1219,7 @@ editor.
 - **What is in it.** What a person does to the clips, and nothing the app
   does by itself. Transcribing, searching and rendering make things rather
   than change them. Moving the playhead, choosing a clip and zooming are
-  not edits. The settings are not in it, apart from the caption height,
+  not edits. The playhead has Back and Forward of its own, below. The settings are not in it, apart from the caption height,
   which is moved in the workspace like everything else here.
 - **A field keeps its own undo.** While a word in the caption box or a
   number beside the clip is being typed in, Cmd-Z takes back the typing,
@@ -1243,6 +1243,35 @@ The engine side is `engine/undo.go`, the app side
 The menu has to be the app's own: on macOS the stock Undo takes Cmd-Z
 before the page sees it and hands it to the web view, whose undo only
 knows about text being typed.
+
+### Back and forward
+
+**Back** and **Forward** in the Go menu take the playhead to where it was
+before and back again, Cmd-[ and Cmd-] as in Finder and Safari, Alt-Left
+and Alt-Right on Windows and Linux. They are a history of their own,
+because undo is for edits and a playhead put somewhere is not one. A
+playhead in the undo history would put every click between a person and
+the edit they want back, and a click after an undo would throw away what
+Redo had to give.
+
+- **A place is where the playhead rested.** It stood still for a second,
+  paused. The moments a drag, playing or the keys walking the words pass
+  through are not places, so Back steps over all of them to where the hand
+  last stopped. A step of less than a second from a place, like a word
+  walked to, is still that place.
+- **Leaving a place puts it on the way back**, whatever left it: a click,
+  a clip chosen, an undo, or playing on from it. Playing from a place and
+  stopping somewhere else is two places, so Back after playing is where
+  playing started.
+- **A place keeps its clip.** Going back to it chooses the clip that was
+  chosen there, as long as it is still in the list, so the clip timeline
+  shows the clip the moment belongs to.
+- **Going somewhere new after Back** leaves nothing to go forward to, as in
+  a browser.
+- **A field being typed in keeps the keys**, as it does Undo.
+
+The places are kept in `frontend/src/lib/places.ts`, while the episode is
+open, and the menu is in `cmd/framefairy-app/menu.go`.
 
 ### Work in hand
 

@@ -199,7 +199,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.14 | The range picker and the clip timeline on one floor, a step darker than the workspace, with nothing darkened outside the window. Asked for by Tim | `[x]` |
 | 3.15 | The crop frame and the shade round it only while the playhead is in a clip, no grey dashed frame anywhere else. Asked for by Tim | `[x]` |
 | 3.16 | Target holds its suggestion as a real number rather than a grey placeholder, so the arrow keys step from it and the down arrow on 6 gives 5, not 1. Asked for by Tim | `[x]` |
-| 3.17 | Back and Forward in a Go menu, Cmd-[ and Cmd-], take the playhead to the places it rested before and back again, choosing the clip it was on. Undo stays for edits. Asked for by Tim | `[~]` |
+| 3.17 | Back and Forward in a Go menu, Cmd-[ and Cmd-], take the playhead to the places it rested before and back again, choosing the clip it was on. Undo stays for edits. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 

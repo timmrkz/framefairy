@@ -31,6 +31,7 @@
     type Word,
     type WindowView,
     onUndo,
+    onGo,
     onLevels,
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
@@ -64,6 +65,7 @@
   import { stepLine } from "../lib/steps";
   import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
+  import { Places } from "../lib/places";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -1855,6 +1857,34 @@
     }
   }
   onMount(() => onUndo(undo));
+
+  // Back and Forward, from the Go menu and its keys: the places the
+  // playhead rested, see lib/places.ts. It is told where the playhead is
+  // on a timer of its own, started once, because the playhead changes
+  // every frame while the video plays.
+  const places = new Places();
+  onMount(() => {
+    const watch = setInterval(() => places.see(time, selected, !paused, performance.now()), 100);
+    const stop = onGo(go);
+    return () => {
+      clearInterval(watch);
+      stop();
+    };
+  });
+
+  async function go(where: "back" | "forward") {
+    // A field being typed in keeps the keys for itself, as it does Undo.
+    const on = document.activeElement as HTMLElement | null;
+    if (on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA" || on.isContentEditable)) return;
+    const here = { at: time, clip: selected };
+    const to = where === "back" ? places.back(here, performance.now()) : places.forward(here, performance.now());
+    if (!to) return;
+    // The clip that was chosen there, chosen again, as long as it is still
+    // in the list. Choosing it does not move the playhead, the place does.
+    const clip = clips.find((c) => c.key === to.clip && !c.rejected);
+    if (clip && clip.key !== selected) await select(clip.key, false);
+    seekTo(to.at);
+  }
 
   // The first clip a search finds, shown as soon as it is in the list.
   // Not while the video plays: choosing a clip puts the playhead on it, and

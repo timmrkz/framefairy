@@ -727,6 +727,11 @@ export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
   return Events.On("undo", (ev) => fn(ev.data as "undo" | "redo"));
 }
 
+// Back and Forward in the Go menu, for the playhead, see lib/places.ts.
+export function onGo(fn: (where: "back" | "forward") => void): () => void {
+  return Events.On("go", (ev) => fn(ev.data as "back" | "forward"));
+}
+
 // Acknowledgements in the Help menu, which is where apps keep the notices
 // of the work they are made with.
 // Cmd+Q heard by the Go side: "ask" while work runs and the key has to be

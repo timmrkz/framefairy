@@ -1652,6 +1652,12 @@ export const Events = {
       (window as any).__menu = (what: string) => fn({ data: what });
       return () => delete (window as any).__menu;
     }
+    // Back and Forward in the Go menu, with window.__go("back") and
+    // window.__go("forward").
+    if (name === "go") {
+      (window as any).__go = (where: string) => fn({ data: where });
+      return () => delete (window as any).__go;
+    }
     // Cmd+Q heard, with window.__quit("ask") or window.__quit("going").
     if (name === "quit") {
       (window as any).__quit = (what: string) => fn({ data: what });
