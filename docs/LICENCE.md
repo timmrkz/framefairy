@@ -252,22 +252,56 @@ the dispenser and the app
 ### Key package: `licence/`
 
 The format and nothing else, so making a key, checking a batch and
-checking a pasted key are the same code.
+checking a pasted key are the same code. Built.
 
 ```go
 type Licence struct {
 	Format, Signer, Edition uint8
-	ID                      [8]byte
-	Signed                  time.Time // a day
+	ID                      ID        // shown as 652B-757A-8DC4-F04A
+	Signed                  time.Time // a day, midnight UTC
 	Name                    string
 }
 
+type Trust struct {
+	Signers map[uint8]ed25519.PublicKey // public keys, by signer number
+	Revoked Set                         // the revocation list
+	Genuine map[uint8]Set               // the genuine list of each leaked signer
+}
+
 func Sign(l Licence, key ed25519.PrivateKey) (Key, error)
-func Check(k Key, t Trust) (Licence, error) // public keys, revocations, genuine lists
+func Check(k Key, t Trust) (Licence, error)
 func (k Key) Fingerprint() Fingerprint
+func ParseID(s string) (ID, error)
+func ParseFingerprint(s string) (Fingerprint, error)
 ```
 
-`Check` reads untrusted text, so it has a fuzz target.
+The rules it keeps:
+
+- **One spelling per key.** The fingerprint is taken over the text, so a
+  key that could be written two ways would have two fingerprints, and a
+  revoked key could slip past the list in its other spelling. `Check`
+  accepts only the exact text `Sign` writes: no padding, no other
+  alphabet, no line breaks or space, no stray bits in the last character,
+  nothing after the signature. Whoever reads a pasted key trims the space
+  around it first.
+- **What `Check` accepts, `Sign` would have written.** A name that is not
+  UTF-8, has control characters or characters that turn the direction of
+  text, or space at either end is refused by both, even with a good
+  signature, so a name is always shown as it reads. So is an ID of all
+  zeros, which only a broken random source makes.
+- **`Sign` checks its own work.** It runs `Check` on the key it just made
+  before it returns it, so a fault while signing never hands out a key
+  that does not check.
+- **Signer 0 is the test signer.** No shipped build trusts it.
+- **The reason is kept.** `Check` refuses with one of `ErrMalformed`,
+  `ErrFormat`, `ErrSigner`, `ErrSignature`, `ErrRevoked` and
+  `ErrNotGenuine`, so the settings can say why.
+
+`Check` reads untrusted text, so it has three fuzz targets: any text, any
+licence signed, and any field bytes signed past `Sign`'s rules, as a
+broken signer could. The tests sign the three example keys again and get
+the very same text, which pins the whole format, and flip every bit of
+them and every value of every field byte, which must all be refused.
 
 ### Dispenser: `cmd/framefairy-dispenser`
 
