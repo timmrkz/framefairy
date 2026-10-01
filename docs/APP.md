@@ -417,12 +417,9 @@ place.
     playhead only reaches the word once the clip's captions have arrived,
     so the frame was lost on the way. The workspace now tells the video
     preview where it landed, see `keyAt` in `Player.svelte`.
-  - **A colour field lets go of the keyboard once a colour is chosen**,
-    see `letColourGo` in `App.svelte`. It kept it, and every shortcut
-    stands aside while a field has the keyboard, so Shift and the arrows
-    did nothing after a caption colour was picked. It lets go on change,
-    which comes once the picking is over, so the system's colour panel is
-    never taken away in the middle of it.
+  - **A colour picked with the pointer lets go of the keyboard**, so Shift
+    and the arrows walk the words again straight after. Left with Escape,
+    the keyboard goes back to the colour, the way a list gives it back.
   - **A button pressed with the pointer keeps no keyboard**, the way a
     button on the Mac does not, see `letButtonGo` in `App.svelte`. In
     Chromium, on Windows and in the preview, a clicked button kept it, and
@@ -1036,6 +1033,51 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+### The colour picker
+
+The colours of the captions, **Text**, **Box** and **Highlight** in the
+settings column, and the accent's colour wheel in the settings open one
+colour picker, `Colour.svelte`. It is the app's own, drawn on bits-ui the
+way `Pick.svelte` is, because the colour field it replaces handed the click
+to macOS: the pop-up was the system's, looked like another program, could
+not be styled, and never said which of its colours was the one in use.
+
+In it, from the quickest pick to the most exact:
+
+- **The colours a caption is most often made in**, round, the way the Mac
+  shows a row of colours: white, black, yellow, orange, red, pink, the
+  app's purple, blue and green, from `captionColours` in
+  `frontend/src/lib/colour.ts`. The one in use wears a ring.
+- **A square for the shade and a strip for the hue**, for any other colour.
+  The video preview and the clip timeline follow the hand as it drags, and
+  the colour is saved when it lets go. The arrows move them too, Shift in
+  bigger steps.
+- **The pipette**, beside the hex. It closes the pop-up and makes the video
+  preview a place to point at: a loupe sits on the pointer the way the
+  Mac's own colour sampler does, the pixels under it drawn ten times over
+  and the one in its middle marked, with its hex under it. The captions are
+  drawn in that colour as the pointer moves, a click takes it, and Escape
+  or a click anywhere else leaves the colour as it was. What is read is the
+  episode's own frame, not the screen, so the crop, its shade and the
+  captions lying over the picture never colour what is taken. The colour
+  being picked keeps its ring in the meantime, so it is clear which one
+  the picture is giving. See `sampleColour` in `Player.svelte`. WebKit has
+  no eyedropper of its own for a page, and it is not needed: the picture
+  is the app's to read.
+- **The hex**, for a colour known by its number, a brand colour above all,
+  with or without the #. It is drawn as it is typed and saved with Enter or
+  when it is left.
+
+The opacity stays the number beside each colour, so the row keeps its
+width.
+
+While a colour was drawn on the way and the last one was still being
+saved, the next colour drawn was thrown away the moment it was drawn: the
+drawing was held against the captions from before the save, and nothing
+watched the save end. The colour field drew again with every movement and
+hid it. The pipette draws once per colour, and showed nothing until the
+saving was watched.
+
 ### Thumbnails
 
 A clip can have any number of thumbnails, or none. A thumbnail is a frame
@@ -1541,7 +1583,9 @@ default.
 **Appearance** holds the **accent colour**, what the app picks things out
 in: the chosen clip, the window on the range picker, a button that matters.
 It is the Mac's own row of round colours, with the app's purple, `#942192`,
-first, and a colour wheel at the end for any other. The app's colour is the
+first, and a colour wheel at the end for any other, which opens the app's
+colour picker, see **The colour picker** under the workspace, without
+presets of its own, because the row before it is its presets. The app's colour is the
 only one the interface has: the lighter shade under the pointer and the
 wash behind a chosen clip are mixed from it, so changing it moves all
 three, and it moves as the colour is picked. The colours burned into a

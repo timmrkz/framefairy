@@ -208,14 +208,14 @@ it.
 | 2 | Key on the thank-you page | Our page, with the transaction | dispenser `Keys` | The page shows the keys as soon as the sale is assigned, and says it is waiting until then |
 | 3 | Several seats | A purchase with quantity n | dispenser `Assign` | n keys, all sent to the buyer |
 | 4 | Sold by a partner, live | Partner API `POST /v1/orders` | dispenser `Assign` | Keys come back in the response. The same partner order twice gives the same keys. Another partner's token cannot reach them |
-| 5 | Sold by a partner, in advance | Command line on the signer | signer `Batch` | A file of n keys, recorded with the partner and its index |
+| 5 | Sold by a partner, in advance | Command line on the signer | signer `Partner` | A file of n keys, recorded with the partner and its index |
 | 6 | Given away | Command line on the signer | signer `Named` | A key with the name we gave, recorded with its purpose |
 | 7 | Lost key | Our lost-key page, an email address | dispenser `Resend` | Keys go only to that address. The page answers the same whether or not the address bought anything. Limited per address and per caller |
 | 8 | Chargeback | Paddle adjustment, action chargeback | dispenser `Revoke` | Every key of that sale is on the next revocation list |
 | 9 | Chargeback reversed | Paddle adjustment updated | dispenser `Restore` | Those keys leave the next revocation list |
 | 10 | Refund made anyway | Paddle adjustment, action refund | dispenser `Revoke` | Handled exactly like a chargeback |
 | 11 | Key posted in public | Command line, or the admin call | dispenser `Replace` | That key is revoked, the sale gets the next pool key, and the buyer gets it by email |
-| 12 | Pool running low | The signer asks for the pool level | signer `Batch`, dispenser `Stock` | Below the line, the signer signs a batch and the dispenser takes it. The dispenser checks every key's signature before it takes it |
+| 12 | Pool running low | The signer asks for the pool level | signer `Pool`, dispenser `Stock` | Below the line, the signer signs a batch and the dispenser takes it. The dispenser checks every key's signature before it takes it |
 | 13 | Pool nearly empty | Dispenser, after any sale | email to us | Below 20 % of a batch, an email, every day until it is refilled |
 | 14 | Dispenser's database stolen | Command line | dispenser `RevokeUnsold`, then 12 | Every key still in the pool is revoked and the pool is refilled. Sold keys keep working |
 | 15 | Dispenser's database restored from a backup | Command line | dispenser `Retire`, then 12, then `Reconcile` | Every key unsold in the backup is set aside, not revoked, and never handed out again. Sales missing from the backup get fresh keys. No key is ever held by two sales |
@@ -243,7 +243,7 @@ Paddle webhook   thank-you page   lost-key page   partner API   CRON
                               | asks for the pool level, hands over batches
                               | (the signer calls out, nothing calls in)
         signer, cmd/framefairy-signer (a small machine, mostly off)
-        Batch, Named, its own record of every key it signed
+        Pool, Partner, Named, its own record of every key it signed
 
 key package, licence/: Sign and Check, the same code in the signer,
 the dispenser and the app
@@ -252,22 +252,56 @@ the dispenser and the app
 ### Key package: `licence/`
 
 The format and nothing else, so making a key, checking a batch and
-checking a pasted key are the same code.
+checking a pasted key are the same code. Built.
 
 ```go
 type Licence struct {
 	Format, Signer, Edition uint8
-	ID                      [8]byte
-	Signed                  time.Time // a day
+	ID                      ID        // shown as 652B-757A-8DC4-F04A
+	Signed                  time.Time // a day, midnight UTC
 	Name                    string
 }
 
+type Trust struct {
+	Signers map[uint8]ed25519.PublicKey // public keys, by signer number
+	Revoked Set                         // the revocation list
+	Genuine map[uint8]Set               // the genuine list of each leaked signer
+}
+
 func Sign(l Licence, key ed25519.PrivateKey) (Key, error)
-func Check(k Key, t Trust) (Licence, error) // public keys, revocations, genuine lists
+func Check(k Key, t Trust) (Licence, error)
 func (k Key) Fingerprint() Fingerprint
+func ParseID(s string) (ID, error)
+func ParseFingerprint(s string) (Fingerprint, error)
 ```
 
-`Check` reads untrusted text, so it has a fuzz target.
+The rules it keeps:
+
+- **One spelling per key.** The fingerprint is taken over the text, so a
+  key that could be written two ways would have two fingerprints, and a
+  revoked key could slip past the list in its other spelling. `Check`
+  accepts only the exact text `Sign` writes: no padding, no other
+  alphabet, no line breaks or space, no stray bits in the last character,
+  nothing after the signature. Whoever reads a pasted key trims the space
+  around it first.
+- **What `Check` accepts, `Sign` would have written.** A name that is not
+  UTF-8, has control characters or characters that turn the direction of
+  text, or space at either end is refused by both, even with a good
+  signature, so a name is always shown as it reads. So is an ID of all
+  zeros, which only a broken random source makes.
+- **`Sign` checks its own work.** It runs `Check` on the key it just made
+  before it returns it, so a fault while signing never hands out a key
+  that does not check.
+- **Signer 0 is the test signer.** No shipped build trusts it.
+- **The reason is kept.** `Check` refuses with one of `ErrMalformed`,
+  `ErrFormat`, `ErrSigner`, `ErrSignature`, `ErrRevoked` and
+  `ErrNotGenuine`, so the settings can say why.
+
+`Check` reads untrusted text, so it has three fuzz targets: any text, any
+licence signed, and any field bytes signed past `Sign`'s rules, as a
+broken signer could. The tests sign the three example keys again and get
+the very same text, which pins the whole format, and flip every bit of
+them and every value of every field byte, which must all be refused.
 
 ### Dispenser: `cmd/framefairy-dispenser`
 
@@ -324,20 +358,55 @@ What reaches it, and who may call what:
 | CRON | The daily trigger | `Reconcile`, the warning, the export |
 | Admin | Us, with a token kept offline | `Replace`, `Revoke`, `Restore`, `RevokeUnsold`, `Retire` |
 
-### Signer: `cmd/framefairy-signer`
+### Signer: `licence/signer`, `cmd/framefairy-signer`
+
+Built, apart from handing batches to the dispenser, which waits for the
+dispenser.
 
 ```go
-func (s *Signer) Batch(n int, edition uint8) ([]licence.Key, error)
+func (s *Signer) Pool(n int, edition uint8) ([]licence.Key, error)
+func (s *Signer) Partner(partner string, n int, edition uint8) ([]licence.Key, error)
 func (s *Signer) Named(name, purpose string, edition uint8) (licence.Key, error)
+func (r *Record) Issued(signer uint8) []licence.Fingerprint
 ```
 
 It runs on a small machine of ours, which may be switched off for weeks.
 Once a day while it is on, it asks the dispenser for the pool level and,
 below the line, signs a batch of 1,000 keys and hands them over. Partner
-batches and named keys are commands typed on it. It keeps its own
-record: one line per key it ever signed, ID, fingerprint, signer, batch
-and purpose, never the key itself. That record is how it never repeats an
-ID, and how the genuine list of a signer is made.
+batches and named keys are commands typed on it:
+
+```
+framefairy-signer key -signer 1
+framefairy-signer named -name "Lena Fischer" -purpose "review copy"
+framefairy-signer partner -partner "Bundle Hunt" -n 500 -out bundle.txt
+framefairy-signer issued
+```
+
+Its folder, `~/.framefairy-signer`, holds two files. `key.json` is the
+private half and the signer number that goes with it, readable by its
+owner alone, or the signer refuses to start. `record.jsonl` is its record:
+one line per key it ever signed, with the day, signer, ID, fingerprint,
+edition, batch, place in the batch, size of the batch, kind and note,
+never the key and never a name. With `-test` it signs as the test signer
+and keeps a separate record in `test/`, so a sandbox key is never on a
+real signer's genuine list.
+
+The rules the record keeps:
+
+- **A key is in the record before it leaves.** A batch is written whole,
+  in one write, and synced to the disk before any of its keys are
+  returned. That is how no ID is ever drawn twice, and no key is ever out
+  there that the genuine list would miss.
+- **A batch cut short was never handed out.** If the signer stops while it
+  writes, the half-written batch is removed when the record is next
+  opened, and the signer says so.
+- **Anything else that is not what the signer writes is refused.** A line
+  changed, removed, doubled or moved, a gap in the batch numbers, an ID
+  written another way: the record will not open, and says which line.
+- **One signer at a time.** The record is locked while it is open, so two
+  signers can never draw IDs past each other.
+- **IDs are drawn again when taken.** A random source that keeps giving
+  taken IDs stops the signer instead of looping.
 
 ### Partner API
 
@@ -375,8 +444,9 @@ No names and no email addresses are kept. The buyer's details stay at
 Paddle. The keys in the pool are the one thing of value in the database,
 and use case 14 is what happens if it is ever stolen.
 
-**The signer** keeps one file, a line for every key it signed, and a copy
-of it in object storage that keeps every version.
+**The signer** keeps one file, a line for every key it signed, see
+[Signer](#signer-licencesigner-cmdframefairy-signer), and a copy of it in
+object storage that keeps every version.
 
 **Backups.** The database is backed up by Scaleway automatically. On top
 of that, the daily CRON run exports all three tables to object storage at

@@ -117,6 +117,12 @@
     <path d="M2 4.5h12M2 11.5h12" />
     <circle cx="5.5" cy="4.5" r="1.9" fill="var(--ink-1)" />
     <circle cx="10.5" cy="11.5" r="1.9" fill="var(--ink-1)" />
+  <!-- Taking a colour from the picture: the pipette the Mac's colour
+       panel and every drawing app give the same thing, its bulb up and to
+       the right and its tip down at the left, where the colour is taken. -->
+  {:else if name === "pipette"}
+    <path d="M9.2 4.2 11.8 6.8M8.4 5 2.8 10.6 2.3 13.7 5.4 13.2 11 7.6" />
+    <path d="M10.2 3.2 11.6 1.8a1.8 1.8 0 0 1 2.6 2.6L12.8 5.8" />
   {/if}
 </svg>
 
