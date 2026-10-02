@@ -418,7 +418,7 @@ type chatError struct {
 // wrote.
 func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt string,
 	units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
-	return e.askLocal(ctx, m, r, []chatMessage{{"system", r.System}, {"user", prompt}},
+	return e.askLocal(ctx, m, r, withSystem(r.System, chatMessage{"user", prompt}),
 		units, count, maxTokens, logDir, "plan-prompt.txt", listen)
 }
 
@@ -428,8 +428,22 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt s
 // answer and the new question.
 func (e *Engine) CallLocalAgain(ctx context.Context, m LocalModel, r Recipe, prompt, answer,
 	again string, units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
-	return e.askLocal(ctx, m, r, []chatMessage{{"system", r.System}, {"user", prompt},
-		{"assistant", answer}, {"user", again}}, units, count, maxTokens, logDir, "fit-prompt.txt", listen)
+	return e.askLocal(ctx, m, r, withSystem(r.System, chatMessage{"user", prompt},
+		chatMessage{"assistant", answer}, chatMessage{"user", again}), units, count, maxTokens, logDir,
+		"fit-prompt.txt", listen)
+}
+
+// noSystem is the system part of a recipe that has none, said to the API,
+// which would otherwise take an empty one for the lines brief.
+const noSystem = "\x00none"
+
+// withSystem is a conversation with the recipe's system part first, when
+// it has one. A recipe whose prompt is one message sends no system part.
+func withSystem(system string, turns ...chatMessage) []chatMessage {
+	if system == "" {
+		return turns
+	}
+	return append([]chatMessage{{"system", system}}, turns...)
 }
 
 // chatMessage is one turn of a conversation.
@@ -445,8 +459,10 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		// A model loaded while the transcript was still on its way is used
 		// as it is. The search lets go of it when it is done, and it stops.
 		chars := 0
-		for _, message := range messages[1:] {
-			chars += runeLen(message.Content)
+		for _, message := range messages {
+			if message.Role != "system" {
+				chars += runeLen(message.Content)
+			}
 		}
 		size := localContextFor(m.Model, chars, maxTokens)
 		if !modelReady(m.Model, size) {

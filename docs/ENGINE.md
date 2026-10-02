@@ -250,6 +250,8 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below, and a brief for any video: the heart of a story and its payoff are never cut, the clip starts on the least a stranger needs and ends on the payoff, the length comes after that, at most N clips, and the task said again after the transcript | at most N clips, as runs of lines |
 | `heart` | the `lines` brief and transcript, told that a program fits the length so it need not count seconds | at most N clips, each with its heart, the lines never cut, and the runs of lines the story reaches. The engine fits each to the length around the heart, so it is never asked again |
 | `heart-opening` | `heart`, with the opening asked for too: the first line a stranger needs, the question or the setup that says who, when and where | at most N clips, each with its opening, its heart and the runs of lines the story reaches. The engine never starts a clip after its opening |
+| `heart-lean` | one message from `engine/prompts/heart-lean.txt`: the transcript first, only the words and "…" before a long pause, then the task once, a third of the length of the `heart` brief | as `heart-opening`, without a slug and with a reason of at most twelve words |
+| `points` | one message from `engine/prompts/points.txt`: the transcript with the minute and second each line starts at, then the task | three lines a clip, start, payoff and end, one stretch, the pauses left to the engine, which never starts a clip after its start |
 | `stories2` | the `lines` brief with the transcript as `stories` writes it | at most N clips, as runs of sentences |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
@@ -370,6 +372,12 @@ own choice: the umbrella story without "I was a small kid, second, third
 grade", the mirror story without the father's art. So `heart-opening`
 asks for a third point, the opening, the first line a stranger needs,
 and the engine never starts a clip after it, even when it stays long.
+
+Why the prompts look the way they do, what each part costs and the ones
+being compared are in [PROMPTS.md](PROMPTS.md). A prompt kept in
+`engine/prompts/` is one message with no system part, filled in by
+`prompt` in `engine/prompts.go`. An answer without slugs gets them from
+its titles.
 
 A recipe with `Edit`, `stories-edit`, holds back every clip, not only
 those off the length, and the second ask is about the edit: where each
@@ -983,6 +991,7 @@ Everything else is in `engine/`:
                 a window searched again
   fit.go        clips well off the length asked for again, measured
   heart.go      the heart recipe, and fitting a clip around its heart
+  prompts.go    prompts kept as text in prompts/, and the lean transcripts
   edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine

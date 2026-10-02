@@ -58,9 +58,69 @@ var heartOpeningRecipe = Recipe{
 	Schema:  heartOpeningSchema,
 }
 
+// heartLeanRecipe is heart-opening asked in a few lines: one message, the
+// transcript first with nothing but the words and the long pauses, what to
+// do after it, and a smaller answer. Beside heart-opening it tells whether
+// the brief and the annotations of lines earn the time they take to read.
+var heartLeanRecipe = Recipe{
+	Name: "heart-lean",
+	About: "heart-opening in one short message, the transcript first with only the words and the " +
+		"long pauses, the task after it, no slug and a short reason",
+	Unit:   "line",
+	Hearts: true,
+	// The prompt says nothing of pauses, so two runs that meet are one,
+	// and the pauses are the engine's to cut.
+	Joins:   true,
+	Version: 1,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		return prompt("heart-lean", lines, bareTranscript(lines), opts)
+	},
+	Schema: func(lineCount, count int) string { return leanSchema(lineCount, count, "heart-lean") },
+}
+
+// pointsRecipe is Tim's three points: where a story starts, where it lands
+// and where it ends, one stretch, each line with the time it starts at so
+// the model can tell the length with one subtraction. The pauses are the
+// engine's to cut.
+var pointsRecipe = Recipe{
+	Name: "points",
+	About: "three line numbers a clip, start, payoff and end, the transcript with the time each " +
+		"line starts, in one short message, the pauses left to the engine",
+	Unit:    "line",
+	Hearts:  true,
+	Joins:   true,
+	Version: 1,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		return prompt("points", lines, timedTranscript(lines), opts)
+	},
+	Schema: func(lineCount, count int) string { return leanSchema(lineCount, count, "points") },
+}
+
 func init() {
 	recipes[heartRecipe.Name] = heartRecipe
 	recipes[heartOpeningRecipe.Name] = heartOpeningRecipe
+	recipes[heartLeanRecipe.Name] = heartLeanRecipe
+	recipes[pointsRecipe.Name] = pointsRecipe
+}
+
+// leanSchema is the answer of the recipes asked from a prompt file: a
+// title and a short reason, and the points of the clip, no slug.
+func leanSchema(lineCount, count int, recipe string) string {
+	line := fmt.Sprintf(`{"type": "integer", "minimum": 1, "maximum": %d}`, max(lineCount, 1))
+	pair := fmt.Sprintf(`{"type": "array", "minItems": 2, "maxItems": 2, "items": %s}`, line)
+	points := fmt.Sprintf(`"opening": %s, "heart": %s, "keep": {"type": "array", "minItems": 1, `+
+		`"maxItems": 12, "items": %s}`, line, pair, pair)
+	required := `"title", "reason", "opening", "heart", "keep"`
+	if recipe == "points" {
+		points = fmt.Sprintf(`"start": %s, "payoff": %s, "end": %s`, line, line, line)
+		required = `"title", "reason", "start", "payoff", "end"`
+	}
+	return fmt.Sprintf(`{"type": "object", "properties": {"clips": {"type": "array", "minItems": 1, `+
+		`"maxItems": %d, "items": {"type": "object", "properties": {`+
+		`"title": {"type": "string", "minLength": 1, "maxLength": 200}, `+
+		`"reason": {"type": "string", "minLength": 1, "maxLength": 300}, %s}, `+
+		`"required": [%s], "additionalProperties": false}}}, "required": ["clips"], `+
+		`"additionalProperties": false}`, max(count, 1), points, required)
 }
 
 // lengthParagraph is what the brief says about the length, which in the

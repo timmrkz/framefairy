@@ -372,8 +372,12 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 		err := e.Log.Step("choosing and condensing", func() error {
 			var err error
+			system := recipe.System
+			if system == "" {
+				system = noSystem
+			}
 			reply, err = e.CallAPIWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
-				opts.LogDir, "plan", recipe.System, listen)
+				opts.LogDir, "plan", system, listen)
 			return err
 		})
 		if err != nil {

@@ -266,6 +266,17 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	if !ok {
 		return PlanEntry{}, []string{fmt.Sprintf("clip %d is not an object", index)}, false
 	}
+	// The points recipe names three lines rather than runs. They are the
+	// run from start to end, the payoff its heart and the start its opening.
+	if _, has := clip["keep"]; !has {
+		if _, named := clip["start"]; named {
+			points, problem := fromPoints(clip, index, lineCount)
+			if problem != "" {
+				return PlanEntry{}, []string{problem}, false
+			}
+			clip = points
+		}
+	}
 	rangesIn, ok := clip["keep"].([]any)
 	if !ok || len(rangesIn) == 0 {
 		return PlanEntry{}, []string{fmt.Sprintf("clip %d has no keep ranges", index)}, false
@@ -346,14 +357,46 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		}
 		return pyStr(value)
 	}
+	// An answer without slugs gets them from the titles, the way a clip
+	// made by hand does.
+	slug, title := Scrub(get("slug"), 64), Scrub(get("title"), 200)
+	if slug == "" {
+		slug = strings.ToLower(SanitiseName(title, "clip"))
+	}
 	return PlanEntry{
-		Slug:    Scrub(get("slug"), 64),
-		Title:   Scrub(get("title"), 200),
+		Slug:    slug,
+		Title:   title,
 		Reason:  Scrub(get("reason"), 300),
 		Keep:    ranges,
 		Heart:   heart,
 		Opening: opening,
 	}, problems, true
+}
+
+// fromPoints reads a clip given as start, payoff and end into the run, the
+// heart and the opening the other recipes give, or says what is wrong.
+func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, string) {
+	var n [3]int
+	for i, key := range []string{"start", "payoff", "end"} {
+		v, ok := toInt(clip[key])
+		if !ok || v < 1 || v > lineCount {
+			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
+		}
+		n[i] = v
+	}
+	start, payoff, end := n[0], n[1], n[2]
+	if payoff < start {
+		return nil, fmt.Sprintf("clip %d: its payoff %d comes before its start %d", index, payoff, start)
+	}
+	end = max(end, payoff)
+	out := make(map[string]any, len(clip)+3)
+	for k, v := range clip {
+		out[k] = v
+	}
+	out["keep"] = []any{[]any{float64(start), float64(end)}}
+	out["heart"] = []any{float64(payoff), float64(payoff)}
+	out["opening"] = float64(start)
+	return out, ""
 }
 
 // readEntry checks one clip of an answer in the units the recipe numbered,

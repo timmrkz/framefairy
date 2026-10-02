@@ -215,7 +215,14 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart,heart@1024,hear
 shows whether `heart` finds stories as good as `lines` and how much
 sooner, and how much of the thinking it still needs once it no longer
 has to count seconds. `heart-opening` asks for the line a clip opens on
-too, so a story keeps the setup a stranger needs.
+too, so a story keeps the setup a stranger needs. `heart-lean` asks the
+same in one short message with a bare transcript, and `points` for three
+lines a clip, see [PROMPTS.md](PROMPTS.md). Every side starts a
+llama-server of its own, so none reads from the cache of the one before.
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare heart-opening@1024,heart-lean@1024,points@1024,heart-lean@512,points@512
+```
 
 A recipe with `@` and a number thinks that many tokens, whatever
 `--think` says, so one recipe can be compared with itself:
