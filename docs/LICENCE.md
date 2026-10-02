@@ -212,8 +212,8 @@ it.
 | 6 | Given away | Command line on the signer | signer `Named` | A key with the name we gave, recorded with its purpose |
 | 7 | Lost key | Our lost-key page, an email address | dispenser `Resend` | Keys go only to that address. The page answers the same whether or not the address bought anything. Limited per address and per caller |
 | 8 | Chargeback | Paddle adjustment, action chargeback | dispenser `Settle` | Every key of that sale is on the next revocation list |
-| 9 | Chargeback reversed | Paddle adjustment updated | dispenser `Settle` | Those keys leave the next revocation list, whichever of the two webhooks arrives first |
-| 10 | Refund made anyway | Paddle adjustment, action refund | dispenser `Settle` | Handled exactly like a chargeback |
+| 9 | Chargeback reversed | Paddle adjustment, action chargeback_reverse | dispenser `Settle` | Those keys leave the next revocation list, whichever of the two webhooks arrives first |
+| 10 | Refund made anyway | Paddle adjustment, action refund, then updated when Paddle approves it | dispenser `Settle` | Handled exactly like a chargeback |
 | 11 | Key posted in public | Command line, or the admin call | dispenser `Replace` | That key is revoked, the sale gets the next pool key, and the buyer gets it by email |
 | 12 | Pool running low | The signer asks for the pool level | signer `Pool`, dispenser `Stock` | Below the line, the signer signs a batch and the dispenser takes it. The dispenser checks every key's signature before it takes it |
 | 13 | Pool nearly empty | Dispenser, after any sale | email to us | Below 20 % of a batch, an email, every day until it is refilled |
@@ -351,6 +351,15 @@ whichever webhook arrives first, and however often each comes. Keys
 revoked because they were posted in public are not Paddle's business and
 stay revoked. `Reconcile` settles every sale Paddle completed or adjusted
 since a time, and goes on past one that fails.
+
+Paddle has the money back when a refund of the sale is approved or a
+chargeback has not been reversed. A refund waiting for Paddle's approval
+or rejected, and a chargeback warning, do not count. A reversal is an
+adjustment of its own, `chargeback_reverse`, and a refund being approved
+is the first adjustment updated, see
+[Paddle's adjustment events](https://developer.paddle.com/webhooks/adjustments/adjustment-created).
+Reading this from Paddle's API is the `Orders` implementation's job, and
+the sandbox run checks it.
 
 **Mail.** A Paddle sale's letter is queued in the same transaction that
 assigns its keys, then sent at once to the address in the webhook. If that
@@ -500,7 +509,20 @@ The rules they keep:
   be settled yet, because Paddle does not know the sale yet, the pool is
   empty or something is down, is answered with a failure so Paddle sends
   it again. One the dispenser does nothing with is answered with
-  success, so Paddle stops.
+  success, so Paddle stops. The format is
+  [Paddle's](https://developer.paddle.com/webhooks/about/signature-verification).
+- **Paddle wants an answer within five seconds**, and otherwise sends the
+  webhook again: up to 60 times over three days for a live account, 3
+  times in 15 minutes in the sandbox, see
+  [Paddle's delivery rules](https://developer.paddle.com/webhooks/about/respond-to-webhooks).
+  `Settle` asks Paddle once and writes once, so it fits, and a webhook it
+  overran is settled again when it comes back. Paddle's own libraries
+  refuse a signature older than five seconds. The dispenser allows five
+  minutes, because a webhook replayed inside them only makes `Settle` ask
+  Paddle again, and a server clock a little off should not hold up a
+  sale. That means each retry is signed when it is sent, which the
+  sandbox run checks. Paddle also publishes the addresses its webhooks
+  come from. The dispenser trusts the signature and does not check them.
 - **The thank-you page shows a sale's keys for a day after the sale**, then
   answers that they went by email. A reference that got out later shows
   nothing.
