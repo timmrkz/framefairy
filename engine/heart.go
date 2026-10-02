@@ -149,3 +149,163 @@ func heartSchema(lineCount, count int) string {
   "additionalProperties": false
 }`, max(count, 1), max(lineCount, 1), max(lineCount, 1))
 }
+
+// fitToHeart fits a clip, runs of lines numbered from 1, to shortest and
+// longest seconds around its heart, on whole sentences, and says what it
+// did: "shortened", "lengthened", or nothing. seconds measures a clip as it
+// is cut, and taken says whether a line is in another clip already, which
+// a clip never grows into. A clip without a heart stays as it is.
+//
+// Too long, it lets go of what runs on past the heart first, a sentence at
+// a time, and then of setup from the start, and stops before a step that
+// would leave it further off the length than it was. Too short, it takes
+// in the sentence before it, and the one after it only where there is
+// nothing before it to take, and never past longest.
+func fitToHeart(lines []Line, keep [][2]int, heart [2]int, shortest, longest float64,
+	taken func(n int) bool, seconds func([][2]int) float64) ([][2]int, string) {
+	if heart[0] < 1 || heart[1] < heart[0] || heart[1] > len(lines) || len(keep) == 0 {
+		return keep, ""
+	}
+	keep = withRun(keep, heart)
+	now := seconds(keep)
+	off := func(s float64) float64 { return max(0, shortest-s, s-longest) }
+	did := ""
+	for steps := 0; now > longest && steps < len(lines); steps++ {
+		next := lessAround(lines, keep, heart)
+		if next == nil {
+			break
+		}
+		s := seconds(next)
+		if off(s) > off(now) {
+			break
+		}
+		keep, now, did = next, s, "shortened"
+	}
+	for steps := 0; now < shortest && steps < len(lines); steps++ {
+		next := moreAround(lines, keep, taken)
+		if next == nil {
+			break
+		}
+		s := seconds(next)
+		if s > longest {
+			// The sentence before is too long to take. One after may not be.
+			next = moreAfter(lines, keep, taken)
+			if next == nil {
+				break
+			}
+			if s = seconds(next); s > longest {
+				break
+			}
+		}
+		keep, now, did = next, s, "lengthened"
+	}
+	return keep, did
+}
+
+// withRun is keep with every line of run kept too, runs that then overlap
+// made one.
+func withRun(keep [][2]int, run [2]int) [][2]int {
+	var out [][2]int
+	placed := false
+	add := func(r [2]int) {
+		if n := len(out); n > 0 && r[0] <= out[n-1][1] {
+			out[n-1][1] = max(out[n-1][1], r[1])
+			return
+		}
+		out = append(out, r)
+	}
+	for _, r := range keep {
+		if !placed && run[0] < r[0] {
+			add(run)
+			placed = true
+		}
+		add(r)
+	}
+	if !placed {
+		add(run)
+	}
+	return out
+}
+
+// lessAround is keep a sentence shorter: at its end, while it runs on past
+// the heart, and then at its start, up to the heart. Nil when only the
+// heart is left.
+func lessAround(lines []Line, keep [][2]int, heart [2]int) [][2]int {
+	out := append([][2]int(nil), keep...)
+	last := &out[len(out)-1]
+	if last[1] > heart[1] {
+		if last[0] > heart[1] {
+			// A run wholly after the heart goes at once.
+			return out[:len(out)-1]
+		}
+		end := heart[1]
+		for n := last[1] - 1; n > heart[1]; n-- {
+			if finishesSentence(lines, n) {
+				end = n
+				break
+			}
+		}
+		last[1] = end
+		return out
+	}
+	first := &out[0]
+	if first[0] < heart[0] {
+		if first[1] < heart[0] {
+			return out[1:]
+		}
+		start := heart[0]
+		for n := first[0] + 1; n < heart[0]; n++ {
+			if beginsSentence(lines, n) {
+				start = n
+				break
+			}
+		}
+		first[0] = start
+		return out
+	}
+	return nil
+}
+
+// moreAround is keep with the sentence before it taken in, or nil when
+// there is none to take.
+func moreAround(lines []Line, keep [][2]int, taken func(int) bool) [][2]int {
+	first := keep[0][0]
+	if first <= 1 || taken(first-1) {
+		return moreAfter(lines, keep, taken)
+	}
+	start := first - 1
+	for n := first - 1; n >= 1 && lines[first-2].Start()-lines[n-1].Start() <= sentenceReach; n-- {
+		if taken(n) {
+			break
+		}
+		if beginsSentence(lines, n) {
+			start = n
+			break
+		}
+	}
+	out := append([][2]int(nil), keep...)
+	out[0][0] = start
+	return out
+}
+
+// moreAfter is keep with the sentence after it taken in, or nil when there
+// is none to take.
+func moreAfter(lines []Line, keep [][2]int, taken func(int) bool) [][2]int {
+	last := keep[len(keep)-1][1]
+	if last >= len(lines) || taken(last+1) {
+		return nil
+	}
+	end := last + 1
+	for n := last + 1; n <= len(lines) && lines[n-1].End()-lines[last].End() <= sentenceReach; n++ {
+		if taken(n) {
+			break
+		}
+		if finishesSentence(lines, n) {
+			end = n
+			break
+		}
+	}
+	out := append([][2]int(nil), keep...)
+	out[len(out)-1][1] = end
+	return out
+}

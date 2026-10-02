@@ -302,6 +302,27 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	if len(ranges) == 0 {
 		return PlanEntry{}, problems, false
 	}
+	// A heart that cannot be read is no heart, and the clip is taken as
+	// the model kept it.
+	var heart [2]int
+	if heartAny, present := clip["heart"]; present {
+		pair, ok := heartAny.([]any)
+		var first, last int
+		ok1, ok2 := false, false
+		if ok && len(pair) == 2 {
+			first, ok1 = toInt(pair[0])
+			last, ok2 = toInt(pair[1])
+		}
+		switch {
+		case !ok1 || !ok2:
+			problems = append(problems, fmt.Sprintf("clip %d: its heart is not a pair of numbers", index))
+		case first < 1 || last > lineCount || last < first:
+			problems = append(problems, fmt.Sprintf("clip %d: its heart %d-%d is not inside 1-%d",
+				index, first, last, lineCount))
+		default:
+			heart = [2]int{first, last}
+		}
+	}
 	get := func(key string) string {
 		value, present := clip[key]
 		if !present {
@@ -314,6 +335,7 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		Title:  Scrub(get("title"), 200),
 		Reason: Scrub(get("reason"), 300),
 		Keep:   ranges,
+		Heart:  heart,
 	}, problems, true
 }
 
@@ -330,6 +352,14 @@ func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, boo
 		return PlanEntry{}, append(problems, fmt.Sprintf("clip %d: %s", index, err)), false
 	}
 	entry.Keep = keep
+	if entry.Heart[0] > 0 {
+		heart, err := toLines([][2]int{entry.Heart}, units)
+		if err != nil {
+			entry.Heart = [2]int{}
+		} else {
+			entry.Heart = heart[0]
+		}
+	}
 	return entry, problems, true
 }
 

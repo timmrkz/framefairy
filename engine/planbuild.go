@@ -203,7 +203,10 @@ func (b *planBuilder) propose(entry PlanEntry) {
 		b.mu.Unlock()
 		return
 	}
-	entry = b.shaped(entry)
+	entry, fitted := b.shapedFitted(entry)
+	if fitted != "" {
+		b.e.Log.Detail("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
+	}
 	if b.retaken(entry) {
 		b.retakes++
 		b.mu.Unlock()
@@ -224,11 +227,33 @@ func (b *planBuilder) propose(entry PlanEntry) {
 // and runs that follow each other one run when the recipe leaves the
 // pauses to the engine.
 func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
+	entry, _ = b.shapedFitted(entry)
+	return entry
+}
+
+// shapedFitted is shaped, and for a recipe that names the heart of every
+// clip, the clip fitted to the length around it, see heart.go. It says
+// what fitting did.
+func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
 	entry.Keep = wholeSentences(b.lines, entry.Keep, b.opts.MaxLen, b.seconds)
-	if b.opts.recipe().Joins {
+	recipe := b.opts.recipe()
+	if recipe.Joins {
 		entry.Keep = joinRuns(entry.Keep)
 	}
-	return entry
+	if !recipe.Hearts {
+		return entry, ""
+	}
+	taken := func(n int) bool {
+		for _, t := range b.taken {
+			if n >= t[0] && n <= t[1] {
+				return true
+			}
+		}
+		return false
+	}
+	keep, did := fitToHeart(b.lines, entry.Keep, entry.Heart, b.opts.MinLen, b.opts.MaxLen, taken, b.seconds)
+	entry.Keep = keep
+	return entry, did
 }
 
 // acceptLocked takes a clip of the answer. One that does not fit the length

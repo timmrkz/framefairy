@@ -284,7 +284,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	defer build.stop()
 	// A local model can be asked again about the clips that do not fit the
 	// length, and a reused reply brings the answer it had to that.
-	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0)
+	// One that names the heart of every clip is fitted to the length by
+	// the engine, and never asked again.
+	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0) && !recipe.Hearts
 	var scanner clipScanner
 	listen := &Listener{Text: func(piece string) {
 		for _, raw := range scanner.feed(piece) {
