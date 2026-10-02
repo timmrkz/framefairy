@@ -249,3 +249,37 @@ func FuzzValidatePlan(f *testing.F) {
 		}
 	})
 }
+
+// Whatever a model writes as a plain answer reads into JSON, and the clips
+// in it go through the checks every clip does without a panic. A line read
+// as it arrives reads the same as the whole answer.
+func FuzzPlainAnswer(f *testing.F) {
+	f.Add("12 18 19 | Der Regenschirm | Ein Kind wehrt sich.\n30 33 33 | Spiegel |", 40)
+	f.Add("Hier sind die Momente:\n1 2 | zu wenig\n0 0 0 | null | x", 10)
+	f.Add("99999999999999999999 1 2 | groß | x\n5 5 5 | \"zitat\" | \\u0000", 8)
+	f.Add("3 2 1 | rückwärts | x\n7 7 7 | a | b | c", 9)
+	f.Fuzz(func(t *testing.T, reply string, lineCount int) {
+		if lineCount < 1 || lineCount > 10_000 {
+			t.Skip()
+		}
+		whole := plainAnswer(reply)
+		var data map[string]any
+		if err := json.Unmarshal([]byte(whole), &data); err != nil {
+			t.Fatalf("%q read as %q, not JSON: %v", reply, whole, err)
+		}
+		if _, ok := data["clips"].([]any); !ok {
+			t.Fatalf("%q read without a list of clips: %s", reply, whole)
+		}
+		_, _, _ = ValidatePlan(data, lineUnits(lineCount))
+		var scan lineScanner
+		var lines []string
+		for i := 0; i < len(reply); i += 7 {
+			lines = append(lines, scan.feed(reply[i:min(i+7, len(reply))])...)
+		}
+		for _, line := range lines {
+			if strings.Contains(line, "\n") {
+				t.Fatalf("a line with a line break in it: %q", line)
+			}
+		}
+	})
+}

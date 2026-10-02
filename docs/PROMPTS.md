@@ -67,21 +67,40 @@ What is known:
   try it again, against the two results above.
 
 So the evidence says: the program decides the length, and the model is
-not told about seconds at all. `points` with times is the one side that
-would test the untried way, and can be left out.
+not told about seconds at all. Two ways of letting the model judge the
+length are switches a comparison can try, see below: the time on every
+line, `+times`, and Tim's idea, the length in words, `+words`. Counting
+words is plain counting where a time is arithmetic, though a model counts
+words only roughly too, so whether it is close enough is for the
+comparison to show.
 
 What the program can do with the length depends on what the model
 names. With an opening it never starts after and a payoff it never cuts,
 a story whose stretch from opening to payoff runs 45 seconds has nothing
 the program may take away. The model hardly ever leaves anything out
-inside a clip: all 24 clips of the first comparison were one piece. **So
-the open decision is what happens to such a story**:
+inside a clip: all 24 clips of the first comparison were one piece.
+**Decided by Tim: such a story stays whole.** If it is a good story, the
+person cuts in the app what they do not want in it, and the app makes
+that easy. Neither is the length a fixed 30 seconds: it is a setting in
+the app, so how far a story runs over depends on it too.
 
-1. It stays whole and long, and is flagged for a hand to trim.
-2. The program cuts setup after the opening anyway, and the start may be
-   weaker.
-3. It is left out, as not a short.
-4. The model gets the times, and is told to choose stories that fit.
+## The switches
+
+`heart-lean` and `points` show the model only the numbered words of each
+line, unless a comparison switches more on after a `+` in a side's name,
+as in `points+pause2+words@1024`:
+
+| Switch | What the model gets |
+| --- | --- |
+| `+pause` | "…" before a line after a pause of 1 s or more |
+| `+pause2` | the same after 2 s or more, any number of seconds after the word |
+| `+times` | the minute and second each line starts at, and the length asked for in seconds |
+| `+words` | the length asked for in words, from how fast the speaker talks in the window |
+| `+plain` | the answer one line a clip rather than JSON, `points` only |
+
+A comparison starts a llama-server for every side, so none reads from
+the cache of the one before, and its report sets the moments the sides
+found side by side, one row a moment in the order they come.
 
 ## The request
 
@@ -137,9 +156,11 @@ nothing, because almost every line follows one:
 | 2 s or more | 55 |
 | 3 s or more | 26 |
 
-The lean prompts mark 1 s and more, which is half the lines. 2 s marks
-one line in nine, closer to where a thought really ends. Or no mark at
-all, for the fewest characters.
+It may also be one more label like louder and quieter, pulling attention
+to the form of the speech where the story is not. So it is a switch, and
+a comparison tries it with and without: `+pause` marks 1 s and more, half
+the lines, `+pause2` marks 2 s and more, one line in nine. Without the
+switch there is no mark.
 
 ## The answer
 
@@ -156,13 +177,14 @@ Without JSON, one line a clip:
 ```
 
 That is the line numbers, the title and the reason, and nothing else.
-llama-server holds the model to a shape while it writes, today to JSON,
-and can hold it to this line just as well with a grammar. The program
-then reads the clips line by line as they arrive, the way it reads the
-JSON now, with a reader of its own that is tested against every answer a
-model could write. Which numbers stand at the start of the line follows
-from the decision above: an opening and a payoff, or start, payoff and
-end.
+`points+plain` asks for it. llama-server holds the model to the line
+with a grammar, `pointsGrammar` in `engine/plain.go`, the way it holds it
+to JSON with a schema. The program reads the clips a line at a time as
+they arrive, each into the clip a JSON answer gives, so everything after
+the reading is the same. A line that is not a clip is passed over, and
+the reader is fuzzed, `FuzzPlainAnswer`. Only `points` has a plain answer
+so far: its three numbers fit a line, where `heart-lean`'s runs would
+need a notation of their own.
 
 ## Thinking
 

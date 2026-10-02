@@ -380,3 +380,33 @@ func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
 		t.Errorf("three sides started %d servers and stopped %d", started.Load(), stopped.Load())
 	}
 }
+
+// The report lays the moments the sides found side by side: one row a
+// moment in the order they come, and a clip that shares most of another
+// side's clip is the same moment.
+func TestTheMomentsAreSetSideBySide(t *testing.T) {
+	runs := []RecipeRun{
+		{Recipe: "lines", Clips: []FoundClip{
+			{Title: "Spiegel", Start: 1150, End: 1190, Seconds: 40.5},
+			{Title: "Regenschirm", Start: 57, End: 83, Seconds: 26.2},
+		}},
+		{Recipe: "points+plain", Clips: []FoundClip{
+			{Title: "Der Regenschirm", Start: 60, End: 81, Seconds: 21.3},
+			{Title: "Staubkörner", Start: 1700, End: 1727, Seconds: 26.7},
+		}},
+	}
+	table := momentsTable(runs)
+	lines := strings.Split(strings.TrimSpace(table), "\n")
+	rows := lines[len(lines)-3:]
+	for i, want := range [][]string{{"0:57 Regenschirm", "26 s", "21 s"}, {"19:10 Spiegel", "40 s", "-"},
+		{"28:20 Staubkörner", "-", "27 s"}} {
+		for _, cell := range want {
+			if !strings.Contains(rows[i], cell) {
+				t.Errorf("row %d has no %q:\n%s", i+1, cell, table)
+			}
+		}
+	}
+	if momentsTable(nil) != "" {
+		t.Error("a table of nothing")
+	}
+}

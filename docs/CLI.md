@@ -216,12 +216,18 @@ shows whether `heart` finds stories as good as `lines` and how much
 sooner, and how much of the thinking it still needs once it no longer
 has to count seconds. `heart-opening` asks for the line a clip opens on
 too, so a story keeps the setup a stranger needs. `heart-lean` asks the
-same in one short message with a bare transcript, and `points` for three
-lines a clip, see [PROMPTS.md](PROMPTS.md). Every side starts a
+same in one short message with only the numbered words, and `points` for
+three lines a clip, see [PROMPTS.md](PROMPTS.md). Every side starts a
 llama-server of its own, so none reads from the cache of the one before.
 
+What `heart-lean` and `points` show the model beyond the words is
+switched on after a `+`: `+pause` or `+pause2` for a mark before a long
+pause, `+times` for the time each line starts at, `+words` for the length
+in words, and `+plain` for an answer one line a clip rather than JSON,
+`points` only. So a new idea is a side in the command:
+
 ```
-framefairy episode.mp4 --from 0 --to 30:00 --compare heart-opening@1024,heart-lean@1024,points@1024,heart-lean@512,points@512
+framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart-opening,heart-lean,heart-lean+pause,points,points+words,points+plain,points+plain@1024
 ```
 
 A recipe with `@` and a number thinks that many tokens, whatever
@@ -254,8 +260,10 @@ read and how many of those were new rather than in llama-server's cache
 from the side before, the tokens it thought, the size of the request
 and what the local model read and wrote, a table of what can be counted
 about the clips, how many start or end mid-sentence and how many are well
-off the length, and then every clip each found, with its title and the
-words that stay, to read side by side. Each recipe's plan is in
+off the length, a table of the moments found, one row a moment in the
+order they come with each side's clip of it, and then every clip each
+found, where it is, its title and the words that stay, to read side by
+side. Each recipe's plan is in
 `experiments/<recipe>/`, beside `prompt.txt`, what it asked, and
 `reply.json`, what came back. So `experiments/` holds everything a
 comparison made. When every search failed, there is nothing to

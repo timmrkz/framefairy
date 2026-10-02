@@ -49,7 +49,9 @@ type RecipeRun struct {
 type FoundClip struct {
 	Title, Reason string
 	Seconds       float64
-	Parts         int
+	// Start and End are where in the episode the clip begins and ends.
+	Start, End float64
+	Parts      int
 	// Text is the words that stay, with a mark where something was cut.
 	Text string
 }
@@ -101,6 +103,9 @@ func ParseVariant(name string) (Variant, error) {
 		sw, err := ParseSwitches(switches)
 		if err != nil {
 			return Variant{}, renderErr("%s: %s", pyRepr(name), err)
+		}
+		if sw.Plain && r.Plain == nil {
+			return Variant{}, renderErr("%s: only points answers without JSON so far", pyRepr(name))
 		}
 		v.Switches = sw
 	}
@@ -327,6 +332,9 @@ func foundClips(path string, words []Cue) []FoundClip {
 	var out []FoundClip
 	for _, c := range clips {
 		found := FoundClip{Title: c.Title, Reason: reasons[c.ID], Parts: len(c.Segments)}
+		if n := len(c.Segments); n > 0 {
+			found.Start, found.End = c.Segments[0].Start, c.Segments[n-1].End
+		}
 		var text strings.Builder
 		for i, seg := range c.Segments {
 			found.Seconds += seg.End - seg.Start
@@ -403,6 +411,7 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			strconv.Itoa(off)})
 	}
 	b.WriteString(alignedTable(faults))
+	b.WriteString(momentsTable(runs))
 	for _, r := range runs {
 		fmt.Fprintf(&b, "\n## %s\n\n", r.Recipe)
 		if v, err := ParseVariant(r.Recipe); err == nil {
@@ -425,6 +434,9 @@ func compareReport(opts Options, runs []RecipeRun) string {
 				if sw.Words {
 					shown = append(shown, "the length in words")
 				}
+				if sw.Plain {
+					shown = append(shown, "the answer one line a clip rather than JSON")
+				}
 				b.WriteString(", with " + strings.Join(shown, ", "))
 			}
 			b.WriteString(".\n\n")
@@ -434,11 +446,70 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			continue
 		}
 		for i, c := range r.Clips {
-			fmt.Fprintf(&b, "### %d. %s\n\n%s seconds, %d part(s). %s\n\n> %s\n\n",
-				i+1, c.Title, fixed(c.Seconds, 1), c.Parts, c.Reason, c.Text)
+			fmt.Fprintf(&b, "### %d. %s\n\nAt %s, %s seconds, %d part(s). %s\n\n> %s\n\n",
+				i+1, c.Title, HMS(c.Start), fixed(c.Seconds, 1), c.Parts, c.Reason, c.Text)
 		}
 	}
 	return b.String()
+}
+
+// momentsTable is every moment the sides found, one row each in the order
+// they come in the episode, and for each side the seconds of its clip of
+// that moment. Two clips are one moment when they share more than half of
+// the shorter. So the same story can be read side by side, and a story only
+// one side found stands out.
+func momentsTable(runs []RecipeRun) string {
+	type moment struct {
+		start, end float64
+		title      string
+		seconds    map[int]float64
+	}
+	var moments []*moment
+	for side, r := range runs {
+		for _, c := range r.Clips {
+			var found *moment
+			for _, m := range moments {
+				shared := min(m.end, c.End) - max(m.start, c.Start)
+				if shared > 0.5*min(m.end-m.start, c.End-c.Start) {
+					found = m
+					break
+				}
+			}
+			if found == nil {
+				found = &moment{start: c.Start, end: c.End, title: c.Title, seconds: map[int]float64{}}
+				moments = append(moments, found)
+			}
+			if _, has := found.seconds[side]; !has {
+				found.seconds[side] = c.Seconds
+			}
+		}
+	}
+	if len(moments) == 0 {
+		return ""
+	}
+	sort.SliceStable(moments, func(i, j int) bool { return moments[i].start < moments[j].start })
+	rows := [][]string{{"Moment"}}
+	for _, r := range runs {
+		rows[0] = append(rows[0], r.Recipe)
+	}
+	for _, m := range moments {
+		title := []rune(m.title)
+		if len(title) > 40 {
+			title = append(title[:39], '…')
+		}
+		row := []string{HMS(m.start) + " " + string(title)}
+		for side := range runs {
+			cell := "-"
+			if s, ok := m.seconds[side]; ok {
+				cell = fixed(s, 0) + " s"
+			}
+			row = append(row, cell)
+		}
+		rows = append(rows, row)
+	}
+	return "\nThe moments found, in the order they come, and how long each side's clip of " +
+		"it runs. Two clips are one moment when they share more than half of the shorter.\n\n" +
+		alignedTable(rows)
 }
 
 // alignedTable is a markdown table whose columns line up in a terminal

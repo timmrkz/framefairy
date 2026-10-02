@@ -994,7 +994,9 @@ Everything else is in `engine/`:
                 a window searched again
   fit.go        clips well off the length asked for again, measured
   heart.go      the heart recipe, and fitting a clip around its heart
-  prompts.go    prompts kept as text in prompts/, and the lean transcripts
+  prompts.go    prompts kept as text in prompts/, the lean transcripts, and
+                the switches a comparison turns on
+  plain.go      the answer one line a clip rather than JSON
   edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine

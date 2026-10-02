@@ -49,6 +49,13 @@ type Recipe struct {
 	// Switchable is true for a recipe asked from a prompt file that can
 	// show the model more or less, see PromptSwitches.
 	Switchable bool
+	// Plain is the grammar of the recipe's answer without JSON, one line
+	// a clip, nil for a recipe that has none, see plain.go. +plain asks
+	// for it.
+	Plain func(units, count int) string
+	// Grammar is what a local model is held to instead of Schema, set
+	// from Plain when the answer is asked for without JSON.
+	Grammar func(units, count int) string
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.
@@ -125,6 +132,9 @@ func (opts PlanOptions) recipe() Recipe {
 	r, err := RecipeNamed(opts.Recipe)
 	if err != nil {
 		r, _ = RecipeNamed("")
+	}
+	if opts.Switches.Plain && r.Plain != nil {
+		r.Grammar = r.Plain
 	}
 	return r
 }

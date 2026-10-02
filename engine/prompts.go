@@ -43,6 +43,8 @@ type promptData struct {
 	Pause              string
 	Times              bool
 	MinWords, MaxWords int
+	// Plain asks for the answer one line a clip, without JSON.
+	Plain bool
 }
 
 const (
@@ -90,7 +92,7 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 		data.Taken = takenSentence(taken)
 	}
 	sw := opts.Switches
-	data.Times = sw.Times
+	data.Times, data.Plain = sw.Times, sw.Plain
 	switch {
 	case sw.Pause == 1:
 		data.Pause = "a second"
@@ -126,6 +128,9 @@ type PromptSwitches struct {
 	// talks in this window, so the model can judge length by counting,
 	// +words.
 	Words bool
+	// Plain asks for the answer without JSON, one line a clip, +plain. Only
+	// points has one, see plain.go.
+	Plain bool
 }
 
 // ParseSwitches reads switches written as in pause2+times+words.
@@ -137,6 +142,8 @@ func ParseSwitches(text string) (PromptSwitches, error) {
 			sw.Times = true
 		case name == "words":
 			sw.Words = true
+		case name == "plain":
+			sw.Plain = true
 		case name == "pause":
 			sw.Pause = 1
 		case strings.HasPrefix(name, "pause"):
@@ -146,7 +153,7 @@ func ParseSwitches(text string) (PromptSwitches, error) {
 			}
 			sw.Pause = n
 		default:
-			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2, +times and +words", name)
+			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2, +times, +words and +plain", name)
 		}
 	}
 	return sw, nil
@@ -166,6 +173,9 @@ func (sw PromptSwitches) String() string {
 	}
 	if sw.Words {
 		out += "+words"
+	}
+	if sw.Plain {
+		out += "+plain"
 	}
 	return out
 }

@@ -14,5 +14,6 @@ From the start to the end should take about {{.Min}} to {{.Max}} seconds, which 
 {{end}}{{if .MinWords}}
 From the start to the end should be about {{.MinWords}} to {{.MaxWords}} words, which is {{.Min}} to {{.Max}} seconds as fast as this speaker talks.
 {{end}}
-Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "start": 12, "payoff": 18, "end": 19}]}
-The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.
+{{if .Plain}}Answer with one line for each moment and nothing else, like this:
+12 18 19 | a hook in the language of the transcript | why the moment works, in at most twelve words{{else}}Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "start": 12, "payoff": 18, "end": 19}]}
+The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.{{end}}

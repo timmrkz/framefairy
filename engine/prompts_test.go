@@ -243,3 +243,83 @@ func TestThePromptsInFilesAskWhatTheyAsked(t *testing.T) {
 		t.Error("the lines brief is not the one the training records name")
 	}
 }
+
+// A plain answer is one line a clip, read into the clip a JSON answer
+// gives. A line that is not a clip is passed over, and a line written in
+// pieces is read once it is whole.
+func TestAPlainAnswer(t *testing.T) {
+	reply := "Hier sind die Momente:\n12 18 19 | Der Regenschirm | Ein Kind wehrt sich.\n" +
+		"3 4 | zu wenige Zahlen\n30 33 33 | Spiegel |\n7 x 9 | kein Clip | nein"
+	var data map[string]any
+	if err := json.Unmarshal([]byte(plainAnswer(reply)), &data); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, plainAnswer(reply))
+	}
+	entries, _, err := ValidatePlan(data, lineUnits(40))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("%+v %v", entries, err)
+	}
+	if e := entries[0]; e.Keep[0] != [2]int{12, 19} || e.Heart != [2]int{18, 18} || e.Opening != 12 ||
+		e.Title != "Der Regenschirm" || e.Reason != "Ein Kind wehrt sich." {
+		t.Errorf("first read as %+v", e)
+	}
+	if e := entries[1]; e.Keep[0] != [2]int{30, 33} || e.Title != "Spiegel" || e.Reason != "" {
+		t.Errorf("second read as %+v", e)
+	}
+	var scan lineScanner
+	var got []string
+	for _, piece := range []string{"12 18", " 19 | Der Re", "genschirm | Grund\n30 33 33", " | S | R\n"} {
+		got = append(got, scan.feed(piece)...)
+	}
+	if len(got) != 2 || got[0] != "12 18 19 | Der Regenschirm | Grund" || got[1] != "30 33 33 | S | R" {
+		t.Errorf("lines %q", got)
+	}
+	if v, err := ParseVariant("points+plain"); err != nil || !v.Switches.Plain {
+		t.Errorf("points+plain read as %+v %v", v, err)
+	}
+	if _, err := ParseVariant("heart-lean+plain"); err == nil {
+		t.Error("heart-lean took +plain")
+	}
+	if g := pointsGrammar(0, 6); !strings.Contains(g, "{0,5}") {
+		t.Errorf("six clips allowed as:\n%s", g)
+	}
+}
+
+// A search asking for a plain answer holds the local model to its grammar
+// rather than to JSON, and takes the clips from the lines it writes.
+func TestASearchWithAPlainAnswer(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "40")
+	var mu sync.Mutex
+	var asked map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		_ = json.NewDecoder(r.Body).Decode(&asked)
+		mu.Unlock()
+		writeLocalStream(w, "1 1 2 | Kurz | Ein Grund.\n", 5)
+	}))
+	defer server.Close()
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.LLMURL = server.URL
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Recipe = "points"
+	base.Switches = PromptSwitches{Plain: true}
+	p := NewProject(e, source, base)
+	path, err := p.Plan(context.Background(), PlanRequest{Count: 1})
+	if err != nil {
+		t.Fatalf("plan: %v %s", err, p.LastError())
+	}
+	mu.Lock()
+	_, schema := asked["response_format"]
+	grammar, _ := asked["grammar"].(string)
+	mu.Unlock()
+	if schema || !strings.Contains(grammar, "root ::=") {
+		t.Errorf("asked with a schema %v, grammar %q", schema, grammar)
+	}
+	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
+		t.Errorf("clips %+v %v", clips, err)
+	}
+}

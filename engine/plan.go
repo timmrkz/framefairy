@@ -264,7 +264,19 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// the engine, and never asked again.
 	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0) && !recipe.Hearts
 	var scanner clipScanner
+	var lineScan lineScanner
+	plain := recipe.Grammar != nil
 	listen := &Listener{Text: func(piece string) {
+		// An answer without JSON is read a line at a time, each line a
+		// clip, into the object a JSON answer gives.
+		if plain {
+			for _, line := range lineScan.feed(piece) {
+				if clip, ok := plainClip(line); ok {
+					build.take(clip)
+				}
+			}
+			return
+		}
 		for _, raw := range scanner.feed(piece) {
 			build.take(raw)
 		}
@@ -368,7 +380,11 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// has normally been taken by now. This catches what the scanner could
 	// not see, an answer that only parses once it is salvaged, and says
 	// what was wrong with the clips that were left out.
-	data, note, err := ExtractJSONObject(reply, "clips")
+	whole := reply
+	if plain {
+		whole = plainAnswer(reply)
+	}
+	data, note, err := ExtractJSONObject(whole, "clips")
 	switch {
 	case err != nil && build.count() > 0:
 		// The clips taken as the answer arrived are whole and checked. What

@@ -91,6 +91,7 @@ var pointsRecipe = Recipe{
 	Hearts:     true,
 	Joins:      true,
 	Switchable: true,
+	Plain:      pointsGrammar,
 	Version:    1,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
 		return prompt("points", lines, leanTranscript(lines, opts.Switches), opts)

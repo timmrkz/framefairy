@@ -498,12 +498,17 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		"stream":          true,
 		"stream_options":  map[string]any{"include_usage": true},
 		"return_progress": true,
-		"response_format": map[string]any{
+	}
+	// An answer without JSON is held to its own grammar, one line a clip.
+	if r.Grammar != nil {
+		ask["grammar"] = r.Grammar(units, count)
+	} else {
+		ask["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
 				"name": "plan", "strict": true, "schema": schema,
 			},
-		},
+		}
 	}
 	if m.Seed != 0 {
 		ask["seed"] = m.Seed
