@@ -1,6 +1,7 @@
 package dispenser
 
 import (
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -71,8 +72,8 @@ func TestSettleLeavesReplacedKeys(t *testing.T) {
 func TestSettleRefuses(t *testing.T) {
 	f := newFixture(t, false)
 	f.stock(5)
-	if err := f.engine.Settle(f.ctx, "txn_unknown"); err != nil {
-		t.Fatalf("a sale Paddle does not know: %v", err)
+	if err := f.engine.Settle(f.ctx, "txn_unknown"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a sale Paddle does not know: got %v, want ErrNotFound", err)
 	}
 	if err := f.engine.Settle(f.ctx, "txn bad"); err == nil {
 		t.Fatal("settled a reference that is no reference")
