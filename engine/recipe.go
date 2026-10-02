@@ -181,6 +181,8 @@ var linesRecipe = Recipe{
 	Unit:    "line",
 	Version: PromptVersion,
 	System:  SystemPrompt,
-	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string { return buildPrompt(lines, opts) },
-	Schema:  planSchema,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		return prompt("lines", lines, AnnotateLines(lines), opts)
+	},
+	Schema: planSchema,
 }

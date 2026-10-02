@@ -1,3 +1,4 @@
+=== user ===
 Below is the transcript of part of a video, one numbered line per phrase as it was spoken. "…" before a line marks a pause of a second or more.{{if .Context}} About the video: {{.Context}}{{end}}
 
 {{.Transcript}}
@@ -8,8 +9,6 @@ For each moment, name:
 - opening: the line it starts on, the first a stranger needs. The question or the setup that says who, when and where.
 - heart: the first and the last line of what happened and how it lands. Its last line is the payoff.
 - keep: the lines of the story as runs [first, last], from the opening or earlier to the payoff or later. To leave out an aside or a restart, end a run before it and start the next after it.
-
-Do not count seconds. A program fits each moment to {{.Min}} to {{.Max}} seconds on whole sentences. It takes away what runs on after the payoff first, then what comes before the opening, and never cuts from the opening to the payoff. When a moment is too short, it adds the lines before it.
 
 Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "opening": 14, "heart": [17, 19], "keep": [[12, 19]]}]}
 The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.

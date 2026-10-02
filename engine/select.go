@@ -16,31 +16,9 @@ import (
 // transcript, where a model reading a long document attends to it best.
 // Side by side on Tim's episode, as the recipe lines2, it read better
 // than the brief before it.
-const SystemPrompt = storyBrief + `
-Pauses are yours to decide. A pause between two lines in one run stays, at full ` +
-	`length. To cut a pause, end a run on the line before it and start the next run on ` +
-	`the line after it. The two runs may follow each other directly, so [[12, 14], [15, 18]] ` +
-	`keeps lines 12 to 18 and cuts only the pause between 14 and 15. To leave material out, ` +
-	`leave its lines out. A long pause before a short line is often the speaker landing ` +
-	`something, and cutting it throws the landing away. A long pause in the middle of ` +
-	`someone losing their thread is dead weight.
-
-OUTPUT CONTRACT
-
-Your reply is parsed by a program. Return exactly one JSON object and nothing else. ` +
-	`No prose, no markdown fences.
-
-{"clips": [{"slug": "...", "title": "...", "reason": "...", "keep": [[12, 18], [24, 27]]}]}
-
-- "clips": at most the number asked for.
-- "slug": lowercase ASCII letters, digits and hyphens, at most 64 characters, ` +
-	`different for every clip.
-- "title": a hook line in the language of the transcript, one line, at most 200 characters.
-- "reason": one sentence, at most 300 characters.
-- "keep": runs of lines to keep, as [first, last] line numbers from the transcript, ` +
-	`in ascending order and not overlapping. A run may start on the line right after ` +
-	`the previous one ends, which cuts the pause between them.
-`
+//
+// It is kept in prompts/lines.txt, with the request it goes with.
+var SystemPrompt = promptSystem("lines")
 
 // storyBrief is what lines and stories2 both tell the model about a good
 // clip, for any video.

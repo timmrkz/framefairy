@@ -149,33 +149,6 @@ func MarshalPlan(plan any) ([]byte, error) {
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
-func buildPrompt(lines []Line, opts PlanOptions) string {
-	task := fmt.Sprintf("Find up to %d clips, the strongest first. Each runs %s to %s seconds "+
-		"once what you leave out is gone. Keep the heart and the payoff of every story whole.",
-		opts.Count, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
-	// A window searched before, or one with clips made by hand in it, has
-	// lines that are clips already. They stay in the transcript, because a
-	// new clip is read against what is around it, and the task says to
-	// leave them.
-	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
-		task += " " + takenSentence(taken)
-	}
-	ask := []string{
-		task,
-		fmt.Sprintf("The transcript below is numbered from 1 to %d. Those numbers are what "+
-			"you return. Each line shows its talking time in seconds, and any pause before "+
-			"it, so a clip's length is the lines you keep plus the pauses inside the runs "+
-			"you keep.", len(lines)),
-	}
-	if opts.Context != "" {
-		ask = append(ask, "About the video: "+opts.Context)
-	}
-	ask = append(ask, "", "Transcript:", "", AnnotateLines(lines), "",
-		"That is the whole transcript. "+task,
-		"Reply with the JSON object and nothing else.")
-	return strings.Join(ask, "\n")
-}
-
 // takenSentence names the lines that are clips already.
 func takenSentence(taken [][2]int) string {
 	runs := make([]string, len(taken))

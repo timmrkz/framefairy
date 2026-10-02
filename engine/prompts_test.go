@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -18,10 +19,14 @@ func TestThePromptFilesFillIn(t *testing.T) {
 	opts := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
 	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe} {
 		text := recipe.Request(lines, recipe.units(lines), opts)
-		for _, want := range []string{"Der Regenschirm ist zersprungen.", "up to 6 moments", "20 to 30 seconds"} {
+		for _, want := range []string{"Der Regenschirm ist zersprungen.", "up to 6 moments"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s has no %q:\n%s", recipe.Name, want, text)
 			}
+		}
+		// Only a transcript with times can say anything of seconds.
+		if says := strings.Contains(text, "20 to 30 seconds"); says != (recipe.Name == "points") {
+			t.Errorf("%s says the length %v:\n%s", recipe.Name, says, text)
 		}
 		if strings.Contains(text, "{{") || strings.Contains(text, "About the video") {
 			t.Errorf("%s left something of its template:\n%s", recipe.Name, text)
@@ -139,5 +144,41 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 		if bytes.Contains(body, []byte(`"system"`)) || bytes.Contains(body, []byte(`"developer"`)) {
 			t.Errorf("%s was sent a system part: %s", model, body)
 		}
+	}
+}
+
+// The prompts moved into files ask word for word what they asked when they
+// were written in Go, kept in testdata/prompts as the code made them. A
+// change to lines would be a new way of asking, with a new PromptVersion,
+// and saved answers that no longer match their prompt.
+func TestThePromptsInFilesAskWhatTheyAsked(t *testing.T) {
+	lines := said(
+		0.0, 1.1, "Was ist deine erste Erinnerung?",
+		1.5, 1.1, "Erste Erinnerung?",
+		1.4, 1.8, "Nicht so leicht zu beantworten, weil",
+		0.3, 3.5, "ich war dann noch ein relativ kleiner Dütz, zweite, dritte Klasse.",
+		3.7, 4.9, "Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.",
+	)
+	for _, r := range []Recipe{linesRecipe, heartRecipe, heartOpeningRecipe} {
+		for _, with := range []bool{false, true} {
+			opts := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
+			name := r.Name
+			if with {
+				opts.Context = "Ein Podcast über erste Erinnerungen."
+				opts.Taken = []Window{{Start: 0, End: 1.1}}
+				name += "-with-context"
+			}
+			want, err := os.ReadFile("testdata/prompts/" + name + ".txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := "=== system ===\n" + r.System + "\n=== user ===\n" + r.Request(lines, r.units(lines), opts) + "\n"
+			if got != string(want) {
+				t.Errorf("%s asks something new:\n%s", name, got)
+			}
+		}
+	}
+	if SystemPrompt != linesRecipe.System || SystemPrompt == "" {
+		t.Error("the lines brief is not the one the training records name")
 	}
 }

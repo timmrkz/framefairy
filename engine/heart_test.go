@@ -135,7 +135,8 @@ func TestTheHeartIsReadFromTheAnswer(t *testing.T) {
 	}
 	// The brief tells the model the program keeps the length, so a change
 	// to the brief that loses the paragraph about it is caught here.
-	if strings.Contains(heartSystem, lengthParagraph) || !strings.Contains(heartSystem, heartLength) {
+	if strings.Contains(heartRecipe.System, "Each clip should run the length asked for") ||
+		!strings.Contains(heartRecipe.System, "A program fits every clip to the length asked for") {
 		t.Error("the heart brief still asks the model to keep the length")
 	}
 }

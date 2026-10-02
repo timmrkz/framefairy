@@ -15,11 +15,10 @@ import (
 // Go strings, a prompt reads the way the model reads it, and a change to it
 // is a change to a few lines anyone can comment on in a pull request.
 //
-// Such a prompt is one message. The transcript comes first and what to do
-// with it after, so the instructions are the last thing the model reads
-// before it answers, and are said once. The lines brief told the model
-// the task, then the transcript, then the task again. There is no system
-// part: everything the model needs is in the one message.
+// A file is what the model is sent, in the order it is sent: a system part
+// after "=== system ===", where the recipe has one, and the request after
+// "=== user ===", the same way the logs keep a prompt. The program fills in
+// what is between {{ and }}: the transcript, how many clips, how long.
 // ---------------------------------------------------------------------------
 
 //go:embed prompts/*.txt
@@ -27,7 +26,9 @@ var promptFiles embed.FS
 
 // promptData is what a prompt file is filled in with.
 type promptData struct {
-	Count      int
+	Count int
+	// Lines is how many lines the transcript numbers.
+	Lines      int
 	Min, Max   string
 	Transcript string
 	// Taken says which lines are in clips already, empty when none are.
@@ -35,16 +36,47 @@ type promptData struct {
 	Context string
 }
 
-// prompt fills in the prompt file of that name. A file that does not parse
-// is a fault of the program, found by its tests.
-func prompt(name string, lines []Line, transcript string, opts PlanOptions) string {
+const (
+	systemMark = "=== system ===\n"
+	userMark   = "=== user ===\n"
+)
+
+// promptParts is the system part and the request of the prompt file of
+// that name. A file that is not there or not in two parts is a fault of
+// the program, found by its tests.
+func promptParts(name string) (system, request string) {
 	text, err := promptFiles.ReadFile("prompts/" + name + ".txt")
 	if err != nil {
 		panic(fmt.Sprintf("there is no prompt %s: %v", name, err))
 	}
-	t := template.Must(template.New(name).Option("missingkey=error").Parse(string(text)))
-	data := promptData{Count: opts.Count, Min: fixed(opts.MinLen, 0), Max: fixed(opts.MaxLen, 0),
-		Transcript: transcript, Context: opts.Context}
+	body := strings.TrimSuffix(string(text), "\n")
+	if rest, ok := strings.CutPrefix(body, systemMark); ok {
+		system, request, ok = strings.Cut(rest, "\n"+userMark)
+		if !ok {
+			panic(fmt.Sprintf("the prompt %s has a system part and no request", name))
+		}
+		return system, request
+	}
+	request, ok := strings.CutPrefix(body, userMark)
+	if !ok {
+		panic(fmt.Sprintf("the prompt %s does not begin with %q or %q", name, systemMark, userMark))
+	}
+	return "", request
+}
+
+// promptSystem is the system part of the prompt file of that name, empty
+// for a prompt that is one message.
+func promptSystem(name string) string {
+	system, _ := promptParts(name)
+	return system
+}
+
+// prompt fills in the request of the prompt file of that name.
+func prompt(name string, lines []Line, transcript string, opts PlanOptions) string {
+	_, request := promptParts(name)
+	t := template.Must(template.New(name).Option("missingkey=error").Parse(request))
+	data := promptData{Count: opts.Count, Lines: len(lines), Min: fixed(opts.MinLen, 0),
+		Max: fixed(opts.MaxLen, 0), Transcript: transcript, Context: opts.Context}
 	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
 		data.Taken = takenSentence(taken)
 	}
@@ -52,7 +84,7 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	if err := t.Execute(&out, data); err != nil {
 		panic(fmt.Sprintf("the prompt %s cannot be filled in: %v", name, err))
 	}
-	return strings.TrimRight(out.String(), "\n")
+	return out.String()
 }
 
 // longPause is the pause before a line that the lean transcripts mark, with

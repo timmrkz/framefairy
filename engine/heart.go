@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"strings"
 )
 
 // ---------------------------------------------------------------------------
@@ -36,7 +35,7 @@ var heartRecipe = Recipe{
 	Unit:    "line",
 	Hearts:  true,
 	Version: 1,
-	System:  heartSystem,
+	System:  promptSystem("heart"),
 	Request: heartRequest,
 	Schema:  heartSchema,
 }
@@ -53,7 +52,7 @@ var heartOpeningRecipe = Recipe{
 	Unit:    "line",
 	Hearts:  true,
 	Version: 1,
-	System:  heartOpeningSystem,
+	System:  promptSystem("heart-opening"),
 	Request: heartOpeningRequest,
 	Schema:  heartOpeningSchema,
 }
@@ -123,104 +122,14 @@ func leanSchema(lineCount, count int, recipe string) string {
 		`"additionalProperties": false}`, max(count, 1), points, required)
 }
 
-// lengthParagraph is what the brief says about the length, which in the
-// heart recipe is the engine's to keep.
-const lengthParagraph = `Each clip should run the length asked for. When the whole story is longer, make it ` +
-	`shorter by leaving out what the story holds without: asides, restarts, repetitions, ` +
-	`a second example. Never shorten it by cutting the heart or the payoff. A story that ` +
-	`cannot be told within the length even so is not a clip.`
-
-const heartLength = `A program fits every clip to the length asked for, on whole lines, so do not ` +
-	`count seconds. It needs two things from you. The heart: the lines that carry what ` +
-	`happened and the payoff, which it never cuts. And the story around it, as far as it ` +
-	`reaches, from the least a stranger needs to the payoff. When the story is too long, the ` +
-	`program takes away what runs on after the heart first, then setup from the start. ` +
-	`When it is too short, it takes in the lines before it. Inside the story, leave out ` +
-	`what it holds without: asides, restarts, repetitions, a second example.`
-
-const heartOpeningLength = `A program fits every clip to the length asked for, on whole lines, so do not ` +
-	`count seconds. It needs three things from you. The opening: the first line a stranger ` +
-	`needs to follow the story, the question or the setup that says who, when and where. ` +
-	`The heart: the lines that carry what happened and the payoff. And the story around ` +
-	`them, as far as it reaches. The program never starts a clip after its opening and ` +
-	`never cuts its heart. When the story is too long, it takes away what runs on after ` +
-	`the heart first, then what comes before the opening. When it is too short, it takes ` +
-	`in the lines before it. Inside the story, leave out what it holds without: asides, ` +
-	`restarts, repetitions, a second example.`
-
-// heartSystem is the brief lines asks with, the length left to the program
-// and the heart asked for in the answer.
-var heartSystem = strings.Replace(storyBrief, lengthParagraph, heartLength, 1) + heartPauses +
-	heartContract(`"heart": [20, 24], `, "")
-
-// heartOpeningSystem is heartSystem with the opening asked for too.
-var heartOpeningSystem = strings.Replace(storyBrief, lengthParagraph, heartOpeningLength, 1) +
-	heartPauses + heartContract(`"opening": 14, "heart": [20, 24], `,
-	`- "opening": the line the clip starts on, the first a stranger needs, before the heart.
-`)
-
-const heartPauses = `
-Pauses are yours to decide. A pause between two lines in one run stays, at full ` +
-	`length. To cut a pause, end a run on the line before it and start the next run on ` +
-	`the line after it. The two runs may follow each other directly, so [[12, 14], [15, 18]] ` +
-	`keeps lines 12 to 18 and cuts only the pause between 14 and 15.
-`
-
-// heartContract is the answer's shape, with the fields that name points
-// in a clip, in example, and what each of those fields beyond the heart
-// means, in more.
-func heartContract(example, more string) string {
-	return `
-OUTPUT CONTRACT
-
-Your reply is parsed by a program. Return exactly one JSON object and nothing else. ` +
-		`No prose, no markdown fences.
-
-{"clips": [{"slug": "...", "title": "...", "reason": "...", ` + example + `"keep": [[12, 18], [20, 27]]}]}
-
-- "clips": at most the number asked for.
-- "slug": lowercase ASCII letters, digits and hyphens, at most 64 characters, ` +
-		`different for every clip.
-- "title": a hook line in the language of the transcript, one line, at most 200 characters.
-- "reason": one sentence, at most 300 characters.
-- "heart": the first and the last line of the heart and the payoff, [first, last]. ` +
-		`Every line from first to last is kept.
-` + more + `- "keep": runs of lines the story reaches, as [first, last] line numbers from the ` +
-		`transcript, in ascending order and not overlapping, the heart inside them. A run may ` +
-		`start on the line right after the previous one ends, which cuts the pause between them.
-`
-}
-
+// heartRequest and heartOpeningRequest fill in their prompt files, which
+// send the annotated transcript lines sends.
 func heartRequest(lines []Line, _ [][2]int, opts PlanOptions) string {
-	return heartAsk(lines, opts, "Name the heart of each, and keep the story around it.")
+	return prompt("heart", lines, AnnotateLines(lines), opts)
 }
 
 func heartOpeningRequest(lines []Line, _ [][2]int, opts PlanOptions) string {
-	return heartAsk(lines, opts, "Name the opening and the heart of each, and keep the story "+
-		"around them.")
-}
-
-// heartAsk is the request of both heart recipes, which differ in what
-// they ask to be named.
-func heartAsk(lines []Line, opts PlanOptions, name string) string {
-	task := fmt.Sprintf("Find up to %d clips, the strongest first. %s The program fits each "+
-		"to %s to %s seconds.", opts.Count, name, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
-	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
-		task += " " + takenSentence(taken)
-	}
-	ask := []string{
-		task,
-		fmt.Sprintf("The transcript below is numbered from 1 to %d. Those numbers are what "+
-			"you return. Each line shows its talking time in seconds, and any pause before it.",
-			len(lines)),
-	}
-	if opts.Context != "" {
-		ask = append(ask, "About the video: "+opts.Context)
-	}
-	ask = append(ask, "", "Transcript:", "", AnnotateLines(lines), "",
-		"That is the whole transcript. "+task,
-		"Reply with the JSON object and nothing else.")
-	return strings.Join(ask, "\n")
+	return prompt("heart-opening", lines, AnnotateLines(lines), opts)
 }
 
 // heartSchema is planSchema with the heart, which every clip has.
