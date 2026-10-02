@@ -66,7 +66,7 @@ type note struct {
 }
 
 // outbox is the mail service. It sends nothing: every letter is kept here
-// to be read on the console.
+// to be read on the dev page.
 type outbox struct {
 	mu      sync.Mutex
 	clock   *clock

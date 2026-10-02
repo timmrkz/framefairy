@@ -47,11 +47,18 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{
 		return fmt.Sprintf("%s ahead", rest)
 	},
 	"ok":   func(code int) bool { return code >= 200 && code < 300 },
+	"dec":  func(n int) int { return n - 1 },
 	"list": func(s ...string) []string { return s },
-}).ParseFS(web, "web/console.html"))
+	"hm": func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.UTC().Format("Jan 2, 15:04")
+	},
+}).ParseFS(web, "web/dev.html"))
 
-// The console's view of the world, read for one page.
-type consoleView struct {
+// The dev page's view of the world, read for one page.
+type pageView struct {
 	Now     time.Time
 	Ahead   time.Duration
 	Answer  *answer
@@ -71,7 +78,7 @@ type consoleView struct {
 	Revoked int
 	Log     []logLine
 	ReadErr string
-	Actions []string
+	Broken  []string // what is switched away from normal, in words
 }
 
 type saleRow struct {
@@ -81,19 +88,20 @@ type saleRow struct {
 	Keys      []heldKey
 	Pending   []paddle.Adjustment // refunds waiting for approval
 	Standing  bool                // a chargeback that can be reversed
+	Stuck     []webhook           // its webhooks not delivered yet, newest first
 }
 
-// look reads everything the console shows. It reads the store past the
+// look reads everything the dev page shows. It reads the store past the
 // database switch, so a database that is down still shows what it holds.
-func (d *dev) look(ctx context.Context) consoleView {
-	v := consoleView{Now: d.clock.Now(), Ahead: d.clock.Ahead(), Shop: d.shop.view(), DB: d.db.state(), Log: d.log.read()}
+func (d *dev) look(ctx context.Context) pageView {
+	v := pageView{Now: d.clock.Now(), Ahead: d.clock.Ahead(), Shop: d.shop.view(), DB: d.db.state(), Log: d.log.read()}
 	v.Mail, v.Letters, v.Notes = d.mail.read()
 	slices.Reverse(v.Letters)
 	slices.Reverse(v.Notes)
 	d.mu.Lock()
 	v.Answer, v.Refill, v.Sched = d.answer, d.refill, d.schedule
 	d.mu.Unlock()
-	v.Actions = []string{paddle.Refund, paddle.Chargeback, paddle.ChargebackWarning}
+	v.Broken = broken(v)
 
 	keysOf := func(tx dispenser.Tx, revoked map[licence.Fingerprint]dispenser.Revocation, seats []dispenser.Seat) []heldKey {
 		var out []heldKey
@@ -132,6 +140,11 @@ func (d *dev) look(ctx context.Context) consoleView {
 				}
 				if a.Action == paddle.Chargeback && a.Status == paddle.Approved {
 					row.Standing = true
+				}
+			}
+			for _, wh := range v.Shop.Webhooks {
+				if wh.Ref == sl.Ref && wh.State != whDelivered {
+					row.Stuck = append(row.Stuck, wh)
 				}
 			}
 			v.Sales = append(v.Sales, row)
@@ -178,19 +191,58 @@ func (d *dev) look(ctx context.Context) consoleView {
 	return v
 }
 
-func (d *dev) console(w http.ResponseWriter, r *http.Request) {
+// broken says in words what the switches have changed from a world that
+// works, so the page can say so at the top.
+func broken(v pageView) []string {
+	var out []string
+	if v.Shop.API != works {
+		out = append(out, "Paddle's API is down")
+	}
+	if v.Shop.Lag {
+		out = append(out, "Paddle's API lags")
+	}
+	switch v.Shop.Mode {
+	case sendTwice:
+		out = append(out, "Paddle sends every webhook twice")
+	case sendHold:
+		out = append(out, "Paddle holds its webhooks")
+	case sendLose:
+		out = append(out, "Paddle loses its webhooks")
+	}
+	switch v.Mail {
+	case down:
+		out = append(out, "mail is down")
+	case losesWord:
+		out = append(out, "mail loses its answers")
+	}
+	switch v.DB {
+	case down:
+		out = append(out, "the database is down")
+	case losesWord:
+		out = append(out, "the database loses its answers")
+	}
+	if !v.Refill {
+		out = append(out, "the signer is off")
+	}
+	if !v.Sched {
+		out = append(out, "the scheduled runs are off")
+	}
+	return out
+}
+
+func (d *dev) page(w http.ResponseWriter, r *http.Request) {
 	v := d.look(r.Context())
 	if l, err := d.engine.PoolLevel(r.Context()); err == nil {
 		v.Level = l
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := pages.ExecuteTemplate(w, "console.html", v); err != nil {
-		slog.New(d.log).Error("the console page failed", "error", err.Error())
+	if err := pages.ExecuteTemplate(w, "dev.html", v); err != nil {
+		slog.New(d.log).Error("the dev page failed", "error", err.Error())
 	}
 }
 
-// act is one button on the console. What it did is shown at the top of
+// act is one button on the dev page. What it did is shown at the top of
 // the page it goes back to.
 func (d *dev) act(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -221,7 +273,7 @@ func (d *dev) do(ctx context.Context, action string, f url.Values) (answer, erro
 		}
 		d.clock.Advance(dur)
 		d.Tick(ctx)
-		return done("the clock moved " + dur.String() + " forward")
+		return done("Moved the pretend time " + strings.TrimSuffix(strings.TrimSuffix(dur.String(), "0s"), "0m") + " forward")
 	case "paddle":
 		v := d.shop.view()
 		api, mode, lag := v.API, v.Mode, v.Lag
@@ -238,19 +290,19 @@ func (d *dev) do(ctx context.Context, action string, f url.Values) (answer, erro
 			return answer{}, errors.New("no such switch")
 		}
 		d.shop.set(api, mode, lag)
-		return done(fmt.Sprintf("Paddle: API %s, webhooks %s, lag %v", api, mode, lag))
+		return done(fmt.Sprintf("Paddle's API %s, its webhooks %s, lag %v", api, mode, lag))
 	case "mail":
 		if !behaviour(get("mode")) {
 			return answer{}, errors.New("no such switch")
 		}
 		d.mail.set(get("mode"))
-		return done("the mail service " + get("mode"))
+		return done("Mail: " + get("mode"))
 	case "db":
 		if !behaviour(get("mode")) {
 			return answer{}, errors.New("no such switch")
 		}
 		d.db.set(get("mode"))
-		return done("the database " + get("mode"))
+		return done("Database: " + get("mode"))
 	case "auto":
 		d.mu.Lock()
 		if s := get("refill"); s != "" {
@@ -260,25 +312,25 @@ func (d *dev) do(ctx context.Context, action string, f url.Values) (answer, erro
 			d.schedule = s == "on"
 		}
 		d.mu.Unlock()
-		return done("switched")
+		return done("Switched")
 	case "adjust":
 		if err := d.shop.Adjust(get("ref"), get("do")); err != nil {
 			return answer{}, err
 		}
 		d.shop.Deliver(ctx)
-		return done(get("do") + " at Paddle for " + get("ref"))
+		return done(strings.ReplaceAll(strings.ToUpper(get("do")[:1])+get("do")[1:], "_", " ") + " at Paddle")
 	case "decide":
 		if err := d.shop.Decide(get("ref"), get("id"), get("approve") == "yes"); err != nil {
 			return answer{}, err
 		}
 		d.shop.Deliver(ctx)
-		return done("Paddle decided on the refund of " + get("ref"))
+		return done("Paddle decided the refund")
 	case "replay":
 		if err := d.shop.Replay(get("ref")); err != nil {
 			return answer{}, err
 		}
 		d.shop.Deliver(ctx)
-		return done("Paddle sent " + get("ref") + " again")
+		return done("Paddle sent the sale again")
 	case "release":
 		if err := d.shop.Release(get("id")); err != nil {
 			return answer{}, err

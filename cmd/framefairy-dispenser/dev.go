@@ -24,13 +24,13 @@ import (
 	"framefairy/licence/signer"
 )
 
-// The pretend partner, whose orders the console makes through the
+// The pretend partner, whose orders the dev page makes through the
 // partner API.
 const partnerName = "bundle-hunt"
 
 // dev is the dispenser with a pretend world around it: Paddle, the mail
 // service, the database, the signer, the scheduled runs and the clock.
-// Everything the console does goes through the dispenser's own endpoints,
+// Everything the dev page does goes through the dispenser's own endpoints,
 // with the tokens a real caller would have.
 type dev struct {
 	base   string // where it is served, http://host:port
@@ -50,10 +50,10 @@ type dev struct {
 	schedule  bool // the mail and daily runs go by themselves
 	lastMail  time.Time
 	lastDaily time.Time
-	answer    *answer // the last thing the console did, to show
+	answer    *answer // the last thing the dev page did, to show
 }
 
-// answer is what one call to the dispenser answered, for the console.
+// answer is what one call to the dispenser answered, for the dev page.
 type answer struct {
 	What string
 	Code int
@@ -117,7 +117,7 @@ func randomHex(n int) string {
 }
 
 // call sends a request to the dispenser as a caller, and keeps the answer
-// for the console.
+// for the dev page.
 func (d *dev) call(ctx context.Context, who, method, path string, body any) (answer, error) {
 	var r io.Reader
 	if body != nil {
@@ -149,7 +149,7 @@ func (d *dev) call(ctx context.Context, who, method, path string, body any) (ans
 	return answer{What: method + " " + path, Code: resp.StatusCode, Body: strings.TrimSpace(string(b))}, nil
 }
 
-// show keeps what a console action answered.
+// show keeps what an action on the dev page answered.
 func (d *dev) show(a answer) {
 	d.mu.Lock()
 	d.answer = &a
@@ -253,7 +253,7 @@ func (d *dev) keysOf(ctx context.Context, source, ref string, revoked map[string
 	return out, nil
 }
 
-// ring keeps the last log lines for the console and writes them on.
+// ring keeps the last log lines for the dev page and writes them on.
 type ring struct {
 	lines *lines
 	attrs []slog.Attr

@@ -22,7 +22,7 @@ import (
 	"framefairy/licence/paddle"
 )
 
-// How the shop sends the next webhooks, chosen on the console.
+// How the shop sends the next webhooks, chosen on the dev page.
 const (
 	sendNow   = "now"   // at once, as Paddle does
 	sendTwice = "twice" // twice, as Paddle does when an answer got lost
@@ -46,7 +46,7 @@ const (
 var retries = []time.Duration{time.Minute, 4 * time.Minute, 10 * time.Minute}
 
 // apiLag is how long Paddle's API may not know a sale its webhook already
-// announced, when the console says it lags.
+// announced, when the dev page says it lags.
 const apiLag = 2 * time.Minute
 
 // shop is a pretend Paddle. It sells, takes money back, sends signed
@@ -242,7 +242,7 @@ func (s *shop) Release(id string) error {
 }
 
 // queueLocked makes a webhook the way Paddle writes one, and queues it as
-// the console says.
+// the dev page says.
 func (s *shop) queueLocked(typ, ref string, data map[string]any) {
 	now := s.clock.Now()
 	body, _ := json.Marshal(map[string]any{
@@ -392,7 +392,7 @@ func (s *shop) Refs(ctx context.Context, email string) ([]string, error) {
 	return refs, nil
 }
 
-// view is the shop for the console, copied so it can be read unlocked.
+// view is the shop for the dev page, copied so it can be read unlocked.
 type shopView struct {
 	API, Mode string
 	Lag       bool

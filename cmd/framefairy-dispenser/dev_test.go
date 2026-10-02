@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +18,7 @@ import (
 )
 
 // world is the local dispenser on a test server, driven the way a person
-// drives it: through the checkout, the buyer's pages and the console.
+// drives it: through the checkout, the buyer's pages and the dev page.
 type world struct {
 	t      *testing.T
 	d      *dev
@@ -46,7 +47,7 @@ func newWorld(t *testing.T, batch int) *world {
 
 func (w *world) tick() { w.d.Tick(context.Background()) }
 
-// press is a button on the console. It checks the console takes it and
+// press is a button on the dev page. It checks the dev page takes it and
 // gives back what the dispenser answered.
 func (w *world) press(action string, form url.Values) answer {
 	w.t.Helper()
@@ -128,7 +129,7 @@ func (w *world) revoked() []string {
 	return feed.Revoked
 }
 
-// keysOf is what the dispenser holds for a sale, as the console reads it.
+// keysOf is what the dispenser holds for a sale, as the dev page reads it.
 func (w *world) keysOf(ref string) []heldKey {
 	for _, s := range w.d.look(context.Background()).Sales {
 		if s.Ref == ref {
@@ -293,7 +294,7 @@ func TestWhenThingsFail(t *testing.T) {
 		t.Fatal("healthy with the database down")
 	}
 	if v := w.d.look(context.Background()); v.ReadErr != "" {
-		t.Fatalf("the console cannot read with the database down: %s", v.ReadErr)
+		t.Fatalf("the dev page cannot read with the database down: %s", v.ReadErr)
 	}
 	w.press("db", url.Values{"mode": {works}})
 	w.press("clock", url.Values{"by": {"1m"}})
@@ -399,7 +400,7 @@ func TestThanksWindowAndLostKeys(t *testing.T) {
 	}
 }
 
-// Every button on the console takes its click and the page reads back,
+// Every button on the dev page takes its click and the page reads back,
 // with every switch in every position.
 func TestEveryButton(t *testing.T) {
 	w := newWorld(t, 10)
@@ -457,13 +458,13 @@ func TestEveryButton(t *testing.T) {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), "</html>") {
-				t.Fatalf("after %s, with the database %s, the console answered %d", p.action, db, resp.StatusCode)
+				t.Fatalf("after %s, with the database %s, the dev page answered %d", p.action, db, resp.StatusCode)
 			}
 		}
 		w.d.db.set(works)
 	}
 	for _, l := range w.d.log.read() {
-		if strings.Contains(l.Text, "console page failed") || strings.Contains(l.Text, "panic") {
+		if strings.Contains(l.Text, "dev page failed") || strings.Contains(l.Text, "panic") {
 			t.Fatal(l.Text)
 		}
 	}
@@ -481,7 +482,7 @@ func TestEveryButton(t *testing.T) {
 }
 
 // Buyers, Paddle, the signer, the scheduled runs and someone at the
-// console, all at once.
+// dev page, all at once.
 func TestAllAtOnce(t *testing.T) {
 	w := newWorld(t, 20)
 	var wg sync.WaitGroup
@@ -543,3 +544,52 @@ func TestRunRefusesAnOutsideAddress(t *testing.T) {
 		t.Fatalf("no usage: %v", err)
 	}
 }
+
+// The first buyer, the moment the address is printed, finds keys.
+func TestTheFirstBuyerFindsKeys(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	printed := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, ln, 10, writerFunc(func(p []byte) { close(printed) })) }()
+	<-printed
+	base := "http://" + ln.Addr().String()
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.PostForm(base+"/shop/buy", url.Values{"email": {"first@example.com"}, "seats": {"3"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	ref, _ := strings.CutPrefix(resp.Header.Get("Location"), "/thanks?txn=")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := client.Get(base + "/v1/thanks/" + ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			break
+		}
+		if resp.StatusCode != http.StatusAccepted || time.Now().After(deadline) {
+			t.Fatalf("the first buyer's thank-you page answered %d", resp.StatusCode)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	client.CloseIdleConnections()
+	start := time.Now()
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("stopping took %v", took)
+	}
+}
+
+type writerFunc func([]byte)
+
+func (f writerFunc) Write(p []byte) (int, error) { f(p); return len(p), nil }

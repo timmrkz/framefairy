@@ -241,7 +241,7 @@ update-key: toolchain modules
 
 # The licence dispenser on this machine, with a pretend Paddle, mail
 # service and signer around it, to try every sale and every failure by
-# hand. Its console is at http://127.0.0.1:8090/dev. It keeps nothing, so
+# hand. Its dev page is at http://127.0.0.1:8090/dev. It keeps nothing, so
 # every start is an empty shop. See docs/LICENCE.md.
 dispenser: toolchain modules
 	@$(GO) run ./cmd/framefairy-dispenser dev
