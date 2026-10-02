@@ -1081,10 +1081,10 @@
   // A gesture on the clip timeline let go of: an edge trimmed, a part taken
   // out or put back, a cut moved. The engine makes the change it showed
   // while the hand moved, and answers with the clip as it is now.
-  async function reshape(clip: ClipEntry, g: Gesture) {
+  async function reshape(clip: ClipEntry, g: Gesture, playhead: [number, number]) {
     problem = "";
     try {
-      const updated = await api.reshape(path, clip.plan, clip.id, g);
+      const updated = await api.reshape(path, clip.plan, clip.id, g, playhead);
       putClip(updated);
     } catch (err) {
       problem = errorText(err);
@@ -1848,6 +1848,10 @@
       onchange();
       const clip = done.clip ? clips.find((c) => c.key === done.clip) : undefined;
       if (clip && clip.key !== selected) await select(clip.key);
+      // A dragged edge took the playhead along, so taking it back takes
+      // the playhead back too. After the clip is chosen, because choosing
+      // one puts the playhead on it.
+      if (done.playhead !== undefined) player?.seek(done.playhead);
     } catch (err) {
       problem = errorText(err);
     } finally {
@@ -2641,7 +2645,7 @@
         {lit}
         bind:numbers
         onseek={(t) => player?.seek(t)}
-        onreshape={(g) => (current ? reshape(current, g) : Promise.resolve())}
+        onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}

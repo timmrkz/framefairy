@@ -178,14 +178,34 @@ has measured. They are the same numbers where both exist.
 ## How words get their timing
 
 The recogniser gives every word a start and a duration, on an 80 ms grid. It
-also folds pauses into the words around them, so a word after a pause tends
-to start early and a word before one tends to end late.
+can fold a pause into the words around it, so a word after a pause may start
+early and a word before one may end late. More often a word before a pause
+ends early: the recogniser gives a word's last piece a duration of at most
+four of its steps, 320 ms, however long the sound is held. Measured with the
+speech model on its own test recordings, 7 of 64 words, nearly all of them
+the last word before a pause, ended while their sound went on for 30 to
+160 ms more.
 
-The loudness measured every 10 ms corrects that. A word stamped inside a
-real pause moves forward to where its sound starts. A word stamped just after
-an onset moves back onto it. A word running into a pause ends where the sound
-stopped. A single quiet frame at a word start is left alone, because many
-words begin softly.
+The loudness measured every 10 ms corrects all of that. A word stamped inside
+a real pause moves forward to where its sound starts. A word stamped just
+after an onset moves back onto it. A word running into a pause ends where the
+sound stopped, and a word whose sound goes on past its end follows it to
+where it stops, when it stops before the next word and within 0.4 s, the most
+the recogniser can be short by. Sound that runs on into the next word is left
+to that word: it is the next word said early, not this one held. In Tim's
+episode "ich." ended a sentence and "Also," followed with no pause, and a
+word end that followed the sound gave "Also"'s first sound to "ich.", so a
+clip starting at "Also" opened its captions with "ich.". Of 11,074 words,
+743 used to run on 50 ms or more past the recogniser's end, and 58 do now,
+each one into a pause, and no start moved. That limit is there because the end of a
+word is also where a pause begins, and pauses decide where a clip cuts dead
+air and where a caption breaks: under music loud enough to count as sound,
+an end with no limit would run on through every pause. A single quiet frame
+at a word start is left alone, because many words begin softly.
+
+A word that ended early was more than a caption that went early. A clip's
+pieces keep 0.1 s of air after their last word, so the render cut off the
+end of the last word of a piece while it was still being said.
 
 Measured on test audio with known word starts, a typical start ends up 6 ms
 off and 9 in 10 are within 15 ms. Inside continuous speech there is no pause
@@ -403,7 +423,8 @@ light are the halves an edge dragged with shift lands on.
 The recogniser's word timings are moved onto the sound when a transcript
 is read, `SnapWords` in `engine/audio.go`. A word ends where its last
 sound does, when 120 ms or more of silence follow it before the
-recogniser's end. A silence with more of the word after it is not the
+recogniser's end, and when its sound goes on past that end and stops
+within 0.4 s and before the next word starts. A silence with more of the word after it is not the
 end: the recogniser hears a compound, or words said as one, as one word,
 and "sweet-grundschulliebe" used to be cut off at the breath before
 "liebe", which then had no caption and was never lit. The raw timings are
@@ -438,6 +459,37 @@ it that were given back again in `planned_with.removed`, so a search is a
 window with holes in it. `RemoveRange` makes a hole: the clips inside the
 part go, and a plan with nothing
 left of its window goes altogether.
+
+## Captions on the frames they belong to
+
+A short is checked for its timing the way a viewer sees it.
+`TestTheShortShowsItsCaptionsWhenItSaysThem` and
+`TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts` in
+`engine/rendertiming_test.go` render a clip of a black episode with a tone
+where each word is said, read every frame and the sound back, and check
+that each caption and each move of the pill lands on the first frame at
+or after the moment the subtitle file gives it, and that each word is
+heard within 15 ms of the moment it is shown. One clip has a cut that
+does not fall on a frame, the other six pieces none of which is a whole
+number of frames long. They found two things, both fixed:
+
+- **A frame late, one boundary in three.** ffmpeg's subtitle filter hands
+  libass the frame's time in whole milliseconds, worked out in floating
+  point and cut down rather than rounded (`vf_subtitles.c`). After the
+  concat that joins a clip's pieces the clock counts in microseconds, and
+  200000 of them come out as 199.999... ms, so a caption due on the frame
+  at 0.20 s showed on the frame after it. Of the 15,000 frames of a ten
+  minute short at 25 fps, 4544 read a millisecond early. The render puts
+  the clock in microseconds and moves it on half a millisecond while
+  libass reads it, and back after, so every frame reads as the millisecond
+  it is.
+- **Drift at every cut.** A piece becomes a whole number of frames in the
+  short, so a piece that was not one came out longer, and its sound with
+  it, while the captions added the pieces up as they are. By the sixth
+  piece a word was heard 0.10 s after it was shown. The render now takes a
+  clip with every edge on the nearest frame of the source,
+  `SourceInfo.OnFrames`, and makes its captions from that same clip, so
+  the two add up to the same. An edge moves by half a frame at most.
 
 ## The bouncing word
 

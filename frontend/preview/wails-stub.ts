@@ -1356,6 +1356,19 @@ export const Call = {
         const redo = ((window as any).__windowRedo ??= []);
         const from = back ? steps : redo;
         const step = from.pop();
+        const shaped = ((window as any).__reshapeSteps ??= []);
+        const unshaped = ((window as any).__reshapeRedo ??= []);
+        const reshaped = (back ? shaped : unshaped).pop();
+        if (!step && reshaped) {
+          (back ? unshaped : shaped).push(reshaped);
+          held()[reshaped.id] = back ? reshaped.was : reshaped.is;
+          const moved = reshaped.playhead && reshaped.playhead[0] !== reshaped.playhead[1];
+          return Promise.resolve({
+            done: true,
+            clip: `${reshaped.plan.split("/").pop()}/${reshaped.id}`,
+            playhead: moved ? reshaped.playhead[back ? 0 : 1] : undefined,
+          });
+        }
         if (step) {
           (back ? redo : steps).push(step);
           const put = back ? step[0] : step[1];
@@ -1501,12 +1514,16 @@ export const Call = {
       // a clip at least a second long, and a cut at least 50 ms wide.
       case "Shape":
       case "Reshape": {
-        const [, , id, g] = args as [string, string, string, StubGesture];
+        const [, plan, id, g, playhead] = args as [string, string, string, StubGesture, [number, number]];
         const [at, title, rendered] = starts[id] ?? [60, "Clip", false];
         const now = pieces(Number(id), at);
         const out = gestured(now, g, at);
         if (!out) return Promise.reject(new Error("that would leave the clip with nothing in it"));
         if (method === "Reshape") {
+          // A step undo takes back, with the playhead the way the Go side
+          // keeps it, see history.go.
+          ((window as any).__reshapeSteps ??= []).push({ plan, id, was: now, is: out.pieces, playhead });
+          (window as any).__reshapeRedo = [];
           held()[id] = out.pieces;
           return Promise.resolve(clip(Number(id), at, title, rendered));
         }

@@ -20,6 +20,7 @@
   import {
     frameStart,
     insideClip,
+    litWord,
     onward,
     pictureIsStale,
     shouldChase,
@@ -440,6 +441,20 @@
   });
 
   const spoken = $derived(inClipTime(shown));
+
+  // The word lit, counted across the caption's lines, by the rule the
+  // render and the clip timeline go by. firstOfRow is where each line's
+  // words begin in that count.
+  const lit = $derived(caption ? litWord(caption.lines ?? [], spoken) : -1);
+  const firstOfRow = $derived.by(() => {
+    const out: number[] = [];
+    let n = 0;
+    for (const line of caption?.lines ?? []) {
+      out.push(n);
+      n += line.words.length;
+    }
+    return out;
+  });
 
   // The keyboard's word: the word Shift and an arrow walked to wears the
   // frame the pointer puts on a word, so it is the word Enter opens. It is
@@ -1139,9 +1154,7 @@
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
                     class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start}
-                    class:now={captions.style.highlight &&
-                      spoken >= word.start &&
-                      spoken < word.end}
+                    class:now={captions.style.highlight && firstOfRow[row] + i === lit}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"
                     data-at={word.start}

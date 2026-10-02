@@ -24,6 +24,7 @@ import {
   inEpisode,
   inClip,
   draftCaptions,
+  litWord,
 } from "./flow";
 
 describe("the picture agrees with the playhead", () => {
@@ -720,5 +721,25 @@ describe("every window lands on the range picker's step", () => {
 
   test("with no step it is as it was", () => {
     expect(onGrid({ from: 7, to: 70 }, 63, 360, 0, 20)).toEqual({ from: 7, to: 70 });
+  });
+});
+
+describe("the word lit in a caption", () => {
+  const lines = [
+    { words: [{ start: 1.0 }, { start: 1.4 }] },
+    { words: [{ start: 2.0 }] },
+  ];
+  test("is the last word whose start has come, across the lines", () => {
+    expect(litWord(lines, 0.9)).toBe(-1);
+    expect(litWord(lines, 1.0)).toBe(0);
+    expect(litWord(lines, 1.39)).toBe(0);
+    expect(litWord(lines, 1.4)).toBe(1);
+    expect(litWord(lines, 2.5)).toBe(2);
+  });
+  // The render keeps a word lit until the next one starts, so a pause
+  // between two words, or a word held longer than it was timed, never
+  // leaves the caption without its highlight.
+  test("stays lit between words, the way the render draws it", () => {
+    expect(litWord(lines, 1.95)).toBe(1);
   });
 });

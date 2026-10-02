@@ -691,6 +691,9 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 
 	cueMap := map[string][]LaidCaption{}
 	for _, clip := range clips {
+		// Rendered on the source's frames, and captioned on them too, see
+		// OnFrames.
+		clip := source.OnFrames(clip)
 		cues := ClipCaptions(clip, heard, ResolveStyle(clipStyle(style, clip)))
 		cueMap[clip.Basename()] = cues
 		started := time.Now()

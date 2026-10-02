@@ -1189,7 +1189,15 @@ moved by hand, on the clip timeline.
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
-  screen from the clip's first frame, before its first word. The edge
+  screen from the clip's first frame, before its first word.
+- **A word is lit from its start until the next word starts**, and the
+  last word of a caption until the caption goes, in the video preview, on
+  the clip timeline and in the render alike: `litWord` in
+  `frontend/src/lib/flow.ts` for the two in the app and the highlight in
+  `engine/highlight.go` for the short. The video preview used to light a
+  word only until its own end, so the highlight went out while a word was
+  still being said and between every two words, where the short and the
+  clip timeline went on showing it. The edge
   under the pointer, or the one being dragged, is a white line with a dark
   edge that goes again when the hand lets go. Two captions that meet have
   a gap of two pixels between them.
@@ -1221,6 +1229,11 @@ editor.
   than change them. Moving the playhead, choosing a clip and zooming are
   not edits. The settings are not in it, apart from the caption height,
   which is moved in the workspace like everything else here.
+- **The playhead goes back with the edge it moved.** Dragging an edge or a
+  cut on the clip timeline takes the playhead along, so the hand moved
+  both, and taking the edge back puts the playhead back where it stood
+  when the hand took hold. Redo puts it where the drag left it. Moving the
+  playhead alone is still no step.
 - **A field keeps its own undo.** While a word in the caption box or a
   number beside the clip is being typed in, Cmd-Z takes back the typing,
   the way it does in any text field. Once it is saved, the key goes to the
