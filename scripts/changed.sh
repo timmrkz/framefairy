@@ -310,8 +310,9 @@ fi
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
 
 # A script is read by the shell its first line names, so a bash script is not
-# failed for being bash.
+# failed for being bash. One the branch removed has nothing to read.
 for s in $shells; do
+	[ -f "$s" ] || continue
 	case $(head -n 1 "$s") in
 	*bash*) bash -n "$s" ;;
 	*) sh -n "$s" ;;

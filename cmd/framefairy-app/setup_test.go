@@ -38,6 +38,7 @@ func emptyMachine(t *testing.T) *FrameFairy {
 	// under it is there so that a test which can reach the keychain again
 	// says so instead of hanging again.
 	t.Setenv("PATH", filepath.Join(home, "no-tools"))
+	t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "")
 	if _, err := exec.LookPath("security"); err == nil {
 		t.Fatal("this test can still reach the keychain")
 	}
@@ -543,15 +544,16 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 // under that name on the only folder the search path holds here.
 func placeLlamaServer(t *testing.T) {
 	t.Helper()
-	dir := os.Getenv("PATH")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 	// Never started by anything in these tests, so what it would do does
 	// not matter. What matters is that it can be found and could be run.
-	if err := os.WriteFile(filepath.Join(dir, "llama-server"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	// It is named in the environment, the one way to give the app a tool
+	// that is not beside it: the app never looks on the search path.
+	server := filepath.Join(dir, "llama-server")
+	if err := os.WriteFile(server, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("FRAMEFAIRY_LLAMA_SERVER", server)
 }
 
 // The worst state the setup could leave somebody in, and until now it

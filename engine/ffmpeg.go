@@ -82,8 +82,9 @@ type Engine struct {
 }
 
 // NewEngine makes an engine with the tools it calls: the ones named in the
-// environment, then the ones beside the program, then the search path. See
-// ToolPath in tools.go for why that order.
+// environment, or else the ones beside the program, checked. See FindTool
+// in tools.go. A tool that may not run is left empty, and Preflight says
+// why.
 func NewEngine(log *Log) *Engine {
 	return &Engine{Log: log,
 		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
@@ -101,6 +102,9 @@ type result struct {
 // missing binary is a normal outcome here, so it comes back as exit code 127
 // rather than as an error.
 func run(ctx context.Context, cwd string, name string, args ...string) result {
+	if name == "" {
+		return result{Code: 127, Stderr: "no tool that may run, see Preflight"}
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = cwd
 	var stdout, stderr bytes.Buffer
@@ -373,12 +377,23 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 // paying to plan an episode is the wrong order to find out.
 func (e *Engine) Preflight(ctx context.Context) error {
 	e.Log.Progress("checking ffmpeg")
+	for _, tool := range []struct{ path, env, name string }{
+		{e.FFmpeg, "FRAMEFAIRY_FFMPEG", "ffmpeg"},
+		{e.FFprobe, "FRAMEFAIRY_FFPROBE", "ffprobe"},
+	} {
+		if tool.path == "" {
+			e.Log.ClearProgress()
+			_, err := FindTool(tool.env, tool.name)
+			if err == nil {
+				err = renderErr("there is no %s to run", tool.name)
+			}
+			return err
+		}
+	}
 	version := run(ctx, "", e.FFmpeg, "-version")
 	if version.Code != 0 {
 		e.Log.ClearProgress()
-		return renderErr("%s is not installed or not on PATH.\n"+
-			"  brew tap homebrew-ffmpeg/ffmpeg\n"+
-			"  brew install homebrew-ffmpeg/ffmpeg/ffmpeg", e.FFmpeg)
+		return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
 	}
 	first := "ffmpeg ?"
 	if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {

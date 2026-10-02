@@ -34,7 +34,6 @@ func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo,
 		return cached, nil
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	e.UseTools(s.store.Settings().FFmpeg, "")
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
 		s.mu.Lock()
@@ -111,8 +110,5 @@ func (s *FrameFairy) Still(ctx context.Context, path string, at float64, width i
 		fps = info.FPS()
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	if ff := s.store.Settings().FFmpeg; ff != "" {
-		e.FFmpeg = ff
-	}
 	return e.Still(ctx, path, at, fps, width)
 }

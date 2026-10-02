@@ -85,10 +85,9 @@ A model is only half of the local way. `llama-server`, from llama.cpp, is
 what runs it, and a model without one is fifteen gigabytes that answer
 nothing. So the app looks for it and says so while it is missing, and it
 does not call itself ready on a machine that has the download and no way
-to open it, which it used to. It is looked for the way ffmpeg is: the one
-named in the settings, then the one sitting beside the app, then the
-search path. The middle step is the one a customer has, because they have
-no Homebrew and no terminal.
+to open it, which it used to. It is taken the way ffmpeg is: the one
+beside the app, checked to be the file the app was built with, and no
+other, see **The tools are the app's own** below.
 
 The last button is **Finish setup**, and that is all it does. Adding an
 episode has one way of being done and it is the plus in the sidebar, so a
@@ -1595,13 +1594,26 @@ preview and the clip timeline show them as they are picked. A taste in one
 is not a taste in the other. A highlight colour chosen here before is still
 the one a search gets until its own is picked in the captions column.
 
+**The tools are the app's own.** The app runs the ffmpeg, ffprobe and
+llama-server beside it and no others: not one on the search path, and not
+one named in the settings, which it used to run whatever they named. Each
+is checked before it runs to be the file the app was built with: `make`
+takes the SHA-256 of each tool it puts beside the programs and builds it
+into them, and a tool that does not match, or one no sum was built in
+for, is not run. A tool that is missing or does not match is said in the
+check under **Advanced**, in words, rather than replaced by another. The
+environment can still name one, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`
+and `FRAMEFAIRY_LLAMA_SERVER`, which is how the tests take theirs. See
+`FindTool` in `engine/tools.go`.
+
 **Training data** says how many records there are and has the one trash
 can that throws them away, which asks first.
 
 **Advanced** is closed until it is opened, like a disclosure in Finder, and
-holds the machinery: the paths to the language model file and llama-server,
-or the Claude model, the speech model folder, ffmpeg and the training data
-folder, each a name on the left and a field on the right. Empty paths use
+holds the machinery: the path to the language model file, or the Claude
+model, the speech model folder and the training data folder, each a name
+on the left and a field on the right. There is no field for ffmpeg or
+llama-server any more, see **The tools are the app's own**. Empty paths use
 the same defaults as the command line. Under the paths is everything the
 check looked at, found or not, with the check's own words and **Check
 again**, though the check runs again by itself whenever a setting changes:

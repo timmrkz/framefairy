@@ -62,22 +62,42 @@ const DefaultThink = 2048
 const thinkEnough = "\n\nThat is enough thinking. Time to write the answer.\n"
 
 // LlamaServerPath decides which llama-server to run, the same way ffmpeg is
-// decided: the one named in the environment, then the one sitting beside the
-// program, then the search path. See ToolPath in tools.go.
-//
-// The middle step is the one that matters for a shipped app. A customer has
-// no Homebrew and no terminal, so the only llama-server they will ever have
-// is the one we put next to the program. Looking only on the search path is
-// how a machine with a model on it still cannot find a clip.
+// decided: the one named in the environment, or else the one beside the
+// program, checked. See FindTool in tools.go. Empty when there is none
+// that may run, and FindLlamaServer says why.
 func LlamaServerPath() string {
 	return ToolPath("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
+}
+
+// serverToRun is the llama-server an ask runs: the one named on the command
+// line with --llm-server, which is somebody's own choice, or else the
+// program's own, checked.
+func serverToRun(named string) (string, error) {
+	if named == "" {
+		return FindLlamaServer()
+	}
+	if _, err := exec.LookPath(named); err != nil {
+		return "", renderErr("%s was not found. Point --llm-server at the binary.", named)
+	}
+	return named, nil
+}
+
+// FindLlamaServer is LlamaServerPath with the reason when there is none.
+func FindLlamaServer() (string, error) {
+	return FindTool("FRAMEFAIRY_LLAMA_SERVER", "llama-server")
 }
 
 // HasLlamaServer says whether a llama-server can be run at all. The setup
 // and the settings ask this before offering the local way, because a model
 // on its own is fifteen gigabytes that cannot answer anything.
 func HasLlamaServer() bool {
-	_, err := exec.LookPath(LlamaServerPath())
+	server, err := FindLlamaServer()
+	if err != nil {
+		return false
+	}
+	// One named in the environment is taken as it stands, so it is looked
+	// at here, the way starting it would.
+	_, err = exec.LookPath(server)
 	return err == nil
 }
 
@@ -250,13 +270,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	if _, err := os.Stat(m.Model); err != nil {
 		return "", nil, renderErr("the language model %s cannot be read: %s", m.Model, err)
 	}
-	server := m.Server
-	if server == "" {
-		server = LlamaServerPath()
+	if err := CheckModelFile(m.Model, ""); err != nil {
+		return "", nil, err
 	}
-	if _, err := exec.LookPath(server); err != nil {
-		return "", nil, renderErr("%s was not found. Install llama.cpp as docs/INSTALL.md "+
-			"describes, or point --llm-server at the binary.", server)
+	server, err := serverToRun(m.Server)
+	if err != nil {
+		return "", nil, err
 	}
 	port, err := freePort()
 	if err != nil {

@@ -1,10 +1,14 @@
 package engine
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // A bundled app carries its own ffmpeg, built without libx264 so the build
@@ -102,8 +106,8 @@ func TestAToolBesideTheProgramWinsOverTheSearchPath(t *testing.T) {
 	})
 }
 
-// The order: what was named, then what is beside the program, then the bare
-// name for the search path to answer.
+// The order: what was named, then what is beside the program, and nothing
+// else.
 func TestTheEnvironmentAlwaysWins(t *testing.T) {
 	t.Run("a named tool is taken as it stands", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_FFMPEG", "/somewhere/else/ffmpeg")
@@ -112,14 +116,16 @@ func TestTheEnvironmentAlwaysWins(t *testing.T) {
 		}
 	})
 
-	// Nothing named and nothing beside the test binary, so the bare name is
-	// left for the search path to resolve. A path invented here would be a
-	// path that does not exist.
-	t.Run("otherwise the bare name, for the search path", func(t *testing.T) {
+	// Nothing named and nothing beside the test binary, so there is no
+	// ffmpeg, whatever the search path holds. It used to be left to the
+	// search path, which ran whichever ffmpeg was first on it.
+	t.Run("otherwise nothing, never the search path", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_FFMPEG", "")
-		got := ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg")
-		if got != "ffmpeg" && !filepath.IsAbs(got) {
-			t.Errorf("got %q, which is neither the bare name nor a real path", got)
+		if got := ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"); got != "" {
+			t.Errorf("got %q from somewhere other than beside the program", got)
+		}
+		if _, err := FindTool("FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
+			t.Error("no ffmpeg, and no reason given")
 		}
 	})
 }
@@ -148,11 +154,13 @@ func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
 		}
 	})
 
-	t.Run("otherwise the bare name, for the search path", func(t *testing.T) {
+	t.Run("otherwise nothing, never the search path", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "")
-		got := LlamaServerPath()
-		if got != "llama-server" && !filepath.IsAbs(got) {
-			t.Errorf("got %q, which is neither the bare name nor a real path", got)
+		if got := LlamaServerPath(); got != "" {
+			t.Errorf("got %q from somewhere other than beside the program", got)
+		}
+		if HasLlamaServer() {
+			t.Error("said yes with nothing beside the program")
 		}
 	})
 
@@ -198,5 +206,51 @@ func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
 	e.UseTools(filepath.Join(t.TempDir(), "ffmpeg"), "/opt/ffprobe")
 	if e.FFprobe != "/opt/ffprobe" {
 		t.Errorf("an ffprobe named on its own lost to a guess: %s", e.FFprobe)
+	}
+}
+
+// A tool beside the program is run only once it is checked to be the file
+// the program was built with: the SHA-256 make builds in, see toolSums. One
+// with no sum built in, or one that does not match, is not run, and one
+// changed after it was checked is checked again.
+func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
+	t.Setenv("FRAMEFAIRY_FFMPEG", "")
+	dir := t.TempDir()
+	ffmpeg := filepath.Join(dir, "ffmpeg")
+	if err := os.WriteFile(ffmpeg, []byte("#!/bin/sh\necho the real one\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("#!/bin/sh\necho the real one\n"))
+	was := toolSums
+	t.Cleanup(func() { toolSums = was })
+
+	toolSums = ""
+	if _, err := findToolIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
+		t.Error("ran a tool no sum was built in for")
+	}
+
+	toolSums = "ffprobe=00,ffmpeg=" + hex.EncodeToString(sum[:])
+	got, err := findToolIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	if err != nil || got != ffmpeg {
+		t.Fatalf("the right file was refused: %q, %v", got, err)
+	}
+
+	// The same name, other bytes, a moment later: what somebody who put
+	// their own file there would leave.
+	later := time.Now().Add(2 * time.Second)
+	if err := os.WriteFile(ffmpeg, []byte("#!/bin/sh\necho somebody else\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chtimes(ffmpeg, later, later)
+	if _, err := findToolIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg"); err == nil {
+		t.Error("ran a tool that changed after it was checked")
+	} else if !strings.Contains(err.Error(), "not the one this program was built with") {
+		t.Errorf("refused for another reason: %v", err)
+	}
+
+	// Named in the environment, it is somebody's own choice and is taken.
+	t.Setenv("FRAMEFAIRY_FFMPEG", ffmpeg)
+	if got, err := findToolIn(dir, "FRAMEFAIRY_FFMPEG", "ffmpeg"); err != nil || got != ffmpeg {
+		t.Errorf("a tool named in the environment was refused: %q, %v", got, err)
 	}
 }

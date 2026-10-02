@@ -86,8 +86,8 @@ Start with [README.md](README.md). In short:
   mistake as no pull request at all.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
-  llama-server are built by `make` and live in `bin/`, which is where the
-  programs look first.
+  llama-server are built by `make` and live in `bin/`, the only place the
+  programs take them from.
 - He tests the app himself. The cloud VM cannot show the window, so after each
   change say exactly what to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.

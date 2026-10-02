@@ -101,9 +101,12 @@ jobs:
       - name: go.mod is tidy
         if: steps.needs.outputs.run == 'true'
         run: go mod tidy -diff
+      # Without the tools we ship, which this runner does not build: it
+      # proves the programs link, and NOTOOLS says so rather than make
+      # stopping for want of them.
       - name: Build
         if: steps.needs.outputs.run == 'true'
-        run: make
+        run: make NOTOOLS=1
 
   # Every Go test under the race detector, which also runs the seed corpus
   # of every fuzz target. ffmpeg is here because the tests that render skip

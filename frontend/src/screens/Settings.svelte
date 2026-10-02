@@ -872,13 +872,6 @@
                 </span>
                 <input type="text" bind:value={settings.llmModel} placeholder="The one in use" spellcheck="false" />
               </label>
-              <label class="item field">
-                <span class="words">
-                  <span class="head">llama-server</span>
-                  <span class="small muted">What runs the model.</span>
-                </span>
-                <input type="text" bind:value={settings.llmServer} placeholder="Beside the app, then the search path" spellcheck="false" />
-              </label>
             {:else}
               <label class="item field">
                 <span class="words">
@@ -894,13 +887,6 @@
                 <span class="small muted">The installed one, unless named.</span>
               </span>
               <input type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" spellcheck="false" />
-            </label>
-            <label class="item field">
-              <span class="words">
-                <span class="head">ffmpeg</span>
-                <span class="small muted">What reads and renders video.</span>
-              </span>
-              <input type="text" bind:value={settings.ffmpeg} placeholder="Beside the app, then the search path" spellcheck="false" />
             </label>
             <label class="item field">
               <span class="words">

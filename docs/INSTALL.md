@@ -32,18 +32,20 @@ and needs no rewriting.
 
 `framefairy` checks both at startup, before anything is spent.
 
-`make` builds one for you on macOS, from source, and puts it in `bin/`
-beside the programs, where they look before the search path. It is built
-without libx264, which would make it GPL, and encodes through the system's
-own encoder instead, VideoToolbox. That is the one a customer gets, so it
-is the one worth running. `make ffmpeg` builds it again from scratch. Why it
-is built this way is in [PACKAGING.md](PACKAGING.md).
+`make` builds one for you, from source, and puts it in `bin/` beside the
+programs, which is the only place they take it from: never the search
+path. It is built without libx264, which would make it GPL, and encodes
+through the system's own encoder instead, VideoToolbox. That is the one a
+customer gets, so it is the one worth running. `make ffmpeg` builds it again
+from scratch, and a build that fails stops `make`. Why it is built this way
+is in [PACKAGING.md](PACKAGING.md). The programs run it only once it is
+checked to be the file whose SHA-256 `make` built into them.
 
-Any other ffmpeg works too, as long as it has libass and one of the H.264
-encoders `h264_videotoolbox`, `libx264`, `h264_vaapi` or `libopenh264`. Put
-it on the search path and remove `bin/ffmpeg`, or name it with
-`--ffmpeg PATH`. An ffmpeg with libx264 is fine to run on your own machine,
-it is only not one we may ship.
+Any other ffmpeg works on the command line too, named with `--ffmpeg PATH`
+or `FRAMEFAIRY_FFMPEG`, as long as it has libass and one of the H.264
+encoders `h264_videotoolbox`, `libx264`, `h264_vaapi` or `libopenh264`. An
+ffmpeg with libx264 is fine to run on your own machine, it is only not one
+we may ship. The app takes no other.
 
 **macOS.** Homebrew's default `ffmpeg` is a slim build without libass.
 `ffmpeg-full` has it and installs beside the slim one:
@@ -76,13 +78,12 @@ The moments are chosen by a language model running on your machine through
 llama.cpp's `llama-server`.
 
 `make` builds one for you, from source, and puts it in `bin/` beside the
-programs, where they look before the search path. That is the one a
-customer gets, so it is the one worth running. `make llama` builds it again
-from scratch.
+programs, the only place they take it from. That is the one a customer
+gets, so it is the one worth running. `make llama` builds it again from
+scratch.
 
-If you would rather use one you already have, put it on the search path and
-remove `bin/llama-server`, or name it with `--llm-server PATH` on the
-command line or in the app's settings.
+If you would rather use one you already have, name it with
+`--llm-server PATH` on the command line, or `FRAMEFAIRY_LLAMA_SERVER`.
 
 | System | If you want your own instead |
 | --- | --- |

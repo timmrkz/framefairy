@@ -26,8 +26,6 @@ export interface TrainingStatus {
 }
 
 export interface Settings {
-  ffmpeg: string;
-  llmServer: string;
   llmModel: string;
   asrModel: string;
   planner: "local" | "api";

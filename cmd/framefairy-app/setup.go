@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -426,13 +425,12 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	var out []Check
 
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	e.UseTools(opts.FFmpeg, "")
 	ff := Check{Name: "ffmpeg"}
 	if err := e.Preflight(ctx); err != nil {
 		ff.Detail = err.Error()
 	} else {
 		ff.OK = true
-		ff.Detail = lookPath(e.FFmpeg)
+		ff.Detail = e.FFmpeg
 	}
 	out = append(out, ff)
 
@@ -486,15 +484,11 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		return append(out, key)
 	}
 
-	server := opts.LLMServer
-	if server == "" {
-		server = engine.LlamaServerPath()
-	}
 	ls := Check{Name: "llama-server"}
-	if found := lookPath(server); found != "" {
-		ls.OK, ls.Detail = true, found
+	if found, err := engine.FindLlamaServer(); err != nil {
+		ls.Detail = err.Error()
 	} else {
-		ls.Detail = server + " was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path."
+		ls.OK, ls.Detail = true, found
 	}
 	out = append(out, ls)
 
@@ -523,14 +517,6 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		}
 	}
 	return append(out, lm)
-}
-
-func lookPath(name string) string {
-	found, err := exec.LookPath(name)
-	if err != nil {
-		return ""
-	}
-	return found
 }
 
 func fileExists(path string) bool {

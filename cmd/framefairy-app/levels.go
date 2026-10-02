@@ -22,7 +22,6 @@ import (
 // start a decoder for every episode at once, and one goes on while the
 // transcription has the speech model.
 type measuring struct {
-	ffmpeg func() string
 	notify func(episode string)
 
 	mu      sync.Mutex
@@ -43,8 +42,8 @@ type measure struct {
 	done chan struct{}
 }
 
-func newMeasuring(ffmpeg func() string, notify func(string)) *measuring {
-	return &measuring{ffmpeg: ffmpeg, notify: notify,
+func newMeasuring(notify func(string)) *measuring {
+	return &measuring{notify: notify,
 		running: map[string]*measure{}, looking: map[string][2]float64{}, slots: make(chan struct{}, 2)}
 }
 
@@ -98,9 +97,6 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 		return
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	if ff := m.ffmpeg(); ff != "" {
-		e.FFmpeg = ff
-	}
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time

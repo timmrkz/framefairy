@@ -72,6 +72,10 @@ done
 
 SRC="$WORK/llama.cpp-$LLAMA_VERSION"
 say "llama.cpp $LLAMA_VERSION"
+# A clone from before is never built from again: what is in it now is not
+# what was checked then. It used to be, so the pin held only the first
+# time. A build is rare, so the source is fetched and checked every time.
+rm -rf "${SRC:?}"
 if [ ! -d "$SRC" ]; then
 	echo "  fetching the source of llama.cpp $LLAMA_VERSION"
 	# advice.detachedHead off, as in build-ffmpeg.sh: a tag is not a
