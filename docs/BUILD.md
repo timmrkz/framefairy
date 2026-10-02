@@ -262,6 +262,39 @@ first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
 
+## Keeping up
+
+What the app is made of and did not write is watched four ways, because a
+scan made once is out of date the week after.
+
+- **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
+  week when a Go module, a package of the interface or an action has a
+  newer version, grouped into one pull request each. With Dependabot
+  security updates on in the repository's settings, it opens one at once
+  for a fix to a known vulnerability. Wails and the speech library's Go
+  module are left out, because each moves with a pin Dependabot cannot
+  change.
+- **govulncheck** and **npm audit**, `.github/workflows/security.yml`, on
+  every pull request that changes the Go modules or the interface's
+  packages, and on main every Monday. govulncheck reports only what the
+  code really calls, so a module that is listed and never compiled in, of
+  which Wails brings several, is not a finding. Either failing is a red
+  check.
+- **The tools we build ourselves**, which nothing else watches:
+  `scripts/upstream.sh` compares ffmpeg, the four libraries it is built
+  with, llama.cpp and the speech library with their newest releases, and
+  the same workflow keeps one issue open while anything is behind and
+  closes it once everything is current. llama.cpp makes a build a day, so
+  it counts only once it is a month behind. ffmpeg is the one that matters
+  most: it reads a video somebody else made.
+- **GitHub's own alerts**, once switched on in the settings: Dependabot
+  alerts, secret scanning with push protection, and private vulnerability
+  reporting, so somebody who finds a hole has a place to say so.
+
+An issue or a pull request is what reaches Tim, because GitHub tells
+whoever watches the repository. Nothing here polls or writes a message
+when nothing is wrong.
+
 ## No build warnings on macOS
 
 Go 1.27 builds its own code for macOS 13. Without further settings, clang
