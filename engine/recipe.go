@@ -42,6 +42,10 @@ type Recipe struct {
 	// is split between the two asks, so it thinks no longer in all than a
 	// recipe that asks once. See fit.go.
 	Edit bool
+	// Hearts is true for a recipe that asks for the heart of every clip
+	// and leaves the length to the engine, which fits each clip around its
+	// heart and never asks again. See heart.go.
+	Hearts bool
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.

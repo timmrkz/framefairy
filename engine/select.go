@@ -249,6 +249,10 @@ type PlanEntry struct {
 	Title  string
 	Reason string
 	Keep   [][2]int
+	// Heart is the first and last line the model named as the heart of
+	// the clip, which fitting it to the length never cuts. It is zero
+	// where the recipe asks for none, see heart.go.
+	Heart [2]int
 }
 
 // validateEntry checks one clip of an answer, the index-th. It gives the
