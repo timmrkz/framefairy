@@ -147,7 +147,7 @@ llama-server had to be on the machine. A customer has no Homebrew and no
 terminal. That was a wall.
 
 Both halves are closed now. The app looks for llama-server the way it looks
-for ffmpeg, the one beside the program before the one on the search path,
+for ffmpeg, the one beside the program and no other,
 and it does not call itself ready on a machine with a model it cannot run.
 And `scripts/build-llama.sh` builds one, from a pinned tag, which `make`
 does once and puts in `bin/`, so the llama-server run every day is the one
@@ -178,7 +178,7 @@ never stops would have filled the disk first. See `downloadRoom` in
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches a model from whoever published it, the way
-`scripts/models.sh` does today, so its licence is between the user and Google
+`make models` does for the command line, so its licence is between the user and Google
 rather than something we have to carry.
 
 ### 3. ffmpeg: an LGPL build, without libx264, encoding through the system
@@ -261,8 +261,9 @@ Windows and Linux are deliberately not in that table yet. Windows has
 render every short made on that system. They go in when those builds are
 first made and looked at.
 
-**Checked against ffmpeg's own configure**, release 7.1, rather than taken
-on trust, because the whole decision rests on it.
+**Checked against ffmpeg's own configure**, release 7.1 and again for
+8.1.3, rather than taken on trust, because the whole decision rests on it.
+Both say the same.
 
 `EXTERNAL_LIBRARY_GPL_LIST` is the list of libraries whose use requires
 `--enable-gpl`. In full: `avisynth`, `frei0r`, `libcdio`, `libdavs2`,
@@ -278,6 +279,19 @@ one against `<name>_filter_deps` in configure: `crop`, `scale`, `pad`,
 about: `cropdetect` **is** GPL and `crop` is not, so a future filter picked
 by name without checking is how this comes back. The GPL filters are things
 like `delogo`, `eq`, `hqdn3d` and `nnedi`, none of which this engine wants.
+
+**What it may read is cut down to what the app gives it.** The episode is
+a file somebody else may have made, and ffmpeg is the part of the app that
+reads it. The app hands ffmpeg a path and reads its answers from a pipe,
+so `file` and `pipe` are the only ways in and out the build keeps:
+`--disable-network`, `--disable-protocols --enable-protocol=file,pipe`.
+And none of the formats that are lists of other files, `hls`, `dash`,
+`concat`, `imf` and `webm_dash_manifest`, which is how a crafted video has
+pulled somebody's own files into what they then publish. The `concat`
+filter the engine uses is another thing and stays. `build-ffmpeg.sh`
+reads the finished binary back and stops if anything else got in. And it
+is kept at the newest release, ffmpeg 8.1.3 from October 2026: 7.1 had
+been kept long after 8 came out without anybody choosing to.
 
 So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than
