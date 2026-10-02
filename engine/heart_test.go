@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -333,5 +335,47 @@ func TestThoughtIsCountedInTokens(t *testing.T) {
 	}
 	if answer.ReasoningTokens != 2 || answer.Reasoning != 14 {
 		t.Errorf("%d tokens and %d characters of thought", answer.ReasoningTokens, answer.Reasoning)
+	}
+}
+
+// Every side of a comparison asks a llama-server of its own, so none finds
+// the request of the side before in its cache and reads it for nothing.
+func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
+	source := testEpisode(t, "20")
+	var asked int32
+	server := fakeModel(t, &asked)
+	defer server.Close()
+	var started, stopped atomic.Int32
+	was := launch
+	launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+		started.Add(1)
+		var once sync.Once
+		return server.URL, func() { once.Do(func() { stopped.Add(1) }) }, nil
+	}
+	t.Cleanup(func() {
+		StopModels()
+		launch = was
+	})
+	StopModels()
+	model := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(model, []byte("gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	opts := DefaultOptions()
+	opts.Source = source
+	opts.LLMModel = model
+	// Any program will do: the stand-in above is what starts.
+	opts.LLMServer = "true"
+	opts.ASRModel = t.TempDir()
+	opts.Count = 1
+	opts.Replan = true
+	if _, _, err := e.Compare(context.Background(), opts, []string{"heart@1024", "heart@0", "lines"}); err != nil {
+		t.Fatal(err)
+	}
+	if started.Load() != 3 || stopped.Load() < 2 {
+		t.Errorf("three sides started %d servers and stopped %d", started.Load(), stopped.Load())
 	}
 }

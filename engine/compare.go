@@ -123,6 +123,14 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		if ctx.Err() != nil {
 			return runs, "", ctx.Err()
 		}
+		// Every side starts with a llama-server of its own, so none finds
+		// the request of the side before in its cache. Two sides that
+		// differ only in thinking send the same request, and the second
+		// read 15,303 tokens in 0.1 seconds where the first took 26. A
+		// server somebody started themselves is theirs to restart.
+		if i > 0 && opts.LLMURL == "" {
+			StopModels()
+		}
 		e.Log.Info("searching with the %s recipe", name)
 		o := opts
 		o.Recipe, o.Variant, o.Experiment, o.PlanOnly = variants[i].Recipe, name, true, true
