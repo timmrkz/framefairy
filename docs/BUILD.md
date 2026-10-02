@@ -205,10 +205,10 @@ needs any of the rest:
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
-| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make`. The programs and the interface, which is what proves they still link |
+| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
 | `linux` | Linux | `make unit` |
 | `fuzz` | Linux | `make fuzz` |
-| `macos` | macOS | the ffmpeg we ship, built by `scripts/build-ffmpeg.sh` and kept until that script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
+| `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
 | `macos-fuzz` | macOS | `make fuzz` |
 
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
