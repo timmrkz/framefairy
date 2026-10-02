@@ -67,76 +67,43 @@ if [ -n "$missing" ]; then
 	done
 fi
 
-# The ffmpeg framefairy ships, built from source without libx264 so the
-# build is LGPL. It takes many minutes and it happens once: after that the
-# file is there and this is a file test.
+# The ffmpeg and the llama-server framefairy ships, built from source: ffmpeg
+# without libx264 so the build is LGPL, llama-server from llama.cpp, which
+# is MIT. Each takes minutes and happens once: after that the file is there
+# and this is a file test.
 #
-# It is built here rather than by hand because what is run every day has to
-# be what a customer runs. A build that fails is not a reason to be unable
-# to work: the search path answers instead, and the line below says so, so
-# that nobody is left wondering which ffmpeg made a clip.
-if [ ! -x "$FFMPEG_DIR/bin/ffmpeg" ]; then
-	# A build that did not work is not tried again on every make. That would
-	# be several minutes of nothing before every build, for as long as it
-	# stays broken. It is tried again the moment the script that does it
-	# changes, and make ffmpeg always tries again whatever happened.
-	recipe=$(cksum scripts/build-ffmpeg.sh | cut -d' ' -f1)
-	if [ "$(cat "$FFMPEG_DIR/failed" 2>/dev/null)" = "$recipe" ]; then
-		echo "The ffmpeg framefairy ships did not build last time, so the one on the"
-		echo "search path is used instead. Try it again with: make ffmpeg"
-	else
-		echo "Building the ffmpeg framefairy ships. This takes several minutes, once."
-		if sh scripts/build-ffmpeg.sh "$FFMPEG_DIR"; then
-			rm -f "$FFMPEG_DIR/failed"
-		else
-			mkdir -p "$FFMPEG_DIR"
-			echo "$recipe" >"$FFMPEG_DIR/failed"
-			echo
-			echo "That did not work, so framefairy will use the ffmpeg on the search path."
-			echo "Try it again on its own with: make ffmpeg"
-			# An ffmpeg that is missing is installed, the way make installs
-			# whatever else this machine lacks. One that is there but cannot
-			# burn in captions belongs to whoever put it there, so it is not
-			# unlinked and replaced behind their back: make says what to run.
-			if ! command -v ffmpeg >/dev/null 2>&1; then
-				echo "There is no ffmpeg on the search path either, so installing one with libass."
-				brew tap homebrew-ffmpeg/ffmpeg
-				brew install homebrew-ffmpeg/ffmpeg/ffmpeg
-			elif ! ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' ass '; then
-				echo "The ffmpeg on the search path has no libass, so it cannot burn in captions."
-				echo "Either fix the build with make ffmpeg, or replace that ffmpeg with one that has it:"
-				echo "  brew tap homebrew-ffmpeg/ffmpeg"
-				echo "  brew unlink ffmpeg"
-				echo "  brew install homebrew-ffmpeg/ffmpeg/ffmpeg"
-			fi
-		fi
-	fi
-fi
-
-# The llama-server framefairy ships, built from llama.cpp, which is MIT.
-# Same rules as ffmpeg above: several minutes, once, and after that this is
-# a file test.
+# They are built here rather than by hand because what is run every day has
+# to be what a customer runs. A build that fails stops make. It used to
+# leave the search path to answer, with Homebrew's ffmpeg, or a third
+# party's installed for the purpose, which made a broken build look like a
+# working one with somebody else's tools in it. The programs take no tool
+# from the search path any more, so there is nothing for it to answer.
 #
-# It is built here rather than installed from Homebrew because a customer
-# has no Homebrew. The llama-server that has to work is the one in the app,
-# so that is the one to run every day. A build that fails is not a reason
-# to be unable to work: the search path answers instead, and the app says
-# plainly when nothing answers at all.
-if [ ! -x "$LLAMA_DIR/bin/llama-server" ]; then
-	recipe=$(cksum scripts/build-llama.sh | cut -d' ' -f1)
-	if [ "$(cat "$LLAMA_DIR/failed" 2>/dev/null)" = "$recipe" ]; then
-		echo "The llama-server framefairy ships did not build last time, so a local"
-		echo "model needs one on the search path. Try it again with: make llama"
-	else
-		echo "Building the llama-server framefairy ships. This takes a few minutes, once."
-		if sh scripts/build-llama.sh "$LLAMA_DIR"; then
-			rm -f "$LLAMA_DIR/failed"
-		else
-			mkdir -p "$LLAMA_DIR"
-			echo "$recipe" >"$LLAMA_DIR/failed"
-			echo
-			echo "That did not work. A local model will need a llama-server on the search"
-			echo "path until it does. Try it again on its own with: make llama"
-		fi
+# A build that did not work is not tried again on every make. That would be
+# minutes of nothing before every build, for as long as it stays broken. It
+# is tried again the moment the script that does it changes, and make
+# ffmpeg and make llama always try again whatever happened.
+build_tool() {
+	name=$1 dir=$2 script=$3 target=$4
+	if [ -x "$dir/bin/$name" ]; then
+		return 0
 	fi
-fi
+	recipe=$(cksum "$script" | cut -d' ' -f1)
+	if [ "$(cat "$dir/failed" 2>/dev/null)" = "$recipe" ]; then
+		echo "The $name framefairy ships did not build last time, and no other is used."
+		echo "Try it again with: make $target"
+		exit 1
+	fi
+	echo "Building the $name framefairy ships. This takes several minutes, once."
+	if sh "$script" "$dir"; then
+		rm -f "$dir/failed"
+		return 0
+	fi
+	mkdir -p "$dir"
+	echo "$recipe" >"$dir/failed"
+	echo
+	echo "The $name build did not work, and no other is used. Try it again with: make $target"
+	exit 1
+}
+build_tool ffmpeg "$FFMPEG_DIR" scripts/build-ffmpeg.sh ffmpeg
+build_tool llama-server "$LLAMA_DIR" scripts/build-llama.sh llama

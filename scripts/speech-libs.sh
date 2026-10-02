@@ -50,13 +50,6 @@ DIR="$ROOT/.build/speech"
 OUT="$DIR/$NAME/lib"
 STAMP="$DIR/$NAME.ok"
 
-# Checked once, when it arrives. After that a file test is the whole cost,
-# because make asks this on every build.
-if [ -f "$STAMP" ] && [ -f "$OUT/$LIB" ]; then
-	echo "$OUT"
-	exit 0
-fi
-
 sha256() {
 	if command -v sha256sum >/dev/null 2>&1; then
 		sha256sum "$1" | cut -d' ' -f1
@@ -64,6 +57,17 @@ sha256() {
 		shasum -a 256 "$1" | cut -d' ' -f1
 	fi
 }
+
+# The archive is checked when it arrives, and the library unpacked from it
+# is checked on every build against the SHA-256 it had then, which the
+# stamp holds. make asks this on every build, and one sum of one library is
+# a fraction of a second. It used to be a file test, so a library changed
+# after it was unpacked went into the program unseen. One that no longer
+# matches is unpacked again from the archive, which is checked first.
+if [ -f "$STAMP" ] && [ -f "$OUT/$LIB" ] && [ "$(sha256 "$OUT/$LIB")" = "$(cat "$STAMP")" ]; then
+	echo "$OUT"
+	exit 0
+fi
 
 mkdir -p "$DIR"
 ARCHIVE="$DIR/$NAME.tar.bz2"
@@ -93,5 +97,5 @@ if grep -aq 'espeak-ng' "$OUT/$LIB"; then
 	echo "speech-libs.sh: $OUT/$LIB still carries espeak-ng." >&2
 	exit 1
 fi
-touch "$STAMP"
+sha256 "$OUT/$LIB" >"$STAMP"
 echo "$OUT"

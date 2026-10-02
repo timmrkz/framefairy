@@ -310,8 +310,9 @@ fi
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
 
 # A script is read by the shell its first line names, so a bash script is not
-# failed for being bash.
+# failed for being bash. One the branch removed has nothing to read.
 for s in $shells; do
+	[ -f "$s" ] || continue
 	case $(head -n 1 "$s") in
 	*bash*) bash -n "$s" ;;
 	*) sh -n "$s" ;;
@@ -330,6 +331,15 @@ done
 [ "$rules" = 1 ] && sh scripts/ci-needs-test.sh
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
-[ "$build" = 1 ] && $MAKE -s --no-print-directory
+# Away from a Mac nothing builds the tools we ship, and make stops without
+# them, so there the build proves the programs build and says it goes
+# without, the way CI's Linux job does. On a Mac make builds them.
+if [ "$build" = 1 ]; then
+	if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+		$MAKE -s --no-print-directory
+	else
+		$MAKE -s --no-print-directory NOTOOLS=1
+	fi
+fi
 
 exit 0

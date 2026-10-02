@@ -146,6 +146,7 @@ func (m *made) make(name, seconds string) (string, error) {
 }
 
 func TestMain(m *testing.M) {
+	toolsFromThePath()
 	code := m.Run()
 	if videos.dir != "" {
 		_ = os.RemoveAll(videos.dir)
@@ -470,3 +471,23 @@ func within(t *testing.T, c <-chan struct{}, what string) {
 }
 
 var errBroken = errors.New("the speech model could not be loaded")
+
+// toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search
+// path in the environment, where the programs take a tool from by choice.
+// A program never falls back to the search path by itself, see
+// engine.FindTool, and a test binary has nothing beside it. One already
+// named is left as it is.
+func toolsFromThePath() {
+	for env, name := range map[string]string{
+		"FRAMEFAIRY_FFMPEG":       "ffmpeg",
+		"FRAMEFAIRY_FFPROBE":      "ffprobe",
+		"FRAMEFAIRY_LLAMA_SERVER": "llama-server",
+	} {
+		if os.Getenv(env) != "" {
+			continue
+		}
+		if found, err := exec.LookPath(name); err == nil {
+			_ = os.Setenv(env, found)
+		}
+	}
+}

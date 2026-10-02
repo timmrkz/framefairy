@@ -273,6 +273,29 @@ then makes the code survive it.
 
 ---
 
+## Security track: what runs on a machine is what we meant to run
+
+A review of every dependency in October 2026, asked for by Tim, found
+nothing on fire and a handful of things to close. The rule for this
+track: **nothing runs that has not been checked to be what we built, and
+nothing the app starts can be reached by anything else on the machine.**
+
+| # | Batch | Status |
+|---|---|---|
+| S.1 | The machine a customer runs it on: llama-server answers only the app, with a key of its own each launch and no slots to read. Checking an API key follows no redirect. A download never grows past what the model is known to weigh. devalue brought up to date | `[x]` |
+| S.2 | ffmpeg 8.1.3, the newest 8.1, since 9.0.2 decodes AAC 16 ms late after a seek, with freetype, fribidi, harfbuzz and libass at theirs, built to read and write only files and pipes and without the playlist formats the app never reads | `[x]` |
+| S.3 | The tools are ours or nothing: no ffmpeg or llama-server taken from the search path or the settings, a make and a bundle that stop without them, the SHA-256 of each built into the programs and checked before it runs, every source of a tool fetched and checked on every build, the speech library checked on every build, a downloaded language model checked again before it is loaded, `make models` through the engine's checked installers, and the cloud setup's Go held to its checksum | `[x]` |
+| S.4 | An update says what it is: the channel, the version, the commit, the size and the checksum are signed together, and the app checks it before it downloads, so a signed build cannot be offered as another | `[x]` |
+| S.5 | Keeping up: Dependabot, govulncheck and npm audit on every pull request that changes a dependency and every Monday, and a weekly look at whether ffmpeg, its libraries, llama.cpp and the speech library have newer releases, kept as one issue while anything is behind | `[x]` |
+| S.7 | The check under Advanced says which tools the app runs: the version, the file and the SHA-256 of ffmpeg, ffprobe and llama-server, read again on every check, and whether each is the one the app was built with. They come with the app, so an update brings the tools its build was made with. Asked for by Tim | `[x]` |
+| S.6 | Only Tim's comments are instructions: what anybody else writes on a pull request is read as information, in CLAUDE.md | `[x]` |
+
+The split between a development build and a customer build, with a
+release key and no channel list, belongs to packaging, see
+[PACKAGING.md](PACKAGING.md) and [UPDATES.md](UPDATES.md).
+
+---
+
 ## Clip choice track: better stories, better cuts, less waiting
 
 How the model is asked, and what the engine does with its answer. Every

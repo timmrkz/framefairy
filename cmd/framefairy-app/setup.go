@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -417,6 +416,30 @@ type Check struct {
 	Name   string `json:"name"`
 	OK     bool   `json:"ok"`
 	Detail string `json:"detail"`
+	// For a tool the app carries: the version it says it is, where it is,
+	// and its SHA-256, read again every time the check runs. "There is an
+	// ffmpeg" said nothing about which one, see toolCheck.
+	Version string `json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+}
+
+// toolCheck is what the settings say about a tool the app carries. Each
+// look reads the file again and compares it with the SHA-256 built into
+// the app, so a file changed since it last ran is seen here, not only
+// when it is next refused.
+func toolCheck(ctx context.Context, env, name string) Check {
+	s := engine.InspectTool(ctx, env, name)
+	c := Check{Name: name, Version: s.Version, Path: s.Path, SHA256: s.SHA256}
+	switch {
+	case s.Err != nil:
+		c.Detail = s.Err.Error()
+	case s.Named:
+		c.OK, c.Detail = true, "Named in "+env+", so it runs as named and is not checked."
+	default:
+		c.OK, c.Detail = true, "The one this app was built with: its SHA-256 matches the one built in."
+	}
+	return c
 }
 
 // CheckSetup looks for the tools and models the engine needs.
@@ -426,15 +449,16 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 	var out []Check
 
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	e.UseTools(opts.FFmpeg, "")
-	ff := Check{Name: "ffmpeg"}
-	if err := e.Preflight(ctx); err != nil {
-		ff.Detail = err.Error()
-	} else {
-		ff.OK = true
-		ff.Detail = lookPath(e.FFmpeg)
+	ff := toolCheck(ctx, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	probe := toolCheck(ctx, "FRAMEFAIRY_FFPROBE", "ffprobe")
+	// The file is right and it has to work too: an encoder this machine
+	// can use and the captions filter.
+	if ff.OK && probe.OK {
+		if err := e.Preflight(ctx); err != nil {
+			ff.OK, ff.Detail = false, err.Error()
+		}
 	}
-	out = append(out, ff)
+	out = append(out, ff, probe)
 
 	// Which of the system's own video decoders framing can use. It is not
 	// a requirement, the processor decodes where there is none, so it is
@@ -486,17 +510,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		return append(out, key)
 	}
 
-	server := opts.LLMServer
-	if server == "" {
-		server = engine.LlamaServerPath()
-	}
-	ls := Check{Name: "llama-server"}
-	if found := lookPath(server); found != "" {
-		ls.OK, ls.Detail = true, found
-	} else {
-		ls.Detail = server + " was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path."
-	}
-	out = append(out, ls)
+	out = append(out, toolCheck(ctx, "FRAMEFAIRY_LLAMA_SERVER", "llama-server"))
 
 	lm := Check{Name: "Language model"}
 	model := opts.LLMModel
@@ -523,14 +537,6 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 		}
 	}
 	return append(out, lm)
-}
-
-func lookPath(name string) string {
-	found, err := exec.LookPath(name)
-	if err != nil {
-		return ""
-	}
-	return found
 }
 
 func fileExists(path string) bool {

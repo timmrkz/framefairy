@@ -124,23 +124,29 @@ ifeq ($(INSTALL),1)
 	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
 endif
 
-# Our own ffmpeg goes beside the programs, where they look before the search
-# path. Only if there is one: on a machine where the build has not run, or
-# did not work, the search path answers instead.
+# Our own ffmpeg and llama-server go beside the programs, which is the only
+# place the programs take them from, and only once they are checked to be
+# the files whose sums were built into them, see scripts/tool-sums.sh.
 #
-# This is what makes the development build use the ffmpeg a customer will
-# use, rather than whatever Homebrew happens to have installed. Their
-# licence texts come with them, because scripts/bundle-macos.sh carries
-# whatever LICENSE-* it finds here into the app, and it found nothing.
+# A tool that is not there stops make. It used to be left to the search
+# path, so a build that had failed looked like one that worked, with
+# Homebrew's ffmpeg in it. NOTOOLS=1 builds the programs without them, for
+# a runner that only proves the programs link, and they then run no tool.
+#
+# Their licence texts come with them, because scripts/bundle-macos.sh
+# carries whatever LICENSE-* it finds here into the app.
+NOTOOLS ?=
 tools-beside:
-	@if [ -x $(STAMPS)/ffmpeg/bin/ffmpeg ]; then \
-		cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(BIN)/ && \
-		echo "Using our own ffmpeg, from make ffmpeg"; \
-	fi
-	@if [ -x $(STAMPS)/llama/bin/llama-server ]; then \
-		cp $(STAMPS)/llama/bin/llama-server $(BIN)/ && \
-		echo "Using our own llama-server, from make llama"; \
-	fi
+ifneq ($(NOTOOLS),1)
+	@for tool in $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server; do \
+		if [ ! -x $$tool ]; then \
+			echo "$$tool is missing, and the programs run no other. Build it with make ffmpeg or make llama."; \
+			exit 1; \
+		fi; \
+	done
+	@cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(BIN)/
+	@echo "Using our own ffmpeg and llama-server"
+endif
 	@for licence in $(STAMPS)/ffmpeg/bin/LICENSE-ffmpeg.txt $(STAMPS)/llama/bin/LICENSE-llama.cpp; do \
 		if [ -f $$licence ]; then cp $$licence $(BIN)/; fi; \
 	done
@@ -195,14 +201,20 @@ $(UI_BUILT): $(UI_SOURCES)
 # day is what is shipped. A program built without it runs on this machine
 # and nowhere else, which is a thing to find out here rather than from a
 # customer.
+# The SHA-256 of each tool tools-beside puts beside the programs is built
+# into every program that runs one, see scripts/tool-sums.sh. It is worked
+# out as the program is built, not when this file is read, because make
+# builds the tools after reading it.
 $(BIN)/framefairy$(EXE): modules
 	@echo "Building $@"
-	@$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $@ ./cmd/framefairy
+	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
+		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
 	@echo "Building $@"
-	@$(GO) build -trimpath -tags production -ldflags '$(APP_LDFLAGS)' -o $@ ./cmd/framefairy-app
+	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
+		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
@@ -353,8 +365,8 @@ check:
 tools:
 	@sh scripts/tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama
 
-models:
-	@sh scripts/models.sh
+models: toolchain modules
+	@$(GO) run ./scripts/models
 
 # How fast the speech model hears on this machine, every way it can run,
 # over three minutes of AUDIO, which can be an episode. It prints a table.

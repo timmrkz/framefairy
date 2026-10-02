@@ -206,9 +206,10 @@ func InstallSpeechModel(ctx context.Context, log *Log, m SpeechModel, dir string
 // and then the file is written again from the start. So resuming is an
 // improvement where it works and never a way of going wrong.
 //
-// expect is how big it should be, used only to report how far the download
-// has come when the server does not say, and to know a download that
-// stopped early from one that finished. what is the name to say it by.
+// expect is how big it should be, used to report how far the download has
+// come when the server does not say, to know a download that stopped early
+// from one that finished, and to stop one that goes on past it, see
+// downloadRoom. what is the name to say it by.
 func download(ctx context.Context, log *Log, url string, expect int64, path, what string) (string, error) {
 	have := int64(0)
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
@@ -267,6 +268,19 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 	default:
 		return "", renderErr("%s answered %s", url, res.Status)
 	}
+	// Never more than the model is known to weigh, and a little room. The
+	// checksum would refuse anything else in the end, but only after all of
+	// it had been written, and a server that never stops sending would have
+	// filled the disk first.
+	limit := int64(-1)
+	if expect > 0 {
+		limit = expect + downloadRoom(expect)
+		if res.ContentLength > 0 && have+res.ContentLength > limit {
+			return "", renderErr("%s is %s, more than the %s it should be, so it was not fetched.",
+				what, inMB(have+res.ContentLength), inMB(expect))
+		}
+		body.Reader = io.LimitReader(body.Reader, limit-have+1)
+	}
 
 	sum := sha256.New()
 	var file *os.File
@@ -294,6 +308,12 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 	if err != nil {
 		return "", stalled(err)
 	}
+	if limit >= 0 && done > limit {
+		file.Close()
+		os.Remove(path)
+		return "", renderErr("%s went on past the %s it should be, so it was stopped and thrown away.",
+			what, inMB(expect))
+	}
 	if total > 0 && done < total {
 		return "", renderErr("%s stopped after %s of %s.", what, inMB(done), inMB(total))
 	}
@@ -301,6 +321,13 @@ func download(ctx context.Context, log *Log, url string, expect int64, path, wha
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// downloadRoom is how far past its known size a download may go: a hundredth
+// of it, and never less than a megabyte. The checksum decides whether it is
+// the right file. This only stops one that is plainly not.
+func downloadRoom(expect int64) int64 {
+	return max(expect/100, 1<<20)
 }
 
 // downloadStall is how long a download may go without a byte before it is

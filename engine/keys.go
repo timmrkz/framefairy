@@ -248,7 +248,11 @@ func VerifyAPIKey(ctx context.Context, p Provider, key string) error {
 		return nil
 	}
 	setKey(request, p, key)
-	response, err := http.DefaultClient.Do(request)
+	// Never followed anywhere, like every other request that carries a key,
+	// see httpClient. Go keeps a header it does not know on a redirect to
+	// another host, and the key is one: a redirect would have handed it to
+	// whoever the provider's address sent it on to.
+	response, err := httpClient.Do(request)
 	if err != nil {
 		return nil
 	}

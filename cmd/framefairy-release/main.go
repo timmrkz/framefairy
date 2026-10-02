@@ -158,10 +158,14 @@ func sign(args []string) error {
 		Size: size, SHA256: hex.EncodeToString(digest), Signature: updates.Sign(private, digest),
 		Published: time.Now().UTC().Truncate(time.Second),
 	}
+	b.Claim = updates.SignClaim(private, b)
 	if err := b.Check(); err != nil {
 		return err
 	}
 	if err := updates.Verify(public, b); err != nil {
+		return err
+	}
+	if err := updates.VerifyClaim(public, b); err != nil {
 		return err
 	}
 	return writeJSON(*out, b)
@@ -211,6 +215,15 @@ func list(args []string) error {
 		if err := updates.Verify(public, b); err != nil {
 			fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
 			continue
+		}
+		// An entry from before claims were made is kept, for the apps
+		// that do not check them yet, and the apps that do leave it alone.
+		// One whose claim is there and wrong is no build of ours.
+		if b.Claim != "" {
+			if err := updates.VerifyClaim(public, b); err != nil {
+				fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
+				continue
+			}
 		}
 		b.Newest = newest[b.Channel]
 		l.Channels = append(l.Channels, b)

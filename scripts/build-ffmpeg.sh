@@ -49,16 +49,31 @@ SYSTEM=$(uname -s 2>/dev/null)
 # its archive to, and answers nothing from some networks. Raising a
 # version means raising its pin beside it: sha256sum of the archive, or
 # git ls-remote of the tag, the line ending ^{}.
-FFMPEG_VERSION=7.1.5
-FFMPEG_COMMIT=3a0867c2bfda4a4d4309ca1a8cbdc6175e67f587
-FREETYPE_VERSION=2.13.3
-FREETYPE_SHA256=0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289
-FRIBIDI_VERSION=1.0.16
-FRIBIDI_SHA256=1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c
-HARFBUZZ_VERSION=10.1.0
-HARFBUZZ_SHA256=6ce3520f2d089a33cef0fc48321334b8e0b72141f6a763719aaaecd2779ecb82
-LIBASS_VERSION=0.17.3
-LIBASS_SHA256=eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
+#
+# Each is the newest release there is, and is meant to stay so: what reads
+# a video somebody else made is the part of the app that most needs its
+# fixes. A major release is no reason to wait. 7.1 was kept long after 8
+# came out without anybody choosing to, and nothing in the app needed it.
+#
+# Except where a release changes what the app relies on. ffmpeg is the
+# newest 8.1 and not 9.0, which was out in October 2026: 9.0.2 decodes AAC
+# after a seek 16 ms later than before, 256 samples at 16 kHz, so the
+# loudness the app measures from a jump no longer lines up with the same
+# loudness measured from the start, and a render, which starts with a
+# seek too, may move its sound against its picture. 8.1 lands on the
+# sample. Moving to 9 waits until the app is made to agree with it and a
+# render on a Mac is shown to keep its sound in place. What found it is
+# TestMeasureLevelsGoesWhereTheClipTimelineLooks in engine/levels_test.go.
+FFMPEG_VERSION=8.1.3
+FFMPEG_COMMIT=1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7
+FREETYPE_VERSION=2.14.3
+FREETYPE_SHA256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f
+FRIBIDI_VERSION=1.0.17
+FRIBIDI_SHA256=6949dcde27d41cebad1fd741fcafc36d55a1020d2d872d4a6eb3914caabbada2
+HARFBUZZ_VERSION=14.5.1
+HARFBUZZ_SHA256=7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6
+LIBASS_VERSION=0.17.5
+LIBASS_SHA256=2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc
 
 mkdir -p "$WORK" "$PREFIX"
 # Only our own libraries, and nothing this machine happens to have.
@@ -122,8 +137,13 @@ sha256() {
 
 # $1 url, $2 the folder it unpacks to, $3 the archive's sha256. An archive
 # that is not the one pinned is thrown away and the build stops.
+#
+# A folder unpacked before is never built from again, because the archive
+# it came from is gone and nothing could say it is still what was checked.
+# It used to be, so the pin held only the first time. A build is rare and
+# the sources are small, so they are fetched and checked every time.
 fetch() {
-	if [ -d "$WORK/$2" ]; then return 0; fi
+	rm -rf "${WORK:?}/$2"
 	echo "  fetching the source of $2"
 	if ! curl -sSL --fail --retry 2 --max-time 300 -o "$WORK/$2.tar" "$1" 2>/dev/null; then
 		rm -f "$WORK/$2.tar"
@@ -149,8 +169,11 @@ fetch() {
 # git and not ffmpeg.org, for ffmpeg, also because a cloud session reaches
 # GitHub and little else, and a build script that only works with the open
 # internet is one nobody can check before a release.
+#
+# A clone from before is never built from again, for the same reason as
+# above: what is in it now is not what was checked then.
 fetch_git() {
-	if [ -d "$WORK/$4" ]; then return 0; fi
+	rm -rf "${WORK:?}/$4"
 	echo "  fetching the source of $4, $2 from git"
 	# advice.detachedHead off: fourteen lines about a state nobody here is
 	# going to commit in, on the screen, in the middle of a build.
@@ -181,10 +204,16 @@ fetch "https://downloads.sourceforge.net/freetype/freetype-$FREETYPE_VERSION.tar
 say "fribidi"
 fetch "https://github.com/fribidi/fribidi/releases/download/v$FRIBIDI_VERSION/fribidi-$FRIBIDI_VERSION.tar.xz" "fribidi-$FRIBIDI_VERSION" \
 	"$FRIBIDI_SHA256"
+# Only the library, with meson the way harfbuzz is built. From 1.0.17 the
+# autotools build makes a manual page for its command line program even
+# with --disable-docs, and stops when help2man is not on the machine. The
+# program and its page were never wanted.
 (cd "$WORK/fribidi-$FRIBIDI_VERSION" &&
-	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--disable-docs &&
-	make -j"$JOBS" && make install) >>"$LOG" 2>&1
+	rm -rf build &&
+	meson setup build --prefix="$PREFIX" --libdir=lib --buildtype=release \
+		--default-library=static -Ddocs=false -Dbin=false -Dtests=false &&
+	meson compile -C build &&
+	meson install -C build) >>"$LOG" 2>&1
 
 say "harfbuzz"
 fetch "https://github.com/harfbuzz/harfbuzz/releases/download/$HARFBUZZ_VERSION/harfbuzz-$HARFBUZZ_VERSION.tar.xz" "harfbuzz-$HARFBUZZ_VERSION" \
@@ -218,6 +247,16 @@ fetch "https://github.com/libass/libass/releases/download/$LIBASS_VERSION/libass
 # what makes the result LGPL and redistributable. ffmpeg -L on the finished
 # binary is the proof, and this script checks it below rather than trusting
 # the flags.
+#
+# What it may read from is cut down to what the app gives it, because the
+# episode is a file somebody else may have made. The app hands ffmpeg a
+# path and reads its answer from a pipe, so file and pipe are the only
+# ways in and out it keeps. No network, and none of the ways one input can
+# name another: no concat, subfile, data or crypto, and no hls, dash,
+# concat or imf, the formats that are lists of other files. A video made
+# to look like one, but holding a playlist that names a file on the disk,
+# is how a crafted file has pulled somebody's own files into what they
+# then publish. With nothing that reads a list, a file is only ever itself.
 say "ffmpeg $FFMPEG_VERSION"
 fetch_git "https://github.com/FFmpeg/FFmpeg.git" "n$FFMPEG_VERSION" "$FFMPEG_COMMIT" \
 	"ffmpeg-$FFMPEG_VERSION"
@@ -236,6 +275,9 @@ fi
 		--disable-debug \
 		--disable-doc \
 		--disable-network \
+		--disable-protocols \
+		--enable-protocol=file,pipe \
+		--disable-demuxer=hls,dash,concat,imf,webm_dash_manifest \
 		--disable-autodetect \
 		--enable-zlib \
 		--enable-iconv \
@@ -262,6 +304,21 @@ if "$FF" -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx libx26
 	echo "build-ffmpeg.sh: libx264 got in, which makes the build GPL." >&2
 	exit 1
 fi
+# Only the two ways in and out, and none of the formats that are lists of
+# other files, see the configure line.
+protocols=$("$FF" -hide_banner -protocols 2>/dev/null | awk 'NF == 1 && $1 != "Input:" && $1 != "Output:" {print $1}' | sort -u | tr '\n' ' ')
+if [ "$protocols" != "file pipe " ]; then
+	echo >&2
+	echo "build-ffmpeg.sh: it reads and writes through $protocols, not only file and pipe." >&2
+	exit 1
+fi
+for list in hls dash concat imf webm_dash_manifest; do
+	if "$FF" -hide_banner -demuxers 2>/dev/null | awk '{print $2}' | tr ',' '\n' | grep -qx "$list"; then
+		echo >&2
+		echo "build-ffmpeg.sh: the $list demuxer got in, which reads other files an episode names." >&2
+		exit 1
+	fi
+done
 # libass is what burns the captions in. Without it the app renders shorts
 # with no words on them, which is worse than not rendering at all.
 if ! "$FF" -hide_banner -filters 2>/dev/null | awk '{print $2}' | grep -qx subtitles; then

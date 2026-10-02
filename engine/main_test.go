@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"testing"
@@ -22,6 +23,7 @@ func TestMain(m *testing.M) {
 		holdLock(path)
 		return
 	}
+	toolsFromThePath()
 	dir, err := os.MkdirTemp("", "framefairy-training")
 	if err != nil {
 		panic(err)
@@ -70,4 +72,24 @@ func holdLock(path string) {
 	fmt.Println("held")
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	release()
+}
+
+// toolsFromThePath names the ffmpeg, ffprobe and llama-server on the search
+// path in the environment, where the programs take a tool from by choice.
+// A program never falls back to the search path by itself, see
+// engine.FindTool, and a test binary has nothing beside it. One already
+// named is left as it is.
+func toolsFromThePath() {
+	for env, name := range map[string]string{
+		"FRAMEFAIRY_FFMPEG":       "ffmpeg",
+		"FRAMEFAIRY_FFPROBE":      "ffprobe",
+		"FRAMEFAIRY_LLAMA_SERVER": "llama-server",
+	} {
+		if os.Getenv(env) != "" {
+			continue
+		}
+		if found, err := exec.LookPath(name); err == nil {
+			_ = os.Setenv(env, found)
+		}
+	}
 }

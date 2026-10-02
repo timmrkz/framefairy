@@ -369,3 +369,26 @@ func TestAKeyIsShownInShort(t *testing.T) {
 		t.Errorf("removed: %v, hint %q", err, KeyHint(p))
 	}
 }
+
+// A key being checked goes to the provider's address and nowhere else: a
+// redirect to another host is not followed, so the key never reaches it.
+func TestAKeyBeingCheckedFollowsNoRedirect(t *testing.T) {
+	var leaked []string
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = append(leaked, r.Header.Get("x-api-key")+r.Header.Get("authorization"))
+	}))
+	defer elsewhere.Close()
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/v1/models", http.StatusTemporaryRedirect)
+	}))
+	defer provider.Close()
+	for _, p := range []Provider{
+		{Name: "anthropic", Models: provider.URL, KeyPrefix: "sk-ant-"},
+		{Name: "openai", Models: provider.URL, KeyPrefix: "sk-"},
+	} {
+		_ = VerifyAPIKey(context.Background(), p, p.KeyPrefix+"api03-abcdefghijklmnopqrstuvwxyz0123456789")
+	}
+	if len(leaked) > 0 {
+		t.Errorf("a redirect took the key to another host: %q", leaked)
+	}
+}
