@@ -544,6 +544,52 @@ The rules they keep:
 - **A daily audit that fails emails us** at once.
 - **A panic fails its own request**, and the dispenser goes on.
 
+### On this machine
+
+`make dispenser` runs the dispenser on this machine, at
+`http://127.0.0.1:8090`, with a pretend world around it, to try every
+sale and every failure by hand before any of it meets Paddle:
+
+- **A pretend Paddle.** Its checkout at `/shop` sells, sends a signed
+  `transaction.completed` webhook and sends the buyer to the thank-you
+  page with the sale's reference, as Paddle's checkout does. From the
+  console it refunds, with Paddle's approval or rejection, charges back,
+  reverses a chargeback and warns of one, each as the adjustment
+  webhooks Paddle sends, and it answers the dispenser's questions about
+  a sale through `licence/paddle`, as the client for Paddle's API will.
+  A webhook that is not answered with success is sent again after 1, 5
+  and 15 minutes, as the sandbox does. Its signature is written from
+  Paddle's docs and not taken from the dispenser.
+- **The buyer's pages**: the checkout, the thank-you page and the
+  lost-key page, on the same address as the endpoints, the way our
+  website and the dispenser will share their origin rules. They are
+  plain, and say what each answer of the dispenser means to a buyer.
+- **A mail service that sends nothing.** Every letter, to a buyer or to
+  us, lands in the outbox on the console.
+- **The test signer**, which refills the pool through the hand-over
+  endpoint whenever it is below a batch, 10 keys by default.
+- **A clock that can be moved forward**, by minutes, an hour, a day or
+  three, so a retry, the thank-you page's day, the mail run every 5
+  minutes and the daily run come in a click.
+- **Switches for what goes wrong**: Paddle's API down, Paddle's API not
+  knowing a sale for 2 minutes after its webhook, Paddle's next webhooks
+  sent twice, held to be sent by hand in any order, or lost, the mail
+  service and the database down or doing their work and losing the
+  answer, the signer and the scheduled runs stopped.
+
+The console at `/dev` shows both sides at once: what Paddle says about
+every sale and what the dispenser holds for it, every webhook with every
+try and what the dispenser answered, the pool, the mail queue, the
+outbox, the record and the log. Every button goes through the
+dispenser's own endpoints with the token a real caller has: the signer's,
+the scheduled runs', the release workflow's, ours and a pretend
+partner's. It answers this machine only, keeps nothing, and every start
+is an empty shop.
+
+What it cannot show is whether we read the real Paddle right. That is
+the staging dispenser's job: the same program against Paddle's sandbox,
+once the PostgreSQL store and the container are there.
+
 ## What each program remembers
 
 **The dispenser** keeps three tables in its database:
@@ -713,6 +759,14 @@ with, offline, before every render.
   failed letter counted its try twice and warned us twice (a transaction
   works everything out before it starts). Both simulation bugs come back
   as failing seeds when their fix is taken out.
+- **The dispenser on this machine** has tests that press every button of
+  its console with the database working and down, and that walk a sale
+  from the checkout to a chargeback and back, webhooks held and sent in
+  the other order, twice or lost, the mail service, the database and
+  Paddle's API failing, the pool running dry, the thank-you page's day
+  and the lost-key page's limits. Buyers, Paddle, the signer, the runs
+  and the console all at once, under the race detector, end with the
+  audit.
 - The whole sale runs once against Paddle's sandbox before launch.
 
 ## Binding a key to a machine

@@ -17,6 +17,8 @@
 #   make install    the same, into /Applications, where it updates itself
 #   make update-key make the key updates are signed with, once, see
 #                   docs/UPDATES.md
+#   make dispenser  the licence dispenser on this machine, with a pretend
+#                   Paddle, at http://127.0.0.1:8090/dev
 #   make icon       the .icns, from build/icon.png. make app does it for you
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make llama      build the llama-server we ship again, from scratch
@@ -107,7 +109,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -236,6 +238,13 @@ endif
 # never to a file. See docs/UPDATES.md.
 update-key: toolchain modules
 	@$(GO) run ./cmd/framefairy-release key
+
+# The licence dispenser on this machine, with a pretend Paddle, mail
+# service and signer around it, to try every sale and every failure by
+# hand. Its console is at http://127.0.0.1:8090/dev. It keeps nothing, so
+# every start is an empty shop. See docs/LICENCE.md.
+dispenser: toolchain modules
+	@$(GO) run ./cmd/framefairy-dispenser dev
 
 # The icon on its own, for when build/icon.png changed and you want to see
 # it without building everything. make app does this by itself.
