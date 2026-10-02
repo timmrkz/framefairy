@@ -64,6 +64,9 @@ type Variant struct {
 	// Temperature is how freely the model picks its words, nil for the
 	// search's own.
 	Temperature *float64
+	// Switches are what the side shows the model beyond the recipe's own,
+	// written after a +, as in points+times.
+	Switches PromptSwitches
 }
 
 // ParseVariant reads a side of a comparison: a recipe name, after an @ the
@@ -81,13 +84,26 @@ func ParseVariant(name string) (Variant, error) {
 		t = &f
 	}
 	recipe, think, hasThink := strings.Cut(rest, "@")
-	if _, err := RecipeNamed(recipe); err != nil || recipe == "" {
+	recipe, switches, hasSwitches := strings.Cut(recipe, "+")
+	r, err := RecipeNamed(recipe)
+	if err != nil || recipe == "" {
 		if err == nil {
 			err = renderErr("a side of a comparison needs a recipe, as in stories@1024")
 		}
 		return Variant{}, err
 	}
 	v := Variant{Recipe: recipe, Temperature: t}
+	if hasSwitches {
+		if !r.Switchable {
+			return Variant{}, renderErr("%s: %s takes no switches. heart-lean and points do, "+
+				"as in points+times", pyRepr(name), recipe)
+		}
+		sw, err := ParseSwitches(switches)
+		if err != nil {
+			return Variant{}, renderErr("%s: %s", pyRepr(name), err)
+		}
+		v.Switches = sw
+	}
 	if hasThink {
 		n, err := strconv.Atoi(think)
 		if err != nil || n < -1 {
@@ -140,6 +156,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		if variants[i].Temperature != nil {
 			o.Temperature = variants[i].Temperature
 		}
+		o.Switches = variants[i].Switches
 		// Every side draws the same way, so what differs between two is
 		// what was changed, not the luck of the draw.
 		if o.Seed == 0 {
@@ -396,6 +413,19 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			}
 			if v.Temperature != nil {
 				fmt.Fprintf(&b, ", at a temperature of %s", trimFloat(*v.Temperature))
+			}
+			if sw := v.Switches; sw != (PromptSwitches{}) {
+				var shown []string
+				if sw.Pause > 0 {
+					shown = append(shown, "a mark before a pause of "+trimFloat(sw.Pause)+" s or more")
+				}
+				if sw.Times {
+					shown = append(shown, "the time each line starts at")
+				}
+				if sw.Words {
+					shown = append(shown, "the length in words")
+				}
+				b.WriteString(", with " + strings.Join(shown, ", "))
 			}
 			b.WriteString(".\n\n")
 		}

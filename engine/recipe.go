@@ -46,6 +46,9 @@ type Recipe struct {
 	// and leaves the length to the engine, which fits each clip around its
 	// heart and never asks again. See heart.go.
 	Hearts bool
+	// Switchable is true for a recipe asked from a prompt file that can
+	// show the model more or less, see PromptSwitches.
+	Switchable bool
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.

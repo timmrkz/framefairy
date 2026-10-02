@@ -1,5 +1,5 @@
 === user ===
-Below is the transcript of part of a video, one numbered line per phrase as it was spoken, each with the minute and second it starts at. "…" before a line marks a pause of a second or more.{{if .Context}} About the video: {{.Context}}{{end}}
+Below is the transcript of part of a video, one numbered line per phrase as it was spoken{{if .Times}}, each with the minute and second it starts at{{end}}.{{if .Pause}} "…" before a line marks a pause of {{.Pause}} or more.{{end}}{{if .Context}} About the video: {{.Context}}{{end}}
 
 {{.Transcript}}
 
@@ -9,8 +9,10 @@ For each moment, give three line numbers:
 - start: the first line a stranger needs. The question or the setup that says who, when and where.
 - payoff: the line where it lands, what happened in the end or what it meant.
 - end: the last line. Usually the payoff, later only to finish its sentence or to let it land.
-
-From the start to the end should take {{.Min}} to {{.Max}} seconds, which the times tell you. A program cuts the long pauses, and adds the lines before the start when a moment is too short.
-
+{{if .Times}}
+From the start to the end should take about {{.Min}} to {{.Max}} seconds, which the times tell you.
+{{end}}{{if .MinWords}}
+From the start to the end should be about {{.MinWords}} to {{.MaxWords}} words, which is {{.Min}} to {{.Max}} seconds as fast as this speaker talks.
+{{end}}
 Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "start": 12, "payoff": 18, "end": 19}]}
 The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.

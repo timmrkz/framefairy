@@ -58,39 +58,42 @@ var heartOpeningRecipe = Recipe{
 }
 
 // heartLeanRecipe is heart-opening asked in a few lines: one message, the
-// transcript first with nothing but the words and the long pauses, what to
-// do after it, and a smaller answer. Beside heart-opening it tells whether
-// the brief and the annotations of lines earn the time they take to read.
+// transcript first with nothing but the words, what to do after it, and a
+// smaller answer. Beside heart-opening it tells whether the brief and the
+// annotations of lines earn the time they take to read. Its switches add
+// pause marks, times and a length in words, see PromptSwitches.
 var heartLeanRecipe = Recipe{
 	Name: "heart-lean",
-	About: "heart-opening in one short message, the transcript first with only the words and the " +
-		"long pauses, the task after it, no slug and a short reason",
-	Unit:   "line",
-	Hearts: true,
+	About: "heart-opening in one short message, the transcript first with only the words, the " +
+		"task after it, no slug and a short reason",
+	Unit:       "line",
+	Hearts:     true,
+	Switchable: true,
 	// The prompt says nothing of pauses, so two runs that meet are one,
 	// and the pauses are the engine's to cut.
 	Joins:   true,
 	Version: 1,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
-		return prompt("heart-lean", lines, bareTranscript(lines), opts)
+		return prompt("heart-lean", lines, leanTranscript(lines, opts.Switches), opts)
 	},
 	Schema: func(lineCount, count int) string { return leanSchema(lineCount, count, "heart-lean") },
 }
 
 // pointsRecipe is Tim's three points: where a story starts, where it lands
-// and where it ends, one stretch, each line with the time it starts at so
-// the model can tell the length with one subtraction. The pauses are the
-// engine's to cut.
+// and where it ends, one stretch. The pauses are the engine's to cut, and a
+// story longer than the length stays whole. Its switches add pause marks,
+// times and a length in words, see PromptSwitches.
 var pointsRecipe = Recipe{
 	Name: "points",
-	About: "three line numbers a clip, start, payoff and end, the transcript with the time each " +
-		"line starts, in one short message, the pauses left to the engine",
-	Unit:    "line",
-	Hearts:  true,
-	Joins:   true,
-	Version: 1,
+	About: "three line numbers a clip, start, payoff and end, in one short message with only " +
+		"the words, the pauses left to the engine",
+	Unit:       "line",
+	Hearts:     true,
+	Joins:      true,
+	Switchable: true,
+	Version:    1,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
-		return prompt("points", lines, timedTranscript(lines), opts)
+		return prompt("points", lines, leanTranscript(lines, opts.Switches), opts)
 	},
 	Schema: func(lineCount, count int) string { return leanSchema(lineCount, count, "points") },
 }

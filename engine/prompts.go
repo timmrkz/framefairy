@@ -3,6 +3,8 @@ package engine
 import (
 	"embed"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -34,6 +36,13 @@ type promptData struct {
 	// Taken says which lines are in clips already, empty when none are.
 	Taken   string
 	Context string
+	// Pause is the shortest pause the transcript marks, in words, "a
+	// second" say, empty when it marks none. Times is whether each line has
+	// the time it starts at. MinWords and MaxWords are the length of a clip
+	// in words, 0 when not said.
+	Pause              string
+	Times              bool
+	MinWords, MaxWords int
 }
 
 const (
@@ -80,6 +89,19 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
 		data.Taken = takenSentence(taken)
 	}
+	sw := opts.Switches
+	data.Times = sw.Times
+	switch {
+	case sw.Pause == 1:
+		data.Pause = "a second"
+	case sw.Pause > 0:
+		data.Pause = trimFloat(sw.Pause) + " seconds"
+	}
+	// A window too short to tell how fast its speaker talks says no words.
+	if rate := wordsPerSecond(lines); sw.Words && rate > 0 {
+		data.MinWords = int(rate*opts.MinLen + 0.5)
+		data.MaxWords = int(rate*opts.MaxLen + 0.5)
+	}
 	var out strings.Builder
 	if err := t.Execute(&out, data); err != nil {
 		panic(fmt.Sprintf("the prompt %s cannot be filled in: %v", name, err))
@@ -87,42 +109,90 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	return out.String()
 }
 
-// longPause is the pause before a line that the lean transcripts mark, with
-// "…" in front of the line.
-const longPause = 1.0
-
-// bareTranscript is every line numbered, and nothing about it but whether
-// a long pause comes before it. A recipe that leaves the length to the
-// engine has no use for how long a line runs, and how loud a line was said
-// says nothing about the story in it.
-func bareTranscript(lines []Line) string {
-	var b strings.Builder
-	for i, line := range lines {
-		fmt.Fprintf(&b, "[%d] %s%s\n", i+1, pauseMark(line), line.Text())
-	}
-	return strings.TrimRight(b.String(), "\n")
+// PromptSwitches are what a recipe asked from a prompt file shows the model
+// beyond its words, each switched on by name after a + in a comparison,
+// as in points+times+words. With none, the model gets the words of each
+// line and nothing else.
+type PromptSwitches struct {
+	// Pause marks a line that comes after a pause of at least that many
+	// seconds with "…" in front of it. 0 marks none. +pause is a second,
+	// +pause2 two.
+	Pause float64
+	// Times gives each line the minute and second it starts at, from the
+	// start of the transcript, so the length of a stretch is one
+	// subtraction, +times.
+	Times bool
+	// Words says how long a clip is in words, from how fast the speaker
+	// talks in this window, so the model can judge length by counting,
+	// +words.
+	Words bool
 }
 
-// timedTranscript is every line numbered with the minute and second it
-// starts at, from the start of the transcript. A clip's length is then one
-// subtraction, where the lines brief left the model to add up the length of
-// every line in it, which it could not.
-func timedTranscript(lines []Line) string {
+// ParseSwitches reads switches written as in pause2+times+words.
+func ParseSwitches(text string) (PromptSwitches, error) {
+	var sw PromptSwitches
+	for _, name := range strings.Split(text, "+") {
+		switch {
+		case name == "times":
+			sw.Times = true
+		case name == "words":
+			sw.Words = true
+		case name == "pause":
+			sw.Pause = 1
+		case strings.HasPrefix(name, "pause"):
+			n, err := strconv.ParseFloat(strings.TrimPrefix(name, "pause"), 64)
+			if err != nil || n <= 0 || n > 10 || math.IsNaN(n) {
+				return sw, fmt.Errorf("+%s: a pause is +pause for a second or +pause2 for two, at most ten", name)
+			}
+			sw.Pause = n
+		default:
+			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2, +times and +words", name)
+		}
+	}
+	return sw, nil
+}
+
+// String is the switches as they are written, +pause2+times say.
+func (sw PromptSwitches) String() string {
+	var out string
+	switch {
+	case sw.Pause == 1:
+		out += "+pause"
+	case sw.Pause > 0:
+		out += "+pause" + trimFloat(sw.Pause)
+	}
+	if sw.Times {
+		out += "+times"
+	}
+	if sw.Words {
+		out += "+words"
+	}
+	return out
+}
+
+// leanTranscript is every line numbered with its words, and what the
+// switches add: the minute and second it starts at, and "…" in front of a
+// line after a long pause. A recipe that leaves the length to the engine
+// has no use for how long a line runs, and how loud a line was said says
+// nothing about the story in it.
+func leanTranscript(lines []Line, sw PromptSwitches) string {
 	if len(lines) == 0 {
 		return ""
 	}
 	first := lines[0].Start()
 	var b strings.Builder
 	for i, line := range lines {
-		at := int(line.Start() - first)
-		fmt.Fprintf(&b, "[%d %d:%02d] %s%s\n", i+1, at/60, at%60, pauseMark(line), line.Text())
+		fmt.Fprintf(&b, "[%d", i+1)
+		if sw.Times {
+			at := int(line.Start() - first)
+			fmt.Fprintf(&b, " %d:%02d", at/60, at%60)
+		}
+		b.WriteString("] ")
+		if sw.Pause > 0 && line.GapBefore >= sw.Pause {
+			b.WriteString("… ")
+		}
+		b.WriteString(line.Text())
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-func pauseMark(line Line) string {
-	if line.GapBefore >= longPause {
-		return "… "
-	}
-	return ""
 }

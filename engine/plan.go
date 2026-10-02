@@ -62,6 +62,9 @@ type PlanOptions struct {
 	Fresh      bool
 	// Recipe is how the model is asked, by name. Empty is DefaultRecipe.
 	Recipe string
+	// Switches change what a recipe asked from a prompt file shows the
+	// model, see PromptSwitches.
+	Switches PromptSwitches
 	// Record appends new model answers to the episode's training records.
 	Record bool
 	// Local plans on this machine instead of through the API.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,9 +25,9 @@ func TestThePromptFilesFillIn(t *testing.T) {
 				t.Errorf("%s has no %q:\n%s", recipe.Name, want, text)
 			}
 		}
-		// Only a transcript with times can say anything of seconds.
-		if says := strings.Contains(text, "20 to 30 seconds"); says != (recipe.Name == "points") {
-			t.Errorf("%s says the length %v:\n%s", recipe.Name, says, text)
+		// Without switches nothing is said of seconds.
+		if strings.Contains(text, "seconds") {
+			t.Errorf("%s says a length:\n%s", recipe.Name, text)
 		}
 		if strings.Contains(text, "{{") || strings.Contains(text, "About the video") {
 			t.Errorf("%s left something of its template:\n%s", recipe.Name, text)
@@ -50,18 +51,78 @@ func TestThePromptFilesFillIn(t *testing.T) {
 	}
 }
 
-// The lean transcript is the words and a mark before a long pause, the
-// timed one has the minute and second each line starts at as well.
+// The lean transcript is the words alone, and each switch adds what it
+// names: the time a line starts at, and a mark before a long pause.
 func TestTheLeanTranscripts(t *testing.T) {
 	lines := said(0.0, 2.0, "Erste Erinnerung?", 0.5, 3.0, "Nicht so leicht.", 1.5, 70.0, "Weil ich mich nicht erinnere.",
 		0.2, 1.0, "Echt.")
-	if got, want := bareTranscript(lines), "[1] Erste Erinnerung?\n[2] Nicht so leicht.\n"+
-		"[3] … Weil ich mich nicht erinnere.\n[4] Echt."; got != want {
-		t.Errorf("bare:\n%s\nwant:\n%s", got, want)
+	for _, c := range []struct {
+		sw   PromptSwitches
+		want string
+	}{
+		{PromptSwitches{}, "[1] Erste Erinnerung?\n[2] Nicht so leicht.\n[3] Weil ich mich nicht erinnere.\n[4] Echt."},
+		{PromptSwitches{Pause: 1}, "[1] Erste Erinnerung?\n[2] Nicht so leicht.\n[3] … Weil ich mich nicht erinnere.\n[4] Echt."},
+		{PromptSwitches{Pause: 2}, "[1] Erste Erinnerung?\n[2] Nicht so leicht.\n[3] Weil ich mich nicht erinnere.\n[4] Echt."},
+		{PromptSwitches{Pause: 1, Times: true}, "[1 0:00] Erste Erinnerung?\n[2 0:02] Nicht so leicht.\n" +
+			"[3 0:07] … Weil ich mich nicht erinnere.\n[4 1:17] Echt."},
+	} {
+		if got := leanTranscript(lines, c.sw); got != c.want {
+			t.Errorf("%s:\n%s\nwant:\n%s", c.sw, got, c.want)
+		}
 	}
-	if got, want := timedTranscript(lines), "[1 0:00] Erste Erinnerung?\n[2 0:02] Nicht so leicht.\n"+
-		"[3 0:07] … Weil ich mich nicht erinnere.\n[4 1:17] Echt."; got != want {
-		t.Errorf("timed:\n%s\nwant:\n%s", got, want)
+}
+
+// A side of a comparison names its switches after a +, and only a recipe
+// asked from a prompt file takes them.
+func TestSwitchesAreReadFromASidesName(t *testing.T) {
+	v, err := ParseVariant("points+pause2+times+words@1024~0.3")
+	if err != nil || v.Recipe != "points" || *v.Think != 1024 || *v.Temperature != 0.3 ||
+		v.Switches != (PromptSwitches{Pause: 2, Times: true, Words: true}) {
+		t.Fatalf("read as %+v %v", v, err)
+	}
+	if v.Switches.String() != "+pause2+times+words" {
+		t.Errorf("written as %s", v.Switches)
+	}
+	if v, err := ParseVariant("heart-lean+pause"); err != nil || v.Switches.Pause != 1 {
+		t.Errorf("+pause read as %+v %v", v, err)
+	}
+	for _, bad := range []string{"lines+times", "heart+pause", "points+loud", "points+pause0", "points+pause99", "points+"} {
+		if _, err := ParseVariant(bad); err == nil {
+			t.Errorf("%q was taken", bad)
+		}
+	}
+}
+
+// Each switch changes the request only where it should: the times and
+// the words say a length, the pause says what its mark means, and without
+// switches nothing is said of seconds or of pauses.
+func TestSwitchesChangeTheRequest(t *testing.T) {
+	var parts []any
+	for i := range 40 {
+		parts = append(parts, 0.8, 4.0, fmt.Sprintf("Das ist der Satz Nummer %d hier.", i+1))
+	}
+	lines := said(parts...)
+	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe} {
+		ask := func(sw PromptSwitches) string {
+			return recipe.Request(lines, recipe.units(lines), PlanOptions{Count: 6, MinLen: 20, MaxLen: 30, Switches: sw})
+		}
+		plain := ask(PromptSwitches{})
+		for _, not := range []string{"seconds", "…", "words, which is", ":0"} {
+			if strings.Contains(plain, not) {
+				t.Errorf("%s without switches says %q:\n%s", recipe.Name, not, plain)
+			}
+		}
+		if text := ask(PromptSwitches{Times: true}); !strings.Contains(text, "[2 0:04]") ||
+			!strings.Contains(text, "about 20 to 30 seconds, which the times tell you") {
+			t.Errorf("%s+times:\n%s", recipe.Name, text)
+		}
+		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words.
+		if text := ask(PromptSwitches{Words: true}); !strings.Contains(text, "about 29 to 44 words") {
+			t.Errorf("%s+words:\n%s", recipe.Name, text)
+		}
+		if text := ask(PromptSwitches{Pause: 2}); !strings.Contains(text, "a pause of 2 seconds or more") {
+			t.Errorf("%s+pause2:\n%s", recipe.Name, text)
+		}
 	}
 }
 
