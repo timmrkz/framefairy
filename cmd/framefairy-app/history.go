@@ -39,6 +39,11 @@ type step struct {
 	// hand moved it, see ChooseWindow. Before is nil for an episode that
 	// had none kept.
 	window *[2]*KeptWindow
+	// playhead is where the playhead stood before and after, when the
+	// step was a gesture on the clip timeline that took it along, like an
+	// edge dragged. Taking the edge back takes the playhead back with it,
+	// because the hand moved both.
+	playhead *[2]float64
 }
 
 // history is the undo and redo of one episode.
@@ -76,6 +81,13 @@ func (s *FrameFairy) forget(path string) {
 // search removed from some of its plans but not all, is a step for what it
 // did change.
 func (s *FrameFairy) edit(path string, fn func() error) error {
+	return s.editMoving(path, nil, fn)
+}
+
+// editMoving is edit for a gesture that moved the playhead as well, with
+// where it stood before and after. The playhead is part of the step, never
+// a step of its own: a gesture that changed nothing is still no step.
+func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() error) error {
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -89,6 +101,9 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 	st := step{change: change}
 	if heightWas != heightNow {
 		st.captionY = &[2]float64{heightWas, heightNow}
+	}
+	if change != nil && playhead != nil && playhead[0] != playhead[1] {
+		st.playhead = playhead
 	}
 	if change != nil || st.captionY != nil {
 		h.undo = append(h.undo, st)
@@ -107,6 +122,8 @@ type Undone struct {
 	Clip string `json:"clip,omitempty"`
 	// Window is where the step put the window, when it moved it.
 	Window *KeptWindow `json:"window,omitempty"`
+	// Playhead is where the step put the playhead, when it moved it.
+	Playhead *float64 `json:"playhead,omitempty"`
 }
 
 // Undo takes back the last thing done to an episode's clips.
@@ -196,6 +213,13 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 	*from = (*from)[:len(*from)-1]
 	*to = append(*to, st)
 	done := Undone{Done: true, Window: window}
+	if st.playhead != nil {
+		at := st.playhead[0]
+		if !back {
+			at = st.playhead[1]
+		}
+		done.Playhead = &at
+	}
 	if shown.ID != "" {
 		done.Clip = filepath.Base(shown.Plan) + "/" + shown.ID
 	}

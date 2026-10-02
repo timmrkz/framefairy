@@ -32,6 +32,7 @@
     inClip,
     inEpisode,
     insideClip,
+    litWord,
     type CaptionDraft,
     type Parts,
   } from "../lib/flow";
@@ -97,7 +98,9 @@
     // A gesture let go of: an edge of the clip trimmed, a part taken out,
     // the edges of a cut moved, a cut put back. The engine makes the change
     // it showed while the hand moved, see engine/shape.go.
-    onreshape?: (g: Gesture) => Promise<void>;
+    // It comes with where the playhead stood when the hand took hold and
+    // where the gesture left it, so an undo puts both back.
+    onreshape?: (g: Gesture, playhead: [number, number]) => Promise<void>;
     // Walking the words has run off the end of the clip. The words of the
     // clip beside it are not here to walk on to, they arrive with its
     // captions, so the workspace is asked and it takes it from there.
@@ -265,12 +268,19 @@
   let nextGesture: Gesture | null = null;
   let asking = false;
   let shapeFor = 0;
+  // Where the playhead stood when the hand took hold, and where the
+  // engine's answers have put it since. Kept here rather than read from
+  // time when the hand lets go, because the last seek may not have
+  // landed yet.
+  let heldAt = 0;
+  let leftAt = 0;
 
   function gesture(g: Omit<Gesture, "frame">): Gesture {
     return { ...g, frame };
   }
 
   function shape(g: Gesture) {
+    if (!hand) heldAt = leftAt = time;
     hand = g;
     nextGesture = g;
     void ask();
@@ -288,7 +298,10 @@
       const answer = await api.shape(path, asked.plan, asked.id, g);
       if (mine === shapeFor && clip?.key === asked.key && answer) {
         shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
-        if (answer.playhead >= 0) seekSoon(answer.playhead);
+        if (answer.playhead >= 0) {
+          leftAt = answer.playhead;
+          seekSoon(answer.playhead);
+        }
       }
     } catch {
       // A gesture the engine says no to shows the last one it said yes to.
@@ -310,14 +323,15 @@
       shaped = null;
       return;
     }
-    await reshape(g);
+    await reshape(g, [heldAt, leftAt]);
   }
 
-  async function reshape(g: Gesture) {
+  // A click on a cut's button moves no playhead, so it stays where it is.
+  async function reshape(g: Gesture, playhead: [number, number] = [time, time]) {
     if (!onreshape) return;
     saving = true;
     try {
-      await onreshape(g);
+      await onreshape(g, playhead);
     } finally {
       saving = false;
     }
@@ -1045,15 +1059,7 @@
   // keys pops both at once.
   const spokenAt = $derived(clip && cuePieces.length ? inClip(cuePieces, time) : -1);
   function wordNow(c: CaptionCue): number {
-    let k = -1;
-    let n = 0;
-    for (const line of c.lines ?? []) {
-      for (const w of line.words ?? []) {
-        if (spokenAt >= w.start) k = n;
-        n++;
-      }
-    }
-    return k;
+    return litWord(c.lines ?? [], spokenAt);
   }
 
   // Where a click on a caption puts the playhead: a frame into its first

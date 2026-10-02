@@ -424,3 +424,22 @@ export function draftCaptions<T extends { start: number; end: number }>(
   }
   return out;
 }
+
+// Which word of a caption is lit at a moment on the clip's clock, counted
+// across its lines, or -1 before its first word. A word is lit from its
+// start until the next word starts, and the last until the caption goes,
+// the way the render burns the highlight in (engine/highlight.go). It is
+// not lit only until its own end: the video preview did that, and a word
+// went dark while it was still being said and between every two words,
+// where the short and the clip timeline went on showing it.
+export function litWord(lines: { words: { start: number }[] }[], at: number): number {
+  let lit = -1;
+  let n = 0;
+  for (const line of lines) {
+    for (const word of line.words) {
+      if (at >= word.start) lit = n;
+      n++;
+    }
+  }
+  return lit;
+}

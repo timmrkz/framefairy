@@ -94,7 +94,7 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Shape(mine, elsewhere, "01", g); err == nil {
 		t.Error("Shape read a plan outside the library")
 	}
-	if _, err := svc.Reshape(ctx, mine, elsewhere, "01", g); err == nil {
+	if _, err := svc.Reshape(ctx, mine, elsewhere, "01", g, [2]float64{}); err == nil {
 		t.Error("Reshape wrote a plan outside the library")
 	}
 	if _, err := svc.Captions(other, elsewhere, "01"); err == nil {
@@ -299,7 +299,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		_, errs["ResetCrop"] = svc.ResetCrop(ctx, mine, wrong, "01", 1)
 		_, errs["RemoveClip"] = svc.RemoveClip(ctx, mine, wrong, "01", true)
 		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g)
-		_, errs["Reshape"] = svc.Reshape(ctx, mine, wrong, "01", g)
+		_, errs["Reshape"] = svc.Reshape(ctx, mine, wrong, "01", g, [2]float64{})
 		_, errs["Captions"] = svc.Captions(mine, wrong, "01")
 		for name, err := range errs {
 			if err == nil {
