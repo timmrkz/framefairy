@@ -235,8 +235,17 @@ func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
 // clip, the clip fitted to the length around it, see heart.go. It says
 // what fitting did.
 func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
-	entry.Keep = wholeSentences(b.lines, entry.Keep, b.opts.MaxLen, b.seconds)
 	recipe := b.opts.recipe()
+	if recipe.Hearts {
+		// The heart is whole sentences and kept, before the edges are put
+		// on sentences, so they never cut a line of it. Put back after,
+		// a heart ending on a comma ended the clip there.
+		entry.Heart = wholeHeart(b.lines, entry.Heart)
+		if entry.Heart[0] > 0 {
+			entry.Keep = withRun(entry.Keep, entry.Heart)
+		}
+	}
+	entry.Keep = wholeSentences(b.lines, entry.Keep, b.opts.MaxLen, b.seconds)
 	if recipe.Joins {
 		entry.Keep = joinRuns(entry.Keep)
 	}

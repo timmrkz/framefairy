@@ -325,9 +325,14 @@ func compareReport(opts Options, runs []RecipeRun) string {
 	if opts.Temperature != nil {
 		temperature = trimFloat(*opts.Temperature)
 	}
-	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %d clips of %s to %s seconds asked for. "+
+	// No count is the count the window suggests, which was never 0 clips.
+	count := "as many clips as the window suggests"
+	if opts.Count > 0 {
+		count = fmt.Sprintf("%d clips", opts.Count)
+	}
+	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %s of %s to %s seconds asked for. "+
 		"Seed %d, temperature %s unless a side says otherwise.\n\n",
-		filepath.Base(opts.Source), window, opts.Count, fixed(opts.Min, 0), fixed(opts.Max, 0),
+		filepath.Base(opts.Source), window, count, fixed(opts.Min, 0), fixed(opts.Max, 0),
 		seed, temperature)
 	costs := [][]string{{"Recipe", "Clips", "Asks", "Seconds", "Model, seconds",
 		"Request, characters", "Read, tokens", "Written, tokens", "Thought, characters"}}

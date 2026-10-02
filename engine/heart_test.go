@@ -234,3 +234,24 @@ func TestAComparisonCountsEveryAsk(t *testing.T) {
 		t.Errorf("the table does not line up, row widths %v:\n%s", widths, body)
 	}
 }
+
+// A heart is whole sentences. One whose last line ends on a comma takes in
+// the line that finishes the sentence, so the clip does not end there: the
+// umbrella story's heart ended on "salienden Erinnerungen," once.
+func TestAHeartIsWholeSentences(t *testing.T) {
+	lines := said(
+		0.0, 3.0, "Und dann ist der Regenschirm zersprungen.", // 1
+		1.0, 4.0, "Das war eine der ersten echten Erinnerungen,", // 2
+		0.5, 1.5, "die ich habe.", // 3
+		1.0, 2.0, "Davor weiß ich nichts.", // 4
+	)
+	if got := wholeHeart(lines, [2]int{1, 2}); got != [2]int{1, 3} {
+		t.Errorf("heart 1-2 became %v, not [1 3]", got)
+	}
+	if got := wholeHeart(lines, [2]int{3, 3}); got != [2]int{2, 3} {
+		t.Errorf("heart 3 became %v, not [2 3]", got)
+	}
+	if got := wholeHeart(lines, [2]int{4, 9}); got != [2]int{} {
+		t.Errorf("a heart past the end became %v", got)
+	}
+}

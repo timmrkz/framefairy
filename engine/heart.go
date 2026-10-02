@@ -309,3 +309,12 @@ func moreAfter(lines []Line, keep [][2]int, taken func(int) bool) [][2]int {
 	out[len(out)-1][1] = end
 	return out
 }
+
+// wholeHeart is a heart, lines numbered from 1, grown to the sentences its
+// first and last line are in. A heart that is not inside the lines is none.
+func wholeHeart(lines []Line, heart [2]int) [2]int {
+	if heart[0] < 1 || heart[1] < heart[0] || heart[1] > len(lines) {
+		return [2]int{}
+	}
+	return [2]int{sentenceStart(lines, heart[0]), sentenceEnd(lines, heart[1])}
+}
