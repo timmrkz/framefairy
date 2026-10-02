@@ -194,6 +194,28 @@ func (e *Engine) Keys(ctx context.Context, source, ref string) ([]licence.Key, e
 	return keys, err
 }
 
+// keysAt is Keys, and when the sale's keys were first assigned.
+func (e *Engine) keysAt(ctx context.Context, source, ref string) ([]licence.Key, time.Time, error) {
+	if err := checkSale(source, ref); err != nil {
+		return nil, time.Time{}, err
+	}
+	var keys []licence.Key
+	var at time.Time
+	err := e.store.View(ctx, func(tx Tx) error {
+		seats, err := tx.Seats(source, ref)
+		if err != nil {
+			return err
+		}
+		if len(seats) == 0 {
+			return ErrNotFound
+		}
+		at = seats[0].At
+		keys, err = keysOf(tx, seats)
+		return err
+	})
+	return keys, at, err
+}
+
 func keysOf(tx Tx, seats []Seat) ([]licence.Key, error) {
 	keys := make([]licence.Key, 0, len(seats))
 	for i, s := range seats {

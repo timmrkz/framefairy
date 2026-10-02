@@ -465,12 +465,62 @@ for everyone.
 ```
 POST /v1/orders                {ref, seats, email}  -> {keys}
 GET  /v1/orders/{ref}                               -> {keys}
-POST /v1/orders/{ref}/revoke   {why}                -> {}
+POST /v1/orders/{ref}/revoke   {why}                -> {revoked}
 ```
 
-Each partner has its own token, which reaches only its own orders. The
-same `ref` twice gives the same keys. A partner with its own webhook
-format gets an adapter that turns it into these calls.
+Each partner has its own token, which reaches only its own orders: the
+token decides the source, and a partner cannot name one. The same `ref`
+twice gives the same keys. A partner with its own webhook format gets an
+adapter that turns it into these calls.
+
+### Every endpoint
+
+Built, in `licence/dispenser`, in front of the engine.
+
+| Endpoint | Caller | Does |
+| --- | --- | --- |
+| `POST /paddle` | Paddle, signed | `Settle` the sale the webhook names |
+| `GET /v1/thanks/{ref}` | our thank-you page | the sale's keys, for a day |
+| `POST /v1/lost` | our lost-key page | `Resend` |
+| `POST /v1/orders`, `GET /v1/orders/{ref}`, `POST /v1/orders/{ref}/revoke` | a partner, with its token | `Assign`, `Keys`, `Revoke` |
+| `GET /v1/pool`, `POST /v1/pool` | the signer, with its token | `PoolLevel`, `Stock` |
+| `GET /v1/feed` | the release workflow, with its token | revocation list, genuine lists of leaked signers, the record's head |
+| `POST /v1/cron/mail` | every few minutes, with the cron token | `SendMail` |
+| `POST /v1/cron/daily` | once a day, with the cron token | `Reconcile` the last week, `CheckPool`, `Audit` |
+| `POST /v1/admin/{action}` | us, with the admin token | `replace`, `revoke`, `restore`, `revoke-unsold`, `retire`, `settle`, `reconcile`, `audit` |
+| `GET /healthz` | the outside check | the database answers |
+
+The rules they keep:
+
+- **A Paddle webhook is read only when Paddle signed it in the last five
+  minutes**: an HMAC-SHA256 of `{ts}:{body}` with the webhook's secret, in
+  the `Paddle-Signature` header. Two secrets are accepted while one
+  replaces the other. Of the webhook, only the reference of the sale is
+  read, and `Settle` asks Paddle what the sale is. A webhook that cannot
+  be settled yet, because Paddle does not know the sale yet, the pool is
+  empty or something is down, is answered with a failure so Paddle sends
+  it again. One the dispenser does nothing with is answered with
+  success, so Paddle stops.
+- **The thank-you page shows a sale's keys for a day after the sale**, then
+  answers that they went by email. A reference that got out later shows
+  nothing.
+- **The lost-key page answers the same whatever the address**, and takes
+  three asks per address and twenty per caller an hour. The counts live in
+  one container's memory: they stop a page being used to flood an inbox,
+  not a determined attacker asking a few times more.
+- **Only our website's pages may read** the thank-you and lost-key
+  answers. No other endpoint answers a page at all.
+- **Tokens are kept as their SHA-256**, so the dispenser's settings hold
+  nothing a caller could use, and each caller's token reaches only its own
+  endpoints. A caller without a token has its endpoints switched off.
+- **Every request is read strictly**: one JSON object, no unknown field, at
+  most 16 KB, 2 MB for a batch from the signer, 1 MB from Paddle. Every
+  answer says not to cache it.
+- **A failure says what kind it is and no more**: `invalid`, `not_found`,
+  `conflict`, `stale`, `pool_empty`, `unauthorized`, `too_many`,
+  `internal`. What went wrong inside is logged, never sent.
+- **A daily audit that fails emails us** at once.
+- **A panic fails its own request**, and the dispenser goes on.
 
 ## What each program remembers
 
@@ -611,6 +661,9 @@ with, offline, before every render.
   when two collide, and every engine test runs both ways.
 - `licence.Check` has a fuzz target, as the repository requires for
   everything that reads untrusted text.
+- Fuzz targets read Paddle's signature header and body, and send any body
+  to every endpoint that takes one from outside. None may be accepted
+  without its true signature, and none may fail on our side.
 - Every use case has a test named after it.
 - **The simulation.** The real engine runs in a world that goes wrong:
   buyers buy, Paddle sends webhooks late, twice, in the wrong order or
@@ -627,7 +680,9 @@ with, offline, before every render.
   `go test ./licence/dispenser -run TestSimulation -seed 1234 -v`.
   `make changed` runs 100 seeds of 400 steps, and `-seeds` and `-steps`
   run more. Before it was merged it ran 5,000 seeds and 500 seeds of
-  2,000 steps.
+  2,000 steps. It drives the dispenser through its endpoints, as Paddle,
+  the signer, a partner, the buyers, the scheduled runs and we do, and
+  the daily audit must never fail.
 - **What these tests found**, each now a rule of the code above. The
   simulation: a batch handed over again after a restore sold keys a
   second time (the pool generation), and a letter given up while the
