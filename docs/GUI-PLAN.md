@@ -282,7 +282,7 @@ nothing the app starts can be reached by anything else on the machine.**
 
 | # | Batch | Status |
 |---|---|---|
-| S.1 | The machine a customer runs it on: llama-server answers only the app, with a key of its own each launch and no slots to read. Checking an API key follows no redirect. A download never grows past what the model is known to weigh. devalue brought up to date | `[ ]` |
+| S.1 | The machine a customer runs it on: llama-server answers only the app, with a key of its own each launch and no slots to read. Checking an API key follows no redirect. A download never grows past what the model is known to weigh. devalue brought up to date | `[x]` |
 | S.2 | ffmpeg 8, the newest release, built without the playlist formats the app never reads | `[ ]` |
 | S.3 | The tools are ours or nothing: no ffmpeg or llama-server taken from the search path or the settings, a bundle that refuses to be made without them, and every tool and download checked against its checksum every time it is used, not only the first time | `[ ]` |
 | S.4 | An update says what it is: the channel, the version and the commit are signed with the build, so a signed build cannot be offered as another | `[ ]` |

@@ -676,3 +676,55 @@ func TestADownloadThatStopsArrivingGivesUp(t *testing.T) {
 		t.Errorf("what came was not kept to carry on from: %v", err)
 	}
 }
+
+// A download never grows past what the model is known to weigh, and a
+// little room: a server that says the file is far bigger is not read from,
+// and one that never stops sending is stopped. The checksum would have
+// refused either in the end, but only once all of it had been written.
+// What is counted is what the server got out, since the disk is what a
+// server that never stops would fill. Some of it always sits in the
+// connection's buffers, which is the room the test allows.
+func TestADownloadNeverGrowsPastItsSize(t *testing.T) {
+	body := ggufBytes(20_000)
+	sum := fmt.Sprintf("%x", sha256.Sum256(body))
+	const buffers = 16 << 20
+	for _, c := range []struct {
+		name string
+		says bool
+	}{{"says it is bigger", true}, {"never stops", false}} {
+		t.Run(c.name, func(t *testing.T) {
+			var sent atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				const total = 256 << 20
+				if c.says {
+					w.Header().Set("Content-Length", fmt.Sprint(total))
+				}
+				chunk := make([]byte, 64<<10)
+				for written := 0; written < total; written += len(chunk) {
+					n, err := w.Write(chunk)
+					sent.Add(int64(n))
+					if err != nil {
+						return
+					}
+				}
+			}))
+			t.Cleanup(server.Close)
+			dir := t.TempDir()
+			m := LanguageModel{Name: "test.gguf", Title: "Test", URL: server.URL,
+				Download: int64(len(body)), Needs: 1, SHA256: sum}
+			err := InstallLanguageModel(context.Background(), NewLog(io.Discard, false, false), m, dir)
+			if err == nil {
+				t.Fatal("a download bigger than the model was taken")
+			}
+			server.CloseClientConnections()
+			limit := int64(len(body)) + downloadRoom(int64(len(body)))
+			if got := sent.Load(); got > limit+buffers {
+				t.Errorf("%d bytes were taken from the server, past the %d the model may ever weigh", got, limit)
+			}
+			entries, _ := os.ReadDir(dir)
+			if len(entries) > 0 {
+				t.Errorf("something was left on disk: %v", entries)
+			}
+		})
+	}
+}

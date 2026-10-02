@@ -3,6 +3,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -208,6 +210,36 @@ var localClient = &http.Client{
 	},
 }
 
+// A llama-server the app starts answers only to the app. Left to itself
+// it answers anybody: any program on the machine, and any web page open
+// in a browser, because it allows every origin by default, and it lists
+// what it is working on, which is the transcript of the episode being
+// searched. Its port is on the loopback and different every time, but a
+// page can look through every port in a few seconds.
+//
+// So each server gets a key of its own, made when it starts and handed
+// over in its environment rather than on its command line, where every
+// program on the machine could read it, and the list of what it is
+// working on is switched off. The key lives as long as the server, by
+// its address, and only goes with a request to that address. An address
+// given by hand, a server somebody else started, gets no key.
+var serverKeys sync.Map
+
+func newServerKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// authorize puts the key of the server at url on a request to it.
+func authorize(request *http.Request, url string) {
+	if key, ok := serverKeys.Load(url); ok {
+		request.Header.Set("Authorization", "Bearer "+key.(string))
+	}
+}
+
 // stopGrace is how long llama-server has to go by itself once it is asked
 // to. Idle, it goes well inside it.
 var stopGrace = 500 * time.Millisecond
@@ -244,9 +276,18 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// keeps in ordinary memory. Level 3, its own default, leaves all
 		// of that out of the log. It adds a few lines an ask, not a line
 		// a token.
-		"-lv", "4"}
+		"-lv", "4",
+		// Nothing reads what the server is working on, and it is the
+		// transcript, see serverKeys.
+		"--no-slots"}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
+	key, err := newServerKey()
+	if err != nil {
+		return "", nil, renderErr("no key could be made for %s: %s", server, err)
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	cmd := exec.Command(server, args...)
+	cmd.Env = append(os.Environ(), "LLAMA_API_KEY="+key)
 	var logFile *os.File
 	if logDir != "" {
 		// The model can be loaded ahead of a search, before anything else
@@ -271,6 +312,7 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	// Written down while it runs, so a server an app that crashed left
 	// behind is found and stopped the next time the app starts.
 	noteServer(serverNote{PID: cmd.Process.Pid, Port: port, Model: m.Model})
+	serverKeys.Store(url, key)
 	// exited is closed once the server has gone, and exitErr says how. Only
 	// the goroutine that waits for it writes them, so stopping it never
 	// reads the process's state while that goroutine writes it.
@@ -302,13 +344,13 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		}
 		closeLog.Do(func() {
 			forgetServer(cmd.Process.Pid)
+			serverKeys.Delete(url)
 			if logFile != nil {
 				logFile.Close()
 			}
 		})
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	started := time.Now()
 	for {
 		select {
@@ -360,6 +402,7 @@ func healthy(ctx context.Context, url string) bool {
 	if err != nil {
 		return false
 	}
+	authorize(request, url)
 	response, err := localClient.Do(request)
 	if err != nil {
 		return false
@@ -513,6 +556,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		return nil, err
 	}
 	request.Header.Set("content-type", "application/json")
+	authorize(request, url)
 
 	started := time.Now()
 	response, err := localClient.Do(request)

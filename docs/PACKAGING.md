@@ -167,6 +167,15 @@ between five and fifteen gigabytes, and one that failed at nine tenths used
 to start again from nothing. It carries on from the part file instead, with
 a range request and the checksum fed the bytes already on disk.
 
+**A download never grows past what the model weighs.** The size of every
+model is known to the byte beside its checksum, and a download may go a
+hundredth past it, never less than a megabyte, and no further. A server
+that says the file is bigger is not read from, and one that goes on
+sending is stopped and what it sent thrown away. The checksum would have
+refused either, but only once all of it was on disk, and a server that
+never stops would have filled the disk first. See `downloadRoom` in
+`engine/speech.go`.
+
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches a model from whoever published it, the way
 `scripts/models.sh` does today, so its licence is between the user and Google

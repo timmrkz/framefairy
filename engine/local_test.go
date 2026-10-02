@@ -267,3 +267,88 @@ func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
 		t.Errorf("a cancelled load waited %s for an answer", took)
 	}
 }
+
+// A llama-server the app starts answers only to the app: it is handed a
+// key of its own in its environment, a new one every launch, never on its
+// command line, and it lists nothing of what it is working on.
+func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in for llama-server is a shell script")
+	}
+	dir := t.TempDir()
+	server := filepath.Join(dir, "llama-server")
+	script := "#!/bin/sh\necho \"key=$LLAMA_API_KEY args=$*\"\nexec sleep 30\n"
+	if err := os.WriteFile(server, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	model := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(model, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	launch := func(name string) string {
+		logDir := filepath.Join(dir, name)
+		logFile := filepath.Join(logDir, "llm-server.log")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			e := NewEngine(NewLog(io.Discard, false, false))
+			_, _, _ = e.startServer(ctx, LocalModel{Server: server, Model: model}, 16384, logDir)
+		}()
+		var body []byte
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+			if body, _ = os.ReadFile(logFile); strings.Contains(string(body), "args=") {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		cancel()
+		<-done
+		return string(body)
+	}
+	keyOf := func(out string) string {
+		_, after, _ := strings.Cut(out, "key=")
+		key, _, _ := strings.Cut(after, " ")
+		return key
+	}
+	first, second := launch("one"), launch("two")
+	key := keyOf(first)
+	if len(key) != 64 {
+		t.Fatalf("the server was handed no key of 64 hex digits: %q", first)
+	}
+	if strings.Contains(first[strings.Index(first, "args="):], key) {
+		t.Errorf("the key is on the command line, where any program can read it: %q", first)
+	}
+	if !strings.Contains(first, "--no-slots") {
+		t.Errorf("the server lists what it is working on: %q", first)
+	}
+	if other := keyOf(second); other == key || len(other) != 64 {
+		t.Errorf("a second launch was handed %q after %q, not a key of its own", other, key)
+	}
+}
+
+// The key goes with a request to the server it belongs to and to no other
+// address, and it is gone once that server is.
+func TestTheKeyGoesOnlyToItsServer(t *testing.T) {
+	var got []string
+	answer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("Authorization"))
+	}))
+	defer answer.Close()
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, "other:"+r.Header.Get("Authorization"))
+	}))
+	defer other.Close()
+
+	serverKeys.Store(answer.URL, "the-key")
+	healthy(context.Background(), answer.URL)
+	healthy(context.Background(), other.URL)
+	serverKeys.Delete(answer.URL)
+	healthy(context.Background(), answer.URL)
+
+	want := []string{"Bearer the-key", "other:", ""}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("the requests carried %q, want %q", got, want)
+	}
+}
