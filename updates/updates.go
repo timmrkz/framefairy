@@ -277,8 +277,9 @@ func SignClaim(key ed25519.PrivateKey, b Build) string {
 // VerifyClaim checks that an entry is signed as the build it says it is.
 func VerifyClaim(public ed25519.PublicKey, b Build) error {
 	if b.Claim == "" {
-		return fmt.Errorf("the build of %s does not say, under our signature, which build it is, "+
-			"so it is not installed. A new build of it brings one", b.Channel)
+		return fmt.Errorf("the build of %s was published without a claim, the signature that "+
+			"says which build it is, so it is not installed. Every build published once claims "+
+			"are signed on main carries one", b.Channel)
 	}
 	sig, err := base64.StdEncoding.DecodeString(b.Claim)
 	if err != nil || !ed25519.Verify(public, ClaimMessage(b), sig) {
