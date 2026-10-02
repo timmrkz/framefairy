@@ -32,6 +32,9 @@ var (
 	// ErrConflict is a sale that is already there with a different
 	// number of seats.
 	ErrConflict = errors.New("the sale is already there and differs")
+	// ErrStale is a batch from the signer of a pool generation that has
+	// ended. The signer drops it.
+	ErrStale = errors.New("a batch of an earlier pool")
 )
 
 // Config is how an engine is set up.
@@ -211,7 +214,14 @@ func keysOf(tx Tx, seats []Seat) ([]licence.Key, error) {
 // is refused. A key the pool has already is skipped, so a batch handed
 // over twice, after a connection dropped, adds nothing the second time.
 // It says how many keys were new.
-func (e *Engine) Stock(ctx context.Context, batch []licence.Key) (int, error) {
+//
+// The batch must carry the pool's generation, as PoolLevel gave it to the
+// signer. A restore and a stolen database start a new generation, and a
+// batch of an earlier one is refused with ErrStale: the signer may be
+// handing over again a batch whose keys were sold before the database was
+// lost, and the restored database no longer knows them. Those keys must
+// never be sold a second time, so the signer drops the batch.
+func (e *Engine) Stock(ctx context.Context, generation string, batch []licence.Key) (int, error) {
 	if len(batch) < 1 || len(batch) > MaxStock {
 		return 0, fmt.Errorf("%w: a batch holds 1 to %d keys, not %d", ErrInvalid, MaxStock, len(batch))
 	}
@@ -237,6 +247,13 @@ func (e *Engine) Stock(ctx context.Context, batch []licence.Key) (int, error) {
 	var added int
 	err := e.store.Update(ctx, func(tx Tx) error {
 		added = 0
+		current, err := currentGeneration(tx)
+		if err != nil {
+			return err
+		}
+		if generation != current {
+			return fmt.Errorf("%w: the batch is of generation %q, the pool is at %q", ErrStale, generation, current)
+		}
 		for _, k := range keys {
 			had, err := tx.Key(k.Fingerprint)
 			if err == nil && had.Key == k.Key {
@@ -264,14 +281,40 @@ func (e *Engine) Stock(ctx context.Context, batch []licence.Key) (int, error) {
 	return added, nil
 }
 
-// PoolLevel is how many keys are left to sell, and how many the signer
-// signs when it refills.
-func (e *Engine) PoolLevel(ctx context.Context) (left, batch int, err error) {
-	err = e.store.View(ctx, func(tx Tx) error {
-		left, err = tx.Count(Unsold)
+// Level is where the pool stands: how many keys are left to sell, how
+// many the signer signs when it refills, and the generation its batch must
+// carry.
+type Level struct {
+	Left       int
+	Batch      int
+	Generation string
+}
+
+// PoolLevel is where the pool stands.
+func (e *Engine) PoolLevel(ctx context.Context) (Level, error) {
+	var l Level
+	err := e.store.View(ctx, func(tx Tx) error {
+		var err error
+		if l.Left, err = tx.Count(Unsold); err != nil {
+			return err
+		}
+		l.Generation, err = currentGeneration(tx)
 		return err
 	})
-	return left, e.batch, err
+	l.Batch = e.batch
+	return l, err
+}
+
+// The pool's generation is kept as a note. A pool that never had one is
+// generation "".
+const generationNote = "pool generation"
+
+func currentGeneration(tx Tx) (string, error) {
+	g, err := tx.Note(generationNote)
+	if errors.Is(err, ErrNotFound) {
+		return "", nil
+	}
+	return g, err
 }
 
 // checkOrder refuses an order the engine was not built for.

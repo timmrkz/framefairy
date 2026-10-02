@@ -2,6 +2,8 @@ package dispenser
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -215,7 +217,8 @@ func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string)
 }
 
 // RevokeUnsold revokes every key still in the pool, after the database was
-// stolen. Sold keys keep working. It says how many keys it burned.
+// stolen. Sold keys keep working. It starts a new pool generation, see
+// Stock. It says how many keys it burned.
 func (e *Engine) RevokeUnsold(ctx context.Context, why string) (int, error) {
 	return e.clearPool(ctx, why, Burned)
 }
@@ -223,7 +226,8 @@ func (e *Engine) RevokeUnsold(ctx context.Context, why string) (int, error) {
 // Retire sets every key still in the pool aside for good without revoking
 // it, after the database was restored from a backup: some of those keys
 // were sold after the backup was taken, and the backup cannot say which.
-// It says how many keys it retired.
+// It starts a new pool generation, so the signer's batches from before the
+// restore are refused, see Stock. It says how many keys it retired.
 func (e *Engine) Retire(ctx context.Context, why string) (int, error) {
 	return e.clearPool(ctx, why, Retired)
 }
@@ -234,9 +238,18 @@ func (e *Engine) clearPool(ctx context.Context, why string, to State) (int, erro
 	}
 	now := e.now()
 	event := map[State]string{Burned: EventBurn, Retired: EventRetire}[to]
+	// A new generation, drawn before the transaction, which may run twice.
+	var g [16]byte
+	if _, err := rand.Read(g[:]); err != nil {
+		return 0, err
+	}
+	generation := hex.EncodeToString(g[:])
 	var n int
 	err := e.store.Update(ctx, func(tx Tx) error {
 		n = 0
+		if err := tx.SetNote(generationNote, generation); err != nil {
+			return err
+		}
 		pool, err := tx.Pool()
 		if err != nil {
 			return err

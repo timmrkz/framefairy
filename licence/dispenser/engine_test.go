@@ -92,7 +92,7 @@ func newFixture(t testing.TB, twice bool) *fixture {
 func (f *fixture) stock(n int) []licence.Key {
 	f.t.Helper()
 	keys := sign(f.t, n)
-	added, err := f.engine.Stock(f.ctx, keys)
+	added, err := f.engine.Stock(f.ctx, f.generation(), keys)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -104,11 +104,21 @@ func (f *fixture) stock(n int) []licence.Key {
 
 func (f *fixture) left() int {
 	f.t.Helper()
-	left, _, err := f.engine.PoolLevel(f.ctx)
+	l, err := f.engine.PoolLevel(f.ctx)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return left
+	return l.Left
+}
+
+// generation is the pool's generation, which a batch must carry.
+func (f *fixture) generation() string {
+	f.t.Helper()
+	l, err := f.engine.PoolLevel(f.ctx)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return l.Generation
 }
 
 func (f *fixture) verify() Anchor {
@@ -302,7 +312,7 @@ func TestStockRefusesTheWholeBatch(t *testing.T) {
 			"a key in another letters": {"ff1-" + good[0][4:]},
 		}
 		for name, batch := range cases {
-			if _, err := f.engine.Stock(f.ctx, batch); !errors.Is(err, ErrInvalid) {
+			if _, err := f.engine.Stock(f.ctx, f.generation(), batch); !errors.Is(err, ErrInvalid) {
 				t.Errorf("%s: got %v, want ErrInvalid", name, err)
 			}
 		}
@@ -323,12 +333,12 @@ func TestStockTwice(t *testing.T) {
 		if _, err := f.engine.Assign(f.ctx, order("txn_1", 1)); err != nil {
 			t.Fatal(err)
 		}
-		added, err := f.engine.Stock(f.ctx, batch)
+		added, err := f.engine.Stock(f.ctx, f.generation(), batch)
 		if err != nil || added != 0 {
 			t.Fatalf("the same batch again added %d, %v", added, err)
 		}
 		more := sign(t, 2)
-		added, err = f.engine.Stock(f.ctx, append(append([]licence.Key{}, batch[2:]...), more...))
+		added, err = f.engine.Stock(f.ctx, f.generation(), append(append([]licence.Key{}, batch[2:]...), more...))
 		if err != nil || added != 2 {
 			t.Fatalf("a batch half known added %d, %v", added, err)
 		}
@@ -351,19 +361,19 @@ func TestStockRefusesAnIDTwice(t *testing.T) {
 	id := licence.ID{7, 7, 7, 7, 7, 7, 7, 7}
 	a, _ := licence.Sign(licence.Licence{Format: 1, ID: id, Signed: now}, testSigner())
 	b, _ := licence.Sign(licence.Licence{Format: 1, ID: id, Signed: now.AddDate(0, 0, 1)}, testSigner())
-	if _, err := f.engine.Stock(f.ctx, []licence.Key{a}); err != nil {
+	if _, err := f.engine.Stock(f.ctx, f.generation(), []licence.Key{a}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.engine.Stock(f.ctx, []licence.Key{b}); !errors.Is(err, ErrInvalid) {
+	if _, err := f.engine.Stock(f.ctx, f.generation(), []licence.Key{b}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("got %v, want ErrInvalid", err)
 	}
 }
 
 func TestPoolLevel(t *testing.T) {
 	f := newFixture(t, false)
-	left, batch, err := f.engine.PoolLevel(f.ctx)
-	if err != nil || left != 0 || batch != 1000 {
-		t.Fatalf("%d, %d, %v", left, batch, err)
+	l, err := f.engine.PoolLevel(f.ctx)
+	if err != nil || l.Left != 0 || l.Batch != 1000 || l.Generation != "" {
+		t.Fatalf("%+v, %v", l, err)
 	}
 	f.stock(7)
 	f.engine.Assign(f.ctx, order("txn_1", 3))
@@ -513,7 +523,7 @@ func TestManySalesAtOnce(t *testing.T) {
 						t.Error(err)
 						return
 					}
-					if _, _, err := f.engine.PoolLevel(f.ctx); err != nil {
+					if _, err := f.engine.PoolLevel(f.ctx); err != nil {
 						t.Error(err)
 						return
 					}

@@ -240,7 +240,7 @@ func TestDatabaseStolen(t *testing.T) {
 			t.Fatalf("sold from a burned pool: %v", err)
 		}
 		// The burned keys never come back, not even handed over again.
-		if added, err := f.engine.Stock(f.ctx, pool); err != nil || added != 0 {
+		if added, err := f.engine.Stock(f.ctx, f.generation(), pool); err != nil || added != 0 {
 			t.Fatalf("a burned batch handed over again added %d, %v", added, err)
 		}
 		fresh := f.stock(3)
@@ -392,7 +392,7 @@ func TestEverythingAtOnce(t *testing.T) {
 					case 6:
 						_, err = f.engine.Revocations(f.ctx)
 					case 7:
-						_, err = f.engine.Stock(f.ctx, sign(t, 2))
+						_, err = f.engine.Stock(f.ctx, f.generation(), sign(t, 2))
 					}
 					if errors.Is(err, ErrNotFound) {
 						err = nil

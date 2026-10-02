@@ -246,7 +246,7 @@ func run(t *testing.T, twice bool, seed uint64, steps int) {
 				batch = slices.Clone(stocked[from:min(len(stocked), from+1+r.IntN(5))])
 			}
 			batch = append(batch, sign(t, 1+r.IntN(6))...)
-			got, err := f.engine.Stock(f.ctx, batch)
+			got, err := f.engine.Stock(f.ctx, f.generation(), batch)
 			want := m.stock(batch)
 			if err != nil || got != want {
 				t.Fatalf("%s: engine added %d (%v), model %d", where("stock"), got, err, want)

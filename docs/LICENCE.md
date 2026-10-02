@@ -211,9 +211,9 @@ it.
 | 5 | Sold by a partner, in advance | Command line on the signer | signer `Partner` | A file of n keys, recorded with the partner and its index |
 | 6 | Given away | Command line on the signer | signer `Named` | A key with the name we gave, recorded with its purpose |
 | 7 | Lost key | Our lost-key page, an email address | dispenser `Resend` | Keys go only to that address. The page answers the same whether or not the address bought anything. Limited per address and per caller |
-| 8 | Chargeback | Paddle adjustment, action chargeback | dispenser `Revoke` | Every key of that sale is on the next revocation list |
-| 9 | Chargeback reversed | Paddle adjustment updated | dispenser `Restore` | Those keys leave the next revocation list |
-| 10 | Refund made anyway | Paddle adjustment, action refund | dispenser `Revoke` | Handled exactly like a chargeback |
+| 8 | Chargeback | Paddle adjustment, action chargeback | dispenser `Settle` | Every key of that sale is on the next revocation list |
+| 9 | Chargeback reversed | Paddle adjustment updated | dispenser `Settle` | Those keys leave the next revocation list, whichever of the two webhooks arrives first |
+| 10 | Refund made anyway | Paddle adjustment, action refund | dispenser `Settle` | Handled exactly like a chargeback |
 | 11 | Key posted in public | Command line, or the admin call | dispenser `Replace` | That key is revoked, the sale gets the next pool key, and the buyer gets it by email |
 | 12 | Pool running low | The signer asks for the pool level | signer `Pool`, dispenser `Stock` | Below the line, the signer signs a batch and the dispenser takes it. The dispenser checks every key's signature before it takes it |
 | 13 | Pool nearly empty | Dispenser, after any sale | email to us | Below 20 % of a batch, an email, every day until it is refilled |
@@ -324,13 +324,14 @@ func (e *Engine) CheckPool(ctx context.Context) error
 func (e *Engine) Replace(ctx context.Context, f licence.Fingerprint, why string) (licence.Key, Seat, error)
 func (e *Engine) Revoke(ctx context.Context, t Target, why string) (int, error)
 func (e *Engine) Restore(ctx context.Context, t Target, why string) (int, error)
-func (e *Engine) Stock(ctx context.Context, batch []licence.Key) (added int, err error)
-func (e *Engine) PoolLevel(ctx context.Context) (left, batch int, err error)
+func (e *Engine) Stock(ctx context.Context, generation string, batch []licence.Key) (added int, err error)
+func (e *Engine) PoolLevel(ctx context.Context) (Level, error) // left, batch, generation
 func (e *Engine) RevokeUnsold(ctx context.Context, why string) (int, error)
 func (e *Engine) Retire(ctx context.Context, why string) (int, error) // set the unsold pool aside, revoke nothing
 func (e *Engine) Revocations(ctx context.Context) ([]licence.Fingerprint, error)
 func (e *Engine) Genuine(ctx context.Context, signer uint8) ([]licence.Fingerprint, error)
-func (e *Engine) Reconcile(ctx context.Context, since time.Time) error
+func (e *Engine) Settle(ctx context.Context, ref string) error
+func (e *Engine) Reconcile(ctx context.Context, since time.Time) (int, error)
 ```
 
 What the engine needs from outside, each behind a small interface so the
@@ -339,15 +340,25 @@ engine is tested with memory and a fixed clock:
 | Port | Does | First implementation |
 | --- | --- | --- |
 | `Store` | The pool, the sales and the record, each change in one transaction | Scaleway Serverless SQL Database |
-| `Orders` | Paddle's transactions and adjustments, the address of a sale, and the sales of an address | Paddle's API |
+| `Orders` | A Paddle sale as it stands now, the sales completed or adjusted since a time, and the sales of an address | Paddle's API |
 | `Mailer` | Sends keys to buyers and warnings to us | A European mail service |
+
+**Settling a sale.** An adjustment webhook does not say what to do, it
+says something changed. `Settle` asks Paddle what the sale is now and
+makes the dispenser match: its keys assigned, and revoked exactly when
+Paddle has the money back. So a chargeback and its reversal end the same
+whichever webhook arrives first, and however often each comes. Keys
+revoked because they were posted in public are not Paddle's business and
+stay revoked. `Reconcile` settles every sale Paddle completed or adjusted
+since a time, and goes on past one that fails.
 
 **Mail.** A Paddle sale's letter is queued in the same transaction that
 assigns its keys, then sent at once to the address in the webhook. If that
 fails, it waits in the queue and `SendMail`, which runs every few
 minutes, tries it again after 1, 5 and 30 minutes, 2 hours, then every 6
-hours, with the address Paddle has. After three days it is given up and
-we are told: the keys are on the thank-you and lost-key pages meanwhile.
+hours, with the address Paddle has. After three days we are told, and
+then it is given up, in that order, so a crash between the two tells us
+twice rather than never: the keys are on the thank-you and lost-key pages meanwhile.
 The queue holds no address, only which sale a letter is for, so no
 buyer's address is ever kept. A run takes a letter for ten minutes before
 it sends it, so two runs never send the same one, and a crash between
@@ -387,7 +398,7 @@ What reaches it, and who may call what:
 
 | Adapter | Receives | Calls |
 | --- | --- | --- |
-| Paddle | `transaction.completed`, `adjustment.created`, `adjustment.updated`, signed by Paddle | `Assign`, `Revoke`, `Restore` |
+| Paddle | `transaction.completed`, `adjustment.created`, `adjustment.updated`, signed by Paddle | `Assign` for a sale, `Settle` for an adjustment |
 | Thank-you page | A transaction, from our website | `Keys` |
 | Lost key | An email address, from our website | `Resend` |
 | Partner API | An order, with the partner's own token | `Assign`, `Keys`, `Revoke` |
@@ -498,9 +509,14 @@ against the last published feed. Then, before anything is sold:
 1. **Set the whole pool aside.** Every key still marked unsold in the
    backup is retired: never handed out again, and not revoked. Some of them
    were sold after the backup was taken and are in buyers' hands now, and
-   the backup cannot say which.
+   the backup cannot say which. `Retire` also starts a new pool
+   generation.
 2. **Refill.** The signer signs a fresh batch, and only fresh keys are
-   handed out from then on.
+   handed out from then on. A batch the signer handed over before the
+   restore and never heard back about is refused, because it carries the
+   old generation, and the signer drops it: its keys may have been sold
+   before the database was lost, and the restored database no longer
+   knows them. The simulation found this one, see Testing.
 3. **Catch up.** `Reconcile` runs from the backup's last line. A sale Paddle
    knows about and the record does not gets the next fresh key, by email,
    with a line saying any key it had before still works.
@@ -515,6 +531,14 @@ She has two working keys, and no key belongs to two people.
 So a restore can give a buyer a second key, never leave one without a key,
 and never give two buyers the same key. At worst it retires a pool's worth
 of keys nobody holds.
+
+What a restore cannot bring back is what we did by hand after the backup.
+A key posted in public and replaced after the backup works again, and so
+does the first key of a sale made after the backup and charged back
+later, because the backup never knew it was sold. Paddle's chargebacks
+themselves are caught up by `Reconcile`. Both cost at most a sale that is
+already lost, and the revocation list of the last published feed says
+which keys were replaced, to be replaced again by hand.
 
 ## When something is down
 
@@ -588,6 +612,30 @@ with, offline, before every render.
 - `licence.Check` has a fuzz target, as the repository requires for
   everything that reads untrusted text.
 - Every use case has a test named after it.
+- **The simulation.** The real engine runs in a world that goes wrong:
+  buyers buy, Paddle sends webhooks late, twice, in the wrong order or
+  never, takes money back and gives it back, the database is lost before
+  and after it commits, the mail service fails or fails after it sent,
+  Paddle goes down, the pool runs dry, the signer's hand-over drops, keys
+  are posted in public, and the database comes back from a backup. After
+  every step: no key is ever given to two sales, no letter carries a key
+  of someone else's sale, and the store is what its record adds up to.
+  Once the world calms down: every paid sale has its keys and a letter
+  with them, or we were told the letter was given up, and the revocation
+  list is exactly what Paddle and the posted keys say. One seed decides
+  every step, so a failure runs again the same way:
+  `go test ./licence/dispenser -run TestSimulation -seed 1234 -v`.
+  `make changed` runs 100 seeds of 400 steps, and `-seeds` and `-steps`
+  run more. Before it was merged it ran 5,000 seeds and 500 seeds of
+  2,000 steps.
+- **What these tests found**, each now a rule of the code above. The
+  simulation: a batch handed over again after a restore sold keys a
+  second time (the pool generation), and a letter given up while the
+  database lost its answer left us untold (we are told before the letter
+  leaves the queue). The store that runs every transaction twice: a
+  failed letter counted its try twice and warned us twice (a transaction
+  works everything out before it starts). Both simulation bugs come back
+  as failing seeds when their fix is taken out.
 - The whole sale runs once against Paddle's sandbox before launch.
 
 ## Binding a key to a machine

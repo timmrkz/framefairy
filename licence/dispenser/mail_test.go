@@ -126,10 +126,10 @@ func TestMailWaitsForAnAddress(t *testing.T) {
 		if len(f.mail.sent()) != 0 || len(f.queue()) != 1 {
 			t.Fatal("a letter without an address went, or was not queued")
 		}
-		f.shop.down = true
+		f.shop.setDown(true)
 		f.clock.add(time.Minute)
 		f.sendMail()
-		f.shop.down = false
+		f.shop.setDown(false)
 		f.shop.sold("txn_a", "bad address")
 		f.clock.add(5 * time.Minute)
 		f.sendMail()
@@ -245,7 +245,7 @@ func TestLostKey(t *testing.T) {
 				t.Errorf("%q: got %v, want ErrInvalid", bad, err)
 			}
 		}
-		f.shop.down = true
+		f.shop.setDown(true)
 		if err := f.engine.Resend(f.ctx, "anna@example.com"); err == nil {
 			t.Fatal("Paddle down, and Resend said it sent")
 		}

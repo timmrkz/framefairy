@@ -3,6 +3,7 @@ package dispenser
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 )
@@ -75,33 +76,64 @@ func (m *fakeMail) failing(f func(to string, l Letter) bool) {
 	m.fail = f
 }
 
-// fakeShop is Paddle as far as the dispenser asks it: whose sale is whose.
+// fakeShop is Paddle as far as the dispenser asks it: its sales as they
+// stand, and when each last changed.
 type fakeShop struct {
-	mu    sync.Mutex
-	buyer map[string]string // reference to address
-	down  bool
+	mu      sync.Mutex
+	sales   map[string]Sale
+	changed map[string]time.Time
+	down    bool
 }
 
+// sold records a sale of one seat to email, made now.
 func (s *fakeShop) sold(ref, email string) {
+	s.put(Sale{Ref: ref, Seats: 1, Email: email, At: now}, now)
+}
+
+func (s *fakeShop) put(sale Sale, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.buyer == nil {
-		s.buyer = map[string]string{}
+	if s.sales == nil {
+		s.sales = map[string]Sale{}
+		s.changed = map[string]time.Time{}
 	}
-	s.buyer[ref] = email
+	s.sales[sale.Ref] = sale
+	s.changed[sale.Ref] = at
 }
 
-func (s *fakeShop) Email(ctx context.Context, ref string) (string, error) {
+func (s *fakeShop) setDown(down bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.down = down
+}
+
+func (s *fakeShop) Sale(ctx context.Context, ref string) (Sale, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.down {
-		return "", errors.New("Paddle is down")
+		return Sale{}, errors.New("Paddle is down")
 	}
-	e, ok := s.buyer[ref]
+	sale, ok := s.sales[ref]
 	if !ok {
-		return "", errors.New("no such transaction")
+		return Sale{}, ErrNotFound
 	}
-	return e, nil
+	return sale, nil
+}
+
+func (s *fakeShop) Since(ctx context.Context, t time.Time) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.down {
+		return nil, errors.New("Paddle is down")
+	}
+	var refs []string
+	for ref, at := range s.changed {
+		if !at.Before(t) {
+			refs = append(refs, ref)
+		}
+	}
+	slices.Sort(refs)
+	return refs, nil
 }
 
 func (s *fakeShop) Refs(ctx context.Context, email string) ([]string, error) {
@@ -111,10 +143,11 @@ func (s *fakeShop) Refs(ctx context.Context, email string) ([]string, error) {
 		return nil, errors.New("Paddle is down")
 	}
 	var refs []string
-	for ref, e := range s.buyer {
-		if e == email {
+	for ref, sale := range s.sales {
+		if sale.Email == email {
 			refs = append(refs, ref)
 		}
 	}
+	slices.Sort(refs)
 	return refs, nil
 }
