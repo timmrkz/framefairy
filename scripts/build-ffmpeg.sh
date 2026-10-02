@@ -54,8 +54,8 @@ SYSTEM=$(uname -s 2>/dev/null)
 # a video somebody else made is the part of the app that most needs its
 # fixes. A major release is no reason to wait. 7.1 was kept long after 8
 # came out without anybody choosing to, and nothing in the app needed it.
-FFMPEG_VERSION=8.1.3
-FFMPEG_COMMIT=1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7
+FFMPEG_VERSION=9.0.2
+FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
 FREETYPE_VERSION=2.14.3
 FREETYPE_SHA256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f
 FRIBIDI_VERSION=1.0.17

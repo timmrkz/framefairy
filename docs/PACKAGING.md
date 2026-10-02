@@ -262,8 +262,8 @@ render every short made on that system. They go in when those builds are
 first made and looked at.
 
 **Checked against ffmpeg's own configure**, release 7.1 and again for
-8.1.3, rather than taken on trust, because the whole decision rests on it.
-Both say the same.
+8.1.3 and 9.0.2, rather than taken on trust, because the whole decision
+rests on it. All three say the same.
 
 `EXTERNAL_LIBRARY_GPL_LIST` is the list of libraries whose use requires
 `--enable-gpl`. In full: `avisynth`, `frei0r`, `libcdio`, `libdavs2`,
@@ -290,8 +290,9 @@ And none of the formats that are lists of other files, `hls`, `dash`,
 pulled somebody's own files into what they then publish. The `concat`
 filter the engine uses is another thing and stays. `build-ffmpeg.sh`
 reads the finished binary back and stops if anything else got in. And it
-is kept at the newest release, ffmpeg 8.1.3 from October 2026: 7.1 had
-been kept long after 8 came out without anybody choosing to.
+is kept at the newest release, ffmpeg 9.0.2 in October 2026: 7.1 had been
+kept long after 8 and 9 came out without anybody choosing to, and
+`scripts/upstream.sh` now says every week when it falls behind again.
 
 So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than
