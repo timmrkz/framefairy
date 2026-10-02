@@ -38,6 +38,7 @@ func emptyMachine(t *testing.T) *FrameFairy {
 	// under it is there so that a test which can reach the keychain again
 	// says so instead of hanging again.
 	t.Setenv("PATH", filepath.Join(home, "no-tools"))
+	t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "")
 	if _, err := exec.LookPath("security"); err == nil {
 		t.Fatal("this test can still reach the keychain")
 	}
@@ -543,15 +544,16 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 // under that name on the only folder the search path holds here.
 func placeLlamaServer(t *testing.T) {
 	t.Helper()
-	dir := os.Getenv("PATH")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 	// Never started by anything in these tests, so what it would do does
 	// not matter. What matters is that it can be found and could be run.
-	if err := os.WriteFile(filepath.Join(dir, "llama-server"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	// It is named in the environment, the one way to give the app a tool
+	// that is not beside it: the app never looks on the search path.
+	server := filepath.Join(dir, "llama-server")
+	if err := os.WriteFile(server, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("FRAMEFAIRY_LLAMA_SERVER", server)
 }
 
 // The worst state the setup could leave somebody in, and until now it
@@ -622,5 +624,45 @@ func TestOpenKeysPageOpensOnlyTheCompanysPage(t *testing.T) {
 		if err != nil || u.Scheme != "https" || !strings.HasSuffix(u.Host, p.KeysAt) {
 			t.Errorf("%s: keys are made at %q, said to be %s", p.Name, p.KeysPage, p.KeysAt)
 		}
+	}
+}
+
+// The settings say which ffmpeg, ffprobe and llama-server the app runs:
+// the version, the file and its SHA-256, read again on every check, and
+// whether the file is the one the app was built with. "There is an
+// ffmpeg" said nothing about which one.
+func TestTheCheckSaysWhichToolsTheAppRuns(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	s := emptyMachine(t)
+	t.Setenv("FRAMEFAIRY_FFMPEG", ffmpeg)
+	if probe, err := exec.LookPath("ffprobe"); err == nil {
+		t.Setenv("FRAMEFAIRY_FFPROBE", probe)
+	}
+	placeLlamaServer(t)
+	if err := s.ChoosePlanner("local"); err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]Check{}
+	for _, c := range s.CheckSetup(context.Background()) {
+		found[c.Name] = c
+	}
+	for _, name := range []string{"ffmpeg", "ffprobe", "llama-server"} {
+		c, ok := found[name]
+		if !ok {
+			t.Errorf("no row for %s", name)
+			continue
+		}
+		if c.Path == "" || len(c.SHA256) != 64 {
+			t.Errorf("%s says no file or no SHA-256: %+v", name, c)
+		}
+		if !strings.Contains(c.Detail, "FRAMEFAIRY_") {
+			t.Errorf("%s, named in the environment, does not say so: %q", name, c.Detail)
+		}
+	}
+	if found["ffmpeg"].Version == "" {
+		t.Errorf("ffmpeg says no version: %+v", found["ffmpeg"])
 	}
 }

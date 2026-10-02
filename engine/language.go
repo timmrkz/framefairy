@@ -442,6 +442,10 @@ func InstallLanguageModel(ctx context.Context, log *Log, m LanguageModel, dir st
 			return wrong(renderErr("what came back from %s is not a model file.", m.URL))
 		}
 		log.ClearProgress()
-		return os.Rename(part, final)
+		if err := os.Rename(part, final); err != nil {
+			return err
+		}
+		modelArrived(dir, m, final)
+		return nil
 	})
 }

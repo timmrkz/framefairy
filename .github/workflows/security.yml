@@ -1,0 +1,95 @@
+# Keeping up with what is found in the code we ship but did not write.
+#
+# On a pull request that changes the Go modules or the interface's
+# packages, and on main every Monday: govulncheck over the Go code, which
+# reports only what the code really calls, and npm audit over the
+# interface's packages. Either failing is a red check.
+#
+# Every Monday also scripts/upstream.sh, which compares ffmpeg, the
+# libraries it is built with, llama.cpp and the speech library with their
+# newest releases. While anything is behind, one issue says so and is kept
+# up to date, and it is closed once everything is current. An issue is
+# what reaches Tim: GitHub tells whoever watches the repository.
+# See docs/BUILD.md, Keeping up.
+name: Security
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - go.mod
+      - go.sum
+      - frontend/package.json
+      - frontend/package-lock.json
+      - .github/workflows/security.yml
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: System packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+      # The interface is embedded in the app, and Go wants the folder.
+      - name: An interface to embed
+        run: mkdir -p cmd/framefairy-app/dist/app && touch cmd/framefairy-app/dist/app/index.html
+      # Pinned like everything else here. Raising it is a line in a pull
+      # request, where it can be read first.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  npm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+      # Everything, not only what ships: the build tools make the bundle
+      # that does.
+      - name: npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=low
+
+  upstream:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Newer releases of what we ship
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          title="Newer releases of the tools the app ships"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if table=$(sh scripts/upstream.sh --behind); then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Everything the app ships is at its newest release again."
+            fi
+            exit 0
+          fi
+          body=$(printf '%s\n\n%s\n\n%s\n' \
+            "These are behind their newest release upstream, as of $(date -u +%Y-%m-%d). What reads a video somebody else made needs its fixes, so raise each pin in its build script, run make, and render a short before merging." \
+            "$table" \
+            "Written by .github/workflows/security.yml, and closed by it once everything is current.")
+          if [ -n "$open" ]; then
+            gh issue edit "$open" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
