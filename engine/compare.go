@@ -38,14 +38,9 @@ type RecipeRun struct {
 	// PromptChars is the whole request, what the model is told and the
 	// request with the transcript in it.
 	PromptChars int
-	// What a local model says it read and wrote, when one was asked, and
-	// the seconds it took to read the request and write the answer.
-	PromptTokens, WrittenTokens, ThoughtChars int
-	ModelSeconds                              float64
-	// Asks is how many times the model was asked, the first ask and every
-	// ask again about clips well off the length. ModelSeconds and the
-	// tokens written are of all of them.
-	Asks   int
+	// Use is what a local model says it read, thought and wrote, and how
+	// long that took, when one was asked.
+	Use    modelUse
 	Clips  []FoundClip
 	Failed string
 }
@@ -160,8 +155,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 			keepCopy(dir, "prompt.txt", body)
 		}
 		var reply string
-		reply, run.PromptTokens, run.WrittenTokens, run.ThoughtChars, run.ModelSeconds, run.Asks =
-			lastLocalAnswer(logs, began)
+		reply, run.Use = lastLocalAnswer(logs, began)
 		if body, err := os.ReadFile(reply); reply != "" && err == nil {
 			keepCopy(dir, "reply.json", body)
 		}
@@ -206,14 +200,23 @@ func keepCopy(dir, name string, body []byte) {
 	}
 }
 
-// lastLocalAnswer finds the answer saved since began and reads what the local
-// model said about it: the tokens it read, the tokens it wrote, how much of
-// what it wrote was thought, the seconds it took, and how many times it was
-// asked. The tokens written and the seconds are of every ask, the first and
-// those again about clips well off the length. The numbers are zero for
-// the API, and the path empty for an answer reused.
-func lastLocalAnswer(logs string, began time.Time) (path string, read, written, thought int,
-	seconds float64, asks int) {
+// modelUse is what a local model did for a search. Asks is how many times
+// it was asked, the first ask and every ask again about clips well off the
+// length. Read is the tokens of the first request, and ReadAnew those it
+// read rather than found in llama-server's cache from the side before,
+// which has the same request when two sides differ only in thinking.
+// Reading is the seconds that reading took. Thought is the tokens of
+// thought, or where they were not counted, ThoughtChars its characters.
+// Written and Seconds are of every ask.
+type modelUse struct {
+	Asks, Read, ReadAnew, Thought, ThoughtChars, Written int
+	Reading, Seconds                                     float64
+}
+
+// lastLocalAnswer finds the answer saved since began and reads what the
+// local model said about it. It is all zero for the API, and the path empty
+// for an answer reused.
+func lastLocalAnswer(logs string, began time.Time) (path string, use modelUse) {
 	matches, _ := filepath.Glob(filepath.Join(logs, "reply-*.json"))
 	var newest string
 	var at time.Time
@@ -225,11 +228,11 @@ func lastLocalAnswer(logs string, began time.Time) (path string, read, written, 
 		newest, at = m, info.ModTime()
 	}
 	if newest == "" {
-		return "", 0, 0, 0, 0, 0
+		return "", use
 	}
 	body, err := os.ReadFile(newest)
 	if err != nil {
-		return "", 0, 0, 0, 0, 0
+		return "", use
 	}
 	var saved struct {
 		How      *localAnswer `json:"how"`
@@ -239,25 +242,29 @@ func lastLocalAnswer(logs string, began time.Time) (path string, read, written, 
 		RefitHow *localAnswer `json:"refit_how"`
 	}
 	if json.Unmarshal(body, &saved) != nil || saved.How == nil {
-		return newest, 0, 0, 0, 0, 0
+		return newest, use
 	}
-	read, thought = saved.How.PromptTokens, saved.How.Reasoning
-	asks = 1
+	first := saved.How
+	use = modelUse{Asks: 1, Read: first.PromptTokens, ReadAnew: first.PromptTokens,
+		Thought: first.ReasoningTokens, ThoughtChars: first.Reasoning}
+	if first.Timings != nil {
+		use.ReadAnew, use.Reading = first.Timings.PromptN, first.Timings.PromptMS/1000
+	}
 	for _, h := range []*localAnswer{saved.How, saved.FitHow, saved.RefitHow} {
 		if h == nil {
 			continue
 		}
-		written += h.Written
+		use.Written += h.Written
 		if h.Timings != nil {
-			seconds += (h.Timings.PromptMS + h.Timings.PredictedMS) / 1000
+			use.Seconds += (h.Timings.PromptMS + h.Timings.PredictedMS) / 1000
 		}
 	}
 	for _, again := range []*string{saved.Fit, saved.Refit} {
 		if again != nil {
-			asks++
+			use.Asks++
 		}
 	}
-	return newest, read, written, thought, seconds, asks
+	return newest, use
 }
 
 // newestPlan is the plan written in dir since began.
@@ -334,20 +341,31 @@ func compareReport(opts Options, runs []RecipeRun) string {
 		"Seed %d, temperature %s unless a side says otherwise.\n\n",
 		filepath.Base(opts.Source), window, count, fixed(opts.Min, 0), fixed(opts.Max, 0),
 		seed, temperature)
-	costs := [][]string{{"Recipe", "Clips", "Asks", "Seconds", "Model, seconds",
-		"Request, characters", "Read, tokens", "Written, tokens", "Thought, characters"}}
+	costs := [][]string{{"Recipe", "Clips", "Asks", "Seconds", "Model, seconds", "Reading, seconds",
+		"Request, characters", "Read, tokens", "Read anew, tokens", "Thought, tokens", "Written, tokens"}}
 	for _, r := range runs {
-		model := "-"
-		if r.ModelSeconds > 0 {
-			model = fixed(r.ModelSeconds, 0)
+		u := r.Use
+		seconds := func(s float64) string {
+			if s <= 0 {
+				return "-"
+			}
+			return fixed(s, 0)
 		}
-		costs = append(costs, []string{r.Recipe, strconv.Itoa(len(r.Clips)), orNone(r.Asks),
-			fixed(r.Seconds, 0), model, commas(r.PromptChars), orNone(r.PromptTokens),
-			orNone(r.WrittenTokens), orNone(r.ThoughtChars)})
+		thought := orNone(u.Thought)
+		if u.Thought == 0 && u.ThoughtChars > 0 {
+			thought = "about " + commas(u.ThoughtChars*10/25)
+		}
+		costs = append(costs, []string{r.Recipe, strconv.Itoa(len(r.Clips)), orNone(u.Asks),
+			fixed(r.Seconds, 0), seconds(u.Seconds), seconds(u.Reading), commas(r.PromptChars),
+			orNone(u.Read), orNone(u.ReadAnew), thought, orNone(u.Written)})
 	}
 	b.WriteString(alignedTable(costs))
 	b.WriteString("\nAsks counts the first ask and every ask again about clips well off the " +
-		"length. Model, seconds and Written, tokens are of all of them, Read, tokens of the first.\n")
+		"length. Model, seconds and Written, tokens are of all of them, the reading of the " +
+		"first. Read anew is what the model read rather than found in its cache: a side with " +
+		"the same request as the side before reads almost nothing, so its seconds leave out " +
+		"the reading the others paid for. Thought is part of Written. Where the tokens of " +
+		"thought were not counted, it is worked out from the characters, about 2.5 a token.\n")
 	// What can be counted about the clips, beside what has to be read.
 	b.WriteString("\nWhat can be counted, fewer is better. A clip starts mid-sentence when its first " +
 		"word is in lower case, ends mid-sentence when its last has no full stop, question or " +

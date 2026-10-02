@@ -241,6 +241,9 @@ func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
 		// on sentences, so they never cut a line of it. Put back after,
 		// a heart ending on a comma ended the clip there.
 		entry.Heart = wholeHeart(b.lines, entry.Heart)
+		if entry.Opening > 0 {
+			entry.Opening = sentenceStart(b.lines, min(entry.Opening, len(b.lines)))
+		}
 		if entry.Heart[0] > 0 {
 			entry.Keep = withRun(entry.Keep, entry.Heart)
 		}
@@ -260,7 +263,8 @@ func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
 		}
 		return false
 	}
-	keep, did := fitToHeart(b.lines, entry.Keep, entry.Heart, b.opts.MinLen, b.opts.MaxLen, taken, b.seconds)
+	keep, did := fitToHeart(b.lines, entry.Keep, entry.Heart, entry.Opening, b.opts.MinLen, b.opts.MaxLen,
+		taken, b.seconds)
 	entry.Keep = keep
 	return entry, did
 }

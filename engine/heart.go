@@ -41,7 +41,27 @@ var heartRecipe = Recipe{
 	Schema:  heartSchema,
 }
 
-func init() { recipes[heartRecipe.Name] = heartRecipe }
+// heartOpeningRecipe is heart with the opening named too: the first line
+// a stranger needs, which a clip never starts after. In Tim's first
+// comparison heart started the umbrella story without "I was a small kid,
+// second, third grade" and the mirror story without the father's art,
+// both where the model chose to start, and lines kept both.
+var heartOpeningRecipe = Recipe{
+	Name: "heart-opening",
+	About: "heart, with the opening named too, the first line a stranger needs, which the engine " +
+		"never starts a clip after",
+	Unit:    "line",
+	Hearts:  true,
+	Version: 1,
+	System:  heartOpeningSystem,
+	Request: heartOpeningRequest,
+	Schema:  heartOpeningSchema,
+}
+
+func init() {
+	recipes[heartRecipe.Name] = heartRecipe
+	recipes[heartOpeningRecipe.Name] = heartOpeningRecipe
+}
 
 // lengthParagraph is what the brief says about the length, which in the
 // heart recipe is the engine's to keep.
@@ -58,37 +78,73 @@ const heartLength = `A program fits every clip to the length asked for, on whole
 	`When it is too short, it takes in the lines before it. Inside the story, leave out ` +
 	`what it holds without: asides, restarts, repetitions, a second example.`
 
+const heartOpeningLength = `A program fits every clip to the length asked for, on whole lines, so do not ` +
+	`count seconds. It needs three things from you. The opening: the first line a stranger ` +
+	`needs to follow the story, the question or the setup that says who, when and where. ` +
+	`The heart: the lines that carry what happened and the payoff. And the story around ` +
+	`them, as far as it reaches. The program never starts a clip after its opening and ` +
+	`never cuts its heart. When the story is too long, it takes away what runs on after ` +
+	`the heart first, then what comes before the opening. When it is too short, it takes ` +
+	`in the lines before it. Inside the story, leave out what it holds without: asides, ` +
+	`restarts, repetitions, a second example.`
+
 // heartSystem is the brief lines asks with, the length left to the program
 // and the heart asked for in the answer.
-var heartSystem = strings.Replace(storyBrief, lengthParagraph, heartLength, 1) + `
+var heartSystem = strings.Replace(storyBrief, lengthParagraph, heartLength, 1) + heartPauses +
+	heartContract(`"heart": [20, 24], `, "")
+
+// heartOpeningSystem is heartSystem with the opening asked for too.
+var heartOpeningSystem = strings.Replace(storyBrief, lengthParagraph, heartOpeningLength, 1) +
+	heartPauses + heartContract(`"opening": 14, "heart": [20, 24], `,
+	`- "opening": the line the clip starts on, the first a stranger needs, before the heart.
+`)
+
+const heartPauses = `
 Pauses are yours to decide. A pause between two lines in one run stays, at full ` +
 	`length. To cut a pause, end a run on the line before it and start the next run on ` +
 	`the line after it. The two runs may follow each other directly, so [[12, 14], [15, 18]] ` +
 	`keeps lines 12 to 18 and cuts only the pause between 14 and 15.
+`
 
+// heartContract is the answer's shape, with the fields that name points
+// in a clip, in example, and what each of those fields beyond the heart
+// means, in more.
+func heartContract(example, more string) string {
+	return `
 OUTPUT CONTRACT
 
 Your reply is parsed by a program. Return exactly one JSON object and nothing else. ` +
-	`No prose, no markdown fences.
+		`No prose, no markdown fences.
 
-{"clips": [{"slug": "...", "title": "...", "reason": "...", "heart": [20, 24], "keep": [[12, 18], [20, 27]]}]}
+{"clips": [{"slug": "...", "title": "...", "reason": "...", ` + example + `"keep": [[12, 18], [20, 27]]}]}
 
 - "clips": at most the number asked for.
 - "slug": lowercase ASCII letters, digits and hyphens, at most 64 characters, ` +
-	`different for every clip.
+		`different for every clip.
 - "title": a hook line in the language of the transcript, one line, at most 200 characters.
 - "reason": one sentence, at most 300 characters.
 - "heart": the first and the last line of the heart and the payoff, [first, last]. ` +
-	`Every line from first to last is kept.
-- "keep": runs of lines the story reaches, as [first, last] line numbers from the ` +
-	`transcript, in ascending order and not overlapping, the heart inside them. A run may ` +
-	`start on the line right after the previous one ends, which cuts the pause between them.
+		`Every line from first to last is kept.
+` + more + `- "keep": runs of lines the story reaches, as [first, last] line numbers from the ` +
+		`transcript, in ascending order and not overlapping, the heart inside them. A run may ` +
+		`start on the line right after the previous one ends, which cuts the pause between them.
 `
+}
 
 func heartRequest(lines []Line, _ [][2]int, opts PlanOptions) string {
-	task := fmt.Sprintf("Find up to %d clips, the strongest first. Name the heart of each, and "+
-		"keep the story around it. The program fits each to %s to %s seconds.",
-		opts.Count, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
+	return heartAsk(lines, opts, "Name the heart of each, and keep the story around it.")
+}
+
+func heartOpeningRequest(lines []Line, _ [][2]int, opts PlanOptions) string {
+	return heartAsk(lines, opts, "Name the opening and the heart of each, and keep the story "+
+		"around them.")
+}
+
+// heartAsk is the request of both heart recipes, which differ in what
+// they ask to be named.
+func heartAsk(lines []Line, opts PlanOptions, name string) string {
+	task := fmt.Sprintf("Find up to %d clips, the strongest first. %s The program fits each "+
+		"to %s to %s seconds.", opts.Count, name, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
 	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
 		task += " " + takenSentence(taken)
 	}
@@ -109,6 +165,21 @@ func heartRequest(lines []Line, _ [][2]int, opts PlanOptions) string {
 
 // heartSchema is planSchema with the heart, which every clip has.
 func heartSchema(lineCount, count int) string {
+	return pointsSchema(lineCount, count, false)
+}
+
+// heartOpeningSchema is heartSchema with the opening, which every clip has.
+func heartOpeningSchema(lineCount, count int) string {
+	return pointsSchema(lineCount, count, true)
+}
+
+func pointsSchema(lineCount, count int, opening bool) string {
+	openingField, required := "", `"slug", "title", "reason", "heart", "keep"`
+	if opening {
+		openingField = fmt.Sprintf(`
+          "opening": {"type": "integer", "minimum": 1, "maximum": %d},`, max(lineCount, 1))
+		required = `"slug", "title", "reason", "opening", "heart", "keep"`
+	}
 	return fmt.Sprintf(`{
   "type": "object",
   "properties": {
@@ -121,7 +192,7 @@ func heartSchema(lineCount, count int) string {
         "properties": {
           "slug": {"type": "string", "pattern": "^[a-z0-9-]{1,64}$"},
           "title": {"type": "string", "minLength": 1, "maxLength": 200},
-          "reason": {"type": "string", "minLength": 1, "maxLength": 300},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 300},%s
           "heart": {
             "type": "array",
             "minItems": 2,
@@ -140,38 +211,51 @@ func heartSchema(lineCount, count int) string {
             }
           }
         },
-        "required": ["slug", "title", "reason", "heart", "keep"],
+        "required": [%s],
         "additionalProperties": false
       }
     }
   },
   "required": ["clips"],
   "additionalProperties": false
-}`, max(count, 1), max(lineCount, 1), max(lineCount, 1))
+}`, max(count, 1), openingField, max(lineCount, 1), max(lineCount, 1), required)
 }
 
 // fitToHeart fits a clip, runs of lines numbered from 1, to shortest and
 // longest seconds around its heart, on whole sentences, and says what it
-// did: "shortened", "lengthened", or nothing. seconds measures a clip as it
-// is cut, and taken says whether a line is in another clip already, which
-// a clip never grows into. A clip without a heart stays as it is.
+// did: "shortened", "lengthened", or nothing. opening is the line the clip
+// must not start after, 0 for none. seconds measures a clip as it is cut,
+// and taken says whether a line is in another clip already, which a clip
+// never grows into. A clip without a heart stays as it is.
 //
 // Too long, it lets go of what runs on past the heart first, a sentence at
-// a time, and then of setup from the start, and stops before a step that
-// would leave it further off the length than it was. Too short, it takes
+// a time, and then of setup from the start, never past the opening, and
+// stops before a step that would leave it further off the length than it
+// was. Too short, it takes
 // in the sentence before it, and the one after it only where there is
 // nothing before it to take, and never past longest.
-func fitToHeart(lines []Line, keep [][2]int, heart [2]int, shortest, longest float64,
+func fitToHeart(lines []Line, keep [][2]int, heart [2]int, opening int, shortest, longest float64,
 	taken func(n int) bool, seconds func([][2]int) float64) ([][2]int, string) {
 	if heart[0] < 1 || heart[1] < heart[0] || heart[1] > len(lines) || len(keep) == 0 {
 		return keep, ""
 	}
 	keep = withRun(keep, heart)
+	// The setup goes no further than the opening, and a clip that starts
+	// after its opening starts there. An opening after the heart begins is
+	// no opening.
+	floor := heart[0]
+	if opening >= 1 && opening < heart[0] {
+		floor = opening
+		if keep[0][0] > opening {
+			keep = append([][2]int(nil), keep...)
+			keep[0][0] = opening
+		}
+	}
 	now := seconds(keep)
 	off := func(s float64) float64 { return max(0, shortest-s, s-longest) }
 	did := ""
 	for steps := 0; now > longest && steps < len(lines); steps++ {
-		next := lessAround(lines, keep, heart)
+		next := lessAround(lines, keep, heart, floor)
 		if next == nil {
 			break
 		}
@@ -228,9 +312,9 @@ func withRun(keep [][2]int, run [2]int) [][2]int {
 }
 
 // lessAround is keep a sentence shorter: at its end, while it runs on past
-// the heart, and then at its start, up to the heart. Nil when only the
-// heart is left.
-func lessAround(lines []Line, keep [][2]int, heart [2]int) [][2]int {
+// the heart, and then at its start, up to floor, the heart or the opening
+// before it. Nil when nothing more can go.
+func lessAround(lines []Line, keep [][2]int, heart [2]int, floor int) [][2]int {
 	out := append([][2]int(nil), keep...)
 	last := &out[len(out)-1]
 	if last[1] > heart[1] {
@@ -249,12 +333,12 @@ func lessAround(lines []Line, keep [][2]int, heart [2]int) [][2]int {
 		return out
 	}
 	first := &out[0]
-	if first[0] < heart[0] {
-		if first[1] < heart[0] {
+	if first[0] < floor {
+		if first[1] < floor {
 			return out[1:]
 		}
-		start := heart[0]
-		for n := first[0] + 1; n < heart[0]; n++ {
+		start := floor
+		for n := first[0] + 1; n < floor; n++ {
 			if beginsSentence(lines, n) {
 				start = n
 				break

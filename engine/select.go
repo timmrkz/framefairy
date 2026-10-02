@@ -253,6 +253,9 @@ type PlanEntry struct {
 	// the clip, which fitting it to the length never cuts. It is zero
 	// where the recipe asks for none, see heart.go.
 	Heart [2]int
+	// Opening is the line the model named as the one a clip must not
+	// start after, 0 where the recipe asks for none, see heart.go.
+	Opening int
 }
 
 // validateEntry checks one clip of an answer, the index-th. It gives the
@@ -323,6 +326,19 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 			heart = [2]int{first, last}
 		}
 	}
+	opening := 0
+	if openingAny, present := clip["opening"]; present {
+		n, ok := toInt(openingAny)
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("clip %d: its opening is not a number", index))
+		case n < 1 || n > lineCount:
+			problems = append(problems, fmt.Sprintf("clip %d: its opening %d is not inside 1-%d",
+				index, n, lineCount))
+		default:
+			opening = n
+		}
+	}
 	get := func(key string) string {
 		value, present := clip[key]
 		if !present {
@@ -331,11 +347,12 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		return pyStr(value)
 	}
 	return PlanEntry{
-		Slug:   Scrub(get("slug"), 64),
-		Title:  Scrub(get("title"), 200),
-		Reason: Scrub(get("reason"), 300),
-		Keep:   ranges,
-		Heart:  heart,
+		Slug:    Scrub(get("slug"), 64),
+		Title:   Scrub(get("title"), 200),
+		Reason:  Scrub(get("reason"), 300),
+		Keep:    ranges,
+		Heart:   heart,
+		Opening: opening,
 	}, problems, true
 }
 
@@ -352,6 +369,13 @@ func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, boo
 		return PlanEntry{}, append(problems, fmt.Sprintf("clip %d: %s", index, err)), false
 	}
 	entry.Keep = keep
+	if entry.Opening > 0 {
+		if opening, err := toLines([][2]int{{entry.Opening, entry.Opening}}, units); err != nil {
+			entry.Opening = 0
+		} else {
+			entry.Opening = opening[0][0]
+		}
+	}
 	if entry.Heart[0] > 0 {
 		heart, err := toLines([][2]int{entry.Heart}, units)
 		if err != nil {

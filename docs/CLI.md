@@ -214,7 +214,8 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart,heart@1024,hear
 
 shows whether `heart` finds stories as good as `lines` and how much
 sooner, and how much of the thinking it still needs once it no longer
-has to count seconds.
+has to count seconds. `heart-opening` asks for the line a clip opens on
+too, so a story keeps the setup a stranger needs.
 
 A recipe with `@` and a number thinks that many tokens, whatever
 `--think` says, so one recipe can be compared with itself:
@@ -241,7 +242,9 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories
 searches the same window once with each recipe and writes
 `<episode>.framefairy/experiments/compare-<date>.md`: a table of what each
 search cost, the time, how many times the model was asked, the seconds it
-took over all of them, the size of the request
+took over all of them and how many of them went on reading, the tokens it
+read and how many of those were new rather than in llama-server's cache
+from the side before, the tokens it thought, the size of the request
 and what the local model read and wrote, a table of what can be counted
 about the clips, how many start or end mid-sentence and how many are well
 off the length, and then every clip each found, with its title and the

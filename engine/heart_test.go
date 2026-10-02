@@ -84,7 +84,7 @@ func TestAClipIsFittedAroundItsHeart(t *testing.T) {
 		if c.taken > 0 {
 			taken = func(n int) bool { return n == c.taken }
 		}
-		keep, did := fitToHeart(lines, parseRuns(t, c.keep), c.heart, 20, 30, taken, lasting(lines))
+		keep, did := fitToHeart(lines, parseRuns(t, c.keep), c.heart, 0, 20, 30, taken, lasting(lines))
 		if fmt.Sprint(keep) != c.want || did != c.did {
 			t.Errorf("%s: %s became %v %q, want %s %q", c.name, c.keep, keep, did, c.want, c.did)
 		}
@@ -97,7 +97,7 @@ func TestAClipIsFittedAroundItsHeart(t *testing.T) {
 func TestFittingStopsShortOfMakingItWorse(t *testing.T) {
 	lines := spoken(14, 4, 4, 9)
 	// 1 to 4 runs 34 seconds, the heart 2 to 4. Without the first it is 19.
-	keep, did := fitToHeart(lines, [][2]int{{1, 4}}, [2]int{2, 4}, 20, 30, noneTaken, lasting(lines))
+	keep, did := fitToHeart(lines, [][2]int{{1, 4}}, [2]int{2, 4}, 0, 20, 30, noneTaken, lasting(lines))
 	if fmt.Sprint(keep) != "[[2 4]]" && fmt.Sprint(keep) != "[[1 4]]" {
 		t.Fatalf("became %v", keep)
 	}
@@ -209,7 +209,7 @@ func TestAComparisonCountsEveryAsk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 2 || runs[0].Asks != 2 || runs[1].Asks != 1 {
+	if len(runs) != 2 || runs[0].Use.Asks != 2 || runs[1].Use.Asks != 1 {
 		t.Fatalf("runs %+v", runs)
 	}
 	for _, run := range runs {
@@ -253,5 +253,85 @@ func TestAHeartIsWholeSentences(t *testing.T) {
 	}
 	if got := wholeHeart(lines, [2]int{4, 9}); got != [2]int{} {
 		t.Errorf("a heart past the end became %v", got)
+	}
+}
+
+// A clip never starts after its opening: the setup goes no further, even
+// when the clip then stays long, and a clip the model started after its
+// own opening starts there.
+func TestAClipKeepsItsOpening(t *testing.T) {
+	lines := spoken(5, 5, 5, 5, 5, 5, 5, 5, 5, 5)
+	for _, c := range []struct {
+		name, keep, want, did string
+		heart                 [2]int
+		opening               int
+	}{
+		// Without an opening, setup goes until it fits: 6 to 10 is 29.
+		{"no opening", "[[1 10]]", "[[6 10]]", "shortened", [2]int{9, 10}, 0},
+		// With the opening at 3 it stops there, 47 seconds long.
+		{"opening", "[[1 10]]", "[[3 10]]", "shortened", [2]int{9, 10}, 3},
+		// Started after its opening, it starts there.
+		{"started late", "[[5 8]]", "[[3 8]]", "", [2]int{7, 8}, 3},
+		// An opening inside the heart is no opening.
+		{"opening in the heart", "[[1 8]]", "[[4 8]]", "shortened", [2]int{7, 8}, 7},
+	} {
+		keep, did := fitToHeart(lines, parseRuns(t, c.keep), c.heart, c.opening, 20, 30, noneTaken,
+			lasting(lines))
+		if fmt.Sprint(keep) != c.want || did != c.did {
+			t.Errorf("%s: %s became %v %q, want %s %q", c.name, c.keep, keep, did, c.want, c.did)
+		}
+	}
+}
+
+// The opening is read from the answer, one that cannot be read is said and
+// left out, and heart-opening asks for it in every clip.
+func TestTheOpeningIsReadFromTheAnswer(t *testing.T) {
+	read := func(opening string) (PlanEntry, []string) {
+		var data map[string]any
+		answer := `{"clips": [{"slug": "a", "title": "A", "reason": "r", "opening": ` + opening +
+			`, "heart": [4, 6], "keep": [[2, 8]]}]}`
+		if err := json.Unmarshal([]byte(answer), &data); err != nil {
+			t.Fatal(err)
+		}
+		entries, problems, err := ValidatePlan(data, lineUnits(20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entries[0], problems
+	}
+	if entry, problems := read("3"); entry.Opening != 3 || len(problems) > 0 {
+		t.Errorf("opening %d, problems %v", entry.Opening, problems)
+	}
+	for _, bad := range []string{"0", "30", "[3]"} {
+		if entry, problems := read(bad); entry.Opening != 0 || len(problems) != 1 {
+			t.Errorf("opening %s read as %d, problems %v", bad, entry.Opening, problems)
+		}
+	}
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(heartOpeningSchema(20, 6)), &schema); err != nil {
+		t.Fatalf("the schema is not JSON: %v", err)
+	}
+	if !strings.Contains(heartOpeningSchema(20, 6), `"opening", "heart"`) ||
+		strings.Contains(heartSchema(20, 6), "opening") {
+		t.Error("only heart-opening asks for the opening")
+	}
+	if err := json.Unmarshal([]byte(heartSchema(20, 6)), &schema); err != nil {
+		t.Fatalf("the heart schema is not JSON: %v", err)
+	}
+}
+
+// The thought is counted in tokens as well as characters, one a piece as
+// llama-server sends them, so a comparison can say how much was thought.
+func TestThoughtIsCountedInTokens(t *testing.T) {
+	stream := "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Die \"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Geschichte\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"{}\"},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: [DONE]\n\n"
+	answer, err := readLocalStream(strings.NewReader(stream), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.ReasoningTokens != 2 || answer.Reasoning != 14 {
+		t.Errorf("%d tokens and %d characters of thought", answer.ReasoningTokens, answer.Reasoning)
 	}
 }
