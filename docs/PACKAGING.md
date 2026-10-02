@@ -290,9 +290,16 @@ And none of the formats that are lists of other files, `hls`, `dash`,
 pulled somebody's own files into what they then publish. The `concat`
 filter the engine uses is another thing and stays. `build-ffmpeg.sh`
 reads the finished binary back and stops if anything else got in. And it
-is kept at the newest release, ffmpeg 9.0.2 in October 2026: 7.1 had been
-kept long after 8 and 9 came out without anybody choosing to, and
-`scripts/upstream.sh` now says every week when it falls behind again.
+is kept at the newest release, unless a release changes what the app
+relies on: 7.1 had been kept long after 8 and 9 came out without anybody
+choosing to, and `scripts/upstream.sh` now says every week when it falls
+behind. In October 2026 that is the newest 8.1, 8.1.3, and not 9.0.2,
+which decodes AAC after a seek 16 ms later than before. The loudness the
+app measures from a jump then no longer lines up with the same loudness
+from the start, which the macOS tests caught, and a render, which starts
+with a seek too, may move its sound against its picture. Moving to 9
+waits until the app agrees with it and a render on a Mac keeps its sound
+in place.
 
 So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than
