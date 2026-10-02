@@ -123,6 +123,10 @@ fi
 # server can fetch a model from a URL and serve its own page over TLS. We
 # hand it a file on disk and talk to it on 127.0.0.1, so there is nothing
 # to give up.
+#
+# The build number is the pinned one. llama.cpp counts it from the history
+# it was cloned with, and a clone of one commit made every server say it
+# was build 1, so the app could not say which llama-server it runs.
 FLAGS="-DCMAKE_BUILD_TYPE=Release \
 	-DCMAKE_INSTALL_PREFIX=$OUT \
 	-DBUILD_SHARED_LIBS=OFF \
@@ -135,7 +139,8 @@ FLAGS="-DCMAKE_BUILD_TYPE=Release \
 	-DLLAMA_BUILD_SERVER=ON \
 	-DLLAMA_BUILD_UI=OFF \
 	-DLLAMA_USE_PREBUILT_UI=OFF \
-	-DLLAMA_OPENSSL=OFF"
+	-DLLAMA_OPENSSL=OFF \
+	-DLLAMA_BUILD_NUMBER=${LLAMA_VERSION#b}"
 
 if [ "$SYSTEM" = Darwin ]; then
 	# Metal is what makes a model answer in seconds on an M2 rather than

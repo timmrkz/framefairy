@@ -254,3 +254,53 @@ func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 		t.Errorf("a tool named in the environment was refused: %q, %v", got, err)
 	}
 }
+
+// What the settings say about each tool: the version it says it is,
+// as each of them says it.
+func TestAToolSaysItsVersion(t *testing.T) {
+	for out, want := range map[string]string{
+		"ffmpeg version n8.1.3 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with clang": "8.1.3",
+		"ffprobe version n8.1.3 Copyright (c) 2007-2026 the FFmpeg developers":                  "8.1.3",
+		"ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers":           "6.1.1-3ubuntu5",
+		"0.00.001 I srv init\nversion: 0.4.1-dev (build 11105, commit 348f853)\nbuilt with":     "b11105",
+		"nothing at all": "",
+	} {
+		if got := parseToolVersion(out); got != want {
+			t.Errorf("%q read as %q, want %q", out, got, want)
+		}
+	}
+}
+
+// The settings read a tool again whenever they look, and say whether it is
+// the file the program was built with: a tool changed since it was last
+// run is caught by the look, not only by the next run.
+func TestInspectingAToolReadsItAgain(t *testing.T) {
+	t.Setenv("FRAMEFAIRY_FFMPEG", "")
+	dir := t.TempDir()
+	ffmpeg := filepath.Join(dir, "ffmpeg")
+	body := []byte("#!/bin/sh\necho 'ffmpeg version n8.1.3 Copyright'\n")
+	if err := os.WriteFile(ffmpeg, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	was := toolSums
+	t.Cleanup(func() { toolSums = was })
+	toolSums = "ffmpeg=" + hex.EncodeToString(sum[:])
+
+	s := inspectToolIn(t.Context(), dir, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	if !s.Checked || s.Err != nil || s.SHA256 != hex.EncodeToString(sum[:]) || s.Version != "8.1.3" {
+		t.Fatalf("the right file read as %+v", s)
+	}
+	// Changed in place with the same size and time, which a stamp alone
+	// would not see. The look reads it again.
+	info, _ := os.Stat(ffmpeg)
+	other := []byte("#!/bin/sh\necho 'ffmpeg version n6.6.6 Copyright'\n")
+	if err := os.WriteFile(ffmpeg, other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chtimes(ffmpeg, info.ModTime(), info.ModTime())
+	s = inspectToolIn(t.Context(), dir, "FRAMEFAIRY_FFMPEG", "ffmpeg")
+	if s.Checked || s.Err == nil || s.Version != "" {
+		t.Errorf("a changed file read as %+v", s)
+	}
+}

@@ -1,11 +1,14 @@
 package engine
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -154,16 +157,11 @@ func checkTool(path, name string) error {
 	if was, ok := checked.Load(path); ok && was == stamp {
 		return nil
 	}
-	file, err := os.Open(path)
+	got, err := fileSHA256(path)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	sum := sha256.New()
-	if _, err := io.Copy(sum, file); err != nil {
-		return err
-	}
-	if got := hex.EncodeToString(sum.Sum(nil)); got != want {
+	if got != want {
 		return renderErr("%s beside the program is not the one this program was built with, so it is "+
 			"not run. Its SHA-256 is %s and should be %s. Installing the app again puts the right one back.",
 			name, got, want)
@@ -195,3 +193,101 @@ func (e *Engine) UseTools(ffmpeg, ffprobe string) {
 		e.FFprobe = guess
 	}
 }
+
+// ToolState is what can be said about a tool a program runs, for whoever
+// wants to see it: which file, which version, its SHA-256 and whether that
+// is the sum built into the program. The settings show it, because "there
+// is an ffmpeg" says nothing about which one.
+type ToolState struct {
+	Path    string
+	Version string
+	SHA256  string
+	// Checked says the file is the one whose sum was built in.
+	Checked bool
+	// Named says the environment named it, so nothing was built in for it
+	// and it runs as named, unchecked.
+	Named bool
+	// Err says why the tool does not run.
+	Err error
+}
+
+// InspectTool reads a tool again, whatever was checked before, and says
+// what it is. A tool that does not match is not run here either: its
+// version is only asked of a file that may run.
+func InspectTool(ctx context.Context, envVar, name string) ToolState {
+	return inspectToolIn(ctx, exeDir(), envVar, name)
+}
+
+func inspectToolIn(ctx context.Context, dir, envVar, name string) ToolState {
+	var s ToolState
+	if named := os.Getenv(envVar); named != "" {
+		s.Path, s.Named = named, true
+	} else if s.Path = toolIn(runtime.GOOS, dir, name); s.Path == "" {
+		_, s.Err = findToolIn(dir, envVar, name)
+		return s
+	}
+	sum, err := fileSHA256(s.Path)
+	if err != nil {
+		s.Err = err
+		return s
+	}
+	s.SHA256 = sum
+	if !s.Named {
+		checked.Delete(s.Path)
+		if s.Err = checkTool(s.Path, name); s.Err != nil {
+			return s
+		}
+		s.Checked = true
+	}
+	s.Version = toolVersion(ctx, s.Path, name)
+	return s
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	sum := sha256.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// toolVersion is the version a tool says it is, or empty. ffmpeg and
+// ffprobe say "ffmpeg version n8.1.3 Copyright ...", and llama-server says
+// "version: 0.4.1-dev (build 11105, commit 348f853)", which is build b11105.
+func toolVersion(ctx context.Context, path, name string) string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	flag := "-version"
+	if strings.HasPrefix(name, "llama") {
+		flag = "--version"
+	}
+	out, _ := exec.CommandContext(ctx, path, flag).CombinedOutput()
+	return parseToolVersion(string(out))
+}
+
+func parseToolVersion(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		for i, f := range fields {
+			switch {
+			case f == "version" && i > 0 && i+1 < len(fields):
+				return strings.TrimPrefix(fields[i+1], "n")
+			case f == "version:":
+				if m := llamaBuild.FindStringSubmatch(line); m != nil {
+					return "b" + m[1]
+				}
+				if i+1 < len(fields) {
+					return fields[i+1]
+				}
+			}
+		}
+	}
+	return ""
+}
+
+var llamaBuild = regexp.MustCompile(`\(build ([1-9][0-9]*),`)

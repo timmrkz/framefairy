@@ -63,6 +63,11 @@ export interface Check {
   name: string;
   ok: boolean;
   detail: string;
+  // For a tool the app carries: the version it says it is, where it is,
+  // and its SHA-256, read again on every check.
+  version?: string;
+  path?: string;
+  sha256?: string;
 }
 
 export interface PlanSummary {

@@ -1601,7 +1601,22 @@ is checked before it runs to be the file the app was built with: `make`
 takes the SHA-256 of each tool it puts beside the programs and builds it
 into them, and a tool that does not match, or one no sum was built in
 for, is not run. A tool that is missing or does not match is said in the
-check under **Advanced**, in words, rather than replaced by another. The
+check under **Advanced**, in words, rather than replaced by another.
+
+**The check says which tools these are.** Each of ffmpeg, ffprobe and
+llama-server has its row, with the version it says it is beside its name,
+the file, its SHA-256, and whether that is the sum built into the app.
+**Check again** reads every file again rather than trusting what it read
+before, so a tool changed since it last ran is caught by looking, not
+only by the next run that refuses it. llama-server says its build, b and
+the number, because the build passes the pinned build number to
+llama.cpp: a clone of one commit had every server saying it was build 1.
+
+**The tools come with the app.** They are inside it, so an update brings
+the ones its build was made with, and there is nothing of them to update
+on their own: a version raised in a build script is a new app, and the
+next update is the new tools. A customer never runs older tools than the
+app they have. The
 environment can still name one, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`
 and `FRAMEFAIRY_LLAMA_SERVER`, which is how the tests take theirs. See
 `FindTool` in `engine/tools.go`.

@@ -915,8 +915,12 @@
                   {#if c.ok}<Icon name="check" />{:else}<span class="dot err"></span>{/if}
                 </span>
                 <div class="words">
-                  <span>{c.name}</span>
+                  <span>{c.name}{#if c.version}{" "}<span class="muted num">{c.version}</span>{/if}</span>
                   <span class="small selectable" class:muted={c.ok} class:error={!c.ok}>{c.detail}</span>
+                  <!-- Which file, and what it is down to the byte, so it
+                       can be compared with the build it came from. -->
+                  {#if c.path}<span class="small muted selectable">{c.path}</span>{/if}
+                  {#if c.sha256}<span class="small muted selectable sum" title="SHA-256">SHA-256 {c.sha256}</span>{/if}
                 </div>
               </div>
             {/each}
@@ -1193,5 +1197,13 @@
 
   .found {
     min-height: 0;
+  }
+
+  /* A checksum is read a character at a time, in figures of one width,
+     and broken anywhere rather than pushing the card wider. */
+  .sum {
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    overflow-wrap: anywhere;
   }
 </style>

@@ -1274,7 +1274,8 @@ export const Call = {
         const broken = location.search.includes("broken");
         const api = ((window as any).__settings?.planner ?? (window as any).__planner) === "api";
         const out = [
-          { name: "ffmpeg", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg" },
+          { name: "ffmpeg", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffmpeg", sha256: "e1ba46e814d383b96be780d1a7c49e1c4eecef1619615a241974dc122e2f1a2e" },
+          { name: "ffprobe", ok: true, version: "8.1.3", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/ffprobe", sha256: "5b0c9e2d7a41f8836c2e0b1d94f7a6c35e8d21b0a97f4c6e3d58b2a1f0c9e7d4" },
           { name: "Video decoding", ok: true, detail: "VideoToolbox, falling back to the processor for a file it does not take. The log of a search says which one it used" },
           { name: "Caption fonts", ok: true, detail: "built in: Inter Black, Montserrat ExtraBold" },
           { name: "Speech model", ok: true, detail: "/Users/tim/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
@@ -1290,8 +1291,8 @@ export const Call = {
         if (api) out.push({ name: `${who} API key`, ok: key, detail: key ? "found" : `no ${who} API key found. Either set ${openai ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"}, or store it in the keychain` });
         else {
           out.push(broken
-            ? { name: "llama-server", ok: false, detail: "llama-server was not found. Install llama.cpp as docs/INSTALL.md describes, or set its path." }
-            : { name: "llama-server", ok: true, detail: "/Applications/Frame Fairy.app/Contents/MacOS/llama-server" });
+            ? { name: "llama-server", ok: false, detail: "llama-server beside the program is not the one this program was built with, so it is not run. Its SHA-256 is 05ea47886ba6d8a0e9fb93f7d7f68f64b992eefb78e5628e79709c2154e9d71b and should be 9d2c41f0e6b8a3d75c1e04f92b6a8d3e7f05c1b29a4e68d3f7b0c25e19a4d6f8. Installing the app again puts the right one back.", path: "/Applications/Frame Fairy.app/Contents/MacOS/llama-server", sha256: "05ea47886ba6d8a0e9fb93f7d7f68f64b992eefb78e5628e79709c2154e9d71b" }
+            : { name: "llama-server", ok: true, version: "b11105", detail: "The one this app was built with: its SHA-256 matches the one built in.", path: "/Applications/Frame Fairy.app/Contents/MacOS/llama-server", sha256: "9d2c41f0e6b8a3d75c1e04f92b6a8d3e7f05c1b29a4e68d3f7b0c25e19a4d6f8" });
           // A model chosen before its download is not here yet, which the
           // check says in the Go side's words.
           const used: string = (window as any).__used ?? "gemma-4-26B_q4_0-it.gguf";
