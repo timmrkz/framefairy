@@ -468,10 +468,13 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 						local.Think = DefaultThink / 2
 					}
 				}
+				// The clock counts the clips given again, so the fill moves
+				// while the model writes them rather than standing still.
+				listen := build.clock.fitAsk(count)
 				err := e.Log.Step(step, func() error {
 					var err error
 					answer, err = e.CallLocalAgain(ctx, local, recipe, prompt, reply, request,
-						len(units), count, max(local.Think, 0)+1024+256*count, opts.LogDir, nil)
+						len(units), count, max(local.Think, 0)+1024+256*count, opts.LogDir, listen)
 					return err
 				})
 				if err != nil {

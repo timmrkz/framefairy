@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // useSpeedFile gives a test a record of timings of its own, empty.
@@ -19,10 +20,16 @@ func useSpeedFile(t *testing.T) {
 
 // A search measured against the one before it: 20 seconds loading, 30
 // reading, 30 thinking at 50 tokens a second, 4 a clip for twelve clips, 10
-// asking again about the clips well off the length, 3 of framing at the
-// end. 141 in all.
+// a clip asking again about the clips well off the length, 1.5 a clip of
+// framing at the end, with one framer. Until the answer says otherwise,
+// one clip is fitted and two are framed after it, so 141 in all.
 var lastTime = searchSpeed{Version: speedVersion, Load: 20, Read: 1000, Thought: 30, Rate: 50,
-	Clip: 4, Fit: 10, Tail: 3, Runs: 1}
+	Clip: 4, Fit: 10, Tail: 1.5, Runs: 1}
+
+// clockFor is a search clock measured against past, as a search makes one.
+func clockFor(past searchSpeed) *searchClock {
+	return &searchClock{past: past, known: true}
+}
 
 func TestASearchWithNothingToGoOnSaysNoShare(t *testing.T) {
 	f, r := searchProgress(searchNow{Part: partReading, Chars: 30000, Count: 12, Local: true}, searchSpeed{}, false)
@@ -32,17 +39,19 @@ func TestASearchWithNothingToGoOnSaysNoShare(t *testing.T) {
 }
 
 // Whatever happens, in whatever order the parts report, the share never
-// goes back and never claims the whole before the search is over.
+// goes back and never claims the whole before the search is over. The
+// time left is a number or nothing.
 func TestTheShareOnlyGrows(t *testing.T) {
 	now := searchNow{Chars: 30000, Count: 12, Local: true, Loads: true, Budget: -1}
+	clock := clockFor(lastTime)
 	last := -1.0
 	check := func(what string) {
 		t.Helper()
-		f, r := searchProgress(now, lastTime, true)
+		f, r := clock.measure(now)
 		if f < last-1e-9 {
 			t.Errorf("%s: share went back from %.4f to %.4f", what, last, f)
 		}
-		if f < 0 || f > 0.99 || r < 0 {
+		if f < 0 || f > 0.99 || (r < 0 && r != Unknown) {
 			t.Errorf("%s: share %.4f, left %.1f", what, f, r)
 		}
 		last = f
@@ -74,23 +83,39 @@ func TestTheShareOnlyGrows(t *testing.T) {
 			now.InPart += wait
 			check("writing")
 		}
-		now.Taken++
-		if clip > 1 {
+		// Four of them are held back to be fitted to the length, which
+		// the estimate learns of only as they come.
+		now.Named++
+		if clip%3 == 1 {
+			now.Held++
+		} else {
+			now.Taken++
+		}
+		if clip > 1 && now.Framed < now.Taken-1 {
+			now.Framed++
 			now.Landed++
 		}
 		check("a clip taken")
 	}
-	// Two clips held back and asked for again, which takes far longer than
+	// The four held back are asked for again, which takes far longer than
 	// before, and the framing of what was taken goes on meanwhile.
-	now.Taken, now.Landed = 10, 9
 	now.Part, now.InPart = partFitting, 0
+	check("the answer whole")
+	now.FitOf = 4
 	for _, wait := range []float64{0, 5, 10, 60, 600} {
 		now.InPart += wait
 		check("fitting")
+		now.FitDone = min(now.FitDone+1, 4)
+		check("a clip fitted")
+		if now.Framed < now.Taken {
+			now.Framed++
+			now.Landed++
+		}
 	}
-	now.Landed, now.Taken = 10, 12
-	now.Part, now.InPart = partFraming, 0
-	for now.Landed < 12 {
+	now.Taken = 12
+	now.Part, now.InPart, now.FramedAt = partFraming, 0, now.Framed
+	for now.Framed < 12 {
+		now.Framed++
 		now.Landed++
 		now.InPart++
 		check("framing")
@@ -104,9 +129,8 @@ func TestTheShareOnlyGrows(t *testing.T) {
 // there full while the model was asked about the two it held back.
 func TestAFitKeepsTheFillShortOfTheEnd(t *testing.T) {
 	past := lastTime
-	past.Fit = 20
 	now := searchNow{Part: partFitting, Chars: 30000, Count: 12, Local: true, Budget: -1,
-		Taken: 10, Landed: 10}
+		Named: 12, Held: 2, FitOf: 2, Taken: 10, Framed: 10, Landed: 10}
 	f, left := searchProgress(now, past, true)
 	// 23 of 131 seconds are still to go, the fitting and the framing, with
 	// nothing to load.
@@ -126,11 +150,13 @@ func TestAFitKeepsTheFillShortOfTheEnd(t *testing.T) {
 	// the stand-in's, never against nothing.
 	past.Fit = 0
 	if _, left := searchProgress(searchNow{Part: partFitting, Chars: 30000, Count: 12,
-		Local: true, Taken: 10, Landed: 10}, past, true); left < measuredLocal.Fit {
+		Local: true, Named: 12, Held: 2, FitOf: 2, Taken: 10, Framed: 10, Landed: 10}, past,
+		true); left < 2*measuredLocal.Fit {
 		t.Errorf("left %.1f without a timed fit", left)
 	}
 	// A model in the cloud is never asked again, so it has no fitting.
-	cloud := searchNow{Part: partFraming, Chars: 30000, Count: 12, Taken: 12, Landed: 11}
+	cloud := searchNow{Part: partFraming, Chars: 30000, Count: 12, Named: 12, Taken: 12,
+		Framed: 11, FramedAt: 11, Landed: 11}
 	if _, left := searchProgress(cloud, past, true); left > 3 {
 		t.Errorf("left %.1f in the cloud", left)
 	}
@@ -148,9 +174,9 @@ func TestTheModelsOwnCountBeatsTheClock(t *testing.T) {
 }
 
 func TestWritingNeverRunsPastTheClipBeingWritten(t *testing.T) {
-	now := searchNow{Part: partWriting, Chars: 30000, Count: 12, Taken: 2, InPart: 1000}
+	now := searchNow{Part: partWriting, Chars: 30000, Count: 12, Named: 2, InPart: 1000}
 	f, _ := searchProgress(now, lastTime, true)
-	now.Taken = 3
+	now.Named = 3
 	after, _ := searchProgress(now, lastTime, true)
 	if f >= after {
 		t.Errorf("waiting on the third clip reads %.3f, the third clip taken reads %.3f", f, after)
@@ -365,5 +391,138 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.LogsDir(), "plan-response.json")); !os.IsNotExist(err) {
 		t.Error("the answer was written twice")
+	}
+}
+
+// A part that runs longer than it did before does not hold the time left
+// still. Six clips asked for, four of them held back to be fitted: the
+// fitting was timed at 10 seconds and the framing after it at 3, and for a
+// minute past its estimate the search said About 0:05 left, and went on
+// saying it. Past the estimate, with nothing counted, the clock no longer
+// knows how long is left and says no time at all. Once the model has
+// given a clip again, what is left is worked out from how fast it goes.
+func TestTimeLeftDoesNotStandStillPastTheEstimate(t *testing.T) {
+	past := lastTime
+	now := searchNow{Part: partFitting, Chars: 30000, Count: 6, Local: true, Budget: -1,
+		Named: 6, Held: 4, FitOf: 4, Taken: 2, Framed: 1, Landed: 1}
+	for _, at := range []float64{5, 20, 39} {
+		now.InPart = at
+		if _, left := searchProgress(now, past, true); left <= 0 {
+			t.Errorf("%.0f seconds into a fitting of 40 says no time left: %.1f", at, left)
+		}
+	}
+	for _, at := range []float64{45, 60, 120} {
+		now.InPart = at
+		if _, left := searchProgress(now, past, true); left != Unknown {
+			t.Errorf("%.0f seconds into a fitting of 40, with nothing given again, says %.1f "+
+				"seconds left", at, left)
+		}
+	}
+	// Two of four given again in 60 seconds: 60 more for the other two,
+	// and the framing of the four and of the one still on its way.
+	now.InPart, now.FitDone = 60, 2
+	if _, left := searchProgress(now, past, true); left < 67 || left > 68 {
+		t.Errorf("left %.1f, want 67.5", left)
+	}
+}
+
+// The fitting takes as long as the clips the model is asked about, and
+// the framing after it as long as the clips it waits on. Four clips held
+// back are four times one, which is what the estimate said before.
+func TestTheFittingAndTheFramingCountTheirClips(t *testing.T) {
+	now := searchNow{Part: partFitting, Chars: 30000, Count: 6, Local: true, Budget: -1,
+		Named: 6, Held: 1, FitOf: 1, Taken: 5, Framed: 5, Landed: 5}
+	_, one := searchProgress(now, lastTime, true)
+	now.Held, now.FitOf, now.Taken, now.Framed, now.Landed = 4, 4, 2, 2, 2
+	_, four := searchProgress(now, lastTime, true)
+	// 10 and 1.5 a clip, one framer.
+	if one < 11.4 || one > 11.6 || four < 45.9 || four > 46.1 {
+		t.Errorf("one clip to fit leaves %.1f, want 11.5, four leave %.1f, want 46", one, four)
+	}
+	// A clip asked about a second time is a clip more.
+	now.FitOf = 5
+	if _, again := searchProgress(now, lastTime, true); again <= four {
+		t.Errorf("asking again leaves %.1f, no more than %.1f", again, four)
+	}
+	// In the framing, what it waits on is what was not framed when it
+	// began: three clips at 1.5 a clip, one of them framed. Framed three
+	// at a time, they take as long as one.
+	frame := searchNow{Part: partFraming, Chars: 30000, Count: 6, Local: true, Budget: -1,
+		Named: 6, Taken: 6, FramedAt: 3, Framed: 4, Landed: 4}
+	if _, left := searchProgress(frame, lastTime, true); left < 2.9 || left > 3.1 {
+		t.Errorf("left %.1f, want 3", left)
+	}
+	// Nothing left to frame is no time left, not a time it cannot say.
+	done := frame
+	done.FramedAt, done.Framed, done.InPart = 6, 6, 5
+	if _, left := searchProgress(done, lastTime, true); left != 0 {
+		t.Errorf("left %.1f with every clip framed", left)
+	}
+	frame.Framers, frame.Framed = 3, 3
+	if _, left := searchProgress(frame, lastTime, true); left < 1.4 || left > 1.6 {
+		t.Errorf("left %.1f with three framers, want 1.5", left)
+	}
+}
+
+// The fitting is kept per clip and the framing per round of the framers,
+// four clips at a time framed as long as one. A search that had
+// nothing left to frame when the model stopped keeps the framing it had.
+// It was kept as no time, which halved the record on every such search.
+func TestTheTailIsKeptPerClip(t *testing.T) {
+	useSpeedFile(t)
+	keepSpeed("gemma", searchSpeed{Read: 1000, Clip: 4, Fit: 6, Tail: 4, Runs: 1}, false)
+	keepSpeed("gemma", searchSpeed{Read: 1000, Clip: 4, Runs: 1}, false)
+	if got, _ := pastSpeed("gemma", true); got.Tail != 4 || got.Fit != 6 {
+		t.Errorf("tail %.1f, fit %.1f, want 4 and 6", got.Tail, got.Fit)
+	}
+}
+
+// The model's answer to the fitting is counted clip by clip as it is
+// written, never past the clips it was asked about, and a finished search
+// keeps how long a clip took to fit and to frame after the answer.
+func TestTheClockCountsTheFittingAndKeepsItPerClip(t *testing.T) {
+	useSpeedFile(t)
+	c := newSearchClock(NewLog(&bytes.Buffer{}, false, false), "gemma", true, 30000, 6, -1)
+	c.now.Framers = 4
+	c.enter(partReading)
+	c.enter(partWriting)
+	for i := range 6 {
+		c.named(i < 4)
+		if i >= 4 {
+			c.taken()
+		}
+	}
+	c.answerDone()
+	listen := c.fitAsk(4)
+	answer := `{"clips": [{"slug": "a", "keep": [[1, 2]]}, {"slug": "b", "keep": [[3, 4]]},` +
+		` {"slug": "c", "keep": [[5, 6]]}, {"slug": "d", "keep": [[7, 8]]}, {"slug": "e", "keep": [[9, 9]]}]}`
+	for i := 0; i < len(answer); i += 7 {
+		listen.text(answer[i:min(i+7, len(answer))])
+	}
+	c.mu.Lock()
+	done, of := c.now.FitDone, c.now.FitOf
+	c.mu.Unlock()
+	if done != 4 || of != 4 {
+		t.Errorf("%d of %d given again, want 4 of 4", done, of)
+	}
+	for range 4 {
+		c.taken()
+	}
+	c.fitted(true)
+	for range 6 {
+		c.framed()
+		c.landed()
+	}
+	// The parts took what the test says they did.
+	c.mu.Lock()
+	c.took[partReading], c.took[partWriting], c.took[partFitting] = 30, 12, 40
+	c.framingAt = c.lastFramed.Add(-time.Duration(12 * float64(time.Second)))
+	c.mu.Unlock()
+	c.finish(true)
+	got, _ := pastSpeed("gemma", true)
+	// 40 seconds for four clips, and 12 for the six still to frame, in two
+	// rounds of four framers.
+	if got.Fit != 10 || got.Tail != 6 || got.Clip != 2 {
+		t.Errorf("fit %.2f, tail %.2f, clip %.2f, want 10, 6 and 2", got.Fit, got.Tail, got.Clip)
 	}
 }
