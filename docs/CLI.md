@@ -204,6 +204,17 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories-edit
 ```
 
 shows whether the second ask makes better edges, and what it costs.
+`heart` asks once: the model names the heart of every clip and the
+program fits each to the length around it, see
+[ENGINE.md](ENGINE.md#recipes).
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart,heart@1024,heart@0
+```
+
+shows whether `heart` finds stories as good as `lines` and how much
+sooner, and how much of the thinking it still needs once it no longer
+has to count seconds.
 
 A recipe with `@` and a number thinks that many tokens, whatever
 `--think` says, so one recipe can be compared with itself:
@@ -229,7 +240,8 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories
 
 searches the same window once with each recipe and writes
 `<episode>.framefairy/experiments/compare-<date>.md`: a table of what each
-search cost, the time, the seconds the model took, the size of the request
+search cost, the time, how many times the model was asked, the seconds it
+took over all of them, the size of the request
 and what the local model read and wrote, a table of what can be counted
 about the clips, how many start or end mid-sentence and how many are well
 off the length, and then every clip each found, with its title and the

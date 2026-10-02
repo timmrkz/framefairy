@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -176,5 +177,60 @@ func TestTheHeartRecipeAsksOnce(t *testing.T) {
 	}
 	if n := clips[0].Duration(); n < 20 || n > 30 {
 		t.Errorf("the clip runs %.1f seconds", n)
+	}
+}
+
+// A comparison counts every ask: lines asks again about a clip well off
+// the length, heart fits it without asking, and the report says so.
+func TestAComparisonCountsEveryAsk(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "40")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct{ Messages []chatMessage }
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		keep := "[[1, 1]]"
+		if len(request.Messages) > 2 {
+			keep = "[[1, 2]]"
+		}
+		writeLocalStream(w, `{"clips": [{"slug": "kurz", "title": "Kurz", "reason": "r", `+
+			`"heart": [1, 1], "keep": `+keep+`}]}`, 11)
+	}))
+	defer server.Close()
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	opts := DefaultOptions()
+	opts.Source = source
+	opts.LLMURL = server.URL
+	opts.ASRModel = t.TempDir()
+	opts.Count = 1
+	opts.Replan = true
+	runs, report, err := e.Compare(context.Background(), opts, []string{"lines", "heart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 || runs[0].Asks != 2 || runs[1].Asks != 1 {
+		t.Fatalf("runs %+v", runs)
+	}
+	for _, run := range runs {
+		if len(run.Clips) != 1 || run.Clips[0].Seconds < 20 || run.Clips[0].Seconds > 30 {
+			t.Errorf("%s: %+v", run.Recipe, run.Clips)
+		}
+	}
+	body, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The table lines up: every row as long as its heads.
+	var widths []int
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "| Recipe | Clips | Asks") {
+			widths = append(widths, runeLen(line))
+		} else if len(widths) > 0 && len(widths) < 4 && strings.HasPrefix(line, "|") {
+			widths = append(widths, runeLen(line))
+		}
+	}
+	if len(widths) != 4 || widths[1] != widths[0] || widths[2] != widths[0] || widths[3] != widths[0] {
+		t.Errorf("the table does not line up, row widths %v:\n%s", widths, body)
 	}
 }

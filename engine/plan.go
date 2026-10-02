@@ -487,7 +487,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 					key = "refit"
 				}
 				asks++
-				saveFit(cachePath, key, answer.Content)
+				saveFit(cachePath, key, answer.Content, answer)
 				return answer.Content, nil
 			}
 		}
@@ -576,7 +576,7 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 
 // saveFit adds the answer about the clips that did not fit to the saved
 // reply, under key, where a search that reuses the reply finds it.
-func saveFit(cachePath, key, fit string) {
+func saveFit(cachePath, key, fit string, how *localAnswer) {
 	if cachePath == "" {
 		return
 	}
@@ -590,6 +590,15 @@ func saveFit(cachePath, key, fit string) {
 	}
 	value, _ := json.Marshal(fit)
 	saved[key] = value
+	// How the model got to it goes beside it, as with the first answer, so
+	// a comparison counts every ask and what it took.
+	if how != nil {
+		told := *how
+		told.Content = ""
+		if body, err := json.Marshal(told); err == nil {
+			saved[key+"_how"] = body
+		}
+	}
 	if body, err := json.MarshalIndent(saved, "", "  "); err == nil {
 		_ = os.WriteFile(cachePath, body, 0o644)
 	}

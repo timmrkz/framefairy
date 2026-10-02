@@ -248,6 +248,7 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below, and a brief for any video: the heart of a story and its payoff are never cut, the clip starts on the least a stranger needs and ends on the payoff, the length comes after that, at most N clips, and the task said again after the transcript | at most N clips, as runs of lines |
+| `heart` | the `lines` brief and transcript, told that a program fits the length so it need not count seconds | at most N clips, each with its heart, the lines never cut, and the runs of lines the story reaches. The engine fits each to the length around the heart, so it is never asked again |
 | `stories2` | the `lines` brief with the transcript as `stories` writes it | at most N clips, as runs of sentences |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
@@ -338,6 +339,22 @@ cannot tell where the heart of a story is, and on Tim's episode it cut
 the setup off the mirror story when it cut from the start, and the payoff
 out of the umbrella story, twice, when it cut from the middle. A complete
 story of 38 s is worth more than one of 19 s without its core.
+
+**`heart` asks once.** The second ask costs the time of writing every
+held clip again, and the clips it holds back wait for it, which in the
+app was a minute of "Fitting to the length" on four of six cards. Cutting
+to the length without asking failed because the engine did not know
+where the heart was. So `heart` asks the model to name it, `Recipe.Hearts`,
+and `fitToHeart` in `engine/heart.go` fits the clip on whole sentences
+as it is shaped: what runs on past the heart goes first, a sentence at a
+time, then setup from the start, and never the heart. A step that would
+leave the clip further off the length than it was is not taken. A clip
+too short takes in the sentence before it, the way I grows a clip made by
+hand, and the one after only where there is nothing before it to take,
+never into another clip and never past the longest length. A clip whose
+heart alone runs past the length stays whole. A heart that cannot be
+read leaves the clip as the model kept it. It works the same with a
+model in the cloud.
 
 A recipe with `Edit`, `stories-edit`, holds back every clip, not only
 those off the length, and the second ask is about the edit: where each
@@ -950,6 +967,7 @@ Everything else is in `engine/`:
   windows.go    where the model has already looked, and the passes over
                 a window searched again
   fit.go        clips well off the length asked for again, measured
+  heart.go      the heart recipe, and fitting a clip around its heart
   edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine

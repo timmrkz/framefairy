@@ -287,9 +287,11 @@ what Tim reads and what the report counts.
 | C.3 | A brief for any video, what must never be cut, the task said again after the transcript. The app's default since prompt version 3 | `[x]` |
 | C.4 | A yardstick: about 40 stories whose first and last sentence and what to leave out Tim has marked, scored by the program over three seeds | `[ ]` |
 | C.5 | Decided with the yardstick, not by one run: 1024 tokens of thinking, the shorter `stories2` transcript, worked examples from Tim's cuts, a close second look at each clip's edges | `[ ]` |
+| C.6 | Asked once: `heart`, the model names the heart of every clip and the engine fits the length around it on whole sentences, so no clip is asked for again. The comparison counts every ask and its seconds. Command line only, to be compared with `lines` at several thinking budgets before the app takes it | `[~]` |
 
 Tried and taken out: asking the model to review its own edges, telling
-the voices apart, cutting an overlong clip automatically. The reasons are
+the voices apart, cutting an overlong clip automatically without knowing
+its heart, which `heart` tries again with the heart named. The reasons are
 in [ENGINE.md](ENGINE.md#recipes).
 
 ## Training track, separate from the app

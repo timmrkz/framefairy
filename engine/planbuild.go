@@ -205,7 +205,7 @@ func (b *planBuilder) propose(entry PlanEntry) {
 	}
 	entry, fitted := b.shapedFitted(entry)
 	if fitted != "" {
-		b.e.Log.Detail("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
+		b.e.Log.Info("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
 	}
 	if b.retaken(entry) {
 		b.retakes++
