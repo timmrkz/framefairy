@@ -147,7 +147,7 @@ llama-server had to be on the machine. A customer has no Homebrew and no
 terminal. That was a wall.
 
 Both halves are closed now. The app looks for llama-server the way it looks
-for ffmpeg, the one beside the program before the one on the search path,
+for ffmpeg, the one beside the program and no other,
 and it does not call itself ready on a machine with a model it cannot run.
 And `scripts/build-llama.sh` builds one, from a pinned tag, which `make`
 does once and puts in `bin/`, so the llama-server run every day is the one
@@ -167,9 +167,18 @@ between five and fifteen gigabytes, and one that failed at nine tenths used
 to start again from nothing. It carries on from the part file instead, with
 a range request and the checksum fed the bytes already on disk.
 
+**A download never grows past what the model weighs.** The size of every
+model is known to the byte beside its checksum, and a download may go a
+hundredth past it, never less than a megabyte, and no further. A server
+that says the file is bigger is not read from, and one that goes on
+sending is stopped and what it sent thrown away. The checksum would have
+refused either, but only once all of it was on disk, and a server that
+never stops would have filled the disk first. See `downloadRoom` in
+`engine/speech.go`.
+
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches a model from whoever published it, the way
-`scripts/models.sh` does today, so its licence is between the user and Google
+`make models` does for the command line, so its licence is between the user and Google
 rather than something we have to carry.
 
 ### 3. ffmpeg: an LGPL build, without libx264, encoding through the system
@@ -252,8 +261,9 @@ Windows and Linux are deliberately not in that table yet. Windows has
 render every short made on that system. They go in when those builds are
 first made and looked at.
 
-**Checked against ffmpeg's own configure**, release 7.1, rather than taken
-on trust, because the whole decision rests on it.
+**Checked against ffmpeg's own configure**, release 7.1 and again for
+8.1.3 and 9.0.2, rather than taken on trust, because the whole decision
+rests on it. All three say the same.
 
 `EXTERNAL_LIBRARY_GPL_LIST` is the list of libraries whose use requires
 `--enable-gpl`. In full: `avisynth`, `frei0r`, `libcdio`, `libdavs2`,
@@ -269,6 +279,27 @@ one against `<name>_filter_deps` in configure: `crop`, `scale`, `pad`,
 about: `cropdetect` **is** GPL and `crop` is not, so a future filter picked
 by name without checking is how this comes back. The GPL filters are things
 like `delogo`, `eq`, `hqdn3d` and `nnedi`, none of which this engine wants.
+
+**What it may read is cut down to what the app gives it.** The episode is
+a file somebody else may have made, and ffmpeg is the part of the app that
+reads it. The app hands ffmpeg a path and reads its answers from a pipe,
+so `file` and `pipe` are the only ways in and out the build keeps:
+`--disable-network`, `--disable-protocols --enable-protocol=file,pipe`.
+And none of the formats that are lists of other files, `hls`, `dash`,
+`concat`, `imf` and `webm_dash_manifest`, which is how a crafted video has
+pulled somebody's own files into what they then publish. The `concat`
+filter the engine uses is another thing and stays. `build-ffmpeg.sh`
+reads the finished binary back and stops if anything else got in. And it
+is kept at the newest release, unless a release changes what the app
+relies on: 7.1 had been kept long after 8 and 9 came out without anybody
+choosing to, and `scripts/upstream.sh` now says every week when it falls
+behind. In October 2026 that is the newest 8.1, 8.1.3, and not 9.0.2,
+which decodes AAC after a seek 16 ms later than before. The loudness the
+app measures from a jump then no longer lines up with the same loudness
+from the start, which the macOS tests caught, and a render, which starts
+with a seek too, may move its sound against its picture. Moving to 9
+waits until the app agrees with it and a render on a Mac keeps its sound
+in place.
 
 So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than

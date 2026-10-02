@@ -64,11 +64,13 @@ func build(t *testing.T, key ed25519.PrivateKey, channel, version, url string, d
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Build{
+	b := Build{
 		Channel: channel, Name: channel, Version: version, Commit: "abc1234",
 		URL: url, Size: size, SHA256: hex.EncodeToString(digest),
 		Signature: Sign(key, digest), Published: time.Now().UTC(),
 	}
+	b.Claim = SignClaim(key, b)
+	return b
 }
 
 func listJSON(t *testing.T, builds ...Build) []byte {
@@ -449,5 +451,72 @@ func TestCommitURLOnlyNamesACommit(t *testing.T) {
 		if got := CommitURL(c); got != "" {
 			t.Errorf("%q gave %q", c, got)
 		}
+	}
+}
+
+// The claim says which build an entry is: its channel, version, commit,
+// size and checksum, all at once. Change any of them and it no longer
+// holds, and an entry without one is not taken by an app that checks.
+func TestAClaimSaysWhichBuild(t *testing.T) {
+	key := testKey(t)
+	public := key.Public().(ed25519.PublicKey)
+	b := build(t, key, "pr-5", "0.3.0-pr5.1", "https://example.com/pr-5.zip", appZip(t, "x"))
+	if err := VerifyClaim(public, b); err != nil {
+		t.Fatalf("the claim made for it does not hold: %v", err)
+	}
+	for name, change := range map[string]func(*Build){
+		"another channel": func(b *Build) { b.Channel = "main" },
+		"another version": func(b *Build) { b.Version = "9.9.9" },
+		"another commit":  func(b *Build) { b.Commit = "fedcba9" },
+		"another size":    func(b *Build) { b.Size++ },
+		"another zip":     func(b *Build) { b.SHA256 = strings.Repeat("0", 64) },
+		"no claim":        func(b *Build) { b.Claim = "" },
+	} {
+		c := b
+		change(&c)
+		if err := VerifyClaim(public, c); err == nil {
+			t.Errorf("%s: the claim still held", name)
+		}
+	}
+	// What the claim leaves out is only shown, never installed by.
+	c := b
+	c.Name, c.URL, c.Published = "a new title", "https://example.com/elsewhere.zip", time.Now()
+	if err := VerifyClaim(public, c); err != nil {
+		t.Errorf("a new title or address broke the claim: %v", err)
+	}
+	if err := VerifyClaim(testKey(t).Public().(ed25519.PublicKey), b); err == nil {
+		t.Error("a claim held against somebody else's key")
+	}
+}
+
+// A build signed for one channel, offered as another: a pull request's
+// build put in main's place, with a newer number. Its zip is ours, so the
+// signature over the zip alone lets it through. The claim does not.
+func TestABuildOfferedAsAnotherIsRefused(t *testing.T) {
+	key := testKey(t)
+	s := &served{zip: appZip(t, "pull request 5")}
+	srv := serve(t, s)
+	b := build(t, key, "pr-5", "0.3.0-pr5.1", srv.URL+"/dev/app.zip", s.zip)
+	b.Channel, b.Name, b.Version = "main", "main", "0.3.0-main.99"
+	s.list = listJSON(t, b)
+
+	// An app from before claims takes it, which is the hole.
+	before := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client(), Own: "main"}
+	if rel, err := newUpdater(t, before, "0.3.0-main.4", key).Check(context.Background()); err != nil || rel == nil {
+		t.Fatalf("without the claim checked it was not even offered, so this proves nothing: %v, %v", rel, err)
+	}
+
+	src := &Source{URL: srv.URL + "/dev/channels.json", Client: srv.Client(), Own: "main",
+		Key: key.Public().(ed25519.PublicKey)}
+	u := newUpdater(t, src, "0.3.0-main.4", key)
+	rel, err := u.Check(context.Background())
+	if err == nil || rel != nil {
+		t.Fatalf("a pull request's build was offered as main: %v, %v", rel, err)
+	}
+	if !strings.Contains(err.Error(), "not signed as what the channel list says") {
+		t.Errorf("refused for another reason: %v", err)
+	}
+	if s.zips.Load() != 0 {
+		t.Error("the build was downloaded before it was refused")
 	}
 }

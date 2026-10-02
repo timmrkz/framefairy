@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -790,13 +789,8 @@ func resolveLocal(opts Options) (*LocalModel, error) {
 	if _, err := os.Stat(m.Model); err != nil {
 		return nil, renderErr("the language model %s cannot be read: %s", m.Model, err)
 	}
-	server := m.Server
-	if server == "" {
-		server = LlamaServerPath()
-	}
-	if _, err := exec.LookPath(server); err != nil {
-		return nil, renderErr("%s was not found. Install llama.cpp as docs/INSTALL.md describes, "+
-			"or point --llm-server at the binary.", server)
+	if _, err := serverToRun(m.Server); err != nil {
+		return nil, err
 	}
 	return m, nil
 }

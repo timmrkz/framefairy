@@ -872,13 +872,6 @@
                 </span>
                 <input type="text" bind:value={settings.llmModel} placeholder="The one in use" spellcheck="false" />
               </label>
-              <label class="item field">
-                <span class="words">
-                  <span class="head">llama-server</span>
-                  <span class="small muted">What runs the model.</span>
-                </span>
-                <input type="text" bind:value={settings.llmServer} placeholder="Beside the app, then the search path" spellcheck="false" />
-              </label>
             {:else}
               <label class="item field">
                 <span class="words">
@@ -894,13 +887,6 @@
                 <span class="small muted">The installed one, unless named.</span>
               </span>
               <input type="text" bind:value={settings.asrModel} placeholder="~/.framefairy/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" spellcheck="false" />
-            </label>
-            <label class="item field">
-              <span class="words">
-                <span class="head">ffmpeg</span>
-                <span class="small muted">What reads and renders video.</span>
-              </span>
-              <input type="text" bind:value={settings.ffmpeg} placeholder="Beside the app, then the search path" spellcheck="false" />
             </label>
             <label class="item field">
               <span class="words">
@@ -929,8 +915,12 @@
                   {#if c.ok}<Icon name="check" />{:else}<span class="dot err"></span>{/if}
                 </span>
                 <div class="words">
-                  <span>{c.name}</span>
+                  <span>{c.name}{#if c.version}{" "}<span class="muted num">{c.version}</span>{/if}</span>
                   <span class="small selectable" class:muted={c.ok} class:error={!c.ok}>{c.detail}</span>
+                  <!-- Which file, and what it is down to the byte, so it
+                       can be compared with the build it came from. -->
+                  {#if c.path}<span class="small muted selectable">{c.path}</span>{/if}
+                  {#if c.sha256}<span class="small muted selectable sum" title="SHA-256">SHA-256 {c.sha256}</span>{/if}
                 </div>
               </div>
             {/each}
@@ -1207,5 +1197,13 @@
 
   .found {
     min-height: 0;
+  }
+
+  /* A checksum is read a character at a time, in figures of one width,
+     and broken anywhere rather than pushing the card wider. */
+  .sum {
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    overflow-wrap: anywhere;
   }
 </style>

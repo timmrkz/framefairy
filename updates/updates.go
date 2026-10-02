@@ -76,7 +76,16 @@ type Build struct {
 	// Signature is Ed25519 over the SHA-256 of the zip, the raw 32 bytes,
 	// in base64. That is what Wails' updater checks. Sparkle signs the
 	// file itself, so the two cannot share a signature.
-	Signature string    `json:"signature"`
+	Signature string `json:"signature"`
+	// Claim is Ed25519 over what the entry says the build is: its channel,
+	// version, commit, size and SHA-256 together, see ClaimMessage. The
+	// signature above says only that a zip is one of ours, so any zip ever
+	// signed could be offered under any channel and any version, an old
+	// build of main as the newest, a pull request's as main. With the claim
+	// it can only be offered as what it was signed as. Empty in an entry
+	// from before claims were made, which an app that checks claims does
+	// not install.
+	Claim     string    `json:"claim,omitempty"`
 	Published time.Time `json:"published"`
 	// Newest is the channel's newest commit when that is not the one this
 	// build was made from: a push whose build has not come yet. The build
@@ -130,6 +139,11 @@ func (b Build) Check() error {
 	}
 	if sig, err := base64.StdEncoding.DecodeString(b.Signature); err != nil || len(sig) != ed25519.SignatureSize {
 		return fmt.Errorf("channel %s has no signature", b.Channel)
+	}
+	if b.Claim != "" {
+		if sig, err := base64.StdEncoding.DecodeString(b.Claim); err != nil || len(sig) != ed25519.SignatureSize {
+			return fmt.Errorf("channel %s has a claim that is no signature", b.Channel)
+		}
 	}
 	return nil
 }
@@ -243,6 +257,36 @@ func Digest(r io.Reader) ([]byte, int64, error) {
 // Sign signs a digest the way Wails' updater checks it.
 func Sign(key ed25519.PrivateKey, digest []byte) string {
 	return base64.StdEncoding.EncodeToString(ed25519.Sign(key, digest))
+}
+
+// ClaimMessage is what a claim signs: everything an entry says about which
+// build it is, one line each, under a first line that says what the message
+// is for, so a signature made for anything else can never pass for one.
+// The name and the time are not in it: the name is a pull request's title,
+// which can change after the build, and neither decides what is installed.
+func ClaimMessage(b Build) []byte {
+	return fmt.Appendf(nil, "framefairy build claim 1\nchannel %s\nversion %s\ncommit %s\nsize %d\nsha256 %s\n",
+		b.Channel, b.Version, b.Commit, b.Size, strings.ToLower(b.SHA256))
+}
+
+// SignClaim signs what an entry says the build is.
+func SignClaim(key ed25519.PrivateKey, b Build) string {
+	return base64.StdEncoding.EncodeToString(ed25519.Sign(key, ClaimMessage(b)))
+}
+
+// VerifyClaim checks that an entry is signed as the build it says it is.
+func VerifyClaim(public ed25519.PublicKey, b Build) error {
+	if b.Claim == "" {
+		return fmt.Errorf("the build of %s was published without a claim, the signature that "+
+			"says which build it is, so it is not installed. Every build published once claims "+
+			"are signed on main carries one", b.Channel)
+	}
+	sig, err := base64.StdEncoding.DecodeString(b.Claim)
+	if err != nil || !ed25519.Verify(public, ClaimMessage(b), sig) {
+		return fmt.Errorf("the build of %s is not signed as what the channel list says it is, "+
+			"so it is not installed", b.Channel)
+	}
+	return nil
 }
 
 // Verify checks a build's signature against a public key. The app leaves

@@ -1,0 +1,38 @@
+# Dependabot opens a pull request when a Go module, a package of the
+# interface or an action has a newer version, once a week, and at once for
+# a security fix when Dependabot security updates are on in the settings.
+# See docs/BUILD.md, Keeping up.
+#
+# Left out, because each moves with something Dependabot cannot change:
+# Wails, which is pinned exactly and moves together with @wailsio/runtime,
+# and the speech library, whose native libraries scripts/speech-libs.sh
+# pins by checksum beside the Go module's version. scripts/upstream.sh
+# watches the speech library instead, with ffmpeg and llama.cpp.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: github.com/wailsapp/wails/v3
+      - dependency-name: github.com/k2-fsa/sherpa-onnx-go*
+    groups:
+      go:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "@wailsio/runtime"
+    groups:
+      interface:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

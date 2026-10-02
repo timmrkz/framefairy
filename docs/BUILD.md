@@ -19,8 +19,16 @@ the folder, copy the new files in and run `make` again.
    there yet: ffmpeg and llama-server. Several minutes, once. Every build
    after this one copies them beside the programs, and from then on the app
    renders through the exact ffmpeg a customer gets and runs a local model
-   through the exact llama-server a customer gets, rather than whatever
-   Homebrew happens to have.
+   through the exact llama-server a customer gets. They are the only ones
+   the programs run: nothing comes from the search path, and a build of
+   either that fails stops `make` rather than leaving Homebrew's to answer.
+   Every source they are built from is fetched and checked against its
+   pinned SHA-256 or commit on every build, never reused from a folder
+   unpacked before, and the SHA-256 of each finished tool is built into the
+   programs, which run a tool only when it matches, see
+   `scripts/tool-sums.sh` and `FindTool` in `engine/tools.go`.
+   `NOTOOLS=1` builds the programs without them, for a runner that only
+   proves the programs link, and those programs then run no tool.
 3. Checks for Go 1.27 or newer and a C compiler, and stops with the install
    command if one is still missing.
 4. Resolves the project's Go modules and writes `go.sum`. This needs the
@@ -76,7 +84,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
-| `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line. The app does this itself |
+| `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
 | `make speechbench AUDIO=episode.mp4` | how fast the speech model hears on this machine, on the processor and through CoreML, with 4 and 8 threads, in pieces of 15 and 30 s, one or two at a time, over three minutes of the episode, and how many words each way changes. Takes a few minutes. `ARGS="-seconds 60"` passes more, see [Measuring the speech model](#measuring-the-speech-model) |
 | `make clean` | removes `bin/`, `.build/`, `frontend/node_modules/` and the preview builds |
 | `make help` | this list |
@@ -197,10 +205,10 @@ needs any of the rest:
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
-| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make`. The programs and the interface, which is what proves they still link |
+| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
 | `linux` | Linux | `make unit` |
 | `fuzz` | Linux | `make fuzz` |
-| `macos` | macOS | the ffmpeg we ship, built by `scripts/build-ffmpeg.sh` and kept until that script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
+| `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
 | `macos-fuzz` | macOS | `make fuzz` |
 
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
@@ -253,6 +261,39 @@ nothing that renders, frames or listens was tested on the system that ships
 first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
+
+## Keeping up
+
+What the app is made of and did not write is watched four ways, because a
+scan made once is out of date the week after.
+
+- **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
+  week when a Go module, a package of the interface or an action has a
+  newer version, grouped into one pull request each. With Dependabot
+  security updates on in the repository's settings, it opens one at once
+  for a fix to a known vulnerability. Wails and the speech library's Go
+  module are left out, because each moves with a pin Dependabot cannot
+  change.
+- **govulncheck** and **npm audit**, `.github/workflows/security.yml`, on
+  every pull request that changes the Go modules or the interface's
+  packages, and on main every Monday. govulncheck reports only what the
+  code really calls, so a module that is listed and never compiled in, of
+  which Wails brings several, is not a finding. Either failing is a red
+  check.
+- **The tools we build ourselves**, which nothing else watches:
+  `scripts/upstream.sh` compares ffmpeg, the four libraries it is built
+  with, llama.cpp and the speech library with their newest releases, and
+  the same workflow keeps one issue open while anything is behind and
+  closes it once everything is current. llama.cpp makes a build a day, so
+  it counts only once it is a month behind. ffmpeg is the one that matters
+  most: it reads a video somebody else made.
+- **GitHub's own alerts**, once switched on in the settings: Dependabot
+  alerts, secret scanning with push protection, and private vulnerability
+  reporting, so somebody who finds a hole has a place to say so.
+
+An issue or a pull request is what reaches Tim, because GitHub tells
+whoever watches the repository. Nothing here polls or writes a message
+when nothing is wrong.
 
 ## No build warnings on macOS
 

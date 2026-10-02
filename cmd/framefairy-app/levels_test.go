@@ -46,7 +46,7 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	told := &atomic.Int64{}
 	s := &FrameFairy{store: st}
 	s.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
-	s.levels = newMeasuring(func() string { return "" }, func(string) { told.Add(1) })
+	s.levels = newMeasuring(func(string) { told.Add(1) })
 	t.Cleanup(s.levels.shutDown)
 	return s, paths, told
 }

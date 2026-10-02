@@ -198,6 +198,7 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 		return
 	}
 	src.Own = buildChannel
+	src.Key = key
 	src.Picked = c.picked
 	src.Seen = c.seen
 	src.Progress = c.progress

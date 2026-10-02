@@ -46,15 +46,17 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resourc
 
 cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
 
-# The tools we ship, beside the program, which is where engine/tools.go
-# looks before the search path. So the bundle renders with our ffmpeg and
-# runs a local model with our llama-server, with no search path at all.
+# The tools we ship, beside the program, which is the only place
+# engine/tools.go takes them from. A bundle without one is not made: the
+# app would have no ffmpeg or no llama-server at all, since it runs no
+# other. It used to be made anyway, with a line saying it would look on
+# the search path, which on a customer's Mac has none of them.
 for tool in ffmpeg ffprobe llama-server; do
-	if [ -x "$BINDIR/$tool" ]; then
-		cp "$BINDIR/$tool" "$APP/Contents/MacOS/$tool"
-	else
-		echo "  no $tool in $BINDIR, so the bundle will look on the search path for it"
+	if [ ! -x "$BINDIR/$tool" ]; then
+		echo "bundle-macos.sh: no $tool in $BINDIR, and the app runs no other. Build it with make." >&2
+		exit 1
 	fi
+	cp "$BINDIR/$tool" "$APP/Contents/MacOS/$tool"
 done
 # Their licence texts travel with them. LGPL asks for it and MIT asks for
 # it, and it is two files. They go in Resources, not beside the programs:

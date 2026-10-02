@@ -14,6 +14,12 @@
 # this script again inside a session finishes the job.
 
 GO_VERSION=1.27.1
+# The SHA-256 of the toolchain's zip from Go's module proxy, taken from one
+# that go mod download had checked against Go's public checksum database.
+# Raising GO_VERSION means raising this beside it, the same way:
+#   go mod download -json golang.org/toolchain@v0.0.1-goVERSION.linux-amd64
+# and sha256sum of the Zip it names.
+GO_SHA256=b477e877a104211f3010911c61b501c0c015533d80290ddfa9f3dd43c5b4120e
 
 # Each line is a repository on GitHub and the commit its skills are taken
 # from. A skill is instructions Claude follows with push rights to this
@@ -36,6 +42,14 @@ install_go() {
 	tmp=$(mktemp -d)
 	curl -fsSL --retry 3 -o "$tmp/go.zip" \
 		"https://proxy.golang.org/golang.org/toolchain/@v/$name.zip" || return 1
+	# Nothing is unpacked that is not the zip pinned above.
+	local got
+	got=$(sha256sum "$tmp/go.zip" | cut -d' ' -f1)
+	if [ "$got" != "$GO_SHA256" ]; then
+		log "the Go toolchain is not the one pinned: sha256 $got, expected $GO_SHA256"
+		rm -rf "$tmp"
+		return 1
+	fi
 	python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
 		"$tmp/go.zip" "$tmp" || return 1
 	local src="$tmp/golang.org/toolchain@$name"

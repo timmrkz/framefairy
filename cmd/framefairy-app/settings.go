@@ -16,13 +16,16 @@ import (
 
 // Settings are what the settings screen edits. Empty paths mean the same
 // defaults the command line uses.
+//
+// There is no ffmpeg and no llama-server here. They were paths the
+// settings could name, and the app ran whatever they named: the app's own
+// tools are the only ones it runs now, see engine.FindTool. A settings file
+// that still names one has it read past and dropped on the next save.
 type Settings struct {
-	FFmpeg    string `json:"ffmpeg"`
-	LLMServer string `json:"llmServer"`
-	LLMModel  string `json:"llmModel"`
-	ASRModel  string `json:"asrModel"`
-	Planner   string `json:"planner"`
-	APIModel  string `json:"apiModel"`
+	LLMModel string `json:"llmModel"`
+	ASRModel string `json:"asrModel"`
+	Planner  string `json:"planner"`
+	APIModel string `json:"apiModel"`
 	// Target is how many clips a search looks for when a number was typed
 	// for it, and 0 when it follows the window, see engine.SuggestedCount.
 	// It was count, a number every search took whatever its window: a
@@ -91,8 +94,6 @@ func (s *Settings) tidy() {
 // options turns the settings into what the engine takes.
 func (s Settings) options() engine.Options {
 	o := engine.DefaultOptions()
-	o.FFmpeg = s.FFmpeg
-	o.LLMServer = s.LLMServer
 	o.LLMModel = s.LLMModel
 	o.ASRModel = s.ASRModel
 	if s.Planner != "" {

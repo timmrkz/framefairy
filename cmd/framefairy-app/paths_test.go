@@ -218,9 +218,8 @@ func TestPathARenderThatFailsSaysWhy(t *testing.T) {
 	if len(clips) == 0 {
 		t.Fatal("no clips to render")
 	}
-	if err := d.svc.store.UpdateSettings(func(s *Settings) { s.FFmpeg = "/nowhere/ffmpeg" }); err != nil {
-		t.Fatal(err)
-	}
+	// The environment is the one way left to name another ffmpeg.
+	t.Setenv("FRAMEFAIRY_FFMPEG", "/nowhere/ffmpeg")
 	d.render(ep, clips[0].Plan)
 	d.idle(ep)
 	if d.failedRender(ep) == "" {

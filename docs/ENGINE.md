@@ -800,8 +800,11 @@ in its settings is the one used, and a key left in a terminal's
 environment never wins over it. `KeyHint` gives a key in short, its first
 twelve characters and its last four, kept as the keychain item's comment
 so it is read without the key. `VerifyAPIKey` shows a key to its company
-before the app keeps it, by asking for the list of models, and a key
-refused during a search is said in words, naming where it came from. The
+before the app keeps it, by asking for the list of models, through the
+same client as every other request that carries a key, which follows no
+redirect: Go keeps a header it does not know on a redirect to another
+host, and the key is one. A key refused during a search is said in words,
+naming where it came from. The
 company's own answer is kept in the `logs` folder, as every refused request
 is, and in the detail lines of `--verbose`.
 
@@ -935,6 +938,18 @@ framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 
 The server's output is kept in `logs/llm-server.log`, at log level 4,
 which is the first level where llama.cpp says what it took from memory.
+
+**A server the engine starts answers only to the engine.** Left to
+itself, llama-server answers anybody: every program on the machine, and
+every web page in a browser, because it allows any origin, and it lists
+what it is working on, which is the transcript being searched. Its port
+is on the loopback and new every time, but a page can try every port in a
+few seconds. So each server is handed a key of its own when it starts, in
+its environment as `LLAMA_API_KEY` and not on its command line, where any
+program could read it, and `--no-slots` switches the list off. The key
+goes only with a request to the server it was made for, see `serverKeys`
+in `engine/local.go`. A server given with `--llm-url`, started by hand as
+above, gets no key and needs none.
 
 ## Jobs and their records
 

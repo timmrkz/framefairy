@@ -59,7 +59,6 @@ func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
-	widenPath()
 	engine.PreferSavedKeys()
 	st := openStore()
 
@@ -86,7 +85,7 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	svc.levels = newMeasuring(func() string { return st.Settings().FFmpeg }, func(episode string) {
+	svc.levels = newMeasuring(func(episode string) {
 		if app != nil {
 			app.Event.Emit("levels", episode)
 		}
@@ -200,33 +199,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// widenPath adds the usual install folders. An app started from Finder does
-// not get the shell's PATH, so Homebrew's ffmpeg and llama-server would not
-// be found otherwise.
-func widenPath() {
-	var extra []string
-	switch runtime.GOOS {
-	case "darwin":
-		extra = []string{"/opt/homebrew/bin", "/usr/local/bin"}
-	case "linux":
-		extra = []string{"/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"}
-	}
-	current := os.Getenv("PATH")
-	parts := filepath.SplitList(current)
-	for _, dir := range extra {
-		found := false
-		for _, p := range parts {
-			if p == dir {
-				found = true
-			}
-		}
-		if !found {
-			current += string(os.PathListSeparator) + dir
-		}
-	}
-	_ = os.Setenv("PATH", current)
 }
 
 // mediaMiddleware serves episode files and their outputs under /media/ so
