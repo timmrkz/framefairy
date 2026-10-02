@@ -46,8 +46,9 @@ func (e *Engine) Settle(ctx context.Context, ref string) error {
 	}
 	s, err := e.orders.Sale(ctx, ref)
 	if errors.Is(err, ErrNotFound) {
-		// Not a completed sale, or not yet: nothing to make match.
-		return nil
+		// Not a completed sale, or not yet: Paddle's answers can trail its
+		// webhooks. The webhook comes again, and the daily run catches up.
+		return fmt.Errorf("%w: Paddle has no completed sale %s", ErrNotFound, ref)
 	}
 	if err != nil {
 		return fmt.Errorf("asking the shop about %s: %w", ref, err)

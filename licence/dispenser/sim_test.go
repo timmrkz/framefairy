@@ -1,12 +1,16 @@
 package dispenser
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -105,8 +109,8 @@ func (m *simMail) Us(ctx context.Context, subject, body string) error {
 
 // webhook is one Paddle has yet to deliver.
 type webhook struct {
-	kind  string // "completed" or "adjusted"
-	sale  Sale   // as it was when the webhook was sent
+	event string // transaction.completed or adjustment.created
+	ref   string
 	first time.Time
 }
 
@@ -127,6 +131,7 @@ type world struct {
 	mail    *simMail
 	shop    *fakeShop
 	engine  *Engine
+	web     http.Handler
 	trust   licence.Trust
 	history []string
 	verbose bool
@@ -187,8 +192,8 @@ func (w *world) log(format string, args ...any) {
 	}
 }
 
-// restart starts a new engine on the same store, as a serverless container
-// that crashed is started again.
+// restart starts a new engine and its endpoints on the same store, as a
+// serverless container that crashed is started again.
 func (w *world) restart() {
 	e, err := New(w.store, Config{
 		Signers: w.trust.Signers,
@@ -200,7 +205,50 @@ func (w *world) restart() {
 	if err != nil {
 		w.t.Fatal(err)
 	}
-	w.engine = e
+	h, err := e.Handler(APIConfig{
+		PaddleSecrets: []string{paddleSecret},
+		Partners:      map[string]string{TokenHash(bundleToken): "bundle-hunt"},
+		Signer:        TokenHash(signerToken),
+		Cron:          TokenHash(cronToken),
+		Admin:         TokenHash(adminToken),
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	w.engine, w.web = e, h
+}
+
+// call makes one request to the dispenser's endpoints, the way the
+// outside world does.
+func (w *world) call(method, path, token string, body []byte, header ...string) (int, map[string]any) {
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
+	rec := httptest.NewRecorder()
+	w.web.ServeHTTP(rec, req)
+	var out map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	return rec.Code, out
+}
+
+func (w *world) post(path, token string, v any) (int, map[string]any) {
+	body, _ := json.Marshal(v)
+	return w.call("POST", path, token, body)
+}
+
+func keysOfAnswer(m map[string]any) []licence.Key {
+	raw, _ := m["keys"].([]any)
+	var out []licence.Key
+	for _, k := range raw {
+		if s, ok := k.(string); ok {
+			out = append(out, licence.Key(s))
+		}
+	}
+	return out
 }
 
 func (w *world) ctx() context.Context { return context.Background() }
@@ -214,8 +262,8 @@ func (w *world) step(step int) {
 	case n < 47:
 		w.adjust()
 	case n < 55:
-		w.log("%d: mail runs", step)
-		w.engine.SendMail(w.ctx())
+		code, out := w.post("/v1/cron/mail", cronToken, nil)
+		w.log("%d: the mail run: %d %v", step, code, out)
 	case n < 62:
 		w.signer()
 	case n < 65:
@@ -244,18 +292,19 @@ func (w *world) step(step int) {
 }
 
 // daily is the CRON run, once a day: catch up with Paddle, warn about the
-// pool.
+// pool, audit the store. The audit must never fail.
 func (w *world) daily() {
 	day := int(w.clock.now().Sub(now) / (24 * time.Hour))
 	if day == w.lastDay {
 		return
 	}
 	w.lastDay = day
-	n, err := w.engine.Reconcile(w.ctx(), w.clock.now().Add(-7*24*time.Hour))
-	w.log("  the daily run reconciles %d sales: %v", n, err)
-	w.engine.CheckPool(w.ctx())
+	code, out := w.post("/v1/cron/daily", cronToken, nil)
+	w.log("  the daily run: %d %v", code, out)
+	if out["audit"] != nil {
+		w.t.Errorf("seed %d: the daily audit failed", w.seed)
+	}
 }
-
 func (w *world) buy() {
 	w.sales++
 	sale := Sale{
@@ -265,15 +314,14 @@ func (w *world) buy() {
 		At:    w.clock.now(),
 	}
 	w.shop.put(sale, w.clock.now())
-	w.hooks = append(w.hooks, webhook{kind: "completed", sale: sale, first: w.clock.now()})
+	w.hooks = append(w.hooks, webhook{event: "transaction.completed", ref: sale.Ref, first: w.clock.now()})
 	w.log("%s bought %d seats as %s", sale.Email, sale.Seats, sale.Ref)
 }
 
-// deliver hands one webhook to the dispenser, the way the Paddle adapter
-// will: a completed sale is assigned from what the webhook says, an
-// adjustment settles the sale with what Paddle says now. A webhook that
-// fails stays and comes again, sometimes one that succeeded comes again
-// too, and after three days Paddle gives up on it.
+// deliver sends one webhook to the dispenser, signed as Paddle signs it.
+// A webhook not answered with success stays and comes again, sometimes one
+// that succeeded comes again too, and after three days Paddle gives up on
+// it.
 func (w *world) deliver() {
 	if len(w.hooks) == 0 {
 		return
@@ -281,24 +329,27 @@ func (w *world) deliver() {
 	i := w.r.IntN(len(w.hooks))
 	h := w.hooks[i]
 	if w.clock.now().Sub(h.first) > 72*time.Hour {
-		w.log("Paddle gives up on the %s webhook of %s", h.kind, h.sale.Ref)
+		w.log("Paddle gives up on the %s webhook of %s", h.event, h.ref)
 		w.hooks = slices.Delete(w.hooks, i, i+1)
 		return
 	}
-	var err error
-	if h.kind == "completed" {
-		var keys []licence.Key
-		keys, err = w.engine.Assign(w.ctx(), Order{Source: "paddle", Ref: h.sale.Ref, Seats: h.sale.Seats, Email: h.sale.Email, At: h.sale.At})
-		w.given(h.sale.Ref, keys)
-	} else {
-		err = w.engine.Settle(w.ctx(), h.sale.Ref)
+	field := "id"
+	if strings.HasPrefix(h.event, "adjustment.") {
+		field = "transaction_id"
 	}
-	w.log("the %s webhook of %s arrives: %v", h.kind, h.sale.Ref, err)
-	if err == nil && w.r.IntN(8) != 0 {
+	body := []byte(`{"event_type":"` + h.event + `","data":{"` + field + `":"` + h.ref + `"}}`)
+	code, out := w.call("POST", "/paddle", "", body, "Paddle-Signature", signPaddle(body, paddleSecret, w.clock.now()))
+	w.log("the %s webhook of %s arrives: %d %v", h.event, h.ref, code, out)
+	if code >= 400 && code < 500 {
+		w.t.Errorf("seed %d: a signed webhook was refused: %d %v", w.seed, code, out)
+	}
+	if code == http.StatusOK && w.r.IntN(8) != 0 {
 		w.hooks = slices.Delete(w.hooks, i, i+1)
 	}
+	// What the buyer's thank-you page shows now.
+	_, thanks := w.call("GET", "/v1/thanks/"+h.ref, "", nil)
+	w.given(h.ref, keysOfAnswer(thanks))
 }
-
 func (w *world) adjust() {
 	if w.sales == 0 {
 		return
@@ -309,27 +360,32 @@ func (w *world) adjust() {
 	sale.TakenBack = !sale.TakenBack
 	w.shop.mu.Unlock()
 	w.shop.put(sale, w.clock.now())
-	w.hooks = append(w.hooks, webhook{kind: "adjusted", sale: sale, first: w.clock.now()})
+	w.hooks = append(w.hooks, webhook{event: "adjustment.created", ref: sale.Ref, first: w.clock.now()})
 	w.log("Paddle says %s is taken back: %v", ref, sale.TakenBack)
 }
 
 // signer is the signer waking up: it hands over again what it never heard
-// back about, and refills the pool when it runs low.
+// back about, and refills the pool when it runs low, all through its
+// endpoints.
 func (w *world) signer() {
 	if len(w.pending) > 0 {
 		h := w.pending[0]
-		added, err := w.engine.Stock(w.ctx(), h.generation, h.keys)
-		w.log("the signer hands over a batch again: %d new, %v", added, err)
-		if err == nil || errors.Is(err, ErrStale) {
+		code, out := w.post("/v1/pool", signerToken, map[string]any{"generation": h.generation, "keys": h.keys})
+		w.log("the signer hands over a batch again: %d %v", code, out)
+		if code == http.StatusOK || out["error"] == "stale" {
 			w.pending = w.pending[1:]
 		}
 		return
 	}
-	level, err := w.engine.PoolLevel(w.ctx())
-	if err != nil || level.Left*10 >= level.Batch*3 {
+	code, level := w.call("GET", "/v1/pool", signerToken, nil)
+	if code != http.StatusOK {
 		return
 	}
-	batch := level.Batch
+	left, batch := int(level["left"].(float64)), int(level["batch"].(float64))
+	generation := level["generation"].(string)
+	if left*10 >= batch*3 {
+		return
+	}
 	keys := make([]licence.Key, batch)
 	for i := range keys {
 		w.ids++
@@ -344,19 +400,17 @@ func (w *world) signer() {
 		}
 		keys[i] = k
 	}
-	added, err := w.engine.Stock(w.ctx(), level.Generation, keys)
-	w.log("the signer hands over %d keys: %d new, %v", len(keys), added, err)
-	if err != nil && !errors.Is(err, ErrStale) {
-		w.pending = append(w.pending, handover{level.Generation, keys})
+	code, out := w.post("/v1/pool", signerToken, map[string]any{"generation": generation, "keys": keys})
+	w.log("the signer hands over %d keys: %d %v", len(keys), code, out)
+	if code != http.StatusOK && out["error"] != "stale" {
+		w.pending = append(w.pending, handover{generation, keys})
 	}
 }
-
 func (w *world) lostKey() {
 	email := fmt.Sprintf("buyer%d@example.com", w.r.IntN(12))
-	err := w.engine.Resend(w.ctx(), email)
-	w.log("%s asks for their keys again: %v", email, err)
+	code, _ := w.post("/v1/lost", "", map[string]string{"email": email})
+	w.log("%s asks for their keys again: %d", email, code)
 }
-
 func (w *world) replace() {
 	if w.sales == 0 {
 		return
@@ -367,29 +421,27 @@ func (w *world) replace() {
 		return
 	}
 	old := keys[w.r.IntN(len(keys))]
-	next, seat, err := w.engine.Replace(w.ctx(), old.Fingerprint(), "posted in public")
-	w.log("a key of %s is posted in public and replaced: %v", ref, err)
-	if err == nil {
+	code, out := w.post("/v1/admin/replace", adminToken, map[string]string{"fingerprint": old.Fingerprint().String(), "why": "posted in public"})
+	w.log("a key of %s is posted in public and replaced: %d %v", ref, code, out)
+	if code == http.StatusOK {
 		w.replaced[old.Fingerprint()] = true
-		w.given(seat.Ref, []licence.Key{next})
+		w.given(out["ref"].(string), []licence.Key{licence.Key(out["key"].(string))})
 	}
 	// A crash after the commit replaced it all the same.
-	if errors.Is(err, errCrash) {
+	if code == http.StatusInternalServerError {
 		if now, _ := w.engine.Keys(w.ctx(), "paddle", ref); !slices.Contains(now, old) {
 			w.replaced[old.Fingerprint()] = true
 		}
 	}
 }
-
 func (w *world) partner() {
 	ref := fmt.Sprintf("p%d", w.r.IntN(20))
 	email := fmt.Sprintf("partnerbuyer%s@example.com", ref)
-	w.partners["partner:bundle/"+ref] = email
-	keys, err := w.engine.Assign(w.ctx(), Order{Source: "partner:bundle", Ref: ref, Seats: 1, Email: email, At: w.clock.now()})
-	w.log("the partner sells %s: %v", ref, err)
-	w.given("partner:bundle/"+ref, keys)
+	w.partners["partner:bundle-hunt/"+ref] = email
+	code, out := w.post("/v1/orders", bundleToken, map[string]any{"ref": ref, "seats": 1, "email": email})
+	w.log("the partner sells %s: %d", ref, code)
+	w.given("partner:bundle-hunt/"+ref, keysOfAnswer(out))
 }
-
 func (w *world) takeBackup() {
 	db := w.store.Memory.db.clone()
 	w.backup, w.backedUp = &db, w.clock.now()
@@ -397,8 +449,9 @@ func (w *world) takeBackup() {
 }
 
 // restore brings the database back from the backup and follows the
-// procedure in docs/LICENCE.md: set the unsold pool aside, refill, catch
-// up with Paddle from the backup's time.
+// procedure in docs/LICENCE.md, by hand through the admin endpoints: set
+// the unsold pool aside, refill, catch up with Paddle from the backup's
+// time.
 func (w *world) restore() {
 	if w.backup == nil {
 		return
@@ -408,15 +461,15 @@ func (w *world) restore() {
 	w.log("the database is lost and comes back from the backup of %s", w.backedUp.Format(time.DateTime))
 	w.restart()
 	for {
-		n, err := w.engine.Retire(w.ctx(), "restored from a backup")
-		w.log("  the unsold pool is set aside: %d, %v", n, err)
-		if err == nil {
+		code, out := w.post("/v1/admin/retire", adminToken, map[string]string{"why": "restored from a backup"})
+		w.log("  the unsold pool is set aside: %d %v", code, out)
+		if code == http.StatusOK {
 			break
 		}
 	}
 	w.signer()
-	n, err := w.engine.Reconcile(w.ctx(), w.backedUp.Add(-time.Hour))
-	w.log("  caught up with Paddle: %d, %v", n, err)
+	code, out := w.post("/v1/admin/reconcile", adminToken, map[string]string{"since": w.backedUp.Add(-time.Hour).Format(time.RFC3339)})
+	w.log("  caught up with Paddle: %d %v", code, out)
 }
 
 // given notes that keys went to a sale, and fails the run if any of them
@@ -484,19 +537,19 @@ func (w *world) calm() {
 	// after a long outage.
 	for round := 0; ; round++ {
 		w.signer()
-		n, err := w.engine.Reconcile(w.ctx(), now.Add(-time.Hour))
-		w.log("a last reconcile settles %d: %v", n, err)
-		if err == nil {
+		code, out := w.post("/v1/admin/reconcile", adminToken, map[string]string{"since": now.Add(-time.Hour).Format(time.RFC3339)})
+		w.log("a last reconcile: %d %v", code, out)
+		if code == http.StatusOK {
 			break
 		}
 		if round == 50 {
-			w.t.Errorf("seed %d: catching up still fails after 50 refills: %v", w.seed, err)
+			w.t.Errorf("seed %d: catching up still fails after 50 refills: %d %v", w.seed, code, out)
 			return
 		}
 	}
 	for range 30 {
 		w.clock.add(6 * time.Hour)
-		w.engine.SendMail(w.ctx())
+		w.post("/v1/cron/mail", cronToken, nil)
 	}
 	if w.t.Failed() {
 		return
