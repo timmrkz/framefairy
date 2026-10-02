@@ -400,6 +400,7 @@ with its newest build, so one fetch is the whole check:
       "size": 187000000,
       "sha256": "…",
       "signature": "…",
+      "claim": "…",
       "published": "2026-09-25T20:54:46Z",
       "newest": "6ceea6d1f2a3"
     }
@@ -421,10 +422,22 @@ with its newest build, so one fetch is the whole check:
   into main: #24 was closed in that state, the close was never seen, and
   the app went on offering it.
 - **Nothing in it is trusted.** Anybody on the way could change the file.
-  What makes a build safe is the signature over the zip's checksum, made
-  with the development key and checked against the public half built
-  into the app, before anything is unpacked. A list that points somewhere
-  else can only point at a file that fails.
+  What makes a build safe is two signatures, made with the development key
+  and checked against the public half built into the app. The
+  `signature` is over the zip's checksum, which Wails' updater checks
+  before anything is unpacked, so a list that points somewhere else can
+  only point at a file that fails. The `claim` is over what the entry
+  says the build is, its channel, version, commit, size and checksum
+  together, and the app checks it before it downloads anything. Without
+  it, any zip ever signed could be offered as any channel and any
+  version: an old build of main as the newest, or a pull request's as
+  main, by anybody who could write the list. With it, a build can only
+  be offered as what it was signed as. The name and the time are left
+  out: a pull request's title can change after its build, and neither
+  decides what is installed. An entry from before claims were made stays
+  in the list for the apps that do not check them, and an app that does
+  will not install it until a new build of that channel brings one. See
+  `ClaimMessage` in `updates/updates.go`.
 - **A customer build will have no channel list.** It will know the stable
   feed and nothing else.
 - Asking GitHub's API from the app was the other way. It would put the
@@ -530,7 +543,8 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 
 The signature is Ed25519 over the SHA-256 of the zip, which is what Wails'
-updater checks. Sparkle signs the file itself, so a Sparkle appcast and
+updater checks, and the claim is Ed25519 over the entry's channel, version,
+commit, size and checksum, which the app checks itself. Sparkle signs the file itself, so a Sparkle appcast and
 this list could never have shared a signature, and the list is a small
 JSON file of our own rather than an appcast.
 

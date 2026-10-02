@@ -285,7 +285,7 @@ nothing the app starts can be reached by anything else on the machine.**
 | S.1 | The machine a customer runs it on: llama-server answers only the app, with a key of its own each launch and no slots to read. Checking an API key follows no redirect. A download never grows past what the model is known to weigh. devalue brought up to date | `[x]` |
 | S.2 | ffmpeg 8, the newest release, with freetype, fribidi, harfbuzz and libass at theirs, built to read and write only files and pipes and without the playlist formats the app never reads | `[x]` |
 | S.3 | The tools are ours or nothing: no ffmpeg or llama-server taken from the search path or the settings, a make and a bundle that stop without them, the SHA-256 of each built into the programs and checked before it runs, every source of a tool fetched and checked on every build, the speech library checked on every build, a downloaded language model checked again before it is loaded, `make models` through the engine's checked installers, and the cloud setup's Go held to its checksum | `[x]` |
-| S.4 | An update says what it is: the channel, the version and the commit are signed with the build, so a signed build cannot be offered as another | `[ ]` |
+| S.4 | An update says what it is: the channel, the version, the commit, the size and the checksum are signed together, and the app checks it before it downloads, so a signed build cannot be offered as another | `[x]` |
 | S.5 | Keeping up: Dependabot, govulncheck and npm audit in CI and once a week, and a weekly look at whether ffmpeg, llama.cpp and the speech library have newer releases | `[ ]` |
 | S.6 | Only Tim's comments are instructions: what anybody else writes on a pull request is read as data | `[ ]` |
 

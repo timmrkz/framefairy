@@ -2,6 +2,7 @@ package updates
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -34,6 +35,11 @@ type Source struct {
 	Seen func(List)
 	// Progress is told how far a download has come.
 	Progress func(written, total int64)
+	// Key is the public key the build's claim is checked against, see
+	// Build.Claim. A build is offered to the updater only once the entry
+	// is signed as the build it says it is. Nil checks no claim, which is
+	// only for the tests of what does not depend on it.
+	Key ed25519.PublicKey
 	// Cache is the folder the builds already downloaded are kept in, so
 	// a channel picked again has its build at once. Empty keeps nothing.
 	// See cache.go.
@@ -130,6 +136,11 @@ func (s *Source) Check(ctx context.Context, req updater.CheckRequest) (*updater.
 	b, ok := list.Follow(picked, s.Own)
 	if !ok || b.Version == req.CurrentVersion {
 		return nil, nil
+	}
+	if s.Key != nil {
+		if err := VerifyClaim(s.Key, b); err != nil {
+			return nil, err
+		}
 	}
 	return Release(b)
 }
