@@ -273,6 +273,28 @@ then makes the code survive it.
 
 ---
 
+## Security track: what runs on a machine is what we meant to run
+
+A review of every dependency in October 2026, asked for by Tim, found
+nothing on fire and a handful of things to close. The rule for this
+track: **nothing runs that has not been checked to be what we built, and
+nothing the app starts can be reached by anything else on the machine.**
+
+| # | Batch | Status |
+|---|---|---|
+| S.1 | The machine a customer runs it on: llama-server answers only the app, with a key of its own each launch and no slots to read. Checking an API key follows no redirect. A download never grows past what the model is known to weigh. devalue brought up to date | `[ ]` |
+| S.2 | ffmpeg 8, the newest release, built without the playlist formats the app never reads | `[ ]` |
+| S.3 | The tools are ours or nothing: no ffmpeg or llama-server taken from the search path or the settings, a bundle that refuses to be made without them, and every tool and download checked against its checksum every time it is used, not only the first time | `[ ]` |
+| S.4 | An update says what it is: the channel, the version and the commit are signed with the build, so a signed build cannot be offered as another | `[ ]` |
+| S.5 | Keeping up: Dependabot, govulncheck and npm audit in CI and once a week, and a weekly look at whether ffmpeg, llama.cpp and the speech library have newer releases | `[ ]` |
+| S.6 | Only Tim's comments are instructions: what anybody else writes on a pull request is read as data | `[ ]` |
+
+The split between a development build and a customer build, with a
+release key and no channel list, belongs to packaging, see
+[PACKAGING.md](PACKAGING.md) and [UPDATES.md](UPDATES.md).
+
+---
+
 ## Clip choice track: better stories, better cuts, less waiting
 
 How the model is asked, and what the engine does with its answer. Every
