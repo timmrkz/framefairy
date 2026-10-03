@@ -555,6 +555,11 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	if think == ThinkForWindow {
 		think = DefaultThink
 	}
+	// A plain answer is a few tokens a clip, so it may run little past its
+	// thinking, see answerCap. A thought without a budget is not capped.
+	if r.Plain != nil && think >= 0 {
+		maxTokens = min(maxTokens, r.Plain.answerCap(think, count))
+	}
 	ask := map[string]any{
 		"model":      filepath.Base(m.Model),
 		"messages":   messages,
@@ -667,7 +672,11 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		e.Log.Detail("the model thought for %s characters before it answered",
 			commas(answer.Reasoning))
 	}
-	if answer.FinishReason == "length" {
+	switch {
+	case answer.FinishReason == "length" && r.Plain != nil:
+		e.Log.Warn("the model went on writing after its answer and was stopped at %s tokens",
+			commas(maxTokens))
+	case answer.FinishReason == "length":
 		e.Log.Warn("the answer hit the %s token ceiling. Raise --max-tokens if clips are missing.",
 			commas(maxTokens))
 	}

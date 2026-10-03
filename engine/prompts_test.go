@@ -121,10 +121,10 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 			}
 		}
 		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words, and
-		// for middle three quarters of the longest.
+		// for middle only the longest, at three quarters.
 		words := "about 29 to 44 words"
 		if recipe.Name == "middle" {
-			words = "about 29 to 33 words"
+			words = "up to about 33 words"
 		}
 		if !strings.Contains(plain, words) {
 			t.Errorf("%s says no length in words:\n%s", recipe.Name, plain)
@@ -359,6 +359,10 @@ func TestAMiddleAnswer(t *testing.T) {
 	if _, _, err := ValidatePlan(past, lineUnits(60)); err == nil {
 		t.Error("a middle past the transcript was read")
 	}
+	// Six stories may run a thought of 2,048 tokens and a line each.
+	if got := middlePlain.answerCap(2048, 6); got != 2048+256+6*16 {
+		t.Errorf("six stories may run %d tokens", got)
+	}
 	text := "Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen."
 	if got := firstWords(text, 31); got != "Und dann hat er mich geschlagen" {
 		t.Errorf("named %q", got)
@@ -396,9 +400,15 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	mu.Lock()
 	_, schema := asked["response_format"]
 	_, grammar := asked["grammar"]
+	most, _ := asked["max_tokens"].(float64)
 	mu.Unlock()
 	if schema || grammar {
 		t.Errorf("asked with a schema %v, a grammar %v", schema, grammar)
+	}
+	// It may run its thinking and a line a clip, not the 48,000 tokens a
+	// JSON answer may.
+	if most < 256+80 || most > 4096+256+80 {
+		t.Errorf("an answer of one clip may run %v tokens", most)
 	}
 	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
 		t.Errorf("clips %+v %v", clips, err)

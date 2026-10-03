@@ -1,5 +1,5 @@
 {{.Transcript}}
 
 Find the {{.Count}} best stories in this transcript{{if .TakenLines}}, none of them in {{.TakenLines}}{{end}}.{{if .Pause}} "…" before a line marks a pause of {{.Pause}} or more.{{end}}{{if .Times}} Each line has the minute and second it starts at.{{end}}
-For each story, first find a line in its middle, then the line where the story starts and the line where it ends.{{if .MinWords}} A story runs about {{.MinWords}} to {{.MaxWords}} words.{{else if .Times}} A story runs about {{.Min}} to {{.Max}} seconds.{{end}}
+For each story, first find a line in its middle, then the line where the story starts and the line where it ends.{{if .MaxWords}} A story runs up to about {{.MaxWords}} words.{{else if .Times}} A story runs about {{.Min}} to {{.Max}} seconds.{{end}}
 Answer with one line per story: the line where it starts, the line in its middle and the line where it ends, in that order, each later than the one before, and nothing else, like this: 31 40 52

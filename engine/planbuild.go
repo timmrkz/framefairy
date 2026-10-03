@@ -567,7 +567,9 @@ func (b *planBuilder) answered() {
 func (b *planBuilder) rest(whole []PlanEntry) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closed {
+	// Every clip asked for was taken as the answer arrived. What follows
+	// is a model that went on writing, and it is not read for repeats.
+	if b.closed || len(b.order) >= b.opts.Count {
 		return
 	}
 	// The clips taken as the answer arrived were checked for repeats in

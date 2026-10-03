@@ -29,6 +29,10 @@ import (
 
 // plainFormat is how a recipe that answers without JSON is answered.
 type plainFormat struct {
+	// PerClip is about how many tokens one clip's line takes, with room to
+	// spare. A plain answer may run the thinking and this much a clip, and
+	// no further, see answerCap.
+	PerClip int
 	// Clip reads one line of the answer into the clip object a JSON answer
 	// has, and says false for a line that is no clip: prose, a blank, too
 	// few numbers.
@@ -38,6 +42,7 @@ type plainFormat struct {
 // pointsPlain is the answer of points: start, payoff and end, the title
 // and the reason.
 var pointsPlain = &plainFormat{
+	PerClip: 80,
 	Clip: func(line string) (string, bool) {
 		parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
 		n, ok := threeNumbers(parts[0])
@@ -56,6 +61,7 @@ var pointsPlain = &plainFormat{
 // middlePlain is the answer of middle: the line a story starts on, a line
 // in its middle and the line it ends on, in that order, and nothing else.
 var middlePlain = &plainFormat{
+	PerClip: 16,
 	Clip: func(line string) (string, bool) {
 		n, ok := threeNumbers(line)
 		if !ok {
@@ -63,6 +69,16 @@ var middlePlain = &plainFormat{
 		}
 		return clipJSON(map[string]any{"start": n[0], "middle": n[1], "end": n[2]})
 	},
+}
+
+// answerCap is the most tokens a plain answer of count clips may run
+// after a thought of think tokens: the thought, a line a clip, and room
+// for a word before them. Without it a model that went on thinking in its
+// answer did not stop: on 3 October middle thought past its budget,
+// counted the words of every story line by line, and wrote 17,372 tokens
+// in four and a half minutes for six lines of three numbers.
+func (f *plainFormat) answerCap(think, count int) int {
+	return max(think, 0) + 256 + max(count, 1)*f.PerClip
 }
 
 // threeNumbers reads a text that is three whole numbers of 1 or more.
