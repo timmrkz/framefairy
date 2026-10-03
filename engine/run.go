@@ -189,6 +189,13 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	if r.opts.TranscribeOnly {
 		return r.hear(ctx)
 	}
+	// A model that cannot be loaded fails the run before the transcript
+	// is made for it.
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.planPath)) {
+		if err := roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
+			return err
+		}
+	}
 	plan, clips, err := r.planned(ctx)
 	if err != nil || clips == nil {
 		return err
@@ -879,6 +886,11 @@ func (e *Engine) fail(ctx context.Context, err error) error {
 func (e *Engine) planFailed(ctx context.Context, err error) error {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		return e.fail(ctx, err)
+	}
+	// A model that does not fit says so as it is: its first sentence is
+	// what the row of the search shows, see ErrNoRoom.
+	if errors.Is(err, ErrNoRoom) {
+		return err
 	}
 	return fmt.Errorf("planning failed: %w", err)
 }
