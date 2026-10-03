@@ -863,6 +863,22 @@ is still exactly that server, with the same port and the same model. A
 server the command line is still using is left alone. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
+**A model that does not fit is not started.** Before llama-server starts,
+what the model needs at the context it is started with, the same
+`NeedsAt` the app offers models by, is held against the memory the system
+can give it now, `freemem.go`. On macOS that is read from `vm_stat` the
+way Activity Monitor counts memory used: all of it, less app memory
+(anonymous less purgeable), wired memory, where a model sits once Metal
+has it, and compressed memory. Files cached count as free, because macOS
+gives them back as soon as it is asked. On Linux it is `MemAvailable`. A
+model that does not fit ends the search at once: "not enough memory for
+the model", then how much it needs, how much is free, and the
+llama-servers running by their process numbers, or else to quit other
+programs. The first sentence fits the row of the search in the app, and
+the rest is read there on hover. Before, macOS killed the server while it
+loaded, and the search said only that it stopped. A system that does not
+say what is free is not checked.
+
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks
 about a half hour window for 12,000 tokens or more before it writes a
 word of the answer. On an M2 Max that is four of the five and a half
@@ -971,6 +987,7 @@ Everything else is in `engine/`:
   language.go   the language models there are, and installing one
   remove_model.go taking a model off the machine again
   leftover.go   a llama-server left behind by an app that crashed
+  freemem.go    whether a model fits in the memory free now
   stream.go     answers read as they are written, and each clip taken
                 the moment it is whole
   plan.go       building the plan: the prompt, the call, the whole answer
