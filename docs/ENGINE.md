@@ -870,12 +870,16 @@ can give it now, `freemem.go`. On macOS that is read from `vm_stat` the
 way Activity Monitor counts memory used: all of it, less app memory
 (anonymous less purgeable), wired memory, where a model sits once Metal
 has it, and compressed memory. Files cached count as free, because macOS
-gives them back as soon as it is asked. On Linux it is `MemAvailable`. A
-model that does not fit ends the search at once: "not enough memory for
-the model", then how much it needs, how much is free, and the
-llama-servers running by their process numbers, or else to quit other
-programs. The first sentence fits the row of the search in the app, and
-the rest is read there on hover. Before, macOS killed the server while it
+gives them back as soon as it is asked. On Linux it is `MemAvailable`. It is checked twice. A search checks
+before it transcribes its window, with the context a warm-up reckons for
+it, so a search that cannot finish fails at once rather than after
+minutes of listening, unless this program already holds a model. And
+llama-server is checked again just before it starts. A model that does
+not fit ends the search with "not enough memory", two words that fit the
+row of the search in the app, without "planning failed" in front. The
+rest is read there on hover: how much the model needs, how much is free,
+and the llama-servers running by their process numbers, or else to quit
+other programs. Before, macOS killed the server while it
 loaded, and the search said only that it stopped. A system that does not
 say what is free is not checked.
 

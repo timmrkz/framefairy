@@ -1,9 +1,13 @@
 package engine
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -60,23 +64,63 @@ func TestWhatVmStatSaysIsFree(t *testing.T) {
 	}
 }
 
-// A model that does not fit says so in a first sentence short enough for
-// the row of a search, then what it needs, what is free, and what to do,
-// naming the llama-servers that hold memory.
+// A model that does not fit says so in two words, which fit the row of a
+// search, then what it needs, what is free, and what to do, naming the
+// llama-servers that hold memory. A search that ends on it says it as it
+// is, without "planning failed" in front.
 func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 	err := tooLittleMemory(17_900_000_000, 9_500_000_000, []string{"4534"})
 	said := err.Error()
 	first, _, _ := strings.Cut(said, ".")
-	if first != "not enough memory for the model" {
+	if first != "not enough memory" || !errors.Is(err, ErrNoRoom) {
 		t.Errorf("first sentence %q", first)
 	}
-	for _, want := range []string{"about 17.9 GB and 9.5 GB are free", "process 4534", "kill 4534"} {
+	for _, want := range []string{"needs about 17.9 GB and 9.5 GB are free", "process 4534", "kill 4534"} {
 		if !strings.Contains(said, want) {
 			t.Errorf("no %q in %q", want, said)
 		}
 	}
 	if said := tooLittleMemory(2e9, 1e9, nil).Error(); !strings.Contains(said, "Quit other programs") {
 		t.Errorf("without a server: %q", said)
+	}
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	if got := e.planFailed(context.Background(), err); got.Error() != said {
+		t.Errorf("a search ended on it says %q", got)
+	}
+	if got := e.planFailed(context.Background(), errors.New("x")); got.Error() != "planning failed: x" {
+		t.Errorf("any other reason says %q", got)
+	}
+}
+
+// A search whose model does not fit in the memory free now fails before
+// it listens to its window, which can take minutes, and says why. Not in
+// parallel: it puts its own machine in place of the one the tests run on,
+// and the tests that run in parallel wait until it is done.
+func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
+	wasFree, wasServers := freeMemory, otherServers
+	freeMemory = func() int64 { return 1 << 20 }
+	otherServers = func() []string { return []string{"4534"} }
+	t.Cleanup(func() { freeMemory, otherServers = wasFree, wasServers })
+
+	source := testEpisode(t, "40")
+	var heard int32
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.Planner, base.LLMURL, base.LLMServer, base.LLMModel = "local", "", "true", os.Args[0]
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	_, err := p.Search(context.Background(), PlanRequest{To: 40, Count: 1}, nil)
+	if !errors.Is(err, ErrNoRoom) || !strings.Contains(err.Error(), "kill 4534") {
+		t.Fatalf("the search ended on %v", err)
+	}
+	if n := atomic.LoadInt32(&heard); n != 0 {
+		t.Errorf("it listened %d times first", n)
+	}
+	// With the API there is no model to load here.
+	base.Planner = "api"
+	if err := roomBeforeSearch(base, 1800); err != nil {
+		t.Errorf("an API search: %v", err)
 	}
 }
 

@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -113,18 +115,49 @@ func roomForModel(model string, ctx int) error {
 	return tooLittleMemory(need, free, otherServers())
 }
 
+// ErrNoRoom is a model that does not fit in the memory free now. A search
+// that ends on it says so as it is, without "planning failed" in front,
+// so its first sentence fits the row of the search.
+var ErrNoRoom = errors.New("not enough memory")
+
 // tooLittleMemory says that a model needing need bytes does not fit in
 // free, and what to do about it: stop the llama-servers that are running,
 // by their process numbers, or quit other programs. The first sentence is
-// short, so it fits the row of a search, and the rest is read on hover.
+// the one the row of a search shows, so it is two words, and the rest is
+// read on hover.
 func tooLittleMemory(need, free int64, servers []string) error {
 	what := "Quit other programs, or choose a smaller model."
 	if len(servers) > 0 {
 		what = "Another llama-server holds memory, process " + strings.Join(servers, ", ") +
 			". Quit the program that started it, or stop it with kill " + strings.Join(servers, " ") + "."
 	}
-	return renderErr("not enough memory for the model. It needs about %s and %s are free. %s",
-		inGB(need), inGB(free), what)
+	return fmt.Errorf("%w. The model needs about %s and %s are free. %s",
+		ErrNoRoom, inGB(need), inGB(free), what)
+}
+
+// roomBeforeSearch says whether the local model a search will ask fits in
+// the memory free now, before the search transcribes its window, so a
+// search that cannot finish fails at once rather than after minutes of
+// listening. The window is seconds long, and the context is reckoned the
+// way a warm-up reckons it. A model this program holds already, loaded or
+// loading, is not checked: its memory is counted as used, and the engine
+// checks again when it starts a server, see startServer.
+func roomBeforeSearch(opts Options, seconds float64) error {
+	if opts.Planner != "local" || opts.LLMURL != "" {
+		return nil
+	}
+	local, err := resolveLocal(opts)
+	if err != nil {
+		return nil
+	}
+	host.mu.Lock()
+	held := host.model != nil
+	host.mu.Unlock()
+	if held {
+		return nil
+	}
+	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
+	return roomForModel(local.Model, localContextFor(local.Model, chars, opts.MaxTokens))
 }
 
 // inGB is a size in gigabytes the way the app says a model's size, in
