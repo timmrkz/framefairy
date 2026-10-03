@@ -155,8 +155,13 @@ each one `main` is not already in:
 - **merges cleanly:** that `main` should be merged in, so the pull request is
   tested against what it will land on
 
-The comment is what wakes the session. It merges `main` in, resolves what
-conflicts, reads `CLAUDE.md` again, runs `make changed`, and pushes.
+The comment is what wakes the session. It merges `main` in, reads
+`CLAUDE.md` again and pushes. A merge without conflicts is pushed at once,
+with no tests in the session: what `main` brings was tested on `main`, the
+branch's own change was tested before its last push, and CI tests the two
+together on the push. Waiting for the same tests in the session held a
+reply up by as much as ten minutes. A merge with conflicts runs
+`make changed` before the push, because resolving them writes new code.
 Reading `CLAUDE.md` again is in the comment on purpose: a session reads it
 once when it starts, so a rule that lands on `main` while the session runs
 would otherwise reach it only in its next session. Every move of `main`
