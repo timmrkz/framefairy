@@ -777,7 +777,9 @@ func fonts() error {
 
 // npm is every package the interface bundle holds. The interface is built
 // once more with source maps into a folder of its own, and the maps say
-// which files of which packages went in.
+// which files of which packages went in. The build is told the notices are
+// being written, because its own check of them would stop it at the very
+// change they are written for.
 func npm() error {
 	tmp, err := os.MkdirTemp("", "framefairy-notices")
 	if err != nil {
@@ -787,6 +789,7 @@ func npm() error {
 	cmd := exec.Command("npx", "--no-install", "vite", "build", "--sourcemap",
 		"--outDir", tmp, "--emptyOutDir", "--logLevel", "error")
 	cmd.Dir = "frontend"
+	cmd.Env = append(os.Environ(), "FRAMEFAIRY_WRITING_NOTICES=1")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("building the interface: %w", err)
