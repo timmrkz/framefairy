@@ -899,12 +899,19 @@ fit: an ask that needs another model, or more room, waits for the one in
 memory to be let go of and then takes its place. A warm-up gives way to a
 model in use instead of waiting, and the search it was for loads the model
 when its turn comes. The app stops the model when it closes, also one
-that is still loading. A running server is written down, one note a
+that is still loading, and the command line does when it ends. It did
+not until 3 October: a search keeps the model 30 seconds after its
+answer, the timer that would stop it ended with the program, and every
+run left its llama-server behind. A running server is written down, one note a
 server in `~/.framefairy/llama-servers/`, with the process that started
 it, so one left behind by a run that crashed is stopped the next time the
-app starts, once the program that started it has gone and if that process
-is still exactly that server, with the same port and the same model. A
-server the command line is still using is left alone. The server runs one ask at a time (`-np 1`) with
+app or the command line starts, once the program that started it has
+gone and if that process is still exactly that server, with the same
+port and the same model. A server another program is still using is
+left alone. A server killed while it loads says that memory may have run
+out, which is what a second model beside one already loaded does on a
+32 GB Mac: on 3 October a comparison failed on every side that way, with
+a server from an earlier run still holding its model. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
 **The local model thinks on a budget.** Left to itself, Gemma 4 thinks

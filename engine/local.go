@@ -378,8 +378,17 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			return "", nil, ctx.Err()
 		case <-exited:
 			stop()
-			return "", nil, renderErr("%s stopped while loading the model (%v). Its output is "+
-				"in %s", server, exitErr, filepath.Join(logDir, "llm-server.log"))
+			// Killed while loading is what macOS does when memory runs
+			// out, most often because a model is already loaded by
+			// another llama-server.
+			why := ""
+			if strings.Contains(fmt.Sprint(exitErr), "killed") {
+				why = " The system stopped it, which it does when memory runs out. Another " +
+					"llama-server may be holding a model: quit the app, or find it with " +
+					"pgrep -fl llama-server."
+			}
+			return "", nil, renderErr("%s stopped while loading the model (%v).%s Its output is "+
+				"in %s", server, exitErr, why, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
