@@ -47,6 +47,9 @@ type Source struct {
 	// Retries is how long to wait before each new try when the channel
 	// list answers 404. Nil is listRetries.
 	Retries []time.Duration
+	// Copies are the addresses of the two copies of the list, read before
+	// URL, see ListCopies. Empty reads URL alone.
+	Copies []string
 
 	// fetches are the builds on their way into the cache, by SHA-256, see
 	// fetch.go.
@@ -72,14 +75,63 @@ func (e *statusError) Error() string { return "the channel list answered " + e.s
 // Name implements updater.Provider.
 func (s *Source) Name() string { return "channels" }
 
-// Fetch reads the channel list, and tries again while it answers 404.
+// Fetch reads the channel list: the newer of its two copies, or with
+// neither to be had the list itself, tried again while it answers 404.
 func (s *Source) Fetch(ctx context.Context) (List, error) {
+	list, err := s.fetchCopies(ctx)
+	if err != nil {
+		list, err = s.fetchRetrying(ctx)
+	}
+	if err != nil {
+		return List{}, err
+	}
+	s.prune(list)
+	if s.Seen != nil {
+		s.Seen(list)
+	}
+	return list, nil
+}
+
+// fetchCopies reads both copies of the list at once and keeps the one
+// written last. The workflow replaces only the older copy each time it
+// writes the list, so the other is there the whole time, however long
+// GitHub takes to serve the new one: a list replaced at one address was
+// missing for a moment each time, and an app that checked then said the
+// check did not get through, retries and all. An error only when neither
+// copy could be read.
+func (s *Source) fetchCopies(ctx context.Context) (List, error) {
+	if len(s.Copies) == 0 {
+		return List{}, errors.New("the channel list has no copies")
+	}
+	lists := make([]List, len(s.Copies))
+	errs := make([]error, len(s.Copies))
+	var wg sync.WaitGroup
+	for i, addr := range s.Copies {
+		wg.Go(func() { lists[i], errs[i] = s.fetch(ctx, addr) })
+	}
+	wg.Wait()
+	best := -1
+	for i := range lists {
+		if errs[i] == nil && (best < 0 || lists[i].Written.After(lists[best].Written)) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return List{}, errors.Join(errs...)
+	}
+	return lists[best], nil
+}
+
+// fetchRetrying reads the list at URL, and tries again while it answers
+// 404. It is what a release written before the copies has, and what is
+// read while neither copy can be.
+func (s *Source) fetchRetrying(ctx context.Context) (List, error) {
 	waits := s.Retries
 	if waits == nil {
 		waits = listRetries
 	}
 	for try := 0; ; try++ {
-		list, err := s.fetch(ctx)
+		list, err := s.fetch(ctx, s.URL)
 		var status *statusError
 		if !errors.As(err, &status) || status.code != http.StatusNotFound || try == len(waits) {
 			return list, err
@@ -92,10 +144,10 @@ func (s *Source) Fetch(ctx context.Context) (List, error) {
 	}
 }
 
-func (s *Source) fetch(ctx context.Context) (List, error) {
+func (s *Source) fetch(ctx context.Context, addr string) (List, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr, nil)
 	if err != nil {
 		return List{}, err
 	}
@@ -112,15 +164,7 @@ func (s *Source) fetch(ctx context.Context) (List, error) {
 	if err != nil {
 		return List{}, fmt.Errorf("the channel list could not be read: %w", err)
 	}
-	list, err := Parse(data)
-	if err != nil {
-		return List{}, err
-	}
-	s.prune(list)
-	if s.Seen != nil {
-		s.Seen(list)
-	}
-	return list, nil
+	return Parse(data)
 }
 
 // Check implements updater.Provider.
