@@ -11,10 +11,10 @@ import (
 //
 // A plain answer is one line a clip. points writes its three line numbers,
 // the title and the reason, split by "|", and middle only its three line
-// numbers:
+// numbers, the start, a line in the middle and the end:
 //
 //	12 18 19 | Der Regenschirm | Ein Kind wehrt sich mit Judo.
-//	40 31 52
+//	31 40 52
 //
 // JSON spends about a third of an answer on keys, quotes and brackets.
 // Each line is read into the same clip object a JSON answer gives, so
@@ -53,15 +53,15 @@ var pointsPlain = &plainFormat{
 	},
 }
 
-// middlePlain is the answer of middle: a line inside the story, then the
-// line it starts on and the line it ends on, and nothing else.
+// middlePlain is the answer of middle: the line a story starts on, a line
+// in its middle and the line it ends on, in that order, and nothing else.
 var middlePlain = &plainFormat{
 	Clip: func(line string) (string, bool) {
 		n, ok := threeNumbers(line)
 		if !ok {
 			return "", false
 		}
-		return clipJSON(map[string]any{"middle": n[0], "start": n[1], "end": n[2]})
+		return clipJSON(map[string]any{"start": n[0], "middle": n[1], "end": n[2]})
 	},
 }
 

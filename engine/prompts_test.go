@@ -120,12 +120,17 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 				t.Errorf("%s without switches says %q:\n%s", recipe.Name, not, plain)
 			}
 		}
-		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words.
-		if !strings.Contains(plain, "about 29 to 44 words") {
+		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words, and
+		// for middle three quarters of it.
+		words := "about 29 to 44 words"
+		if recipe.Name == "middle" {
+			words = "about 22 to 33 words"
+		}
+		if !strings.Contains(plain, words) {
 			t.Errorf("%s says no length in words:\n%s", recipe.Name, plain)
 		}
 		if text := ask(PromptSwitches{Times: true}); !strings.Contains(text, "[2 0:04]") ||
-			!strings.Contains(text, "about 20 to 30 seconds") || strings.Contains(text, "29 to 44 words") {
+			!strings.Contains(text, "about 20 to 30 seconds") || strings.Contains(text, words) {
 			t.Errorf("%s+times:\n%s", recipe.Name, text)
 		}
 		if text := ask(PromptSwitches{Pause: 2}); !strings.Contains(text, "a pause of 2 seconds or more") {
@@ -328,27 +333,23 @@ func TestAPlainAnswer(t *testing.T) {
 	}
 }
 
-// A middle answer is three numbers a story: a line inside it, its start
-// and its end. The line inside is its heart, which the engine never ends
-// a story before.
+// A middle answer is three numbers a story: its start, a line in its
+// middle and its end. The line in the middle is its heart, which the
+// engine never ends a story before. Three lines out of order are sorted,
+// so a middle written first or last is still the one between the others.
 func TestAMiddleAnswer(t *testing.T) {
-	reply := "Hier:\n40 31 52\n7 9 5\n1 2\n12 18 19 | ein Titel | nein\n3 3 3\n30 46 52"
+	reply := "Hier:\n31 40 52\n7 9 5\n1 2\n12 18 19 | ein Titel | nein\n3 3 3\n44 39 52"
 	var data map[string]any
 	if err := json.Unmarshal([]byte(middlePlain.answer(reply)), &data); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, middlePlain.answer(reply))
 	}
-	entries, _, err := ValidatePlan(data, lineUnits(60))
-	if err != nil || len(entries) != 4 {
-		t.Fatalf("%+v %v", entries, err)
-	}
-	if _, problems, _ := ValidatePlan(data, lineUnits(60)); len(problems) > 0 {
-		t.Errorf("untitled stories were found wanting: %v", problems)
+	entries, problems, err := ValidatePlan(data, lineUnits(60))
+	if err != nil || len(entries) != 4 || len(problems) > 0 {
+		t.Fatalf("%+v %v %v", entries, problems, err)
 	}
 	type story struct{ keep, heart [2]int }
-	// A start after the end is read the other way round, and a middle
-	// outside its story is no middle: the story is from start to end.
 	for i, want := range []story{{[2]int{31, 52}, [2]int{40, 40}}, {[2]int{5, 9}, [2]int{7, 7}},
-		{[2]int{3, 3}, [2]int{3, 3}}, {[2]int{46, 52}, [2]int{46, 46}}} {
+		{[2]int{3, 3}, [2]int{3, 3}}, {[2]int{39, 52}, [2]int{44, 44}}} {
 		if e := entries[i]; e.Keep[0] != want.keep || e.Heart != want.heart || e.Opening != want.keep[0] ||
 			e.Title != "" {
 			t.Errorf("story %d read as %+v", i+1, e)

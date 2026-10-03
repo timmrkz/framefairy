@@ -45,8 +45,8 @@ it three sentences:
 
 ```
 Find the 6 best stories in this transcript.
-For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends. A story runs about 44 to 66 words.
-Answer with one line per story, the middle, the start and the end, and nothing else, like this: 40 31 52
+For each story, first find a line in its middle, then the line where the story starts and the line where it ends. A story runs about 33 to 50 words.
+Answer with one line per story: the line where it starts, the line in its middle and the line where it ends, in that order, each later than the one before, and nothing else, like this: 31 40 52
 ```
 
 Nothing tells the model what a short is, what a video is, or what a
@@ -54,11 +54,23 @@ heart, a payoff or an opening is. Those words carry
 meanings of their own, and the model may follow the word rather than the
 story. It is asked for the story and its shape, nothing more.
 
-Why the middle first. The model writes its answer one number after the
-other, and each number is written knowing the ones before it. Pointing
-at a story first is the easy part. The start and the end are then
-written knowing which story they belong to, and only have to be found to
-the left and to the right of it.
+Why the middle first. Pointing at a story is the easy part, and the start
+and the end are then found to the left and to the right of it. The model
+does that while it thinks. It is asked to write the three in the order
+they come, because that is what it did anyway: in the second window of
+3 October it wrote 5 of 6 answers as start, middle, end, though it was
+asked for the middle first. Each later than the one before says that the
+middle is not the start or the end: thinking half as long, it gave its
+start as the middle in 4 of 6, and those stories ran 3 to 7 times too
+long. Three lines out of order are sorted, so the one between the others
+is the middle.
+
+Why three quarters of the length. Told 44 to 66 words, `middle` named 8
+of 18 stories within it over the three windows of 3 October. The typical
+one ran about a third over the top, a few ran two to four times over, and
+one fell short of the bottom. So it is told three quarters of the length
+in words, and the typical story ends near the top of the length the clip
+may have.
 
 What the program does with it. It never starts a story later than the
 model's start, and never ends it before the line in its middle. A story

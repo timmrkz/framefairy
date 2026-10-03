@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -382,29 +383,25 @@ func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, stri
 	return out, ""
 }
 
-// fromMiddle reads a clip given as a line inside the story, its start and
-// its end into the run from start to end, the line inside it its heart
+// fromMiddle reads a clip given as its start, a line in its middle and
+// its end into the run from start to end, the line in its middle its heart
 // and the start its opening. A story too long for the length is ended
-// earlier by the engine, never before the line inside it, and it never
-// starts later. A middle outside its story is no middle: in Tim's run of
-// 3 October the model, thinking half as long, wrote "30 116 148", and
-// sorting the three made a story of 310 seconds from line 30. The start
-// and the end are then the story, and the engine may end it earlier from
-// its start on.
+// earlier by the engine, never before the line in its middle, and it never
+// starts later. Three lines out of order are sorted: in Tim's runs of
+// 3 October the model, asked for the middle first, wrote five of six in
+// the order they come, as in 339 344 352, and a middle written last or
+// first is still the one between the other two.
 func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
-	for i, key := range []string{"middle", "start", "end"} {
+	for i, key := range []string{"start", "middle", "end"} {
 		v, ok := toInt(clip[key])
 		if !ok || v < 1 || v > lineCount {
 			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
 		}
 		n[i] = v
 	}
-	start, end := min(n[1], n[2]), max(n[1], n[2])
-	middle := n[0]
-	if middle < start || middle > end {
-		middle = start
-	}
+	slices.Sort(n[:])
+	start, middle, end := n[0], n[1], n[2]
 	out := make(map[string]any, len(clip)+3)
 	for k, v := range clip {
 		out[k] = v
