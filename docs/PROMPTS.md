@@ -45,7 +45,7 @@ it three sentences:
 
 ```
 Find the 6 best stories in this transcript.
-For each story, first find a line in its middle, then the line where the story starts and the line where it ends. A story runs about 33 to 50 words.
+For each story, first find a line in its middle, then the line where the story starts and the line where it ends. A story runs about 44 to 50 words.
 Answer with one line per story: the line where it starts, the line in its middle and the line where it ends, in that order, each later than the one before, and nothing else, like this: 31 40 52
 ```
 
@@ -65,12 +65,13 @@ start as the middle in 4 of 6, and those stories ran 3 to 7 times too
 long. Three lines out of order are sorted, so the one between the others
 is the middle.
 
-Why three quarters of the length. Told 44 to 66 words, `middle` named 8
+Why three quarters of the longest. Told 44 to 66 words, `middle` named 8
 of 18 stories within it over the three windows of 3 October. The typical
-one ran about a third over the top, a few ran two to four times over, and
-one fell short of the bottom. So it is told three quarters of the length
-in words, and the typical story ends near the top of the length the clip
-may have.
+one ran about a third over the top, and a few ran two to four times
+over. None fell short of the bottom when it thought in full. So it is
+told the shortest as it is and three quarters of the longest, 44 to 50
+words where it was 44 to 66, and the typical story ends near the top of
+the length the clip may have.
 
 What the program does with it. It never starts a story later than the
 model's start, and never ends it before the line in its middle. A story

@@ -121,10 +121,10 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 			}
 		}
 		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words, and
-		// for middle three quarters of it.
+		// for middle three quarters of the longest.
 		words := "about 29 to 44 words"
 		if recipe.Name == "middle" {
-			words = "about 22 to 33 words"
+			words = "about 29 to 33 words"
 		}
 		if !strings.Contains(plain, words) {
 			t.Errorf("%s says no length in words:\n%s", recipe.Name, plain)

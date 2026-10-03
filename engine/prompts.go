@@ -110,8 +110,8 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 		if share == 0 {
 			share = 1
 		}
-		data.MinWords = int(share*rate*opts.MinLen + 0.5)
-		data.MaxWords = int(share*rate*opts.MaxLen + 0.5)
+		data.MinWords = int(rate*opts.MinLen + 0.5)
+		data.MaxWords = max(int(share*rate*opts.MaxLen+0.5), data.MinWords)
 	}
 	var out strings.Builder
 	if err := t.Execute(&out, data); err != nil {
@@ -120,13 +120,14 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	return out.String()
 }
 
-// wordsShare is the share of the length in words a prompt says, for a
-// prompt whose stories run long. Told 44 to 66 words, middle named 8 of 18
-// stories within it in Tim's runs of 3 October, the typical one about a
-// third over the top and a few two to four times over, and one under the
-// bottom. Told three quarters of it, the typical story ends near the top
-// of the length the clip may have, a shorter one is grown by the engine
-// with the sentences before it, and a longer one is ended earlier.
+// wordsShare is the share of the longest length in words a prompt says,
+// for a prompt whose stories run long. Told 44 to 66 words, middle named 8
+// of 18 stories within it in Tim's runs of 3 October, the typical one
+// about a third over the top and a few two to four times over. None fell
+// short of the bottom thinking in full, so the shortest stays. Told three
+// quarters of the longest, the typical story ends near the top of the
+// length the clip may have, and a longer one is ended earlier by the
+// engine.
 var wordsShare = map[string]float64{"middle": 0.75}
 
 // PromptSwitches are what a recipe asked from a prompt file shows the model
