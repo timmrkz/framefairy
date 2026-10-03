@@ -33,6 +33,16 @@ func (s *sideBySide) Copies() int { return s.copies }
 func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 	now := s.busy.Add(1)
 	defer s.busy.Add(-1)
+	// Until two pieces have been heard at once, a piece waits for the next
+	// to arrive, rather than counting on the sleep below to outlast the
+	// decoding of it. On a busy runner decoding a piece can take longer
+	// than the sleep, and the test then failed for the runner, not the
+	// engine. An engine that hears one piece at a time still fails: no
+	// second piece comes, and the wait gives up.
+	for deadline := time.Now().Add(5 * time.Second); s.most.Load() < 2 && now < 2 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+		now = s.busy.Load()
+	}
 	for {
 		most := s.most.Load()
 		if now <= most || s.most.CompareAndSwap(most, now) {
