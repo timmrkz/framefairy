@@ -386,8 +386,11 @@ func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, stri
 // its end into the run from start to end, the line inside it its heart
 // and the start its opening. A story too long for the length is ended
 // earlier by the engine, never before the line inside it, and it never
-// starts later. The three are sorted, so a model that pointed past the
-// end it named still gives the stretch it pointed at.
+// starts later. A middle outside its story is no middle: in Tim's run of
+// 3 October the model, thinking half as long, wrote "30 116 148", and
+// sorting the three made a story of 310 seconds from line 30. The start
+// and the end are then the story, and the engine may end it earlier from
+// its start on.
 func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
 	for i, key := range []string{"middle", "start", "end"} {
@@ -397,8 +400,11 @@ func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, stri
 		}
 		n[i] = v
 	}
-	start, end := min(n[0], n[1], n[2]), max(n[0], n[1], n[2])
-	middle := n[0] + n[1] + n[2] - start - end
+	start, end := min(n[1], n[2]), max(n[1], n[2])
+	middle := n[0]
+	if middle < start || middle > end {
+		middle = start
+	}
 	out := make(map[string]any, len(clip)+3)
 	for k, v := range clip {
 		out[k] = v

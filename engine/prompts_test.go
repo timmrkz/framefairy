@@ -330,24 +330,25 @@ func TestAPlainAnswer(t *testing.T) {
 
 // A middle answer is three numbers a story: a line inside it, its start
 // and its end. The line inside is its heart, which the engine never ends
-// a story before, and three numbers out of order still give the stretch
-// they point at.
+// a story before.
 func TestAMiddleAnswer(t *testing.T) {
-	reply := "Hier:\n40 31 52\n5 9 7\n1 2\n12 18 19 | ein Titel | nein\n3 3 3"
+	reply := "Hier:\n40 31 52\n7 9 5\n1 2\n12 18 19 | ein Titel | nein\n3 3 3\n30 46 52"
 	var data map[string]any
 	if err := json.Unmarshal([]byte(middlePlain.answer(reply)), &data); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, middlePlain.answer(reply))
 	}
 	entries, _, err := ValidatePlan(data, lineUnits(60))
-	if err != nil || len(entries) != 3 {
+	if err != nil || len(entries) != 4 {
 		t.Fatalf("%+v %v", entries, err)
 	}
 	if _, problems, _ := ValidatePlan(data, lineUnits(60)); len(problems) > 0 {
 		t.Errorf("untitled stories were found wanting: %v", problems)
 	}
 	type story struct{ keep, heart [2]int }
+	// A start after the end is read the other way round, and a middle
+	// outside its story is no middle: the story is from start to end.
 	for i, want := range []story{{[2]int{31, 52}, [2]int{40, 40}}, {[2]int{5, 9}, [2]int{7, 7}},
-		{[2]int{3, 3}, [2]int{3, 3}}} {
+		{[2]int{3, 3}, [2]int{3, 3}}, {[2]int{46, 52}, [2]int{46, 46}}} {
 		if e := entries[i]; e.Keep[0] != want.keep || e.Heart != want.heart || e.Opening != want.keep[0] ||
 			e.Title != "" {
 			t.Errorf("story %d read as %+v", i+1, e)
