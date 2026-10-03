@@ -397,7 +397,7 @@
   },
   {
     "name": "bits-ui",
-    "version": "2.19.2",
+    "version": "2.19.3",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/bits-ui",
     "part": "The app's interface",
@@ -447,7 +447,7 @@
   },
   {
     "name": "svelte",
-    "version": "5.57.0",
+    "version": "5.57.1",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/svelte",
     "part": "The app's interface",
