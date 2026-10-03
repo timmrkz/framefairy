@@ -10,8 +10,8 @@ For each moment, name:
 - keep: the lines of the story as runs [first, last], from the opening or earlier to the payoff or later. To leave out an aside or a restart, end a run before it and start the next after it.
 {{if .Times}}
 From the opening to the payoff should take about {{.Min}} to {{.Max}} seconds, which the times tell you.
-{{end}}{{if .MinWords}}
-From the opening to the payoff should be about {{.MinWords}} to {{.MaxWords}} words.
+{{end}}{{if .MaxWords}}
+From the opening to the payoff should be up to about {{.MaxWords}} words.
 {{end}}
 Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "opening": 14, "heart": [17, 19], "keep": [[12, 19]]}]}
 The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.

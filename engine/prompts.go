@@ -40,11 +40,11 @@ type promptData struct {
 	Context           string
 	// Pause is the shortest pause the transcript marks, in words, "a
 	// second" say, empty when it marks none. Times is whether each line has
-	// the time it starts at. MinWords and MaxWords are the length of a clip
-	// in words, 0 when not said.
-	Pause              string
-	Times              bool
-	MinWords, MaxWords int
+	// the time it starts at. MaxWords is the longest a clip may run in
+	// words, as the prompts say it, 0 when not said.
+	Pause    string
+	Times    bool
+	MaxWords int
 }
 
 const (
@@ -101,17 +101,10 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 		data.Pause = trimFloat(sw.Pause) + " seconds"
 	}
 	// The length is said in words, unless the lines have their times and
-	// it is said in seconds. A window too short to tell how fast its
-	// speaker talks says no words. In Tim's run of 3 October, middle told
-	// a length in words named 4 of 6 stories within it, and told none ran
-	// from 55 to 351 words.
+	// it is said in seconds, and only the longest, see wordsShare. A
+	// window too short to tell how fast its speaker talks says no words.
 	if rate := wordsPerSecond(lines); !sw.Times && rate > 0 {
-		share := wordsShare[name]
-		if share == 0 {
-			share = 1
-		}
-		data.MinWords = int(rate*opts.MinLen + 0.5)
-		data.MaxWords = max(int(share*rate*opts.MaxLen+0.5), data.MinWords)
+		data.MaxWords = int(wordsShare*rate*opts.MaxLen + 0.5)
 	}
 	var out strings.Builder
 	if err := t.Execute(&out, data); err != nil {
@@ -120,15 +113,19 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	return out.String()
 }
 
-// wordsShare is the share of the longest length in words a prompt says,
-// for a prompt whose stories run long. Told 44 to 66 words, middle named 8
-// of 18 stories within it in Tim's runs of 3 October, the typical one
-// about a third over the top and a few two to four times over. None fell
-// short of the bottom thinking in full, so the shortest stays. Told three
-// quarters of the longest, the typical story ends near the top of the
-// length the clip may have, and a longer one is ended earlier by the
-// engine.
-var wordsShare = map[string]float64{"middle": 0.75}
+// wordsShare is the share of the longest length a prompt says in words,
+// the same for every prompt, since it is the same model that reads them.
+// Told nothing of the length, middle named stories of up to 351 words.
+// Told 44 to 66 words, it named 8 of 18 within it in Tim's runs of
+// 3 October, the typical one about a third over the top and a few two to
+// four times over, and none short of the bottom when it thought in full.
+// So only the longest is said, at three quarters: the typical story then
+// ends near the top of the length the clip may have, a longer one is
+// ended earlier by the engine, and a shorter one is grown with the
+// sentences before it. Both ends were said once, 42 to 47 words, and a
+// band that narrow set the model counting the words of every story until
+// it ran out of tokens.
+const wordsShare = 0.75
 
 // PromptSwitches are what a recipe asked from a prompt file shows the model
 // beyond its words, each switched on by name after a + in a comparison,

@@ -70,7 +70,9 @@ Why only the longest, and at three quarters. Told 44 to 66 words,
 3 October. The typical one ran about a third over the top, a few ran two
 to four times over, and none fell short of the bottom when it thought in
 full. So it is told only the longest, at three quarters: up to about 50
-words where it was 44 to 66. A range of both was tried first, 44 to 50,
+words where it was 44 to 66. `heart-lean` and `points` are told the same,
+since it is the same model that reads them, and the comparison then
+weighs the prompts and not how each says the length. A range of both was tried first, 44 to 50,
 and it went wrong: a band five words wide set the model counting. In the
 window from 1:30:00 it counted the words of every story line by line,
 thought past its budget into its answer, and wrote 17,372 tokens in four
@@ -209,7 +211,9 @@ length, `middle` up to 351 words. Told the length in words, Tim's idea,
 `middle` named 4 of 6 stories within the words asked for. `lines`, told
 each line's seconds, had 4 of 6 within the length on its first answer
 too, from a transcript twice the size. So the lean prompts now say the
-length in words, from how fast the speaker talks in the window. A time
+length in words, from how fast the speaker talks in the window, and since
+the second run of 3 October only the longest, at three quarters, the same
+in all three, see `wordsShare` in `engine/prompts.go`. A time
 on every line, `+times`, says it in seconds instead, and is the switch
 left to try against it.
 

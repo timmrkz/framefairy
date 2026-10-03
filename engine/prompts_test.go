@@ -120,12 +120,9 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 				t.Errorf("%s without switches says %q:\n%s", recipe.Name, not, plain)
 			}
 		}
-		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words, and
-		// for middle only the longest, at three quarters.
-		words := "about 29 to 44 words"
-		if recipe.Name == "middle" {
-			words = "up to about 33 words"
-		}
+		// Seven words a line, 280 in 191.2 seconds: 30 seconds are 44
+		// words, of which three quarters are said.
+		words := "up to about 33 words"
 		if !strings.Contains(plain, words) {
 			t.Errorf("%s says no length in words:\n%s", recipe.Name, plain)
 		}
