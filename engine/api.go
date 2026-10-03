@@ -523,7 +523,7 @@ func replyText(data *apiReply) string {
 type requestBody struct {
 	Model     string    `json:"model"`
 	MaxTokens int       `json:"max_tokens"`
-	System    string    `json:"system"`
+	System    string    `json:"system,omitempty"`
 	Messages  []message `json:"messages"`
 	Stream    bool      `json:"stream,omitempty"`
 	Thinking  *thinking `json:"thinking,omitempty"`
@@ -582,8 +582,11 @@ func setKey(request *http.Request, p Provider, key string) {
 func bodyFor(p Provider, model string, maxTokens int, system, prompt string,
 	prefill, stream bool) ([]byte, error) {
 	if p.Name == "openai" {
-		body := openAIRequest{Model: model, MaxCompletionTokens: maxTokens,
-			Messages: []message{{"developer", system}, {"user", prompt}}}
+		turns := []message{{"user", prompt}}
+		if system != "" {
+			turns = append([]message{{"developer", system}}, turns...)
+		}
+		body := openAIRequest{Model: model, MaxCompletionTokens: maxTokens, Messages: turns}
 		if stream {
 			body.Stream = true
 			body.StreamOptions = &openAIOptions{IncludeUsage: true}
@@ -604,8 +607,11 @@ func bodyFor(p Provider, model string, maxTokens int, system, prompt string,
 func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens int,
 	logDir, tag, system string, listen *Listener) (string, error) {
 	e.Calls.Requests++
-	if system == "" {
+	switch system {
+	case "":
 		system = SystemPrompt
+	case noSystem:
+		system = ""
 	}
 	p := ProviderFor(model)
 	if p.Name != "anthropic" {

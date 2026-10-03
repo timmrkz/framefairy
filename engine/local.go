@@ -383,8 +383,17 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 			return "", nil, ctx.Err()
 		case <-exited:
 			stop()
-			return "", nil, renderErr("%s stopped while loading the model (%v). Its output is "+
-				"in %s", server, exitErr, filepath.Join(logDir, "llm-server.log"))
+			// Killed while loading is what macOS does when memory runs
+			// out, most often because a model is already loaded by
+			// another llama-server.
+			why := ""
+			if strings.Contains(fmt.Sprint(exitErr), "killed") {
+				why = " The system stopped it, which it does when memory runs out. Another " +
+					"llama-server may be holding a model: quit the app, or find it with " +
+					"pgrep -fl llama-server."
+			}
+			return "", nil, renderErr("%s stopped while loading the model (%v).%s Its output is "+
+				"in %s", server, exitErr, why, filepath.Join(logDir, "llm-server.log"))
 		case <-time.After(500 * time.Millisecond):
 		}
 		// How far the loading is, is the search's to say: it knows how long
@@ -485,7 +494,7 @@ type chatError struct {
 // wrote.
 func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt string,
 	units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
-	return e.askLocal(ctx, m, r, []chatMessage{{"system", r.System}, {"user", prompt}},
+	return e.askLocal(ctx, m, r, withSystem(r.System, chatMessage{"user", prompt}),
 		units, count, maxTokens, logDir, "plan-prompt.txt", listen)
 }
 
@@ -495,8 +504,22 @@ func (e *Engine) CallLocal(ctx context.Context, m LocalModel, r Recipe, prompt s
 // answer and the new question.
 func (e *Engine) CallLocalAgain(ctx context.Context, m LocalModel, r Recipe, prompt, answer,
 	again string, units, count, maxTokens int, logDir string, listen *Listener) (*localAnswer, error) {
-	return e.askLocal(ctx, m, r, []chatMessage{{"system", r.System}, {"user", prompt},
-		{"assistant", answer}, {"user", again}}, units, count, maxTokens, logDir, "fit-prompt.txt", listen)
+	return e.askLocal(ctx, m, r, withSystem(r.System, chatMessage{"user", prompt},
+		chatMessage{"assistant", answer}, chatMessage{"user", again}), units, count, maxTokens, logDir,
+		"fit-prompt.txt", listen)
+}
+
+// noSystem is the system part of a recipe that has none, said to the API,
+// which would otherwise take an empty one for the lines brief.
+const noSystem = "\x00none"
+
+// withSystem is a conversation with the recipe's system part first, when
+// it has one. A recipe whose prompt is one message sends no system part.
+func withSystem(system string, turns ...chatMessage) []chatMessage {
+	if system == "" {
+		return turns
+	}
+	return append([]chatMessage{{"system", system}}, turns...)
 }
 
 // chatMessage is one turn of a conversation.
@@ -512,8 +535,10 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		// A model loaded while the transcript was still on its way is used
 		// as it is. The search lets go of it when it is done, and it stops.
 		chars := 0
-		for _, message := range messages[1:] {
-			chars += runeLen(message.Content)
+		for _, message := range messages {
+			if message.Role != "system" {
+				chars += runeLen(message.Content)
+			}
 		}
 		size := localContextFor(m.Model, chars, maxTokens)
 		if !modelReady(m.Model, size) {
@@ -528,13 +553,17 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	}
 	listen.part(partReading)
 
-	schema := json.RawMessage(r.Schema(units, count))
 	// A run works the budget out from its window before it asks, see
 	// SuggestedThink. One that did not is given the budget for half an
 	// hour rather than none at all.
 	think := m.Think
 	if think == ThinkForWindow {
 		think = DefaultThink
+	}
+	// A plain answer is a few tokens a clip, so it may run little past its
+	// thinking, see answerCap. A thought without a budget is not capped.
+	if r.Plain != nil && think >= 0 {
+		maxTokens = min(maxTokens, r.Plain.answerCap(think, count))
 	}
 	ask := map[string]any{
 		"model":      filepath.Base(m.Model),
@@ -549,12 +578,20 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		"stream":          true,
 		"stream_options":  map[string]any{"include_usage": true},
 		"return_progress": true,
-		"response_format": map[string]any{
+	}
+	// An answer without JSON is held to nothing. A grammar of our own
+	// would hold the model from its first token, so Gemma could not open
+	// its thought, which only a schema's grammar leaves room for, and it
+	// wrote its thinking into an answer line that never ended. The reader
+	// passes over any line that is not a clip.
+	if r.Plain == nil {
+		schema := json.RawMessage(r.Schema(units, count))
+		ask["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
 				"name": "plan", "strict": true, "schema": schema,
 			},
-		},
+		}
 	}
 	if m.Seed != 0 {
 		ask["seed"] = m.Seed
@@ -640,7 +677,11 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		e.Log.Detail("the model thought for %s characters before it answered",
 			commas(answer.Reasoning))
 	}
-	if answer.FinishReason == "length" {
+	switch {
+	case answer.FinishReason == "length" && r.Plain != nil:
+		e.Log.Warn("the model went on writing after its answer and was stopped at %s tokens",
+			commas(maxTokens))
+	case answer.FinishReason == "length":
 		e.Log.Warn("the answer hit the %s token ceiling. Raise --max-tokens if clips are missing.",
 			commas(maxTokens))
 	}

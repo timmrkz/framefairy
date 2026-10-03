@@ -42,6 +42,16 @@ type Recipe struct {
 	// is split between the two asks, so it thinks no longer in all than a
 	// recipe that asks once. See fit.go.
 	Edit bool
+	// Hearts is true for a recipe that asks for the heart of every clip
+	// and leaves the length to the engine, which fits each clip around its
+	// heart and never asks again. See heart.go.
+	Hearts bool
+	// Switchable is true for a recipe asked from a prompt file that can
+	// show the model more or less, see PromptSwitches.
+	Switchable bool
+	// Plain is how the recipe answers without JSON, one line a clip, nil
+	// for a recipe that answers in JSON, see plain.go.
+	Plain *plainFormat
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.
@@ -54,7 +64,7 @@ type Recipe struct {
 	// out with the units numbered from 1.
 	Request func(lines []Line, units [][2]int, opts PlanOptions) string
 	// Schema is the answer's shape as JSON schema, which a local model is
-	// held to while it writes. It has units numbers in it and asks for at
+	// held to while it writes, nil for a recipe that answers without JSON. It has units numbers in it and asks for at
 	// most count clips.
 	Schema func(units, count int) string
 }
@@ -177,6 +187,8 @@ var linesRecipe = Recipe{
 	Unit:    "line",
 	Version: PromptVersion,
 	System:  SystemPrompt,
-	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string { return buildPrompt(lines, opts) },
-	Schema:  planSchema,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		return prompt("lines", lines, AnnotateLines(lines), opts)
+	},
+	Schema: planSchema,
 }

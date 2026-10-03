@@ -411,12 +411,15 @@ type localTimings struct {
 
 // localAnswer is llama-server's streamed answer put back together.
 type localAnswer struct {
-	Content      string        `json:"content"`
-	Reasoning    int           `json:"reasoning_chars"`
-	FinishReason string        `json:"finish_reason"`
-	PromptTokens int           `json:"prompt_tokens"`
-	Written      int           `json:"completion_tokens"`
-	Timings      *localTimings `json:"timings,omitempty"`
+	Content   string `json:"content"`
+	Reasoning int    `json:"reasoning_chars"`
+	// ReasoningTokens is the tokens of thought, one a piece as llama-server
+	// sends them.
+	ReasoningTokens int           `json:"reasoning_tokens,omitempty"`
+	FinishReason    string        `json:"finish_reason"`
+	PromptTokens    int           `json:"prompt_tokens"`
+	Written         int           `json:"completion_tokens"`
+	Timings         *localTimings `json:"timings,omitempty"`
 }
 
 // readLocalStream reads llama-server's answer as it is written.
@@ -448,6 +451,9 @@ func readLocalStream(r io.Reader, listen *Listener) (*localAnswer, error) {
 			}
 			if r := choice.Delta.ReasoningContent; r != nil {
 				answer.Reasoning += len(*r)
+				if *r != "" {
+					answer.ReasoningTokens++
+				}
 				listen.thinking(len(*r))
 			}
 			if choice.FinishReason != nil && *choice.FinishReason != "" {

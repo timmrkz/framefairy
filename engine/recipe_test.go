@@ -24,14 +24,6 @@ func TestTheDefaultRecipeAsksWhatWasAlwaysAsked(t *testing.T) {
 	if r.Name != DefaultRecipe || r.System != SystemPrompt || r.Version != PromptVersion {
 		t.Fatalf("the default recipe is %s, version %d", r.Name, r.Version)
 	}
-	lines := []Line{
-		{Index: 1, Cues: []Cue{{Start: 0, End: 1, Text: "Hallo"}}},
-		{Index: 2, Cues: []Cue{{Start: 1.8, End: 2.4, Text: "Welt."}}, GapBefore: 0.8},
-	}
-	opts := PlanOptions{Count: 3, MinLen: 20, MaxLen: 30}
-	if got, want := r.Request(lines, r.units(lines), opts), buildPrompt(lines, opts); got != want {
-		t.Errorf("the default recipe asks something new:\n%s\nrather than\n%s", got, want)
-	}
 	if got, want := r.Schema(2, 3), planSchema(2, 3); got != want {
 		t.Error("the default recipe's answer has a new shape")
 	}

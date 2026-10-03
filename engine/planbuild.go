@@ -203,7 +203,10 @@ func (b *planBuilder) propose(entry PlanEntry) {
 		b.mu.Unlock()
 		return
 	}
-	entry = b.shaped(entry)
+	entry, fitted := b.shapedFitted(entry)
+	if fitted != "" {
+		b.e.Log.Info("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
+	}
 	if b.retaken(entry) {
 		b.retakes++
 		b.mu.Unlock()
@@ -224,10 +227,62 @@ func (b *planBuilder) propose(entry PlanEntry) {
 // and runs that follow each other one run when the recipe leaves the
 // pauses to the engine.
 func (b *planBuilder) shaped(entry PlanEntry) PlanEntry {
+	entry, _ = b.shapedFitted(entry)
+	return entry
+}
+
+// shapedFitted is shaped, and for a recipe that names the heart of every
+// clip, the clip fitted to the length around it, see heart.go. It says
+// what fitting did.
+func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
+	recipe := b.opts.recipe()
+	if recipe.Hearts {
+		// The heart is whole sentences and kept, before the edges are put
+		// on sentences, so they never cut a line of it. Put back after,
+		// a heart ending on a comma ended the clip there.
+		entry.Heart = wholeHeart(b.lines, entry.Heart)
+		if entry.Opening > 0 {
+			entry.Opening = sentenceStart(b.lines, min(entry.Opening, len(b.lines)))
+		}
+		if entry.Heart[0] > 0 {
+			entry.Keep = withRun(entry.Keep, entry.Heart)
+		}
+	}
 	entry.Keep = wholeSentences(b.lines, entry.Keep, b.opts.MaxLen, b.seconds)
-	if b.opts.recipe().Joins {
+	if recipe.Joins {
 		entry.Keep = joinRuns(entry.Keep)
 	}
+	if !recipe.Hearts {
+		return b.named(entry), ""
+	}
+	taken := func(n int) bool {
+		for _, t := range b.taken {
+			if n >= t[0] && n <= t[1] {
+				return true
+			}
+		}
+		return false
+	}
+	keep, did := fitToHeart(b.lines, entry.Keep, entry.Heart, entry.Opening, b.opts.MinLen, b.opts.MaxLen,
+		taken, b.seconds)
+	entry.Keep = keep
+	return b.named(entry), did
+}
+
+// named gives a clip the model named nothing, as middle's are, a title and
+// a slug from its first words.
+func (b *planBuilder) named(entry PlanEntry) PlanEntry {
+	if entry.Title != "" {
+		return entry
+	}
+	var words []string
+	for _, r := range entry.Keep {
+		for n := r[0]; n <= r[1] && len(words) < 20; n++ {
+			words = append(words, strings.Fields(b.lines[n-1].Text())...)
+		}
+	}
+	entry.Title = firstWords(strings.Join(words, " "), 60)
+	entry.Slug = strings.ToLower(SanitiseName(entry.Title, "clip"))
 	return entry
 }
 
@@ -512,7 +567,9 @@ func (b *planBuilder) answered() {
 func (b *planBuilder) rest(whole []PlanEntry) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closed {
+	// Every clip asked for was taken as the answer arrived. What follows
+	// is a model that went on writing, and it is not read for repeats.
+	if b.closed || len(b.order) >= b.opts.Count {
 		return
 	}
 	// The clips taken as the answer arrived were checked for repeats in
@@ -912,4 +969,22 @@ func lastNumber(path, prefix string) int {
 		}
 	}
 	return last
+}
+
+// firstWords is as many whole words of text as fit in limit characters, or
+// the first word when it alone is longer.
+func firstWords(text string, limit int) string {
+	words := strings.Fields(text)
+	out := ""
+	for i, w := range words {
+		next := w
+		if i > 0 {
+			next = out + " " + w
+		}
+		if i > 0 && runeLen(next) > limit {
+			break
+		}
+		out = next
+	}
+	return out
 }

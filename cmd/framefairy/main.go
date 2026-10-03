@@ -446,6 +446,14 @@ func main() {
 		}
 		log.SetSink(engine.JSONLines(events))
 	}
+	// A llama-server a run left behind, because it was killed or its
+	// terminal closed, holds a model in memory, and a model loaded beside it
+	// does not fit: macOS kills the new one while it loads. The app stops
+	// such a server when it starts, and the command line does the same.
+	// One whose program still runs, the app's own, is left alone.
+	if engine.StopLeftoverServer() {
+		log.Info("stopped a llama-server an earlier run left behind")
+	}
 	var code int
 	if len(p.opts.Compare) > 0 {
 		// A comparison asks afresh, because what a search costs is half
@@ -462,6 +470,12 @@ func main() {
 		code = e.Run(ctx, p.opts)
 	}
 	stop()
+	// A search keeps the model loaded for 30 seconds after its answer, in
+	// case it asks again, and a comparison keeps its last side's. The timer
+	// that would stop it dies with this program, which left llama-server
+	// running with the model in memory after every run, so it is stopped
+	// here, as the app stops it when it quits.
+	engine.CloseModels()
 	if events != nil {
 		// os.Exit skips deferred calls, so the file is closed here.
 		log.SetSink(nil)

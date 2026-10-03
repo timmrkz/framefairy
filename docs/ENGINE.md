@@ -248,6 +248,11 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | Recipe | What the model reads | What it answers |
 | --- | --- | --- |
 | `lines` | every line of speech numbered, with its length, the pause before it and its level, see below, and a brief for any video: the heart of a story and its payoff are never cut, the clip starts on the least a stranger needs and ends on the payoff, the length comes after that, at most N clips, and the task said again after the transcript | at most N clips, as runs of lines |
+| `heart` | the `lines` brief and transcript, told that a program fits the length so it need not count seconds | at most N clips, each with its heart, the lines never cut, and the runs of lines the story reaches. The engine fits each to the length around the heart, so it is never asked again |
+| `heart-opening` | `heart`, with the opening asked for too: the first line a stranger needs, the question or the setup that says who, when and where | at most N clips, each with its opening, its heart and the runs of lines the story reaches. The engine never starts a clip after its opening |
+| `heart-lean` | one message from `engine/prompts/heart-lean.txt`: the transcript first, only the words, then the task once with the length in words | as `heart-opening`, without a slug and with a reason of at most twelve words |
+| `points` | one message from `engine/prompts/points.txt`: the transcript, only the words, then the task with the length in words | one line a clip without JSON: start, payoff and end, one stretch, the title and the reason. The pauses are left to the engine, which never starts a clip after its start |
+| `middle` | one message from `engine/prompts/middle.txt`: the transcript, only the words, then three sentences with the length in words, nothing of videos, shorts or JSON | one line a story without JSON: a line inside it, its start and its end. The engine never starts it later and never ends it before the line inside it, and ends a story too long earlier. A clip is named after its first words |
 | `stories2` | the `lines` brief with the transcript as `stories` writes it | at most N clips, as runs of sentences |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
@@ -338,6 +343,45 @@ cannot tell where the heart of a story is, and on Tim's episode it cut
 the setup off the mirror story when it cut from the start, and the payoff
 out of the umbrella story, twice, when it cut from the middle. A complete
 story of 38 s is worth more than one of 19 s without its core.
+
+**`heart` asks once.** The second ask costs the time of writing every
+held clip again, and the clips it holds back wait for it, which in the
+app was a minute of "Fitting to the length" on four of six cards. Cutting
+to the length without asking failed because the engine did not know
+where the heart was. So `heart` asks the model to name it, `Recipe.Hearts`,
+and `fitToHeart` in `engine/heart.go` fits the clip on whole sentences
+as it is shaped: what runs on past the heart goes first, a sentence at a
+time, then setup from the start, and never the heart. A step that would
+leave the clip further off the length than it was is not taken. A clip
+too short takes in the sentence before it, the way I grows a clip made by
+hand, and the one after only where there is nothing before it to take,
+never into another clip and never past the longest length. A clip whose
+heart alone runs past the length stays whole. A heart that cannot be
+read leaves the clip as the model kept it. It works the same with a
+model in the cloud. The heart is grown to the sentences its lines are in
+before the edges are put on sentences, so no edge cuts a line of it:
+once a heart ended on a comma and the clip ended there.
+
+The first comparison, on the first 30 minutes of Tim's episode with six
+clips asked for: `lines` took 88 s, asked twice and still left two clips
+off the length, 41 s and 57 s. `heart` took 77 s with its full thinking,
+`heart@1024` 36 s and `heart@0` 22 s, all asked once. `heart@1024` found
+much the same stories as `lines`, every one within the length. `heart@0`
+named whole stories as hearts, so one stayed 55 s, and chose weaker
+moments. But `heart` started stories later than `lines`, by the model's
+own choice: the umbrella story without "I was a small kid, second, third
+grade", the mirror story without the father's art. So `heart-opening`
+asks for a third point, the opening, the first line a stranger needs,
+and the engine never starts a clip after it, even when it stays long.
+
+Why the prompts look the way they do, what each part costs and the ones
+being compared are in [PROMPTS.md](PROMPTS.md). A prompt kept in
+`engine/prompts/` is exactly what the model is sent, the system part
+where there is one and the request, filled in by `prompt` in
+`engine/prompts.go`. `lines`, `heart` and `heart-opening` are kept there
+too, held word for word to what they sent before by the prompts in
+`engine/testdata/prompts/`. An answer without slugs gets them from its
+titles.
 
 A recipe with `Edit`, `stories-edit`, holds back every clip, not only
 those off the length, and the second ask is about the edit: where each
@@ -855,12 +899,19 @@ fit: an ask that needs another model, or more room, waits for the one in
 memory to be let go of and then takes its place. A warm-up gives way to a
 model in use instead of waiting, and the search it was for loads the model
 when its turn comes. The app stops the model when it closes, also one
-that is still loading. A running server is written down, one note a
+that is still loading, and the command line does when it ends. It did
+not until 3 October: a search keeps the model 30 seconds after its
+answer, the timer that would stop it ended with the program, and every
+run left its llama-server behind. A running server is written down, one note a
 server in `~/.framefairy/llama-servers/`, with the process that started
 it, so one left behind by a run that crashed is stopped the next time the
-app starts, once the program that started it has gone and if that process
-is still exactly that server, with the same port and the same model. A
-server the command line is still using is left alone. The server runs one ask at a time (`-np 1`) with
+app or the command line starts, once the program that started it has
+gone and if that process is still exactly that server, with the same
+port and the same model. A server another program is still using is
+left alone. A server killed while it loads says that memory may have run
+out, which is what a second model beside one already loaded does on a
+32 GB Mac: on 3 October a comparison failed on every side that way, with
+a server from an earlier run still holding its model. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
 **A model that does not fit is not started.** Before llama-server starts,
@@ -985,6 +1036,10 @@ Everything else is in `engine/`:
   windows.go    where the model has already looked, and the passes over
                 a window searched again
   fit.go        clips well off the length asked for again, measured
+  heart.go      the heart recipe, and fitting a clip around its heart
+  prompts.go    prompts kept as text in prompts/, the lean transcripts, and
+                the switches a comparison turns on
+  plain.go      the answers one line a clip rather than JSON, of points and middle
   edges.go      every clip edge on a sentence
   select.go     prompt, reply parsing and plan validation
   local.go      planning with llama.cpp on this machine

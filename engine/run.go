@@ -46,6 +46,9 @@ type Options struct {
 	// Variant is the name a comparison gives this search, stories@1024 say,
 	// and the folder its plan goes in. Empty is the recipe's own name.
 	Variant string
+	// Switches change what a recipe asked from a prompt file shows the
+	// model, see PromptSwitches. A comparison sets them from a side's name.
+	Switches PromptSwitches
 
 	// Planner is "local", the default, or "api".
 	Planner   string
@@ -512,6 +515,7 @@ func (r *runner) plan(ctx context.Context) error {
 			Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
 			Pass: opts.Pass, Taken: opts.Taken,
 			Recipe:   opts.Recipe,
+			Switches: opts.Switches,
 			PlanPath: planPath,
 		})
 	if err != nil {

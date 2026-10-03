@@ -97,6 +97,29 @@ func wholeSentences(lines []Line, keep [][2]int, longest float64, seconds func([
 	return out
 }
 
+// sentenceStart is the line where the sentence of line n begins, and
+// sentenceEnd the line where it ends, lines numbered from 1, no further off
+// than sentenceReach, the reach every clip's edges have. A transcript
+// without punctuation for that long has no sentence to go to, and the
+// line itself stands.
+func sentenceStart(lines []Line, n int) int {
+	for k := n; k >= 1 && lines[n-1].Start()-lines[k-1].Start() <= sentenceReach; k-- {
+		if beginsSentence(lines, k) {
+			return k
+		}
+	}
+	return n
+}
+
+func sentenceEnd(lines []Line, n int) int {
+	for k := n; k <= len(lines) && lines[k-1].End()-lines[n-1].End() <= sentenceReach; k++ {
+		if finishesSentence(lines, k) {
+			return k
+		}
+	}
+	return n
+}
+
 // nearer is whichever of back and forward, -1 for none, lies nearer to at
 // in time, or at itself when there is neither.
 func nearer(at, back, forward int, time func(int) float64) int {
