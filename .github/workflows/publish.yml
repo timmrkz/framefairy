@@ -62,7 +62,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Nothing is published until the key is made, and a list without it
       # cannot be checked.
       - id: key
@@ -74,7 +74,7 @@ jobs:
             echo "::notice::No update key yet, so there is no list to write."
           fi
       - if: steps.key.outputs.ready == 'true'
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -105,7 +105,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       # main, the default for a workflow_run, never the branch.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # What the build is a build of, from GitHub's record of the run and
       # not from anything the build wrote. A run that left no zip is a
@@ -200,7 +200,7 @@ jobs:
           fi
 
       - if: steps.zip.outputs.ready == 'true'
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -261,7 +261,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: key
         name: Is there an update key
         run: |
@@ -271,7 +271,7 @@ jobs:
             echo "::notice::No update key yet, so there is no list to write."
           fi
       - if: steps.key.outputs.ready == 'true'
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
