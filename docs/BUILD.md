@@ -270,11 +270,15 @@ scan made once is out of date the week after.
 
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
   week when a Go module, a package of the interface or an action has a
-  newer version, grouped into one pull request each. With Dependabot
-  security updates on in the repository's settings, it opens one at once
-  for a fix to a known vulnerability. Wails and the speech library's Go
-  module are left out, because each moves with a pin Dependabot cannot
-  change.
+  newer version. Minor and patch versions come together, one pull request
+  for the Go modules and one for the interface, and a new major version
+  comes in a pull request of its own, so a major that breaks the build
+  holds back nothing else. The actions come in one pull request, majors
+  included. With Dependabot security updates on in the repository's
+  settings, it opens one at once for a fix to a known vulnerability.
+  Wails and the speech library's Go module are left out, because each
+  moves with a pin Dependabot cannot change. TypeScript stays below 7 until
+  svelte-check, which checks the interface's types, accepts 7.
 - **govulncheck** and **npm audit**, `.github/workflows/security.yml`, on
   every pull request that changes the Go modules or the interface's
   packages, and on main every Monday. govulncheck reports only what the

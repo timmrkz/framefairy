@@ -8,6 +8,13 @@
 # and the speech library, whose native libraries scripts/speech-libs.sh
 # pins by checksum beside the Go module's version. scripts/upstream.sh
 # watches the speech library instead, with ffmpeg and llama.cpp.
+#
+# Minor and patch versions come together, one pull request a week for the
+# Go modules and one for the interface. A new major version comes alone,
+# because a major can break the build, and a broken one in the group
+# holds back every patch beside it. The actions stay in one pull request
+# with their majors: an action's major is mostly the Node it runs on, and
+# CI runs every one of them.
 version: 2
 updates:
   - package-ecosystem: gomod
@@ -20,15 +27,22 @@ updates:
     groups:
       go:
         patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
     ignore:
       - dependency-name: "@wailsio/runtime"
+      # svelte-check, which checks the interface's types, takes TypeScript
+      # 5 or 6 and npm will not install it beside 7. Take this out once a
+      # svelte-check release accepts 7.
+      - dependency-name: typescript
+        versions: [">=7"]
     groups:
       interface:
         patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
