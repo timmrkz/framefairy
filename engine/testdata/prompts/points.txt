@@ -13,5 +13,7 @@ For each moment, give three line numbers:
 - payoff: the line where it lands, what happened in the end or what it meant.
 - end: the last line. Usually the payoff, later only to finish its sentence or to let it land.
 
+From the start to the end should be about 36 to 54 words.
+
 Answer with one line for each moment and nothing else, like this:
 12 18 19 | a hook in the language of the transcript | why the moment works, in at most twelve words

@@ -100,8 +100,12 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	case sw.Pause > 0:
 		data.Pause = trimFloat(sw.Pause) + " seconds"
 	}
-	// A window too short to tell how fast its speaker talks says no words.
-	if rate := wordsPerSecond(lines); sw.Words && rate > 0 {
+	// The length is said in words, unless the lines have their times and
+	// it is said in seconds. A window too short to tell how fast its
+	// speaker talks says no words. In Tim's run of 3 October, middle told
+	// a length in words named 4 of 6 stories within it, and told none ran
+	// from 55 to 351 words.
+	if rate := wordsPerSecond(lines); !sw.Times && rate > 0 {
 		data.MinWords = int(rate*opts.MinLen + 0.5)
 		data.MaxWords = int(rate*opts.MaxLen + 0.5)
 	}
@@ -114,8 +118,8 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 
 // PromptSwitches are what a recipe asked from a prompt file shows the model
 // beyond its words, each switched on by name after a + in a comparison,
-// as in points+times+words. With none, the model gets the words of each
-// line and nothing else.
+// as in points+pause2+times. With none, the model gets the words of each
+// line and the length of a clip in words.
 type PromptSwitches struct {
 	// Pause marks a line that comes after a pause of at least that many
 	// seconds with "…" in front of it. 0 marks none. +pause is a second,
@@ -125,21 +129,15 @@ type PromptSwitches struct {
 	// start of the transcript, so the length of a stretch is one
 	// subtraction, +times.
 	Times bool
-	// Words says how long a clip is in words, from how fast the speaker
-	// talks in this window, so the model can judge length by counting,
-	// +words.
-	Words bool
 }
 
-// ParseSwitches reads switches written as in pause2+times+words.
+// ParseSwitches reads switches written as in pause2+times.
 func ParseSwitches(text string) (PromptSwitches, error) {
 	var sw PromptSwitches
 	for _, name := range strings.Split(text, "+") {
 		switch {
 		case name == "times":
 			sw.Times = true
-		case name == "words":
-			sw.Words = true
 		case name == "pause":
 			sw.Pause = 1
 		case strings.HasPrefix(name, "pause"):
@@ -149,7 +147,7 @@ func ParseSwitches(text string) (PromptSwitches, error) {
 			}
 			sw.Pause = n
 		default:
-			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2, +times and +words", name)
+			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2 and +times. The length is said in words without +times", name)
 		}
 	}
 	return sw, nil
@@ -166,9 +164,6 @@ func (sw PromptSwitches) String() string {
 	}
 	if sw.Times {
 		out += "+times"
-	}
-	if sw.Words {
-		out += "+words"
 	}
 	return out
 }

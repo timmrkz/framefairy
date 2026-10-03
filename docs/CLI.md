@@ -224,12 +224,13 @@ rather than JSON. Every side starts a llama-server of its own, so none
 reads from the cache of the one before.
 
 What `heart-lean`, `points` and `middle` show the model beyond the words
-is switched on after a `+`: `+pause` or `+pause2` for a mark before a
-long pause, `+times` for the time each line starts at, and `+words` for
-the length in words. So a new idea is a side in the command:
+and the length in words is switched on after a `+`: `+pause` or
+`+pause2` for a mark before a long pause, and `+times` for the time each
+line starts at, with the length in seconds. So a new idea is a side in
+the command:
 
 ```
-framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart-opening,heart-lean,points,middle,middle+pause,middle+words,middle@1024
+framefairy episode.mp4 --from 0 --to 30:00 --compare heart-opening,points,middle,middle+times,middle@1024
 ```
 
 A recipe with `@` and a number thinks that many tokens, whatever

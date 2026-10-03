@@ -383,9 +383,11 @@ func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, stri
 }
 
 // fromMiddle reads a clip given as a line inside the story, its start and
-// its end into the run from start to end, which is all heart, so the
-// engine never cuts the story. The three are sorted, so a model that
-// pointed past the end it named still gives the stretch it pointed at.
+// its end into the run from start to end, the line inside it its heart
+// and the start its opening. A story too long for the length is ended
+// earlier by the engine, never before the line inside it, and it never
+// starts later. The three are sorted, so a model that pointed past the
+// end it named still gives the stretch it pointed at.
 func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
 	var n [3]int
 	for i, key := range []string{"middle", "start", "end"} {
@@ -396,12 +398,13 @@ func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, stri
 		n[i] = v
 	}
 	start, end := min(n[0], n[1], n[2]), max(n[0], n[1], n[2])
+	middle := n[0] + n[1] + n[2] - start - end
 	out := make(map[string]any, len(clip)+3)
 	for k, v := range clip {
 		out[k] = v
 	}
 	out["keep"] = []any{[]any{float64(start), float64(end)}}
-	out["heart"] = []any{float64(start), float64(end)}
+	out["heart"] = []any{float64(middle), float64(middle)}
 	out["opening"] = float64(start)
 	return out, ""
 }

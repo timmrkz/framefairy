@@ -82,28 +82,28 @@ func TestTheLeanTranscripts(t *testing.T) {
 // A side of a comparison names its switches after a +, and only a recipe
 // asked from a prompt file takes them.
 func TestSwitchesAreReadFromASidesName(t *testing.T) {
-	v, err := ParseVariant("points+pause2+times+words@1024~0.3")
+	v, err := ParseVariant("points+pause2+times@1024~0.3")
 	if err != nil || v.Recipe != "points" || *v.Think != 1024 || *v.Temperature != 0.3 ||
-		v.Switches != (PromptSwitches{Pause: 2, Times: true, Words: true}) {
+		v.Switches != (PromptSwitches{Pause: 2, Times: true}) {
 		t.Fatalf("read as %+v %v", v, err)
 	}
-	if v.Switches.String() != "+pause2+times+words" {
+	if v.Switches.String() != "+pause2+times" {
 		t.Errorf("written as %s", v.Switches)
 	}
 	if v, err := ParseVariant("heart-lean+pause"); err != nil || v.Switches.Pause != 1 {
 		t.Errorf("+pause read as %+v %v", v, err)
 	}
 	for _, bad := range []string{"lines+times", "heart+pause", "points+loud", "points+pause0", "points+pause99", "points+",
-		"points+plain"} {
+		"points+plain", "middle+words"} {
 		if _, err := ParseVariant(bad); err == nil {
 			t.Errorf("%q was taken", bad)
 		}
 	}
 }
 
-// Each switch changes the request only where it should: the times and
-// the words say a length, the pause says what its mark means, and without
-// switches nothing is said of seconds or of pauses.
+// Without switches the length is said in words, from how fast the
+// speaker talks, and nothing of seconds or pauses. +times says it in
+// seconds instead, and the pause says what its mark means.
 func TestSwitchesChangeTheRequest(t *testing.T) {
 	var parts []any
 	for i := range 40 {
@@ -115,18 +115,18 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 			return recipe.Request(lines, recipe.units(lines), PlanOptions{Count: 6, MinLen: 20, MaxLen: 30, Switches: sw})
 		}
 		plain := ask(PromptSwitches{})
-		for _, not := range []string{"seconds", "…", "words, which is", ":0"} {
+		for _, not := range []string{"seconds", "…", ":0"} {
 			if strings.Contains(plain, not) {
 				t.Errorf("%s without switches says %q:\n%s", recipe.Name, not, plain)
 			}
 		}
-		if text := ask(PromptSwitches{Times: true}); !strings.Contains(text, "[2 0:04]") ||
-			!strings.Contains(text, "about 20 to 30 seconds") {
-			t.Errorf("%s+times:\n%s", recipe.Name, text)
-		}
 		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words.
-		if text := ask(PromptSwitches{Words: true}); !strings.Contains(text, "about 29 to 44 words") {
-			t.Errorf("%s+words:\n%s", recipe.Name, text)
+		if !strings.Contains(plain, "about 29 to 44 words") {
+			t.Errorf("%s says no length in words:\n%s", recipe.Name, plain)
+		}
+		if text := ask(PromptSwitches{Times: true}); !strings.Contains(text, "[2 0:04]") ||
+			!strings.Contains(text, "about 20 to 30 seconds") || strings.Contains(text, "29 to 44 words") {
+			t.Errorf("%s+times:\n%s", recipe.Name, text)
 		}
 		if text := ask(PromptSwitches{Pause: 2}); !strings.Contains(text, "a pause of 2 seconds or more") {
 			t.Errorf("%s+pause2:\n%s", recipe.Name, text)
@@ -265,7 +265,7 @@ func TestEveryPromptAsksWhatTestdataSays(t *testing.T) {
 	for _, r := range fromFiles {
 		sides := []side{{r.Name, base}, {r.Name + "-with-context", with}}
 		if r.Switchable {
-			for _, sw := range []PromptSwitches{{Pause: 1, Words: true}, {Times: true}} {
+			for _, sw := range []PromptSwitches{{Pause: 1}, {Times: true}} {
 				opts := base
 				opts.Switches = sw
 				sides = append(sides, side{r.Name + sw.String(), opts})
@@ -329,8 +329,8 @@ func TestAPlainAnswer(t *testing.T) {
 }
 
 // A middle answer is three numbers a story: a line inside it, its start
-// and its end. The story from start to end is all heart, so the engine
-// never cuts it, and three numbers out of order still give the stretch
+// and its end. The line inside is its heart, which the engine never ends
+// a story before, and three numbers out of order still give the stretch
 // they point at.
 func TestAMiddleAnswer(t *testing.T) {
 	reply := "Hier:\n40 31 52\n5 9 7\n1 2\n12 18 19 | ein Titel | nein\n3 3 3"
@@ -345,8 +345,11 @@ func TestAMiddleAnswer(t *testing.T) {
 	if _, problems, _ := ValidatePlan(data, lineUnits(60)); len(problems) > 0 {
 		t.Errorf("untitled stories were found wanting: %v", problems)
 	}
-	for i, want := range [][2]int{{31, 52}, {5, 9}, {3, 3}} {
-		if e := entries[i]; e.Keep[0] != want || e.Heart != want || e.Opening != want[0] || e.Title != "" {
+	type story struct{ keep, heart [2]int }
+	for i, want := range []story{{[2]int{31, 52}, [2]int{40, 40}}, {[2]int{5, 9}, [2]int{7, 7}},
+		{[2]int{3, 3}, [2]int{3, 3}}} {
+		if e := entries[i]; e.Keep[0] != want.keep || e.Heart != want.heart || e.Opening != want.keep[0] ||
+			e.Title != "" {
 			t.Errorf("story %d read as %+v", i+1, e)
 		}
 	}

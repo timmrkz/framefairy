@@ -98,7 +98,7 @@ func ParseVariant(name string) (Variant, error) {
 	if hasSwitches {
 		if !r.Switchable {
 			return Variant{}, renderErr("%s: %s takes no switches. heart-lean, points and middle do, "+
-				"as in middle+words", pyRepr(name), recipe)
+				"as in middle+times", pyRepr(name), recipe)
 		}
 		sw, err := ParseSwitches(switches)
 		if err != nil {
@@ -427,9 +427,6 @@ func compareReport(opts Options, runs []RecipeRun) string {
 				}
 				if sw.Times {
 					shown = append(shown, "the time each line starts at")
-				}
-				if sw.Words {
-					shown = append(shown, "the length in words")
 				}
 				b.WriteString(", with " + strings.Join(shown, ", "))
 			}

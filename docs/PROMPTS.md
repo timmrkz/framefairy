@@ -33,7 +33,7 @@ recipes from pull request 19 are still in Go and take no part in this.
 What each file sends, filled in for a transcript of five lines, is in
 [`engine/testdata/prompts`](../engine/testdata/prompts): as it is, with
 a context and a line that is a clip already, `-with-context`, and the
-files that take switches with `+pause+words` and with `+times`. A test
+files that take switches with `+pause` and with `+times`. A test
 holds every file to them, so a change to a prompt shows there too, as
 the model will read it. `go test ./engine -run
 TestEveryPromptAsksWhatTestdataSays -update-prompts` writes them anew.
@@ -45,12 +45,12 @@ it three sentences:
 
 ```
 Find the 6 best stories in this transcript.
-For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends.
+For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends. A story runs about 44 to 66 words.
 Answer with one line per story, the middle, the start and the end, and nothing else, like this: 40 31 52
 ```
 
-Nothing tells the model what a short is, what a video is, how long a
-clip runs, or what a heart, a payoff or an opening is. Those words carry
+Nothing tells the model what a short is, what a video is, or what a
+heart, a payoff or an opening is. Those words carry
 meanings of their own, and the model may follow the word rather than the
 story. It is asked for the story and its shape, nothing more.
 
@@ -60,10 +60,13 @@ at a story first is the easy part. The start and the end are then
 written knowing which story they belong to, and only have to be found to
 the left and to the right of it.
 
-What the program does with it. The story from start to end is kept
-whole, never cut, as decided for a story longer than the length, and
-one shorter than the length takes in the sentences before it. The model
-names no title, so a clip is named after its first words.
+What the program does with it. It never starts a story later than the
+model's start, and never ends it before the line in its middle. A story
+longer than the length is ended earlier, on a whole sentence, decided by
+Tim after the run of 3 October, where a story with no length to it ran
+up to 2.5 minutes. One shorter than the length takes in the sentences
+before it. The model names no title, so a clip is named after its first
+words.
 
 ## What the run of 3 October showed
 
@@ -139,13 +142,17 @@ What is known:
   where `lines` asked for fifteen additions. That is the only reason to
   try it again, against the two results above.
 
-So the evidence says: the program decides the length, and the model is
-not told about seconds at all. Two ways of letting the model judge the
-length are switches a comparison can try, see below: the time on every
-line, `+times`, and Tim's idea, the length in words, `+words`. Counting
-words is plain counting where a time is arithmetic, though a model counts
-words only roughly too, so whether it is close enough is for the
-comparison to show.
+So the evidence of the first run said: the program decides the length,
+and the model is not told about seconds at all. The run of 3 October
+showed what that costs. Told nothing of the length, `heart-lean`,
+`points` and `middle` named whole topics, 5, 3 and 5 of 6 clips off the
+length, `middle` up to 351 words. Told the length in words, Tim's idea,
+`middle` named 4 of 6 stories within the words asked for. `lines`, told
+each line's seconds, had 4 of 6 within the length on its first answer
+too, from a transcript twice the size. So the lean prompts now say the
+length in words, from how fast the speaker talks in the window. A time
+on every line, `+times`, says it in seconds instead, and is the switch
+left to try against it.
 
 What the program can do with the length depends on what the model
 names. With an opening it never starts after and a payoff it never cuts,
@@ -159,16 +166,16 @@ the app, so how far a story runs over depends on it too.
 
 ## The switches
 
-`heart-lean`, `points` and `middle` show the model only the numbered
-words of each line, unless a comparison switches more on after a `+` in
-a side's name, as in `middle+pause2+words@1024`:
+`heart-lean`, `points` and `middle` show the model the numbered words
+of each line and the length of a clip in words, unless a comparison
+switches more on after a `+` in a side's name, as in
+`middle+pause2@1024`:
 
 | Switch | What the model gets |
 | --- | --- |
 | `+pause` | "…" before a line after a pause of 1 s or more |
 | `+pause2` | the same after 2 s or more, any number of seconds after the word |
-| `+times` | the minute and second each line starts at, and the length asked for in seconds |
-| `+words` | the length asked for in words, from how fast the speaker talks in the window |
+| `+times` | the minute and second each line starts at, and the length asked for in seconds rather than words |
 
 A comparison starts a llama-server for every side, so none reads from
 the cache of the one before, and its report sets the moments the sides

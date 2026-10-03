@@ -11,7 +11,7 @@ For each moment, name:
 {{if .Times}}
 From the opening to the payoff should take about {{.Min}} to {{.Max}} seconds, which the times tell you.
 {{end}}{{if .MinWords}}
-From the opening to the payoff should be about {{.MinWords}} to {{.MaxWords}} words, which is {{.Min}} to {{.Max}} seconds as fast as this speaker talks.
+From the opening to the payoff should be about {{.MinWords}} to {{.MaxWords}} words.
 {{end}}
 Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "opening": 14, "heart": [17, 19], "keep": [[12, 19]]}]}
 The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.

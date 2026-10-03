@@ -5,5 +5,5 @@
 [5] Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.
 
 Find the 6 best stories in this transcript.
-For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends.
+For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends. A story runs about 36 to 54 words.
 Answer with one line per story, the middle, the start and the end, and nothing else, like this: 40 31 52

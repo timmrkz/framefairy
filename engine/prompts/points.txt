@@ -11,7 +11,7 @@ For each moment, give three line numbers:
 {{if .Times}}
 From the start to the end should take about {{.Min}} to {{.Max}} seconds, which the times tell you.
 {{end}}{{if .MinWords}}
-From the start to the end should be about {{.MinWords}} to {{.MaxWords}} words, which is {{.Min}} to {{.Max}} seconds as fast as this speaker talks.
+From the start to the end should be about {{.MinWords}} to {{.MaxWords}} words.
 {{end}}
 Answer with one line for each moment and nothing else, like this:
 12 18 19 | a hook in the language of the transcript | why the moment works, in at most twelve words

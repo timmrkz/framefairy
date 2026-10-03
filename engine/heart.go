@@ -61,7 +61,7 @@ var heartOpeningRecipe = Recipe{
 // transcript first with nothing but the words, what to do after it, and a
 // smaller answer. Beside heart-opening it tells whether the brief and the
 // annotations of lines earn the time they take to read. Its switches add
-// pause marks, times and a length in words, see PromptSwitches.
+// pause marks and times, see PromptSwitches.
 var heartLeanRecipe = Recipe{
 	Name: "heart-lean",
 	About: "heart-opening in one short message, the transcript first with only the words, the " +
@@ -83,7 +83,7 @@ var heartLeanRecipe = Recipe{
 // lands and where it ends, one stretch. It answers without JSON, one line
 // a clip with the title and the reason. The pauses are the engine's to cut,
 // and the engine may cut what runs on after the payoff. Its switches add
-// pause marks, times and a length in words, see PromptSwitches.
+// pause marks and times, see PromptSwitches.
 var pointsRecipe = Recipe{
 	Name: "points",
 	About: "three line numbers a clip, start, payoff and end, with a title and a reason, one " +
@@ -103,17 +103,18 @@ var pointsRecipe = Recipe{
 // transcript, and after it a few sentences. For each story the model
 // names a line somewhere inside it, and then the line it starts on and
 // the line it ends on, three numbers and nothing else. Nothing tells it
-// what a short is, what a payoff is or how long a clip runs. Pointing at
-// the story first is what it writes first, so its start and its end are
-// written knowing which story they belong to. The whole story is the
-// heart, so the engine never cuts it: a story longer than the length
-// stays whole, and a shorter one takes in the sentences before it. The
-// clip is named after its first words. Its switches add pause marks, times
-// and a length in words, see PromptSwitches.
+// what a short is, what a payoff is or what a video is, only how many
+// words a story runs. Pointing at the story first is what it writes
+// first, so its start and its end are written knowing which story they
+// belong to. The engine never starts a story later and never ends it
+// before the line inside it: a story too long is ended earlier on a whole
+// sentence, and a shorter one takes in the sentences before it. The clip
+// is named after its first words. Its switches add pause marks, and times
+// with the length in seconds, see PromptSwitches.
 var middleRecipe = Recipe{
 	Name: "middle",
-	About: "only the transcript and a few sentences, three line numbers a story, a line inside " +
-		"it, its start and its end, without JSON, the story never cut",
+	About: "only the transcript and a few sentences with the length in words, three line numbers " +
+		"a story, a line inside it, its start and its end, without JSON",
 	Unit:       "line",
 	Hearts:     true,
 	Joins:      true,
