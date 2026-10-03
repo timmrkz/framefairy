@@ -1,4 +1,3 @@
-=== user ===
 Below is the transcript of part of a video, one numbered line per phrase as it was spoken{{if .Times}}, each with the minute and second it starts at{{end}}.{{if .Pause}} "…" before a line marks a pause of {{.Pause}} or more.{{end}}{{if .Context}} About the video: {{.Context}}{{end}}
 
 {{.Transcript}}

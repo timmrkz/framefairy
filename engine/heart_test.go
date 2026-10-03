@@ -390,7 +390,7 @@ func TestTheMomentsAreSetSideBySide(t *testing.T) {
 			{Title: "Spiegel", Start: 1150, End: 1190, Seconds: 40.5},
 			{Title: "Regenschirm", Start: 57, End: 83, Seconds: 26.2},
 		}},
-		{Recipe: "points+plain", Clips: []FoundClip{
+		{Recipe: "middle", Clips: []FoundClip{
 			{Title: "Der Regenschirm", Start: 60, End: 81, Seconds: 21.3},
 			{Title: "Staubkörner", Start: 1700, End: 1727, Seconds: 26.7},
 		}},

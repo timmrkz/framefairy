@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,40 +14,44 @@ import (
 	"testing"
 )
 
-// Both prompt files fill in: the transcript, the count and the length are
-// in them and nothing is left of the template.
+// The prompt files of one message fill in: the transcript and the count
+// are in them, nothing is left of the template, and without switches
+// nothing is said of seconds. A recipe answers in JSON or without it,
+// never both.
 func TestThePromptFilesFillIn(t *testing.T) {
 	lines := said(0.0, 2.0, "Was ist deine erste Erinnerung?", 1.5, 3.0, "Der Regenschirm ist zersprungen.")
 	opts := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
-	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe} {
+	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe, middleRecipe} {
 		text := recipe.Request(lines, recipe.units(lines), opts)
-		for _, want := range []string{"Der Regenschirm ist zersprungen.", "up to 6 moments"} {
+		for _, want := range []string{"[2] Der Regenschirm ist zersprungen.", " 6 "} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s has no %q:\n%s", recipe.Name, want, text)
 			}
 		}
-		// Without switches nothing is said of seconds.
-		if strings.Contains(text, "seconds") {
-			t.Errorf("%s says a length:\n%s", recipe.Name, text)
-		}
-		if strings.Contains(text, "{{") || strings.Contains(text, "About the video") {
-			t.Errorf("%s left something of its template:\n%s", recipe.Name, text)
+		for _, not := range []string{"seconds", "{{", "===", "About the video"} {
+			if strings.Contains(text, not) {
+				t.Errorf("%s says %q:\n%s", recipe.Name, not, text)
+			}
 		}
 		if recipe.System != "" {
 			t.Errorf("%s has a system part", recipe.Name)
 		}
-		// A context and lines that are clips already are said where the
-		// file says them.
-		with := opts
-		with.Context = "Ein Podcast über erste Erinnerungen."
-		with.Taken = []Window{{Start: 0, End: 2}}
-		text = recipe.Request(lines, recipe.units(lines), with)
-		if !strings.Contains(text, "About the video: Ein Podcast") || !strings.Contains(text, "Line 1 is in a clip already") {
-			t.Errorf("%s does not say the context or the clips there are:\n%s", recipe.Name, text)
+		if recipe.Schema != nil {
+			var schema map[string]any
+			if err := json.Unmarshal([]byte(recipe.Schema(2, 6)), &schema); err != nil {
+				t.Errorf("%s's schema is not JSON: %v", recipe.Name, err)
+			}
 		}
-		var schema map[string]any
-		if err := json.Unmarshal([]byte(recipe.Schema(2, 6)), &schema); err != nil {
-			t.Errorf("%s's schema is not JSON: %v", recipe.Name, err)
+		if (recipe.Schema == nil) == (recipe.Plain == nil) {
+			t.Errorf("%s answers both with and without JSON, or neither", recipe.Name)
+		}
+	}
+	// The middle prompt says nothing of videos, of shorts or of JSON, and
+	// names no part of a story.
+	text := strings.ToLower(middleRecipe.Request(lines, nil, opts))
+	for _, not := range []string{"video", "short", "json", "clip", "heart", "payoff", "opening", "setup"} {
+		if strings.Contains(text, not) {
+			t.Errorf("middle says %q:\n%s", not, text)
 		}
 	}
 }
@@ -86,7 +91,8 @@ func TestSwitchesAreReadFromASidesName(t *testing.T) {
 	if v, err := ParseVariant("heart-lean+pause"); err != nil || v.Switches.Pause != 1 {
 		t.Errorf("+pause read as %+v %v", v, err)
 	}
-	for _, bad := range []string{"lines+times", "heart+pause", "points+loud", "points+pause0", "points+pause99", "points+"} {
+	for _, bad := range []string{"lines+times", "heart+pause", "points+loud", "points+pause0", "points+pause99", "points+",
+		"points+plain"} {
 		if _, err := ParseVariant(bad); err == nil {
 			t.Errorf("%q was taken", bad)
 		}
@@ -102,7 +108,7 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 		parts = append(parts, 0.8, 4.0, fmt.Sprintf("Das ist der Satz Nummer %d hier.", i+1))
 	}
 	lines := said(parts...)
-	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe} {
+	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe, middleRecipe} {
 		ask := func(sw PromptSwitches) string {
 			return recipe.Request(lines, recipe.units(lines), PlanOptions{Count: 6, MinLen: 20, MaxLen: 30, Switches: sw})
 		}
@@ -113,7 +119,7 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 			}
 		}
 		if text := ask(PromptSwitches{Times: true}); !strings.Contains(text, "[2 0:04]") ||
-			!strings.Contains(text, "about 20 to 30 seconds, which the times tell you") {
+			!strings.Contains(text, "about 20 to 30 seconds") {
 			t.Errorf("%s+times:\n%s", recipe.Name, text)
 		}
 		// Seven words a line, 280 in 191.2 seconds: 29 to 44 words.
@@ -173,7 +179,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 		mu.Lock()
 		sent = append(sent, request.Messages)
 		mu.Unlock()
-		writeLocalStream(w, `{"clips": [{"title": "Kurz", "reason": "r", "start": 1, "payoff": 1, "end": 1}]}`, 11)
+		writeLocalStream(w, "1 1 1\n", 3)
 	}))
 	defer server.Close()
 	var heard int32
@@ -183,7 +189,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	base.LLMURL = server.URL
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
-	base.Recipe = "points"
+	base.Recipe = "middle"
 	p := NewProject(e, source, base)
 	path, err := p.Plan(context.Background(), PlanRequest{Count: 1})
 	if err != nil {
@@ -192,8 +198,10 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	if len(sent) != 1 || len(sent[0]) != 1 || sent[0][0].Role != "user" {
 		t.Fatalf("sent %+v", sent)
 	}
-	// One line is too short, and the engine takes in the one after it.
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 {
+	// One line is too short, and the engine takes in the one after it. A
+	// story the model gave no title is named after its first words.
+	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 ||
+		clips[0].Title == "" {
 		t.Errorf("clips %+v %v", clips, err)
 	}
 
@@ -208,11 +216,21 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	}
 }
 
-// The prompts moved into files ask word for word what they asked when they
-// were written in Go, kept in testdata/prompts as the code made them. A
-// change to lines would be a new way of asking, with a new PromptVersion,
-// and saved answers that no longer match their prompt.
-func TestThePromptsInFilesAskWhatTheyAsked(t *testing.T) {
+// updatePrompts writes testdata/prompts anew from the prompt files, for a
+// change to a prompt that is meant:
+//
+//	go test ./engine -run TestEveryPromptAsksWhatTestdataSays -update-prompts
+//
+// The pull request then shows exactly what the model is sent.
+var updatePrompts = flag.Bool("update-prompts", false, "write testdata/prompts from the prompt files")
+
+// Every prompt file asks word for word what testdata/prompts keeps: with
+// nothing more, with a context and a line that is a clip already, and the
+// files that take switches with them. lines, heart and heart-opening are
+// kept as the Go code made them before they moved into files. A change to
+// lines is a new way of asking, with a new PromptVersion, and saved answers
+// that no longer match their prompt.
+func TestEveryPromptAsksWhatTestdataSays(t *testing.T) {
 	lines := said(
 		0.0, 1.1, "Was ist deine erste Erinnerung?",
 		1.5, 1.1, "Erste Erinnerung?",
@@ -220,22 +238,45 @@ func TestThePromptsInFilesAskWhatTheyAsked(t *testing.T) {
 		0.3, 3.5, "ich war dann noch ein relativ kleiner Dütz, zweite, dritte Klasse.",
 		3.7, 4.9, "Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.",
 	)
-	for _, r := range []Recipe{linesRecipe, heartRecipe, heartOpeningRecipe} {
-		for _, with := range []bool{false, true} {
-			opts := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
-			name := r.Name
-			if with {
-				opts.Context = "Ein Podcast über erste Erinnerungen."
-				opts.Taken = []Window{{Start: 0, End: 1.1}}
-				name += "-with-context"
+	type side struct {
+		name string
+		opts PlanOptions
+	}
+	base := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
+	with := base
+	with.Context = "Ein Podcast über erste Erinnerungen."
+	with.Taken = []Window{{Start: 0, End: 1.1}}
+	fromFiles := []Recipe{linesRecipe, heartRecipe, heartOpeningRecipe, heartLeanRecipe, pointsRecipe, middleRecipe}
+	if files, err := promptFiles.ReadDir("prompts"); err != nil || len(files) != len(fromFiles) {
+		t.Fatalf("%d prompt files, %d of them held to what they ask: %v", len(files), len(fromFiles), err)
+	}
+	for _, r := range fromFiles {
+		sides := []side{{r.Name, base}, {r.Name + "-with-context", with}}
+		if r.Switchable {
+			for _, sw := range []PromptSwitches{{Pause: 1, Words: true}, {Times: true}} {
+				opts := base
+				opts.Switches = sw
+				sides = append(sides, side{r.Name + sw.String(), opts})
 			}
-			want, err := os.ReadFile("testdata/prompts/" + name + ".txt")
+		}
+		for _, s := range sides {
+			got := r.Request(lines, r.units(lines), s.opts) + "\n"
+			if r.System != "" {
+				got = "=== system ===\n" + r.System + "\n=== user ===\n" + got
+			}
+			path := "testdata/prompts/" + s.name + ".txt"
+			if *updatePrompts {
+				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				continue
+			}
+			want, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := "=== system ===\n" + r.System + "\n=== user ===\n" + r.Request(lines, r.units(lines), opts) + "\n"
 			if got != string(want) {
-				t.Errorf("%s asks something new:\n%s", name, got)
+				t.Errorf("%s asks something new:\n%s", s.name, got)
 			}
 		}
 	}
@@ -251,8 +292,8 @@ func TestAPlainAnswer(t *testing.T) {
 	reply := "Hier sind die Momente:\n12 18 19 | Der Regenschirm | Ein Kind wehrt sich.\n" +
 		"3 4 | zu wenige Zahlen\n30 33 33 | Spiegel |\n7 x 9 | kein Clip | nein"
 	var data map[string]any
-	if err := json.Unmarshal([]byte(plainAnswer(reply)), &data); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, plainAnswer(reply))
+	if err := json.Unmarshal([]byte(pointsPlain.answer(reply)), &data); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, pointsPlain.answer(reply))
 	}
 	entries, _, err := ValidatePlan(data, lineUnits(40))
 	if err != nil || len(entries) != 2 {
@@ -273,14 +314,40 @@ func TestAPlainAnswer(t *testing.T) {
 	if len(got) != 2 || got[0] != "12 18 19 | Der Regenschirm | Grund" || got[1] != "30 33 33 | S | R" {
 		t.Errorf("lines %q", got)
 	}
-	if v, err := ParseVariant("points+plain"); err != nil || !v.Switches.Plain {
-		t.Errorf("points+plain read as %+v %v", v, err)
-	}
-	if _, err := ParseVariant("heart-lean+plain"); err == nil {
-		t.Error("heart-lean took +plain")
-	}
-	if g := pointsGrammar(0, 6); !strings.Contains(g, "{0,5}") {
+	if g := pointsPlain.Grammar(0, 6); !strings.Contains(g, "{0,5}") {
 		t.Errorf("six clips allowed as:\n%s", g)
+	}
+}
+
+// A middle answer is three numbers a story: a line inside it, its start
+// and its end. The story from start to end is all heart, so the engine
+// never cuts it, and three numbers out of order still give the stretch
+// they point at.
+func TestAMiddleAnswer(t *testing.T) {
+	reply := "Hier:\n40 31 52\n5 9 7\n1 2\n12 18 19 | ein Titel | nein\n3 3 3"
+	var data map[string]any
+	if err := json.Unmarshal([]byte(middlePlain.answer(reply)), &data); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, middlePlain.answer(reply))
+	}
+	entries, _, err := ValidatePlan(data, lineUnits(60))
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("%+v %v", entries, err)
+	}
+	for i, want := range [][2]int{{31, 52}, {5, 9}, {3, 3}} {
+		if e := entries[i]; e.Keep[0] != want || e.Heart != want || e.Opening != want[0] || e.Title != "" {
+			t.Errorf("story %d read as %+v", i+1, e)
+		}
+	}
+	past := map[string]any{"clips": []any{map[string]any{"middle": 70.0, "start": 1.0, "end": 2.0}}}
+	if _, _, err := ValidatePlan(past, lineUnits(60)); err == nil {
+		t.Error("a middle past the transcript was read")
+	}
+	if g := middlePlain.Grammar(0, 6); !strings.Contains(g, "{0,5}") || strings.Contains(g, "|") {
+		t.Errorf("six stories allowed as:\n%s", g)
+	}
+	text := "Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen."
+	if got := firstWords(text, 31); got != "Und dann hat er mich geschlagen" {
+		t.Errorf("named %q", got)
 	}
 }
 
@@ -306,7 +373,6 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
 	base.Recipe = "points"
-	base.Switches = PromptSwitches{Plain: true}
 	p := NewProject(e, source, base)
 	path, err := p.Plan(context.Background(), PlanRequest{Count: 1})
 	if err != nil {

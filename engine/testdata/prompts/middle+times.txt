@@ -1,0 +1,9 @@
+[1 0:00] Was ist deine erste Erinnerung?
+[2 0:02] Erste Erinnerung?
+[3 0:05] Nicht so leicht zu beantworten, weil
+[4 0:07] ich war dann noch ein relativ kleiner Dütz, zweite, dritte Klasse.
+[5 0:14] Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.
+
+Find the 6 best stories in this transcript. Each line has the minute and second it starts at.
+For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends. A story runs about 20 to 30 seconds.
+Answer with one line per story, the middle, the start and the end, and nothing else, like this: 40 31 52

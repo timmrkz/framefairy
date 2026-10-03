@@ -258,19 +258,22 @@ func FuzzPlainAnswer(f *testing.F) {
 	f.Add("Hier sind die Momente:\n1 2 | zu wenig\n0 0 0 | null | x", 10)
 	f.Add("99999999999999999999 1 2 | groß | x\n5 5 5 | \"zitat\" | \\u0000", 8)
 	f.Add("3 2 1 | rückwärts | x\n7 7 7 | a | b | c", 9)
+	f.Add("40 31 52\n5 9 7\n1 2\n 3  3 3 ", 60)
 	f.Fuzz(func(t *testing.T, reply string, lineCount int) {
 		if lineCount < 1 || lineCount > 10_000 {
 			t.Skip()
 		}
-		whole := plainAnswer(reply)
-		var data map[string]any
-		if err := json.Unmarshal([]byte(whole), &data); err != nil {
-			t.Fatalf("%q read as %q, not JSON: %v", reply, whole, err)
+		for _, format := range []*plainFormat{pointsPlain, middlePlain} {
+			whole := format.answer(reply)
+			var data map[string]any
+			if err := json.Unmarshal([]byte(whole), &data); err != nil {
+				t.Fatalf("%q read as %q, not JSON: %v", reply, whole, err)
+			}
+			if _, ok := data["clips"].([]any); !ok {
+				t.Fatalf("%q read without a list of clips: %s", reply, whole)
+			}
+			_, _, _ = ValidatePlan(data, lineUnits(lineCount))
 		}
-		if _, ok := data["clips"].([]any); !ok {
-			t.Fatalf("%q read without a list of clips: %s", reply, whole)
-		}
-		_, _, _ = ValidatePlan(data, lineUnits(lineCount))
 		var scan lineScanner
 		var lines []string
 		for i := 0; i < len(reply); i += 7 {

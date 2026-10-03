@@ -539,7 +539,6 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	}
 	listen.part(partReading)
 
-	schema := json.RawMessage(r.Schema(units, count))
 	// A run works the budget out from its window before it asks, see
 	// SuggestedThink. One that did not is given the budget for half an
 	// hour rather than none at all.
@@ -562,9 +561,10 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		"return_progress": true,
 	}
 	// An answer without JSON is held to its own grammar, one line a clip.
-	if r.Grammar != nil {
-		ask["grammar"] = r.Grammar(units, count)
+	if r.Plain != nil {
+		ask["grammar"] = r.Plain.Grammar(units, count)
 	} else {
+		schema := json.RawMessage(r.Schema(units, count))
 		ask["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{

@@ -17,10 +17,11 @@ import (
 // Go strings, a prompt reads the way the model reads it, and a change to it
 // is a change to a few lines anyone can comment on in a pull request.
 //
-// A file is what the model is sent, in the order it is sent: a system part
-// after "=== system ===", where the recipe has one, and the request after
-// "=== user ===", the same way the logs keep a prompt. The program fills in
-// what is between {{ and }}: the transcript, how many clips, how long.
+// A file is what the model is sent. Most are one message, the whole file.
+// The three that came from the Go code, lines, heart and heart-opening,
+// also have a system part: it comes first, after "=== system ===", and the
+// message after "=== user ===". The program fills in what is between {{
+// and }}: the transcript, how many clips, how long.
 // ---------------------------------------------------------------------------
 
 //go:embed prompts/*.txt
@@ -33,9 +34,10 @@ type promptData struct {
 	Lines      int
 	Min, Max   string
 	Transcript string
-	// Taken says which lines are in clips already, empty when none are.
-	Taken   string
-	Context string
+	// Taken says which lines are in clips already, empty when none are,
+	// and TakenLines only names them, as in lines 3-7 and 12.
+	Taken, TakenLines string
+	Context           string
 	// Pause is the shortest pause the transcript marks, in words, "a
 	// second" say, empty when it marks none. Times is whether each line has
 	// the time it starts at. MinWords and MaxWords are the length of a clip
@@ -43,8 +45,6 @@ type promptData struct {
 	Pause              string
 	Times              bool
 	MinWords, MaxWords int
-	// Plain asks for the answer one line a clip, without JSON.
-	Plain bool
 }
 
 const (
@@ -52,8 +52,9 @@ const (
 	userMark   = "=== user ===\n"
 )
 
-// promptParts is the system part and the request of the prompt file of
-// that name. A file that is not there or not in two parts is a fault of
+// promptParts is the system part and the message of the prompt file of
+// that name, the system part empty for a file that is one message. A file
+// that is not there, or has a system part and no message, is a fault of
 // the program, found by its tests.
 func promptParts(name string) (system, request string) {
 	text, err := promptFiles.ReadFile("prompts/" + name + ".txt")
@@ -61,18 +62,15 @@ func promptParts(name string) (system, request string) {
 		panic(fmt.Sprintf("there is no prompt %s: %v", name, err))
 	}
 	body := strings.TrimSuffix(string(text), "\n")
-	if rest, ok := strings.CutPrefix(body, systemMark); ok {
-		system, request, ok = strings.Cut(rest, "\n"+userMark)
-		if !ok {
-			panic(fmt.Sprintf("the prompt %s has a system part and no request", name))
-		}
-		return system, request
-	}
-	request, ok := strings.CutPrefix(body, userMark)
+	rest, ok := strings.CutPrefix(body, systemMark)
 	if !ok {
-		panic(fmt.Sprintf("the prompt %s does not begin with %q or %q", name, systemMark, userMark))
+		return "", body
 	}
-	return "", request
+	system, request, ok = strings.Cut(rest, "\n"+userMark)
+	if !ok {
+		panic(fmt.Sprintf("the prompt %s has a system part and no message", name))
+	}
+	return system, request
 }
 
 // promptSystem is the system part of the prompt file of that name, empty
@@ -89,10 +87,13 @@ func prompt(name string, lines []Line, transcript string, opts PlanOptions) stri
 	data := promptData{Count: opts.Count, Lines: len(lines), Min: fixed(opts.MinLen, 0),
 		Max: fixed(opts.MaxLen, 0), Transcript: transcript, Context: opts.Context}
 	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
-		data.Taken = takenSentence(taken)
+		data.Taken, data.TakenLines = takenSentence(taken), "lines "+takenNames(taken)
+		if len(taken) == 1 && taken[0][0] == taken[0][1] {
+			data.TakenLines = "line " + takenNames(taken)
+		}
 	}
 	sw := opts.Switches
-	data.Times, data.Plain = sw.Times, sw.Plain
+	data.Times = sw.Times
 	switch {
 	case sw.Pause == 1:
 		data.Pause = "a second"
@@ -128,9 +129,6 @@ type PromptSwitches struct {
 	// talks in this window, so the model can judge length by counting,
 	// +words.
 	Words bool
-	// Plain asks for the answer without JSON, one line a clip, +plain. Only
-	// points has one, see plain.go.
-	Plain bool
 }
 
 // ParseSwitches reads switches written as in pause2+times+words.
@@ -142,8 +140,6 @@ func ParseSwitches(text string) (PromptSwitches, error) {
 			sw.Times = true
 		case name == "words":
 			sw.Words = true
-		case name == "plain":
-			sw.Plain = true
 		case name == "pause":
 			sw.Pause = 1
 		case strings.HasPrefix(name, "pause"):
@@ -153,7 +149,7 @@ func ParseSwitches(text string) (PromptSwitches, error) {
 			}
 			sw.Pause = n
 		default:
-			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2, +times, +words and +plain", name)
+			return sw, fmt.Errorf("+%s is no switch. There are +pause, +pause2, +times and +words", name)
 		}
 	}
 	return sw, nil
@@ -173,9 +169,6 @@ func (sw PromptSwitches) String() string {
 	}
 	if sw.Words {
 		out += "+words"
-	}
-	if sw.Plain {
-		out += "+plain"
 	}
 	return out
 }

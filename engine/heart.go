@@ -76,27 +76,53 @@ var heartLeanRecipe = Recipe{
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
 		return prompt("heart-lean", lines, leanTranscript(lines, opts.Switches), opts)
 	},
-	Schema: func(lineCount, count int) string { return leanSchema(lineCount, count, "heart-lean") },
+	Schema: leanSchema,
 }
 
-// pointsRecipe is Tim's three points: where a story starts, where it lands
-// and where it ends, one stretch. The pauses are the engine's to cut, and a
-// story longer than the length stays whole. Its switches add pause marks,
-// times and a length in words, see PromptSwitches.
+// pointsRecipe is three points a clip: where a story starts, where it
+// lands and where it ends, one stretch. It answers without JSON, one line
+// a clip with the title and the reason. The pauses are the engine's to cut,
+// and the engine may cut what runs on after the payoff. Its switches add
+// pause marks, times and a length in words, see PromptSwitches.
 var pointsRecipe = Recipe{
 	Name: "points",
-	About: "three line numbers a clip, start, payoff and end, in one short message with only " +
-		"the words, the pauses left to the engine",
+	About: "three line numbers a clip, start, payoff and end, with a title and a reason, one " +
+		"line a clip without JSON, the pauses left to the engine",
 	Unit:       "line",
 	Hearts:     true,
 	Joins:      true,
 	Switchable: true,
-	Plain:      pointsGrammar,
+	Plain:      pointsPlain,
 	Version:    1,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
 		return prompt("points", lines, leanTranscript(lines, opts.Switches), opts)
 	},
-	Schema: func(lineCount, count int) string { return leanSchema(lineCount, count, "points") },
+}
+
+// middleRecipe is Tim's way of asking, as little as can be said: the
+// transcript, and after it a few sentences. For each story the model
+// names a line somewhere inside it, and then the line it starts on and
+// the line it ends on, three numbers and nothing else. Nothing tells it
+// what a short is, what a payoff is or how long a clip runs. Pointing at
+// the story first is what it writes first, so its start and its end are
+// written knowing which story they belong to. The whole story is the
+// heart, so the engine never cuts it: a story longer than the length
+// stays whole, and a shorter one takes in the sentences before it. The
+// clip is named after its first words. Its switches add pause marks, times
+// and a length in words, see PromptSwitches.
+var middleRecipe = Recipe{
+	Name: "middle",
+	About: "only the transcript and a few sentences, three line numbers a story, a line inside " +
+		"it, its start and its end, without JSON, the story never cut",
+	Unit:       "line",
+	Hearts:     true,
+	Joins:      true,
+	Switchable: true,
+	Plain:      middlePlain,
+	Version:    1,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		return prompt("middle", lines, leanTranscript(lines, opts.Switches), opts)
+	},
 }
 
 func init() {
@@ -104,26 +130,22 @@ func init() {
 	recipes[heartOpeningRecipe.Name] = heartOpeningRecipe
 	recipes[heartLeanRecipe.Name] = heartLeanRecipe
 	recipes[pointsRecipe.Name] = pointsRecipe
+	recipes[middleRecipe.Name] = middleRecipe
 }
 
-// leanSchema is the answer of the recipes asked from a prompt file: a
-// title and a short reason, and the points of the clip, no slug.
-func leanSchema(lineCount, count int, recipe string) string {
+// leanSchema is the answer of heart-lean: a title and a short reason, and
+// the opening, the heart and the runs of the clip, no slug.
+func leanSchema(lineCount, count int) string {
 	line := fmt.Sprintf(`{"type": "integer", "minimum": 1, "maximum": %d}`, max(lineCount, 1))
 	pair := fmt.Sprintf(`{"type": "array", "minItems": 2, "maxItems": 2, "items": %s}`, line)
-	points := fmt.Sprintf(`"opening": %s, "heart": %s, "keep": {"type": "array", "minItems": 1, `+
-		`"maxItems": 12, "items": %s}`, line, pair, pair)
-	required := `"title", "reason", "opening", "heart", "keep"`
-	if recipe == "points" {
-		points = fmt.Sprintf(`"start": %s, "payoff": %s, "end": %s`, line, line, line)
-		required = `"title", "reason", "start", "payoff", "end"`
-	}
 	return fmt.Sprintf(`{"type": "object", "properties": {"clips": {"type": "array", "minItems": 1, `+
 		`"maxItems": %d, "items": {"type": "object", "properties": {`+
 		`"title": {"type": "string", "minLength": 1, "maxLength": 200}, `+
-		`"reason": {"type": "string", "minLength": 1, "maxLength": 300}, %s}, `+
-		`"required": [%s], "additionalProperties": false}}}, "required": ["clips"], `+
-		`"additionalProperties": false}`, max(count, 1), points, required)
+		`"reason": {"type": "string", "minLength": 1, "maxLength": 300}, `+
+		`"opening": %s, "heart": %s, "keep": {"type": "array", "minItems": 1, "maxItems": 12, `+
+		`"items": %s}}, "required": ["title", "reason", "opening", "heart", "keep"], `+
+		`"additionalProperties": false}}}, "required": ["clips"], "additionalProperties": false}`,
+		max(count, 1), line, pair, pair)
 }
 
 // heartRequest and heartOpeningRequest fill in their prompt files, which

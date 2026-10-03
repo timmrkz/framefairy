@@ -97,15 +97,12 @@ func ParseVariant(name string) (Variant, error) {
 	v := Variant{Recipe: recipe, Temperature: t}
 	if hasSwitches {
 		if !r.Switchable {
-			return Variant{}, renderErr("%s: %s takes no switches. heart-lean and points do, "+
-				"as in points+times", pyRepr(name), recipe)
+			return Variant{}, renderErr("%s: %s takes no switches. heart-lean, points and middle do, "+
+				"as in middle+words", pyRepr(name), recipe)
 		}
 		sw, err := ParseSwitches(switches)
 		if err != nil {
 			return Variant{}, renderErr("%s: %s", pyRepr(name), err)
-		}
-		if sw.Plain && r.Plain == nil {
-			return Variant{}, renderErr("%s: only points answers without JSON so far", pyRepr(name))
 		}
 		v.Switches = sw
 	}
@@ -433,9 +430,6 @@ func compareReport(opts Options, runs []RecipeRun) string {
 				}
 				if sw.Words {
 					shown = append(shown, "the length in words")
-				}
-				if sw.Plain {
-					shown = append(shown, "the answer one line a clip rather than JSON")
 				}
 				b.WriteString(", with " + strings.Join(shown, ", "))
 			}

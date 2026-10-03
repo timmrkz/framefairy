@@ -12,22 +12,58 @@ a second.
 
 ## The prompt files
 
-| File | Used by | Parts |
+| File | Used by | Answer |
 | --- | --- | --- |
-| [`lines.txt`](../engine/prompts/lines.txt) | the app, today | system part and request |
-| [`heart.txt`](../engine/prompts/heart.txt) | experiment | system part and request |
-| [`heart-opening.txt`](../engine/prompts/heart-opening.txt) | experiment | system part and request |
-| [`heart-lean.txt`](../engine/prompts/heart-lean.txt) | experiment | one message |
-| [`points.txt`](../engine/prompts/points.txt) | experiment | one message |
+| [`lines.txt`](../engine/prompts/lines.txt) | the app, today | JSON |
+| [`heart.txt`](../engine/prompts/heart.txt) | experiment | JSON |
+| [`heart-opening.txt`](../engine/prompts/heart-opening.txt) | experiment | JSON |
+| [`heart-lean.txt`](../engine/prompts/heart-lean.txt) | experiment | JSON |
+| [`points.txt`](../engine/prompts/points.txt) | experiment | one line a clip, no JSON |
+| [`middle.txt`](../engine/prompts/middle.txt) | experiment | three numbers a story, no JSON |
 
-A file is what the model is sent, in order: a system part after
-`=== system ===` where there is one, and the request after
-`=== user ===`. The program fills in what is between `{{` and `}}`: the
-transcript, `{{.Count}}` clips, `{{.Min}}` to `{{.Max}}` seconds, the
-lines that are clips already and what the video is about. The three older
-files send word for word what the Go code sent before them, which a test
-holds them to. The `stories` recipes from pull request 19 are still in Go
-and take no part in this.
+A file is the message the model is sent, as it is. The program fills in
+what is between `{{` and `}}`: the transcript, `{{.Count}}` clips,
+`{{.Min}}` to `{{.Max}}` seconds, the lines that are clips already and
+what the video is about. Only the three files that came from the Go code,
+`lines`, `heart` and `heart-opening`, send a system part too. It comes
+first, after `=== system ===`, and the message after `=== user ===`.
+They send word for word what the Go code sent before them. The `stories`
+recipes from pull request 19 are still in Go and take no part in this.
+
+What each file sends, filled in for a transcript of five lines, is in
+[`engine/testdata/prompts`](../engine/testdata/prompts): as it is, with
+a context and a line that is a clip already, `-with-context`, and the
+files that take switches with `+pause+words` and with `+times`. A test
+holds every file to them, so a change to a prompt shows there too, as
+the model will read it. `go test ./engine -run
+TestEveryPromptAsksWhatTestdataSays -update-prompts` writes them anew.
+
+## The simplest way of asking: `middle`
+
+Tim's way of asking, as little as can be said. The transcript, and after
+it three sentences:
+
+```
+Find the 6 best stories in this transcript.
+For each story, first pick a line somewhere in its middle, then the line where the story starts and the line where it ends.
+Answer with one line per story, the middle, the start and the end, and nothing else, like this: 40 31 52
+```
+
+Nothing tells the model what a short is, what a video is, how long a
+clip runs, or what a heart, a payoff or an opening is. Those words carry
+meanings of their own, and the model may follow the word rather than the
+story. It is asked for the story and its shape, nothing more.
+
+Why the middle first. The model writes its answer one number after the
+other, and each number is written knowing the ones before it. Pointing
+at a story first is the easy part. The start and the end are then
+written knowing which story they belong to, and only have to be found to
+the left and to the right of it.
+
+What the program does with it. The story from start to end is kept
+whole, never cut, as decided for a story longer than the length, and
+one shorter than the length takes in the sentences before it. The model
+names no title, so a clip is named after its first words.
 
 ## Where a search spends its time
 
@@ -86,9 +122,9 @@ the app, so how far a story runs over depends on it too.
 
 ## The switches
 
-`heart-lean` and `points` show the model only the numbered words of each
-line, unless a comparison switches more on after a `+` in a side's name,
-as in `points+pause2+words@1024`:
+`heart-lean`, `points` and `middle` show the model only the numbered
+words of each line, unless a comparison switches more on after a `+` in
+a side's name, as in `middle+pause2+words@1024`:
 
 | Switch | What the model gets |
 | --- | --- |
@@ -96,7 +132,6 @@ as in `points+pause2+words@1024`:
 | `+pause2` | the same after 2 s or more, any number of seconds after the word |
 | `+times` | the minute and second each line starts at, and the length asked for in seconds |
 | `+words` | the length asked for in words, from how fast the speaker talks in the window |
-| `+plain` | the answer one line a clip rather than JSON, `points` only |
 
 A comparison starts a llama-server for every side, so none reads from
 the cache of the one before, and its report sets the moments the sides
@@ -104,7 +139,8 @@ found side by side, one row a moment in the order they come.
 
 ## The request
 
-- **One message, no system part.** Chat models are trained with a role
+- **One message, no system part.** Only the three files from the Go
+  code have one. Chat models are trained with a role
   for standing instructions, and the cloud providers recommend it. A model
   on this machine reads both parts as one text all the same: earlier
   Gemma versions had no system role and folded it into the first message.
@@ -170,26 +206,32 @@ quotes and brackets. The lean prompts already leave out the slug, which
 the program makes from the title, and ask for a reason of at most twelve
 words.
 
-Without JSON, one line a clip:
+Without JSON, one line a clip, as `points` answers:
 
 ```
 14 17 18 | Der Regenschirm | Ein Kind wehrt sich mit Judo, und der Schirm zerbricht.
 ```
 
 That is the line numbers, the title and the reason, and nothing else.
-`points+plain` asks for it. llama-server holds the model to the line
-with a grammar, `pointsGrammar` in `engine/plain.go`, the way it holds it
-to JSON with a schema. The program reads the clips a line at a time as
-they arrive, each into the clip a JSON answer gives, so everything after
-the reading is the same. A line that is not a clip is passed over, and
-the reader is fuzzed, `FuzzPlainAnswer`. Only `points` has a plain answer
-so far: its three numbers fit a line, where `heart-lean`'s runs would
-need a notation of their own.
+`middle` answers with less still, three numbers a story and no title:
+
+```
+40 31 52
+```
+
+llama-server holds the model to the line with a grammar, in
+`engine/plain.go`, the way it holds it to JSON with a schema. The program
+reads the clips a line at a time as they arrive, each into the clip a
+JSON answer gives, so everything after the reading is the same. A line
+that is not a clip is passed over, and the reader is fuzzed,
+`FuzzPlainAnswer`. `points` and `middle` always answer this way, and
+`lines`, `heart`, `heart-opening` and `heart-lean` in JSON: the runs of
+`heart-lean` would need a notation of their own on a line.
 
 ## Thinking
 
 The budget follows the window, 2,048 tokens for half an hour and in
 proportion for others, at least 512 and at most 4,096, `SuggestedThink`
 in `engine/suggest.go`. That rule stays. What can change is the 2,048:
-a comparison side written `points@1024` thinks a fixed 1,024, and once a
+a comparison side written `middle@1024` thinks a fixed 1,024, and once a
 plainer prompt does as well with less, the rule's number comes down.

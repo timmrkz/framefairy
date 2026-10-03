@@ -10,10 +10,12 @@ import (
 // ---------------------------------------------------------------------------
 // An answer without JSON
 //
-// A plain answer is one line a clip: its line numbers, the title and the
-// reason, split by "|", as in
+// A plain answer is one line a clip. points writes its three line numbers,
+// the title and the reason, split by "|", and middle only its three line
+// numbers:
 //
 //	12 18 19 | Der Regenschirm | Ein Kind wehrt sich mit Judo.
+//	40 31 52
 //
 // JSON spends about a third of an answer on keys, quotes and brackets. A
 // local model is held to the line by a grammar, the way it is held to JSON
@@ -23,28 +25,78 @@ import (
 // clip goes through the checks every clip goes through.
 // ---------------------------------------------------------------------------
 
-// plainClip reads one line of a plain answer of points into the clip
-// object a JSON answer has, and says false for a line that is no clip:
-// prose, a blank, too few numbers.
-func plainClip(line string) (string, bool) {
-	parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
-	numbers := strings.Fields(parts[0])
-	if len(parts) < 2 || len(numbers) != 3 {
-		return "", false
-	}
+// plainFormat is how a recipe that answers without JSON is answered.
+type plainFormat struct {
+	// Grammar holds a local model to at most count lines of the answer, in
+	// llama.cpp's grammar notation.
+	Grammar func(units, count int) string
+	// Clip reads one line of the answer into the clip object a JSON answer
+	// has, and says false for a line that is no clip: prose, a blank, too
+	// few numbers.
+	Clip func(line string) (string, bool)
+}
+
+// pointsPlain is the answer of points: start, payoff and end, the title
+// and the reason.
+var pointsPlain = &plainFormat{
+	Grammar: func(_, count int) string {
+		return fmt.Sprintf(`root ::= clip ("\n" clip){0,%d} "\n"?
+clip ::= number " " number " " number " | " text " | " text
+number ::= [1-9] [0-9]{0,5}
+text ::= [^|\n]+
+`, max(count, 1)-1)
+	},
+	Clip: func(line string) (string, bool) {
+		parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
+		n, ok := threeNumbers(parts[0])
+		if len(parts) < 2 || !ok {
+			return "", false
+		}
+		clip := map[string]any{"start": n[0], "payoff": n[1], "end": n[2],
+			"title": strings.TrimSpace(parts[1]), "reason": ""}
+		if len(parts) == 3 {
+			clip["reason"] = strings.TrimSpace(parts[2])
+		}
+		return clipJSON(clip)
+	},
+}
+
+// middlePlain is the answer of middle: a line inside the story, then the
+// line it starts on and the line it ends on, and nothing else.
+var middlePlain = &plainFormat{
+	Grammar: func(_, count int) string {
+		return fmt.Sprintf(`root ::= clip ("\n" clip){0,%d} "\n"?
+clip ::= number " " number " " number
+number ::= [1-9] [0-9]{0,5}
+`, max(count, 1)-1)
+	},
+	Clip: func(line string) (string, bool) {
+		n, ok := threeNumbers(line)
+		if !ok {
+			return "", false
+		}
+		return clipJSON(map[string]any{"middle": n[0], "start": n[1], "end": n[2]})
+	},
+}
+
+// threeNumbers reads a text that is three whole numbers of 1 or more.
+func threeNumbers(text string) ([3]int, bool) {
 	var n [3]int
-	for i, field := range numbers {
+	fields := strings.Fields(text)
+	if len(fields) != 3 {
+		return n, false
+	}
+	for i, field := range fields {
 		v, err := strconv.Atoi(field)
 		if err != nil || v < 1 {
-			return "", false
+			return n, false
 		}
 		n[i] = v
 	}
-	clip := map[string]any{"start": n[0], "payoff": n[1], "end": n[2],
-		"title": strings.TrimSpace(parts[1]), "reason": ""}
-	if len(parts) == 3 {
-		clip["reason"] = strings.TrimSpace(parts[2])
-	}
+	return n, true
+}
+
+func clipJSON(clip map[string]any) (string, bool) {
 	body, err := json.Marshal(clip)
 	if err != nil {
 		return "", false
@@ -52,12 +104,12 @@ func plainClip(line string) (string, bool) {
 	return string(body), true
 }
 
-// plainAnswer is a whole plain answer as the JSON object a JSON answer
-// is, {"clips": [...]}, every line that is a clip in it, in order.
-func plainAnswer(reply string) string {
+// answer is a whole plain answer as the JSON object a JSON answer is,
+// {"clips": [...]}, every line that is a clip in it, in order.
+func (f *plainFormat) answer(reply string) string {
 	var clips []string
 	for _, line := range strings.Split(reply, "\n") {
-		if clip, ok := plainClip(line); ok {
+		if clip, ok := f.Clip(line); ok {
 			clips = append(clips, clip)
 		}
 	}
@@ -81,15 +133,4 @@ func (s *lineScanner) feed(piece string) []string {
 	s.buf.Reset()
 	s.buf.WriteString(text[cut+1:])
 	return strings.Split(text[:cut], "\n")
-}
-
-// pointsGrammar holds a local model to at most count lines of a plain
-// answer of points, in llama.cpp's grammar notation: three numbers, the
-// title and the reason.
-func pointsGrammar(_, count int) string {
-	return fmt.Sprintf(`root ::= clip ("\n" clip){0,%d} "\n"?
-clip ::= number " " number " " number " | " text " | " text
-number ::= [1-9] [0-9]{0,5}
-text ::= [^|\n]+
-`, max(count, 1)-1)
 }

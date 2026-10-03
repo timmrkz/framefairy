@@ -154,6 +154,18 @@ func MarshalPlan(plan any) ([]byte, error) {
 
 // takenSentence names the lines that are clips already.
 func takenSentence(taken [][2]int) string {
+	names := takenNames(taken)
+	if len(taken) == 1 && taken[0][0] == taken[0][1] {
+		return fmt.Sprintf("Line %s is in a clip already. Find other moments, and do not keep it.", names)
+	}
+	return fmt.Sprintf("Lines %s are in clips already. Find other moments, and keep none of those lines.", names)
+}
+
+// takenNames names runs of lines as in 3-7, 9 and 12.
+func takenNames(taken [][2]int) string {
+	if len(taken) == 0 {
+		return ""
+	}
 	runs := make([]string, len(taken))
 	for i, r := range taken {
 		runs[i] = strconv.Itoa(r[0])
@@ -161,14 +173,10 @@ func takenSentence(taken [][2]int) string {
 			runs[i] += "-" + strconv.Itoa(r[1])
 		}
 	}
-	names := runs[0]
 	if n := len(runs); n > 1 {
-		names = strings.Join(runs[:n-1], ", ") + " and " + runs[n-1]
+		return strings.Join(runs[:n-1], ", ") + " and " + runs[n-1]
 	}
-	if len(taken) == 1 && taken[0][0] == taken[0][1] {
-		return fmt.Sprintf("Line %s is in a clip already. Find other moments, and do not keep it.", names)
-	}
-	return fmt.Sprintf("Lines %s are in clips already. Find other moments, and keep none of those lines.", names)
+	return runs[0]
 }
 
 type savedReply struct {
@@ -265,13 +273,13 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0) && !recipe.Hearts
 	var scanner clipScanner
 	var lineScan lineScanner
-	plain := recipe.Grammar != nil
+	plain := recipe.Plain
 	listen := &Listener{Text: func(piece string) {
 		// An answer without JSON is read a line at a time, each line a
 		// clip, into the object a JSON answer gives.
-		if plain {
+		if plain != nil {
 			for _, line := range lineScan.feed(piece) {
-				if clip, ok := plainClip(line); ok {
+				if clip, ok := plain.Clip(line); ok {
 					build.take(clip)
 				}
 			}
@@ -381,8 +389,8 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// not see, an answer that only parses once it is salvaged, and says
 	// what was wrong with the clips that were left out.
 	whole := reply
-	if plain {
-		whole = plainAnswer(reply)
+	if plain != nil {
+		whole = plain.answer(reply)
 	}
 	data, note, err := ExtractJSONObject(whole, "clips")
 	switch {

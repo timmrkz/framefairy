@@ -204,6 +204,12 @@ func (b *planBuilder) propose(entry PlanEntry) {
 		return
 	}
 	entry, fitted := b.shapedFitted(entry)
+	// A recipe that asks for no title, middle, names a clip by how it
+	// begins.
+	if entry.Title == "" {
+		entry.Title = firstWords(b.lines[entry.Keep[0][0]-1].Text(), 60)
+		entry.Slug = strings.ToLower(SanitiseName(entry.Title, "clip"))
+	}
 	if fitted != "" {
 		b.e.Log.Info("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
 	}
@@ -950,4 +956,22 @@ func lastNumber(path, prefix string) int {
 		}
 	}
 	return last
+}
+
+// firstWords is as many whole words of text as fit in limit characters, or
+// the first word when it alone is longer.
+func firstWords(text string, limit int) string {
+	words := strings.Fields(text)
+	out := ""
+	for i, w := range words {
+		next := w
+		if i > 0 {
+			next = out + " " + w
+		}
+		if i > 0 && runeLen(next) > limit {
+			break
+		}
+		out = next
+	}
+	return out
 }

@@ -216,18 +216,20 @@ shows whether `heart` finds stories as good as `lines` and how much
 sooner, and how much of the thinking it still needs once it no longer
 has to count seconds. `heart-opening` asks for the line a clip opens on
 too, so a story keeps the setup a stranger needs. `heart-lean` asks the
-same in one short message with only the numbered words, and `points` for
-three lines a clip, see [PROMPTS.md](PROMPTS.md). Every side starts a
-llama-server of its own, so none reads from the cache of the one before.
+same in one short message with only the numbered words, `points` for
+three lines a clip with a title and a reason, and `middle` for only three
+line numbers a story, a line inside it, its start and its end, see
+[PROMPTS.md](PROMPTS.md). `points` and `middle` answer one line a clip
+rather than JSON. Every side starts a llama-server of its own, so none
+reads from the cache of the one before.
 
-What `heart-lean` and `points` show the model beyond the words is
-switched on after a `+`: `+pause` or `+pause2` for a mark before a long
-pause, `+times` for the time each line starts at, `+words` for the length
-in words, and `+plain` for an answer one line a clip rather than JSON,
-`points` only. So a new idea is a side in the command:
+What `heart-lean`, `points` and `middle` show the model beyond the words
+is switched on after a `+`: `+pause` or `+pause2` for a mark before a
+long pause, `+times` for the time each line starts at, and `+words` for
+the length in words. So a new idea is a side in the command:
 
 ```
-framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart-opening,heart-lean,heart-lean+pause,points,points+words,points+plain,points+plain@1024
+framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart-opening,heart-lean,points,middle,middle+pause,middle+words,middle@1024
 ```
 
 A recipe with `@` and a number thinks that many tokens, whatever

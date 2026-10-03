@@ -244,11 +244,15 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	if !ok {
 		return PlanEntry{}, []string{fmt.Sprintf("clip %d is not an object", index)}, false
 	}
-	// The points recipe names three lines rather than runs. They are the
-	// run from start to end, the payoff its heart and the start its opening.
+	// points and middle name three lines rather than runs, see fromPoints
+	// and fromMiddle.
 	if _, has := clip["keep"]; !has {
+		read := fromPoints
+		if _, named := clip["middle"]; named {
+			read = fromMiddle
+		}
 		if _, named := clip["start"]; named {
-			points, problem := fromPoints(clip, index, lineCount)
+			points, problem := read(clip, index, lineCount)
 			if problem != "" {
 				return PlanEntry{}, []string{problem}, false
 			}
@@ -373,6 +377,30 @@ func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, stri
 	}
 	out["keep"] = []any{[]any{float64(start), float64(end)}}
 	out["heart"] = []any{float64(payoff), float64(payoff)}
+	out["opening"] = float64(start)
+	return out, ""
+}
+
+// fromMiddle reads a clip given as a line inside the story, its start and
+// its end into the run from start to end, which is all heart, so the
+// engine never cuts the story. The three are sorted, so a model that
+// pointed past the end it named still gives the stretch it pointed at.
+func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
+	var n [3]int
+	for i, key := range []string{"middle", "start", "end"} {
+		v, ok := toInt(clip[key])
+		if !ok || v < 1 || v > lineCount {
+			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
+		}
+		n[i] = v
+	}
+	start, end := min(n[0], n[1], n[2]), max(n[0], n[1], n[2])
+	out := make(map[string]any, len(clip)+3)
+	for k, v := range clip {
+		out[k] = v
+	}
+	out["keep"] = []any{[]any{float64(start), float64(end)}}
+	out["heart"] = []any{float64(start), float64(end)}
 	out["opening"] = float64(start)
 	return out, ""
 }
