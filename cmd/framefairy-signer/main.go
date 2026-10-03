@@ -27,7 +27,6 @@ import (
 	"bufio"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -108,12 +107,6 @@ func parse(fs *flag.FlagSet, args []string) error {
 type keyFile struct {
 	Signer uint8  `json:"signer"`
 	Seed   string `json:"seed"` // 32 bytes, hexadecimal
-}
-
-// testSeed is the test signer's, the same as in docs/LICENCE.md.
-func testSeed() []byte {
-	sum := sha256.Sum256([]byte("framefairy test signer, never shipped"))
-	return sum[:]
 }
 
 func makeKey(args []string, out io.Writer) error {
@@ -200,7 +193,7 @@ func open(o *options) (*signer.Signer, *signer.Record, error) {
 
 func readKey(o *options) (uint8, []byte, error) {
 	if o.test {
-		return 0, testSeed(), nil
+		return 0, signer.TestSeed(), nil
 	}
 	path := filepath.Join(o.dir, "key.json")
 	f, err := os.Open(path)
