@@ -145,8 +145,14 @@ Start with [README.md](README.md). In short:
   in the reply and leave it undone.
 - **When main moves, merge it in.** A comment from the Main moved workflow
   on your pull request means main has landed something. Merge main into
-  the branch, resolve what conflicts, run the checks the change needs and
-  push, without being asked. See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+  the branch and push, without being asked. A merge that went through
+  without conflicts is pushed at once, with no test run first: what it
+  brings in was tested on main, the branch's own change was tested before
+  its last push, and CI tests the two together on the push anyway. Running
+  them in the session as well only keeps Tim waiting, ten minutes when the
+  change reaches the engine. A merge with conflicts is different: the
+  resolution is new code, so run `make changed` on it before the push. See
+  [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Writing rules
 
@@ -409,7 +415,9 @@ messages, pull request text, code comments and chat replies.
   by then it is their bug.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
-  without ffmpeg. **Run `make changed` before every push.** It checks what
+  without ffmpeg. **Run `make changed` before every push of a change of
+  your own.** A clean merge of main is not one, see the rule on main
+  moving above. It checks what
   the branch changed against main and only that: the Go tests of the
   packages that changed and every package that imports them, the fuzz
   targets that go through a changed file, `make interface` for `frontend/`, the build for the Makefile and
@@ -474,8 +482,9 @@ the skills listed last show their name without what they are for.
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
 - Run `make changed` before every push, and it must pass, see the tests
-  rule above. Waiting minutes on tests that nothing in the change can move
-  is Tim waiting. When it is not sure what a file reaches, it builds.
+  rule above. The one exception is a merge of main without conflicts,
+  which is pushed as it is. Waiting minutes on tests that nothing in the
+  change can move is Tim waiting. When it is not sure what a file reaches, it builds.
 - The app cannot be started there, so there is no way to look at the
   window. Interface work goes through the skill in
   `.claude/skills/interface/`, which has the preview harness in
