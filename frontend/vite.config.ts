@@ -6,11 +6,13 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // app, from notices/notices.json. A package the bundle takes in without a
 // notice, or at another version than its notice, stops the build here,
 // because the day it is added is the day it is easiest to say what it is.
-// make notices writes the notices again.
+// make notices writes the notices again. It builds the interface itself to
+// see what the bundle holds, and says so in FRAMEFAIRY_WRITING_NOTICES, so
+// the notices it is there to write do not stop it.
 function notices(): Plugin {
   return {
     name: "framefairy-notices",
-    apply: "build",
+    apply: (_, env) => env.command === "build" && !process.env.FRAMEFAIRY_WRITING_NOTICES,
     generateBundle(_, bundle) {
       const noticed = new Map<string, string>();
       const list = JSON.parse(readFileSync(new URL("../notices/notices.json", import.meta.url), "utf8"));
