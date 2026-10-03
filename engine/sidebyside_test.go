@@ -26,6 +26,16 @@ type sideBySide struct {
 	seen func()
 	fail int32
 	n    atomic.Int32
+	// paired closes once two pieces are being heard at once, or once the
+	// first gave up waiting for a second.
+	pairOnce sync.Once
+	makeOnce sync.Once
+	paired   chan struct{}
+}
+
+func (s *sideBySide) pairedChan() chan struct{} {
+	s.makeOnce.Do(func() { s.paired = make(chan struct{}) })
+	return s.paired
 }
 
 func (s *sideBySide) Copies() int { return s.copies }
@@ -33,15 +43,21 @@ func (s *sideBySide) Copies() int { return s.copies }
 func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 	now := s.busy.Add(1)
 	defer s.busy.Add(-1)
-	// Until two pieces have been heard at once, a piece waits for the next
-	// to arrive, rather than counting on the sleep below to outlast the
-	// decoding of it. On a busy runner decoding a piece can take longer
-	// than the sleep, and the test then failed for the runner, not the
-	// engine. An engine that hears one piece at a time still fails: no
-	// second piece comes, and the wait gives up.
-	for deadline := time.Now().Add(5 * time.Second); s.most.Load() < 2 && now < 2 && time.Now().Before(deadline); {
-		time.Sleep(5 * time.Millisecond)
-		now = s.busy.Load()
+	// The first piece is held until a second one arrives, so the two are
+	// heard at once by how the engine hands them out, not by how fast this
+	// machine decodes the next piece while the first one sleeps. An engine
+	// that hears one piece at a time never sends the second while the first
+	// is held, so the wait has a limit: once it runs out, no piece waits
+	// again, and the test fails as it should.
+	release := func() { s.pairOnce.Do(func() { close(s.pairedChan()) }) }
+	if now >= 2 {
+		release()
+	} else {
+		select {
+		case <-s.pairedChan():
+		case <-time.After(10 * time.Second):
+			release()
+		}
 	}
 	for {
 		most := s.most.Load()
@@ -52,8 +68,7 @@ func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 	if s.fail > 0 && s.n.Add(1) == s.fail {
 		panic("a copy of the speech model broke")
 	}
-	// Longer than decoding the next piece takes, as it is for the real
-	// model, so the next one arrives while this is still being heard.
+	// Each piece takes a time of its own, so they finish in any order.
 	time.Sleep(time.Duration(200+rand.IntN(200)) * time.Millisecond)
 	s.mu.Lock()
 	out := s.inner.Recognize(samples, rate)
