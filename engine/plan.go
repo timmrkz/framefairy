@@ -572,8 +572,14 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 			body = []byte("{\n  \"parsed\": " + indented.String() + extra + "\n}")
 		}
 	}
+	// An answer without JSON keeps how it was got too, which the
+	// comparison reads.
 	if body == nil {
-		body, _ = MarshalPlan(map[string]string{"text": reply})
+		saved := map[string]any{"text": reply}
+		if how != nil {
+			saved["how"] = how
+		}
+		body, _ = MarshalPlan(saved)
 	}
 	_ = os.WriteFile(cachePath, body, 0o644)
 }

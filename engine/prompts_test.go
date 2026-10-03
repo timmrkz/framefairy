@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The prompt files of one message fill in: the transcript and the count
@@ -179,7 +181,9 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 		mu.Lock()
 		sent = append(sent, request.Messages)
 		mu.Unlock()
-		writeLocalStream(w, "1 1 1\n", 3)
+		// The last line has no line break, so it is taken from the whole
+		// answer rather than as it arrives.
+		writeLocalStream(w, "1 1 1", 3)
 	}))
 	defer server.Close()
 	var heard int32
@@ -201,8 +205,16 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	// One line is too short, and the engine takes in the one after it. A
 	// story the model gave no title is named after its first words.
 	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 ||
-		clips[0].Title == "" {
+		clips[0].Title == "" || strings.HasPrefix(clips[0].Slug, "clip") {
 		t.Errorf("clips %+v %v", clips, err)
+	}
+	// The answer is kept with how it was got, which a comparison reads.
+	saved, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "..", "..", "logs", "reply-*.json"))
+	if len(saved) != 1 {
+		t.Fatalf("saved %v", saved)
+	}
+	if _, use := lastLocalAnswer(filepath.Dir(saved[0]), time.Time{}); use.Asks != 1 || use.Read != 100 {
+		t.Errorf("the saved answer tells %+v", use)
 	}
 
 	for _, model := range []string{"claude-sonnet-5", "gpt-6-sol"} {
@@ -329,6 +341,9 @@ func TestAMiddleAnswer(t *testing.T) {
 	entries, _, err := ValidatePlan(data, lineUnits(60))
 	if err != nil || len(entries) != 3 {
 		t.Fatalf("%+v %v", entries, err)
+	}
+	if _, problems, _ := ValidatePlan(data, lineUnits(60)); len(problems) > 0 {
+		t.Errorf("untitled stories were found wanting: %v", problems)
 	}
 	for i, want := range [][2]int{{31, 52}, {5, 9}, {3, 3}} {
 		if e := entries[i]; e.Keep[0] != want || e.Heart != want || e.Opening != want[0] || e.Title != "" {

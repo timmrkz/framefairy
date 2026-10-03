@@ -340,9 +340,10 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		return pyStr(value)
 	}
 	// An answer without slugs gets them from the titles, the way a clip
-	// made by hand does.
+	// made by hand does. One without titles either, as middle's, is named
+	// by its first words once it is shaped, see planBuilder.named.
 	slug, title := Scrub(get("slug"), 64), Scrub(get("title"), 200)
-	if slug == "" {
+	if slug == "" && title != "" {
 		slug = strings.ToLower(SanitiseName(title, "clip"))
 	}
 	return PlanEntry{

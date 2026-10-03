@@ -204,12 +204,6 @@ func (b *planBuilder) propose(entry PlanEntry) {
 		return
 	}
 	entry, fitted := b.shapedFitted(entry)
-	// A recipe that asks for no title, middle, names a clip by how it
-	// begins.
-	if entry.Title == "" {
-		entry.Title = firstWords(b.lines[entry.Keep[0][0]-1].Text(), 60)
-		entry.Slug = strings.ToLower(SanitiseName(entry.Title, "clip"))
-	}
 	if fitted != "" {
 		b.e.Log.Info("%s %s around its heart to %ss", entry.Slug, fitted, fixed(b.seconds(entry.Keep), 1))
 	}
@@ -259,7 +253,7 @@ func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
 		entry.Keep = joinRuns(entry.Keep)
 	}
 	if !recipe.Hearts {
-		return entry, ""
+		return b.named(entry), ""
 	}
 	taken := func(n int) bool {
 		for _, t := range b.taken {
@@ -272,7 +266,24 @@ func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
 	keep, did := fitToHeart(b.lines, entry.Keep, entry.Heart, entry.Opening, b.opts.MinLen, b.opts.MaxLen,
 		taken, b.seconds)
 	entry.Keep = keep
-	return entry, did
+	return b.named(entry), did
+}
+
+// named gives a clip the model named nothing, as middle's are, a title and
+// a slug from its first words.
+func (b *planBuilder) named(entry PlanEntry) PlanEntry {
+	if entry.Title != "" {
+		return entry
+	}
+	var words []string
+	for _, r := range entry.Keep {
+		for n := r[0]; n <= r[1] && len(words) < 20; n++ {
+			words = append(words, strings.Fields(b.lines[n-1].Text())...)
+		}
+	}
+	entry.Title = firstWords(strings.Join(words, " "), 60)
+	entry.Slug = strings.ToLower(SanitiseName(entry.Title, "clip"))
+	return entry
 }
 
 // acceptLocked takes a clip of the answer. One that does not fit the length

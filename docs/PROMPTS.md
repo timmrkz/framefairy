@@ -65,6 +65,43 @@ whole, never cut, as decided for a story longer than the length, and
 one shorter than the length takes in the sentences before it. The model
 names no title, so a clip is named after its first words.
 
+## What the run of 3 October showed
+
+Tim's episode with Ben, the first 30 minutes, six clips of 20 to 30
+seconds, Gemma 4 26B A4B on his M2 Max. Model is the seconds the model
+took for every ask of the side. The thought is worked out from what the
+plain sides wrote, which the report could not read yet.
+
+| Side | Model, s | Read, tokens | Clips off the length | Clip lengths, s |
+| --- | ---: | ---: | ---: | --- |
+| `lines` | 94, three asks | 15,235 | 1 | 19 to 36 |
+| `heart-opening` | 63 | 15,338 | 1 | 28 to 40 |
+| `heart-lean` | 56 | 8,616 | 5 | 25 to 50 |
+| `points` | 51 | 8,551 | 3 | 20 to 51 |
+| `middle` | 42 | 8,407 | 5 | 25 to 154 |
+| `middle+pause` | 40 | 8,624 | 4 | 28 to 133 |
+| `middle+words` | 40 | 8,420 | 3 | 22 to 56 |
+| `middle@1024` | 26 | 8,407 | 5 | 25 to 154 |
+
+- **Reading** halves with the lean prompts, 26 s to 12 s.
+- **Thinking** is most of what is left. Every side thought to its budget,
+  about 2,048 tokens or 30 s. `middle@1024` thought half as long and
+  named the same first three stories as `middle`.
+- **Writing** is a few seconds. `middle` writes about 80 tokens, the
+  JSON sides about 400.
+- **`middle` finds where a story starts.** It opened the umbrella story
+  on "Aber aus der Grundschule habe ich zum Beispiel eine Erinnerung", the
+  line the story really begins on, which no other side did. But told
+  nothing of length, a story is a whole topic to it: 50 s to 2.5 min.
+- **`+words` brings `middle` close to the length**, 22 to 56 s, and
+  changes which stories it picks. Its starts are worse: two begin in the
+  middle of a thought.
+- **`+pause` changed little.**
+- **`heart-opening` read best**: every story with its setup, the payoff
+  kept, 28 to 40 s. It is also the slowest of the sides that ask once.
+- **`points` ignores the language** it is told to title in, and wrote
+  English titles for a German episode.
+
 ## Where a search spends its time
 
 | Part | Seconds | What it is |
