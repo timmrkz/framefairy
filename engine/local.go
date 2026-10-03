@@ -560,10 +560,12 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		"stream_options":  map[string]any{"include_usage": true},
 		"return_progress": true,
 	}
-	// An answer without JSON is held to its own grammar, one line a clip.
-	if r.Plain != nil {
-		ask["grammar"] = r.Plain.Grammar(units, count)
-	} else {
+	// An answer without JSON is held to nothing. A grammar of our own
+	// would hold the model from its first token, so Gemma could not open
+	// its thought, which only a schema's grammar leaves room for, and it
+	// wrote its thinking into an answer line that never ended. The reader
+	// passes over any line that is not a clip.
+	if r.Plain == nil {
 		schema := json.RawMessage(r.Schema(units, count))
 		ask["response_format"] = map[string]any{
 			"type": "json_schema",

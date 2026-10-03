@@ -2,7 +2,6 @@ package engine
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -17,19 +16,19 @@ import (
 //	12 18 19 | Der Regenschirm | Ein Kind wehrt sich mit Judo.
 //	40 31 52
 //
-// JSON spends about a third of an answer on keys, quotes and brackets. A
-// local model is held to the line by a grammar, the way it is held to JSON
-// by a schema, and each line is read into the same clip object a JSON
-// answer gives, so everything after the reading is the same. What a model
-// writes is untrusted: a line that is not a clip is passed over, and the
-// clip goes through the checks every clip goes through.
+// JSON spends about a third of an answer on keys, quotes and brackets.
+// Each line is read into the same clip object a JSON answer gives, so
+// everything after the reading is the same. The model is held to no
+// grammar: llama-server applies a grammar of our own from the first token,
+// before the model has thought, and a model that cannot open its thought
+// writes it into the answer. What a model writes is untrusted: a line that
+// is not a clip is passed over, the clips past the count asked for are
+// left out, and every clip goes through the checks every clip goes
+// through.
 // ---------------------------------------------------------------------------
 
 // plainFormat is how a recipe that answers without JSON is answered.
 type plainFormat struct {
-	// Grammar holds a local model to at most count lines of the answer, in
-	// llama.cpp's grammar notation.
-	Grammar func(units, count int) string
 	// Clip reads one line of the answer into the clip object a JSON answer
 	// has, and says false for a line that is no clip: prose, a blank, too
 	// few numbers.
@@ -39,13 +38,6 @@ type plainFormat struct {
 // pointsPlain is the answer of points: start, payoff and end, the title
 // and the reason.
 var pointsPlain = &plainFormat{
-	Grammar: func(_, count int) string {
-		return fmt.Sprintf(`root ::= clip ("\n" clip){0,%d} "\n"?
-clip ::= number " " number " " number " | " text " | " text
-number ::= [1-9] [0-9]{0,5}
-text ::= [^|\n]+
-`, max(count, 1)-1)
-	},
 	Clip: func(line string) (string, bool) {
 		parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
 		n, ok := threeNumbers(parts[0])
@@ -64,12 +56,6 @@ text ::= [^|\n]+
 // middlePlain is the answer of middle: a line inside the story, then the
 // line it starts on and the line it ends on, and nothing else.
 var middlePlain = &plainFormat{
-	Grammar: func(_, count int) string {
-		return fmt.Sprintf(`root ::= clip ("\n" clip){0,%d} "\n"?
-clip ::= number " " number " " number
-number ::= [1-9] [0-9]{0,5}
-`, max(count, 1)-1)
-	},
 	Clip: func(line string) (string, bool) {
 		n, ok := threeNumbers(line)
 		if !ok {

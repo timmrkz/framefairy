@@ -219,14 +219,22 @@ That is the line numbers, the title and the reason, and nothing else.
 40 31 52
 ```
 
-llama-server holds the model to the line with a grammar, in
-`engine/plain.go`, the way it holds it to JSON with a schema. The program
-reads the clips a line at a time as they arrive, each into the clip a
-JSON answer gives, so everything after the reading is the same. A line
-that is not a clip is passed over, and the reader is fuzzed,
-`FuzzPlainAnswer`. `points` and `middle` always answer this way, and
-`lines`, `heart`, `heart-opening` and `heart-lean` in JSON: the runs of
-`heart-lean` would need a notation of their own on a line.
+Nothing holds the model to the line, unlike JSON, which a schema holds
+it to. A grammar of our own was tried first, and `points` never finished
+in Tim's run of 3 October. llama-server applies such a grammar from the
+model's first token, where for a schema it builds one that lets Gemma
+think first. So Gemma could not open its thought, most likely wrote its
+thinking into the title, which the grammar let run without a line break,
+and no clip ever came.
+
+The program reads the clips a line at a time as they arrive, each into
+the clip a JSON answer gives, so everything after the reading is the
+same. A line that is not a clip is passed over, so a sentence before the
+answer costs nothing, and the clips past the count asked for are left
+out. The reader is fuzzed, `FuzzPlainAnswer`. `points` and `middle`
+always answer this way, and `lines`, `heart`, `heart-opening` and
+`heart-lean` in JSON: the runs of `heart-lean` would need a notation of
+their own on a line.
 
 ## Thinking
 

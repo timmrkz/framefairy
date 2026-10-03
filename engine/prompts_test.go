@@ -314,9 +314,6 @@ func TestAPlainAnswer(t *testing.T) {
 	if len(got) != 2 || got[0] != "12 18 19 | Der Regenschirm | Grund" || got[1] != "30 33 33 | S | R" {
 		t.Errorf("lines %q", got)
 	}
-	if g := pointsPlain.Grammar(0, 6); !strings.Contains(g, "{0,5}") {
-		t.Errorf("six clips allowed as:\n%s", g)
-	}
 }
 
 // A middle answer is three numbers a story: a line inside it, its start
@@ -342,17 +339,15 @@ func TestAMiddleAnswer(t *testing.T) {
 	if _, _, err := ValidatePlan(past, lineUnits(60)); err == nil {
 		t.Error("a middle past the transcript was read")
 	}
-	if g := middlePlain.Grammar(0, 6); !strings.Contains(g, "{0,5}") || strings.Contains(g, "|") {
-		t.Errorf("six stories allowed as:\n%s", g)
-	}
 	text := "Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen."
 	if got := firstWords(text, 31); got != "Und dann hat er mich geschlagen" {
 		t.Errorf("named %q", got)
 	}
 }
 
-// A search asking for a plain answer holds the local model to its grammar
-// rather than to JSON, and takes the clips from the lines it writes.
+// A search asking for a plain answer holds the local model to no schema
+// and no grammar, so it can think first, and takes the clips from the
+// lines it writes, passing over the rest.
 func TestASearchWithAPlainAnswer(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -362,7 +357,7 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 		mu.Lock()
 		_ = json.NewDecoder(r.Body).Decode(&asked)
 		mu.Unlock()
-		writeLocalStream(w, "1 1 2 | Kurz | Ein Grund.\n", 5)
+		writeLocalStream(w, "Hier sind sie:\n1 1 2 | Kurz | Ein Grund.\n3 3 3 | Zu viel | Einer mehr.\n", 5)
 	}))
 	defer server.Close()
 	var heard int32
@@ -380,10 +375,10 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	}
 	mu.Lock()
 	_, schema := asked["response_format"]
-	grammar, _ := asked["grammar"].(string)
+	_, grammar := asked["grammar"]
 	mu.Unlock()
-	if schema || !strings.Contains(grammar, "root ::=") {
-		t.Errorf("asked with a schema %v, grammar %q", schema, grammar)
+	if schema || grammar {
+		t.Errorf("asked with a schema %v, a grammar %v", schema, grammar)
 	}
 	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
 		t.Errorf("clips %+v %v", clips, err)
