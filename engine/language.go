@@ -373,6 +373,11 @@ func MachineMemory() int64 {
 
 // memTotal reads MemTotal out of a meminfo file, which is in kibibytes.
 func memTotal(path string) int64 {
+	return meminfo(path, "MemTotal:")
+}
+
+// meminfo reads one field of a meminfo file, in bytes, or zero.
+func meminfo(path, field string) int64 {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0
@@ -381,7 +386,7 @@ func memTotal(path string) int64 {
 	lines := bufio.NewScanner(file)
 	for lines.Scan() {
 		line := lines.Text()
-		if !strings.HasPrefix(line, "MemTotal:") {
+		if !strings.HasPrefix(line, field) {
 			continue
 		}
 		fields := strings.Fields(line)

@@ -444,6 +444,11 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	if err != nil {
 		return "", err
 	}
+	// A model that cannot be loaded fails the search before it listens to
+	// its window, which can take minutes, see roomBeforeSearch.
+	if err := roomBeforeSearch(p.Base, end-req.From); err != nil {
+		return "", err
+	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, turn, step)
 	}

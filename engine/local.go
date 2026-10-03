@@ -273,6 +273,11 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 	if err := CheckModelFile(m.Model, ""); err != nil {
 		return "", nil, err
 	}
+	// A model that does not fit in the memory free now is not started:
+	// macOS would kill it while it loads, see freemem.go.
+	if err := roomForModel(m.Model, contextSize); err != nil {
+		return "", nil, err
+	}
 	server, err := serverToRun(m.Server)
 	if err != nil {
 		return "", nil, err

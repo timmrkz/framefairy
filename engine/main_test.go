@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 		return
 	}
 	toolsFromThePath()
+	// The tests start fake servers, whatever the machine they run on has
+	// free, so what is free is not asked. TestTheMemoryFreeNow asks it.
+	freeMemory = func() int64 { return 0 }
 	dir, err := os.MkdirTemp("", "framefairy-training")
 	if err != nil {
 		panic(err)
