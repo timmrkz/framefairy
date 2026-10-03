@@ -105,6 +105,44 @@ plain sides wrote, which the report could not read yet.
 - **`points` ignores the language** it is told to title in, and wrote
   English titles for a German episode.
 
+## What the second run of 3 October showed
+
+The same window, with the length said in words in the lean prompts, and
+`middle+times` to try seconds against it. What the model named, before
+the program fitted it, against what it was asked for:
+
+| Side | Asked | Within it | What the model named |
+| --- | --- | ---: | --- |
+| `middle` | 44 to 66 words | 4 of 6 | 51 to 136 words |
+| `middle@1024` | 44 to 66 words | 2 of 6 | 30 to 129 words |
+| `points` | 44 to 66 words | 1 of 6 | 25 to 124 words |
+| `middle+times` | 20 to 30 seconds | 0 of 6 | 44 to 83 seconds |
+
+| Side | Model, s | Clips off the length |
+| --- | ---: | ---: |
+| `heart-opening` | 63 | 1 |
+| `heart-lean` | 45 | 0 |
+| `points` | 46 | 2 |
+| `middle` | 46 | 0 |
+| `middle+times` | 46 | 1 |
+| `middle@1024` | 26 | 0 |
+
+- **Words, not seconds.** Told the seconds and given the time of every
+  line, the model named no story within the length. Told the words, it
+  named 4 of 6, and the program fitted the rest.
+- **The lean prompts now keep the length.** `heart-lean` and `middle`
+  had no clip off it, where the run before had 5 each.
+- **But they lose the setup.** The umbrella story starts on "Und
+  irgendein Typ auf dem Schulhof gemobbt" in `heart-lean`, `middle` and
+  `middle@1024`, without the judo and the second grade before it, and
+  the orchid story starts on "Aber für diesen Markt gab, ne?".
+  `heart-opening` keeps the setup of every story, and found the insights
+  the lean prompts missed: "Sind unsere Erinnerungen echt?", "Warum ich
+  für andere kämpfe", "Die Sehnsucht nach Einzigartigkeit".
+- **Half the thinking, about the same picks.** `middle@1024` took 26 s
+  where `middle` took 46, named the same umbrella and orchid stories,
+  and kept every clip within the length.
+
 ## Where a search spends its time
 
 | Part | Seconds | What it is |
