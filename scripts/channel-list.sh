@@ -74,3 +74,23 @@ if ! gh api -X PATCH "repos/{owner}/{repo}/releases/assets/$next" -f name=channe
 	gh release upload dev channels.json --clobber
 	gh release delete-asset dev channels.next.json -y || true
 fi
+
+# Two copies of the list, channels-a.json and channels-b.json, which the
+# apps read in place of channels.json, keeping the one written last, see
+# ListCopies in updates/updates.go. Only the older copy is replaced, so
+# the newer one stays where it is the whole time. channels.json above is
+# still missing for a moment each time, and for as long again as GitHub
+# takes to serve the new file, a few seconds, and Tim's app ran into that
+# with seven seconds of waiting. The workflow writes the list no more than
+# once at a time and every writing takes half a minute, so the copy left
+# alone is never one GitHub is still catching up on. channels.json stays
+# for the builds made before the copies.
+copy=$(gh api 'repos/{owner}/{repo}/releases/tags/dev' --jq '
+	[.assets[] | {name, updated_at}] as $have
+	| ["channels-a.json", "channels-b.json"]
+	| map(. as $n | {name: $n, at: ([$have[] | select(.name == $n) | .updated_at] | first // "")})
+	| sort_by(.at) | .[0].name')
+echo "replacing $copy, the older copy of the list"
+cp channels.json "$copy"
+gh release delete-asset dev "$copy" -y || true
+gh release upload dev "$copy" --clobber

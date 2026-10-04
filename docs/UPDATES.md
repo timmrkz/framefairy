@@ -361,11 +361,12 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 ### How the app knows the pull requests
 
-The channel list is one small public file at one fixed web address, a
-file of the release called `dev` in this repository:
+The channel list is one small public file, a file of the release called
+`dev` in this repository, kept at two fixed web addresses as two copies:
 
 ```
-https://github.com/timmrkz/framefairy/releases/download/dev/channels.json
+https://github.com/timmrkz/framefairy/releases/download/dev/channels-a.json
+https://github.com/timmrkz/framefairy/releases/download/dev/channels-b.json
 ```
 
 The address is built into the app. What is in the file is not: the build
@@ -376,13 +377,24 @@ GitHub cannot replace a release file in one step. `gh release upload
 --clobber` deletes the old file before it uploads the new one, so for the
 length of an upload there was no list, and an app that checked then was
 answered 404 and said the check did not get through. The list is written
-twice on every push to a pull request, so Tim ran into it. Now
-`scripts/channel-list.sh` uploads the new list as `channels.next.json`,
-deletes the old one and renames the new one into place, so the list is
-missing only for the rename. If the rename fails, it uploads the list the
-old way. And the app waits out a 404 on the list, trying again after one,
-two and four seconds, before it says anything, see `Fetch` in
-`updates/source.go`. Any other answer is said at once.
+twice on every push to a pull request, so Tim ran into it. The first fix
+uploaded the new list under a name of its own and renamed it into place,
+and the app waited out a 404 for seven seconds. Tim still ran into it:
+after the rename GitHub went on answering 404 at the list's address for
+a few seconds more, measured at up to four from outside, and how long is
+GitHub's to decide.
+
+So the list is never replaced where an app reads it. There are two
+copies, and `scripts/channel-list.sh` replaces only the older one each
+time, which leaves the newer one where it is the whole time. The app
+reads both at once and keeps the one written last, by the time the list
+says it was written, see `fetchCopies` in `updates/source.go`. The
+workflow writes the list once at a time and each writing takes half a
+minute, so the copy left alone is never one GitHub is still catching up
+on. `channels.json` is still written, the old way, for the builds made
+before the copies, and the app falls back on it, with the seven seconds
+of waiting, when neither copy can be read. Any other answer is said at
+once.
 
 The app fetches it the way it fetches any file. It does not call GitHub's
 API and has no idea what a pull request is. The file lists every channel
