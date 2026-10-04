@@ -4,6 +4,7 @@
   // help on screen at all times.
   import type { Snippet } from "svelte";
   import Icon from "./Icon.svelte";
+  import { placeBubble, widths, type Place } from "../lib/bubble";
 
   let {
     label,
@@ -40,29 +41,35 @@
     };
   }
 
-  // Where it ended up having to go: under the mark, above it when there is
-  // no room below, and moved sideways when it would leave the app. A
-  // bubble that runs off the screen is a bubble nobody can read. It stays
-  // out of sight until it has been measured and put somewhere, so it never
-  // shows in the corner of the app first.
-  let at = $state<{ top: number; left: number } | null>(null);
-  let above = $state(false);
+  // Where it goes is worked out in lib/bubble.ts: under the mark, over
+  // it or beside it, the first that holds all of it, wider when a long
+  // text fits nowhere at the narrow width. It stays out of sight until it
+  // has been measured and put somewhere, so it never shows in the corner
+  // of the app first.
+  let at = $state<Place | null>(null);
+
+  function place(node: HTMLElement): Place {
+    return placeBubble(root.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }, side, (width) => {
+      node.style.width = `${width}px`;
+      node.style.maxHeight = "none";
+      const height = node.getBoundingClientRect().height;
+      node.style.maxHeight = "";
+      return height;
+    });
+  }
 
   $effect(() => {
     if (!shown || !bubble) {
       at = null;
       return;
     }
-    const gap = 6;
-    const edge = 8;
-    const mark = root.getBoundingClientRect();
-    const box = bubble.getBoundingClientRect();
-    let top = mark.bottom + gap;
-    above = top + box.height > window.innerHeight - edge && mark.top - box.height - gap > edge;
-    if (above) top = mark.top - box.height - gap;
-    let left = side === "right" ? mark.right + 8 - box.width : mark.left - 8;
-    left = Math.min(left, window.innerWidth - edge - box.width);
-    at = { top: Math.max(edge, top), left: Math.max(edge, left) };
+    const node = bubble;
+    at = place(node);
+    // A bubble that is up when the app changes size is put somewhere again,
+    // or a smaller app would cut it off.
+    const again = () => (at = place(node));
+    window.addEventListener("resize", again);
+    return () => window.removeEventListener("resize", again);
   });
 
   // Opened by a click, it stays until you click somewhere else or press
@@ -102,10 +109,13 @@
   <span
     class="bubble selectable"
     class:placed={!!at}
-    class:above
+    class:above={at?.where === "above"}
+    class:beside={at?.where === "beside"}
+    class:toleft={side === "right"}
+    class:scroll={at?.scroll}
     bind:this={bubble}
     use:loose
-    style="top: {at?.top ?? 0}px; left: {at?.left ?? 0}px"
+    style="top: {at?.top ?? 0}px; left: {at?.left ?? 0}px; width: {at?.width ?? widths[0]}px"
     onpointerenter={() => (nearBubble = true)}
     onpointerleave={() => (nearBubble = false)}
   >{@render children()}</span>
@@ -148,7 +158,6 @@
   .bubble {
     position: fixed;
     z-index: 200;
-    width: 260px;
     padding: 8px 10px;
     background: var(--ink-2);
     border: 1px solid var(--line);
@@ -160,9 +169,15 @@
     text-align: left;
     white-space: normal;
     cursor: text;
+    visibility: hidden;
+  }
+
+  /* Only a window too small for the whole text at any width scrolls it,
+     and then the bubble is as tall as the app. Everywhere else it shows
+     all of it, and nothing clips the bridge below. */
+  .bubble.scroll {
     max-height: calc(100vh - 16px);
     overflow: auto;
-    visibility: hidden;
   }
 
   .bubble.placed {
@@ -181,6 +196,21 @@
   .bubble.above::before {
     top: auto;
     bottom: -8px;
+  }
+
+  /* Beside the mark the bridge runs down the side that faces it. */
+  .bubble.beside::before {
+    top: 0;
+    bottom: 0;
+    height: auto;
+    left: auto;
+    right: -8px;
+    width: 8px;
+  }
+
+  .bubble.beside:not(.toleft)::before {
+    right: auto;
+    left: -8px;
   }
 
 </style>
