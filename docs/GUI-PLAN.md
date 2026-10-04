@@ -206,7 +206,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.16 | Target holds its suggestion as a real number rather than a grey placeholder, so the arrow keys step from it and the down arrow on 6 gives 5, not 1. Asked for by Tim | `[x]` |
 | 3.17 | A clip fitted on the clip timeline stands under the video preview and the range picker, not under the middle of the app, which the wider clip list puts a little to the right. Asked for by Tim | `[x]` |
 | 3.18 | Every info bubble wholly inside the app: under, over or beside its mark, wider when a long text fits nowhere at the narrow width, and scrolling only in an app too small for it at any width. Asked for by Tim | `[x]` |
-| 3.19 | The clip timeline's info bubble cut to what the track itself does, a line each, and every double-click on the track answered again: the second click landed on the playhead's line, which did not take it. Asked for by Tim | `[x]` |
+| 3.19 | The clip timeline's info bubble cut to what the track itself does, a line each. A double-click in the clip cuts a part out and one on a cut removes it, told from the two presses so it works wherever the second lands. Shift and a drag no longer cuts, and a double-click no longer fits the clip. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 

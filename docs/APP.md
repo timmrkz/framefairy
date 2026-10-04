@@ -931,11 +931,17 @@ bubble scrolled by those eight pixels.
     - **The cuts can be changed.** Each one carries a handle on either edge,
       in the accent's lighter shade so it is not taken for the clip's own
       edge. Dragging a handle moves that edge of the cut, and a double-click
-      on the block puts the part back.
-    - **Shift is the cutting hand.** Holding it and dragging across the clip
-      takes out the part dragged over. Holding it and double-clicking
-      takes one out where the click lands, forty pixels wide, which is wide
-      enough to see and to take hold of by either edge and drag to size.
+      on the block or on either handle removes the cut, so the part plays
+      again.
+    - **A double-click in the clip cuts a part out** where it lands, forty
+      pixels wide, which is wide enough to see and to take hold of by either
+      edge and drag to size. Outside the clip a double-click does nothing,
+      and nothing else on the track makes a cut. Shift and a drag used to
+      draw one, and a double-click in the place a cut had just been removed
+      took it out again: Tim found neither, and the second made a double-
+      click in the clip cut something only sometimes. Shift means words and
+      clips everywhere else in the app, so a drag with it held moves the
+      playhead like any other drag.
       Forty pixels and not a quarter of a second, because what has to stay
       the same is what the hand sees: the timeline goes from a whole four
       hour episode down to a second across, and a width in seconds is
@@ -945,36 +951,31 @@ bubble scrolled by those eight pixels.
       of the two 12 pixel edge handles and then a quarter of the track.
       Forty pixels comes out as 40 and 47, the 47 being the frame rounding:
       a cut is a whole number of frames wide, rounded up, so it is never
-      too short for the engine to take. Either way the view never moves: a gesture that
-      cuts and zooms at the same time is a gesture nobody can aim, and
-      before this a shift double-click only zoomed, which is why it read as
-      nothing happening. A shift double-click inside a cut does nothing,
-      because there is nothing there left to take out. Without shift the
-      same drag moves the playhead, so nothing that worked before works
-      differently, and a shift-click with no drag does nothing.
-    - **A part put back goes back in with the same gesture.** The
-      double-click that puts a cut back is remembered, so a second
-      double-click in the same place takes the part out again, edge for
-      edge. It is forgotten as soon as anything else about that clip
-      changes, because a part put back into a clip that has moved on is
-      not the part that was taken out.
+      too short for the engine to take. The view never moves: a gesture
+      that cuts and zooms at the same time is a gesture nobody can aim.
+    - **A double-click is told from the two presses**, not from the
+      browser's dblclick. The first press moves the playhead under the
+      pointer, so the second lands on the playhead's line or on a cut's
+      handle, and a dblclick goes to whatever the second landed on. Over
+      the line it went nowhere, which is why a double-click in the clip did
+      nothing while one on a cut's handle did. Two presses within half a
+      second and six pixels of each other are a double-click wherever the
+      second lands.
     - **A cut lands on the frame.** The edges stay where the hand put them,
       rounded to a whole frame of the episode and no further, because a
       double-click and a drag both say where exactly and moving the edges
       somewhere else is not what was asked. A cut made this way may stop
       inside a word, which is the point of it.
     - **Shift lands on whole words instead.** Holding shift while dragging a
-      handle of a cut, or alt as well as shift while drawing one across the
-      clip, where shift already draws, puts the edges where the render would cut
-      them, so a cut dragged over a pause takes the whole pause and a cut
-      dragged over speech takes whole words, and it can never stop half way
-      through a word. That is the right thing when a whole phrase is to go
-      and the wrong thing when a breath is: a drag of a few pixels in a
-      silence came out as the whole silence, which is why this is the
-      modifier now and not the default. The key is
-      read while the hand moves rather than when it goes down, so letting
-      go of it part way through goes back to frames and the block says
-      so before the drag ends.
+      handle of a cut puts the edges where the render would cut them, so a
+      cut dragged over a pause takes the whole pause and a cut dragged over
+      speech takes whole words, and it can never stop half way through a
+      word. That is the right thing when a whole phrase is to go and the
+      wrong thing when a breath is: a drag of a few pixels in a silence came
+      out as the whole silence, which is why this is the modifier and not
+      the default. The key is read while the hand moves rather than when it
+      goes down, so letting go of it part way through goes back to frames
+      and the block says so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and that is the one place they are
       written out, so the waveform has the whole track to itself.
@@ -1013,16 +1014,12 @@ bubble scrolled by those eight pixels.
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
       wherever the playhead goes. The crosshair in the row under the track
-      goes to the playhead and puts it in the middle. A double-click lets
-      go of the view, and so does clicking a clip in the list, the one that
-      is already selected included, which puts that clip back in view.
-      Every double-click on the track went nowhere for a while: its first
-      click moves the playhead under the pointer, so the second lands on
-      the playhead's line, which stands over the track rather than in it
-      and did not answer. Fitting the clip and putting a cut back both did
-      nothing. The line answers a double-click the way the track does now.
-      Its info bubble says only what the track itself does, in a line
-      each, and leaves the row under it to its own titles. The words and the waveform of the whole episode
+      goes to the playhead and puts it in the middle. Clicking a clip in
+      the list, the one that is already selected included, puts that clip
+      back in view. A double-click on the track never did: one was meant
+      to, and it went nowhere for the reason above. Its info bubble says
+      only what the track itself does, a line each, and leaves the row
+      under it to its own titles. The words and the waveform of the whole episode
       are read once and kept, so swiping does not wait for a file to be
       read again.
     - **Every clip is on it, not only the chosen one.** The other clips

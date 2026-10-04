@@ -242,14 +242,49 @@
 
   function scrub(event: PointerEvent) {
     if (event.button !== 0) return;
-    // Shift and a drag marks a part to take out instead of moving the
-    // playhead. Everything else about the track is unchanged.
-    if (event.shiftKey && editable && onreshape) {
+    if (twice(event)) {
       event.preventDefault();
-      drawCut(event);
+      doubled(event.clientX);
       return;
     }
     scrubPlayhead(event, timeAt, onseek, (held) => (scrubbing = held));
+  }
+
+  // A double-click is told from the two presses rather than from the
+  // browser's dblclick. The first press moves the playhead under the
+  // pointer, so the second lands on the playhead's line, or on a cut's
+  // edge, and a dblclick goes to whatever the second landed on. Over the
+  // line it went nowhere, so a double-click in the clip did nothing at all
+  // while one on a cut's edge did something. Told here, it is the same
+  // gesture wherever the second press lands. The time and the distance are
+  // the Mac's own for a double-click.
+  let lastPress = { at: 0, x: 0 };
+
+  function twice(event: PointerEvent): boolean {
+    const now = event.timeStamp;
+    const again = now - lastPress.at < 500 && Math.abs(event.clientX - lastPress.x) < 6;
+    lastPress = again ? { at: 0, x: 0 } : { at: now, x: event.clientX };
+    return again;
+  }
+
+  // What a double-click does: on a cut it removes the cut, so the part
+  // plays again. Inside the clip it cuts a part out where it lands, a few
+  // pixels wide, to be dragged to its size. Anywhere else it does nothing.
+  function doubled(clientX: number) {
+    if (!editable || !onreshape || !clip) return;
+    const at = timeAt(clientX);
+    const hit = cuts.find((c) => at >= c.from && at <= c.to);
+    if (hit) {
+      void removeCut(hit.index);
+      return;
+    }
+    if (!wholeClip || at < wholeClip.start || at > wholeClip.end) return;
+    // What those forty pixels are worth in seconds, here, at this zoom.
+    // timeAt is linear and unclamped, so the difference is the same
+    // anywhere on the track, and reading it costs no layout: it is a
+    // measurement read, never turned back into a size.
+    const wide = Math.abs(timeAt(clientX + cutAtOnce) - at);
+    void cutHere(at, wide);
   }
 
   // A gesture on the clip, and what the engine makes of it. The hand says
@@ -423,7 +458,6 @@
         onseek(edge === "start" ? first : last);
         return;
       }
-      undone = null;
       await letGo(true);
     };
     target.addEventListener("pointermove", move);
@@ -440,6 +474,10 @@
     if (!was) return;
     event.preventDefault();
     event.stopPropagation();
+    if (twice(event)) {
+      void removeCut(index);
+      return;
+    }
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
@@ -463,34 +501,6 @@
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      undone = null;
-      await letGo(moved);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
-  }
-
-  // Drawing a cut is a drag across the clip with shift held, which is how
-  // a part is marked in an editing timeline. Without shift the same drag
-  // moves the playhead, so nothing that worked before works differently.
-  // Shift already draws, so alt as well puts the edges on words.
-  function drawCut(event: PointerEvent) {
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    const startX = event.clientX;
-    const from = timeAt(startX);
-    let moved = false;
-    const move = (e: PointerEvent) => {
-      if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
-      if (!moved) return;
-      shape(gesture({ kind: "cut", edge: "", index: 0, from, to: timeAt(e.clientX), toWords: e.altKey }));
-    };
-    const up = async () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      undone = null;
       await letGo(moved);
     };
     target.addEventListener("pointermove", move);
@@ -515,42 +525,19 @@
   // other.
   const cutAtOnce = 40;
 
-  // Shift and a double-click takes a part out where you click, the way
-  // shift and a drag takes out the part you drag across. Shift is the
-  // cutting hand on this track either way. Where it goes exactly, and
-  // whether there is room for it, is the engine's.
+  // A double-click in the clip takes a part out where it lands. Where it
+  // goes exactly, and whether there is room for it, is the engine's.
   async function cutHere(at: number, wide: number) {
-    if (!editable) return;
-    undone = null;
     await reshape(gesture({ kind: "cut", edge: "", index: 0, from: at - wide / 2, to: at + wide / 2, toWords: false }));
   }
 
-  // The cut that was last put back, so the same double-click in the same
-  // place can put it in again. Taking a part out is one double-click,
-  // and nothing that takes one click may cost more than one to undo. It
-  // belongs to the clip it was in, and it is forgotten the moment anything
-  // else about that clip's cuts changes, because a part put back into a
-  // clip that has moved on is not the part that was taken out.
-  let undone = $state<{ key: string; from: number; to: number } | null>(null);
-
-  // A double-click puts a cut back, the way a double-click undoes an edit
-  // point in an editing timeline. It is not a single click, because a cut
-  // is easy to land on by accident while scrubbing.
-  async function putCutBack(index: number, event: MouseEvent) {
-    event.preventDefault();
-    if (!editable) return;
+  // A double-click on a cut removes it, the way a double-click takes an
+  // edit point out in an editing timeline. Not a single click, because a
+  // cut is easy to land on by accident while moving the playhead.
+  async function removeCut(index: number) {
     const cut = cuts.find((c) => c.index === index);
     if (!cut) return;
     await reshape(gesture({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false }));
-    undone = clip ? { key: clip.key, from: cut.from, to: cut.to } : null;
-  }
-
-  // Putting back what was just put back. The part is taken out again
-  // exactly as it was, edge for edge.
-  async function cutAgain(was: { from: number; to: number }) {
-    if (!editable) return;
-    undone = null;
-    await reshape(gesture({ kind: "restore", edge: "", index: 0, from: was.from, to: was.to, toWords: false }));
   }
 
   // A view is read with as much again either side of it, so swiping along
@@ -681,40 +668,7 @@
     return at > 0.2 && at < 0.8 ? at : undefined;
   }
 
-  function fitView(event?: MouseEvent) {
-    // Shift is the cutting hand on this track, so a double-click with it
-    // held takes a part out where it lands and never moves the view. It
-    // used to fit the clip instead, which is why holding shift and
-    // double-clicking read as nothing happening: the one gesture that
-    // looked like it ought to cut only zoomed.
-    if (event?.shiftKey) {
-      event.preventDefault();
-      const at = timeAt(event.clientX);
-      // What those forty pixels are worth in seconds, here, at this zoom.
-      // timeAt is linear and unclamped, so the difference is the same
-      // anywhere on the track, and reading it costs no layout: it is a
-      // measurement read, never turned back into a size.
-      const wide = Math.abs(timeAt(event.clientX + cutAtOnce) - at);
-      // Inside a cut there is nothing left to take out.
-      if (!cuts.some((c) => at >= c.from && at <= c.to)) void cutHere(at, wide);
-      return;
-    }
-    if (event && editable && onreshape && track) {
-      const at = timeAt(event.clientX);
-      const hit = cuts.find((c) => at >= c.from && at <= c.to);
-      if (hit) {
-        putCutBack(hit.index, event);
-        return;
-      }
-      // Nothing to put back here, but this is where something was just put
-      // back. The same gesture in the same place takes it out again.
-      const back = undone;
-      if (back && back.key === clip?.key && at >= back.from && at <= back.to) {
-        event.preventDefault();
-        cutAgain(back);
-        return;
-      }
-    }
+  function fitView() {
     held = false;
     if (clip && clip.segments.length) {
       const a = clip.segments[0].start;
@@ -1282,7 +1236,6 @@
     class:scrubbing
     bind:this={track}
     onpointerdown={scrub}
-    ondblclick={fitView}
     aria-label="The clip timeline"
   >
     <canvas bind:this={canvas}></canvas>
@@ -1294,15 +1247,14 @@
     >
       <Info label="What the clip timeline is" side="right">
         The episode up close.<br />
-        Click or drag to move the playhead. Two fingers travel, a pinch zooms, a double-click
-        fits the clip.<br />
+        Click or drag to move the playhead. Two fingers travel, a pinch zooms.<br />
         The arrow keys step a frame, with shift a word. Shift with up or down goes to the next
         clip.<br />
         Drag a clip edge to trim it, with shift by whole words.<br />
-        Hold shift and drag across the clip to cut that part out, with alt as well by whole
-        words. Double-click a cut to put it back.<br />
-        Along the foot are the captions. Drag an edge to retime one, double-click it to put it
-        back.
+        Double-click in the clip to cut a part out. Drag its edges to size it, with shift by
+        whole words. Double-click a cut to remove it.<br />
+        Along the foot are the captions. Drag an edge to retime one, double-click a moved edge to
+        reset it.
       </Info>
     </span>
     <!-- The ruler in two layers, the same as on the range picker: the line
@@ -1346,7 +1298,7 @@
         class:drawing={drawing(c)}
         style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
         title={editable
-          ? "A part the clip leaves out. Drag an edge to change it, double-click to put it back."
+          ? "A part the clip leaves out. Drag an edge to change it, double-click to remove it."
           : "A part the clip leaves out."}
       ></div>
     {/each}
@@ -1518,12 +1470,7 @@
              either side of it, so the playhead is taken hold of wherever
              the hand finds it, the same as on the range picker. -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <!-- A double-click lands here more often than anywhere: its first
-             click moves the playhead under the pointer, so the second one
-             falls on this line. It is not inside the track, so it answers
-             the double-click itself, or fitting the clip and putting a cut
-             back never happened. -->
-        <div class="playhead" onpointerdown={scrub} ondblclick={fitView} title="Drag to move the playhead"></div>
+        <div class="playhead" onpointerdown={scrub} title="Drag to move the playhead"></div>
         <!-- The head is its own element rather than something drawn on the
              line, because it stands above the track and the track is what
              takes the drag. Drawn but not grabbable, its top five pixels
@@ -1534,7 +1481,6 @@
         <div
           class="head"
           onpointerdown={scrub}
-          ondblclick={fitView}
           title="Drag to move the playhead"
         ></div>
       </div>
