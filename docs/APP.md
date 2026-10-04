@@ -237,9 +237,13 @@ The picture always agrees with the playhead. Whenever the app cannot show
 the moment the playhead stands on, which is what happens while the machine is
 busy transcribing or searching and a seek is dropped, the frame under the
 playhead is read from the file by the engine and shown instead. The moment
-the app catches up it takes over by itself. The engine keeps one frame per
-second of an episode in its work folder, so going back over a part costs
-nothing.
+the app catches up it takes over by itself. The engine keeps every frame it
+has read in the episode's work folder, so going back over a part costs
+nothing. The app waits a fifth of a second before it asks, and a picture
+that lands in that time, which it nearly always does when the machine is
+not busy, has no frame read for it at all. It used to wait and then ask
+anyway, so every click on the clip timeline and every clip picked had a
+frame read by ffmpeg that was never shown.
 
 While the video plays, the picture is the video's alone. No frame is read
 from the file for it and none is drawn over it, not while playing starts and
