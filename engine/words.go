@@ -117,7 +117,16 @@ func Said(clip Clip, words []Cue) []Cue {
 // it. It used to have to lie wholly inside a piece, so a word the clip
 // said had no caption until the edge had passed its first sound.
 func ClipWords(clip Clip, words []Cue) []Cue {
-	var out []Cue
+	out, _ := clipWords(clip, words)
+	return out
+}
+
+// clipWords is ClipWords with, beside each word on the clip's clock, the
+// same word on the episode's, which is where its pauses are measured: a cut
+// shortens a pause on the clip's clock and leaves the episode's alone.
+func clipWords(clip Clip, words []Cue) ([]Cue, []Cue) {
+	type pair struct{ at, was Cue }
+	var pairs []pair
 	offsets := make([]float64, len(clip.Segments))
 	sum := 0.0
 	for i, segment := range clip.Segments {
@@ -153,11 +162,16 @@ func ClipWords(clip Clip, words []Cue) []Cue {
 		if best < len(clip.Segments)-1 {
 			end = math.Min(end, segment.End)
 		}
-		out = append(out, Cue{offsets[best] + (start - segment.Start),
-			offsets[best] + (end - segment.Start), word.Text})
+		pairs = append(pairs, pair{Cue{offsets[best] + (start - segment.Start),
+			offsets[best] + (end - segment.Start), word.Text}, word})
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
-	return out
+	sort.SliceStable(pairs, func(i, j int) bool { return pairs[i].at.Start < pairs[j].at.Start })
+	out := make([]Cue, len(pairs))
+	was := make([]Cue, len(pairs))
+	for i, p := range pairs {
+		out[i], was[i] = p.at, p.was
+	}
+	return out, was
 }
 
 // wordTouch is how much of a word a piece has to hold for the clip to say

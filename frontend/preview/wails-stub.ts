@@ -154,6 +154,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     thumbnails: (((window as any).__thumbs ??= {})[`0${n}`] ?? [])
       .filter((t: number) => segments.some((p) => t >= p.start && t < p.end))
       .sort((a: number, b: number) => a - b),
+    // Where the edges were before anything changed them, kept the first
+    // time anything does, the way the engine's editPieces keeps them.
+    found: (((window as any).__found ??= {})[`0${n}`] ?? [first, last]) as [number, number],
     key: `clips.json/0${n}`,
     plan: "/eps/ep.framefairy/logs/clips.json",
     cropLefts: segments.map((p) => p.cropX),
@@ -1530,6 +1533,8 @@ export const Call = {
           // keeps it, see history.go.
           ((window as any).__reshapeSteps ??= []).push({ plan, id, was: now, is: out.pieces, playhead });
           (window as any).__reshapeRedo = [];
+          const found = ((window as any).__found ??= {}) as Record<string, [number, number]>;
+          if (!found[id] && now.length) found[id] = [now[0].start, now[now.length - 1].end];
           held()[id] = out.pieces;
           return Promise.resolve(clip(Number(id), at, title, rendered));
         }

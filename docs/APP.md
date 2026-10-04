@@ -877,6 +877,16 @@ bubble scrolled by those eight pixels.
       because it is the key Tim reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
+    - **A double-click on an edge puts it back where the clip was found**,
+      the way a double-click on a caption's edge puts that back where its
+      words put it. Tim asked for the two to be the same. The clip keeps
+      where its edges were in the plan, `found`, written by `editPieces` in
+      `engine/edit.go` the first time anything changes its pieces and never
+      after, so a clip never changed needs none and is where it was found.
+      A clip changed before this was written keeps the edges it had at its
+      first change after it. The edge's title says when it was moved by
+      hand, and the double-click is a trim to the edge it was found with, so
+      Undo takes it back like any other trim.
     - **The playhead goes with the edge.** While either edge of a clip is
       dragged, the playhead stands on it and the video preview shows that
       frame, the clip as it is being dragged, with its captions. On frames

@@ -358,17 +358,28 @@ const (
 // word is spoken. It stays up until the next caption appears, unless a pause
 // comes first, in which case it goes shortly after its last word.
 //
+// A pause is measured in the episode, not in the clip. A cut takes out what
+// lies in it and nothing else: a cut in a pause between two captions left a
+// pause too short to part them on the clip's clock, so the two became one,
+// and a caption held up for the pause it no longer had. The captions are the
+// ones the episode has there, less what the cut took. A caption that would
+// stay up past where a cut begins goes where the cut does.
+//
 // A word alone says is too wide for a line gets a caption of its own, which
 // is how it is read as two lines of one caption, hyphenated, rather than
 // as a third line under the words around it. alone may be nil.
 func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Caption {
-	words := ClipWords(clip, said)
+	words, was := clipWords(clip, said)
 	if len(words) == 0 {
 		return nil
 	}
+	// The pause after a word, as long as it is in the episode.
+	pauseAfter := func(i int) float64 { return was[i+1].Start - was[i].End }
 	type group struct {
 		words []Cue
 		alone bool
+		// Where its first and last word are in the clip's words.
+		first, last int
 	}
 	var groups []group
 	var current []Cue
@@ -379,27 +390,28 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		}
 		return strings.Join(parts, " ")
 	}
+	closeGroup := func(end int) {
+		groups = append(groups, group{words: current, first: end - len(current) + 1, last: end})
+		current = nil
+	}
 	for i, word := range words {
 		if alone != nil && alone(word.Text) {
 			if len(current) > 0 {
-				groups = append(groups, group{words: current})
-				current = nil
+				closeGroup(i - 1)
 			}
-			groups = append(groups, group{words: []Cue{word}, alone: true})
+			groups = append(groups, group{words: []Cue{word}, alone: true, first: i, last: i})
 			continue
 		}
 		if len(current) > 0 && runeLen(text(append(current[:len(current):len(current)], word))) > maxChars {
-			groups = append(groups, group{words: current})
-			current = nil
+			closeGroup(i - 1)
 		}
 		current = append(current, word)
 		last := i == len(words)-1
-		pauseNext := !last && words[i+1].Start-word.End >= captionPause
+		pauseNext := !last && pauseAfter(i) >= captionPause
 		sentence := endsWithBreak(word.Text) &&
 			float64(runeLen(text(current))) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
-			groups = append(groups, group{words: current})
-			current = nil
+			closeGroup(i)
 		}
 	}
 
@@ -410,10 +422,12 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	for i, g := range groups {
 		start := g.words[0].Start
 		lastWord := g.words[len(g.words)-1]
-		end := lastWord.End + captionHold
+		// Held for as long as it is in the episode, and gone where a cut
+		// begins inside that hold.
+		end := math.Max(lastWord.End, ClipTime(clip, was[g.last].End+captionHold))
 		if i+1 < len(groups) {
 			next := groups[i+1].words[0].Start
-			if next-lastWord.End < captionPause {
+			if pauseAfter(g.last) < captionPause {
 				end = next
 			} else {
 				end = math.Min(end, next)

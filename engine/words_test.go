@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -276,5 +277,52 @@ func TestQuietestCut(t *testing.T) {
 	at := float64(cut) * FrameSeconds
 	if at < 22.0 || at > 22.5 {
 		t.Errorf("cut at %.2f, want inside the pause at 22.0-22.5", at)
+	}
+}
+
+// A cut takes out what lies in it and nothing else. Tim cut most of the
+// pause between two captions out of a clip, and the two became one, held
+// over the cut, because the pause was measured on the clip's clock. In the
+// short that was another caption from the one the episode has there.
+func TestACutLeavesTheCaptionsAroundIt(t *testing.T) {
+	words := []Cue{
+		{0.2, 0.6, "Erst"}, {0.6, 1.0, "die"}, {1.0, 1.6, "Idee,"},
+		{2.6, 3.0, "dann"}, {3.0, 3.4, "die"}, {3.4, 4.2, "Zielgruppe."},
+	}
+	whole := Clip{Segments: []Segment{{Start: 0, End: 5}}}
+	texts := func(cs []Caption) []string {
+		out := make([]string, len(cs))
+		for i, c := range cs {
+			out[i] = c.Text
+		}
+		return out
+	}
+	want := texts(Captions(whole, words, 38, nil))
+	if len(want) != 2 {
+		t.Fatalf("the episode has %v", want)
+	}
+
+	// Most of the second of quiet between Idee and dann taken out.
+	cut := Clip{Segments: []Segment{{Start: 0, End: 1.8}, {Start: 2.5, End: 5}}}
+	got := Captions(cut, words, 38, nil)
+	if fmt.Sprint(texts(got)) != fmt.Sprint(want) {
+		t.Fatalf("with the pause cut: %v, without: %v", texts(got), want)
+	}
+	// The first caption goes where the cut begins, 1.8 into the clip, a
+	// little before its hold would have ended, and never over the cut.
+	if !near(got[0].End, 1.8) {
+		t.Errorf("the first caption goes at %.2f, want 1.8", got[0].End)
+	}
+	// The second appears with dann, a tenth after the cut.
+	if !near(got[1].Start, 1.9) {
+		t.Errorf("the second caption appears at %.2f, want 1.9", got[1].Start)
+	}
+
+	// A cut over a word takes that word and leaves the captions as they
+	// were around it.
+	overWord := Clip{Segments: []Segment{{Start: 0, End: 0.6}, {Start: 1.0, End: 5}}}
+	got = Captions(overWord, words, 38, nil)
+	if fmt.Sprint(texts(got)) != "[Erst Idee, dann die Zielgruppe.]" {
+		t.Errorf("with die cut out: %v", texts(got))
 	}
 }

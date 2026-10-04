@@ -532,9 +532,20 @@ func editPieces(planPath, clipID string, change func(pieces []*object) ([]*objec
 		if err != nil {
 			return err
 		}
-		out, err := checkedPieces(change, segmentObjects(c))
+		before := segmentObjects(c)
+		out, err := checkedPieces(change, before)
 		if err != nil {
 			return err
+		}
+		// Where the clip's edges were before anything changed them, kept
+		// the first time anything does, so a double-click on an edge can
+		// put it back. A clip that has it already keeps what it has.
+		if _, ok := c.values[keyFound]; !ok && len(before) > 0 {
+			start, err1 := ParseTime(before[0].values[keyStart])
+			end, err2 := ParseTime(before[len(before)-1].values[keyEnd])
+			if err1 == nil && err2 == nil && end > start {
+				c.set(keyFound, []any{roundTo(start, 3), roundTo(end, 3)})
+			}
 		}
 		kept := make([]any, len(out))
 		for i, seg := range out {

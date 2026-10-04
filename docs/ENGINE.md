@@ -435,6 +435,12 @@ when captions are built, never over the caption beside them and never
 shorter than a tenth of a second, and a timing kept against a word that no
 longer begins or ends a caption is left unused.
 
+A clip keeps where its outer edges were before anything changed them in
+`found`, two numbers, start and end, written by `editPieces` the first time
+its pieces change and never after, and read by `readFound` in
+`engine/clips.go`, which takes nothing but two numbers in order. A double-click
+on an edge of the clip on the clip timeline trims it back there.
+
 Thumbnails are kept per clip in `thumbnails`, the moments of the episode a
 picture of the short is taken at. `readThumbnails` in `engine/clips.go`
 keeps only numbers inside a kept piece, each once, in time order, at most
@@ -447,6 +453,14 @@ A caption is a run of up to 38
 characters, ending early at a pause or at a sentence end once it has some
 substance. It appears when its first word is spoken and stays until the next
 caption appears, or until shortly after its last word when a pause follows.
+**A cut takes out what lies in it and nothing else.** A pause is measured
+in the episode, not in the clip, so a cut in the pause between two
+captions leaves them two, and a caption whose hold runs into a cut goes
+where the cut begins. They used to be measured on the clip's clock, where
+a cut had made the pause short: Tim cut most of a pause out by hand and
+the two captions around it became one, held over the cut, in the clip
+timeline, the video preview and the render alike. A cut over words takes
+those words out of the captions and leaves the rest as they were.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
 estimated. A clip says a word, and captions it, when it holds more than a
 frame of the word's sound, `HoldsWord` in `engine/lines.go`. So dragging an

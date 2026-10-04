@@ -441,6 +441,10 @@
     if (!editable || !onreshape) return;
     event.preventDefault();
     event.stopPropagation();
+    if (twice(event)) {
+      void resetEdge(edge);
+      return;
+    }
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const from = event.clientX;
@@ -529,6 +533,17 @@
   // goes exactly, and whether there is room for it, is the engine's.
   async function cutHere(at: number, wide: number) {
     await reshape(gesture({ kind: "cut", edge: "", index: 0, from: at - wide / 2, to: at + wide / 2, toWords: false }));
+  }
+
+  // A double-click on an edge of the clip puts it back where the clip was
+  // found, the way a double-click on a caption's edge puts that back where
+  // its words put it. An edge already there stays where it is.
+  async function resetEdge(edge: "start" | "end") {
+    if (!clip) return;
+    const at = edge === "start" ? clip.found[0] : clip.found[1];
+    const now = edge === "start" ? first : last;
+    if (Math.abs(at - now) < frame / 2) return;
+    await reshape(gesture({ kind: "trim", edge, index: 0, from: at, to: 0, toWords: false }));
   }
 
   // A double-click on a cut removes it, the way a double-click takes an
@@ -1246,15 +1261,14 @@
       ondblclick={(e) => e.stopPropagation()}
     >
       <Info label="What the clip timeline is" side="right">
-        The episode up close.<br />
-        Click or drag to move the playhead. Two fingers travel, a pinch zooms.<br />
-        The arrow keys step a frame, with shift a word. Shift with up or down goes to the next
-        clip.<br />
-        Drag a clip edge to trim it, with shift by whole words.<br />
-        Double-click in the clip to cut a part out. Drag its edges to size it, with shift by
-        whole words. Double-click a cut to remove it.<br />
-        Along the foot are the captions. Drag an edge to retime one, double-click a moved edge to
-        reset it.
+        The episode up close. Click or drag to move the playhead, swipe with two fingers to travel
+        and pinch to zoom. The arrow keys step a frame, with shift a word, and shift with up or
+        down goes to the next clip.<br /><br />
+        Drag a clip edge to trim it and double-click it to put it back where the clip was found.
+        Double-click in the clip to cut a part out, drag its edges to
+        size it and double-click it to remove it. Shift puts the edges of a clip or a cut on whole
+        words. Along the foot are the captions: drag an edge to retime one and double-click a moved
+        edge to reset it.
       </Info>
     </span>
     <!-- The ruler in two layers, the same as on the range picker: the line
@@ -1353,6 +1367,9 @@
         tabindex="-1"
         aria-label="Clip start"
         aria-valuenow={start}
+        title={Math.abs(clip.found[0] - first) >= frame / 2
+          ? "Where the clip starts, moved by hand. Drag to trim it, double-click to put it back where the clip was found."
+          : "Where the clip starts. Drag to trim it."}
         onpointerdown={(e) => grab("start", e)}
       ></div>
       <div
@@ -1363,6 +1380,9 @@
         tabindex="-1"
         aria-label="Clip end"
         aria-valuenow={end}
+        title={Math.abs(clip.found[1] - last) >= frame / 2
+          ? "Where the clip ends, moved by hand. Drag to trim it, double-click to put it back where the clip was found."
+          : "Where the clip ends. Drag to trim it."}
         onpointerdown={(e) => grab("end", e)}
       ></div>
     {/if}
