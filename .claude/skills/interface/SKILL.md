@@ -731,6 +731,16 @@ bar still plays straight on. And a clip chosen while the video plays,
 which does not move the playhead, leaves it on the video, because no
 gesture put it on that clip.
 
+What the playhead is moved to by the video's answer is still where the
+next step starts from. On the Mac a paused playhead stands on frame
+starts, so a frame step left off a clip that starts inside a frame and
+one step right lands on the start of that frame, before the clip: on the
+video, dimmed, with the crop frame drawn, until one more step. That is
+the rule read as written, a step to before the clip, and it is shown
+rather than hidden. A trim of the end on frames leaves the playhead a
+frame before the end, on the clip, so the space bar plays that last
+frame and stops, and the next press starts the clip over.
+
 **Why it is a state.** It was a distance: the clip played when the
 playhead was within half a frame of its start and before its end. That
 went wrong three times, every time from the same fact, the playhead is
