@@ -42,6 +42,17 @@ const Repository = "https://github.com/timmrkz/framefairy"
 // workflow writes again whenever a channel gets a new build.
 const ListURL = Repository + "/releases/download/dev/channels.json"
 
+// ListCopies are the two copies of the channel list. GitHub cannot replace
+// a release file in one step, so a list replaced at one address is missing
+// for a moment, and for as long again as GitHub takes to serve the new
+// one. The workflow writes the list to the older copy each time and
+// leaves the newer alone, so one is always there. ListURL stays for the
+// builds made before the copies.
+var ListCopies = []string{
+	Repository + "/releases/download/dev/channels-a.json",
+	Repository + "/releases/download/dev/channels-b.json",
+}
+
 // CommitURL is the page of a commit of this repository, or empty when
 // what it is given is not a commit.
 func CommitURL(commit string) string {
@@ -99,6 +110,11 @@ type Build struct {
 // List is the channel list.
 type List struct {
 	Channels []Build `json:"channels"`
+	// Written is when the workflow wrote the list, so the app can tell the
+	// newer of its two copies, see ListCopies. Like everything in the
+	// list it is untrusted: a copy that claims to be newer can only offer
+	// builds that are signed, as any list can.
+	Written time.Time `json:"written,omitzero"`
 }
 
 var (
@@ -173,7 +189,7 @@ func Parse(data []byte) (List, error) {
 		return List{}, fmt.Errorf("the channel list is not readable: %w", err)
 	}
 	seen := map[string]int{}
-	var out List
+	out := List{Written: raw.Written}
 	for _, b := range raw.Channels {
 		if b.Check() != nil {
 			continue

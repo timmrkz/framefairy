@@ -163,7 +163,7 @@ func newUpdating(u *updater.Updater, st *store, busy func() bool, emit func(Upda
 		install: startInstall,
 	}
 	exe, _ := os.Executable()
-	src := &updates.Source{URL: updates.ListURL, Client: &http.Client{}}
+	src := &updates.Source{URL: updates.ListURL, Copies: updates.ListCopies, Client: &http.Client{}}
 	// The builds already downloaded, so going back to a channel has its
 	// build at once. In the user's caches, which is where macOS expects a
 	// file that can always be fetched again.

@@ -228,6 +228,9 @@ func list(args []string) error {
 		b.Newest = newest[b.Channel]
 		l.Channels = append(l.Channels, b)
 	}
+	// When it was written, so the app can tell the newer of the list's
+	// two copies, see updates.ListCopies.
+	l.Written = time.Now().UTC().Truncate(time.Second)
 	data, err := json.Marshal(l)
 	if err != nil {
 		return err
