@@ -253,6 +253,48 @@ export async function screen({
       };
     }, slowseek);
   }
+
+  // ?framelag=1500 puts the frame a seek lands on on screen 1.5 seconds
+  // after the video says it has landed, the way Safari does: seeked comes
+  // first and the new frame after it, 1 to 15 ms later on an idle Mac,
+  // 110 ms for a cold first frame, and longer while the machine places the
+  // crop of every clip a search found. Chromium puts the frame up before
+  // it says seeked, so without this nothing here could ever be in the
+  // state Tim saw. What is on screen is what requestVideoFrameCallback
+  // says, so that is what is held back, for the app and for a probe alike:
+  // window.__presented is the moment of the frame on screen.
+  const framelag = Number(/[?&]framelag=(\d+)/.exec(query)?.[1] ?? 0);
+  if (framelag) {
+    await page.addInitScript((lag) => {
+      const own = HTMLVideoElement.prototype.requestVideoFrameCallback;
+      let landed = -Infinity;
+      document.addEventListener("seeked", () => (landed = performance.now()), true);
+      window.__presented = -1;
+      // Every frame, the probe's own watch of what is on screen.
+      const watch = (v) =>
+        own.call(v, (now, meta) => {
+          const wait = landed + lag - performance.now();
+          const show = () => (window.__presented = meta.mediaTime);
+          if (wait > 0) setTimeout(show, wait);
+          else show();
+          watch(v);
+        });
+      new MutationObserver(() => {
+        const v = document.querySelector("video");
+        if (v && !v.__watched) {
+          v.__watched = true;
+          watch(v);
+        }
+      }).observe(document, { childList: true, subtree: true });
+      HTMLVideoElement.prototype.requestVideoFrameCallback = function (cb) {
+        return own.call(this, (now, meta) => {
+          const wait = landed + lag - performance.now();
+          if (wait > 0) setTimeout(() => cb(now, meta), wait);
+          else cb(now, meta);
+        });
+      };
+    }, framelag);
+  }
   // A probe that reports nothing because the page threw is worse than no
   // probe at all, so anything thrown is printed.
   page.on("pageerror", (e) => console.log("pageerror", String(e)));

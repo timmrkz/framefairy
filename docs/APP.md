@@ -267,6 +267,19 @@ after a search took the playhead to the start of the episode and showed a
 black picture and then the episode's first frame, before the video went to
 the clip and played it.
 
+Which frame is on screen is what the browser says it has put up, through
+`requestVideoFrameCallback`, and not where the video says it is. Safari
+says a seek has landed before the new frame is shown, a few milliseconds
+later on an idle Mac and longer while the machine places the crop of every
+clip a search found. The frame the engine read for the playhead stayed off
+from the moment the video said it had landed, so the frame before showed:
+after a search, the frame of wherever the video preview was before, and on
+the first press of the space bar it stayed while playing began and then
+gave way to the clip. Now the frame the engine read stays until the video
+really shows the playhead's frame, and while playing begins it stands for
+the half second after where the play began. Only the fifth of a second it
+takes the engine to read that frame shows the frame before.
+
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The
 playhead goes to the start of that clip, because that is what choosing a

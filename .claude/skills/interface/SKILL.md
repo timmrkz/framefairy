@@ -63,6 +63,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 | `?webkitclock` | the video's clock while it plays is put back by 0.15 s now and then, the way WebKit's is corrected by reports from the player underneath. Chromium's clock only goes forward, so this is the only way to see what the app does with a clock that steps back |
+| `?framelag=1500` | the frame a seek lands on is put on screen 1.5 seconds after the video says seeked, the way Safari does, through a wrapped `requestVideoFrameCallback`. `window.__presented` is the moment of the frame on screen, for a probe to compare with where the app thinks the picture is. It is `open.mjs` that wraps it, not the stub |
 | `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
 | `?slowseek=150` | every seek takes 150 ms to land, the way WebKit's can on a Mac with a long episode. Chromium lands one in this file in about 3 ms, inside one frame, so nothing could ever happen in the middle of a seek, a press of the space bar during a jump over a cut above all. `open.mjs` slows the element itself: while a seek is on its way `seeking` says yes and the clock says where it was sent, the way a browser answers |
 
@@ -594,6 +595,16 @@ did the video go to the clip. Tim saw "another frame, then it plays from
 the clip". No harness video was ever in that state until `?unread` held
 the file back, because the harness serves the file at once. Before reading
 anything from the video, ask whether it has anything: `readyState`.
+
+**Seeked is not the picture.** Safari says a seek has landed, and moves its
+clock there, before the new frame is on screen. The app took seeked as the
+picture and took the still away, so the frame before showed, for longer
+the busier the machine: after a search, a frame from wherever the video
+preview was, then the clip. #97 fixed the video that had read nothing and
+Tim still saw it, because the harness puts a frame up before it says
+seeked and so could never be in the state he was in. `?framelag` holds the
+frame back the way Safari does. What is on screen is what
+`requestVideoFrameCallback` says, and nothing else may say it.
 
 **Contrast is judged with daylight on the screen.** A fill of 7 to 22
 percent of the accent read as no fill at all on Tim's Mac by a window. A
