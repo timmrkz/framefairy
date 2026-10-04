@@ -9,6 +9,8 @@ import {
   covers,
   type Parts,
   Newest,
+  Grace,
+  type Timers,
   mergeJob,
   nextWindow,
   timesIn,
@@ -21,6 +23,7 @@ import {
   pieceAt,
   insideClip,
   playingAt,
+  jumpStep,
   playingPiece,
   shouldChase,
   inEpisode,
@@ -189,6 +192,107 @@ describe("only the newest answer counts", () => {
     asks.keep(failed);
     const next = asks.send();
     expect(asks.keep(next)).toBe(true);
+  });
+});
+
+// A clock the test moves by hand, so nothing waits for real.
+function handClock() {
+  let now = 0;
+  const waiting: { at: number; run: () => void; live: boolean }[] = [];
+  const timers: Timers = {
+    later: (run, ms) => {
+      const w = { at: now + ms, run, live: true };
+      waiting.push(w);
+      return w;
+    },
+    off: (w) => {
+      if (w) (w as { live: boolean }).live = false;
+    },
+  };
+  const pass = (ms: number) => {
+    now += ms;
+    for (const w of waiting) {
+      if (w.live && w.at <= now) {
+        w.live = false;
+        w.run();
+      }
+    }
+  };
+  return { timers, pass };
+}
+
+// The still the workspace asks the engine for while the video preview
+// cannot show the playhead. Every ask that is sent is a frame the engine
+// reads from the file with ffmpeg and keeps in the work folder.
+describe("a still is asked for only if the picture does not land", () => {
+  const asked = () => {
+    const sent: number[] = [];
+    const { timers, pass } = handClock();
+    const stills = new Grace<number>((at) => sent.push(at), 180, timers);
+    return { sent, stills, pass };
+  };
+
+  test("a picture that does not land gets its still, once", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(902);
+    pass(179);
+    expect(sent).toEqual([]);
+    pass(1);
+    expect(sent).toEqual([902]);
+    pass(5000);
+    expect(sent).toEqual([902]);
+  });
+
+  // The picture landed 20 ms after the seek. The engine used to read the
+  // frame 160 ms later anyway, for nothing, because a still is never drawn
+  // over a picture that shows the playhead.
+  test("a picture that lands before the grace is over needs no still", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(902);
+    pass(20);
+    stills.need(null);
+    pass(5000);
+    expect(sent).toEqual([]);
+  });
+
+  test("a newer need takes the place of the one waiting", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(400);
+    pass(100);
+    stills.need(411);
+    pass(100);
+    expect(sent).toEqual([]);
+    pass(80);
+    expect(sent).toEqual([411]);
+  });
+
+  test("a picture that lands after the still was sent takes nothing back", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(57);
+    pass(180);
+    stills.need(null);
+    pass(5000);
+    expect(sent).toEqual([57]);
+  });
+
+  test("saying nothing is needed with nothing waiting changes nothing", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(null);
+    pass(500);
+    stills.need(3);
+    pass(180);
+    expect(sent).toEqual([3]);
+  });
+
+  test("a picture that lands and is lost again asks again, for where it is now", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(12);
+    pass(50);
+    stills.need(null);
+    pass(50);
+    stills.need(15);
+    pass(180);
+    expect(sent).toEqual([15]);
   });
 });
 
@@ -392,6 +496,57 @@ describe("playingAt", () => {
   test("to where a seek was sent, and to where a jump landed", () => {
     expect(playingAt(62.5, { ...playing, clock: 70, seeking: true })).toBe(70);
     expect(playingAt(70.2, { ...playing, clock: 70, landed: true })).toBe(70);
+  });
+});
+
+// A jump over a cut is made by the frame loop, and a pause stops the
+// loop. A pause pressed while the video was on its way left the jump
+// standing until the next play, and every seek made while paused then
+// had a still from the engine drawn over a video that had landed. The
+// harness shows this with ?slowseek=150, see frontend/preview/open.mjs,
+// because Chromium lands a seek in its small file inside one frame.
+describe("jumpStep", () => {
+  const playing = { seeking: false, paused: false };
+
+  test("is nothing when no jump was made", () => {
+    expect(jumpStep(false, playing)).toBe("none");
+    expect(jumpStep(false, { seeking: true, paused: true })).toBe("none");
+  });
+
+  test("waits while the playing video is on its way", () => {
+    expect(jumpStep(true, { seeking: true, paused: false })).toBe("wait");
+  });
+
+  test("has landed once the video is no longer on its way", () => {
+    expect(jumpStep(true, playing)).toBe("landed");
+    // A pause after the video landed changes nothing: the playhead
+    // still goes where it landed.
+    expect(jumpStep(true, { seeking: false, paused: true })).toBe("landed");
+  });
+
+  test("ends where it stands when the play is paused on the way", () => {
+    expect(jumpStep(true, { seeking: true, paused: true })).toBe("paused");
+  });
+
+  // The frame loop over a jump, frame by frame, the way Player.svelte
+  // runs it: a frame that waits asks for the next one, any other ends
+  // the jump. However the pause falls, nothing is left jumping.
+  test("never leaves a jump standing once the loop stops", () => {
+    const frames = [
+      { seeking: true, paused: false },
+      { seeking: true, paused: false },
+      { seeking: true, paused: true },
+    ];
+    let jumping = true;
+    let running = true;
+    for (const f of frames) {
+      if (!running) break;
+      const step = jumpStep(jumping, f);
+      if (step === "wait") continue;
+      jumping = false;
+      running = !f.paused;
+    }
+    expect(jumping).toBe(false);
   });
 });
 

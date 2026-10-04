@@ -19,6 +19,7 @@
   import { onMount, untrack, type Snippet } from "svelte";
   import {
     insideClip,
+    jumpStep,
     litWord,
     pictureIsStale,
     playingAt,
@@ -72,8 +73,8 @@
     stillAt?: number;
     onplayclip?: (clip: ClipEntry) => void;
     // Asks for the frame at a moment of the episode, for as long as the
-    // app cannot show that moment itself.
-    onstill?: (at: number) => void;
+    // app cannot show that moment itself, and says null once it can.
+    onstill?: (at: number | null) => void;
     // Where the caption box is while it is being dragged, so the setting
     // beside it says what you are doing as you do it. Letting go saves,
     // this only shows.
@@ -157,7 +158,7 @@
     });
   }
   $effect(() => {
-    if (stale) onstill?.(time);
+    onstill?.(stale ? time : null);
   });
   let atPiece = 0;
   let frame = 0;
@@ -351,16 +352,17 @@
     if (!video) return;
     // Where the video is now. A jump this loop made has just landed when it
     // is no longer seeking, and then the playhead goes wherever it went,
-    // back to the start of a loop too.
-    let landed = false;
-    if (jumping) {
-      if (video.seeking) {
-        if (!video.paused) frame = requestAnimationFrame(tick);
-        return;
-      }
-      jumping = false;
-      landed = true;
+    // back to the start of a loop too. A pause while it was on its way
+    // ends it there, and onseeked and ontimeupdate follow it the way they
+    // follow any seek made while paused, see jumpStep.
+    const step = jumpStep(jumping, video);
+    if (step === "wait") {
+      frame = requestAnimationFrame(tick);
+      return;
     }
+    jumping = false;
+    if (step === "paused") return;
+    const landed = step === "landed";
     if (clip && playsClip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
       // jumps every cut and stops where the clip ends.

@@ -104,6 +104,24 @@ export function playingAt(at: number, v: PlayingClock): number {
   return onward(at, v.clock);
 }
 
+// What a frame of a play does about a jump over a cut the playing clip
+// made by itself, or from its end back to its start while it loops: there
+// is none, the video is still on its way so the frame waits, the video has
+// landed and the playhead goes with it, or the play was paused while the
+// video was on its way. Paused, the frame loop stops, so a jump left
+// waiting was never finished, and while it stood every seek made while
+// paused read as a picture somewhere else. A still from the engine was
+// drawn over a video that had landed, on every step of the arrow keys,
+// until the next play. So a pause ends the jump where it stands, and the
+// seek it made lands like any seek made while paused.
+export type JumpStep = "none" | "wait" | "landed" | "paused";
+
+export function jumpStep(jumping: boolean, v: { seeking: boolean; paused: boolean }): JumpStep {
+  if (!jumping) return "none";
+  if (!v.seeking) return "landed";
+  return v.paused ? "paused" : "wait";
+}
+
 // Where the frame a moment falls in starts: the frame a video element
 // shows when it is sent there, the last one that starts at or before it.
 // The still read from the file while the video preview catches up has to
@@ -294,6 +312,56 @@ export class Newest {
     if (ticket <= this.used) return false;
     this.used = ticket;
     return true;
+  }
+}
+
+// How something waits, which is the browser's timers in the app and a
+// clock of its own in a test.
+export type Timers = {
+  later: (run: () => void, ms: number) => unknown;
+  off: (waiting: unknown) => void;
+};
+
+const browserTimers: Timers = {
+  later: (run, ms) => setTimeout(run, ms),
+  off: (waiting) => clearTimeout(waiting as ReturnType<typeof setTimeout>),
+};
+
+// An ask that waits a moment before it is sent, so a need that passes by
+// itself costs nothing.
+//
+// The workspace asks the engine for the frame under the playhead whenever
+// the video preview cannot show it, see pictureIsStale. Most of the time
+// the video lands a few milliseconds later and the frame was never needed,
+// so the ask waits first. A newer need takes the place of the one waiting,
+// which is what keeps a hand moving the playhead from sending an ask for
+// every place it passes. null says nothing is needed any more, and calls
+// off whatever is waiting.
+//
+// It used to be only a timer, which nothing called off. Every move of the
+// playhead while paused further than the picture's room, picking a clip, a
+// click on the clip timeline, the arrow keys, had a frame read from the
+// file with ffmpeg and kept in the work folder, however soon the video
+// landed, and none of them was drawn. An ask already sent is not taken
+// back: what it brings is the newest answer's to keep or throw away, see
+// Newest.
+export class Grace<T> {
+  private waiting: unknown = undefined;
+
+  constructor(
+    private send: (what: T) => void,
+    private wait: number,
+    private timers: Timers = browserTimers,
+  ) {}
+
+  need(what: T | null): void {
+    this.timers.off(this.waiting);
+    this.waiting = undefined;
+    if (what === null) return;
+    this.waiting = this.timers.later(() => {
+      this.waiting = undefined;
+      this.send(what);
+    }, this.wait);
   }
 }
 
