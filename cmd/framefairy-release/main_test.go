@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"framefairy/updates"
 )
@@ -166,5 +167,10 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	}
 	if b, _ := l.Find("pr-58"); b.Newest != "0123456789ab" {
 		t.Errorf("pr-58's newest commit is %q", b.Newest)
+	}
+	// When it was written, so the app can tell the newer of the list's two
+	// copies.
+	if age := time.Since(l.Written); l.Written.IsZero() || age < 0 || age > time.Minute {
+		t.Errorf("the list says it was written at %v", l.Written)
 	}
 }

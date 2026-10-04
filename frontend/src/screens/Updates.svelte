@@ -92,10 +92,15 @@
     const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
     // A pull request that was followed and has since gone stays in the
     // list for as long as it is followed, so the trigger never names
-    // nothing and says what became of it.
-    const gone = update?.picked || update?.gone || "";
-    if (gone && !listed.some((o) => o.value === gone)) {
-      listed.push({ value: gone, label: `${channelName(gone)}, closed` });
+    // nothing and says what became of it. Closed only when a list that was
+    // read says so: the Go side sets gone from the list alone. With no list
+    // read yet, because the check did not get through, the channel is
+    // missing from an empty list, and an open pull request was called
+    // closed.
+    const kept = update?.picked || update?.gone || "";
+    if (kept && !listed.some((o) => o.value === kept)) {
+      const label = update?.gone === kept ? `${channelName(kept)}, closed` : channelName(kept);
+      listed.push({ value: kept, label });
     }
     // A build made by make follows nothing until a channel is picked.
     if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
