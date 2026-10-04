@@ -314,9 +314,15 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	if at < 0 {
 		return Unknown, Unknown
 	}
+	// A local model with a budget thinks to it: every side of Tim's
+	// comparisons of 3 October did. The budget follows the window, see
+	// SuggestedThink, so the seconds a search of another window thought
+	// say little about this one: after a five minute window, a half hour
+	// was taken for a quarter of its thought, and the fill stood at the
+	// end of the thinking while the time left grew.
 	think := past.Thought
 	if now.Local && now.Budget >= 0 && past.Rate > 0 {
-		think = min(think, float64(now.Budget)/past.Rate)
+		think = float64(now.Budget) / past.Rate
 	}
 	answered := at >= partIndex(partFitting)
 	// The fitting is counted from the start, whether or not a clip will
@@ -337,11 +343,16 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 			fitClips = max(now.Held, 1)
 		}
 	}
+	fit, tail := past.Fit, past.Tail
+	if fit <= 0 {
+		fit = measuredLocal.Fit
+	}
+	if tail <= 0 {
+		tail = measuredLocal.Tail
+	}
 	// The framing after the answer waits on the clips not yet framed when
 	// the model stops: the ones the framers have not caught up with and
-	// the ones held back to be fitted. While the model writes, the framers
-	// catch up with all but the last clip it writes, so that one is
-	// counted.
+	// the ones held back to be fitted.
 	frameClips := 0
 	switch {
 	case now.Part == partFraming:
@@ -349,14 +360,7 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	case answered:
 		frameClips = max(now.Taken-now.Framed, 0) + fitClips
 	default:
-		frameClips = 1 + fitClips
-	}
-	fit, tail := past.Fit, past.Tail
-	if fit <= 0 {
-		fit = measuredLocal.Fit
-	}
-	if tail <= 0 {
-		tail = measuredLocal.Tail
+		frameClips = stillToFrame(now, past.Clip, tail) + fitClips
 	}
 	took := []float64{0, float64(now.Chars) / past.Read, think,
 		float64(now.Count) * past.Clip, float64(fitClips) * fit,
@@ -411,7 +415,16 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 		// clip that is being written.
 		share = min(max(counted, share), float64(now.Named+1)/float64(now.Count)-0.001)
 		share = max(share, counted)
-	case partReading, partThinking:
+	case partThinking:
+		// The tokens thought against the budget are all there is to it,
+		// and come a few dozen a second, so they move the fill by
+		// themselves. The clock ran ahead of a model thinking slower than
+		// it did before, and the fill waited at the end of the part while
+		// the model went on.
+		if counted >= 0 {
+			share = min(0.97*counted, 0.97)
+		}
+	case partReading:
 		// The model's own count, which beats the clock, short of the whole
 		// until the next part begins.
 		share = max(share, min(0.97*counted, 0.97))
@@ -434,6 +447,24 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 		return fraction, Unknown
 	}
 	return fraction, left + after
+}
+
+// stillToFrame is how many clips will still wait for the framers when the
+// model stops: the ones waiting now and the ones it has still to write,
+// less what the framers get through while it writes them, and never fewer
+// than the last one. A framer takes tail seconds a clip. lines wrote a
+// clip a second and the framers caught up with all but the last. middle
+// writes six in two seconds, so every one of them waits, two rounds of
+// four framers, and counting one put a round more on the time left the
+// moment the answer was in, while the fill stood still.
+func stillToFrame(now searchNow, clip, tail float64) int {
+	toWrite := max(now.Count-now.Named, 0)
+	waiting := max(now.Taken-now.Framed, 0) + toWrite
+	through := 0
+	if tail > 0 {
+		through = int(float64(max(now.Framers, 1)) * float64(toWrite) * clip / tail)
+	}
+	return max(waiting-through, 1)
 }
 
 // partLeft is the seconds left of a part estimated at part seconds, in
@@ -497,9 +528,13 @@ type searchClock struct {
 	// shown is the share reported last. An estimate that grows, once the
 	// answer says how many clips are held back, does not take the fill
 	// back: it waits there until the work catches up.
-	shown   float64
-	stopped chan struct{}
-	once    sync.Once
+	shown float64
+	// left is the time left reported last, at leftAt, and higher when
+	// the estimate first went above what the clock leaves of it.
+	left           float64
+	leftAt, higher time.Time
+	stopped        chan struct{}
+	once           sync.Once
 }
 
 // newSearchClock starts watching a search of chars characters of
@@ -564,7 +599,8 @@ func (c *searchClock) report() {
 	c.log.ProgressFound(searchLabel(now), fraction, remaining, now.Landed)
 }
 
-// measure is searchProgress with a share that never goes back.
+// measure is searchProgress with a share that never goes back, and a time
+// left that goes up only when it stays up.
 func (c *searchClock) measure(now searchNow) (float64, float64) {
 	fraction, remaining := searchProgress(now, c.past, c.known)
 	if fraction == Unknown {
@@ -573,7 +609,39 @@ func (c *searchClock) measure(now searchNow) (float64, float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.shown = max(c.shown, fraction)
-	return c.shown, remaining
+	return c.shown, c.steadyLeft(remaining, time.Now())
+}
+
+// riseAfter is how long an estimate has to stay above the time left by
+// the clock before the time left goes up. A count that comes in a moment
+// after the clock moved said About 0:15 left and then 0:20 for a report,
+// and a number that goes up and back down is read as the search going
+// backwards.
+const riseAfter = 3 * time.Second
+
+// steadyLeft is the time left to report at at, given the estimate. One
+// below what the clock leaves of the last is taken as it is. One above it
+// is held back, and the last counts down by the clock, until it has stayed
+// above for riseAfter.
+func (c *searchClock) steadyLeft(estimate float64, at time.Time) float64 {
+	if estimate < 0 || c.leftAt.IsZero() {
+		c.left, c.leftAt, c.higher = estimate, at, time.Time{}
+		return estimate
+	}
+	clock := max(c.left-at.Sub(c.leftAt).Seconds(), 0)
+	if estimate <= clock+1 {
+		c.higher = time.Time{}
+	} else {
+		if c.higher.IsZero() {
+			c.higher = at
+		}
+		if at.Sub(c.higher) < riseAfter {
+			c.left, c.leftAt = clock, at
+			return clock
+		}
+	}
+	c.left, c.leftAt = estimate, at
+	return estimate
 }
 
 // enter begins a part. Parts only go forward: a word of thought that comes

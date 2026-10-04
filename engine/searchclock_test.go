@@ -540,3 +540,78 @@ func TestASearchThatNeverFitsLeavesOutTheFitting(t *testing.T) {
 		t.Errorf("%.2f s left with a fitting and %.2f without, want %.0f between", fits, never, want)
 	}
 }
+
+// A local model thinks to its budget, which follows the window, so a
+// search of a long window after one of a short window is not taken for a
+// quarter of its thought. The fill follows the tokens, and the clock does
+// not run ahead of a model that thinks slower than before.
+func TestTheThinkingIsTheBudget(t *testing.T) {
+	past := measuredLocal
+	past.Thought = 7.5 // a five minute window, 512 tokens
+	now := searchNow{Part: partThinking, Chars: 27000, Count: 6, Local: true, Budget: 2048,
+		Framers: 4, Thought: 1024, InPart: 30}
+	_, left := searchProgress(now, past, true)
+	thinkLeft := 1024 / past.Rate
+	if left < thinkLeft {
+		t.Errorf("%.1f s left, with %.1f s of thought still to come", left, thinkLeft)
+	}
+	share := func(thought int, inPart float64) float64 {
+		n := now
+		n.Thought, n.InPart = thought, inPart
+		f, _ := searchProgress(n, past, true)
+		return f
+	}
+	if a, b := share(1024, 15), share(1024, 60); a != b {
+		t.Errorf("the clock moved the fill while the count stood: %.3f, then %.3f", a, b)
+	}
+	if a, b := share(1024, 15), share(1536, 15); b <= a {
+		t.Errorf("the count did not move the fill: %.3f, then %.3f", a, b)
+	}
+}
+
+// middle writes its stories faster than the framers frame one, so every
+// one of them waits when the model stops, and the time left counts that
+// from the start rather than finding it out when the answer is in.
+func TestEveryClipWaitsWhenTheModelWritesFast(t *testing.T) {
+	now := searchNow{Count: 6, Framers: 4}
+	if got := stillToFrame(now, 0.5, 16); got != 6 {
+		t.Errorf("%d clips wait after six written in three seconds, want 6", got)
+	}
+	if got := stillToFrame(now, 16, 16); got != 1 {
+		t.Errorf("%d clips wait after six written as fast as they are framed, want 1", got)
+	}
+	writing := searchNow{Part: partWriting, Chars: 27000, Count: 6, Local: true, NoFit: true,
+		Budget: 2048, Framers: 4, Named: 5, Taken: 5, InPart: 2}
+	_, before := searchProgress(writing, measuredLocal, true)
+	framing := writing
+	framing.Part, framing.Named, framing.Taken, framing.InPart = partFraming, 6, 6, 0
+	_, after := searchProgress(framing, measuredLocal, true)
+	if after > before+1 {
+		t.Errorf("the time left went from %.1f s to %.1f s when the answer was in", before, after)
+	}
+}
+
+// The time left goes down with the clock. An estimate above it for a
+// report is not shown, and one that stays above is.
+func TestTheTimeLeftGoesUpOnlyWhenItStaysUp(t *testing.T) {
+	c := &searchClock{}
+	at := time.Unix(1000, 0)
+	if got := c.steadyLeft(15, at); got != 15 {
+		t.Fatalf("first %.1f", got)
+	}
+	if got := c.steadyLeft(20, at.Add(500*time.Millisecond)); got != 14.5 {
+		t.Errorf("a rise for one report showed %.1f, want 14.5", got)
+	}
+	if got := c.steadyLeft(13, at.Add(time.Second)); got != 13 {
+		t.Errorf("the estimate back below showed %.1f, want 13", got)
+	}
+	for i := range 8 {
+		got := c.steadyLeft(25, at.Add(time.Second+time.Duration(i+1)*500*time.Millisecond))
+		if i < 5 && got > 13 {
+			t.Errorf("a rise showed %.1f after %d reports", got, i+1)
+		}
+		if i == 7 && got != 25 {
+			t.Errorf("a rise that stayed showed %.1f, want 25", got)
+		}
+	}
+}

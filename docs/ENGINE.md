@@ -857,7 +857,15 @@ framed when the model stops. One number for each said About 0:05 left
 for a minute while the model was asked about four clips. The fitting is
 counted from the start of a local search, whether a clip will need it or
 not, and a search with nothing to fit steps over it. A search with a
-recipe that never asks again, `middle` among them, has no fitting at all. It was not counted
+recipe that never asks again, `middle` among them, has no fitting at all.
+A local model with a budget is taken to think to it, since every search
+of Tim's comparisons did and the budget follows the window, and the fill
+follows the tokens it has thought rather than the clock. The framing
+after the answer counts the clips that will still wait when the model
+stops: `middle` writes six in two seconds, so all of them wait, and
+counting one put a round of framing on the time left the moment the
+answer was in. The time left goes down with the clock, and goes up only
+when the estimate has stayed above it for three seconds. It was not counted
 at all once, and the fill stood full for as long as the model was asked
 about two clips. An estimate that grows once the answer is in never
 takes the fill back: the fill waits until the work catches up. While a search runs it holds the
