@@ -30,6 +30,35 @@ if (location.search.includes("webkitclock")) {
   });
 }
 
+// The frame rate of the episode the harness plays, one frame a second, see
+// open.mjs. Source says it, and ?framestart counts in it.
+const harnessFps = 1;
+
+// ?framestart makes the paused video answer with where the frame it shows
+// begins, the way the video on the Mac does: sent to 1677.63 in an episode
+// of 25 frames a second, it settles on the frame from 1677.60 and says
+// 1677.60, see the tests of insideClip. Chromium answers with the exact
+// second it was sent to, so without this the playhead is always where it
+// was put and nothing that compares it to a clip's start can go wrong
+// here. Only while paused and not seeking: a seek on its way answers with
+// where it was sent in every browser, and the clock while playing is
+// ?webkitclock's. The clips here start on whole seconds, which are frame
+// starts, so a probe moves a clip's start into a frame through
+// window.__pieces before the episode is opened.
+if (location.search.includes("framestart")) {
+  const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
+  Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+    get(this: HTMLMediaElement) {
+      const t = real.get!.call(this) as number;
+      if (!this.paused || this.seeking || this.readyState === 0) return t;
+      return Math.floor(t * harnessFps + 1e-6) / harnessFps;
+    },
+    set(this: HTMLMediaElement, t: number) {
+      real.set!.call(this, t);
+    },
+  });
+}
+
 // The words of the whole episode, on one clock, made once.
 //
 // They used to be made from wherever a call asked to start, so a call
@@ -1106,10 +1135,10 @@ export const Call = {
       case "ClearTraining":
         return Promise.resolve(null);
       case "Source":
-        // The frame rate of the episode the harness plays, one frame a
-        // second, see open.mjs. Without it the app took 30, and the frame on
-        // screen was a second behind a playing clock half the time.
-        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: 1 });
+        // The frame rate of the episode the harness plays, see harnessFps.
+        // Without it the app took 30, and the frame on screen was a second
+        // behind a playing clock half the time.
+        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: harnessFps });
       case "Clips": {
         const made = [
           ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),

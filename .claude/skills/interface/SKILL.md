@@ -64,6 +64,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 | `?webkitclock` | the video's clock while it plays is put back by 0.15 s now and then, the way WebKit's is corrected by reports from the player underneath. Chromium's clock only goes forward, so this is the only way to see what the app does with a clock that steps back |
 | `?framelag=1500` | the frame a seek lands on is put on screen 1.5 seconds after the video says seeked, the way Safari does, through a wrapped `requestVideoFrameCallback`. `window.__presented` is the moment of the frame on screen, for a probe to compare with where the app thinks the picture is. It is `open.mjs` that wraps it, not the stub |
+| `?framestart` | the paused video answers with where the frame it shows begins, in the episode's own frames, one a second here, the way the video on the Mac answers 1677.60 when sent to 1677.63. Chromium answers with the exact second it was sent to. The stub's clips start on whole seconds, which are frame starts, so a probe sets `window.__pieces` before it opens the episode to start a clip inside a frame |
 | `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
 
 Add a mode when the state you need is not there. A bug that only happens
@@ -514,7 +515,9 @@ So never compare a playhead to a moment. Compare it to a frame, or better,
 do not compare it at all: **decide by the state the playhead is in, not by
 how far it is from something.** Which word is it in, which piece is it in.
 A distance can round its way into the answer it started from, which is a
-key that does nothing and cannot be got out of. A state cannot.
+key that does nothing and cannot be got out of. A state cannot. Whether
+the space bar plays the clip or the episode is the clearest case, see
+Playback below.
 
 And note where this could not be reproduced: the harness's video answers
 with the exact second it was sent to, so none of these five happen in
@@ -665,6 +668,80 @@ clicking and then pressing a key, then list what matches `:focus-visible`.
 clip had three copies of a 2 pixel border with three different corners.
 They are `.frame` in `app.css` now. Before styling something that is
 "like" another thing, find the other thing and share its rule.
+
+## Playback: on the clip or on the video
+
+Where the playhead is, as far as playing goes, is a state and not a
+measurement. It is **on the clip** or **on the video**, and the gesture
+that put it there says which. Nothing else does: not the video's clock,
+not `ontimeupdate`, not `onseeked`, not a rounding. The rules are
+`placeOf` and `playFrom` in `frontend/src/lib/playhead.ts`, with tests.
+
+| the gesture | leaves the playhead |
+| --- | --- |
+| picking a clip, from the list, a mark, the keys, a search, a clip made or put back | on the clip, at its start |
+| a click on the clip's start edge, a trim, a click on a caption | on the clip |
+| a click on the clip's end edge, the clip playing to its end | on the clip, at its end |
+| a click, a drag, a step or a seek to a moment from the clip's start to its end, cuts included | on the clip |
+| the same to anywhere before or after the clip | on the video |
+| no clip chosen, or a clip chosen with no gesture, while the video plays | on the video |
+| pausing, the video's answer, a jump over a cut, a loop | where it was |
+
+**On the clip**, the space bar plays the clip from the playhead: its cuts
+are jumped and it stops at its end, where the playhead stays, on the clip,
+at its end. With loop on it goes back to its start instead. From a cut it
+plays from the end of that cut, from before the clip, which only the
+video's answer can put it, from the start, and from the end it starts over
+from the start, the way QuickTime starts over at the end of a video.
+
+**On the video**, the space bar plays the episode from the playhead,
+straight on, through the chosen clip and its cuts, with no jump and no
+stop. Playing through the clip leaves it on the video. The chosen clip is
+dimmed wherever it is drawn while the playhead is on the video, `.frame.dim`
+and `.clipmark.selected.dim` in `app.css`: the crop frame, the clip on the
+clip timeline and its mark on the range picker. A person sees that the
+clip's rules are not in play, and the dimming changes in the frame the
+state does.
+
+Where a gesture lands exactly on an edge, the side it is about decides.
+The start edge belongs to the clip, and so does the end edge: a click on
+it is the clip's own edge, and the space bar starts the clip over from
+there, which is what it does where a play of the clip stopped. A trim
+puts the playhead on the edge it drags, which can be a hair outside the
+pieces the video preview has at that moment, so it says it is about the
+clip rather than being measured.
+
+Two choices the words left open, made this way. Loop is about the clip
+and changes no state: with the playhead on the video, loop on, the space
+bar still plays straight on. And a clip chosen while the video plays,
+which does not move the playhead, leaves it on the video, because no
+gesture put it on that clip.
+
+**Why it is a state.** It was a distance: the clip played when the
+playhead was within half a frame of its start and before its end. That
+went wrong three times, every time from the same fact, the playhead is
+never where it was put:
+
+- picking a clip and pressing the space bar seeked before it played,
+  because the paused picture answered with its frame's start, a hair
+  before the clip, and a seek can refuse a play
+- the first play after a search took the clock of a video that had read
+  nothing, zero, as the playhead, which measured as far outside the clip,
+  and the episode played from its start (#97)
+- the paused video on the Mac answers with where its frame begins, up to
+  a frame early, so a clip starting more than half a frame into one
+  measured as before the clip, and the space bar played the episode
+  straight through its cuts and past its end. A wider tolerance and a hold
+  on the playhead were tried for this, #99, and closed: each fix only moved
+  the place the measurement could round to the wrong side
+
+A gesture knows what it is about. The video's clock can only say how far
+it is from something, and that is the question that never settles.
+
+`?framestart` in the harness gives the video the Mac's paused answer, the
+start of the frame it shows. With a clip whose start lies more than half a
+frame into a frame, set through `window.__pieces` before the episode is
+opened, picking it and pressing the space bar is the test.
 
 ## A click is answered in the frame it lands in
 

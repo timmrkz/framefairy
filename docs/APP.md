@@ -275,6 +275,34 @@ really shows the playhead's frame, and while playing begins it stands for
 the half second after where the play began. Only the fifth of a second it
 takes the engine to read that frame shows the frame before.
 
+**The space bar plays the clip or the video, and the playhead says which.**
+The playhead is either on the chosen clip or on the video, and the gesture
+that put it there decides, never the video's clock. Picking a clip puts it
+on the clip, at its start. So does a click on the clip's start edge, a
+trim, a click on a caption, and a click, a drag or a step to anywhere from
+the clip's start to its end, cuts included. A click on the end edge, and
+the clip playing to its end, leave it on the clip at its end. Anywhere
+before or after the clip is on the video, and so is having no clip chosen.
+
+On the clip, the space bar plays the clip from the playhead: its cuts are
+jumped and it stops at its end, or with loop on goes back to its start.
+From inside a cut it plays from the end of that cut, and from the clip's
+end it starts the clip over, the way QuickTime starts over at the end of a
+video. On the video, the space bar plays the episode straight on from the
+playhead, through the chosen clip and its cuts, with no jump and no stop,
+so any part of the episode can be heard with a clip chosen. Playing through
+the clip leaves the playhead on the video, and loop changes nothing there.
+While the playhead is on the video the chosen clip is drawn dimmed, the
+crop frame in the video preview, the clip on the clip timeline and its mark
+on the range picker, so it shows that the clip's rules are not in play.
+
+It used to be measured: the clip played when the playhead was within half
+a frame of its start. The paused video on the Mac answers with where the
+frame it shows begins, up to a frame before the moment it was sent to, so
+a clip just picked measured as before its own start, and the space bar
+played the episode straight through its cuts and past its end. See the
+rules in `frontend/src/lib/playhead.ts`.
+
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The
 playhead goes to the start of that clip, because that is what choosing a
