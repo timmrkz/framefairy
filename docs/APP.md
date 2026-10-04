@@ -356,6 +356,20 @@ area it belongs to, so nothing clips it and nothing lies over it. An area
 with an info mark carries no tooltip of its own: one explanation, in one
 place.
 
+**Every word of a bubble can be read, always.** It hangs under its mark,
+over it, or beside it, the first of those that holds the whole of it
+inside the app, and a long text that fits nowhere at the narrow width is
+made wider, which makes it shorter. It never covers its own mark. Only an
+app too small for it at any width gets a bubble as tall as the app that
+scrolls. The rule is `placeBubble` in `frontend/src/lib/bubble.ts`, with
+tests that put a mark everywhere in apps of several sizes. The clip
+timeline's bubble used to fit neither under nor over its mark, went under
+it anyway and ran off the foot of the app. Moving into the bubble keeps it
+open: an eight pixel bridge on the side facing the mark carries the
+pointer across the gap. It used to sit inside a bubble that clipped its
+overflow, so over the mark the bridge never worked, and the range picker's
+bubble scrolled by those eight pixels.
+
 - **The transcription is the first step of a search, and nothing else.**
   A search is one job on the Go side, see [JOBS.md](JOBS.md): it hears the
   episode from where the transcript ends to the end of its window, stops
