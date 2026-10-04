@@ -18,11 +18,11 @@
   // crop the way the render will burn them in.
   import { onMount, untrack, type Snippet } from "svelte";
   import {
-    frameStart,
     insideClip,
     litWord,
     pictureIsStale,
     playingAt,
+    stillFits,
     shouldChase,
     pieceAt as pieceIndex,
     playingPiece,
@@ -126,7 +126,36 @@
   // it was. The workspace fills in with a frame read from the file.
   let ready = $state(false);
   let shows = $state(-1);
-  const stale = $derived(pictureIsStale({ ready, shows, at: time }));
+  // One frame of the episode. The playhead can only ever stand on one, so
+  // it is the smallest difference between two moments that means anything.
+  const frameOf = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
+  const stale = $derived(pictureIsStale({ ready, shows, at: time, frame: frameOf }));
+
+  // Which frame is really on screen, where the browser can say, and Safari
+  // can since 15.4: requestVideoFrameCallback answers with the moment of
+  // every frame the video puts up. The video's clock cannot say it. Safari
+  // says a seek has landed, seeked, and moves its clock there, before the
+  // new frame is on screen: 1 to 15 ms later on an idle Mac, 110 ms for a
+  // cold first frame, and longer while the machine is busy, which right
+  // after a search it is, placing the crop of every clip. Taken from the
+  // clock, the picture read as the playhead's the moment seeked came, the
+  // frame the engine read was taken away, and the frame before showed: on
+  // the first press of the space bar after a search, a frame from wherever
+  // the video preview was before, then the clip. With the frames known,
+  // nothing else sets shows, and the clock only stands in where the
+  // browser cannot say.
+  const framesKnown = typeof HTMLVideoElement !== "undefined" && "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+  let watching = 0;
+  function watchFrames() {
+    if (!framesKnown || !video) return;
+    video.cancelVideoFrameCallback(watching);
+    watching = video.requestVideoFrameCallback((_, meta) => {
+      // A jump the playing clip makes by itself moves the playhead and the
+      // picture together, in the frame loop, see tick.
+      if (!jumping) shows = meta.mediaTime;
+      watchFrames();
+    });
+  }
   $effect(() => {
     if (stale) onstill?.(time);
   });
@@ -142,10 +171,6 @@
       hint: dragCaptions !== null ? `Captions ${Math.round(captionY)} from the bottom` : "",
     };
   });
-
-  // One frame of the episode. The playhead can only ever stand on one, so
-  // it is the smallest difference between two moments that means anything.
-  const frameOf = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
   const pieces = $derived(clip?.segments ?? []);
   const clipStart = $derived(pieces.length ? pieces[0].start : 0);
@@ -374,11 +399,21 @@
     // all, so the playhead stands where it is, see playingAt.
     const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
     time = playingAt(time, { clock: video.currentTime, empty, seeking: video.seeking, landed });
-    // Playing, the picture is where the playhead is, once no seek is on its
-    // way, so no still is ever read from the file for it. Not while the
-    // video has nothing: the still is the only picture there is, and it
+    // Where the browser says which frame is on screen, that is the picture,
+    // see watchFrames, and the clock is not. Once a jump the playing clip
+    // made has landed, the picture goes with the playhead for the frame or
+    // two until the next frame is put up, so no still is read for it.
+    //
+    // Where it cannot say, playing, the picture is where the playhead is,
+    // once no seek is on its way, so no still is ever read from the file
+    // for it. Not while the video has no frame of where it is, HAVE_NOTHING
+    // or HAVE_METADATA: the still is the only picture there is, and it
     // stays until the video has landed where it was sent, see onseeked.
-    if (!video.seeking && !empty) shows = time;
+    if (framesKnown) {
+      if (landed) shows = time;
+    } else if (!video.seeking && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      shows = time;
+    }
     if (!video.paused) frame = requestAnimationFrame(tick);
   }
 
@@ -986,6 +1021,7 @@
   }
 
   onMount(() => {
+    watchFrames();
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", forget, true);
     window.addEventListener("focusin", focusMoves);
@@ -994,6 +1030,7 @@
       window.removeEventListener("pointerdown", forget, true);
       window.removeEventListener("focusin", focusMoves);
       cancelAnimationFrame(frame);
+      if (framesKnown) video?.cancelVideoFrameCallback(watching);
     };
   });
 </script>
@@ -1013,10 +1050,9 @@
         saves it, Escape leaves it, and two words split it in two.
       </Info>
     </span>
-    <!-- Only the still of the frame the playhead is in. A still of a
-         frame near it was allowed, which was a second picture for one
-         spot, and a different one again once the video landed. -->
-    {#if still && stale && Math.abs(stillAt - frameStart(time, source.fps)) < 1e-6}
+    <!-- The still of the frame the playhead is in, and while playing of
+         where the play began, see stillFits. -->
+    {#if still && stale && stillFits(stillAt, time, source.fps, !paused)}
       <img src={still} alt="" bind:this={stillImage} />
     {/if}
     <!-- svelte-ignore a11y_media_has_caption -->
@@ -1036,7 +1072,7 @@
         // and a still was read from the file in the middle of playing. A
         // jump the playing clip makes is the frame loop's to the end, see
         // onseeked.
-        if (!video.seeking && !jumping) shows = video.currentTime;
+        if (!framesKnown && !video.seeking && !jumping) shows = video.currentTime;
         if (video.paused) time = video.currentTime;
       }}
       onloadedmetadata={() => {
@@ -1047,14 +1083,19 @@
       }}
       onloadeddata={() => {
         ready = true;
-        shows = video.currentTime;
+        if (framesKnown) watchFrames();
+        else shows = video.currentTime;
       }}
       onseeked={() => {
         ready = true;
+        // Landed is not shown: Safari says seeked before the frame is on
+        // screen, see watchFrames, which is what says when it is.
+        //
         // A jump the playing clip made by itself moves the playhead and the
         // picture together, in the frame loop. Moved here, the picture was
         // a frame ahead of the playhead and read as stale for that frame.
-        if (!jumping) shows = video.currentTime;
+        if (framesKnown) watchFrames();
+        else if (!jumping) shows = video.currentTime;
         wanted = -1;
       }}
       onemptied={() => {
