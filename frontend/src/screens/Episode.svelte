@@ -540,7 +540,8 @@
   // nothing.
   //
   // The ask waits a moment first, see Grace, because the video usually
-  // lands a few milliseconds after it was sent.
+  // lands a few milliseconds after it was sent, and it is called off the
+  // moment the video preview shows the playhead.
   const asking = new Grace<number>(readStill, 180);
   // Which ask the picture is from. Several are in the air whenever the
   // playhead is moved quickly, and an answer that took longer to read
@@ -555,16 +556,14 @@
   let showing = $state(-1);
 
   // The moment the video preview cannot show, or null once it shows the
-  // playhead.
+  // playhead. The frame the still already is of needs no ask, and nothing
+  // still waiting may replace it. A frame on and straight back, within the
+  // wait, used to read the frame left behind anyway and put it in place of
+  // the one the playhead was back on, so the picture had no still at all
+  // until that one was read again.
   function askStill(at: number | null) {
-    if (at === null) {
-      asking.need(null);
-      return;
-    }
-    if (!source || status?.missing) return;
-    const frame = frameStart(at, source.fps);
-    if (frame === showing) return;
-    asking.need(frame);
+    const frame = at === null || !source || status?.missing ? null : frameStart(at, source.fps);
+    asking.need(frame === showing ? null : frame);
   }
 
   function readStill(frame: number) {

@@ -241,10 +241,10 @@ describe("a still is asked for only if the picture does not land", () => {
     expect(sent).toEqual([902]);
   });
 
-  // The fault: the picture landed 20 ms after the seek, and the engine
-  // still read the frame 160 ms later, for nothing, because it is never
-  // drawn over a picture that shows the playhead.
-  test.fails("a picture that lands before the grace is over needs no still", () => {
+  // The picture landed 20 ms after the seek. The engine used to read the
+  // frame 160 ms later anyway, for nothing, because a still is never drawn
+  // over a picture that shows the playhead.
+  test("a picture that lands before the grace is over needs no still", () => {
     const { sent, stills, pass } = asked();
     stills.need(902);
     pass(20);
@@ -271,6 +271,15 @@ describe("a still is asked for only if the picture does not land", () => {
     stills.need(null);
     pass(5000);
     expect(sent).toEqual([57]);
+  });
+
+  test("saying nothing is needed with nothing waiting changes nothing", () => {
+    const { sent, stills, pass } = asked();
+    stills.need(null);
+    pass(500);
+    stills.need(3);
+    pass(180);
+    expect(sent).toEqual([3]);
   });
 
   test("a picture that lands and is lost again asks again, for where it is now", () => {

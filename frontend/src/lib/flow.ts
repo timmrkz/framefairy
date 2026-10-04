@@ -317,7 +317,16 @@ const browserTimers: Timers = {
 // the video lands a few milliseconds later and the frame was never needed,
 // so the ask waits first. A newer need takes the place of the one waiting,
 // which is what keeps a hand moving the playhead from sending an ask for
-// every place it passes. null says nothing is needed any more.
+// every place it passes. null says nothing is needed any more, and calls
+// off whatever is waiting.
+//
+// It used to be only a timer, which nothing called off. Every move of the
+// playhead while paused further than the picture's room, picking a clip, a
+// click on the clip timeline, the arrow keys, had a frame read from the
+// file with ffmpeg and kept in the work folder, however soon the video
+// landed, and none of them was drawn. An ask already sent is not taken
+// back: what it brings is the newest answer's to keep or throw away, see
+// Newest.
 export class Grace<T> {
   private waiting: unknown = undefined;
 
@@ -328,8 +337,9 @@ export class Grace<T> {
   ) {}
 
   need(what: T | null): void {
-    if (what === null) return;
     this.timers.off(this.waiting);
+    this.waiting = undefined;
+    if (what === null) return;
     this.waiting = this.timers.later(() => {
       this.waiting = undefined;
       this.send(what);
