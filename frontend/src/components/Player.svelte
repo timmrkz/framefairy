@@ -72,8 +72,8 @@
     stillAt?: number;
     onplayclip?: (clip: ClipEntry) => void;
     // Asks for the frame at a moment of the episode, for as long as the
-    // app cannot show that moment itself.
-    onstill?: (at: number) => void;
+    // app cannot show that moment itself, and says null once it can.
+    onstill?: (at: number | null) => void;
     // Where the caption box is while it is being dragged, so the setting
     // beside it says what you are doing as you do it. Letting go saves,
     // this only shows.
@@ -157,7 +157,7 @@
     });
   }
   $effect(() => {
-    if (stale) onstill?.(time);
+    onstill?.(stale ? time : null);
   });
   let atPiece = 0;
   let frame = 0;

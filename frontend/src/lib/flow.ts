@@ -297,6 +297,46 @@ export class Newest {
   }
 }
 
+// How something waits, which is the browser's timers in the app and a
+// clock of its own in a test.
+export type Timers = {
+  later: (run: () => void, ms: number) => unknown;
+  off: (waiting: unknown) => void;
+};
+
+const browserTimers: Timers = {
+  later: (run, ms) => setTimeout(run, ms),
+  off: (waiting) => clearTimeout(waiting as ReturnType<typeof setTimeout>),
+};
+
+// An ask that waits a moment before it is sent, so a need that passes by
+// itself costs nothing.
+//
+// The workspace asks the engine for the frame under the playhead whenever
+// the video preview cannot show it, see pictureIsStale. Most of the time
+// the video lands a few milliseconds later and the frame was never needed,
+// so the ask waits first. A newer need takes the place of the one waiting,
+// which is what keeps a hand moving the playhead from sending an ask for
+// every place it passes. null says nothing is needed any more.
+export class Grace<T> {
+  private waiting: unknown = undefined;
+
+  constructor(
+    private send: (what: T) => void,
+    private wait: number,
+    private timers: Timers = browserTimers,
+  ) {}
+
+  need(what: T | null): void {
+    if (what === null) return;
+    this.timers.off(this.waiting);
+    this.waiting = this.timers.later(() => {
+      this.waiting = undefined;
+      this.send(what);
+    }, this.wait);
+  }
+}
+
 // What of an episode has been heard, which can only ever grow.
 //
 // Two things say it and they disagree on purpose. The saved transcript is
