@@ -21,6 +21,7 @@ import {
   insideClip,
   playingAt,
   playingPiece,
+  playsTheClip,
   shouldChase,
   inEpisode,
   inClip,
@@ -540,6 +541,60 @@ describe("insideClip", () => {
 
   test("no pieces, nowhere inside", () => {
     expect(insideClip([], 5, frame)).toBe(false);
+  });
+});
+
+describe("playsTheClip", () => {
+  // A clip of two pieces at twenty-five frames a second, which is what the
+  // episodes are. Its start falls three quarters of a frame into one: the
+  // frames start at 1677.60 and 1677.64.
+  const clip = { clipStart: 1677.63, clipEnd: 1712, frame: 0.04, looping: false };
+  const at = (time: number) => playsTheClip({ ...clip, time });
+
+  test("the playhead on the clip's start plays the clip", () => {
+    expect(at(1677.63)).toBe(true);
+  });
+
+  test("so does the playhead anywhere inside it, a cut too", () => {
+    expect(at(1680)).toBe(true);
+    expect(at(1695)).toBe(true);
+  });
+
+  test("a playhead clearly before the clip plays the episode on", () => {
+    expect(at(1677.63 - 0.5)).toBe(false);
+    expect(at(1677.63 - 0.05)).toBe(false);
+  });
+
+  test("the playhead where the clip stopped plays it again from its start", () => {
+    expect(at(1712)).toBe(true);
+    expect(at(1712 - 0.02)).toBe(true);
+    // The video stops on the frame loop's tick after the end, a little
+    // past it.
+    expect(at(1712 + 0.03)).toBe(true);
+  });
+
+  test("a playhead clearly after the clip plays the episode on", () => {
+    expect(at(1713)).toBe(false);
+  });
+
+  test("a loop plays the clip from anywhere", () => {
+    expect(playsTheClip({ ...clip, looping: true, time: 10 })).toBe(true);
+  });
+
+  // The fault, 2.115 in docs/GUI-PLAN.md. Picking a clip puts the playhead
+  // on 1677.63, and while the video is paused the playhead takes its time
+  // from the video, which answers with where the frame it shows begins:
+  // 1677.60, the way insideClip's tests have it. That is three quarters of
+  // a frame before the clip, more than the half frame this allows, so the
+  // first press of the space bar after picking a clip played the episode
+  // straight on: the parts the clip cuts out were heard, and it did not
+  // stop at the clip's end.
+  test.fails("the frame the clip begins in plays the clip, read from the video", () => {
+    expect(at(1677.6)).toBe(true);
+  });
+
+  test.fails("anywhere less than a frame before the clip's start plays the clip", () => {
+    expect(at(1677.63 - 0.039)).toBe(true);
   });
 });
 

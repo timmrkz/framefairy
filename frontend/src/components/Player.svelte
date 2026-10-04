@@ -23,6 +23,7 @@
     litWord,
     pictureIsStale,
     playingAt,
+    playsTheClip,
     shouldChase,
     pieceAt as pieceIndex,
     playingPiece,
@@ -263,17 +264,10 @@
     // Playing moves the playhead on, so the keyboard's word goes.
     keyed = null;
     walked = 0;
-    // The clip plays when the playhead stands in it, when it has just played
-    // to its end, which is where the playhead is left, and when it loops.
-    // Anywhere else the playhead was put there to look at that part of the
-    // episode, clip or no clip, so the episode plays on from there. It used
-    // to go back to the start of the chosen clip, and a part of the episode
-    // could not be heard at all while a clip was chosen.
-    playsClip =
-      !!clip &&
-      (looping ||
-        (time >= clipStart - frameOf / 2 && time < clipEnd - 0.05) ||
-        Math.abs(time - clipEnd) <= 0.05 + frameOf);
+    // See playsTheClip. It used to go back to the start of the chosen clip
+    // wherever the playhead stood, and a part of the episode could not be
+    // heard at all while a clip was chosen.
+    playsClip = !!clip && playsTheClip({ time, clipStart, clipEnd, frame: frameOf, looping });
     if (clip && playsClip) {
       // A clip plays from the playhead while the playhead stands inside it,
       // otherwise from its start.

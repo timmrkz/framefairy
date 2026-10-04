@@ -388,6 +388,32 @@ export function insideClip(pieces: Piece[], at: number, frame: number): boolean 
   return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
 }
 
+// Where the playhead stands when the space bar is pressed, and what it
+// knows about the clip chosen, in the episode's seconds.
+export type PlayFrom = {
+  time: number;
+  clipStart: number;
+  clipEnd: number;
+  // One frame of the episode.
+  frame: number;
+  looping: boolean;
+};
+
+// Whether the space bar plays the chosen clip, with its cuts jumped and a
+// stop at its end, or the episode, straight on from the playhead.
+//
+// The clip plays when the playhead stands in it, when it has just played
+// to its end, which is where the playhead is left, and when it loops.
+// Anywhere else the playhead was put there to look at that part of the
+// episode, clip or no clip, so the episode plays on from there.
+export function playsTheClip(p: PlayFrom): boolean {
+  return (
+    p.looping ||
+    (p.time >= p.clipStart - p.frame / 2 && p.time < p.clipEnd - 0.05) ||
+    Math.abs(p.time - p.clipEnd) <= 0.05 + p.frame
+  );
+}
+
 export type ChaseState = {
   // Where the picture was sent, or -1 when it is not on its way anywhere.
   wanted: number;
