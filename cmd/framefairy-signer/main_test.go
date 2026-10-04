@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"framefairy/licence"
+	"framefairy/licence/signer"
 )
 
 func signerDir(t *testing.T) string {
@@ -55,7 +56,7 @@ func trustOf(t *testing.T) licence.Trust {
 }
 
 func testTrust() licence.Trust {
-	return licence.Trust{Signers: map[uint8]ed25519.PublicKey{0: ed25519.NewKeyFromSeed(testSeed()).Public().(ed25519.PublicKey)}}
+	return licence.Trust{Signers: map[uint8]ed25519.PublicKey{0: ed25519.NewKeyFromSeed(signer.TestSeed()).Public().(ed25519.PublicKey)}}
 }
 
 func TestKey(t *testing.T) {

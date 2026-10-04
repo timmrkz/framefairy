@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Licences on this machine</title><link rel="stylesheet" href="/web/style.css"></head>
+<body class="dev">
+<header>
+  <div>
+    <h1>Licences on this machine</h1>
+    <p class="dim">A pretend shop around the real dispenser. Buy something and watch what happens.</p>
+  </div>
+  <div class="clock" id="clock-box">
+    <div><span class="dim">Pretend time</span> <b id="clock-now">{{hm .Now}}</b>{{if .Ahead}} <span class="dim">({{ahead .Ahead}})</span>{{end}}</div>
+    <div class="buttons">
+      {{range $by := (list "5m" "1h" "24h" "72h")}}<form method="post" action="/dev/clock"><input type="hidden" name="by" value="{{$by}}"><button title="Move the pretend time forward. Retries, the mail run and the daily run follow it.">+{{if eq $by "5m"}}5 min{{else if eq $by "1h"}}1 hour{{else if eq $by "24h"}}1 day{{else}}3 days{{end}}</button></form>{{end}}
+    </div>
+  </div>
+</header>
+
+<main id="live">
+{{with .Answer}}
+<div class="strip {{if ok .Code}}good{{else}}bad{{end}}">
+  <span>{{if ok .Code}}✓{{else}}✗{{end}} {{.What}}{{if and .Code (not (ok .Code))}}, answered {{.Code}}{{end}}</span>
+  {{if .Body}}<details data-keep="answer"><summary>Answer</summary><div class="mono">{{.Body}}</div></details>{{end}}
+</div>
+{{end}}
+{{if .ReadErr}}<div class="strip bad">✗ Reading the store failed: {{.ReadErr}}</div>{{end}}
+{{if .Broken}}<div class="strip warn"><span>Not normal: {{range $i, $b := .Broken}}{{if $i}}, {{end}}{{$b}}{{end}}.</span> <a href="#wrong">Change</a></div>{{end}}
+
+<div class="cols">
+<div>
+  <section class="buy">
+    <h2>Buy</h2>
+    <form method="post" action="/shop/buy" target="_blank" class="line">
+      <input name="email" type="email" required value="buyer@example.com" class="wide" title="The buyer's address. Every letter to it shows under Mail sent.">
+      <input name="seats" type="number" min="1" max="100" value="1" class="narrow" title="Seats">
+      <button class="primary">Buy</button>
+    </form>
+    <p class="dim small">Opens the thank-you page in a new tab, as Paddle's checkout does. <a href="/shop" target="_blank">The checkout page</a> · <a href="/lost" target="_blank">Lost key page</a></p>
+  </section>
+
+  <section>
+    <h2>Sales</h2>
+    {{if not .Sales}}<p class="dim">No sales yet.</p>{{end}}
+    {{range .Sales}}{{$ref := .Ref}}
+    <div class="sale">
+      <div class="sale-head">
+        <div><b>{{.Sale.Email}}</b> <span class="dim">{{.Sale.Seats}} seat{{if ne .Sale.Seats 1}}s{{end}} · {{hm .Sale.At}}</span></div>
+        {{if .TakenBack}}<span class="chip bad" title="Paddle says the money went back to the buyer">Money back</span>{{else if .Pending}}<span class="chip warn">Refund waiting</span>{{else}}<span class="chip good">Paid</span>{{end}}
+      </div>
+      <div class="keys">
+        {{range .Keys}}<div class="key-line"><span class="mono" title="{{.Key}}">{{short .Fingerprint}}</span> {{if .Revoked}}<span class="chip bad">revoked</span>{{else}}<span class="chip good">works</span>{{end}}</div>{{end}}
+        {{if not .Keys}}<div class="warn">No keys yet.</div>{{end}}
+        {{with .Stuck}}{{with index . 0}}<div class="dim small">
+          {{if eq .State "held"}}Paddle holds its {{.Type}} webhook.
+            <form method="post" action="/dev/release"><input type="hidden" name="id" value="{{.ID}}"><button class="small">Send it</button></form>
+          {{else if eq .State "lost"}}Paddle lost its {{.Type}} webhook. The daily run finds the sale.
+          {{else if eq .State "failed"}}Paddle gave up on its {{.Type}} webhook. The daily run finds the sale.
+          {{else if .Tries}}{{with index .Tries (len .Tries | dec)}}The dispenser answered Paddle's webhook with {{.Code}} {{.Answer}}.{{end}} Paddle tries again at {{hm .Next}}.
+          {{else}}Paddle's webhook is on its way.{{end}}
+        </div>{{end}}{{end}}
+      </div>
+      <div class="actions">
+        {{range .Pending}}<span class="dim">Paddle decides the refund:</span>
+          <form method="post" action="/dev/decide"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="approve" value="yes"><button title="Paddle approves the refund. The keys stop working.">Approve</button></form>
+          <form method="post" action="/dev/decide"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="approve" value="no"><button title="Paddle rejects the refund. The keys keep working.">Reject</button></form>
+        {{else}}
+          {{if not .TakenBack}}<form method="post" action="/dev/adjust"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="do" value="refund"><button title="The buyer asks for their money back. Paddle approves or rejects it first.">Refund</button></form>{{end}}
+          {{if .Standing}}<form method="post" action="/dev/adjust"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="do" value="chargeback_reverse"><button title="The bank gives the money back to us. The keys work again.">Reverse the chargeback</button></form>
+          {{else}}<form method="post" action="/dev/adjust"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="do" value="chargeback"><button title="The buyer's bank takes the money back. The keys stop working.">Chargeback</button></form>{{end}}
+        {{end}}
+        <details class="more" data-keep="more-{{$ref}}"><summary>More</summary>
+          <div class="line">
+            <a href="/thanks?txn={{$ref}}" target="_blank">Thank-you page</a>
+            <form method="post" action="/dev/adjust"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="do" value="chargeback_warning"><button class="small" title="The bank warns of a dispute. Nothing changes until a chargeback comes.">Chargeback warning</button></form>
+            <form method="post" action="/dev/replay"><input type="hidden" name="ref" value="{{$ref}}"><button class="small" title="Paddle sends the sale's webhook again. Nothing should change.">Send the sale again</button></form>
+          </div>
+          {{range .Keys}}<div class="line"><span class="mono">{{short .Fingerprint}}</span>{{template "keyButtons" .}}</div>{{end}}
+        </details>
+      </div>
+    </div>
+    {{end}}
+  </section>
+</div>
+
+<div>
+  <section>
+    <h2>Mail sent</h2>
+    {{if not .Letters}}<p class="dim">Nothing yet.</p>{{end}}
+    {{range .Letters}}
+    <details class="letter" data-keep="letter-{{.Ref}}-{{.Kind}}-{{clock .At}}"><summary><span>{{if eq .Kind "keys"}}Your keys{{else if eq .Kind "replaced"}}Your new key{{else}}Your keys again{{end}} <span class="dim">to {{.To}}</span></span><span class="dim small">{{hm .At}}</span></summary>
+      {{if .Failed}}<p class="warn small">Sent, and the mail service said it failed.</p>{{end}}
+      {{range .Keys}}<div class="mono small">{{.}}</div>{{end}}
+    </details>
+    {{end}}
+    {{if .Notes}}<h3>To us</h3>{{range .Notes}}
+    <details class="letter" data-keep="note-{{clock .At}}"><summary><span>{{.Subject}}</span><span class="dim small">{{hm .At}}</span></summary><p class="small">{{.Body}}</p></details>{{end}}{{end}}
+  </section>
+
+  <section id="wrong">
+    <details data-keep="wrong" {{if .Broken}}open{{end}}><summary><h2>Make things go wrong</h2></summary>
+    <div class="switches">
+      <div class="label">Paddle's API</div>
+      <div>{{$api := .Shop.API}}{{range $m := (list "works" "down")}}<form method="post" action="/dev/paddle"><input type="hidden" name="api" value="{{$m}}"><button class="seg {{if eq $m $api}}on{{end}}">{{$m}}</button></form>{{end}}</div>
+      <div class="label" title="Paddle's API does not know a sale for 2 minutes after its webhook">Paddle's API lags</div>
+      <div><form method="post" action="/dev/paddle"><input type="hidden" name="lag" value="off"><button class="seg {{if not .Shop.Lag}}on{{end}}">no</button></form><form method="post" action="/dev/paddle"><input type="hidden" name="lag" value="on"><button class="seg {{if .Shop.Lag}}on{{end}}">2 minutes</button></form></div>
+      <div class="label" title="How Paddle sends the webhooks from now on. Held ones wait on their sale for you to send them, in any order.">Paddle's webhooks</div>
+      <div>{{$mode := .Shop.Mode}}{{range $m := (list "now" "twice" "hold" "lose")}}<form method="post" action="/dev/paddle"><input type="hidden" name="mode" value="{{$m}}"><button class="seg {{if eq $m $mode}}on{{end}}">{{$m}}</button></form>{{end}}</div>
+      <div class="label" title="loses-answer: it sends, then says it failed">Mail</div>
+      <div>{{$mail := .Mail}}{{range $m := (list "works" "down" "loses-answer")}}<form method="post" action="/dev/mail"><input type="hidden" name="mode" value="{{$m}}"><button class="seg {{if eq $m $mail}}on{{end}}">{{$m}}</button></form>{{end}}</div>
+      <div class="label" title="loses-answer: it saves, then says it failed">Database</div>
+      <div>{{$db := .DB}}{{range $m := (list "works" "down" "loses-answer")}}<form method="post" action="/dev/db"><input type="hidden" name="mode" value="{{$m}}"><button class="seg {{if eq $m $db}}on{{end}}">{{$m}}</button></form>{{end}}</div>
+      <div class="label" title="The signer signs new keys whenever fewer than a batch are left">Signer</div>
+      <div><form method="post" action="/dev/auto"><input type="hidden" name="refill" value="on"><button class="seg {{if .Refill}}on{{end}}">refills</button></form><form method="post" action="/dev/auto"><input type="hidden" name="refill" value="off"><button class="seg {{if not .Refill}}on{{end}}">off</button></form></div>
+      <div class="label" title="The mail run every 5 minutes and the daily run every day, on the pretend time">Scheduled runs</div>
+      <div><form method="post" action="/dev/auto"><input type="hidden" name="schedule" value="on"><button class="seg {{if .Sched}}on{{end}}">run</button></form><form method="post" action="/dev/auto"><input type="hidden" name="schedule" value="off"><button class="seg {{if not .Sched}}on{{end}}">off</button></form></div>
+    </div>
+    </details>
+  </section>
+</div>
+</div>
+
+<section class="behind">
+  <h2>Behind the scenes</h2>
+  <nav class="tabs">
+    <button data-tab="webhooks">Webhooks</button>
+    <button data-tab="pool">Pool</button>
+    <button data-tab="runs">Runs</button>
+    <button data-tab="hand">By hand</button>
+    <button data-tab="partner">Partner</button>
+    <button data-tab="record">Record</button>
+    <button data-tab="log">Log</button>
+  </nav>
+
+  <div data-panel="webhooks">
+    {{if not .Shop.Webhooks}}<p class="dim">None yet.</p>{{else}}
+    <table><tr><th>Event</th><th>Sale</th><th>Where it is</th><th>What the dispenser answered</th></tr>
+    {{range .Shop.Webhooks}}<tr><td>{{.Type}}</td><td class="mono">{{short .Ref}}</td>
+      <td>{{if eq .State "delivered"}}<span class="good">delivered</span>{{else if eq .State "failed"}}<span class="bad">every try failed</span>{{else if eq .State "held"}}<span class="warn">held</span> <form method="post" action="/dev/release"><input type="hidden" name="id" value="{{.ID}}"><button class="small">Send it</button></form>{{else if eq .State "lost"}}<span class="bad">lost</span>{{else}}<span class="warn">next try {{hm .Next}}</span>{{end}}</td>
+      <td>{{range .Tries}}<div><span class="dim">{{hm .At}}</span> <span class="{{if ok .Code}}good{{else}}bad{{end}}">{{.Code}}</span> <span class="mono">{{.Answer}}</span></div>{{end}}</td></tr>{{end}}
+    </table>{{end}}
+  </div>
+
+  <div data-panel="pool">
+    <p><b>{{.Level.Left}}</b> keys left to sell <span class="dim">· the signer signs {{.Level.Batch}} at a time · unsold {{index .Pool "unsold"}}, sold {{index .Pool "sold"}}, retired {{index .Pool "retired"}}, burned {{index .Pool "burned"}}</span></p>
+    <div class="line">
+      <form method="post" action="/dev/refill"><button>Refill now</button></form>
+      <form method="post" action="/dev/sign"><input class="narrow" name="n" value="5"><button>Sign keys</button></form>
+    </div>
+    <div class="line"><span class="dim">A batch from a signer that missed a restore:</span>
+      <form method="post" action="/dev/sign"><input type="hidden" name="n" value="5"><input name="generation" placeholder="old generation"><button>Send</button></form></div>
+    <div class="line">
+      <form method="post" action="/dev/revoke-unsold"><input type="hidden" name="why" value="trying it out"><button class="danger" title="Revoke every key nobody bought yet, as after a stolen database">Burn the unsold keys</button></form>
+      <form method="post" action="/dev/retire"><input type="hidden" name="why" value="trying it out"><button class="danger" title="Set the unsold keys aside without revoking them, as after a restore">Retire the pool</button></form>
+    </div>
+  </div>
+
+  <div data-panel="runs">
+    <div class="line">
+      <form method="post" action="/dev/cron-mail"><button title="Sends the letters waiting in the queue">Mail run</button></form>
+      <form method="post" action="/dev/cron-daily"><button title="Catches up with Paddle for the last week, warns about the pool, audits">Daily run</button></form>
+      <form method="post" action="/dev/audit"><button title="Checks the database against its record">Audit</button></form>
+      <form method="post" action="/dev/feed"><button title="What the release workflow puts in the update feed">Update feed</button></form>
+      <form method="post" action="/dev/health"><button>Health</button></form>
+      <form method="post" action="/dev/reconcile"><input class="narrow" name="days" value="7"><button>Reconcile days back</button></form>
+    </div>
+    <p class="dim">{{.Revoked}} key{{if ne .Revoked 1}}s{{end}} on the revocation list.</p>
+    <h3>Letters waiting</h3>
+    {{if not .Queue}}<p class="dim">None.</p>{{else}}
+    <table><tr><th>Letter</th><th>Sale</th><th>Tries</th><th>Next</th></tr>
+    {{range .Queue}}<tr><td>{{.Kind}}</td><td class="mono">{{short .Ref}}</td><td>{{.Tries}}</td><td>{{hm .Due}}</td></tr>{{end}}</table>{{end}}
+  </div>
+
+  <div data-panel="hand">
+    <p class="dim">What we do by hand with the admin token. The buttons beside each key under More do the same for one key.</p>
+    <div class="line"><form method="post" action="/dev/revoke"><input type="hidden" name="source" value="paddle"><input class="wide" name="ref" placeholder="Paddle sale, txn_…"><input type="hidden" name="why" value="by hand"><button>Revoke the sale</button></form></div>
+    <div class="line"><form method="post" action="/dev/restore"><input type="hidden" name="source" value="paddle"><input class="wide" name="ref" placeholder="Paddle sale, txn_…"><input type="hidden" name="why" value="by hand"><button>Restore the sale</button></form></div>
+    <div class="line"><form method="post" action="/dev/settle"><input class="wide" name="ref" placeholder="Paddle sale, txn_…"><button>Settle with Paddle</button></form></div>
+  </div>
+
+  <div data-panel="partner">
+    <p class="dim">The partner bundle-hunt sells keys through the partner API.</p>
+    <div class="line"><form method="post" action="/dev/partner-order"><input name="ref" placeholder="order number"><input class="narrow" name="seats" value="1"><input name="email" placeholder="buyer, optional"><button>Order</button></form></div>
+    <div class="line"><form method="post" action="/dev/partner-keys"><input name="ref" placeholder="order number"><button>Ask for the keys</button></form>
+      <form method="post" action="/dev/partner-revoke"><input name="ref" placeholder="order number"><input type="hidden" name="why" value="refunded"><button>Revoke</button></form></div>
+    {{if .Partner}}<table><tr><th>Order</th><th>Keys</th></tr>
+    {{range .Partner}}<tr><td class="mono">{{.Ref}}</td><td>{{range .Keys}}<div><span class="mono">{{short .Fingerprint}}</span> {{if .Revoked}}<span class="chip bad">revoked</span>{{else}}<span class="chip good">works</span>{{end}}{{template "keyButtons" .}}</div>{{end}}</td></tr>{{end}}
+    </table>{{end}}
+  </div>
+
+  <div data-panel="record">
+    {{if not .Record}}<p class="dim">Empty.</p>{{else}}
+    <table><tr><th>#</th><th>At</th><th>Event</th><th>Key</th><th>Sale</th><th>Why</th></tr>
+    {{range .Record}}<tr><td>{{.Seq}}</td><td>{{hm .At}}</td><td>{{.Event}}</td><td class="mono">{{short .Fingerprint.String}}</td><td class="mono">{{short .Ref}}{{if .Seat}} #{{.Seat}}{{end}}</td><td>{{.Why}}</td></tr>{{end}}
+    </table>{{end}}
+  </div>
+
+  <div data-panel="log">
+    <table>{{range .Log}}<tr><td class="nowrap dim">{{hm .At}}</td><td class="{{if eq .Level "ERROR"}}bad{{else if eq .Level "WARN"}}warn{{end}}">{{.Level}}</td><td class="mono">{{.Text}}</td></tr>{{end}}</table>
+  </div>
+</section>
+</main>
+
+<script>
+// Tabs and open boxes are remembered, so the page can read itself again
+// every two seconds without closing what is open.
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function apply() {
+  const tab = load("tab") || "webhooks";
+  document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  document.querySelectorAll("[data-panel]").forEach(p => p.hidden = p.dataset.panel !== tab);
+  document.querySelectorAll("details[data-keep]").forEach(d => {
+    const v = load("open:" + d.dataset.keep);
+    if (v !== null) d.open = v === "1";
+  });
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-tab]");
+  if (b) { store("tab", b.dataset.tab); apply(); }
+});
+document.addEventListener("toggle", e => {
+  if (e.target.dataset && e.target.dataset.keep) store("open:" + e.target.dataset.keep, e.target.open ? "1" : "0");
+}, true);
+apply();
+let busy = false;
+setInterval(async () => {
+  const a = document.activeElement;
+  if (busy || document.hidden || (a && a.tagName === "INPUT")) return;
+  busy = true;
+  try {
+    const res = await fetch("/dev", {cache: "no-store"});
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    document.getElementById("live").innerHTML = doc.getElementById("live").innerHTML;
+    document.getElementById("clock-box").innerHTML = doc.getElementById("clock-box").innerHTML;
+    apply();
+  } catch (e) {}
+  busy = false;
+}, 2000);
+</script>
+</body></html>
+{{define "keyButtons"}}<span class="key-buttons">
+<form method="post" action="/dev/revoke"><input type="hidden" name="fingerprint" value="{{.Fingerprint}}"><input type="hidden" name="why" value="by hand"><button class="small">Revoke</button></form>
+<form method="post" action="/dev/restore"><input type="hidden" name="fingerprint" value="{{.Fingerprint}}"><input type="hidden" name="why" value="by hand"><button class="small">Restore</button></form>
+<form method="post" action="/dev/replace"><input type="hidden" name="fingerprint" value="{{.Fingerprint}}"><input type="hidden" name="why" value="posted in public"><button class="small" title="The key was posted in public: it is revoked and the buyer gets a new one">Posted in public</button></form>
+</span>{{end}}

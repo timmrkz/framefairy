@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thank you</title><link rel="stylesheet" href="/web/style.css"></head>
+<body class="buyer"><main>
+<section>
+<h1>Thank you</h1>
+<div id="state"><p class="dim">Your key is on its way…</p></div>
+</section>
+<p class="dim"><a href="/lost">Lost your key?</a> · <a href="/dev">Dev page</a></p>
+</main>
+<script>
+// The thank-you page asks the dispenser for the keys of the sale Paddle's
+// checkout named, every two seconds until they are there.
+const ref = new URLSearchParams(location.search).get("txn") || "";
+const state = document.getElementById("state");
+function say(html) { state.innerHTML = html; }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+async function ask() {
+  let res;
+  try {
+    res = await fetch("/v1/thanks/" + encodeURIComponent(ref));
+  } catch (e) {
+    say('<p class="bad">The dispenser does not answer. Your key also comes by email.</p>');
+    return setTimeout(ask, 4000);
+  }
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 200) {
+    const keys = body.keys || [];
+    say('<p>' + (keys.length === 1 ? "Your licence key:" : "Your licence keys, one per seat:") + '</p>' +
+      keys.map(k => '<div class="key mono">' + esc(k) + '</div>').join("") +
+      '<p class="dim">They also come by email. Paste one into Frame Fairy\'s settings to unlock it.</p>');
+    return;
+  }
+  if (res.status === 202) {
+    say('<p class="dim">Your key is on its way…</p>');
+    return setTimeout(ask, 2000);
+  }
+  if (res.status === 410) {
+    say('<p>This sale is more than a day old, so its keys are no longer shown here. They went to your email address, and the <a href="/lost">lost-key page</a> sends them again.</p>');
+    return;
+  }
+  if (res.status === 503) {
+    say('<p class="warn">Your key is taking longer than usual. It comes by email as soon as it is ready. (' + esc(body.error || res.status) + ')</p>');
+    return setTimeout(ask, 5000);
+  }
+  say('<p class="bad">Something went wrong: ' + esc(body.error || res.status) + '. Your key also comes by email.</p>');
+}
+ask();
+</script>
+</body></html>

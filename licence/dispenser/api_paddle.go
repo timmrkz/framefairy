@@ -68,6 +68,9 @@ var (
 // HMAC-SHA256 over "<ts>:<body>" with one of the secrets. More than one h1
 // is accepted while Paddle rotates the secret. The time must be within
 // five minutes of now either way, so an old webhook replayed is refused.
+// Paddle's own libraries allow five seconds, but a replay inside the five
+// minutes only makes Settle ask Paddle again. See
+// https://developer.paddle.com/webhooks/about/signature-verification
 func verifyPaddle(header string, body []byte, secrets []string, now time.Time) error {
 	if header == "" || len(header) > 1024 {
 		return errNoSignature

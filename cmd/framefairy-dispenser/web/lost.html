@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lost your key</title><link rel="stylesheet" href="/web/style.css"></head>
+<body class="buyer"><main>
+<section>
+<h1>Lost your key?</h1>
+<p class="dim">Give the address you bought with, and we send every key it bought there.</p>
+<form id="lost" style="display:block">
+<label>Email address<input name="email" type="email" required></label>
+<button type="submit" class="primary">Send my keys</button>
+</form>
+<div id="state"></div>
+</section>
+<p class="dim"><a href="/shop">Buy</a> · <a href="/dev">Dev page</a></p>
+</main>
+<script>
+const form = document.getElementById("lost");
+const state = document.getElementById("state");
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  const button = form.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Sending…";
+  let res;
+  try {
+    res = await fetch("/v1/lost", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: form.email.value})});
+  } catch (err) {
+    state.innerHTML = '<p class="bad">The dispenser does not answer. Try again in a moment.</p>';
+  }
+  if (res) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 202) state.innerHTML = '<p class="good">If this address bought Frame Fairy, its keys are on their way to it.</p>';
+    else if (res.status === 429) state.innerHTML = '<p class="warn">That was asked a few times already. Try again in an hour.</p>';
+    else if (res.status === 400) state.innerHTML = '<p class="bad">That is not an email address we can send to.</p>';
+    else state.innerHTML = '<p class="bad">Something went wrong: ' + (body.error || res.status) + '. Try again later.</p>';
+  }
+  button.disabled = false;
+  button.textContent = "Send my keys";
+});
+</script>
+</body></html>
