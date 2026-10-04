@@ -207,6 +207,53 @@ export async function screen({
 
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+  // ?slowseek=150 makes every seek take 150 ms to land, the way WebKit's
+  // can on a Mac with a long episode, where the picture is decoded from the
+  // last keyframe before it. Chromium lands a seek in this small file in
+  // about 3 ms, well inside one frame, so a press of the space bar could
+  // never fall in the middle of a jump over a cut, which is where the frame
+  // loop used to leave the jump unfinished, see jumpStep in lib/flow.ts.
+  // The element answers the way a browser does while a seek is on its way:
+  // seeking says yes and the clock says where it was sent. The real seek,
+  // with its own seeking and seeked, is made when the time is up. A seek
+  // asked for meanwhile replaces it, and load() drops it.
+  const slowseek = Number(/[?&]slowseek=(\d+)/.exec(query)?.[1] ?? 0);
+  if (slowseek) {
+    await page.addInitScript((ms) => {
+      const proto = HTMLMediaElement.prototype;
+      const clock = Object.getOwnPropertyDescriptor(proto, "currentTime");
+      const seeking = Object.getOwnPropertyDescriptor(proto, "seeking");
+      const load = proto.load;
+      const pending = new WeakMap();
+      Object.defineProperty(proto, "currentTime", {
+        configurable: true,
+        get() {
+          const p = pending.get(this);
+          return p ? p.to : clock.get.call(this);
+        },
+        set(to) {
+          clearTimeout(pending.get(this)?.timer);
+          const timer = setTimeout(() => {
+            pending.delete(this);
+            clock.set.call(this, to);
+          }, ms);
+          pending.set(this, { to, timer });
+        },
+      });
+      Object.defineProperty(proto, "seeking", {
+        configurable: true,
+        get() {
+          return pending.has(this) || seeking.get.call(this);
+        },
+      });
+      proto.load = function () {
+        clearTimeout(pending.get(this)?.timer);
+        pending.delete(this);
+        return load.call(this);
+      };
+    }, slowseek);
+  }
+
   // ?framelag=1500 puts the frame a seek lands on on screen 1.5 seconds
   // after the video says it has landed, the way Safari does: seeked comes
   // first and the new frame after it, 1 to 15 ms later on an idle Mac,
