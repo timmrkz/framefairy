@@ -67,6 +67,7 @@
     hovered = "",
     onhover,
     onmark,
+    centre,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
   }: {
     path: string;
@@ -151,6 +152,11 @@
     }[];
     // A mark clicked, which chooses that clip, as on the range picker.
     onmark?: (key: string) => void;
+    // Where across the app a fitted clip stands, the middle of the video
+    // preview and the range picker. The track runs under all three columns
+    // and the clip list is wider than the settings, so the middle of the
+    // track is not the middle of the picture above it.
+    centre?: () => number | undefined;
     // The clip under the hand, here, on the range picker or in the clip
     // list. Its mark is lit the way it is under the pointer, and when it is
     // the clip up close, its frame is.
@@ -664,6 +670,17 @@
   // the pointer on the way down so a drag keeps working when it leaves the
   // track, and while a pointer is captured every click and double-click is
   // dealt to the element holding it. A handler on the cut is never reached.
+  // How far across the track the middle of the video preview lies, from
+  // nought at its left edge to one at its right. A measurement read when a
+  // clip is fitted, never turned into a size.
+  function centreOn(): number | undefined {
+    const x = centre?.();
+    const box = track?.getBoundingClientRect();
+    if (x === undefined || !box || box.width <= 0) return undefined;
+    const at = (x - box.left) / box.width;
+    return at > 0.2 && at < 0.8 ? at : undefined;
+  }
+
   function fitView(event?: MouseEvent) {
     // Shift is the cutting hand on this track, so a double-click with it
     // held takes a part out where it lands and never moves the view. It
@@ -703,8 +720,16 @@
       const a = clip.segments[0].start;
       const b = clip.segments[clip.segments.length - 1].end;
       const pad = Math.max(8, (b - a) * 0.3);
+      const shown = b - a + 2 * pad;
+      // The clip stands under the video preview, so the frame here lines up
+      // with the window on the range picker and the crop above it. Never so
+      // far over that less than half the room is left on either side.
+      const at = centreOn();
+      const from = at === undefined
+        ? a - pad
+        : Math.min(a - pad / 2, Math.max(b + pad / 2 - shown, (a + b) / 2 - at * shown));
       viewFor = clip.key;
-      load(Math.max(0, a - pad), Math.min(duration, b + pad));
+      load(Math.max(0, from), Math.min(duration, from + shown));
       return;
     }
     const whole = Math.max(duration, loose);
