@@ -252,6 +252,16 @@ the crop went back and forth over the picture while playing got going. A
 jump the app makes itself, over a cut or back to the start of a loop, still
 takes the playhead with it.
 
+Until the video has read anything of the file, it has no picture and no
+clock, and that is often so for an episode just added, whose file is read by
+the transcription from the moment it is added. Playing then keeps the
+playhead where it stands and the frame the engine read for it on screen, and
+the video takes over at the playhead once it has the file. It used to take
+the video's clock, which says zero, so the first press of the space bar
+after a search took the playhead to the start of the episode and showed a
+black picture and then the episode's first frame, before the video went to
+the clip and played it.
+
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The
 playhead goes to the start of that clip, because that is what choosing a

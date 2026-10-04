@@ -21,8 +21,8 @@
     frameStart,
     insideClip,
     litWord,
-    onward,
     pictureIsStale,
+    playingAt,
     shouldChase,
     pieceAt as pieceIndex,
     playingPiece,
@@ -184,7 +184,12 @@
   function goTo(t: number) {
     if (!video) return;
     if (video.readyState === 0 || !Number.isFinite(video.duration)) {
-      video.addEventListener("loadedmetadata", () => goTo(t), { once: true });
+      // onloadedmetadata sends it to the playhead, wherever that stands
+      // by then. A listener of its own for every seek asked for meanwhile
+      // sent it to each of them in turn when the file came, the clip
+      // chosen before the last among them, and Chromium could be left
+      // seeking for good, with the play waiting on it.
+      //
       // An element that has not started reading the file does not start by
       // itself, so it is asked to. NETWORK_EMPTY and NETWORK_NO_SOURCE are
       // the two states where nothing is on its way.
@@ -364,10 +369,16 @@
     // playing starts and whenever the file is slow to read. Followed as it
     // is, the playhead, the lit word, the caption and the crop went back
     // and forth over the picture for as long as playing took to settle.
-    time = landed || video.seeking ? video.currentTime : onward(time, video.currentTime);
+    //
+    // And a video that has read nothing of the file yet has no clock at
+    // all, so the playhead stands where it is, see playingAt.
+    const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
+    time = playingAt(time, { clock: video.currentTime, empty, seeking: video.seeking, landed });
     // Playing, the picture is where the playhead is, once no seek is on its
-    // way, so no still is ever read from the file for it.
-    if (!video.seeking) shows = time;
+    // way, so no still is ever read from the file for it. Not while the
+    // video has nothing: the still is the only picture there is, and it
+    // stays until the video has landed where it was sent, see onseeked.
+    if (!video.seeking && !empty) shows = time;
     if (!video.paused) frame = requestAnimationFrame(tick);
   }
 

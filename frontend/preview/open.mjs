@@ -167,12 +167,30 @@ export async function screen({
   // in whole pixels easier to read.
   scale = 1,
 } = {}) {
+  // ?unread=12 holds the episode back from the video for the first 12
+  // seconds after it first asks for it, the way the webview cannot read the
+  // file while the machine transcribes an episode just added. The video
+  // has read nothing, HAVE_NOTHING, and its clock says zero, while the
+  // stills, which the engine reads, still come. It is this server that
+  // holds the file, not the fake Go side, so it reads the query here. The
+  // first press of the space bar after a search took the playhead to the
+  // start of the episode in that state, see playingAt in lib/flow.ts.
+  const unread = Number(/[?&]unread=(\d+)/.exec(query)?.[1] ?? 0) * 1000;
+  let unreadFrom = 0;
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     if (url.pathname.startsWith("/media/")) {
       const asked = url.searchParams.get("path") ?? "";
-      if (/still-\d+/.test(asked)) await still(res, asked);
-      else await media(res, req.headers.range);
+      if (/still-\d+/.test(asked)) {
+        await still(res, asked);
+        return;
+      }
+      if (unread) {
+        unreadFrom ||= Date.now();
+        const wait = unreadFrom + unread - Date.now();
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      }
+      await media(res, req.headers.range);
       return;
     }
     const file = url.pathname === "/" ? "/index.html" : url.pathname;

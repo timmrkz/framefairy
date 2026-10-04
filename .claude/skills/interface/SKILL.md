@@ -63,6 +63,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 | `?webkitclock` | the video's clock while it plays is put back by 0.15 s now and then, the way WebKit's is corrected by reports from the player underneath. Chromium's clock only goes forward, so this is the only way to see what the app does with a clock that steps back |
+| `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
@@ -582,6 +583,16 @@ the playhead until the picture has landed. The probe for this passed
 against the broken code until it first loaded a still the way a busy
 machine does: reproduce the state before trusting a probe that says the
 state is gone.
+
+**A video that has read nothing has no clock.** It answers zero, paused or
+playing. The still drawn over it made everything look right while paused,
+and the first press of the space bar after a search took that zero as the
+playhead: the playhead went to the start of the episode, the picture went
+black and then to the episode's first frame, and only when the file came
+did the video go to the clip. Tim saw "another frame, then it plays from
+the clip". No harness video was ever in that state until `?unread` held
+the file back, because the harness serves the file at once. Before reading
+anything from the video, ask whether it has anything: `readyState`.
 
 **Contrast is judged with daylight on the screen.** A fill of 7 to 22
 percent of the accent read as no fill at all on Tim's Mac by a window. A
