@@ -30,21 +30,45 @@ export type Playhead = { place: Place; clip: string };
 export const onVideo: Playhead = { place: "video", clip: "" };
 
 // Where a gesture that puts the playhead at a moment leaves it, for the
-// clip chosen, by its key and its pieces.
+// clip chosen, by its key and its pieces, in an episode of fps frames a
+// second.
 //
 // A gesture about the clip says so, about: picking it, a click on one of
 // its edges, a trim, a click on a caption. That decides an edge, which is
 // the clip's own, and a trim, whose playhead stands on the edge being
 // dragged and so can be a hair outside the pieces the video preview has
 // at that moment. Every other gesture, a click, a drag, a step or a seek,
-// is decided by where it lands: from the clip's first start to its last
-// end, cuts included, is on the clip, and anywhere else on the video.
-export function placeOf(pieces: Piece[], key: string, at: number, about?: "clip"): Playhead {
+// is decided by the frame it lands in: from the frame that holds the
+// clip's first moment to the frame that holds its last, cuts included, is
+// on the clip, and any other frame is on the video. Either way, the frame
+// that holds the clip's last moment is its end, and so is the end itself.
+//
+// By frame and not by second, because the playhead the next gesture
+// starts from is the video's answer, and the paused video on the Mac
+// answers with where the frame it shows begins. A clip starting at 12.37
+// at twenty-five frames a second is in the frame from 12.36, so a step
+// back and a step forward land on 12.36, which by the second is before the
+// clip, and the clip dimmed while its own first frame was on screen. And
+// a trim of the end on frames leaves the playhead a frame before the end,
+// in the clip's last frame, which is where a play of the clip stops.
+export function placeOf(pieces: Piece[], key: string, at: number, fps: number, about?: "clip"): Playhead {
   if (!key || !pieces.length) return onVideo;
   const start = pieces[0].start;
   const end = pieces[pieces.length - 1].end;
-  if (about !== "clip" && (at < start || at > end)) return onVideo;
-  return { place: at >= end ? "end" : "clip", clip: key };
+  const rate = fps > 0 ? fps : 30;
+  const frame = frameIndex(at, rate);
+  const first = frameIndex(start, rate);
+  // The frame that holds the last moment before the end, which is the
+  // frame before the end's own when the end falls on a frame's start.
+  const last = Math.max(Math.ceil(end * rate - 1e-6) - 1, first);
+  if (about !== "clip" && at !== end && (frame < first || frame > last)) return onVideo;
+  return { place: at >= end || frame >= last ? "end" : "clip", clip: key };
+}
+
+// Which frame of the episode a moment falls in, counted from its start,
+// the same frame frameStart in lib/flow.ts begins.
+function frameIndex(t: number, fps: number): number {
+  return Math.floor(Math.max(t, 0) * fps + 1e-6);
 }
 
 // The place for the clip chosen now.

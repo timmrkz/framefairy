@@ -696,8 +696,9 @@ not `ontimeupdate`, not `onseeked`, not a rounding. The rules are
 | picking a clip, from the list, a mark, the keys, a search, a clip made or put back | on the clip, at its start |
 | a click on the clip's start edge, a trim, a click on a caption | on the clip |
 | a click on the clip's end edge, the clip playing to its end | on the clip, at its end |
-| a click, a drag, a step or a seek to a moment from the clip's start to its end, cuts included | on the clip |
-| the same to anywhere before or after the clip | on the video |
+| a click, a drag, a step or a seek into the frame that holds the clip's last moment | on the clip, at its end |
+| the same into any frame from the one that holds the clip's first moment on, cuts included | on the clip |
+| the same into any frame before or after those | on the video |
 | no clip chosen, or a clip chosen with no gesture, while the video plays | on the video |
 | pausing, the video's answer, a jump over a cut, a loop | where it was |
 
@@ -731,15 +732,19 @@ bar still plays straight on. And a clip chosen while the video plays,
 which does not move the playhead, leaves it on the video, because no
 gesture put it on that clip.
 
-What the playhead is moved to by the video's answer is still where the
-next step starts from. On the Mac a paused playhead stands on frame
-starts, so a frame step left off a clip that starts inside a frame and
-one step right lands on the start of that frame, before the clip: on the
-video, dimmed, with the crop frame drawn, until one more step. That is
-the rule read as written, a step to before the clip, and it is shown
-rather than hidden. A trim of the end on frames leaves the playhead a
-frame before the end, on the clip, so the space bar plays that last
-frame and stops, and the next press starts the clip over.
+**Where a gesture lands is a frame, not a second.** The playhead the
+next gesture starts from is still the video's answer, and on the Mac a
+paused playhead stands on the start of the frame it shows. Decided by
+the second, a frame step left off a clip that starts inside a frame and
+one step right landed on the start of that frame, before the clip, and
+the clip dimmed while its own first frame was on screen: the old fault,
+a comparison of seconds, in a new place. So `placeOf` takes the
+episode's frame rate and asks which frame the gesture landed in, the
+same frame `insideClip` draws the crop in. The frame that holds the
+clip's first moment is on the clip, and the frame that holds its last is
+its end. A trim of the end on frames, which leaves the playhead a frame
+before the end, is then at the end, and the space bar starts the clip
+over at once, as it did before.
 
 **Why it is a state.** It was a distance: the clip played when the
 playhead was within half a frame of its start and before its end. That

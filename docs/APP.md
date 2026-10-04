@@ -288,10 +288,15 @@ takes the engine to read that frame shows the frame before.
 The playhead is either on the chosen clip or on the video, and the gesture
 that put it there decides, never the video's clock. Picking a clip puts it
 on the clip, at its start. So does a click on the clip's start edge, a
-trim, a click on a caption, and a click, a drag or a step to anywhere from
-the clip's start to its end, cuts included. A click on the end edge, and
-the clip playing to its end, leave it on the clip at its end. Anywhere
-before or after the clip is on the video, and so is having no clip chosen.
+trim, a click on a caption, and a click, a drag or a step into any frame
+of the clip, cuts included, from the frame that holds its first moment.
+A click on the end edge, a landing in the frame that holds the clip's
+last moment, and the clip playing to its end, leave it on the clip at its
+end. Any frame before or after the clip is on the video, and so is having
+no clip chosen. It goes by frames and not by seconds because the paused
+video on the Mac answers with where its frame begins: a step back and a
+step forward off a clip that starts inside a frame land on that frame's
+start, which by the second is before the clip.
 
 On the clip, the space bar plays the clip from the playhead: its cuts are
 jumped and it stops at its end, or with loop on goes back to its start.

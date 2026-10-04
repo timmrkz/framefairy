@@ -208,6 +208,9 @@
   // clip that answer played the episode straight through a clip just
   // picked.
   let placed = $state<Playhead>(onVideo);
+  // Where the last gesture put the playhead while paused, which is where
+  // the video really is, whatever it answers. -1 once a play moves it on.
+  let putAt = -1;
   const place = $derived(placeFor(placed, clip?.key));
   $effect(() => {
     onClip = place !== "video";
@@ -222,7 +225,8 @@
   export function seek(t: number, about?: "clip") {
     if (!video) return;
     time = Math.max(0, Math.min(t, source.duration));
-    placed = placeOf(pieces, clip?.key ?? "", time, about);
+    placed = placeOf(pieces, clip?.key ?? "", time, 1 / frameOf, about);
+    putAt = time;
     atPiece = pieceAt(time);
     goTo(time);
   }
@@ -323,8 +327,7 @@
     const from = playFrom(place, pieces, time);
     if (clip && from.clip) {
       placed = { place: "clip", clip: clip.key };
-      time = from.at;
-      atPiece = pieceAt(time);
+      atPiece = pieceAt(from.at);
       // And only when the picture really has to move: when the frame it
       // shows is not the frame the play begins in. The paused video answers
       // with where that frame begins, which can be most of a frame before
@@ -332,9 +335,24 @@
       // seek that changes nothing still interrupts, still answers with
       // nothing, still leaves a chase running with nothing to answer it, and
       // a seek is the one thing that can refuse a play.
-      if (frameStart(video.currentTime, source.fps) !== frameStart(time, source.fps)) goTo(time);
+      //
+      // A play that does not start where the playhead stands, from the
+      // clip's start or the end of a cut, starts where the video is only
+      // when a gesture put it exactly there. A frame step off the clip and
+      // back lands on the start of the frame the clip begins in, inside
+      // that frame and before the clip, and played from there it played
+      // the part of the frame before the clip.
+      const moved = from.at !== time;
+      time = from.at;
+      if (
+        frameStart(video.currentTime, source.fps) !== frameStart(time, source.fps) ||
+        (moved && putAt !== time)
+      )
+        goTo(time);
       onplayclip?.(clip);
     }
+    // Playing moves the video on from wherever it was put.
+    putAt = -1;
     wantPlay = true;
     video.play().catch(() => {
       if (!wantPlay || !video) return;

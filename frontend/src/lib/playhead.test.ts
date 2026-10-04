@@ -4,7 +4,8 @@ import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from
 // A clip of two pieces with a cut between them, at twenty-five frames a
 // second, the way the episodes are. Its start falls three quarters of a
 // frame into one: the frames start at 1677.60 and 1677.64.
-const frame = 0.04;
+const fps = 25;
+const frame = 1 / fps;
 const pieces = [
   { start: 1677.63, end: 1690 },
   { start: 1695, end: 1712 },
@@ -15,56 +16,98 @@ const key = "plan/3";
 
 describe("a gesture puts the playhead on the clip or on the video", () => {
   test("picking the clip puts it on the clip, at its start", () => {
-    expect(placeOf(pieces, key, start, "clip")).toEqual({ place: "clip", clip: key });
+    expect(placeOf(pieces, key, start, fps, "clip")).toEqual({ place: "clip", clip: key });
   });
 
   test("a click on the start edge is on the clip", () => {
-    expect(placeOf(pieces, key, start, "clip").place).toBe("clip");
+    expect(placeOf(pieces, key, start, fps, "clip").place).toBe("clip");
     // And landing on it any other way, since the start edge is the clip's.
-    expect(placeOf(pieces, key, start).place).toBe("clip");
+    expect(placeOf(pieces, key, start, fps).place).toBe("clip");
   });
 
   test("a click, a drag or a step inside the clip is on the clip", () => {
-    expect(placeOf(pieces, key, 1680).place).toBe("clip");
-    expect(placeOf(pieces, key, 1700).place).toBe("clip");
+    expect(placeOf(pieces, key, 1680, fps).place).toBe("clip");
+    expect(placeOf(pieces, key, 1700, fps).place).toBe("clip");
   });
 
   test("so is one in a cut, which is between the clip's edges", () => {
-    expect(placeOf(pieces, key, 1692).place).toBe("clip");
-    expect(placeOf(pieces, key, 1690).place).toBe("clip");
+    expect(placeOf(pieces, key, 1692, fps).place).toBe("clip");
+    expect(placeOf(pieces, key, 1690, fps).place).toBe("clip");
   });
 
-  test("anywhere before the clip is on the video", () => {
-    expect(placeOf(pieces, key, start - frame).place).toBe("video");
-    expect(placeOf(pieces, key, start - 0.001).place).toBe("video");
-    expect(placeOf(pieces, key, 0).place).toBe("video");
+  test("any frame before the frame the clip begins in is on the video", () => {
+    // The frame from 1677.56, the one before the clip's first.
+    expect(placeOf(pieces, key, 1677.59, fps).place).toBe("video");
+    expect(placeOf(pieces, key, 1677.56, fps).place).toBe("video");
+    expect(placeOf(pieces, key, 0, fps).place).toBe("video");
   });
 
-  test("anywhere after it is on the video", () => {
-    expect(placeOf(pieces, key, end + 0.001).place).toBe("video");
-    expect(placeOf(pieces, key, end + frame).place).toBe("video");
+  test("the frame that holds the clip's first moment is on the clip", () => {
+    // The paused video on the Mac answers 1677.60 for a playhead put on
+    // the clip's start, so a step back and a step forward, a frame each,
+    // land on 1677.60. By the second that is before the clip, and the
+    // clip dimmed while its own first frame was on screen.
+    const back = 1677.6 - frame;
+    expect(placeOf(pieces, key, back, fps).place).toBe("video");
+    expect(placeOf(pieces, key, back + frame, fps).place).toBe("clip");
+    expect(placeOf(pieces, key, 1677.6, fps).place).toBe("clip");
+    expect(placeOf(pieces, key, start - 0.001, fps).place).toBe("clip");
+  });
+
+  test("any frame after the frame that holds its last moment is on the video", () => {
+    // The end, 1712, is a frame's start, so its last moment is in the
+    // frame from 1711.96 and the frame from 1712 holds nothing of it.
+    expect(placeOf(pieces, key, end + 0.001, fps).place).toBe("video");
+    expect(placeOf(pieces, key, end + frame, fps).place).toBe("video");
   });
 
   test("the end edge is on the clip, at its end", () => {
-    expect(placeOf(pieces, key, end, "clip").place).toBe("end");
-    expect(placeOf(pieces, key, end).place).toBe("end");
+    expect(placeOf(pieces, key, end, fps, "clip").place).toBe("end");
+    expect(placeOf(pieces, key, end, fps).place).toBe("end");
+  });
+
+  test("so is the frame that holds the clip's last moment", () => {
+    // The last frame of the clip, which is where its play stops, and the
+    // video's answer there.
+    expect(placeOf(pieces, key, end - frame, fps).place).toBe("end");
+    expect(placeOf(pieces, key, end - 0.01, fps).place).toBe("end");
+    // The frame before it is still inside.
+    expect(placeOf(pieces, key, end - 2 * frame, fps).place).toBe("clip");
+  });
+
+  test("an end that falls inside a frame has that frame for its last", () => {
+    const mid = [{ start: 10.01, end: 20.02 }];
+    expect(placeOf(mid, key, 20.0, fps).place).toBe("end");
+    expect(placeOf(mid, key, 20.03, fps).place).toBe("end");
+    expect(placeOf(mid, key, 20.04, fps).place).toBe("video");
+    expect(placeOf(mid, key, 10.0, fps).place).toBe("clip");
+    expect(placeOf(mid, key, 9.99, fps).place).toBe("video");
+  });
+
+  test("a trim of the end on frames leaves the end, so the space bar starts over", () => {
+    // The playhead goes with the edge, a frame before the end, see
+    // docs/APP.md. That is the clip's last frame, so it is the end, and
+    // the next press of the space bar plays the clip from its start.
+    const p = placeOf(pieces, key, end - frame, fps, "clip");
+    expect(p.place).toBe("end");
+    expect(playFrom(p.place, pieces, end - frame)).toEqual({ clip: true, at: start });
   });
 
   test("a trim says it is about the clip, wherever the pieces are drawn", () => {
     // The playhead goes with the edge being dragged, and the video preview
     // can still have the pieces from before the last move of the hand.
-    expect(placeOf(pieces, key, start - 0.5, "clip").place).toBe("clip");
-    expect(placeOf(pieces, key, end + 0.5, "clip").place).toBe("end");
+    expect(placeOf(pieces, key, start - 0.5, fps, "clip").place).toBe("clip");
+    expect(placeOf(pieces, key, end + 0.5, fps, "clip").place).toBe("end");
   });
 
   test("with no clip chosen it is on the video", () => {
-    expect(placeOf([], key, 1680)).toEqual(onVideo);
-    expect(placeOf(pieces, "", 1680)).toEqual(onVideo);
-    expect(placeOf([], "", 1680, "clip")).toEqual(onVideo);
+    expect(placeOf([], key, 1680, fps)).toEqual(onVideo);
+    expect(placeOf(pieces, "", 1680, fps)).toEqual(onVideo);
+    expect(placeOf([], "", 1680, fps, "clip")).toEqual(onVideo);
   });
 
   test("a place is about one clip, and another clip chosen is on the video", () => {
-    const p = placeOf(pieces, key, 1680);
+    const p = placeOf(pieces, key, 1680, fps);
     expect(placeFor(p, key)).toBe("clip");
     expect(placeFor(p, "plan/4")).toBe("video");
     expect(placeFor(p, null)).toBe("video");
@@ -119,17 +162,17 @@ describe("the video's answer never moves the state", () => {
   });
 
   test("the place was set by picking, and the answer plays the clip from its start", () => {
-    const p = placeOf(pieces, key, start, "clip");
+    const p = placeOf(pieces, key, start, fps, "clip");
     expect(playFrom(placeFor(p, key), pieces, answer)).toEqual({ clip: true, at: start });
   });
 
   test("and an answer a frame late plays the clip from there", () => {
-    const p = placeOf(pieces, key, start, "clip");
+    const p = placeOf(pieces, key, start, fps, "clip");
     expect(playFrom(placeFor(p, key), pieces, start + frame)).toEqual({ clip: true, at: start + frame });
   });
 
   test("on the video an answer inside the clip is still the video", () => {
-    const p = placeOf(pieces, key, start - 1);
+    const p = placeOf(pieces, key, start - 1, fps);
     expect(playFrom(placeFor(p, key), pieces, start + frame).clip).toBe(false);
   });
 });
