@@ -155,6 +155,14 @@ describe("one card carries the search's work, from the first card to the last", 
     expect(new Carrier().pick(cards, "s")).toBe("s/1");
   });
 
+  test("first is where the list puts a card, when it says", () => {
+    // The list keeps a search's cards in the places they came into, so the
+    // first card named is first, wherever in the episode it lies.
+    const order = new Map([["s/3", 0], ["s/1", 1]]);
+    const cards = [card("s/1", 100), card("s/3", 900)];
+    expect(new Carrier().pick(cards, "s", (a) => order.get(a.key) ?? Infinity)).toBe("s/3");
+  });
+
   test("a card that stopped carries nothing", () => {
     expect(new Carrier().pick([card("s/1", 100, { stopped: true }), card("s/2", 400)], "s")).toBe("s/2");
   });
