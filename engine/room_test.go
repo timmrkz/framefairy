@@ -150,13 +150,15 @@ func TestAWindowHoldsItsClipsAtTheirShortest(t *testing.T) {
 func TestTheWeightOfAWindowIsNeverLessThanWhatItSends(t *testing.T) {
 	tr := talk(1200)
 	weights := WeighLines(tr)
+	// Counted the way the default recipe writes the transcript.
+	r, _ := RecipeNamed("")
 	lines := BuildLines(tr.Words, nil, nil)
 	if len(weights) != len(lines) {
 		t.Fatalf("%d weights for %d lines", len(weights), len(lines))
 	}
 	for _, span := range [][2]int{{0, 1200}, {0, 9}, {3, 12}, {95, 105}, {990, 1200}, {500, 501}} {
 		part := BuildLines(tr.Words[span[0]*2:span[1]*2], nil, nil)
-		sent := runeLen(AnnotateLines(part))
+		sent := runeLen(r.Transcript(part, PlanOptions{}))
 		counted := 0
 		for _, w := range weights[span[0]:span[1]] {
 			counted += w.Chars

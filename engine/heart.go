@@ -124,6 +124,9 @@ var middleRecipe = Recipe{
 	Switchable: true,
 	Plain:      middlePlain,
 	Version:    PromptVersion,
+	Transcript: func(lines []Line, opts PlanOptions) string {
+		return leanTranscript(lines, middleShows.and(opts.Switches))
+	},
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
 		opts.Switches = middleShows.and(opts.Switches)
 		return prompt("middle", lines, leanTranscript(lines, opts.Switches), opts)

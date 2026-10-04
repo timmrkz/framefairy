@@ -740,11 +740,15 @@ is worked out from the model that is going to read it, in `engine/room.go`:
 
 What the instructions and the ask take comes off the top, and what is left
 is the room in characters of numbered transcript. The engine weighs every
-line of the transcript in the same characters, counted with the widest line
-number a window could give it, so a window that the app adds up as fitting
-is never one the engine refuses. Past the end of the transcript a second
-weighs 25 characters, or 15 percent more than the episode's own average
-once there are ten minutes of it, whichever is more.
+line of the transcript in the same characters, written the way the
+default recipe writes it, `middle`'s number, pause mark and words, and
+counted with the widest line number a window could give it, so a window
+that the app adds up as fitting is never one the engine refuses. Past the
+end of the transcript a second weighs 20 characters, or 15 percent more
+than the episode's own average once there are ten minutes of it,
+whichever is more. A half hour of German came to 27,125 characters with
+`middle`, 15 a second, where `lines` wrote about 40,000 and a second
+weighed 25.
 
 In practice Gemma 4 and Ministral 3 read six hours of German at once, the
 API reads any episode with Sonnet, seven hours with Opus and not quite three
@@ -837,7 +841,11 @@ loading the model, the model reading the transcript, the model thinking,
 the model writing its clips, a local model asked again about the clips well
 off the length, and the framing still going after that.
 Every search that finishes keeps how long each part took, per model, in
-`~/.framefairy/speed.json`: the seconds to load, the transcript characters
+`~/.framefairy/speed.json`, set aside when what it measures changes, as
+it did when `middle` became the default and thought a fraction as long as
+`lines`. A model not timed yet is measured against `middle` on an M2 Max:
+27,125 characters read in about 12 seconds, 30 seconds of thought, and
+six stories written in a few. The file holds the seconds to load, the transcript characters
 read per second, the seconds of thinking and the tokens thought a second,
 the seconds per clip, the seconds the model took to answer about each
 clip held back, and the seconds of framing after the answer and the
@@ -848,7 +856,8 @@ fit until the answer says how many are held back, and the clips not yet
 framed when the model stops. One number for each said About 0:05 left
 for a minute while the model was asked about four clips. The fitting is
 counted from the start of a local search, whether a clip will need it or
-not, and a search with nothing to fit steps over it. It was not counted
+not, and a search with nothing to fit steps over it. A search with a
+recipe that never asks again, `middle` among them, has no fitting at all. It was not counted
 at all once, and the fill stood full for as long as the model was asked
 about two clips. An estimate that grows once the answer is in never
 takes the fill back: the fill waits until the work catches up. While a search runs it holds the

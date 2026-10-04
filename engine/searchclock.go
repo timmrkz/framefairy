@@ -37,7 +37,10 @@ import (
 // 3 gave fitting a part of its own. Before, the tail ran from the end of
 // the answer and held the fitting too. 4 measures the fitting and the
 // tail per clip, because both take as long as the clips they wait on.
-const speedVersion = 4
+// 5 times searches that ask middle, which reads two thirds of what lines
+// read and thinks a fraction as long. A search timed with lines would have
+// the first searches with middle wait in the thinking and then jump.
+const speedVersion = 5
 
 // searchSpeed is how long the parts of a search took on this machine, for
 // one model.
@@ -66,13 +69,15 @@ type searchSpeed struct {
 }
 
 // measuredLocal stands in for a local model this machine has not timed yet:
-// Gemma 4 26B A4B on an M2 Max with 32 GB, reading a half hour window of
-// German, 16,000 tokens.
-// The 28 seconds after the answer were timed with the fitting of two clips
-// in them and one round of framing after it, and are split between the
-// two.
-var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 1170,
-	Thought: 260, Rate: 47, Clip: 1.1, Fit: 6, Tail: 16, Runs: 1}
+// Gemma 4 26B A4B on an M2 Max with 32 GB, asked with middle about a half
+// hour window of German in Tim's runs of 3 October. It read 27,125
+// characters in about 12 seconds, thought its 2,048 tokens in about 30
+// and wrote six stories in a few. The load, the fitting and the framing
+// after the answer were timed with lines, and do not depend on how the
+// model is asked. middle is never asked again about a clip, so its
+// fitting is only there for a recipe that is.
+var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 2260,
+	Thought: 30, Rate: 68, Clip: 0.5, Fit: 6, Tail: 16, Runs: 1}
 
 // measuredCloud stands in for a model in the cloud this machine has not
 // timed yet. It is a guess, not a measurement: a half hour window read in
@@ -263,8 +268,9 @@ type searchNow struct {
 	// Local is a model on this machine, which has to be loaded first. One
 	// that was running already skips it. Only a local model is asked again
 	// about the clips well off the length, so only its search has a part
-	// for the fitting.
-	Local, Loads bool
+	// for the fitting, and only with a recipe that asks: NoFit is a recipe
+	// that never does, as middle, whose search steps over it.
+	Local, Loads, NoFit bool
 	// ReadDone and ReadOf are the tokens read and to read, where the model
 	// says. The API does not.
 	ReadDone, ReadOf int
@@ -321,7 +327,7 @@ func searchProgress(now searchNow, past searchSpeed, known bool) (float64, float
 	// constant for it said About 0:05 left for a minute while the model
 	// was asked about four.
 	fitClips := 0
-	if now.Local {
+	if now.Local && !now.NoFit {
 		switch {
 		case now.FitOf > 0:
 			fitClips = now.FitOf

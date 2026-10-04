@@ -60,6 +60,10 @@ type Recipe struct {
 	// of whole lines, first and last, counted from zero. Nil numbers every
 	// line on its own.
 	Units func(lines []Line) [][2]int
+	// Transcript is the transcript as the request writes it out, a line a
+	// line, for a recipe that numbers every line. The room a window needs
+	// is counted from it, see WeighLines. Nil is the lines recipe's way.
+	Transcript func(lines []Line, opts PlanOptions) string
 	// Request is the request: what is asked for, and the transcript written
 	// out with the units numbered from 1.
 	Request func(lines []Line, units [][2]int, opts PlanOptions) string

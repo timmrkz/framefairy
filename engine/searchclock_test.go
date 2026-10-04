@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -524,5 +525,18 @@ func TestTheClockCountsTheFittingAndKeepsItPerClip(t *testing.T) {
 	// rounds of four framers.
 	if got.Fit != 10 || got.Tail != 6 || got.Clip != 2 {
 		t.Errorf("fit %.2f, tail %.2f, clip %.2f, want 10, 6 and 2", got.Fit, got.Tail, got.Clip)
+	}
+}
+
+// A recipe that never asks again about a clip, as middle, has no fitting
+// to wait for, so the time left never holds one: the clip asked about and
+// the round of framing it would wait on.
+func TestASearchThatNeverFitsLeavesOutTheFitting(t *testing.T) {
+	now := searchNow{Part: partThinking, Chars: 30000, Count: 6, Local: true, Budget: -1, Framers: 1}
+	_, fits := searchProgress(now, measuredLocal, true)
+	now.NoFit = true
+	_, never := searchProgress(now, measuredLocal, true)
+	if want := measuredLocal.Fit + measuredLocal.Tail; math.Abs(fits-never-want) > 0.01 {
+		t.Errorf("%.2f s left with a fitting and %.2f without, want %.0f between", fits, never, want)
 	}
 }
