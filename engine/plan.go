@@ -62,6 +62,9 @@ type PlanOptions struct {
 	Fresh      bool
 	// Recipe is how the model is asked, by name. Empty is DefaultRecipe.
 	Recipe string
+	// Switches change what a recipe asked from a prompt file shows the
+	// model, see PromptSwitches.
+	Switches PromptSwitches
 	// Record appends new model answers to the episode's training records.
 	Record bool
 	// Local plans on this machine instead of through the API.
@@ -149,35 +152,20 @@ func MarshalPlan(plan any) ([]byte, error) {
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
-func buildPrompt(lines []Line, opts PlanOptions) string {
-	task := fmt.Sprintf("Find up to %d clips, the strongest first. Each runs %s to %s seconds "+
-		"once what you leave out is gone. Keep the heart and the payoff of every story whole.",
-		opts.Count, fixed(opts.MinLen, 0), fixed(opts.MaxLen, 0))
-	// A window searched before, or one with clips made by hand in it, has
-	// lines that are clips already. They stay in the transcript, because a
-	// new clip is read against what is around it, and the task says to
-	// leave them.
-	if taken := takenLines(lines, opts.Taken); len(taken) > 0 {
-		task += " " + takenSentence(taken)
-	}
-	ask := []string{
-		task,
-		fmt.Sprintf("The transcript below is numbered from 1 to %d. Those numbers are what "+
-			"you return. Each line shows its talking time in seconds, and any pause before "+
-			"it, so a clip's length is the lines you keep plus the pauses inside the runs "+
-			"you keep.", len(lines)),
-	}
-	if opts.Context != "" {
-		ask = append(ask, "About the video: "+opts.Context)
-	}
-	ask = append(ask, "", "Transcript:", "", AnnotateLines(lines), "",
-		"That is the whole transcript. "+task,
-		"Reply with the JSON object and nothing else.")
-	return strings.Join(ask, "\n")
-}
-
 // takenSentence names the lines that are clips already.
 func takenSentence(taken [][2]int) string {
+	names := takenNames(taken)
+	if len(taken) == 1 && taken[0][0] == taken[0][1] {
+		return fmt.Sprintf("Line %s is in a clip already. Find other moments, and do not keep it.", names)
+	}
+	return fmt.Sprintf("Lines %s are in clips already. Find other moments, and keep none of those lines.", names)
+}
+
+// takenNames names runs of lines as in 3-7, 9 and 12.
+func takenNames(taken [][2]int) string {
+	if len(taken) == 0 {
+		return ""
+	}
 	runs := make([]string, len(taken))
 	for i, r := range taken {
 		runs[i] = strconv.Itoa(r[0])
@@ -185,14 +173,10 @@ func takenSentence(taken [][2]int) string {
 			runs[i] += "-" + strconv.Itoa(r[1])
 		}
 	}
-	names := runs[0]
 	if n := len(runs); n > 1 {
-		names = strings.Join(runs[:n-1], ", ") + " and " + runs[n-1]
+		return strings.Join(runs[:n-1], ", ") + " and " + runs[n-1]
 	}
-	if len(taken) == 1 && taken[0][0] == taken[0][1] {
-		return fmt.Sprintf("Line %s is in a clip already. Find other moments, and do not keep it.", names)
-	}
-	return fmt.Sprintf("Lines %s are in clips already. Find other moments, and keep none of those lines.", names)
+	return runs[0]
 }
 
 type savedReply struct {
@@ -221,10 +205,10 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// later stage crashes, or you simply re-run with the same transcript, the
 	// API is not called a second time. Another recipe asks something else,
 	// so it is another reply, and what it tells the model is part of the
-	// question. The default recipe keeps the fingerprint it always had, so
+	// question. The lines recipe keeps the fingerprint it always had, so
 	// the replies saved before recipes existed are still found.
 	asked := opts.Model + "\x00" + prompt
-	if recipe.Name != DefaultRecipe {
+	if recipe.Name != linesRecipe.Name {
 		asked = opts.Model + "\x00" + recipe.Name + "\x00" + recipe.System + "\x00" + prompt
 	}
 	sum := sha256.Sum256([]byte(asked))
@@ -284,9 +268,23 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	defer build.stop()
 	// A local model can be asked again about the clips that do not fit the
 	// length, and a reused reply brings the answer it had to that.
-	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0)
+	// One that names the heart of every clip is fitted to the length by
+	// the engine, and never asked again.
+	build.fits = opts.Local != nil && (!haveReply || len(savedFits) > 0) && !recipe.Hearts
 	var scanner clipScanner
+	var lineScan lineScanner
+	plain := recipe.Plain
 	listen := &Listener{Text: func(piece string) {
+		// An answer without JSON is read a line at a time, each line a
+		// clip, into the object a JSON answer gives.
+		if plain != nil {
+			for _, line := range lineScan.feed(piece) {
+				if clip, ok := plain.Clip(line); ok {
+					build.take(clip)
+				}
+			}
+			return
+		}
 		for _, raw := range scanner.feed(piece) {
 			build.take(raw)
 		}
@@ -301,6 +299,8 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			budget = opts.Local.Think
 		}
 		clock := newSearchClock(e.Log, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count, budget)
+		// Set before the clock runs, so nothing reads it while it is set.
+		clock.now.NoFit = !build.fits
 		go clock.run()
 		defer clock.stop()
 		build.clock = clock
@@ -370,8 +370,17 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 		err := e.Log.Step("choosing and condensing", func() error {
 			var err error
+			system := recipe.System
+			if system == "" {
+				system = noSystem
+			}
+			// A prefilled brace is the start of a JSON answer, and an
+			// answer without JSON would begin with it too.
+			if plain != nil && e.Prefill {
+				e.Prefill = false
+			}
 			reply, err = e.CallAPIWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
-				opts.LogDir, "plan", recipe.System, listen)
+				opts.LogDir, "plan", system, listen)
 			return err
 		})
 		if err != nil {
@@ -386,7 +395,11 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// has normally been taken by now. This catches what the scanner could
 	// not see, an answer that only parses once it is salvaged, and says
 	// what was wrong with the clips that were left out.
-	data, note, err := ExtractJSONObject(reply, "clips")
+	whole := reply
+	if plain != nil {
+		whole = plain.answer(reply)
+	}
+	data, note, err := ExtractJSONObject(whole, "clips")
 	switch {
 	case err != nil && build.count() > 0:
 		// The clips taken as the answer arrived are whole and checked. What
@@ -395,7 +408,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		e.Log.Warn("the end of the answer could not be read. The %d clip(s) before it are kept.",
 			build.count())
 		data = nil
-	case err != nil && opts.Local != nil:
+	case err != nil && (opts.Local != nil || plain != nil):
+		// A repair is asked for JSON, and an answer without it has
+		// nothing a repair could put right.
 		return nil, build.failed(renderErr("%s The prompt and the answer are in %s.", err, opts.LogDir))
 	case err != nil:
 		e.Log.Warn("%s", err)
@@ -485,7 +500,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 					key = "refit"
 				}
 				asks++
-				saveFit(cachePath, key, answer.Content)
+				saveFit(cachePath, key, answer.Content, answer)
 				return answer.Content, nil
 			}
 		}
@@ -566,15 +581,21 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 			body = []byte("{\n  \"parsed\": " + indented.String() + extra + "\n}")
 		}
 	}
+	// An answer without JSON keeps how it was got too, which the
+	// comparison reads.
 	if body == nil {
-		body, _ = MarshalPlan(map[string]string{"text": reply})
+		saved := map[string]any{"text": reply}
+		if how != nil {
+			saved["how"] = how
+		}
+		body, _ = MarshalPlan(saved)
 	}
 	_ = os.WriteFile(cachePath, body, 0o644)
 }
 
 // saveFit adds the answer about the clips that did not fit to the saved
 // reply, under key, where a search that reuses the reply finds it.
-func saveFit(cachePath, key, fit string) {
+func saveFit(cachePath, key, fit string, how *localAnswer) {
 	if cachePath == "" {
 		return
 	}
@@ -588,6 +609,15 @@ func saveFit(cachePath, key, fit string) {
 	}
 	value, _ := json.Marshal(fit)
 	saved[key] = value
+	// How the model got to it goes beside it, as with the first answer, so
+	// a comparison counts every ask and what it took.
+	if how != nil {
+		told := *how
+		told.Content = ""
+		if body, err := json.Marshal(told); err == nil {
+			saved[key+"_how"] = body
+		}
+	}
 	if body, err := json.MarshalIndent(saved, "", "  "); err == nil {
 		_ = os.WriteFile(cachePath, body, 0o644)
 	}

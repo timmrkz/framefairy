@@ -224,21 +224,26 @@ type LineWeight struct {
 }
 
 // WeighLines is the transcript cut into the lines a search would send, each
-// with what it weighs. The app adds them up over a window to know whether
-// the window fits the room, without asking the engine at every step of a
-// drag. The numbers in front of a line depend on where the window starts,
-// so a line is counted with the widest number any window of this episode
-// would give it, which only ever errs towards a window that fits.
+// with what it weighs, written the way the default recipe writes them. The
+// app adds them up over a window to know whether the window fits the
+// room, without asking the engine at every step of a drag. The numbers in
+// front of a line depend on where the window starts, so a line is counted
+// with the widest number any window of this episode would give it, which
+// only ever errs towards a window that fits.
 func WeighLines(t *Transcript) []LineWeight {
 	lines := BuildLines(t.Words, t.Levels(), nil)
 	out := make([]LineWeight, 0, len(lines))
 	widest := len(itoa(len(lines)))
-	for i, row := range strings.Split(AnnotateLines(lines), "\n") {
+	written := AnnotateLines(lines)
+	if r, _ := RecipeNamed(""); r.Transcript != nil {
+		written = r.Transcript(lines, PlanOptions{})
+	}
+	for i, row := range strings.Split(written, "\n") {
 		if i >= len(lines) {
 			break
 		}
 		// The number this line has here, and the widest it could have.
-		pad := widest - len(itoa(lines[i].Index))
+		pad := widest - len(itoa(i+1))
 		out = append(out, LineWeight{Start: lines[i].Start(), End: lines[i].End(),
 			Chars: runeLen(row) + 1 + max(pad, 0)})
 	}
@@ -246,9 +251,12 @@ func WeighLines(t *Transcript) []LineWeight {
 }
 
 // SpokenChars is how many characters of numbered transcript a second of an
-// episode makes, before its own transcript can say: a half hour of German
-// came to about 40,000, and this leaves room to spare.
-const SpokenChars = 25.0
+// episode makes, before its own transcript can say. The middle recipe
+// writes a line with its words and a pause mark, and a half hour of German
+// came to 27,125 characters in Tim's runs of 3 October, 15 a second. This
+// leaves a third to spare for somebody who talks faster. lines wrote a
+// line with its length, pause and level, and needed 25.
+const SpokenChars = 20.0
 
 // RateOf is how many characters a second of this episode makes, from the
 // lines it has so far, with 15 percent on top for a stretch busier than the

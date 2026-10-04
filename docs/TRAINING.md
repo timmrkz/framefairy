@@ -8,10 +8,27 @@ what happens to clips and shows nothing about training.
 
 ## 1. Answer format
 
+### Version 5 (current)
+
+The `middle` recipe, with the pauses marked. One message: the transcript,
+only the words, with `…` before a line that follows a pause of a second or
+more, and a few sentences after it. The answer is one line a story with
+three line numbers, where it starts, a line inside it and where it ends,
+as in `31 40 52`. The engine fits the story to the length and cuts the
+pauses inside it, so the answer says nothing of them. See
+[PROMPTS.md](PROMPTS.md).
+
+It is a new way of asking, not an extension of version 4, so it starts a
+format of its own. The records of versions 1 to 4 stay on the machine,
+and the export writes each example in its own format, see Older records
+below. Every version from 5 on extends the one before.
+
+### Versions 1 to 4, the lines recipe
+
 The model answers with line ranges. Each pair `[first, last]` is a run of
 consecutive lines to keep.
 
-### Version 2 (current)
+### Version 2
 
 - A pause between two lines inside one run stays, at full length.
 - Two runs may follow each other directly. `[[12, 14], [15, 18]]` keeps lines
@@ -216,9 +233,18 @@ weights or ignore them.
 
 ### Older records
 
-Records made with an older answer format are exported with the current
-system prompt, since each version only extends the one before. Their meta
-data says `system_upgraded: true` and keeps `recorded_prompt_version`.
+There are two formats, the lines recipe of versions 1 to 4 and the middle
+recipe from version 5 on, and an answer of one cannot be written in the
+other. So every example is exported in its own format. Within a format,
+an older record is exported with the latest system prompt of that format,
+since each version only extends the one before. Its meta data says
+`system_upgraded: true` and keeps `recorded_prompt_version`, and
+`prompt_version` is the latest of its format. Middle sends no system
+prompt, so its examples are the request and the answer alone. Its target
+is the final clip's first and last line with the line the model named
+inside the story, or the line halfway when a moved edge left that one
+outside. A cut pause cannot be said in a middle answer, so it makes no
+correction pair. Which format a training run uses is the run's choice.
 Records made before the proposal segments were stored have no `changes`,
 and their edits count as plain keeps.
 

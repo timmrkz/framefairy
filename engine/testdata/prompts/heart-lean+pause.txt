@@ -1,0 +1,19 @@
+Below is the transcript of part of a video, one numbered line per phrase as it was spoken. "…" before a line marks a pause of a second or more.
+
+[1] Was ist deine erste Erinnerung?
+[2] … Erste Erinnerung?
+[3] … Nicht so leicht zu beantworten, weil
+[4] ich war dann noch ein relativ kleiner Dütz, zweite, dritte Klasse.
+[5] … Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.
+
+That is the whole transcript. Find up to 6 moments in it that each work on their own as a short vertical video: a small, complete story a stranger can follow, from its setup to its payoff. Prefer what is specific: something that happened, a surprise, something funny, an insight put plainly. Mix kinds. Fewer strong moments beat filler.
+
+For each moment, name:
+- opening: the line it starts on, the first a stranger needs. The question or the setup that says who, when and where.
+- heart: the first and the last line of what happened and how it lands. Its last line is the payoff.
+- keep: the lines of the story as runs [first, last], from the opening or earlier to the payoff or later. To leave out an aside or a restart, end a run before it and start the next after it.
+
+From the opening to the payoff should be up to about 41 words.
+
+Answer with JSON only, like this: {"clips": [{"title": "...", "reason": "...", "opening": 14, "heart": [17, 19], "keep": [[12, 19]]}]}
+The title is a hook in the language of the transcript. The reason says in at most twelve words why the moment works.

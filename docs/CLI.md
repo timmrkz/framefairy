@@ -99,7 +99,7 @@ nothing left to refresh.
 | `--keep-pause 0.10` | 0.10 s | air left on each side of a cut |
 | `--silence-db -42` | measured | what counts as silence. Taken from the audio when not given |
 | `--context ""` | empty | guest name, company, vocabulary. Helps the choice of moments and the spelling of names |
-| `--recipe lines` | `lines` | how the model is asked for clips, see [Trying other ways of asking](#trying-other-ways-of-asking) |
+| `--recipe lines` | `middle` | how the model is asked for clips, see [Trying other ways of asking](#trying-other-ways-of-asking) |
 | `--compare lines,stories` | off | search the window once with each recipe and write a report, see below. `stories@1024` is `stories` thinking 1024 tokens |
 | `--replan` | off | discard the saved plan and choose again |
 | `--plan-only` | off | write `clips.json` and stop |
@@ -190,9 +190,9 @@ one after another. How much a model reads is in
 ## Trying other ways of asking
 
 How the model is asked for clips is a recipe: what it is told, how the
-transcript is written out for it, and what its answer looks like. `lines`
-is how clips have always been chosen, and the app uses it. `stories` is
-the first other one: a brief that fits any video, the transcript as
+transcript is written out for it, and what its answer looks like.
+`middle` is how clips are chosen, and the app uses it. `lines` is how
+they were chosen before it. `stories` is the first other one: a brief that fits any video, the transcript as
 sentences in paragraphs with a time at the start of each, and "up to 12,
 the strongest first" rather than exactly 12. `stories-edit` is `stories`
 asked twice, the second time only about where every clip starts and ends,
@@ -204,6 +204,36 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare stories,stories-edit
 ```
 
 shows whether the second ask makes better edges, and what it costs.
+`heart` asks once: the model names the heart of every clip and the
+program fits each to the length around it, see
+[ENGINE.md](ENGINE.md#recipes).
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare lines,heart,heart@1024,heart@0
+```
+
+shows whether `heart` finds stories as good as `lines` and how much
+sooner, and how much of the thinking it still needs once it no longer
+has to count seconds. `heart-opening` asks for the line a clip opens on
+too, so a story keeps the setup a stranger needs. `heart-lean` asks the
+same in one short message with only the numbered words, `points` for
+three lines a clip with a title and a reason, and `middle` for only three
+line numbers a story, a line inside it, its start and its end, see
+[PROMPTS.md](PROMPTS.md). `points` and `middle` answer one line a clip
+rather than JSON. Every side starts a llama-server of its own, so none
+reads from the cache of the one before.
+
+What `heart-lean`, `points` and `middle` show the model beyond the words
+and the length in words is switched on after a `+`: `+pause` or
+`+pause2` for a mark before a long pause, and `+times` for the time each
+line starts at, with the length in seconds. `middle` always marks a
+pause of a second, so `middle+pause` is `middle`, and `middle+pause2`
+marks only the pauses of two seconds. So a new idea is a side in
+the command:
+
+```
+framefairy episode.mp4 --from 0 --to 30:00 --compare heart-opening,points,middle,middle+times,middle@1024
+```
 
 A recipe with `@` and a number thinks that many tokens, whatever
 `--think` says, so one recipe can be compared with itself:
@@ -229,17 +259,22 @@ framefairy episode.mp4 --from 0 --to 30:00 --compare lines,stories
 
 searches the same window once with each recipe and writes
 `<episode>.framefairy/experiments/compare-<date>.md`: a table of what each
-search cost, the time, the seconds the model took, the size of the request
+search cost, the time, how many times the model was asked, the seconds it
+took over all of them and how many of them went on reading, the tokens it
+read and how many of those were new rather than in llama-server's cache
+from the side before, the tokens it thought, the size of the request
 and what the local model read and wrote, a table of what can be counted
 about the clips, how many start or end mid-sentence and how many are well
-off the length, and then every clip each found, with its title and the
-words that stay, to read side by side. Each recipe's plan is in
+off the length, a table of the moments found, one row a moment in the
+order they come with each side's clip of it, and then every clip each
+found, where it is, its title and the words that stay, to read side by
+side. Each recipe's plan is in
 `experiments/<recipe>/`, beside `prompt.txt`, what it asked, and
 `reply.json`, what came back. So `experiments/` holds everything a
 comparison made. When every search failed, there is nothing to
 compare: the comparison fails with the reason and writes no report.
 
-A search with any recipe but `lines`, and every search of a comparison, is
+A search with any recipe but `middle`, and every search of a comparison, is
 an experiment. Its plan goes in `experiments/`, the episode's own plan and
 captions are left alone, nothing is rendered, and nothing is recorded for
 training, because the training records are answers to one way of asking.

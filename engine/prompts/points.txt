@@ -1,0 +1,17 @@
+Below is the transcript of part of a video, one numbered line per phrase as it was spoken{{if .Times}}, each with the minute and second it starts at{{end}}.{{if .Pause}} "…" before a line marks a pause of {{.Pause}} or more.{{end}}{{if .Context}} About the video: {{.Context}}{{end}}
+
+{{.Transcript}}
+
+That is the whole transcript. Find up to {{.Count}} moments in it that each work on their own as a short vertical video: a small, complete story a stranger can follow, from its setup to its payoff. Prefer what is specific: something that happened, a surprise, something funny, an insight put plainly. Mix kinds. Fewer strong moments beat filler.{{if .Taken}} {{.Taken}}{{end}}
+
+For each moment, give three line numbers:
+- start: the first line a stranger needs. The question or the setup that says who, when and where.
+- payoff: the line where it lands, what happened in the end or what it meant.
+- end: the last line. Usually the payoff, later only to finish its sentence or to let it land.
+{{if .Times}}
+From the start to the end should take about {{.Min}} to {{.Max}} seconds, which the times tell you.
+{{end}}{{if .MaxWords}}
+From the start to the end should be up to about {{.MaxWords}} words.
+{{end}}
+Answer with one line for each moment and nothing else, like this:
+12 18 19 | a hook in the language of the transcript | why the moment works, in at most twelve words

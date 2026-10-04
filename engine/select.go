@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -16,31 +17,9 @@ import (
 // transcript, where a model reading a long document attends to it best.
 // Side by side on Tim's episode, as the recipe lines2, it read better
 // than the brief before it.
-const SystemPrompt = storyBrief + `
-Pauses are yours to decide. A pause between two lines in one run stays, at full ` +
-	`length. To cut a pause, end a run on the line before it and start the next run on ` +
-	`the line after it. The two runs may follow each other directly, so [[12, 14], [15, 18]] ` +
-	`keeps lines 12 to 18 and cuts only the pause between 14 and 15. To leave material out, ` +
-	`leave its lines out. A long pause before a short line is often the speaker landing ` +
-	`something, and cutting it throws the landing away. A long pause in the middle of ` +
-	`someone losing their thread is dead weight.
-
-OUTPUT CONTRACT
-
-Your reply is parsed by a program. Return exactly one JSON object and nothing else. ` +
-	`No prose, no markdown fences.
-
-{"clips": [{"slug": "...", "title": "...", "reason": "...", "keep": [[12, 18], [24, 27]]}]}
-
-- "clips": at most the number asked for.
-- "slug": lowercase ASCII letters, digits and hyphens, at most 64 characters, ` +
-	`different for every clip.
-- "title": a hook line in the language of the transcript, one line, at most 200 characters.
-- "reason": one sentence, at most 300 characters.
-- "keep": runs of lines to keep, as [first, last] line numbers from the transcript, ` +
-	`in ascending order and not overlapping. A run may start on the line right after ` +
-	`the previous one ends, which cuts the pause between them.
-`
+//
+// It is kept in prompts/lines.txt, with the request it goes with.
+var SystemPrompt = promptSystem("lines")
 
 // storyBrief is what lines and stories2 both tell the model about a good
 // clip, for any video.
@@ -249,6 +228,13 @@ type PlanEntry struct {
 	Title  string
 	Reason string
 	Keep   [][2]int
+	// Heart is the first and last line the model named as the heart of
+	// the clip, which fitting it to the length never cuts. It is zero
+	// where the recipe asks for none, see heart.go.
+	Heart [2]int
+	// Opening is the line the model named as the one a clip must not
+	// start after, 0 where the recipe asks for none, see heart.go.
+	Opening int
 }
 
 // validateEntry checks one clip of an answer, the index-th. It gives the
@@ -258,6 +244,21 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	clip, ok := clipAny.(map[string]any)
 	if !ok {
 		return PlanEntry{}, []string{fmt.Sprintf("clip %d is not an object", index)}, false
+	}
+	// points and middle name three lines rather than runs, see fromPoints
+	// and fromMiddle.
+	if _, has := clip["keep"]; !has {
+		read := fromPoints
+		if _, named := clip["middle"]; named {
+			read = fromMiddle
+		}
+		if _, named := clip["start"]; named {
+			points, problem := read(clip, index, lineCount)
+			if problem != "" {
+				return PlanEntry{}, []string{problem}, false
+			}
+			clip = points
+		}
 	}
 	rangesIn, ok := clip["keep"].([]any)
 	if !ok || len(rangesIn) == 0 {
@@ -298,6 +299,40 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 	if len(ranges) == 0 {
 		return PlanEntry{}, problems, false
 	}
+	// A heart that cannot be read is no heart, and the clip is taken as
+	// the model kept it.
+	var heart [2]int
+	if heartAny, present := clip["heart"]; present {
+		pair, ok := heartAny.([]any)
+		var first, last int
+		ok1, ok2 := false, false
+		if ok && len(pair) == 2 {
+			first, ok1 = toInt(pair[0])
+			last, ok2 = toInt(pair[1])
+		}
+		switch {
+		case !ok1 || !ok2:
+			problems = append(problems, fmt.Sprintf("clip %d: its heart is not a pair of numbers", index))
+		case first < 1 || last > lineCount || last < first:
+			problems = append(problems, fmt.Sprintf("clip %d: its heart %d-%d is not inside 1-%d",
+				index, first, last, lineCount))
+		default:
+			heart = [2]int{first, last}
+		}
+	}
+	opening := 0
+	if openingAny, present := clip["opening"]; present {
+		n, ok := toInt(openingAny)
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("clip %d: its opening is not a number", index))
+		case n < 1 || n > lineCount:
+			problems = append(problems, fmt.Sprintf("clip %d: its opening %d is not inside 1-%d",
+				index, n, lineCount))
+		default:
+			opening = n
+		}
+	}
 	get := func(key string) string {
 		value, present := clip[key]
 		if !present {
@@ -305,12 +340,76 @@ func validateEntry(clipAny any, index, lineCount int) (PlanEntry, []string, bool
 		}
 		return pyStr(value)
 	}
+	// An answer without slugs gets them from the titles, the way a clip
+	// made by hand does. One without titles either, as middle's, is named
+	// by its first words once it is shaped, see planBuilder.named.
+	slug, title := Scrub(get("slug"), 64), Scrub(get("title"), 200)
+	if slug == "" && title != "" {
+		slug = strings.ToLower(SanitiseName(title, "clip"))
+	}
 	return PlanEntry{
-		Slug:   Scrub(get("slug"), 64),
-		Title:  Scrub(get("title"), 200),
-		Reason: Scrub(get("reason"), 300),
-		Keep:   ranges,
+		Slug:    slug,
+		Title:   title,
+		Reason:  Scrub(get("reason"), 300),
+		Keep:    ranges,
+		Heart:   heart,
+		Opening: opening,
 	}, problems, true
+}
+
+// fromPoints reads a clip given as start, payoff and end into the run, the
+// heart and the opening the other recipes give, or says what is wrong.
+func fromPoints(clip map[string]any, index, lineCount int) (map[string]any, string) {
+	var n [3]int
+	for i, key := range []string{"start", "payoff", "end"} {
+		v, ok := toInt(clip[key])
+		if !ok || v < 1 || v > lineCount {
+			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
+		}
+		n[i] = v
+	}
+	start, payoff, end := n[0], n[1], n[2]
+	if payoff < start {
+		return nil, fmt.Sprintf("clip %d: its payoff %d comes before its start %d", index, payoff, start)
+	}
+	end = max(end, payoff)
+	out := make(map[string]any, len(clip)+3)
+	for k, v := range clip {
+		out[k] = v
+	}
+	out["keep"] = []any{[]any{float64(start), float64(end)}}
+	out["heart"] = []any{float64(payoff), float64(payoff)}
+	out["opening"] = float64(start)
+	return out, ""
+}
+
+// fromMiddle reads a clip given as its start, a line in its middle and
+// its end into the run from start to end, the line in its middle its heart
+// and the start its opening. A story too long for the length is ended
+// earlier by the engine, never before the line in its middle, and it never
+// starts later. Three lines out of order are sorted: in Tim's runs of
+// 3 October the model, asked for the middle first, wrote five of six in
+// the order they come, as in 339 344 352, and a middle written last or
+// first is still the one between the other two.
+func fromMiddle(clip map[string]any, index, lineCount int) (map[string]any, string) {
+	var n [3]int
+	for i, key := range []string{"start", "middle", "end"} {
+		v, ok := toInt(clip[key])
+		if !ok || v < 1 || v > lineCount {
+			return nil, fmt.Sprintf("clip %d: its %s is not a line from 1 to %d", index, key, lineCount)
+		}
+		n[i] = v
+	}
+	slices.Sort(n[:])
+	start, middle, end := n[0], n[1], n[2]
+	out := make(map[string]any, len(clip)+3)
+	for k, v := range clip {
+		out[k] = v
+	}
+	out["keep"] = []any{[]any{float64(start), float64(end)}}
+	out["heart"] = []any{float64(middle), float64(middle)}
+	out["opening"] = float64(start)
+	return out, ""
 }
 
 // readEntry checks one clip of an answer in the units the recipe numbered,
@@ -326,6 +425,21 @@ func readEntry(clipAny any, index int, units [][2]int) (PlanEntry, []string, boo
 		return PlanEntry{}, append(problems, fmt.Sprintf("clip %d: %s", index, err)), false
 	}
 	entry.Keep = keep
+	if entry.Opening > 0 {
+		if opening, err := toLines([][2]int{{entry.Opening, entry.Opening}}, units); err != nil {
+			entry.Opening = 0
+		} else {
+			entry.Opening = opening[0][0]
+		}
+	}
+	if entry.Heart[0] > 0 {
+		heart, err := toLines([][2]int{entry.Heart}, units)
+		if err != nil {
+			entry.Heart = [2]int{}
+		} else {
+			entry.Heart = heart[0]
+		}
+	}
 	return entry, problems, true
 }
 

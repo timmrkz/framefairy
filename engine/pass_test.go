@@ -50,12 +50,14 @@ func answering(t *testing.T, answers ...string) (*httptest.Server, func() []stri
 	}
 }
 
-func clipAnswer(keeps ...string) string {
-	var clips []string
-	for i, k := range keeps {
-		clips = append(clips, fmt.Sprintf(`{"slug": "c%d", "title": "Clip %d", "reason": "Test", "keep": %s}`, i+1, i+1, k))
+// clipAnswer is a story a line, as middle answers: where it starts, a
+// line inside it and where it ends, all that line.
+func clipAnswer(lines ...int) string {
+	var b strings.Builder
+	for _, n := range lines {
+		fmt.Fprintf(&b, "%d %d %d\n", n, n, n)
 	}
-	return `{"clips": [` + strings.Join(clips, ", ") + `]}`
+	return b.String()
 }
 
 func passProject(t *testing.T, url string) *Project {
@@ -76,7 +78,7 @@ func passProject(t *testing.T, url string) *Project {
 // clips already, and a clip that keeps them all the same is left out.
 func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 	t.Parallel()
-	server, asked := answering(t, clipAnswer("[[1, 1]]"), clipAnswer("[[1, 1]]", "[[2, 2]]"))
+	server, asked := answering(t, clipAnswer(1), clipAnswer(1, 2))
 	p := passProject(t, server.URL)
 	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
 
@@ -95,17 +97,17 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 		t.Errorf("the first pass after the second: %v, %+v", err, clips)
 	}
 	_, clips, err := LoadClips(second)
-	if err != nil || len(clips) != 1 || clips[0].ID != "t10-2-01" || clips[0].Title != "Clip 2" {
+	if err != nil || len(clips) != 1 || clips[0].ID != "t10-2-01" {
 		t.Errorf("the second pass should hold only the new moment: %v, %+v", err, clips)
 	}
 	prompts := asked()
 	if len(prompts) != 2 {
 		t.Fatalf("the model was asked %d times", len(prompts))
 	}
-	if strings.Contains(prompts[0], "clips already") || strings.Contains(prompts[0], "a clip already") {
+	if strings.Contains(prompts[0], "none of them in") {
 		t.Errorf("the first pass had nothing to leave, and was told to:\n%s", prompts[0])
 	}
-	if !strings.Contains(prompts[1], "Line 1 is in a clip already") {
+	if !strings.Contains(prompts[1], "none of them in line 1.") {
 		t.Errorf("the second pass was not told which line is taken:\n%s", prompts[1])
 	}
 }
@@ -114,7 +116,7 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 // own: the pass is in its record.
 func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	t.Parallel()
-	server, _ := answering(t, clipAnswer("[[1, 1]]"), clipAnswer("[[2, 2]]"))
+	server, _ := answering(t, clipAnswer(1), clipAnswer(2))
 	p := passProject(t, server.URL)
 	req := PlanRequest{From: 10, To: 30, Count: 1, Min: 1, Max: 30}
 	if _, err := p.Search(context.Background(), req, nil); err != nil {

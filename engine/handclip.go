@@ -191,26 +191,8 @@ func handEntry(lines []Line, req ClipRequest, shortest, longest float64,
 		}
 		here--
 	}
-	// Where the sentence of line n begins and ends, no further off than
-	// sentenceReach, the reach every clip's edges have. A transcript
-	// without punctuation for that long has no sentence to go to, and the
-	// line itself stands.
-	startOf := func(n int) int {
-		for k := n; k >= 1 && lines[n-1].Start()-lines[k-1].Start() <= sentenceReach; k-- {
-			if beginsSentence(lines, k) {
-				return k
-			}
-		}
-		return n
-	}
-	endOf := func(n int) int {
-		for k := n; k <= len(lines) && lines[k-1].End()-lines[n-1].End() <= sentenceReach; k++ {
-			if finishesSentence(lines, k) {
-				return k
-			}
-		}
-		return n
-	}
+	startOf := func(n int) int { return sentenceStart(lines, n) }
+	endOf := func(n int) int { return sentenceEnd(lines, n) }
 	length := func(first, last int) float64 { return seconds([][2]int{{first, last}}) }
 	var first, last int
 	if req.Backward {
