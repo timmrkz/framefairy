@@ -852,9 +852,13 @@ place.
         shift takes a second.
       - **Which list is walked is decided a whole frame either side of the
         clip**, for the same reason the crop frame is. Read exactly, a
-        playhead just put at a clip's start is outside it, so the keys
-        walked the transcript instead and the first press after picking a
-        clip landed wherever the word before the clip happened to be.
+        playhead just put at a clip's start was outside it, since it took
+        the video's answer, the start of the frame, as its place. So the
+        keys walked the transcript instead and the first press after
+        picking a clip landed wherever the word before the clip happened
+        to be. The playhead now stays where it was put, see pausedAt, and
+        the frame either side covers it coming from the video by any other
+        route.
     - Drag an edge to trim. The edge lands on the frame, the same as the
       edge of a cut, and shift puts it on the nearest word instead, the way
       the render cuts a clip the engine proposes. Shift and not alt,
