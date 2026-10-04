@@ -38,6 +38,7 @@ import (
 	"runtime"
 	"strings"
 
+	"framefairy/licence"
 	"framefairy/licence/signer"
 )
 
@@ -193,7 +194,7 @@ func open(o *options) (*signer.Signer, *signer.Record, error) {
 
 func readKey(o *options) (uint8, []byte, error) {
 	if o.test {
-		return 0, signer.TestSeed(), nil
+		return 0, licence.TestSeed(), nil
 	}
 	path := filepath.Join(o.dir, "key.json")
 	f, err := os.Open(path)

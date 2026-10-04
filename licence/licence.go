@@ -93,6 +93,14 @@ type Licence struct {
 	Name    string    // whom it is licensed to. Empty for every key from the pool
 }
 
+// TestSeed is the seed of the test signer, number 0, made from a sentence
+// so anyone can make it again: its keys are for trying things out, and no
+// shipped build trusts it. See docs/LICENCE.md.
+func TestSeed() []byte {
+	sum := sha256.Sum256([]byte("framefairy test signer, never shipped"))
+	return sum[:]
+}
+
 // Key is a licence key as text: Prefix, then the fields and the signature in
 // base64url without padding.
 type Key string

@@ -1054,6 +1054,27 @@ export const Call = {
         ((window as any).__keys ??= {})[String(args[0])] = !!typed;
         return new Promise((resolve) => setTimeout(() => resolve(null), 600));
       }
+      // The licence key. ?link starts with a key from a framefairy:// link
+      // waiting, and window.__unlockLink(key) opens one while the app runs.
+      // A key that ends in "bad" is refused, after the moment it takes.
+      case "Licence":
+        return Promise.resolve(licenceNow());
+      case "SaveLicence": {
+        const typed = String(args[0] ?? "").trim();
+        if (typed.endsWith("bad")) {
+          return new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("this key was not signed by Frame Fairy")), 400),
+          );
+        }
+        licence.saved = !!typed;
+        licence.about = typed ? "Key 0102-0304-0506-0708, licensed to Anna Example, a test key" : "";
+        return new Promise((resolve) => setTimeout(() => resolve(licenceNow()), 400));
+      }
+      case "TakeLicenceLink": {
+        const k = licence.link;
+        licence.link = "";
+        return Promise.resolve(k);
+      }
       case "ChooseCloudModel":
         (window as any).__apiModel = String(args[0]);
         if ((window as any).__settings) (window as any).__settings.apiModel = String(args[0]);
@@ -1676,6 +1697,18 @@ const updFetch = (channel: string) => {
   }, 500));
 };
 
+const licence = {
+  saved: false,
+  about: "",
+  link: location.search.includes("link") ? "FF1-AQIDBAUGBwgJCgsMDQ4PEABBbm5h" : "",
+};
+const licenceNow = () => ({ saved: licence.saved, about: licence.about, waiting: !!licence.link });
+const licenceListeners = new Set<(ev: unknown) => void>();
+(window as any).__unlockLink = (key: string) => {
+  licence.link = key;
+  for (const fn of licenceListeners) fn({ data: null });
+};
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -1709,6 +1742,10 @@ export const Events = {
         fn({ data: null });
       };
       return () => delete (window as any).__checkForUpdates;
+    }
+    if (name === "licence-link") {
+      licenceListeners.add(fn);
+      return () => licenceListeners.delete(fn);
     }
     if (name === "levels") {
       if (!location.search.includes("measuring")) return () => {};

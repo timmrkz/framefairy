@@ -126,6 +126,11 @@ func main() {
 	})
 	svc.app = app
 	svc.leave = leave
+	// A framefairy:// link, from a browser, a mail or any other app, when
+	// the app is started by it and when it is already running.
+	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
+		svc.openedWith(e.Context().URL())
+	})
 	svc.updates = newUpdating(app.Updater, st, svc.jobs.busy, func(u UpdateState) {
 		app.Event.Emit("updates", u)
 	})
@@ -281,6 +286,9 @@ type FrameFairy struct {
 	saidBy string
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
+	// linkKey is a licence key a framefairy:// link brought, waiting for
+	// the settings, see licence.go.
+	linkKey string
 }
 
 // Updates says which build is running, which channel it follows and how far

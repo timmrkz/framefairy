@@ -49,6 +49,13 @@ button:hover { background: var(--ink-3); }
 button.primary { background: var(--accent); border-color: var(--accent); font-weight: 600; padding: 0 20px; }
 button.primary:hover { filter: brightness(1.15); }
 button.danger { color: var(--bad); }
+/* The Unlock link opens the app, so it looks like the button it acts as. */
+a.unlock {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 20px; border-radius: 6px;
+  background: var(--accent); color: var(--text); font-weight: 600; text-decoration: none;
+}
+a.unlock:hover { filter: brightness(1.15); }
+a.unlock.small { height: 24px; padding: 0 8px; font-size: 12px; }
 button.small { height: 24px; padding: 0 8px; font-size: 12px; }
 button.seg { border-radius: 0; margin-left: -1px; }
 form:first-child > button.seg { border-radius: 6px 0 0 6px; margin-left: 0; }

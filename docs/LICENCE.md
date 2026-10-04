@@ -197,6 +197,14 @@ trusted. A Mac that is never online keeps the list it last had, and a key
 revoked after that keeps working there. That is accepted: it only ever
 costs a sale already lost, and never locks out someone who paid.
 
+**A key can only be revoked once it is found.** A chargeback or a refund
+names its keys, so those are revoked by themselves. A key posted in public
+names nothing: somebody has to come across it, on a forum, in a crack or
+in a buyer's note, before it can go on the list, and nothing of ours looks
+for it. Until then it works everywhere, and afterwards it still works on
+every Mac that does not fetch the feed again. Revocation limits a leak
+that was noticed. It does not prevent one.
+
 ## Use cases
 
 Each row is one requirement, and its last column is the test that proves
@@ -292,7 +300,9 @@ The rules it keeps:
 - **`Sign` checks its own work.** It runs `Check` on the key it just made
   before it returns it, so a fault while signing never hands out a key
   that does not check.
-- **Signer 0 is the test signer.** No shipped build trusts it.
+- **Signer 0 is the test signer.** No shipped build trusts it. Only a
+  build made from the code on this machine does, see
+  [How the app checks a key](#how-the-app-checks-a-key).
 - **The reason is kept.** `Check` refuses with one of `ErrMalformed`,
   `ErrFormat`, `ErrSigner`, `ErrSignature`, `ErrRevoked` and
   `ErrNotGenuine`, so the settings can say why.
@@ -567,7 +577,10 @@ sale and every failure by hand before any of it meets Paddle:
 - **A mail service that sends nothing.** Every letter, to a buyer or to
   us, lands in the outbox on the dev page.
 - **The test signer**, which refills the pool through the hand-over
-  endpoint whenever it is below a batch, 10 keys by default.
+  endpoint whenever it is below a batch, 10 keys by default. A Frame
+  Fairy built here with `make` takes its keys, so the Unlock button on
+  the thank-you page and in every letter on the dev page opens the app
+  with the key in its settings, as the real letter will.
 - **A clock that can be moved forward**, by minutes, an hour, a day or
   three, so a retry, the thank-you page's day, the mail run every 5
   minutes and the daily run come in a click.
@@ -682,18 +695,63 @@ does not answer.
 The app calls the same `licence.Check` the dispenser checks every batch
 with, offline, before every render.
 
-- **Entering it.** A Licence row in the settings takes a pasted key and
-  checks it at once. A refused key shakes the field and keeps what was
-  typed, like a refused API key. A good key shows its ID, and the name
-  when it has one.
-- **Keeping it.** Where the API key is kept: the keychain on macOS.
+- **Entering it.** The Licence row in the settings takes a pasted key and
+  checks it when Unlock is pressed. A refused key shakes the field, keeps
+  what was typed and says why, like a refused API key. A good key shows
+  its ID, and the name when it has one. The trash can beside it removes
+  the key, after asking.
+- **The Unlock link.** The thank-you page and the letter carry, beside
+  each key, an Unlock Frame Fairy button, a link
+  `framefairy://unlock?key=FF1-…`. The app claims the `framefairy`
+  scheme in its `Info.plist`, so macOS opens it, or brings it to the
+  front, and hands it the link. The app goes to the settings, puts the
+  key in the field and moves the keyboard to Unlock. Nothing is checked
+  or kept until Unlock is pressed, because any web page and any app on
+  the Mac can open such a link: a link that unlocked by itself would let
+  a page swap a stranger's licence for its own. The link is read
+  strictly, in `keyFromLink`: the `framefairy` scheme, the host
+  `unlock`, no path, no user, no fragment, one `key` and nothing else,
+  at most 1024 characters, and a key that looks like one before it is
+  even checked. Anything else is dropped and logged. It has a fuzz
+  target.
+- **Keeping it.** Where the API key is kept: the keychain on macOS. The
+  keychain item carries its description, the ID and the name, as its
+  comment, so the settings show it without reading the key itself and
+  without the keychain asking for a password.
 - **Using it.** The engine checks before every render, so the app and the
   command line obey one rule: the mark goes on, or it does not.
 - **Trust.** Public keys are built into the app. The revocation list and
   any genuine lists arrive with the update feed, see
   [How revocation reaches the app](#how-revocation-reaches-the-app).
-- **No way around it in our own code.** Development builds need a key like
-  any customer. No switch in any build turns the check off.
+- **Test keys only where anyone could sign their own.** A build made from
+  the code on this machine, which the build workflow has given neither a
+  channel nor a commit, also trusts the test signer, so the keys of
+  `make dispenser` unlock it. Anyone who builds from the code could take
+  the check out anyway, so this gives nothing away. Every build from the
+  workflow, which is every build an update brings, refuses them, and says
+  it is a test key. No switch in any build turns the check off.
+
+**Where a key travels.** A key is meant to be read by the person who
+bought it, and on its way it passes through these hands:
+
+1. The dispenser, which holds every key it sold, and its database.
+2. The thank-you page, in the buyer's browser, for a day after the sale,
+   and the browser's history and cache from then on.
+3. The mail service that sends the letter, every mail server between it
+   and the buyer, and the buyer's mail provider, which keeps it.
+4. Anybody who can read the buyer's mailbox, on any device it is open on.
+5. The Unlock link: the browser or mail app that opens it, macOS, which
+   hands it to the app, and the app's own memory until Unlock is pressed
+   or the app quits. It is never written to a log or to a file.
+6. The keychain on every Mac it unlocks.
+
+None of these is a server of ours apart from the dispenser, and the app
+never sends the key anywhere. A key that leaks from any of them works
+until it is found and revoked, see
+[How revocation reaches the app](#how-revocation-reaches-the-app). That
+is accepted: a key unlocks a watermark and nothing else, it names no
+one who did not choose a name, and a leaked one costs a sale, not
+anybody's data.
 
 ## Security, privacy, testing
 
