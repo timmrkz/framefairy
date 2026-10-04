@@ -104,6 +104,24 @@ export function playingAt(at: number, v: PlayingClock): number {
   return onward(at, v.clock);
 }
 
+// What a frame of a play does about a jump over a cut the playing clip
+// made by itself, or from its end back to its start while it loops: there
+// is none, the video is still on its way so the frame waits, the video has
+// landed and the playhead goes with it, or the play was paused while the
+// video was on its way. Paused, the frame loop stops, so a jump left
+// waiting was never finished, and while it stood every seek made while
+// paused read as a picture somewhere else. A still from the engine was
+// drawn over a video that had landed, on every step of the arrow keys,
+// until the next play. So a pause ends the jump where it stands, and the
+// seek it made lands like any seek made while paused.
+export type JumpStep = "none" | "wait" | "landed" | "paused";
+
+export function jumpStep(jumping: boolean, v: { seeking: boolean; paused: boolean }): JumpStep {
+  if (!jumping) return "none";
+  if (!v.seeking) return "landed";
+  return v.paused ? "paused" : "wait";
+}
+
 // Where the frame a moment falls in starts: the frame a video element
 // shows when it is sent there, the last one that starts at or before it.
 // The still read from the file while the video preview catches up has to

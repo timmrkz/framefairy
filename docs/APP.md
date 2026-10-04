@@ -254,7 +254,12 @@ underneath and is put back a little whenever a report says the picture is
 behind, and followed as it was, the playhead, the lit word, the caption and
 the crop went back and forth over the picture while playing got going. A
 jump the app makes itself, over a cut or back to the start of a loop, still
-takes the playhead with it.
+takes the playhead with it. A pause pressed while the video is on its way
+over a cut ends the jump there: the playhead stands where the video lands,
+and every seek after it shows the video's own frame. The jump used to wait
+for the next play, and until then every seek made while paused, a click on
+the clip timeline or a press of an arrow key, had a frame from the engine
+drawn over a video that had already landed, each one waiting on the engine.
 
 Until the video has read anything of the file, it has no picture and no
 clock, and that is often so for an episode just added, whose file is read by

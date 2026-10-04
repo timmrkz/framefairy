@@ -23,6 +23,7 @@ import {
   pieceAt,
   insideClip,
   playingAt,
+  jumpStep,
   playingPiece,
   shouldChase,
   inEpisode,
@@ -494,6 +495,57 @@ describe("playingAt", () => {
   test("to where a seek was sent, and to where a jump landed", () => {
     expect(playingAt(62.5, { ...playing, clock: 70, seeking: true })).toBe(70);
     expect(playingAt(70.2, { ...playing, clock: 70, landed: true })).toBe(70);
+  });
+});
+
+// A jump over a cut is made by the frame loop, and a pause stops the
+// loop. A pause pressed while the video was on its way left the jump
+// standing until the next play, and every seek made while paused then
+// had a still from the engine drawn over a video that had landed. The
+// harness shows this with ?slowseek=150, see frontend/preview/open.mjs,
+// because Chromium lands a seek in its small file inside one frame.
+describe("jumpStep", () => {
+  const playing = { seeking: false, paused: false };
+
+  test("is nothing when no jump was made", () => {
+    expect(jumpStep(false, playing)).toBe("none");
+    expect(jumpStep(false, { seeking: true, paused: true })).toBe("none");
+  });
+
+  test("waits while the playing video is on its way", () => {
+    expect(jumpStep(true, { seeking: true, paused: false })).toBe("wait");
+  });
+
+  test("has landed once the video is no longer on its way", () => {
+    expect(jumpStep(true, playing)).toBe("landed");
+    // A pause after the video landed changes nothing: the playhead
+    // still goes where it landed.
+    expect(jumpStep(true, { seeking: false, paused: true })).toBe("landed");
+  });
+
+  test("ends where it stands when the play is paused on the way", () => {
+    expect(jumpStep(true, { seeking: true, paused: true })).toBe("paused");
+  });
+
+  // The frame loop over a jump, frame by frame, the way Player.svelte
+  // runs it: a frame that waits asks for the next one, any other ends
+  // the jump. However the pause falls, nothing is left jumping.
+  test("never leaves a jump standing once the loop stops", () => {
+    const frames = [
+      { seeking: true, paused: false },
+      { seeking: true, paused: false },
+      { seeking: true, paused: true },
+    ];
+    let jumping = true;
+    let running = true;
+    for (const f of frames) {
+      if (!running) break;
+      const step = jumpStep(jumping, f);
+      if (step === "wait") continue;
+      jumping = false;
+      running = !f.paused;
+    }
+    expect(jumping).toBe(false);
   });
 });
 
