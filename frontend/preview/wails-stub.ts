@@ -846,7 +846,9 @@ export const Call = {
         updFetch((args[0] as string) || "main");
         return Promise.resolve(null);
       case "CheckForUpdates":
-        updFetch(updNow().picked || updNow().follows);
+        // The channel followed, as updates.Followed has it: the one picked,
+        // or the one the build came from.
+        updFetch(updNow().picked || updNow().follows || updNow().channel);
         return Promise.resolve(null);
       case "RestartToUpdate":
         (window as any).__restarted = true;
@@ -1575,6 +1577,10 @@ export const Call = {
 // ?prgone is pull request 18's build after the pull request was merged:
 // it is not on the list any more, and nothing downloads until another
 // channel is picked.
+// ?listfails is pull request 18's build, picked by hand, when the channel
+// list could not be read since the app started: no channels at all, and a
+// check that failed. The pull request is still open, so it must not read
+// as closed.
 // Picking a channel checks, downloads over two seconds with the fill, and
 // says ready, the way the Go side does.
 const updListeners = new Set<(ev: unknown) => void>();
@@ -1591,6 +1597,7 @@ const updNow = () => {
   if (upd) return upd;
   const local = location.search.includes("makebuild");
   const gone = location.search.includes("prgone");
+  const fails = location.search.includes("listfails");
   upd = {
     version: local ? "0.3.0-local" : "0.3.0-pr29.db33a28",
     commit: local ? "" : "a1b2c3d4e5f6",
@@ -1598,20 +1605,20 @@ const updNow = () => {
     off: location.search.includes("updatesoff")
       ? "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
       : "",
-    channels: gone ? updChannels.filter((c) => c.id !== "pr-18") : updChannels,
-    picked: "",
-    follows: local || gone ? "" : "pr-18",
+    channels: fails ? [] : gone ? updChannels.filter((c) => c.id !== "pr-18") : updChannels,
+    picked: fails ? "pr-18" : "",
+    follows: local || gone || fails ? "" : "pr-18",
     gone: gone ? "pr-18" : "",
     // ?unbuilt: a push to the channel whose build has not come yet.
     building: location.search.includes("unbuilt") ? "6ceea6d1f2a3" : "",
-    phase: local ? "" : gone ? "gone" : "current",
+    phase: local ? "" : gone ? "gone" : fails ? "failed" : "current",
     next: "",
     nextName: "",
     nextCommit: "",
     checked: local ? "0001-01-01T00:00:00Z" : new Date(Date.now() - 7 * 60_000).toISOString(),
     written: 0,
     total: 0,
-    problem: "",
+    problem: fails ? "The channel list answered 404 Not Found." : "",
   };
   return upd;
 };
@@ -1619,6 +1626,17 @@ const updSend = () => updListeners.forEach((fn) => fn({ data: { ...upd } }));
 const updFetch = (channel: string) => {
   updTimers.forEach((t) => clearTimeout(t));
   updTimers = [];
+  // A list that cannot be read fails the check and says nothing about the
+  // channel, the way checkOnce in updates.go does.
+  if (location.search.includes("listfails")) {
+    Object.assign(upd, { phase: "checking" });
+    updSend();
+    updTimers.push(setTimeout(() => {
+      Object.assign(upd, { phase: "failed", problem: "The channel list answered 404 Not Found.", checked: new Date().toISOString() });
+      updSend();
+    }, 80));
+    return;
+  }
   const ch = upd.channels.find((c: any) => c.id === channel);
   if (!ch) {
     Object.assign(upd, { phase: "gone", gone: channel, follows: "", next: "", written: 0, total: 0 });
@@ -1687,7 +1705,7 @@ export const Events = {
     // Check for Updates in the app menu, with window.__checkForUpdates().
     if (name === "show-updates") {
       (window as any).__checkForUpdates = () => {
-        updFetch(updNow().picked || updNow().follows);
+        updFetch(updNow().picked || updNow().follows || updNow().channel);
         fn({ data: null });
       };
       return () => delete (window as any).__checkForUpdates;
