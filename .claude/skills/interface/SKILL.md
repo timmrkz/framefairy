@@ -64,6 +64,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 | `?webkitclock` | the video's clock while it plays is put back by 0.15 s now and then, the way WebKit's is corrected by reports from the player underneath. Chromium's clock only goes forward, so this is the only way to see what the app does with a clock that steps back |
 | `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
+| `?slowseek=150` | every seek takes 150 ms to land, the way WebKit's can on a Mac with a long episode. Chromium lands one in this file in about 3 ms, inside one frame, so nothing could ever happen in the middle of a seek, a press of the space bar during a jump over a cut above all. `open.mjs` slows the element itself: while a seek is on its way `seeking` says yes and the clock says where it was sent, the way a browser answers |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
