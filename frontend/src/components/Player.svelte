@@ -12,8 +12,9 @@
 
 <script lang="ts">
   // The episode, with the crop of the selected clip laid over it. One Play
-  // button, one playhead: playing starts where the playhead stands, and with
-  // a clip selected it jumps the clip's cuts and stops where the clip ends.
+  // button, one playhead: playing starts where the playhead stands. With
+  // the playhead on the selected clip it jumps the clip's cuts and stops
+  // where the clip ends, and on the video it plays the episode straight on.
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
   import { onMount, untrack, type Snippet } from "svelte";
@@ -27,7 +28,9 @@
     shouldChase,
     pieceAt as pieceIndex,
     playingPiece,
+    frameStart,
   } from "../lib/flow";
+  import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "../lib/playhead";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -58,6 +61,7 @@
     strip,
     paused = $bindable(true),
     looping = $bindable(false),
+    onClip = $bindable(false),
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
   }: {
     path: string;
@@ -100,6 +104,10 @@
     // Play and Pause stand in the row above the clip timeline, with Render.
     paused?: boolean;
     looping?: boolean;
+    // Whether the playhead is on the chosen clip, so the space bar plays
+    // the clip, or on the video, so it plays the episode straight on and
+    // the clip is drawn dimmed wherever it is drawn. See lib/playhead.ts.
+    onClip?: boolean;
     offers?: PlayerOffers;
   } = $props();
 
@@ -192,12 +200,29 @@
     return pieceIndex(pieces, t);
   }
 
+  // Where the playhead is, on the clip or on the video, as the last gesture
+  // that put it somewhere left it, see lib/playhead.ts. Only a gesture sets
+  // it, through seek, and a play of the clip that reaches its end. The
+  // video's clock never does: the paused video answers with where the
+  // frame it shows begins, up to a frame early, and measured against the
+  // clip that answer played the episode straight through a clip just
+  // picked.
+  let placed = $state<Playhead>(onVideo);
+  const place = $derived(placeFor(placed, clip?.key));
+  $effect(() => {
+    onClip = place !== "video";
+  });
+
   // A video that has not read its own index yet drops a seek on the floor,
   // which used to leave the playhead somewhere the picture never went. The
   // moment it knows its length, it is sent there.
-  export function seek(t: number) {
+  //
+  // Every gesture that puts the playhead somewhere comes through here, and
+  // says whether it is about the chosen clip, see placeOf.
+  export function seek(t: number, about?: "clip") {
     if (!video) return;
     time = Math.max(0, Math.min(t, source.duration));
+    placed = placeOf(pieces, clip?.key ?? "", time, about);
     atPiece = pieceAt(time);
     goTo(time);
   }
@@ -279,9 +304,10 @@
   // starts the moment it can.
   let wantPlay = false;
 
-  // Whether this play is the chosen clip's, with its cuts jumped and a stop
-  // at its end, or the episode's, straight on from the playhead.
-  let playsClip = false;
+  // Whether a play is the chosen clip's, with its cuts jumped and a stop at
+  // its end, or the episode's, straight on from the playhead. It is the
+  // place, so a gesture made while the video plays changes it at once.
+  const playsClip = $derived(place !== "video");
 
   function play() {
     if (!video) return;
@@ -289,34 +315,24 @@
     // Playing moves the playhead on, so the keyboard's word goes.
     keyed = null;
     walked = 0;
-    // The clip plays when the playhead stands in it, when it has just played
-    // to its end, which is where the playhead is left, and when it loops.
-    // Anywhere else the playhead was put there to look at that part of the
-    // episode, clip or no clip, so the episode plays on from there. It used
-    // to go back to the start of the chosen clip, and a part of the episode
-    // could not be heard at all while a clip was chosen.
-    playsClip =
-      !!clip &&
-      (looping ||
-        (time >= clipStart - frameOf / 2 && time < clipEnd - 0.05) ||
-        Math.abs(time - clipEnd) <= 0.05 + frameOf);
-    if (clip && playsClip) {
-      // A clip plays from the playhead while the playhead stands inside it,
-      // otherwise from its start.
-      //
-      // Half a frame of room at that start, because the playhead is not
-      // where it was put: picking a clip sends it to the clip's first
-      // second and the picture answers with the frame it is showing, which
-      // begins a hair before. Read exactly, the playhead was then outside
-      // the clip it had just been put at the start of, so every press of
-      // the space bar after picking a clip seeked before it played, and a
-      // seek is the one thing that can refuse a play.
-      if (time < clipStart - frameOf / 2 || time >= clipEnd - 0.05) time = clipStart;
+    // On the clip, the clip plays from the playhead, from the end of a cut
+    // the playhead is in, and from its start where the playhead is at its
+    // end. On the video, the episode plays straight on from the playhead,
+    // clip or no clip, so any part of it can be heard while a clip is
+    // chosen. See playFrom.
+    const from = playFrom(place, pieces, time);
+    if (clip && from.clip) {
+      placed = { place: "clip", clip: clip.key };
+      time = from.at;
       atPiece = pieceAt(time);
-      // And only when the picture really has to move. A seek that changes
-      // nothing still interrupts, still answers with nothing, and still
-      // leaves a chase running with nothing to answer it.
-      if (Math.abs(video.currentTime - time) > frameOf / 2) goTo(time);
+      // And only when the picture really has to move: when the frame it
+      // shows is not the frame the play begins in. The paused video answers
+      // with where that frame begins, which can be most of a frame before
+      // the clip just picked, and the picture is still the right one. A
+      // seek that changes nothing still interrupts, still answers with
+      // nothing, still leaves a chase running with nothing to answer it, and
+      // a seek is the one thing that can refuse a play.
+      if (frameStart(video.currentTime, source.fps) !== frameStart(time, source.fps)) goTo(time);
       onplayclip?.(clip);
     }
     wantPlay = true;
@@ -379,8 +395,10 @@
             wantPlay = false;
             video.pause();
             time = clipEnd;
+            placed = playedToEnd(placed, false);
             return;
           }
+          placed = playedToEnd(placed, true);
           atPiece = 0;
         }
         jumping = true;
@@ -461,6 +479,9 @@
       left: (left / source.width) * 100,
       width: (source.cropWidth / source.width) * 100,
       inside: insideClip(clip.segments, time, frameOf),
+      // On the video, the clip's rules are not in play, and its frame says
+      // so by being dimmed.
+      dim: place === "video",
       moved: clip.segments[piece]?.moved ?? false,
     };
   });
@@ -1130,6 +1151,7 @@
       <div
         class="frame"
         class:lit={dragLeft !== null}
+        class:dim={crop.dim}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}

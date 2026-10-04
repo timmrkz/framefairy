@@ -150,6 +150,10 @@
   let aboveH = $state(0);
   let paused = $state(true);
   let looping = $state(false);
+  // Whether the playhead is on the chosen clip or on the video, which the
+  // video preview keeps, see lib/playhead.ts. On the video the clip is
+  // drawn dimmed on the clip timeline and the range picker.
+  let onClip = $state(false);
   let offers = $state<PlayerOffers>({ crop: "", savingCrop: false, hint: "" });
 
   const duration = $derived(source?.duration ?? 0);
@@ -975,8 +979,8 @@
   // Putting the playhead somewhere is a jump, not a drift, so the clip
   // timeline goes there too. A view moved by hand otherwise stays where it
   // was put, which is what the crosshair in the row below it is for.
-  function seekTo(t: number) {
-    player?.seek(t);
+  function seekTo(t: number, about?: "clip") {
+    player?.seek(t, about);
     timeline?.fit(t);
   }
 
@@ -1004,7 +1008,8 @@
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
-    if (clip && seek) player?.seek(clip.start);
+    // On the clip, at its start: picking a clip is a gesture about it.
+    if (clip && seek) player?.seek(clip.start, "clip");
     // Picking a clip puts the clip timeline back on it, the same as the
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
@@ -2099,7 +2104,7 @@
     const clip = list[(next + list.length) % list.length];
     if (!clip) return;
     select(clip.key);
-    seekTo(clip.start);
+    seekTo(clip.start, "clip");
   }
 
   // Walking the words runs off the end of a clip into the one beside it:
@@ -2211,6 +2216,7 @@
     onmark={select}
     playhead={time}
     onseek={seekTo}
+    dimmed={!onClip}
     locked={busy}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
@@ -2556,6 +2562,7 @@
           bind:this={player}
           bind:paused
           bind:looping
+          bind:onClip
           bind:offers
           {path}
           {source}
@@ -2657,7 +2664,8 @@
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
         {lit}
         bind:numbers
-        onseek={(t) => player?.seek(t)}
+        onseek={(t, about) => player?.seek(t, about)}
+        dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}
         thumbnails={current?.thumbnails ?? []}

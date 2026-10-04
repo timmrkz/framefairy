@@ -53,6 +53,7 @@
     frame = 1 / 30,
     lit = [],
     onseek,
+    dimmed = false,
     onreshape,
     onwalkclip,
     captions = [],
@@ -95,7 +96,13 @@
     // hand is in this list and in no other, and a word a cut takes out is
     // in the transcript and never in this one.
     lit?: Word[];
-    onseek: (t: number) => void;
+    // Puts the playhead at a moment. A gesture about the clip itself, an
+    // edge, a trim or a caption, says so, and the playhead is then on the
+    // clip whatever the moment, see placeOf in lib/playhead.ts.
+    onseek: (t: number, about?: "clip") => void;
+    // Whether the playhead is on the video rather than on the clip, so the
+    // clip's frame is drawn dimmed: its rules are not in play.
+    dimmed?: boolean;
     // A gesture let go of: an edge of the clip trimmed, a part taken out,
     // the edges of a cut moved, a cut put back. The engine makes the change
     // it showed while the hand moved, see engine/shape.go.
@@ -231,12 +238,15 @@
   let wanted = 0;
   let queued = 0;
 
-  function seekSoon(t: number) {
+  let wantedAbout: "clip" | undefined;
+
+  function seekSoon(t: number, about?: "clip") {
     wanted = t;
+    wantedAbout = about;
     if (queued) return;
     queued = requestAnimationFrame(() => {
       queued = 0;
-      onseek(wanted);
+      onseek(wanted, wantedAbout);
     });
   }
 
@@ -306,7 +316,9 @@
         shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
         if (answer.playhead >= 0) {
           leftAt = answer.playhead;
-          seekSoon(answer.playhead);
+          // The playhead goes with the edge being dragged, so it is on
+          // the clip, even a hair outside the pieces drawn so far.
+          seekSoon(answer.playhead, "clip");
         }
       }
     } catch {
@@ -420,7 +432,7 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       if (!moved) {
-        onseek(edge === "start" ? first : last);
+        onseek(edge === "start" ? first : last, "clip");
         return;
       }
       undone = null;
@@ -1146,7 +1158,7 @@
         // does, which is how a caption is heard from where it appears.
         capDraft = null;
         oncaptiondraft?.(null);
-        if (!moved) onseek(inEpisode(segments, edge === "start" ? c.start : Math.min(c.end, clipLength)));
+        if (!moved) onseek(inEpisode(segments, edge === "start" ? c.start : Math.min(c.end, clipLength)), "clip");
         return;
       }
       capSaving = true;
@@ -1334,6 +1346,7 @@
       <div
         class="span frame"
         class:lit={!!clip && clip.key === hovered}
+        class:dim={dimmed}
         style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
       ></div>
     {/if}
@@ -1453,7 +1466,7 @@
               role="button"
               title="Put the playhead where this caption appears"
               onpointerdown={(e) => e.stopPropagation()}
-              onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
+              onclick={() => onseek(firstWordOf(b.c) ?? b.from, "clip")}
             ><i></i></div>
           {/key}
         {/each}
