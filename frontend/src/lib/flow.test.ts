@@ -22,6 +22,7 @@ import {
   playingAt,
   playingPiece,
   playsTheClip,
+  pausedAt,
   shouldChase,
   inEpisode,
   inClip,
@@ -581,20 +582,60 @@ describe("playsTheClip", () => {
     expect(playsTheClip({ ...clip, looping: true, time: 10 })).toBe(true);
   });
 
-  // The fault, 2.115 in docs/GUI-PLAN.md. Picking a clip puts the playhead
-  // on 1677.63, and while the video is paused the playhead takes its time
-  // from the video, which answers with where the frame it shows begins:
-  // 1677.60, the way insideClip's tests have it. That is three quarters of
-  // a frame before the clip, more than the half frame this allows, so the
+  // 2.115 in docs/GUI-PLAN.md. Picking a clip puts the playhead on
+  // 1677.63, and the paused video answers with where the frame it shows
+  // begins, 1677.60, the way insideClip's tests have it. That is three
+  // quarters of a frame before the clip. With half a frame of room the
   // first press of the space bar after picking a clip played the episode
   // straight on: the parts the clip cuts out were heard, and it did not
-  // stop at the clip's end.
-  test.fails("the frame the clip begins in plays the clip, read from the video", () => {
+  // stop at the clip's end. Both of these failed then.
+  test("the frame the clip begins in plays the clip, read from the video", () => {
     expect(at(1677.6)).toBe(true);
   });
 
-  test.fails("anywhere less than a frame before the clip's start plays the clip", () => {
+  test("anywhere less than a frame before the clip's start plays the clip", () => {
     expect(at(1677.63 - 0.039)).toBe(true);
+  });
+
+  // The same frame insideClip draws the crop frame in, so the space bar
+  // never plays the episode while the crop frame says the clip.
+  test("a whole frame before the start, as far as the crop frame goes", () => {
+    expect(at(1677.63 - 0.04)).toBe(true);
+    expect(insideClip([{ start: 1677.63, end: 1712 }], 1677.63 - 0.04, 0.04)).toBe(true);
+  });
+});
+
+describe("pausedAt", () => {
+  // Twenty-five frames a second. The playhead was put on 1677.63, which
+  // is three quarters of a frame into the frame from 1677.60.
+  const frame = 0.04;
+
+  test("the frame that holds the moment leaves the playhead where it was put", () => {
+    // The Mac's answer, the start of that frame.
+    expect(pausedAt(1677.63, 1677.6, frame)).toBe(1677.63);
+    // And a hair after, which a video can answer with too.
+    expect(pausedAt(1677.63, 1677.65, frame)).toBe(1677.63);
+    expect(pausedAt(1677.63, 1677.63, frame)).toBe(1677.63);
+  });
+
+  test("so a clip just picked is still the clip when the space bar is pressed", () => {
+    const time = pausedAt(1677.63, 1677.6, frame);
+    expect(playsTheClip({ time, clipStart: 1677.63, clipEnd: 1712, frame, looping: false })).toBe(true);
+  });
+
+  test("a picture a frame or more away moves the playhead to it", () => {
+    expect(pausedAt(1677.63, 1677.59, frame)).toBe(1677.59);
+    expect(pausedAt(1677.63, 1690, frame)).toBe(1690);
+    expect(pausedAt(1677.63, 0, frame)).toBe(0);
+  });
+
+  test("with nothing put since the last play, the playhead is the picture", () => {
+    expect(pausedAt(-1, 1677.6, frame)).toBe(1677.6);
+  });
+
+  test("the end of a clip that played to it stays the end", () => {
+    // The frame loop stops it a little past its end.
+    expect(pausedAt(1712, 1712.012, frame)).toBe(1712);
   });
 });
 

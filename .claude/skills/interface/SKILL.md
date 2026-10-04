@@ -519,7 +519,12 @@ key that does nothing and cannot be got out of. A state cannot.
 And note where this could not be reproduced: the harness's video answers
 with the exact second it was sent to, so none of these five happen in
 Chromium at all. They are proved as rules in `lib/` with tests, and the
-tests say so.
+tests say so. `?framestart` gives the harness the Mac's answer while
+paused, the start of the frame it shows. It is how the sixth was seen: a
+clip picked and played straight on as the episode, its cuts heard, because
+the space bar allowed half a frame and the answer was three quarters of
+one early. The paused playhead now stays where it was put while the
+picture shows the frame that holds it, `pausedAt` in `lib/flow.ts`.
 
 **A floating thing is measured before the stylesheet has finished with
 it.** Which way a list grows from the edge it is hung on is decided from

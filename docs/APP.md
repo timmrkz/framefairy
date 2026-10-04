@@ -262,6 +262,17 @@ after a search took the playhead to the start of the episode and showed a
 black picture and then the episode's first frame, before the video went to
 the clip and played it.
 
+The space bar plays the chosen clip, its cuts jumped and a stop where it
+ends, when the playhead stands in it, from the frame its start falls in on,
+when the clip has just played to its end, and when it loops. Anywhere else
+the playhead was put there to look at that part of the episode, so the
+episode plays straight on from it. While the video is paused the playhead
+stays where it was put, as long as the picture shows the frame that holds
+that moment. The video answers with where that frame begins, which can be
+most of a frame earlier, and taken as the playhead that answer moved a clip
+just picked out of its own start: the first press of the space bar after
+picking a clip played the episode on, cuts and all.
+
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The
 playhead goes to the start of that clip, because that is what choosing a

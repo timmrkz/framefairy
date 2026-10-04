@@ -406,12 +406,39 @@ export type PlayFrom = {
 // to its end, which is where the playhead is left, and when it loops.
 // Anywhere else the playhead was put there to look at that part of the
 // episode, clip or no clip, so the episode plays on from there.
+//
+// In it from a whole frame before its start, the frame the clip begins in,
+// the same as insideClip, so the space bar plays the clip wherever the
+// crop frame says the playhead is in it. A video answers with where the
+// frame it shows begins, which is up to a frame before the moment it was
+// sent to. With half a frame here, a clip starting more than half a frame
+// into one played the episode straight on after it was picked, its cuts
+// heard and no stop at its end, while the crop frame was drawn.
 export function playsTheClip(p: PlayFrom): boolean {
   return (
     p.looping ||
-    (p.time >= p.clipStart - p.frame / 2 && p.time < p.clipEnd - 0.05) ||
+    (p.time >= p.clipStart - p.frame && p.time < p.clipEnd - 0.05) ||
     Math.abs(p.time - p.clipEnd) <= 0.05 + p.frame
   );
+}
+
+// Where the playhead stands while the video is paused, from where it was
+// last put and what the video's clock says, or -1 for put when nothing has
+// put it since the last play.
+//
+// A paused video answers with the frame it shows, which begins up to a
+// frame before the moment it was sent to and can end a little after it.
+// That frame holds the moment, so the answer says the picture is where the
+// playhead was put, not that the playhead moved. Taken as the playhead, it
+// moved a clip that had just been picked out of its own start: the space
+// bar played the episode on instead of the clip, the thumbnail button was
+// off, and every check of "inside the clip" needed a frame of room. So an
+// answer within a frame of where the playhead was put leaves it there, and
+// only an answer further off, a picture that really is somewhere else,
+// moves it.
+export function pausedAt(put: number, clock: number, frame: number): number {
+  if (put >= 0 && Math.abs(clock - put) < frame) return put;
+  return clock;
 }
 
 export type ChaseState = {

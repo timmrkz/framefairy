@@ -21,6 +21,7 @@
     frameStart,
     insideClip,
     litWord,
+    pausedAt,
     pictureIsStale,
     playingAt,
     playsTheClip,
@@ -173,9 +174,15 @@
   export function seek(t: number) {
     if (!video) return;
     time = Math.max(0, Math.min(t, source.duration));
+    placed = video.paused ? time : -1;
     atPiece = pieceAt(time);
     goTo(time);
   }
+
+  // Where the playhead was last put while paused, by a seek or by the clip
+  // stopping at its end, or -1 once it plays. The paused video's answer
+  // leaves it there, see pausedAt.
+  let placed = -1;
 
   // Where the picture was asked to go, while it is still on its way there.
   let wanted = -1;
@@ -268,23 +275,21 @@
     // wherever the playhead stood, and a part of the episode could not be
     // heard at all while a clip was chosen.
     playsClip = !!clip && playsTheClip({ time, clipStart, clipEnd, frame: frameOf, looping });
+    // Playing moves the playhead on from here, so nothing holds it.
+    placed = -1;
     if (clip && playsClip) {
       // A clip plays from the playhead while the playhead stands inside it,
-      // otherwise from its start.
-      //
-      // Half a frame of room at that start, because the playhead is not
-      // where it was put: picking a clip sends it to the clip's first
-      // second and the picture answers with the frame it is showing, which
-      // begins a hair before. Read exactly, the playhead was then outside
-      // the clip it had just been put at the start of, so every press of
-      // the space bar after picking a clip seeked before it played, and a
-      // seek is the one thing that can refuse a play.
-      if (time < clipStart - frameOf / 2 || time >= clipEnd - 0.05) time = clipStart;
+      // otherwise from its start. In the frame before its start counts as
+      // inside, see playsTheClip, and plays from the start.
+      if (time < clipStart || time >= clipEnd - 0.05) time = clipStart;
       atPiece = pieceAt(time);
-      // And only when the picture really has to move. A seek that changes
-      // nothing still interrupts, still answers with nothing, and still
-      // leaves a chase running with nothing to answer it.
-      if (Math.abs(video.currentTime - time) > frameOf / 2) goTo(time);
+      // And only when the picture really has to move: when the frame it
+      // shows is not the frame the playhead is in. Its answer can be up to a
+      // frame from the playhead and still be that frame, see pausedAt. A
+      // seek that changes nothing still interrupts, still answers with
+      // nothing, still leaves a chase running with nothing to answer it, and
+      // a seek is the one thing that can refuse a play.
+      if (Math.abs(video.currentTime - time) >= frameOf) goTo(time);
       onplayclip?.(clip);
     }
     wantPlay = true;
@@ -346,6 +351,7 @@
             wantPlay = false;
             video.pause();
             time = clipEnd;
+            placed = clipEnd;
             return;
           }
           atPiece = 0;
@@ -1031,7 +1037,9 @@
         // jump the playing clip makes is the frame loop's to the end, see
         // onseeked.
         if (!video.seeking && !jumping) shows = video.currentTime;
-        if (video.paused) time = video.currentTime;
+        // Paused, the playhead stays where it was put while the picture
+        // shows the frame that holds it, see pausedAt.
+        if (video.paused) time = pausedAt(placed, video.currentTime, frameOf);
       }}
       onloadedmetadata={() => {
         // Nothing is decoded until the picture is sent somewhere, so an
