@@ -44,6 +44,7 @@
     type Parts,
     inEpisode,
     Newest,
+    Grace,
     nextWindow,
     timesIn,
     followingWindow,
@@ -537,7 +538,11 @@
   // preview will show once it lands, so nothing changes when it does. The
   // engine keeps every frame it has read, so going back over a part costs
   // nothing.
-  let asking = 0;
+  //
+  // The ask waits a moment first, see Grace, because the video usually
+  // lands a few milliseconds after it was sent, and it is called off the
+  // moment the video preview shows the playhead.
+  const asking = new Grace<number>(readStill, 180);
   // Which ask the picture is from. Several are in the air whenever the
   // playhead is moved quickly, and an answer that took longer to read
   // would otherwise land after a newer one and paint over it, leaving the
@@ -550,27 +555,32 @@
   // asked for, and leave the second clip's frame on screen.
   let showing = $state(-1);
 
-  function askStill(at: number) {
-    if (!source || status?.missing) return;
-    const frame = frameStart(at, source.fps);
-    if (frame === showing) return;
-    clearTimeout(asking);
-    asking = window.setTimeout(() => {
-      const ticket = stills.send();
-      api
-        .still(path, frame, 960)
-        .then((file) => {
-          if (!stills.keep(ticket)) return;
-          still = mediaURL(file);
-          showing = frame;
-        })
-        .catch(() => {
-          // A frame that cannot be read is not worth a message. The
-          // picture keeps the one it has, and the second it is of is
-          // left alone so it can be asked for again.
-          stills.keep(ticket);
-        });
-    }, 180);
+  // The moment the video preview cannot show, or null once it shows the
+  // playhead. The frame the still already is of needs no ask, and nothing
+  // still waiting may replace it. A frame on and straight back, within the
+  // wait, used to read the frame left behind anyway and put it in place of
+  // the one the playhead was back on, so the picture had no still at all
+  // until that one was read again.
+  function askStill(at: number | null) {
+    const frame = at === null || !source || status?.missing ? null : frameStart(at, source.fps);
+    asking.need(frame === showing ? null : frame);
+  }
+
+  function readStill(frame: number) {
+    const ticket = stills.send();
+    api
+      .still(path, frame, 960)
+      .then((file) => {
+        if (!stills.keep(ticket)) return;
+        still = mediaURL(file);
+        showing = frame;
+      })
+      .catch(() => {
+        // A frame that cannot be read is not worth a message. The
+        // picture keeps the one it has, and the second it is of is
+        // left alone so it can be asked for again.
+        stills.keep(ticket);
+      });
   }
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
   const current = $derived(clips.find((c) => c.key === selected) ?? null);
