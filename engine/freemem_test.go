@@ -39,22 +39,29 @@ Swapins:                                      0.
 Swapouts:                                     0.
 `
 
-// The memory that can be had is all of it, less what programs hold for
-// themselves, what is wired down and what the compressor holds. Files
-// cached and memory that can be purged count as free.
+// The memory that can be had is all of it, less what is wired down and
+// what the compressor holds. Files cached, and what other programs hold,
+// count as free, because macOS gives both back when a model asks.
 func TestWhatVmStatSaysIsFree(t *testing.T) {
 	const total = 32 << 30
 	page := int64(16384)
-	held := ((285249 - 12044) + 1093422 + 98765) * page
+	held := (1093422 + 98765) * page
 	if got := vmStatFree(vmStatHeld, total); got != total-held {
 		t.Errorf("free %d, want %d", got, total-held)
 	}
-	// About 10.4 GB, too little for Gemma 4 26B A4B beside the one loaded.
+	// About 14.8 GB, too little for Gemma 4 26B A4B beside the one loaded.
 	gemma, _ := LanguageModelByName("gemma-4-26B_q4_0-it.gguf")
 	if free := vmStatFree(vmStatHeld, total); gemma.NeedsAt(32768) <= free {
 		t.Errorf("Gemma fits in %s beside itself", inGB(free))
 	}
-	for _, bad := range []string{"", "Pages free: 12.", strings.ReplaceAll(vmStatHeld, "Anonymous pages", "Other")} {
+	// Tim's Mac on 4 October with nothing loaded and Chrome open: 16.8 GB
+	// of app memory, 2.0 GB wired and 0.4 GB compressed, memory pressure
+	// green. Gemma fits.
+	chrome := strings.NewReplacer("1093422.", "122700.", "285249.", "1030000.", "98765.", "21800.").Replace(vmStatHeld)
+	if free := vmStatFree(chrome, total); gemma.NeedsAt(32768) > free {
+		t.Errorf("Gemma does not fit in %s beside Chrome", inGB(free))
+	}
+	for _, bad := range []string{"", "Pages free: 12.", strings.ReplaceAll(vmStatHeld, "Pages wired down", "Other")} {
 		if got := vmStatFree(bad, total); got != 0 {
 			t.Errorf("%q read as %d free", bad, got)
 		}
