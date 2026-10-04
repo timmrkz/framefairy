@@ -473,6 +473,13 @@ place.
   the range picker under it, every clip found, in time order, with its start
   and length. A green dot marks a rendered clip. Click one to select it,
   which also puts the clip timeline back on it.
+    - Put back on the clip, the clip timeline centres it under the video
+      preview and the range picker, not under the middle of the app. The
+      clip list is wider than the settings once the app is narrow, so the
+      middle column stands a little left of the middle, and a clip centred
+      on the whole track stood up to 38 px right of the picture above it.
+      Where the middle column lies is read when the clip is fitted, from
+      `.middle`, never kept as a size.
     - The clips lie on a surface of their own, the grey of every row in
       the app, parted from each other by lighter lines than the ones that
       part one area of the workspace from another.

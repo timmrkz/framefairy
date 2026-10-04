@@ -130,6 +130,9 @@
   let shownFirst = false;
   let player = $state<Player>();
   let timeline = $state<ClipTimeline>();
+  // The column the video preview and the range picker stand in, which a
+  // clip fitted on the clip timeline is centred under.
+  let middle = $state<HTMLDivElement>();
   // What the clip timeline has to say about the chosen clip, for the row
   // under it.
   let numbers = $state<ClipNumbers>({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false });
@@ -2538,7 +2541,7 @@
           </div>
         {/if}
       </div>
-      <div class="middle">
+      <div class="middle" bind:this={middle}>
         <Player
           bind:this={player}
           bind:paused
@@ -2653,6 +2656,10 @@
         {hovered}
         onhover={hoverClip}
         onmark={select}
+        centre={() => {
+          const box = middle?.getBoundingClientRect();
+          return box && box.width > 0 ? box.left + box.width / 2 : undefined;
+        }}
         captions={captions?.captions ?? []}
         captionLook={shownCaptions
           ? {
