@@ -209,6 +209,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.19 | The clip timeline's info bubble cut to what the track itself does, a line each. A double-click in the clip cuts a part out and one on a cut removes it, told from the two presses so it works wherever the second lands. Shift and a drag no longer cuts, and a double-click no longer fits the clip. Asked for by Tim | `[x]` |
 | 3.20 | A cut takes out what lies in it and nothing else: the captions keep the pauses the episode has, so a cut in a pause no longer joins the two captions around it. Asked for by Tim | `[x]` |
 | 3.21 | A double-click on a clip's edge puts it back where the clip was found, the way one on a caption's edge does. The clip keeps its first edges in the plan from its first change on. Asked for by Tim | `[x]` |
+| 3.22 | A caption is drawn only where the clip is, never over a cut, and the last caption is held past the end only when it is on screen there, so trimming the end no longer stretches the caption before. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 

@@ -963,6 +963,17 @@ bubble scrolled by those eight pixels.
       a cut is a whole number of frames wide, rounded up, so it is never
       too short for the engine to take. The view never moves: a gesture
       that cuts and zooms at the same time is a gesture nobody can aim.
+    - **A caption is drawn only where the clip is.** Its block lies over
+      the parts the clip keeps and never over a cut, in as many pieces as
+      it takes. Where a caption goes at a cut, its end is the end of the
+      piece before, `endInEpisode` in `frontend/src/lib/flow.ts`: a moment
+      at a cut is both the end of the piece before and the start of the
+      one after, and an end taken as the start of the next piece drew the
+      caption across the whole cut. Tim saw it moving the left edge of a
+      cut into a caption, and with shift on a cut's edge, where the next
+      caption begins right where the cut ends. A block has no padding, so
+      one a few pixels long is a few pixels long and does not reach into
+      a cut.
     - **A double-click is told from the two presses**, not from the
       browser's dblclick. The first press moves the playhead under the
       pointer, so the second lands on the playhead's line or on a cut's

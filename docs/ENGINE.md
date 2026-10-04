@@ -460,7 +460,11 @@ where the cut begins. They used to be measured on the clip's clock, where
 a cut had made the pause short: Tim cut most of a pause out by hand and
 the two captions around it became one, held over the cut, in the clip
 timeline, the video preview and the render alike. A cut over words takes
-those words out of the captions and leaves the rest as they were.
+those words out of the captions and leaves the rest as they were. The last
+caption of a clip is held a second past its end, for the frames a render
+lands beyond it, only when it is on screen at the end. It used to be held
+whatever it was, so trimming the end over the last word made the caption
+before it stay to the end, and Tim saw two captions turn into one.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
 estimated. A clip says a word, and captions it, when it holds more than a
 frame of the word's sound, `HoldsWord` in `engine/lines.go`. So dragging an

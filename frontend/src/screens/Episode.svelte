@@ -43,6 +43,7 @@
     heardIn,
     type Parts,
     inEpisode,
+    endInEpisode,
     Newest,
     nextWindow,
     timesIn,
@@ -1575,7 +1576,7 @@
         for (const word of line.words) {
           out.push({
             start: inEpisode(pieces, word.start),
-            end: inEpisode(pieces, word.end),
+            end: endInEpisode(pieces, word.end),
             text: word.text,
           });
         }

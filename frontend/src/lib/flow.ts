@@ -386,6 +386,28 @@ export function inEpisode(pieces: Piece[], at: number): number {
   return last ? last.end : at;
 }
 
+// Where the end of something on the clip's clock falls in the episode: a
+// caption that goes, a word that ends. A moment exactly at a cut is two
+// places in the episode, the end of the piece before and the start of the
+// piece after. A start belongs to the piece after, which is inEpisode. An
+// end belongs to the piece before, or a caption that went where a cut
+// begins was drawn across the whole cut to the far side of it: Tim moved
+// the left edge of a cut into the end of a caption and the caption grew
+// over the cut, while the right edge, moved into a caption's start, did
+// what it should.
+export function endInEpisode(pieces: Piece[], at: number): number {
+  let sum = 0;
+  for (const p of pieces) {
+    const span = p.end - p.start;
+    // A millionth of a second either way, because the two clocks add up
+    // the same pieces in another order.
+    if (at <= sum + span + 1e-6) return p.start + Math.min(Math.max(at - sum, 0), span);
+    sum += span;
+  }
+  const last = pieces[pieces.length - 1];
+  return last ? last.end : at;
+}
+
 // Where a moment of the episode falls in a clip, the other way from
 // inEpisode. A moment the clip cuts out is the moment it comes back, and
 // one before or after it is its start or its end.

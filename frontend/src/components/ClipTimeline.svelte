@@ -31,6 +31,7 @@
     heardIn,
     inClip,
     inEpisode,
+    endInEpisode,
     insideClip,
     litWord,
     type CaptionDraft,
@@ -987,12 +988,17 @@
   const captionBlocks = $derived.by(() => {
     if (!clip || !shownCues?.length || !cuePieces.length) return [];
     const list = shapedShown ? shownCues : draftCaptions(shownCues, capDraft);
-    return list.map((c, i) => ({
-      i,
-      c: shownCues[i],
-      from: inEpisode(cuePieces, c.start),
-      to: inEpisode(cuePieces, Math.min(c.end, clipLength)),
-    }));
+    return list.map((c, i) => {
+      const from = inEpisode(cuePieces, c.start);
+      const to = endInEpisode(cuePieces, Math.min(c.end, clipLength));
+      // A caption on screen on both sides of a cut is drawn on both sides
+      // and never over the cut, where nothing of the clip is shown. One
+      // block across it read as the caption filling the part the cut took.
+      const parts = cuePieces
+        .map((p) => ({ from: Math.max(from, p.start), to: Math.min(to, p.end) }))
+        .filter((part) => part.to > part.from);
+      return { i, c: shownCues[i], from, to, parts: parts.length ? parts : [{ from, to }] };
+    });
   });
 
   // The other clips in view, as marks across the middle of the track.
@@ -1115,11 +1121,12 @@
         // does, which is how a caption is heard from where it appears.
         capDraft = null;
         oncaptiondraft?.(null);
-        if (!moved) onseek(inEpisode(segments, edge === "start" ? c.start : Math.min(c.end, clipLength)));
+        if (!moved)
+          onseek(edge === "start" ? inEpisode(segments, c.start) : endInEpisode(segments, Math.min(c.end, clipLength)));
         return;
       }
       capSaving = true;
-      const saved = await oncaptiontime(word, edge, inEpisode(segments, d.at));
+      const saved = await oncaptiontime(word, edge, (edge === "start" ? inEpisode : endInEpisode)(segments, d.at));
       capSaving = false;
       if (!saved) {
         capDraft = null;
@@ -1408,16 +1415,18 @@
                starts its pop again. A key on the list would not do it: the
                list is only looked at again when the captions change. -->
           {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
-            <div
-              class="caption"
-              class:showing={time >= b.from && time < b.to}
-              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px); --i: {b.i}"
-              role="button"
-              title="Put the playhead where this caption appears"
-              onpointerdown={(e) => e.stopPropagation()}
-              onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
-            ><i></i></div>
+            {#each b.parts as part, k (k)}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+              <div
+                class="caption"
+                class:showing={time >= b.from && time < b.to}
+                style="left: {x(part.from)}%; width: calc({Math.max(x(part.to) - x(part.from), 0)}% - 2px); --i: {b.i}"
+                role="button"
+                title="Put the playhead where this caption appears"
+                onpointerdown={(e) => e.stopPropagation()}
+                onclick={() => onseek(firstWordOf(b.c) ?? b.from)}
+              ><i></i></div>
+            {/each}
           {/key}
         {/each}
       </div>
@@ -1715,7 +1724,11 @@
     height: 16px;
     margin-left: 1px;
     box-sizing: border-box;
-    padding: 0 6px;
+    /* No padding: six pixels of it either side made every block at least
+       twelve wide, so a caption a few pixels long before a cut reached
+       into the cut. The line keeps its inset in its margin instead, which
+       gives way when the block is narrow. */
+    padding: 0;
     display: flex;
     align-items: center;
     background: var(--cap-box);
@@ -1743,6 +1756,7 @@
     display: block;
     flex: 1;
     min-width: 0;
+    margin: 0 min(6px, 25%);
     height: 2px;
     border-radius: 1px;
     background: var(--cap-text);

@@ -349,6 +349,9 @@ const (
 	captionHold = 0.4
 	// A pause this long between words ends a caption.
 	captionPause = 0.6
+	// A caption that goes this close to the end of a clip is on screen at
+	// the end, two frames at the rates people film at.
+	captionAtEnd = 0.08
 )
 
 // Captions gives a clip's captions on the clip's own timeline.
@@ -443,12 +446,19 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words})
 		lastAlone = g.alone
 	}
-	// Held a second past the end. Constant frame rate output usually lands a
-	// frame or two beyond the planned length, and a caption that stops
-	// exactly at the end leaves those frames bare. libass stops with the video.
+	// Held a second past the end when it is on screen at the end. Constant
+	// frame rate output usually lands a frame or two beyond the planned
+	// length, and a caption that stops exactly at the end leaves those
+	// frames bare. libass stops with the video. Only then: the last caption
+	// was held to the end whatever it was, so trimming the end over the last
+	// word turned the caption before it, which had gone after its own word,
+	// into one that stayed to the end, and on the clip timeline two captions
+	// looked to become one.
 	length := clipLength(clip)
 	last := out[len(out)-1]
-	out[len(out)-1].End = math.Max(last.End, length+1.0)
+	if last.End >= length-captionAtEnd {
+		out[len(out)-1].End = math.Max(last.End, length+1.0)
+	}
 	if out[0].Start < 0.12 {
 		out[0].Start = 0
 	}

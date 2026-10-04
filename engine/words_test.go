@@ -238,9 +238,10 @@ func TestCaptionsFollowWords(t *testing.T) {
 	if !near(cues[0].End, 2.0+captionHold) {
 		t.Errorf("caption 1 ends at %.2f", cues[0].End)
 	}
-	// The last caption is held past the end of the clip.
-	if cues[1].End < clipLength(clip) {
-		t.Errorf("last caption ends at %.2f", cues[1].End)
+	// The clip goes on 0.6 s after "dann", so the last caption goes a hold
+	// after its word, like any other, and is not stretched to the end.
+	if !near(cues[1].End, 4.4+captionHold) {
+		t.Errorf("last caption ends at %.2f, want %.2f", cues[1].End, 4.4+captionHold)
 	}
 	for _, c := range cues {
 		if strings.Contains(c.Text, "weg") {
@@ -324,5 +325,27 @@ func TestACutLeavesTheCaptionsAroundIt(t *testing.T) {
 	got = Captions(overWord, words, 38, nil)
 	if fmt.Sprint(texts(got)) != "[Erst Idee, dann die Zielgruppe.]" {
 		t.Errorf("with die cut out: %v", texts(got))
+	}
+}
+
+// The last caption is held past the end of a clip only when it is on screen
+// at the end, for the frames the render lands beyond it. Trimming the end
+// over the last word made the caption before it the last one, and it was
+// then held to the end too, so Tim saw a short caption turn into a long one,
+// and two captions look to become one, as the edge moved.
+func TestTheLastCaptionIsHeldOnlyWhenItIsShownAtTheEnd(t *testing.T) {
+	words := []Cue{
+		{0.2, 0.6, "Das"}, {0.6, 1.0, "war's."},
+		{2.5, 2.8, "Ja."},
+	}
+	// Ending inside the hold of "Ja.", it is on screen at the end.
+	whole := Captions(Clip{Segments: []Segment{{Start: 0, End: 3.0}}}, words, 38, nil)
+	if len(whole) != 2 || whole[1].End < 3.0+1.0 {
+		t.Fatalf("with Ja. the last caption ends at %v: %+v", whole[len(whole)-1].End, whole)
+	}
+	// Trimmed over "Ja.", the caption before keeps its own time.
+	trimmed := Captions(Clip{Segments: []Segment{{Start: 0, End: 2.4}}}, words, 38, nil)
+	if len(trimmed) != 1 || !near(trimmed[0].End, whole[0].End) {
+		t.Errorf("trimmed over Ja. the caption before goes at %v, it went at %v untrimmed", trimmed[0].End, whole[0].End)
 	}
 }
