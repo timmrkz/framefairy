@@ -694,9 +694,20 @@ bubble scrolled by those eight pixels.
       clips after it. A window drawn between the second clip and the third
       opens its rows between the two, and each card that comes takes a
       row's place, so the clips after the window move down once, when the
-      search starts, and not again. Within the window the cards land in
-      the order of the episode, and the model names them strongest first,
-      so a card can land above one that came before it.
+      search starts, and not again.
+    - **A card stays where it came in.** A search stands as many rows as
+      it was asked for, from the start: the first says what it is doing,
+      the others breathe. Each clip it names comes into the row that says
+      so, with the fill it was wearing, and that row's words move on into
+      the next row waiting. A card once there stays in its row until the
+      search is over, the list keeps its height the whole time, and no row
+      slides. Then the clips go to the order they are spoken in, the order
+      of the range picker and the clip timeline, in one step. Each card
+      used to come in at its moment in the episode, above the rows waiting
+      or between cards already there, so every row under it slid down one
+      and the last row waiting closed, each time a clip was named. Tim saw
+      cards being replaced rather than filled in, and a stack that never
+      stood still.
     - **A search starts in sight.** The rows still to come are often after
       the clips there are, so in a long list a search began out of sight and
       all anyone saw was New turning into Cancel. The row the next clip
@@ -712,10 +723,9 @@ bubble scrolled by those eight pixels.
       of its own, and the list is in the order they were spoken, so the
       last clip found is not always the last in the list: it is the one
       that comes into view, wherever it lands, and the rows still to come
-      stay after the last of them. The list stays in the order the clips were
-      spoken, which is the order of the range picker and the clip
-      timeline, so a new clip lands where it belongs in the episode rather
-      than on top.
+      stay after the last of them. Once the search is over the list is in
+      the order the clips were spoken, which is the order of the range
+      picker and the clip timeline.
     - **What a search was asked for is held while it runs.** Target,
       Shortest and Longest go to the model with the prompt, so they are
       locked from New until the search has run, and dimmed. Changing Target

@@ -299,6 +299,19 @@ card came back sliding open. Tim saw it as the whole list blinking at the
 end of a search. When a thing changes what it is, keep its key, and hold
 what must not go in the same pass that builds the list.
 
+**A row that work fills is filled where it stands.** A search's cards
+came in at their moments in the episode, above the rows waiting or between
+cards already there, and `animate:flip` slid every row under them down
+one, each time a clip was named. Nothing ended wrong and every probe of
+the end state passed. Tim saw the stack shuffle and cards that seemed to
+be replaced rather than filled in. Now a running search keeps its rows by
+place: each clip comes into the row that says what the search is doing,
+and a row once a card stays there until the search is over, see `places`
+in `ClipList.svelte`. Prove it by following each row by its element on
+every frame, a `WeakMap` from element to a number, and counting rows that
+move within the stack: the old code moved rows on 112 frames of one
+search of six, the new one on none.
+
 ## When the window itself looks wrong, measure it against a real one
 
 The app is a native window. Every other native window is on the same
