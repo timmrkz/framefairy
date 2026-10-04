@@ -104,7 +104,7 @@ func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 			budgets = append(budgets, b)
 			mu.Unlock()
 		}
-		writeLocalStream(w, `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`, 7)
+		writeLocalStream(w, "1 1 1\n", 7)
 	}))
 	defer server.Close()
 

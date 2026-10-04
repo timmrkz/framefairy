@@ -43,6 +43,36 @@ type answerClip struct {
 	Title  string   `json:"title"`
 	Reason string   `json:"reason"`
 	Keep   [][2]int `json:"keep"`
+	// Heart is the line inside the story a middle answer names, which a
+	// lines answer does not have.
+	Heart [2]int `json:"-"`
+}
+
+// firstMiddle is the first version of the way of asking middle began,
+// see engine.PromptVersion. The versions before it asked with lines, and
+// it does not extend them.
+const firstMiddle = 5
+
+// format is one way of asking and answering: its latest version, what
+// the model was told before the request in it, and how an answer is
+// written.
+type format struct {
+	latest int
+	system string
+	answer func([]answerClip) Message
+}
+
+// formatOf is the way of asking a recorded version belongs to. An example
+// is trained in its own format, upgraded to the latest version of it,
+// which can express everything its targets need, since every version of
+// a format only extends the one before. Lines and middle are two formats,
+// and an answer of one cannot be written in the other.
+func formatOf(version int) format {
+	if version < firstMiddle {
+		return format{latest: firstMiddle - 1, system: engine.SystemPrompt, answer: answer}
+	}
+	middle, _ := engine.RecipeNamed("middle")
+	return format{latest: engine.PromptVersion, system: middle.System, answer: middleAnswer}
 }
 
 // Manifest describes an export.
@@ -307,16 +337,20 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 			split = "eval"
 		}
 		m.Counts["examples"]++
-		// Every version so far only extends the one before, so an older
-		// record is trained with the current system prompt, which can
-		// express everything its targets need.
+		// An older record is trained with the latest system prompt of its
+		// format, which can express everything its targets need.
+		form := formatOf(ex.version)
 		system := ex.system
-		upgraded := ex.version < engine.PromptVersion
+		upgraded := ex.version < form.latest
 		if upgraded {
-			system = engine.SystemPrompt
+			system = form.system
 			m.Counts["upgraded_examples"]++
 		}
-		prompt := []Message{{"system", system}, {"user", ex.prompt}}
+		prompt := []Message{{"user", ex.prompt}}
+		if system != "" {
+			prompt = append([]Message{{"system", system}}, prompt...)
+		}
+		answer := form.answer
 
 		// Clips that were played but never rendered, edited or kept count as
 		// passed over, but only where something else of the same example was
@@ -336,7 +370,7 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 		for _, ck := range ex.order {
 			st := ex.states[ck]
 			proposed := answerClip{Slug: st.cand.Slug, Title: st.cand.Title, Reason: st.cand.Reason,
-				Keep: st.cand.Keep}
+				Keep: st.cand.Keep, Heart: st.cand.Heart}
 			if !st.decided {
 				if st.viewed && chose {
 					bad = append(bad, proposed)
@@ -377,10 +411,14 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 			// A changed clip teaches its correction directly: the changed
 			// lines are better than the proposed ones. Moved edges and cut or
 			// restored pauses both change the lines.
-			if st.changed && fmt.Sprint(target.Keep) != fmt.Sprint(proposed.Keep) {
+			// An answer that only names where a story starts and ends says
+			// nothing of a pause cut inside it, so a change it cannot write
+			// teaches nothing.
+			chosen, rejected := answer([]answerClip{target}), answer([]answerClip{proposed})
+			if st.changed && chosen != rejected {
 				pairs = append(pairs, dpoRecord{Prompt: prompt,
-					Chosen:   []Message{answer([]answerClip{target})},
-					Rejected: []Message{answer([]answerClip{proposed})},
+					Chosen:   []Message{chosen},
+					Rejected: []Message{rejected},
 					Meta:     map[string]any{"kind": "correction", "example": key, "weight": w}})
 			}
 		}
@@ -404,7 +442,7 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 		if err == nil {
 			err = writeJSON(f, sftRecord{Messages: append(append([]Message{}, prompt...), chosen),
 				Meta: map[string]any{"example": key, "weight": weight, "clips": goodMeta,
-					"recorded_prompt_version": ex.version, "prompt_version": engine.PromptVersion,
+					"recorded_prompt_version": ex.version, "prompt_version": form.latest,
 					"system_upgraded": upgraded}})
 		}
 		if err != nil {
@@ -435,6 +473,26 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 func answer(clips []answerClip) Message {
 	body, _ := json.Marshal(map[string][]answerClip{"clips": clips})
 	return Message{Role: "assistant", Content: string(body)}
+}
+
+// middleAnswer is clips as middle answers: one line a story, the line it
+// starts on, a line inside it and the line it ends on. The line inside is
+// the heart the model named, kept between the two ends, where a person
+// who moved an edge may have left it outside.
+func middleAnswer(clips []answerClip) Message {
+	var b strings.Builder
+	for _, c := range clips {
+		if len(c.Keep) == 0 {
+			continue
+		}
+		start, end := c.Keep[0][0], c.Keep[len(c.Keep)-1][1]
+		inside := c.Heart[0]
+		if inside <= start || inside >= end {
+			inside = (start + end) / 2
+		}
+		fmt.Fprintf(&b, "%d %d %d\n", start, inside, end)
+	}
+	return Message{Role: "assistant", Content: strings.TrimSuffix(b.String(), "\n")}
 }
 
 func writeJSON(f *os.File, v any) error {

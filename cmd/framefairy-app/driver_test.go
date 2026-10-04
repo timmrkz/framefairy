@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -441,7 +442,9 @@ func (m *model) answer(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	stream(w, `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`)
+	// One story, the first line, as middle answers: where it starts, a
+	// line inside it and where it ends.
+	stream(w, "1 1 1\n")
 }
 
 // stream sends an answer the way llama-server streams one.
@@ -453,8 +456,8 @@ func stream(w http.ResponseWriter, answer string) {
 			f.Flush()
 		}
 	}
-	quoted := strings.ReplaceAll(answer, `"`, `\"`)
-	send(`{"choices":[{"delta":{"content":"` + quoted + `"},"finish_reason":null}]}`)
+	quoted, _ := json.Marshal(answer)
+	send(`{"choices":[{"delta":{"content":` + string(quoted) + `},"finish_reason":null}]}`)
 	send(`{"choices":[{"delta":{},"finish_reason":"stop"}]}`)
 	send(`{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":40}}`)
 	_, _ = w.Write([]byte("data: [DONE]\n\n"))

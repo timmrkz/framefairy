@@ -329,8 +329,8 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 func TestProjectPlansWithOpenAI(t *testing.T) {
 	source := testEpisode(t, "40")
 	ownTrainingDir(t)
-	plan := `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`
-	fake, e := cloud(t, openAIStream([]string{plan[:30], plan[30:]}, "stop",
+	// One story, the first line, as middle answers, in two pieces.
+	fake, e := cloud(t, openAIStream([]string{"1 1", " 1\n"}, "stop",
 		`{"prompt_tokens":900,"completion_tokens":60}`))
 	var heard int32
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -351,16 +351,49 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
 	_, clips, err := LoadClips(path)
-	if err != nil || len(clips) != 1 || clips[0].Title != "Erste" {
+	if err != nil || len(clips) != 1 || !strings.HasPrefix(clips[0].Title, "wort") {
 		t.Fatalf("the plan from OpenAI's answer: %+v, %v", clips, err)
 	}
 	seen := fake.seen()
 	if len(seen) != 1 || seen[0].path != "/openai" || seen[0].body["model"] != "gpt-6-sol" {
 		t.Fatalf("asked %d times, first at %v", len(seen), seen)
 	}
+	// middle is one message, with nothing before it.
 	msgs, _ := seen[0].body["messages"].([]any)
-	if len(msgs) != 2 || !strings.Contains(fmt.Sprint(msgs[1]), "wort") {
+	if len(msgs) != 1 || !strings.Contains(fmt.Sprint(msgs[0]), "wort") {
 		t.Errorf("the transcript did not go with the request: %v", msgs)
+	}
+}
+
+// A search on Claude with --prefill still gets middle's answer whole. A
+// prefilled brace starts a JSON answer, and middle answers without one.
+func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
+	source := testEpisode(t, "40")
+	ownTrainingDir(t)
+	fake, e := cloud(t, claudeStream("1 1 1\n"))
+	var heard int32
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.Planner = "api"
+	base.Model = "claude-sonnet-5"
+	base.Prefill = true
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	p := NewProject(e, source, base)
+	path, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 1})
+	if err != nil {
+		t.Fatalf("plan: %v %s", err, p.LastError())
+	}
+	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 {
+		t.Fatalf("the plan from Claude's answer: %+v, %v", clips, err)
+	}
+	seen := fake.seen()
+	if len(seen) != 1 {
+		t.Fatalf("asked %d times", len(seen))
+	}
+	msgs, _ := seen[0].body["messages"].([]any)
+	if len(msgs) != 1 {
+		t.Errorf("the request was prefilled: %v", msgs)
 	}
 }
 

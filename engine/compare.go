@@ -38,19 +38,20 @@ type RecipeRun struct {
 	// PromptChars is the whole request, what the model is told and the
 	// request with the transcript in it.
 	PromptChars int
-	// What a local model says it read and wrote, when one was asked, and
-	// the seconds it took to read the request and write the answer.
-	PromptTokens, WrittenTokens, ThoughtChars int
-	ModelSeconds                              float64
-	Clips                                     []FoundClip
-	Failed                                    string
+	// Use is what a local model says it read, thought and wrote, and how
+	// long that took, when one was asked.
+	Use    modelUse
+	Clips  []FoundClip
+	Failed string
 }
 
 // FoundClip is a clip as the report shows it.
 type FoundClip struct {
 	Title, Reason string
 	Seconds       float64
-	Parts         int
+	// Start and End are where in the episode the clip begins and ends.
+	Start, End float64
+	Parts      int
 	// Text is the words that stay, with a mark where something was cut.
 	Text string
 }
@@ -65,6 +66,9 @@ type Variant struct {
 	// Temperature is how freely the model picks its words, nil for the
 	// search's own.
 	Temperature *float64
+	// Switches are what the side shows the model beyond the recipe's own,
+	// written after a +, as in points+times.
+	Switches PromptSwitches
 }
 
 // ParseVariant reads a side of a comparison: a recipe name, after an @ the
@@ -82,13 +86,26 @@ func ParseVariant(name string) (Variant, error) {
 		t = &f
 	}
 	recipe, think, hasThink := strings.Cut(rest, "@")
-	if _, err := RecipeNamed(recipe); err != nil || recipe == "" {
+	recipe, switches, hasSwitches := strings.Cut(recipe, "+")
+	r, err := RecipeNamed(recipe)
+	if err != nil || recipe == "" {
 		if err == nil {
 			err = renderErr("a side of a comparison needs a recipe, as in stories@1024")
 		}
 		return Variant{}, err
 	}
 	v := Variant{Recipe: recipe, Temperature: t}
+	if hasSwitches {
+		if !r.Switchable {
+			return Variant{}, renderErr("%s: %s takes no switches. heart-lean, points and middle do, "+
+				"as in middle+times", pyRepr(name), recipe)
+		}
+		sw, err := ParseSwitches(switches)
+		if err != nil {
+			return Variant{}, renderErr("%s: %s", pyRepr(name), err)
+		}
+		v.Switches = sw
+	}
 	if hasThink {
 		n, err := strconv.Atoi(think)
 		if err != nil || n < -1 {
@@ -124,6 +141,14 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		if ctx.Err() != nil {
 			return runs, "", ctx.Err()
 		}
+		// Every side starts with a llama-server of its own, so none finds
+		// the request of the side before in its cache. Two sides that
+		// differ only in thinking send the same request, and the second
+		// read 15,303 tokens in 0.1 seconds where the first took 26. A
+		// server somebody started themselves is theirs to restart.
+		if i > 0 && opts.LLMURL == "" {
+			StopModels()
+		}
 		e.Log.Info("searching with the %s recipe", name)
 		o := opts
 		o.Recipe, o.Variant, o.Experiment, o.PlanOnly = variants[i].Recipe, name, true, true
@@ -133,6 +158,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		if variants[i].Temperature != nil {
 			o.Temperature = variants[i].Temperature
 		}
+		o.Switches = variants[i].Switches
 		// Every side draws the same way, so what differs between two is
 		// what was changed, not the luck of the draw.
 		if o.Seed == 0 {
@@ -156,7 +182,7 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 			keepCopy(dir, "prompt.txt", body)
 		}
 		var reply string
-		reply, run.PromptTokens, run.WrittenTokens, run.ThoughtChars, run.ModelSeconds = lastLocalAnswer(logs, began)
+		reply, run.Use = lastLocalAnswer(logs, began)
 		if body, err := os.ReadFile(reply); reply != "" && err == nil {
 			keepCopy(dir, "reply.json", body)
 		}
@@ -201,11 +227,23 @@ func keepCopy(dir, name string, body []byte) {
 	}
 }
 
-// lastLocalAnswer finds the answer saved since began and reads what the local
-// model said about it: the tokens it read, the tokens it wrote, and how much
-// of what it wrote was thought. The numbers are zero for the API, and the
-// path empty for an answer reused.
-func lastLocalAnswer(logs string, began time.Time) (path string, read, written, thought int, seconds float64) {
+// modelUse is what a local model did for a search. Asks is how many times
+// it was asked, the first ask and every ask again about clips well off the
+// length. Read is the tokens of the first request, and ReadAnew those it
+// read rather than found in llama-server's cache from the side before,
+// which has the same request when two sides differ only in thinking.
+// Reading is the seconds that reading took. Thought is the tokens of
+// thought, or where they were not counted, ThoughtChars its characters.
+// Written and Seconds are of every ask.
+type modelUse struct {
+	Asks, Read, ReadAnew, Thought, ThoughtChars, Written int
+	Reading, Seconds                                     float64
+}
+
+// lastLocalAnswer finds the answer saved since began and reads what the
+// local model said about it. It is all zero for the API, and the path empty
+// for an answer reused.
+func lastLocalAnswer(logs string, began time.Time) (path string, use modelUse) {
 	matches, _ := filepath.Glob(filepath.Join(logs, "reply-*.json"))
 	var newest string
 	var at time.Time
@@ -217,23 +255,43 @@ func lastLocalAnswer(logs string, began time.Time) (path string, read, written, 
 		newest, at = m, info.ModTime()
 	}
 	if newest == "" {
-		return "", 0, 0, 0, 0
+		return "", use
 	}
 	body, err := os.ReadFile(newest)
 	if err != nil {
-		return "", 0, 0, 0, 0
+		return "", use
 	}
 	var saved struct {
-		How *localAnswer `json:"how"`
+		How      *localAnswer `json:"how"`
+		Fit      *string      `json:"fit"`
+		FitHow   *localAnswer `json:"fit_how"`
+		Refit    *string      `json:"refit"`
+		RefitHow *localAnswer `json:"refit_how"`
 	}
 	if json.Unmarshal(body, &saved) != nil || saved.How == nil {
-		return newest, 0, 0, 0, 0
+		return newest, use
 	}
-	h := saved.How
-	if h.Timings != nil {
-		seconds = (h.Timings.PromptMS + h.Timings.PredictedMS) / 1000
+	first := saved.How
+	use = modelUse{Asks: 1, Read: first.PromptTokens, ReadAnew: first.PromptTokens,
+		Thought: first.ReasoningTokens, ThoughtChars: first.Reasoning}
+	if first.Timings != nil {
+		use.ReadAnew, use.Reading = first.Timings.PromptN, first.Timings.PromptMS/1000
 	}
-	return newest, h.PromptTokens, h.Written, h.Reasoning, seconds
+	for _, h := range []*localAnswer{saved.How, saved.FitHow, saved.RefitHow} {
+		if h == nil {
+			continue
+		}
+		use.Written += h.Written
+		if h.Timings != nil {
+			use.Seconds += (h.Timings.PromptMS + h.Timings.PredictedMS) / 1000
+		}
+	}
+	for _, again := range []*string{saved.Fit, saved.Refit} {
+		if again != nil {
+			use.Asks++
+		}
+	}
+	return newest, use
 }
 
 // newestPlan is the plan written in dir since began.
@@ -271,6 +329,9 @@ func foundClips(path string, words []Cue) []FoundClip {
 	var out []FoundClip
 	for _, c := range clips {
 		found := FoundClip{Title: c.Title, Reason: reasons[c.ID], Parts: len(c.Segments)}
+		if n := len(c.Segments); n > 0 {
+			found.Start, found.End = c.Segments[0].Start, c.Segments[n-1].End
+		}
 		var text strings.Builder
 		for i, seg := range c.Segments {
 			found.Seconds += seg.End - seg.Start
@@ -301,32 +362,53 @@ func compareReport(opts Options, runs []RecipeRun) string {
 	if opts.Temperature != nil {
 		temperature = trimFloat(*opts.Temperature)
 	}
-	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %d clips of %s to %s seconds asked for. "+
-		"Seed %d, temperature %s unless a side says otherwise.\n\n",
-		filepath.Base(opts.Source), window, opts.Count, fixed(opts.Min, 0), fixed(opts.Max, 0),
-		seed, temperature)
-	b.WriteString("| Recipe | Clips | Seconds | Model, seconds | Request, characters | Read, tokens | Written, tokens | Thought, characters |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- |\n")
-	for _, r := range runs {
-		model := "-"
-		if r.ModelSeconds > 0 {
-			model = fixed(r.ModelSeconds, 0)
-		}
-		fmt.Fprintf(&b, "| %s | %d | %s | %s | %s | %s | %s | %s |\n", r.Recipe, len(r.Clips),
-			fixed(r.Seconds, 0), model, commas(r.PromptChars), orNone(r.PromptTokens),
-			orNone(r.WrittenTokens), orNone(r.ThoughtChars))
+	// No count is the count the window suggests, which was never 0 clips.
+	count := "as many clips as the window suggests"
+	if opts.Count > 0 {
+		count = fmt.Sprintf("%d clips", opts.Count)
 	}
+	fmt.Fprintf(&b, "# Recipes compared\n\n%s, %s, %s of %s to %s seconds asked for. "+
+		"Seed %d, temperature %s unless a side says otherwise.\n\n",
+		filepath.Base(opts.Source), window, count, fixed(opts.Min, 0), fixed(opts.Max, 0),
+		seed, temperature)
+	costs := [][]string{{"Recipe", "Clips", "Asks", "Seconds", "Model, seconds", "Reading, seconds",
+		"Request, characters", "Read, tokens", "Read anew, tokens", "Thought, tokens", "Written, tokens"}}
+	for _, r := range runs {
+		u := r.Use
+		seconds := func(s float64) string {
+			if s <= 0 {
+				return "-"
+			}
+			return fixed(s, 0)
+		}
+		thought := orNone(u.Thought)
+		if u.Thought == 0 && u.ThoughtChars > 0 {
+			thought = "about " + commas(u.ThoughtChars*10/25)
+		}
+		costs = append(costs, []string{r.Recipe, strconv.Itoa(len(r.Clips)), orNone(u.Asks),
+			fixed(r.Seconds, 0), seconds(u.Seconds), seconds(u.Reading), commas(r.PromptChars),
+			orNone(u.Read), orNone(u.ReadAnew), thought, orNone(u.Written)})
+	}
+	b.WriteString(alignedTable(costs))
+	b.WriteString("\nAsks counts the first ask and every ask again about clips well off the " +
+		"length. Model, seconds and Written, tokens are of all of them, the reading of the " +
+		"first. Read anew is what the model read rather than found in its cache: a side with " +
+		"the same request as the side before reads almost nothing, so its seconds leave out " +
+		"the reading the others paid for. Thought is part of Written. Where the tokens of " +
+		"thought were not counted, it is worked out from the characters, about 2.5 a token.\n")
 	// What can be counted about the clips, beside what has to be read.
 	b.WriteString("\nWhat can be counted, fewer is better. A clip starts mid-sentence when its first " +
 		"word is in lower case, ends mid-sentence when its last has no full stop, question or " +
 		"exclamation mark, and is off the length when it runs under 90 % of the shortest or over " +
 		"120 % of the longest asked for.\n\n")
-	b.WriteString("| Recipe | Starts mid-sentence | Ends mid-sentence | Off the length |\n")
-	b.WriteString("| --- | --- | --- | --- |\n")
+	faults := [][]string{{"Recipe", "Starts mid-sentence", "Ends mid-sentence", "Off the length"}}
 	for _, r := range runs {
 		starts, ends, off := clipFaults(r.Clips, opts.Min, opts.Max)
-		fmt.Fprintf(&b, "| %s | %d | %d | %d |\n", r.Recipe, starts, ends, off)
+		faults = append(faults, []string{r.Recipe, strconv.Itoa(starts), strconv.Itoa(ends),
+			strconv.Itoa(off)})
 	}
+	b.WriteString(alignedTable(faults))
+	b.WriteString(momentsTable(runs))
 	for _, r := range runs {
 		fmt.Fprintf(&b, "\n## %s\n\n", r.Recipe)
 		if v, err := ParseVariant(r.Recipe); err == nil {
@@ -338,6 +420,16 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			if v.Temperature != nil {
 				fmt.Fprintf(&b, ", at a temperature of %s", trimFloat(*v.Temperature))
 			}
+			if sw := v.Switches; sw != (PromptSwitches{}) {
+				var shown []string
+				if sw.Pause > 0 {
+					shown = append(shown, "a mark before a pause of "+trimFloat(sw.Pause)+" s or more")
+				}
+				if sw.Times {
+					shown = append(shown, "the time each line starts at")
+				}
+				b.WriteString(", with " + strings.Join(shown, ", "))
+			}
 			b.WriteString(".\n\n")
 		}
 		if r.Failed != "" {
@@ -345,9 +437,107 @@ func compareReport(opts Options, runs []RecipeRun) string {
 			continue
 		}
 		for i, c := range r.Clips {
-			fmt.Fprintf(&b, "### %d. %s\n\n%s seconds, %d part(s). %s\n\n> %s\n\n",
-				i+1, c.Title, fixed(c.Seconds, 1), c.Parts, c.Reason, c.Text)
+			fmt.Fprintf(&b, "### %d. %s\n\nAt %s, %s seconds, %d part(s). %s\n\n> %s\n\n",
+				i+1, c.Title, HMS(c.Start), fixed(c.Seconds, 1), c.Parts, c.Reason, c.Text)
 		}
+	}
+	return b.String()
+}
+
+// momentsTable is every moment the sides found, one row each in the order
+// they come in the episode, and for each side the seconds of its clip of
+// that moment. Two clips are one moment when they share more than half of
+// the shorter. So the same story can be read side by side, and a story only
+// one side found stands out.
+func momentsTable(runs []RecipeRun) string {
+	type moment struct {
+		start, end float64
+		title      string
+		seconds    map[int]float64
+	}
+	var moments []*moment
+	for side, r := range runs {
+		for _, c := range r.Clips {
+			var found *moment
+			for _, m := range moments {
+				shared := min(m.end, c.End) - max(m.start, c.Start)
+				if shared > 0.5*min(m.end-m.start, c.End-c.Start) {
+					found = m
+					break
+				}
+			}
+			if found == nil {
+				found = &moment{start: c.Start, end: c.End, title: c.Title, seconds: map[int]float64{}}
+				moments = append(moments, found)
+			}
+			if _, has := found.seconds[side]; !has {
+				found.seconds[side] = c.Seconds
+			}
+		}
+	}
+	if len(moments) == 0 {
+		return ""
+	}
+	sort.SliceStable(moments, func(i, j int) bool { return moments[i].start < moments[j].start })
+	rows := [][]string{{"Moment"}}
+	for _, r := range runs {
+		rows[0] = append(rows[0], r.Recipe)
+	}
+	for _, m := range moments {
+		title := []rune(m.title)
+		if len(title) > 40 {
+			title = append(title[:39], '…')
+		}
+		row := []string{HMS(m.start) + " " + string(title)}
+		for side := range runs {
+			cell := "-"
+			if s, ok := m.seconds[side]; ok {
+				cell = fixed(s, 0) + " s"
+			}
+			row = append(row, cell)
+		}
+		rows = append(rows, row)
+	}
+	return "\nThe moments found, in the order they come, and how long each side's clip of " +
+		"it runs. Two clips are one moment when they share more than half of the shorter.\n\n" +
+		alignedTable(rows)
+}
+
+// alignedTable is a markdown table whose columns line up in a terminal
+// too: every cell padded to its column's width, the first column to the
+// left and the numbers to the right. The first row is the heads.
+func alignedTable(rows [][]string) string {
+	widths := make([]int, len(rows[0]))
+	for _, row := range rows {
+		for i, cell := range row {
+			widths[i] = max(widths[i], runeLen(cell), 3)
+		}
+	}
+	var b strings.Builder
+	line := func(row []string) {
+		b.WriteString("|")
+		for i, cell := range row {
+			pad := strings.Repeat(" ", widths[i]-runeLen(cell))
+			if i == 0 {
+				b.WriteString(" " + cell + pad + " |")
+			} else {
+				b.WriteString(" " + pad + cell + " |")
+			}
+		}
+		b.WriteString("\n")
+	}
+	line(rows[0])
+	b.WriteString("|")
+	for i, w := range widths {
+		if i == 0 {
+			b.WriteString(" " + strings.Repeat("-", w) + " |")
+		} else {
+			b.WriteString(" " + strings.Repeat("-", w-1) + ": |")
+		}
+	}
+	b.WriteString("\n")
+	for _, row := range rows[1:] {
+		line(row)
 	}
 	return b.String()
 }

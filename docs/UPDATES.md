@@ -26,7 +26,7 @@ sees, and whether a licence decides who may have it.
 | `Info.plist`, the icon, the licence notices | the app | the update |
 | The speech model and the language models | `~/.framefairy/models/` | not by the update. The app fetches them itself, as it does on the first run. A new version that wants another model says which, with its checksum, and fetches it with consent, the way it does today |
 | Settings and the episode list | `~/Library/Application Support/` | never replaced. A new version reads what the old one wrote |
-| An episode's work: transcript, clip sets, captions, renders | `<episode>.framefairy/`, beside the video | never touched by an update. A new version has to read every format an older one wrote. The training records already work this way: `PromptVersion` rises, and each version is a superset of the one before |
+| An episode's work: transcript, clip sets, captions, renders | `<episode>.framefairy/`, beside the video | never touched by an update. A new version has to read every format an older one wrote. The training records already work this way: `PromptVersion` rises, each version is a superset of the one before within its format, and the export writes every record in the format it was made in |
 
 And what an update cannot do:
 

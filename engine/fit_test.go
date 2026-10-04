@@ -62,6 +62,8 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
+	// Only lines is asked again about a clip off the length.
+	base.Recipe = "lines"
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
 	p := NewProject(e, source, base)
@@ -219,6 +221,8 @@ func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
+	// Only lines is asked again about a clip off the length.
+	base.Recipe = "lines"
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
 	p := NewProject(e, source, base)

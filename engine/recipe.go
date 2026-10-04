@@ -42,6 +42,16 @@ type Recipe struct {
 	// is split between the two asks, so it thinks no longer in all than a
 	// recipe that asks once. See fit.go.
 	Edit bool
+	// Hearts is true for a recipe that asks for the heart of every clip
+	// and leaves the length to the engine, which fits each clip around its
+	// heart and never asks again. See heart.go.
+	Hearts bool
+	// Switchable is true for a recipe asked from a prompt file that can
+	// show the model more or less, see PromptSwitches.
+	Switchable bool
+	// Plain is how the recipe answers without JSON, one line a clip, nil
+	// for a recipe that answers in JSON, see plain.go.
+	Plain *plainFormat
 	// Version is the version of its answer format. See PromptVersion.
 	Version int
 	// System is what the model is told before the request.
@@ -50,17 +60,24 @@ type Recipe struct {
 	// of whole lines, first and last, counted from zero. Nil numbers every
 	// line on its own.
 	Units func(lines []Line) [][2]int
+	// Transcript is the transcript as the request writes it out, a line a
+	// line, for a recipe that numbers every line. The room a window needs
+	// is counted from it, see WeighLines. Nil is the lines recipe's way.
+	Transcript func(lines []Line, opts PlanOptions) string
 	// Request is the request: what is asked for, and the transcript written
 	// out with the units numbered from 1.
 	Request func(lines []Line, units [][2]int, opts PlanOptions) string
 	// Schema is the answer's shape as JSON schema, which a local model is
-	// held to while it writes. It has units numbers in it and asks for at
+	// held to while it writes, nil for a recipe that answers without JSON. It has units numbers in it and asks for at
 	// most count clips.
 	Schema func(units, count int) string
 }
 
-// DefaultRecipe is the recipe a search uses unless told otherwise.
-const DefaultRecipe = "lines"
+// DefaultRecipe is the recipe a search uses unless told otherwise. It is
+// middle, with the pauses marked, since Tim's comparisons of 3 October:
+// its stories were the ones he would post, and it kept to the length
+// better than any other. See docs/PROMPTS.md.
+const DefaultRecipe = "middle"
 
 // recipes is every recipe there is, by name.
 var recipes = map[string]Recipe{
@@ -168,15 +185,18 @@ func joinRuns(keep [][2]int) [][2]int {
 	return out
 }
 
-// linesRecipe is how clips have been chosen from the start: every line of
-// speech numbered, with its length and any pause and change of level before
-// it, and the answer runs of lines. Its prompt and answer are PromptVersion.
+// linesRecipe is how clips were chosen until middle took over: every line
+// of speech numbered, with its length and any pause and change of level
+// before it, and the answer runs of lines. Its prompt and answer are
+// version 4 of PromptVersion, the last before middle.
 var linesRecipe = Recipe{
 	Name:    "lines",
 	About:   "a brief for any video, every line of speech numbered, with its length, pauses and level, and the task again after the transcript",
 	Unit:    "line",
-	Version: PromptVersion,
+	Version: 4,
 	System:  SystemPrompt,
-	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string { return buildPrompt(lines, opts) },
-	Schema:  planSchema,
+	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		return prompt("lines", lines, AnnotateLines(lines), opts)
+	},
+	Schema: planSchema,
 }
