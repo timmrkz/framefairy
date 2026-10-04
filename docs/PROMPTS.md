@@ -166,6 +166,35 @@ the program fitted it, against what it was asked for:
   where `middle` took 46, named the same umbrella and orchid stories,
   and kept every clip within the length.
 
+## What the window from 1:30:00 showed
+
+Tim's episode with Ben, 1:30:00 to 2:00:00, run on 3 October with the
+fixes of that day: the length said the same in all three prompts, only
+the longest, up to about 50 words, and `middle` writing its three lines
+in the order they come.
+
+| Side | Model, s | Clips off the length | Clip lengths, s |
+| --- | ---: | ---: | --- |
+| `heart-lean` | 44 | 3 | 20, 20, 22, 46, 56, 132 |
+| `middle` | 40 | 1 | 20, 26, 26, 27, 32, 54 |
+| `middle+pause` | 41 | 0 | 20, 22, 23, 27, 28, 28 |
+
+- **The three agree on the moments.** Five of them were found by two
+  sides or all three: the old man locked in a room, the space centre,
+  burning the ships, the first job, and the fire walk with Tony Robbins.
+- **They differ in how long they keep them.** The fire walk ran 132 s in
+  `heart-lean`, whose heart the engine never cuts, 54 s in `middle` and
+  28 s in `middle+pause`.
+- **Where a story starts is a draw.** `middle+pause` started the space
+  centre on "Und dann habe ich nochmal einen schönen Schwenk nach Orlando"
+  where `middle` started on "Geiz daran war.", and the old man on its
+  setup where `middle` started in the middle of it. But it started the
+  first job on "Und ich fand das so toll." after the setup the other two
+  kept, and it alone took a weak moment, 9/11 begun on "98, 98, bis du
+  dahin warst".
+- **The pause mark costs nothing** and kept every clip within the length
+  here. One window does not show that it finds better stories.
+
 ## Where a search spends its time
 
 | Part | Seconds | What it is |
