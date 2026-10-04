@@ -1293,25 +1293,16 @@
       ondblclick={(e) => e.stopPropagation()}
     >
       <Info label="What the clip timeline is" side="right">
-        The episode up close. Drag to move the playhead, two fingers to travel, a pinch to zoom,
-        and a double-click to fit the clip. The arrow keys step a frame. With shift they step a
-        word, so the caption in the picture lights up the next one, and past the last word of a
-        clip they carry on into the one beside it. Shift with the arrows up and down takes the
-        next clip and starts it from the top. Drag
-        a clip edge to trim it, frame by frame, or with shift held from word to word. The words are in the picture, in the caption box, which is where
-        they are read and where they are corrected. A hatched block inside a clip is
-        a part it leaves out. Drag either edge of one to change it, with shift for whole words, double-click one to put it
-        back, and double-click again to take it out once more. Shift is the cutting hand: hold it
-        and drag across the clip to take out the part you drag over, or hold it and double-click
-        to take one out where you click. Cuts land on the frame. Hold alt as well as shift to land
-        on whole words instead, which takes the whole pause a cut falls in. Along the foot are the captions,
-        each from where it appears to where it goes, and the one the video preview is showing is
-        lit. Where one is a little early or late against what you hear, drag its edge: the left
-        side of a gap between two captions is where the one before goes, the right side where the
-        one after appears. A double-click on an edge moved by hand puts it back. The
-        small pictures along the bottom are the thumbnails, the frames Render writes beside the
-        short. The thumbnail button under the timeline, or T, makes the frame under the playhead
-        one, and takes it away again. Drag one to another frame.
+        The episode up close.<br />
+        Click or drag to move the playhead. Two fingers travel, a pinch zooms, a double-click
+        fits the clip.<br />
+        The arrow keys step a frame, with shift a word. Shift with up or down goes to the next
+        clip.<br />
+        Drag a clip edge to trim it, with shift by whole words.<br />
+        Hold shift and drag across the clip to cut that part out, with alt as well by whole
+        words. Double-click a cut to put it back.<br />
+        Along the foot are the captions. Drag an edge to retime one, double-click it to put it
+        back.
       </Info>
     </span>
     <!-- The ruler in two layers, the same as on the range picker: the line
@@ -1527,7 +1518,12 @@
              either side of it, so the playhead is taken hold of wherever
              the hand finds it, the same as on the range picker. -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="playhead" onpointerdown={scrub} title="Drag to move the playhead"></div>
+        <!-- A double-click lands here more often than anywhere: its first
+             click moves the playhead under the pointer, so the second one
+             falls on this line. It is not inside the track, so it answers
+             the double-click itself, or fitting the clip and putting a cut
+             back never happened. -->
+        <div class="playhead" onpointerdown={scrub} ondblclick={fitView} title="Drag to move the playhead"></div>
         <!-- The head is its own element rather than something drawn on the
              line, because it stands above the track and the track is what
              takes the drag. Drawn but not grabbable, its top five pixels

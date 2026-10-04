@@ -1015,7 +1015,14 @@ bubble scrolled by those eight pixels.
       wherever the playhead goes. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. A double-click lets
       go of the view, and so does clicking a clip in the list, the one that
-      is already selected included, which puts that clip back in view. The words and the waveform of the whole episode
+      is already selected included, which puts that clip back in view.
+      Every double-click on the track went nowhere for a while: its first
+      click moves the playhead under the pointer, so the second lands on
+      the playhead's line, which stands over the track rather than in it
+      and did not answer. Fitting the clip and putting a cut back both did
+      nothing. The line answers a double-click the way the track does now.
+      Its info bubble says only what the track itself does, in a line
+      each, and leaves the row under it to its own titles. The words and the waveform of the whole episode
       are read once and kept, so swiping does not wait for a file to be
       read again.
     - **Every clip is on it, not only the chosen one.** The other clips
