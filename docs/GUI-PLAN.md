@@ -204,6 +204,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.15 | The crop frame and the shade round it only while the playhead is in a clip, no grey dashed frame anywhere else. Asked for by Tim | `[x]` |
 | 3.16 | Target holds its suggestion as a real number rather than a grey placeholder, so the arrow keys step from it and the down arrow on 6 gives 5, not 1. Asked for by Tim | `[x]` |
 | 3.17 | A clip fitted on the clip timeline stands under the video preview and the range picker, not under the middle of the app, which the wider clip list puts a little to the right. Asked for by Tim | `[x]` |
+| 3.18 | Every info bubble wholly inside the app: under, over or beside its mark, wider when a long text fits nowhere at the narrow width, and scrolling only in an app too small for it at any width. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 

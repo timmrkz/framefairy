@@ -533,6 +533,18 @@ rounds of Tim's testing to see, because the harness's own convergence
 hides it: the size change trips a ResizeObserver and the second pass comes
 out right in Chromium, and the first pass is what he was looking at.
 
+**A floating thing is read whole, or it was not placed.** Over and under
+are not the only two answers: the clip timeline's info bubble was too tall
+for the room under its mark and for the room over it, so the placement
+fell back to under and ran off the foot of the app, and every probe that
+opened the bubble at a comfortable height passed. Check a floating thing
+by opening every one of them at several app sizes, the small ones above
+all, and comparing its box with `innerWidth` and `innerHeight`. And check
+whether it clips: `scrollHeight` above `clientHeight` only counts where
+`overflow` is not `visible`, or a hover bridge reaching past the box reads
+as hidden text. `placeBubble` in `lib/bubble.ts` is the rule, with tests
+that put a mark everywhere.
+
 **Two things that show the same number must read the same number.** The
 row waiting for the transcript filled by the saved transcript, and the
 range picker's line by what had been heard, which runs seconds ahead. Tim
