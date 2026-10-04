@@ -19,6 +19,7 @@ import {
   pictureIsStale,
   pieceAt,
   insideClip,
+  playingAt,
   playingPiece,
   shouldChase,
   inEpisode,
@@ -351,6 +352,36 @@ describe("onward", () => {
   test("follows a clock that is really somewhere else", () => {
     expect(onward(70.2, 57)).toBe(57);
     expect(onward(55.5, 55.0)).toBe(55.0);
+  });
+});
+
+// A video that has read nothing of the file answers zero for its clock,
+// playing or not. The first press of the space bar after a search followed
+// it to the start of the episode, and the picture with it, until the file
+// came and the video went to the clip. The harness shows this with
+// ?unread=12, see frontend/preview/open.mjs.
+describe("playingAt", () => {
+  const playing = { clock: 62.53, empty: false, seeking: false, landed: false };
+
+  test("stands still while the video has read nothing", () => {
+    expect(playingAt(62.5, { ...playing, clock: 0, empty: true })).toBe(62.5);
+    // However long that lasts, frame after frame.
+    let at = 62.5;
+    for (let i = 0; i < 100; i++) at = playingAt(at, { ...playing, clock: 0, empty: true });
+    expect(at).toBe(62.5);
+  });
+
+  test("goes with the clock once the video has something", () => {
+    expect(playingAt(62.5, playing)).toBe(62.53);
+  });
+
+  test("only forward while it plays, the way onward goes", () => {
+    expect(playingAt(62.5, { ...playing, clock: 62.4 })).toBe(62.5);
+  });
+
+  test("to where a seek was sent, and to where a jump landed", () => {
+    expect(playingAt(62.5, { ...playing, clock: 70, seeking: true })).toBe(70);
+    expect(playingAt(70.2, { ...playing, clock: 70, landed: true })).toBe(70);
   });
 });
 

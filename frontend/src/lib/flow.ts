@@ -62,6 +62,34 @@ export function onward(at: number, clock: number): number {
   return at;
 }
 
+// What the video is doing on a frame of a play, as far as the playhead is
+// concerned.
+export type PlayingClock = {
+  // The video's clock.
+  clock: number;
+  // The video has read nothing of the file yet, HAVE_NOTHING.
+  empty: boolean;
+  // A seek is on its way, so the clock is where it was sent.
+  seeking: boolean;
+  // A jump the playing clip made by itself has just landed.
+  landed: boolean;
+};
+
+// Where the playhead goes on a frame of a play, from where it stands. A
+// video that has read nothing of the file has a clock that says nothing:
+// it answers zero, playing or not. Followed, the first press of the space
+// bar after a search took the playhead to the start of the episode, the
+// still of the clip's first frame gave way to a black picture and then to
+// the start of the episode, and only once the file came did the video go
+// to the clip and play it. So the playhead stands, with the still that
+// shows it, until the video has something. Otherwise it goes with the
+// clock, and only forward, see onward.
+export function playingAt(at: number, v: PlayingClock): number {
+  if (v.empty) return at;
+  if (v.landed || v.seeking) return v.clock;
+  return onward(at, v.clock);
+}
+
 // Where the frame a moment falls in starts: the frame a video element
 // shows when it is sent there, the last one that starts at or before it.
 // The still read from the file while the video preview catches up has to
