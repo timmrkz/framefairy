@@ -31,10 +31,11 @@ func (f fakeRecognizer) Recognize(samples []float32, rate int) []Token {
 
 func (fakeRecognizer) Close() {}
 
-// fakeModel answers like llama-server with one clip made of the first line,
-// streamed a few characters at a time the way the real one sends it. asked
-// counts the searches: a clip that does not fit the length is asked for
-// again in the same conversation, and that is not another search.
+// fakeModel answers like llama-server with one story, the first line, as
+// middle answers, streamed a few characters at a time the way the real
+// one sends it. asked counts the searches: a recipe that asks again
+// about a clip asks in the same conversation, and that is not another
+// search.
 func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct{ Messages []chatMessage }
@@ -42,8 +43,7 @@ func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 		if len(request.Messages) <= 2 {
 			atomic.AddInt32(asked, 1)
 		}
-		plan := `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`
-		writeLocalStream(w, plan, 7)
+		writeLocalStream(w, "1 1 1\n", 7)
 	}))
 }
 
@@ -151,7 +151,9 @@ func TestProjectSteps(t *testing.T) {
 		t.Fatal("no plan_id in the plan file")
 	}
 	record, ok := loadPlanRecord(training, firstID)
-	if !ok || record.Prompt == "" || record.System != SystemPrompt || len(record.Lines) == 0 ||
+	// middle sends no system part, and names a line inside the story.
+	if !ok || record.Prompt == "" || record.System != "" || record.PromptVersion != PromptVersion ||
+		len(record.Lines) == 0 || record.Candidates[0].Heart[0] == 0 ||
 		record.Episode.Window != [2]float64{10, 30} || record.Planner.Kind != "local" ||
 		len(record.Candidates) != 1 || record.Candidates[0].CID != "t10-01" {
 		t.Errorf("plan record %+v", record)
@@ -225,7 +227,7 @@ func TestProjectSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Clips) != 1 || view.Clips[0].Reason != "Test" || view.Clips[0].Preview == "" ||
+	if len(view.Clips) != 1 || view.Clips[0].Title == "" || view.Clips[0].Preview == "" ||
 		view.Summary.From != 10 {
 		t.Errorf("plan view %+v", view)
 	}

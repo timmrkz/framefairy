@@ -1,9 +1,9 @@
 [1] Was ist deine erste Erinnerung?
-[2] Erste Erinnerung?
-[3] Nicht so leicht zu beantworten, weil
+[2] … Erste Erinnerung?
+[3] … Nicht so leicht zu beantworten, weil
 [4] ich war dann noch ein relativ kleiner Dütz, zweite, dritte Klasse.
-[5] Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.
+[5] … Und dann hat er mich geschlagen und dieser Regenschirm ist zersprungen.
 
-Find the 6 best stories in this transcript, none of them in line 1.
+Find the 6 best stories in this transcript, none of them in line 1. "…" before a line marks a pause of a second or more.
 For each story, first find a line in its middle, then the line where the story starts and the line where it ends. A story runs up to about 41 words.
 Answer with one line per story: the line where it starts, the line in its middle and the line where it ends, in that order, each later than the one before, and nothing else, like this: 31 40 52

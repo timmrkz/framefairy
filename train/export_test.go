@@ -150,7 +150,7 @@ func TestExportCountsEachSignalOnce(t *testing.T) {
 		}
 	})
 
-	t.Run("an older record is trained with the current prompt", func(t *testing.T) {
+	t.Run("an older record is trained with the latest prompt of lines", func(t *testing.T) {
 		system := sft[0]["messages"].([]any)[0].(map[string]any)["content"].(string)
 		if system != engine.SystemPrompt || sft[0]["meta"].(map[string]any)["system_upgraded"] != true {
 			t.Errorf("a version 1 record was not given the current system prompt")
@@ -165,6 +165,58 @@ func TestExportCountsEachSignalOnce(t *testing.T) {
 			t.Errorf("split bounds")
 		}
 	})
+}
+
+// TestAMiddleExampleIsWrittenAsMiddleAnswers holds an answer to middle to
+// its own format: no system message, since middle sends none, and a line
+// a story with where it starts, a line inside it and where it ends.
+func TestAMiddleExampleIsWrittenAsMiddleAnswers(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "ep.framefairy", "training")
+	writeFile(t, filepath.Join(dir, "plans.jsonl"),
+		`{"plan_id":"m1","prompt_version":5,"system":"","prompt":"M",`+
+			`"episode":{"file":"ep.mp4","key":"k"},"candidates":[`+
+			`{"cid":"01","title":"A","keep":[[1,6]],"heart":[3,3]},`+
+			`{"cid":"02","title":"B","keep":[[10,20]],"heart":[12,13]},`+
+			`{"cid":"03","title":"C","keep":[[30,39]],"heart":[33,33]},`+
+			`{"cid":"04","title":"D","keep":[[50,55]],"heart":[52,52]}]}`+"\n")
+	writeFile(t, filepath.Join(dir, "decisions.jsonl"), strings.Join([]string{
+		`{"plan_id":"m1","cid":"01","event":"rendered","final":{"lines":[[1,6]]},"changes":{"unchanged":true}}`,
+		// Started later, past the line inside it.
+		`{"plan_id":"m1","cid":"02","event":"rendered","final":{"lines":[[14,20]]},"changes":{"unchanged":false}}`,
+		// A pause cut inside, which a middle answer cannot say.
+		`{"plan_id":"m1","cid":"03","event":"rendered","final":{"lines":[[30,34],[35,39]]},"changes":{"unchanged":false}}`,
+		`{"plan_id":"m1","cid":"04","event":"rejected"}`,
+	}, "\n")+"\n")
+	episodes, err := FindEpisodes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "dataset")
+	if _, err := Export(episodes, out, 0); err != nil {
+		t.Fatal(err)
+	}
+	sft := readJSONL(t, filepath.Join(out, "train", "sft.jsonl"))
+	if len(sft) != 1 {
+		t.Fatalf("%d sft records, want 1", len(sft))
+	}
+	messages := sft[0]["messages"].([]any)
+	if len(messages) != 2 || messages[0].(map[string]any)["role"] != "user" {
+		t.Fatalf("a middle example is the request and the answer, got %v", messages)
+	}
+	if got := messages[1].(map[string]any)["content"]; got != "1 3 6\n14 17 20\n30 33 39" {
+		t.Errorf("the answer is %q", got)
+	}
+	var pairs []string
+	for _, d := range readJSONL(t, filepath.Join(out, "train", "dpo.jsonl")) {
+		chosen := d["chosen"].([]any)[0].(map[string]any)["content"].(string)
+		rejected := d["rejected"].([]any)[0].(map[string]any)["content"].(string)
+		pairs = append(pairs, d["meta"].(map[string]any)["kind"].(string)+": "+chosen+" over "+rejected)
+	}
+	want := []string{"selection: 1 3 6\n14 17 20\n30 33 39 over 50 52 55", "correction: 14 17 20 over 10 12 20"}
+	if strings.Join(pairs, " | ") != strings.Join(want, " | ") {
+		t.Errorf("the pairs are\n%s\nwant\n%s", strings.Join(pairs, "\n"), strings.Join(want, "\n"))
+	}
 }
 
 // TestTheSplitIsTheSameEverywhere pins the held-out split to the episode

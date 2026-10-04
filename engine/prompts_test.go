@@ -25,7 +25,7 @@ func TestThePromptFilesFillIn(t *testing.T) {
 	opts := PlanOptions{Count: 6, MinLen: 20, MaxLen: 30}
 	for _, recipe := range []Recipe{heartLeanRecipe, pointsRecipe, middleRecipe} {
 		text := recipe.Request(lines, recipe.units(lines), opts)
-		for _, want := range []string{"[2] Der Regenschirm ist zersprungen.", " 6 "} {
+		for _, want := range []string{"Der Regenschirm ist zersprungen.", " 6 "} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s has no %q:\n%s", recipe.Name, want, text)
 			}
@@ -102,8 +102,9 @@ func TestSwitchesAreReadFromASidesName(t *testing.T) {
 }
 
 // Without switches the length is said in words, from how fast the
-// speaker talks, and nothing of seconds or pauses. +times says it in
-// seconds instead, and the pause says what its mark means.
+// speaker talks, and nothing of seconds, and nothing of pauses but in
+// middle, which always marks them. +times says it in seconds instead, and
+// the pause says what its mark means.
 func TestSwitchesChangeTheRequest(t *testing.T) {
 	var parts []any
 	for i := range 40 {
@@ -116,9 +117,12 @@ func TestSwitchesChangeTheRequest(t *testing.T) {
 		}
 		plain := ask(PromptSwitches{})
 		for _, not := range []string{"seconds", "…", ":0"} {
-			if strings.Contains(plain, not) {
-				t.Errorf("%s without switches says %q:\n%s", recipe.Name, not, plain)
+			if strings.Contains(plain, not) != (recipe.Name == "middle" && not == "…") {
+				t.Errorf("%s without switches says %q, or says nothing of it:\n%s", recipe.Name, not, plain)
 			}
+		}
+		if recipe.Name == "middle" && !strings.Contains(plain, "a pause of a second or more") {
+			t.Errorf("middle does not say what its pause mark means:\n%s", plain)
 		}
 		// Seven words a line, 280 in 191.2 seconds: 30 seconds are 44
 		// words, of which three quarters are said.
@@ -171,7 +175,7 @@ func TestAClipGivenAsThreePoints(t *testing.T) {
 }
 
 // A recipe asked from a prompt file sends one message and no system part,
-// to the local model and to the API alike.
+// to the local model and to the API alike. middle, the default, is one.
 func TestAPromptFileIsOneMessage(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -195,7 +199,6 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	base.LLMURL = server.URL
 	base.ASRModel = t.TempDir()
 	base.Width, base.Height = 360, 640
-	base.Recipe = "middle"
 	p := NewProject(e, source, base)
 	path, err := p.Plan(context.Background(), PlanRequest{Count: 1})
 	if err != nil {
@@ -211,7 +214,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 		t.Errorf("clips %+v %v", clips, err)
 	}
 	// The answer is kept with how it was got, which a comparison reads.
-	saved, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "..", "..", "logs", "reply-*.json"))
+	saved, _ := filepath.Glob(filepath.Join(p.LogsDir(), "reply-*.json"))
 	if len(saved) != 1 {
 		t.Fatalf("saved %v", saved)
 	}

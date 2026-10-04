@@ -14,18 +14,29 @@ import (
 	"testing"
 )
 
-// The default recipe asks exactly what was always asked, so a saved reply
-// is found again and a search made before recipes existed reads the same.
-func TestTheDefaultRecipeAsksWhatWasAlwaysAsked(t *testing.T) {
+// The default recipe is middle with the pauses marked, Tim's choice of
+// 4 October, and its answer is the one PromptVersion names. lines asks
+// exactly what it always asked, so a saved reply of it is found again.
+func TestTheDefaultRecipeIsMiddleWithThePauses(t *testing.T) {
 	r, err := RecipeNamed("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Name != DefaultRecipe || r.System != SystemPrompt || r.Version != PromptVersion {
+	if r.Name != "middle" || r.Version != PromptVersion || r.Plain == nil {
 		t.Fatalf("the default recipe is %s, version %d", r.Name, r.Version)
 	}
-	if got, want := r.Schema(2, 3), planSchema(2, 3); got != want {
-		t.Error("the default recipe's answer has a new shape")
+	lines := []Line{speech(0, 0, "Was", "ist", "deine", "erste", "Erinnerung?"),
+		speech(4, 1.5, "Erste", "Erinnerung?")}
+	request := r.Request(lines, nil, PlanOptions{Count: 2, MaxLen: 30})
+	if !strings.Contains(request, "[2] … Erste Erinnerung?") {
+		t.Errorf("the default recipe does not mark the pause:\n%s", request)
+	}
+	old, _ := RecipeNamed("lines")
+	if old.System != SystemPrompt || old.Version != 4 || old.Schema(2, 3) != planSchema(2, 3) {
+		t.Error("lines asks something new")
+	}
+	if !IsExperiment("lines") || IsExperiment("middle") || IsExperiment("") {
+		t.Error("only a recipe other than middle is an experiment")
 	}
 }
 
@@ -378,7 +389,7 @@ func TestTheBriefIsPutRight(t *testing.T) {
 	if !strings.Contains(l.Request(lines, l.units(lines), opts), AnnotateLines(lines)) {
 		t.Error("lines no longer writes every line with its time, pause and level")
 	}
-	if PromptVersion != 4 {
-		t.Error("the brief changed, so the prompt version has to")
+	if l.Version != 4 {
+		t.Error("the brief changed, so its version has to")
 	}
 }

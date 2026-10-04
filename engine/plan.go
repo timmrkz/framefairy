@@ -205,10 +205,10 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// later stage crashes, or you simply re-run with the same transcript, the
 	// API is not called a second time. Another recipe asks something else,
 	// so it is another reply, and what it tells the model is part of the
-	// question. The default recipe keeps the fingerprint it always had, so
+	// question. The lines recipe keeps the fingerprint it always had, so
 	// the replies saved before recipes existed are still found.
 	asked := opts.Model + "\x00" + prompt
-	if recipe.Name != DefaultRecipe {
+	if recipe.Name != linesRecipe.Name {
 		asked = opts.Model + "\x00" + recipe.Name + "\x00" + recipe.System + "\x00" + prompt
 	}
 	sum := sha256.Sum256([]byte(asked))
@@ -372,6 +372,11 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			if system == "" {
 				system = noSystem
 			}
+			// A prefilled brace is the start of a JSON answer, and an
+			// answer without JSON would begin with it too.
+			if plain != nil && e.Prefill {
+				e.Prefill = false
+			}
 			reply, err = e.CallAPIWithHeadroom(ctx, prompt, opts.Model, opts.MaxTokens,
 				opts.LogDir, "plan", system, listen)
 			return err
@@ -401,7 +406,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		e.Log.Warn("the end of the answer could not be read. The %d clip(s) before it are kept.",
 			build.count())
 		data = nil
-	case err != nil && opts.Local != nil:
+	case err != nil && (opts.Local != nil || plain != nil):
+		// A repair is asked for JSON, and an answer without it has
+		// nothing a repair could put right.
 		return nil, build.failed(renderErr("%s The prompt and the answer are in %s.", err, opts.LogDir))
 	case err != nil:
 		e.Log.Warn("%s", err)

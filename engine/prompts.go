@@ -164,6 +164,16 @@ func ParseSwitches(text string) (PromptSwitches, error) {
 	return sw, nil
 }
 
+// and is these switches with more switched on. A pause in more takes the
+// place of one in these.
+func (sw PromptSwitches) and(more PromptSwitches) PromptSwitches {
+	if more.Pause > 0 {
+		sw.Pause = more.Pause
+	}
+	sw.Times = sw.Times || more.Times
+	return sw
+}
+
 // String is the switches as they are written, +pause2+times say.
 func (sw PromptSwitches) String() string {
 	var out string

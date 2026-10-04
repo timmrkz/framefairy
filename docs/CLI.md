@@ -99,7 +99,7 @@ nothing left to refresh.
 | `--keep-pause 0.10` | 0.10 s | air left on each side of a cut |
 | `--silence-db -42` | measured | what counts as silence. Taken from the audio when not given |
 | `--context ""` | empty | guest name, company, vocabulary. Helps the choice of moments and the spelling of names |
-| `--recipe lines` | `lines` | how the model is asked for clips, see [Trying other ways of asking](#trying-other-ways-of-asking) |
+| `--recipe lines` | `middle` | how the model is asked for clips, see [Trying other ways of asking](#trying-other-ways-of-asking) |
 | `--compare lines,stories` | off | search the window once with each recipe and write a report, see below. `stories@1024` is `stories` thinking 1024 tokens |
 | `--replan` | off | discard the saved plan and choose again |
 | `--plan-only` | off | write `clips.json` and stop |
@@ -190,9 +190,9 @@ one after another. How much a model reads is in
 ## Trying other ways of asking
 
 How the model is asked for clips is a recipe: what it is told, how the
-transcript is written out for it, and what its answer looks like. `lines`
-is how clips have always been chosen, and the app uses it. `stories` is
-the first other one: a brief that fits any video, the transcript as
+transcript is written out for it, and what its answer looks like.
+`middle` is how clips are chosen, and the app uses it. `lines` is how
+they were chosen before it. `stories` is the first other one: a brief that fits any video, the transcript as
 sentences in paragraphs with a time at the start of each, and "up to 12,
 the strongest first" rather than exactly 12. `stories-edit` is `stories`
 asked twice, the second time only about where every clip starts and ends,
@@ -226,7 +226,9 @@ reads from the cache of the one before.
 What `heart-lean`, `points` and `middle` show the model beyond the words
 and the length in words is switched on after a `+`: `+pause` or
 `+pause2` for a mark before a long pause, and `+times` for the time each
-line starts at, with the length in seconds. So a new idea is a side in
+line starts at, with the length in seconds. `middle` always marks a
+pause of a second, so `middle+pause` is `middle`, and `middle+pause2`
+marks only the pauses of two seconds. So a new idea is a side in
 the command:
 
 ```
@@ -272,7 +274,7 @@ side. Each recipe's plan is in
 comparison made. When every search failed, there is nothing to
 compare: the comparison fails with the reason and writes no report.
 
-A search with any recipe but `lines`, and every search of a comparison, is
+A search with any recipe but `middle`, and every search of a comparison, is
 an experiment. Its plan goes in `experiments/`, the episode's own plan and
 captions are left alone, nothing is rendered, and nothing is recorded for
 training, because the training records are answers to one way of asking.

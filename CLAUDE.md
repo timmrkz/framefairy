@@ -45,7 +45,8 @@ What the product has to be:
 Defaults that were chosen on purpose: windows that grow with the square root of
 the episode, one clip asked for every twelve clip lengths of a half hour window
 and by the square root for other windows, 20 to 30
-seconds per clip, a bouncing word highlight in purple `#942192`,
+seconds per clip, the `middle` recipe with the pauses marked for asking
+the model, a bouncing word highlight in purple `#942192`,
 Gemma 4 26B A4B as the local model, Parakeet TDT 0.6B v3 for speech.
 
 ## Where things are
@@ -459,7 +460,8 @@ Full specification in [docs/TRAINING.md](docs/TRAINING.md). The essentials:
   edges become correction pairs.
 - The answer format is versioned by `PromptVersion`. Raise it whenever the
   prompt or the line rules change, and keep each version a superset of the
-  one before.
+  one before. Version 5, the `middle` recipe, began a format of its own,
+  and the export writes every example in its own format.
 - Everything that works with the records lives in `framefairy-train`, never in
   the app.
 

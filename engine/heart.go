@@ -109,22 +109,30 @@ var pointsRecipe = Recipe{
 // belong to. The engine never starts a story later and never ends it
 // before the line inside it: a story too long is ended earlier on a whole
 // sentence, and a shorter one takes in the sentences before it. The clip
-// is named after its first words. Its switches add pause marks, and times
-// with the length in seconds, see PromptSwitches.
+// is named after its first words. It always marks the pauses of a second
+// or more, which made the stories in Tim's comparisons hold to the length
+// best of all. Its switches add times with the length in seconds, or mark
+// another pause, see PromptSwitches. It is the default recipe, so its
+// answer is the one PromptVersion names.
 var middleRecipe = Recipe{
 	Name: "middle",
-	About: "only the transcript and a few sentences with the length in words, three line numbers " +
-		"a story, a line inside it, its start and its end, without JSON",
+	About: "only the transcript with its pauses and a few sentences with the length in words, " +
+		"three line numbers a story, a line inside it, its start and its end, without JSON",
 	Unit:       "line",
 	Hearts:     true,
 	Joins:      true,
 	Switchable: true,
 	Plain:      middlePlain,
-	Version:    1,
+	Version:    PromptVersion,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
+		opts.Switches = middleShows.and(opts.Switches)
 		return prompt("middle", lines, leanTranscript(lines, opts.Switches), opts)
 	},
 }
+
+// middleShows is what middle always shows the model besides the words:
+// a mark before a line after a pause of a second or more.
+var middleShows = PromptSwitches{Pause: 1}
 
 func init() {
 	recipes[heartRecipe.Name] = heartRecipe

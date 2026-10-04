@@ -69,8 +69,11 @@ type Recipe struct {
 	Schema func(units, count int) string
 }
 
-// DefaultRecipe is the recipe a search uses unless told otherwise.
-const DefaultRecipe = "lines"
+// DefaultRecipe is the recipe a search uses unless told otherwise. It is
+// middle, with the pauses marked, since Tim's comparisons of 3 October:
+// its stories were the ones he would post, and it kept to the length
+// better than any other. See docs/PROMPTS.md.
+const DefaultRecipe = "middle"
 
 // recipes is every recipe there is, by name.
 var recipes = map[string]Recipe{
@@ -178,14 +181,15 @@ func joinRuns(keep [][2]int) [][2]int {
 	return out
 }
 
-// linesRecipe is how clips have been chosen from the start: every line of
-// speech numbered, with its length and any pause and change of level before
-// it, and the answer runs of lines. Its prompt and answer are PromptVersion.
+// linesRecipe is how clips were chosen until middle took over: every line
+// of speech numbered, with its length and any pause and change of level
+// before it, and the answer runs of lines. Its prompt and answer are
+// version 4 of PromptVersion, the last before middle.
 var linesRecipe = Recipe{
 	Name:    "lines",
 	About:   "a brief for any video, every line of speech numbered, with its length, pauses and level, and the task again after the transcript",
 	Unit:    "line",
-	Version: PromptVersion,
+	Version: 4,
 	System:  SystemPrompt,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
 		return prompt("lines", lines, AnnotateLines(lines), opts)

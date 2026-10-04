@@ -15,13 +15,13 @@ import (
 	"time"
 )
 
-// pausedModel answers like llama-server with two clips, and stops after the
-// first until it is let go. That is a model still writing, and it is the
-// moment the first clip has to be in the plan already.
+// pausedModel answers like llama-server with two stories, as middle
+// answers, and stops after the first until it is let go. That is a model
+// still writing, and it is the moment the first clip has to be in the
+// plan already.
 func pausedModel(t *testing.T, letGo <-chan struct{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		first := `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}`
-		rest := `, {"slug": "zweite", "title": "Zweite", "reason": "Test", "keep": [[2, 2]]}]}`
+		first, rest := "1 1 1\n", "2 2 2\n"
 		send := func(piece string) {
 			body, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
 				"delta": map[string]any{"content": piece}}}})
@@ -87,7 +87,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 	finished := make(chan result, 1)
 	go func() {
-		plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
+		plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1})
 		finished <- result{plan, err}
 	}()
 
@@ -173,7 +173,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan error, 1)
 	go func() {
-		_, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
+		_, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 2, Min: 1})
 		finished <- err
 	}()
 	landed(t, path, 1)
@@ -192,7 +192,7 @@ func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
 	p, path := searching(t, letGo)
 	finished := make(chan error, 1)
 	go func() {
-		_, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
+		_, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1})
 		finished <- err
 	}()
 	clips := landed(t, path, 1)
@@ -228,7 +228,7 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 	}
 	t.Cleanup(func() { framing = was })
 
-	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10}); err != nil {
+	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatalf("a search with one clip that panicked: %v", err)
 	}
 	_, clips, err := LoadClips(path)
@@ -292,10 +292,8 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 
 	source := testEpisode(t, "40")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeLocalStream(w, `{"clips": [`+
-			`{"slug": "a", "title": "Erste", "reason": "r", "keep": [[1, 2]]}, `+
-			`{"slug": "b", "title": "Wieder", "reason": "r", "keep": [[2, 2]]}, `+
-			`{"slug": "c", "title": "Dritte", "reason": "r", "keep": [[3, 3]]}]}`, 9)
+		// Lines 1 to 2, line 2 again, and line 3, as middle answers.
+		writeLocalStream(w, "1 1 2\n2 2 2\n3 3 3\n", 9)
 	}))
 	defer server.Close()
 	var heard int32
@@ -315,12 +313,10 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
-	for _, c := range clips {
-		got = append(got, c.ID+" "+c.Title)
-	}
-	if strings.Join(got, ", ") != "01 Erste, 02 Dritte" {
-		t.Errorf("clips %v", got)
+	// The second clip is the third story, after the first.
+	if len(clips) != 2 || clips[0].ID != "01" || clips[1].ID != "02" ||
+		clips[1].Segments[0].Start < clips[0].Segments[len(clips[0].Segments)-1].End-0.5 {
+		t.Errorf("clips %+v", clips)
 	}
 	if n := strings.Count(said.String(), "twice"); n != 1 {
 		t.Errorf("the repeat was said %d times:\n%s", n, said.String())
@@ -359,7 +355,7 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 				ev.Found, written))
 		}
 	})
-	plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 10})
+	plan, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,7 +46,9 @@ func roomOf(opts PlanOptions) Room {
 
 func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
 	machine(t, 128<<30)
-	around := runeLen(SystemPrompt) + runeLen(linesRecipe.Request(nil, nil, PlanOptions{Count: 12, MinLen: 20, MaxLen: 30}))
+	// What the default recipe sends around the transcript comes off it.
+	r, _ := RecipeNamed("")
+	around := runeLen(r.System) + runeLen(r.Request(nil, nil, PlanOptions{Count: 12, MinLen: 20, MaxLen: 30}))
 	for model, tokens := range map[string]int{
 		"gemma-4-26B_q4_0-it.gguf": 262144 - 16384 - 2048,
 		"Qwen3-14B-Q4_K_M.gguf":    40960 - 16384 - 2048,

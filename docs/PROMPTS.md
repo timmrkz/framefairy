@@ -14,12 +14,12 @@ a second.
 
 | File | Used by | Answer |
 | --- | --- | --- |
-| [`lines.txt`](../engine/prompts/lines.txt) | the app, today | JSON |
+| [`lines.txt`](../engine/prompts/lines.txt) | experiment, the app's until 4 October | JSON |
 | [`heart.txt`](../engine/prompts/heart.txt) | experiment | JSON |
 | [`heart-opening.txt`](../engine/prompts/heart-opening.txt) | experiment | JSON |
 | [`heart-lean.txt`](../engine/prompts/heart-lean.txt) | experiment | JSON |
 | [`points.txt`](../engine/prompts/points.txt) | experiment | one line a clip, no JSON |
-| [`middle.txt`](../engine/prompts/middle.txt) | experiment | three numbers a story, no JSON |
+| [`middle.txt`](../engine/prompts/middle.txt) | the app and the command line, with the pauses marked | three numbers a story, no JSON |
 
 A file is the message the model is sent, as it is. The program fills in
 what is between `{{` and `}}`: the transcript, `{{.Count}}` clips,
@@ -40,11 +40,12 @@ TestEveryPromptAsksWhatTestdataSays -update-prompts` writes them anew.
 
 ## The simplest way of asking: `middle`
 
-Tim's way of asking, as little as can be said. The transcript, and after
-it three sentences:
+Tim's way of asking, as little as can be said, and since 4 October the
+way every search asks. The transcript, with "…" before a line that comes
+after a pause of a second or more, and after it three sentences:
 
 ```
-Find the 6 best stories in this transcript.
+Find the 6 best stories in this transcript. "…" before a line marks a pause of a second or more.
 For each story, first find a line in its middle, then the line where the story starts and the line where it ends. A story runs up to about 50 words.
 Answer with one line per story: the line where it starts, the line in its middle and the line where it ends, in that order, each later than the one before, and nothing else, like this: 31 40 52
 ```
@@ -195,6 +196,13 @@ in the order they come.
 - **The pause mark costs nothing** and kept every clip within the length
   here. One window does not show that it finds better stories.
 
+Tim read the stories of all three and chose `middle+pause`. So since
+4 October `middle` always marks the pauses of a second or more, and it is
+the recipe of every search, in the app and on the command line. `lines`
+and the others stay as experiments. Its answers are recorded for
+training as `PromptVersion` 5, a format of its own, see
+[TRAINING.md](TRAINING.md).
+
 ## Where a search spends its time
 
 | Part | Seconds | What it is |
@@ -261,7 +269,8 @@ the app, so how far a story runs over depends on it too.
 `heart-lean`, `points` and `middle` show the model the numbered words
 of each line and the length of a clip in words, unless a comparison
 switches more on after a `+` in a side's name, as in
-`middle+pause2@1024`:
+`middle+pause2@1024`. `middle` always marks the pauses of a second, so
+`middle+pause` is `middle`, and `middle+pause2` marks only those of two:
 
 | Switch | What the model gets |
 | --- | --- |

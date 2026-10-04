@@ -27,6 +27,12 @@ import (
 // PromptVersion changes whenever the prompt or the line rules change, so
 // training data made with an older prompt can be told apart.
 //
+// Version 5 is the middle recipe with the pauses marked: the transcript
+// and a few sentences, one message, and three line numbers a story, where
+// it starts, a line inside it and where it ends. It is a new way of
+// asking and not an extension of version 4, so the versions before it
+// are kept on the machine but not trained on with it, see train/export.go.
+// Every version from 5 on extends the one before.
 // Version 4 names the lines that are in clips already, when a window is
 // searched again or holds clips made by hand, and asks for other moments.
 // Without such lines it is version 3 word for word, and its answer is
@@ -35,7 +41,7 @@ import (
 // the task said again after the transcript. Its answer is version 2's.
 // Version 2 lets two runs follow each other directly, which cuts only the
 // pause between them. Version 1 could only cut a pause by dropping a line.
-const PromptVersion = 4
+const PromptVersion = 5
 
 // TrainingSchema is the version of the record format.
 const TrainingSchema = 1
@@ -172,6 +178,9 @@ type RecordCandidate struct {
 	Title  string   `json:"title"`
 	Reason string   `json:"reason"`
 	Keep   [][2]int `json:"keep"`
+	// Heart is the first and last line of the heart of the clip, for a
+	// recipe that names one, the line inside the story for middle.
+	Heart [2]int `json:"heart,omitzero"`
 	// Segments are the clip as it was first made from the answer, before
 	// anyone changed it.
 	Segments [][2]float64 `json:"segments,omitempty"`
@@ -643,7 +652,8 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	// format PromptVersion names. An answer to another recipe is an
 	// experiment, and a record of it would teach the model to answer a
 	// question it is never asked.
-	if IsExperiment(opts.recipe().Name) {
+	recipe := opts.recipe()
+	if IsExperiment(recipe.Name) {
 		return ""
 	}
 	dir := TrainingDir()
@@ -662,18 +672,19 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	}
 	record := PlanRecord{
 		Schema: TrainingSchema, PlanID: planned, Created: now.UTC().Format(time.RFC3339),
-		Engine: Version, PromptVersion: PromptVersion,
+		Engine: Version, PromptVersion: recipe.Version,
 		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(sourcePath),
 			Transcript: wordsHash(lines),
 			Window:     [2]float64{roundTo(window.Start, 3), roundTo(window.End, 3)}},
 		Planner:  RecordPlanner{Kind: kind, Model: model},
 		Settings: RecordSettings{Count: opts.Count, Min: opts.MinLen, Max: opts.MaxLen},
 		ReplyKey: replyKey, ExampleKey: ExampleKeyOf(prompt),
-		System: SystemPrompt, Prompt: prompt, Lines: lineSpans(lines),
+		System: recipe.System, Prompt: prompt, Lines: lineSpans(lines),
 	}
 	for i, entry := range entries {
 		record.Candidates = append(record.Candidates, RecordCandidate{CID: ids[i], Slug: entry.Slug,
-			Title: entry.Title, Reason: entry.Reason, Keep: entry.Keep, Segments: segments[ids[i]]})
+			Title: entry.Title, Reason: entry.Reason, Keep: entry.Keep, Heart: entry.Heart,
+			Segments: segments[ids[i]]})
 	}
 	if same, ok := findSamePlan(dir, record); ok {
 		return same.PlanID

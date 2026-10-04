@@ -252,12 +252,13 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | `heart-opening` | `heart`, with the opening asked for too: the first line a stranger needs, the question or the setup that says who, when and where | at most N clips, each with its opening, its heart and the runs of lines the story reaches. The engine never starts a clip after its opening |
 | `heart-lean` | one message from `engine/prompts/heart-lean.txt`: the transcript first, only the words, then the task once with the length in words | as `heart-opening`, without a slug and with a reason of at most twelve words |
 | `points` | one message from `engine/prompts/points.txt`: the transcript, only the words, then the task with the length in words | one line a clip without JSON: start, payoff and end, one stretch, the title and the reason. The pauses are left to the engine, which never starts a clip after its start |
-| `middle` | one message from `engine/prompts/middle.txt`: the transcript, only the words, then three sentences with the length in words, nothing of videos, shorts or JSON | one line a story without JSON: a line inside it, its start and its end. The engine never starts it later and never ends it before the line inside it, and ends a story too long earlier. A clip is named after its first words |
+| `middle` | one message from `engine/prompts/middle.txt`: the transcript, only the words with `…` before a line after a pause of a second or more, then three sentences with the length in words, nothing of videos, shorts or JSON | one line a story without JSON: a line inside it, its start and its end. The engine never starts it later and never ends it before the line inside it, and ends a story too long earlier. A clip is named after its first words |
 | `stories2` | the `lines` brief with the transcript as `stories` writes it | at most N clips, as runs of sentences |
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 
-`lines` is what the app uses. The others are tried with `--recipe` and
+`middle` is what the app uses, since Tim's comparisons of 3 October, see
+[PROMPTS.md](PROMPTS.md). `lines` was before it. The others are tried with `--recipe` and
 compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
 A sentence in `stories` ends where a line ends one, or once it has run
 30 s, and never at a pause alone, since a sentence cut at a pause was a
