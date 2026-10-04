@@ -866,11 +866,14 @@ the whole context for it.
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same
 `NeedsAt` the app offers models by, is held against the memory the system
-can give it now, `freemem.go`. On macOS that is read from `vm_stat` the
-way Activity Monitor counts memory used: all of it, less app memory
-(anonymous less purgeable), wired memory, where a model sits once Metal
-has it, and compressed memory. Files cached count as free, because macOS
-gives them back as soon as it is asked. On Linux it is `MemAvailable`. It is checked twice. A search checks
+can give it now, `freemem.go`. On macOS that is read from `vm_stat`: all
+of it, less wired memory, where a model sits once Metal has it, and
+compressed memory. Files cached count as free, and so does what other
+programs hold, because macOS gives both back when a model asks for room,
+the first by dropping them and the second by compressing it or moving it
+to disk. App memory was counted as used at first, the way Activity
+Monitor counts it, and a 32 GB Mac with Chrome open and its memory
+pressure green had 12.8 GB "free" for a model of 17. On Linux it is `MemAvailable`. It is checked twice. A search checks
 before it transcribes its window, with the context a warm-up reckons for
 it, so a search that cannot finish fails at once rather than after
 minutes of listening, unless this program already holds a model. And
