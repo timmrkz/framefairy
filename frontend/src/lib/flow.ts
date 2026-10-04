@@ -10,6 +10,11 @@ export type PictureState = {
   shows: number;
   // Where the playhead stands.
   at: number;
+  // How long one frame of the episode lasts. A frame on screen stands for
+  // every moment from its own to the next frame's, so a playhead that has
+  // moved on inside it is still in the picture. Left out, it is taken as
+  // nothing.
+  frame?: number;
 };
 
 // The picture has to agree with the playhead. While the machine is busy
@@ -45,9 +50,18 @@ export function playingPiece(pieces: Piece[], was: number, at: number): number {
   return pieceAt(pieces, at);
 }
 
+//
+// What the picture shows is the moment of the frame on screen, where the
+// browser can say so, see watchFrames in Player.svelte. That frame stands
+// until the next one, so a playhead ahead of it by up to a frame is in it,
+// and only the half second of room on top of that is what a seek is
+// allowed to land off by. A playing episode of one frame a second read as
+// stale for half of every second, and the frame the engine read was
+// drawn over it.
 export function pictureIsStale(s: PictureState): boolean {
   if (!s.ready || s.shows < 0) return true;
-  return Math.abs(s.shows - s.at) > 0.5;
+  if (s.at >= s.shows) return s.at - s.shows > 0.5 + (s.frame ?? 0);
+  return s.shows - s.at > 0.5;
 }
 
 // Where the playhead goes while the video plays, from where it stands and
@@ -100,6 +114,21 @@ export function playingAt(at: number, v: PlayingClock): number {
 export function frameStart(t: number, fps: number): number {
   const rate = fps > 0 ? fps : 1;
   return Math.floor(Math.max(t, 0) * rate + 1e-6) / rate;
+}
+
+// Whether the still read for one frame belongs over the picture at a
+// moment. Paused, only the still of the very frame the playhead is in: a
+// still of a frame near it was a second picture for one spot, and a third
+// once the video landed. Playing, the still of where the play began also
+// stands for the half second after it, the room a seek is given, see
+// pictureIsStale. Safari plays on before it shows the frame it plays from,
+// see watchFrames in Player.svelte, and with the still of that one frame
+// alone, the frame before it showed through again the moment the playhead
+// left it, one frame into the play.
+export function stillFits(stillAt: number, at: number, fps: number, playing: boolean): boolean {
+  const here = frameStart(at, fps);
+  if (Math.abs(stillAt - here) < 1e-6) return true;
+  return playing && stillAt < here && here - stillAt <= 0.5;
 }
 
 // Parts of the episode, from and to in seconds, in order and apart. The

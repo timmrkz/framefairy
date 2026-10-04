@@ -1106,7 +1106,10 @@ export const Call = {
       case "ClearTraining":
         return Promise.resolve(null);
       case "Source":
-        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
+        // The frame rate of the episode the harness plays, one frame a
+        // second, see open.mjs. Without it the app took 30, and the frame on
+        // screen was a second behind a playing clock half the time.
+        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: 1 });
       case "Clips": {
         const made = [
           ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),
