@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
   import { Carrier, type OnTheWayCard } from "../lib/arriving";
@@ -112,11 +111,47 @@
     return Array.from({ length: n }, (_, i) => i);
   });
   const carried = $derived(ghosts.length === 0 ? carry : null);
+
+  // The places a running search's clips take. A search asks for a number
+  // of clips, and that many rows stand from the start: the first says
+  // what the search is doing, the others wait. Each clip it names comes
+  // into the row that says so, the row that says so moves on into the
+  // next one waiting, and a card once there stays where it is until the
+  // search is over. The list is the same height the whole time and
+  // nothing in it moves.
+  //
+  // A card used to come in at its moment in the episode, which was above
+  // the rows waiting or between cards already there, so the rows under it
+  // slid down one and the last row waiting closed, every time a clip was
+  // named. Tim saw cards replaced rather than filled in, and a stack that
+  // never stood still. In the episode's order is where the clips go once
+  // the search is over, in one step and without sliding, see rows.
+  //
+  // A place is kept by the row's key, which is the card's and stays the
+  // clip's, see rowOf, and kept until the search is over.
+  const searching = $derived(carry?.job ?? "");
+  const placeOf = new Map<string, number>();
+  let placesFor = "";
+  const places = $derived.by(() => {
+    if (searching !== placesFor) {
+      placeOf.clear();
+      placesFor = searching;
+    }
+    if (searching) {
+      for (const a of arriving) {
+        if (a.job === searching && !a.stopped && !placeOf.has(a.key)) placeOf.set(a.key, placeOf.size);
+      }
+    }
+    return new Map(placeOf);
+  });
+
   // The one card of the search that wears its fill, see Carrier. While no
   // card of the search is on its way, the row still to come wears it, and
-  // once one is, that row wears the beam alone, so there is one fill.
+  // once one is, that row wears the beam alone, so there is one fill. The
+  // first card is the first in its place, so the fill goes down the rows
+  // the way the clips came into them.
   const carrier = new Carrier();
-  const carrying = $derived(carry ? carrier.pick(arriving, carry.job) : "");
+  const carrying = $derived(carry ? carrier.pick(arriving, carry.job, (a) => places.get(a.key) ?? Infinity) : "");
 
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
@@ -128,7 +163,15 @@
   // row short for a moment, which the browser answered by pulling a list
   // that was scrolled down back up, every card jumping at once. The keys
   // are kept for as long as the list is, so a clip never changes rows.
-  type Row = { key: string; start: number; clip?: ClipEntry; arriving?: OnTheWayCard; ghost?: number };
+  type Row = {
+    key: string;
+    start: number;
+    clip?: ClipEntry;
+    arriving?: OnTheWayCard;
+    ghost?: number;
+    // Its place among a running search's rows, see places.
+    place?: number;
+  };
   const rowOf = new Map<string, string>();
   const rows = $derived.by((): Row[] => {
     for (const a of arriving) if (a.clip && !rowOf.has(a.clip)) rowOf.set(a.clip, a.key);
@@ -138,12 +181,24 @@
       ...arriving
         .filter((a) => !(a.clip && here.has(a.clip)))
         .map((a) => ({ key: a.key, start: a.start, arriving: a })),
-      // The rows still to come, in their place in the episode, see at.
-      ...ghosts.map((g) => ({ key: `ghost-${g}`, start: at, ghost: g })),
     ];
-    // A row still to come stands before a clip that starts where the
-    // window ends, and the rows still to come keep their own order.
-    const rank = (r: Row) => (r.ghost !== undefined ? r.ghost - 1e6 : 0);
+    // The running search's rows stand together where its window is, see
+    // at, each card and clip in its place and the rows still to come after
+    // them. A row still to come is known by its place, not by how many are
+    // left, so the one a clip comes into is the one that goes, and the
+    // others keep their rows.
+    let taken = 0;
+    for (const r of all) {
+      const place = places.get(r.key);
+      if (place === undefined) continue;
+      r.place = place;
+      r.start = at;
+      taken = Math.max(taken, place + 1);
+    }
+    for (const g of ghosts) all.push({ key: `ghost-${taken + g}`, start: at, ghost: g, place: taken + g });
+    // A row of the search stands before a clip that starts where the
+    // window ends, and the search's rows keep their own order.
+    const rank = (r: Row) => (r.place !== undefined ? r.place - 1e6 : 0);
     return all.sort((a, b) => a.start - b.start || rank(a) - rank(b));
   });
 
@@ -191,8 +246,8 @@
     if (now === shown) return;
     shown = now;
     if (!now) return;
-    // After the rows have slid and moved into their places, 200 ms and
-    // 180 ms, so the block is measured where it comes to rest.
+    // After a row has slid open or closed, 200 ms, so the block is
+    // measured where it comes to rest.
     clearTimeout(showing);
     showing = window.setTimeout(showWork, 220);
   });
@@ -226,15 +281,18 @@
     {@const a = row.arriving}
     {@const g = row.ghost}
     {@const lead = g === 0 && !!(next || stopped || emptied)}
+    <!-- No row slides to a new place. While a search runs nothing moves,
+         see places, and once it is over its clips go to their moments in
+         the episode in one step. A list whose cards slid past each other
+         read as a list that could not keep still. -->
     <li
-      animate:flip={{ duration: 180 }}
       in:enter={row}
       out:leave={row}
       onoutroend={() => clip && onclosed?.(clip.key)}
       data-key={clip?.key ?? a?.key}
       class:ghost={g !== undefined}
       class:waiting={g !== undefined && !lead && waiting}
-      style={g !== undefined && !lead ? `--wait-in: ${g * 800}ms` : undefined}
+      style={g !== undefined && !lead ? `--wait-in: ${(row.place ?? g) * 800}ms` : undefined}
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next && !!stopped)}

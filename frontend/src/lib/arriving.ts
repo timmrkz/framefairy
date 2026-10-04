@@ -148,14 +148,18 @@ export class OnTheWay {
 // away. A card whose clip is written has done its work and passes it on
 // to the first card left, so the fill starts at the first card of the
 // batch and ends at the last.
+//
+// First is by where a card stands in the list, which place says: its
+// moment in the episode unless the list keeps the search's cards in the
+// places they came into, see ClipList.
 export class Carrier {
   private key = "";
 
-  pick(cards: OnTheWayCard[], job: string): string {
+  pick(cards: OnTheWayCard[], job: string, place: (a: OnTheWayCard) => number = (a) => a.start): string {
     const own = cards.filter((a) => a.job === job && !a.stopped && !a.held);
     if (own.some((a) => a.key === this.key)) return this.key;
     let first: OnTheWayCard | undefined;
-    for (const a of own) if (!first || a.start < first.start) first = a;
+    for (const a of own) if (!first || place(a) < place(first)) first = a;
     this.key = first?.key ?? "";
     return this.key;
   }
