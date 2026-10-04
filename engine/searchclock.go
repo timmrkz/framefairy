@@ -616,7 +616,9 @@ func (c *searchClock) measure(now searchNow) (float64, float64) {
 // the clock before the time left goes up. A count that comes in a moment
 // after the clock moved said About 0:15 left and then 0:20 for a report,
 // and a number that goes up and back down is read as the search going
-// backwards.
+// backwards. No rise is let through at once, however small: the app
+// rounds the time left up to five seconds, so 14.8 seconds followed by
+// 15.4 said About 0:15 and then 0:20.
 const riseAfter = 3 * time.Second
 
 // steadyLeft is the time left to report at at, given the estimate. One
@@ -629,7 +631,7 @@ func (c *searchClock) steadyLeft(estimate float64, at time.Time) float64 {
 		return estimate
 	}
 	clock := max(c.left-at.Sub(c.leftAt).Seconds(), 0)
-	if estimate <= clock+1 {
+	if estimate <= clock {
 		c.higher = time.Time{}
 	} else {
 		if c.higher.IsZero() {

@@ -602,6 +602,10 @@ func TestTheTimeLeftGoesUpOnlyWhenItStaysUp(t *testing.T) {
 	if got := c.steadyLeft(20, at.Add(500*time.Millisecond)); got != 14.5 {
 		t.Errorf("a rise for one report showed %.1f, want 14.5", got)
 	}
+	// Less than a second up, across the five seconds the app rounds to.
+	if got := c.steadyLeft(15.1, at.Add(600*time.Millisecond)); got > 14.5 {
+		t.Errorf("a small rise showed %.1f, want at most 14.5", got)
+	}
 	if got := c.steadyLeft(13, at.Add(time.Second)); got != 13 {
 		t.Errorf("the estimate back below showed %.1f, want 13", got)
 	}
