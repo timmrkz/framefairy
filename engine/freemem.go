@@ -34,7 +34,8 @@ var freeMemory = FreeMemory
 
 // FreeMemory is how much memory the system can give a program now, in
 // bytes, or zero when it cannot tell. Memory the system only uses to cache
-// files counts as free, because it gives that back as soon as it is asked.
+// files counts as free, because it gives that back as soon as it is asked,
+// and on macOS so does what other programs hold, see vmStatFree.
 func FreeMemory() int64 {
 	switch runtime.GOOS {
 	case "darwin":
@@ -50,12 +51,14 @@ func FreeMemory() int64 {
 }
 
 // vmStatFree reads what vm_stat says into the memory that can be had: all
-// of it, less what programs hold for themselves and cannot give back, what
-// the system has wired down, and what the compressor holds. That is how
-// Activity Monitor counts the memory used: app memory, which is anonymous
-// memory less what is purgeable, wired memory and compressed memory.
-// Wired is where a model sits once Metal has it. Zero when the text is not
-// what vm_stat writes.
+// of it, less what the system has wired down and what the compressor
+// holds. Wired is where a model sits once Metal has it, and nothing can
+// have it until that program lets go. The memory other programs hold is
+// not counted: macOS compresses it, or moves it to disk, the moment a
+// model asks for room. It was counted at first, the way Activity Monitor
+// counts the memory used, and a 32 GB Mac with Chrome open and its memory
+// pressure green had 12.8 GB "free" for a model of 17. Zero when the text
+// is not what vm_stat writes.
 func vmStatFree(text string, total int64) int64 {
 	if total <= 0 {
 		return 0
@@ -80,14 +83,12 @@ func vmStatFree(text string, total int64) int64 {
 			pages[strings.TrimSpace(name)] = n
 		}
 	}
-	anonymous, ok1 := pages["Anonymous pages"]
-	wired, ok2 := pages["Pages wired down"]
-	compressed, ok3 := pages["Pages occupied by compressor"]
-	if !ok1 || !ok2 || !ok3 {
+	wired, ok1 := pages["Pages wired down"]
+	compressed, ok2 := pages["Pages occupied by compressor"]
+	if !ok1 || !ok2 {
 		return 0
 	}
-	held := (max(anonymous-pages["Pages purgeable"], 0) + wired + compressed) * page
-	return max(total-held, 0)
+	return max(total-(wired+compressed)*page, 0)
 }
 
 // modelNeeds is the memory a model takes started with a context of ctx
