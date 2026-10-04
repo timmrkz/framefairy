@@ -36,19 +36,23 @@ if (location.search.includes("webkitclock")) {
 // 1677.60, see the tests of insideClip. Chromium answers with the exact
 // second it was sent to, so without this the playhead is always where it
 // was put and nothing that compares it to a clip's start can go wrong
-// here. The frames are the 30 a second the app counts in when the episode
-// does not say, as this one does not. Only while paused and not seeking:
+// here. The frames are the episode's own, harnessFps, which Source says.
+// Only while paused and not seeking:
 // a seek on its way answers with where it was sent in every browser, and
 // the clock while playing is ?webkitclock's. The clips here start on
 // whole seconds, which are frame starts, so a probe moves a clip's start
 // into a frame through window.__pieces before the episode is opened.
+// The frame rate of the episode the harness plays, one frame a second, see
+// open.mjs. Source says it, and ?framestart counts in it.
+const harnessFps = 1;
+
 if (location.search.includes("framestart")) {
   const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
   Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
     get(this: HTMLMediaElement) {
       const t = real.get!.call(this) as number;
       if (!this.paused || this.seeking || this.readyState === 0) return t;
-      return Math.floor(t * 30 + 1e-6) / 30;
+      return Math.floor(t * harnessFps + 1e-6) / harnessFps;
     },
     set(this: HTMLMediaElement, t: number) {
       real.set!.call(this, t);
@@ -1132,7 +1136,10 @@ export const Call = {
       case "ClearTraining":
         return Promise.resolve(null);
       case "Source":
-        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080 });
+        // The frame rate of the episode the harness plays, see harnessFps.
+        // Without it the app took 30, and the frame on screen was a second
+        // behind a playing clock half the time.
+        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: harnessFps });
       case "Clips": {
         const made = [
           ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),

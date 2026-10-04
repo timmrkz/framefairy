@@ -17,6 +17,7 @@ import {
   onGrid,
   onward,
   pictureIsStale,
+  stillFits,
   pieceAt,
   insideClip,
   playingAt,
@@ -41,6 +42,14 @@ describe("the picture agrees with the playhead", () => {
 
   test("within half a second, because a seek lands on a frame", () => {
     expect(pictureIsStale({ ready: true, shows: 902.2, at: 902 })).toBe(false);
+  });
+
+  test("a frame on screen stands until the next one", () => {
+    // One frame a second: the playhead at 902.9 is in the frame of 902.
+    expect(pictureIsStale({ ready: true, shows: 902, at: 902.9, frame: 1 })).toBe(false);
+    expect(pictureIsStale({ ready: true, shows: 902, at: 903.6, frame: 1 })).toBe(true);
+    // And never the other way: a frame ahead of the playhead is not its.
+    expect(pictureIsStale({ ready: true, shows: 903, at: 902.4, frame: 1 })).toBe(true);
   });
 
   test("a window that has decoded nothing is always stale", () => {
@@ -582,7 +591,7 @@ describe("playsTheClip", () => {
     expect(playsTheClip({ ...clip, looping: true, time: 10 })).toBe(true);
   });
 
-  // 2.115 in docs/GUI-PLAN.md. Picking a clip puts the playhead on
+  // 2.116 in docs/GUI-PLAN.md. Picking a clip puts the playhead on
   // 1677.63, and the paused video answers with where the frame it shows
   // begins, 1677.60, the way insideClip's tests have it. That is three
   // quarters of a frame before the clip. With half a frame of room the
@@ -868,5 +877,22 @@ describe("the word lit in a caption", () => {
   // leaves the caption without its highlight.
   test("stays lit between words, the way the render draws it", () => {
     expect(litWord(lines, 1.95)).toBe(1);
+  });
+});
+
+describe("stillFits", () => {
+  test("paused, only the still of the frame the playhead is in", () => {
+    expect(stillFits(902, 902.01, 30, false)).toBe(true);
+    expect(stillFits(902, 902.1, 30, false)).toBe(false);
+  });
+
+  // Safari plays on before it shows the frame it plays from. The still of
+  // where the play began stays over it for half a second.
+  test("playing, the still of where it began stands for half a second", () => {
+    expect(stillFits(902, 902.1, 30, true)).toBe(true);
+    expect(stillFits(902, 902.5, 30, true)).toBe(true);
+    expect(stillFits(902, 902.6, 30, true)).toBe(false);
+    // Never a still of a frame ahead of the playhead.
+    expect(stillFits(902.5, 902.1, 30, true)).toBe(false);
   });
 });
