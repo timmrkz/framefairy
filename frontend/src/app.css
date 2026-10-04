@@ -323,6 +323,16 @@ input[type="password"] {
   border-color: var(--accent-hi);
 }
 
+/* The chosen clip while the playhead is on the video rather than on the
+   clip: the space bar plays the episode straight on and the clip's rules,
+   its cuts jumped and a stop at its end, are not in play. Its frame is
+   drawn dimmed wherever it is drawn, the crop, the clip on the clip
+   timeline and its mark on the range picker, see .clipmark.selected.dim.
+   Lit under the hand all the same. See lib/playhead.ts. */
+.frame.dim:not(.lit) {
+  border-color: var(--accent-fill-hi);
+}
+
 /* A clip as a mark on a track: a capsule from where it starts to where it
    ends, in the app's colour, green once it is rendered, across the middle
    of the track the way the captions run across the clip timeline. The
@@ -382,6 +392,12 @@ input[type="password"] {
 .clipmark.selected.lit {
   background: var(--accent-wash);
   border-color: var(--accent-hi);
+}
+
+/* The chosen clip with the playhead on the video, the same as its frame,
+   see .frame.dim. */
+.clipmark.selected.dim:not(.lit):not(:hover) {
+  border-color: var(--accent-fill-hi);
 }
 
 :focus-visible {
