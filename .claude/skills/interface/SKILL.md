@@ -692,10 +692,45 @@ and stands in the frame on screen, at most a frame ahead of where that
 frame begins. It never goes back while playing: the queue keeps the
 furthest it got. A play or a seek while playing reports where it starts
 at once, so the playhead is at a click in the frame of the click, and it
-stands there until the first frame and the first sound are in hand, about
-130 ms in the harness, of which 42 are the sound card's latency, with the
-first frame of the new place already on the canvas. That is the picture
+stands there until the first sound is heard, with the first frame of the
+new place already on the canvas, see The start below. That is the picture
 and the playhead waiting for the sound together, not a hold.
+
+**A click while it plays lands where it was clicked, every time.** Into
+the clip or out of it, the playhead goes to the click in the frame of the
+click, and the play goes on from there, the clip's with its cuts jumped
+inside the clip and the episode straight on outside. Tim found clicks
+across the clip's edge lost while it played, and only those: the one
+gesture that changes the place and the moment together. The video preview
+told the queue the new program, then the moment. The new program started
+the play over from where it was, the queue said so at once, the listener
+set the playhead to that old moment, and the seek after it read the
+playhead and went back there. So `seek` takes both, `queue.seek(at,
+program)`, and the play starts once. Never read a value a call can have
+changed on the way back through a listener: keep the moment in a local.
+
+A click also sent its moment twice, as the hand went down and as it came
+up, and the second started the play over. With the hand held 150 ms,
+longer than a start takes, the playhead had moved on and went back to the
+click. `scrub` now sends nothing on the way up where the hand has not
+moved since the last seek, and the queue takes a seek to the moment a
+play is starting from as that play.
+
+The proof, in the workspace, with the clip of three pieces: play, then
+click the clip timeline 17 times, out of the clip and into it in turn, at
+varied spots, some 120 to 300 ms apart, while the play is still starting,
+and some a second apart, after it moved on. Read `data-playhead`, the
+bars and `.chosen.dim` on every animation frame, and per click check that
+the playhead is on the click two animation frames after the press, that
+once it moves it follows the click's own play, compared on the program
+for the clip so a frame of look-ahead before a cut is not counted as the
+cut, never goes back, plays nothing from inside a cut in the clip and
+jumps nothing outside it, and that the dimming is the place's from then
+on. Before: each of the first eight clicks, every one across the edge,
+stayed where the play was, and the play then ran out at the clip's end,
+so the clicks after it were clicks on a paused playhead. After: 0 of 17
+broke the rule, with the hand held 150 ms and with `?slowread=200` too. With the hand held 150 ms and only the first half of
+the fix, every click went back once.
 
 Paused, the playhead is exactly where it was put and the picture is the
 frame that holds it. A pause keeps the playhead where the sound stopped and
@@ -814,7 +849,9 @@ edges, 25 frames a second:
 | the longest any frame stayed while playing | 50 ms | 50 ms | 93 ms, 199 ms with `?slowseek=150`, 417 ms with `?webkitclock` |
 | the playhead while playing | moves with the sound | still for no animation frame, never back | still for 1 animation frame, 10 with `?slowseek=150`, 24 with `?webkitclock` |
 | the playhead and the frame on screen | | less than a frame apart | up to 2 frames apart |
-| from the press to the first new frame | 146 ms | 134 to 151 ms, 33 ms from the end | 47 to 56 ms, 429 ms with `?webkitclock` |
+| from the press to the first new frame | 129 to 142 ms, from a frame's start | 74 to 81 ms, 107 after a minute paused | 47 to 56 ms, 429 ms with `?webkitclock` |
+| frames of a play passed over, begun anywhere | none in 11 plays | | |
+| the most animation frames a frame was drawn after it was due | 1 | | |
 | where the play stops | 65.000, frame 64.96 | 65, frame 64.96 | 64.976 to 64.994, frame 64.96 |
 | the sound across a cut | the episode's own to the sample, best lag 0 | the same | stops for the seek |
 | the loop seam | the same as a cut | the same as a cut | |
@@ -843,9 +880,8 @@ early, in the middle of the seek.
   sound card was held counts on through the pause, and WebKitGTK without
   a sound device gives stamps on another clock. `heardAt` takes a stamp
   only when it is fresh and near the clock.
-- The first frame of a play stays until the sound is heard, about 130 ms
-  here, of which 42 are the sound card's latency. That is the picture
-  keeping to the sound, not a hold.
+- The first frame of a play stays until the sound is heard, see The
+  start below. That is the picture keeping to the sound, not a hold.
 - A paused seek used to decode the frame on its own, and the space bar
   then decoded the same group of pictures again for the play. Now a paused
   seek cues the play, the cue's first frame is the paused frame, and the
@@ -854,11 +890,27 @@ early, in the middle of the seek.
   is decoded on its own as before.
 - A paused seek to a moment in the frame already on screen draws nothing,
   so it has to say so anyway, or whatever waits for it waits for ever.
-- The frames of a play are drawn on a grid of frames from where it began.
-  A play that began inside a frame reached the clip's end with the frame
-  before the last on screen, and the last never drawn. The playback walk
-  found it, at five frames a second, where a frame is long enough to see.
-  A play that ends now draws the last frame of what played.
+- The frames of a play were drawn on a grid of frames from where it
+  began. A play begun inside a frame drew each frame up to a frame late,
+  and passed over the last frame of a piece whenever the piece ended less
+  than that far into it, the last frame before a cut and the clip's last
+  among them. The playback walk found the clip's last, at five frames a
+  second, where a frame is long enough to see. Now the grid is the
+  episode's own frames: each is drawn when the sound heard reaches where
+  it begins, carried onto the program, `VideoPlan` in `plan.ts`. A visit
+  of a piece draws from the frame that holds its start, or where the play
+  began, to the frame that holds the moment just before its end, and the
+  tick never steps past either without drawing it for one animation frame,
+  `nextEdge`. A frame at a piece's edge can begin 10 ms before the cut,
+  and is then due in the same animation frame as the one after the cut.
+  The proof plays the clip from 57.000, 57.001, 57.013, 57.020, 57.039,
+  59.213, 59.239, 61.731, 62.013, in the cut at 60.000 and from the end,
+  reads every frame drawn back from the canvas, and finds for each the
+  first animation frame its start was heard on: 0 frames passed over and
+  none drawn more than one animation frame after it was due, with
+  `?slowread=200` too. The old grid passed over 1 to 3 frames in every one
+  of the 11 plays, 60.28 and 62.16 from the clip's start, and drew frames
+  up to 3 animation frames late.
 - Plain sound in a MOV counts every moment as a sample, hundreds of
   millions in four hours. It is read by the chunk, and turned into the
   sound card's numbers without a decoder.
@@ -866,6 +918,39 @@ early, in the middle of the seek.
   usually says so, and where it does not, the rate the decoder puts the
   first sound out at is taken and the play starts over at it, before
   anything is heard.
+
+**The start.** From the space bar to the picture moving, from a pause
+after a click, in the harness:
+
+| part | ms |
+| --- | ---: |
+| the sound card's `resume()`, held since the pause | 2 to 6 |
+| the clock set, from the press, the cue being ready | 3 to 11 |
+| the first sound put ahead of the clock, `START_LEAD` | 25, was 50 |
+| the sound card's output latency | 42 |
+| the play's first frame, until the sound reaches the next frame's start | 0 to 40 |
+| less the display frame the queue draws ahead | -17 |
+
+So 74 to 81 ms in the workspace after a click or a pick, where the first
+word is late in its frame, 107 ms after a minute paused, and 129 to 142 ms
+on the queue's own page, whose play starts on a frame's start. With 50 ms
+of lead they were 91 to 111, 129 and 153 to 155. A pause in the middle of
+a play keeps the play and holds the sound card, so the space bar only
+lets it go and the picture moves within one display frame, 5 to 8 ms.
+
+The sound card is held after the fade of a pause, and stays held. Keeping
+it running while paused would save the `resume()` and nothing else, and
+it costs power on a laptop for as long as an episode is open. `START_LEAD`
+is how far ahead of the sound card's clock the first sound goes: put
+where the card has rendered already, it starts late and out of step with
+the picture. The harness played to the sample from 2 ms, best lag 0 at
+both cuts and nothing silent where sound belongs, but its sound card is
+not the Mac's, which renders 512 to 1024 samples at a time, 11 to 21 ms.
+25 ms covers the larger with room left. Measure the parts with a wrapper
+round the queue's `maybeBegin` and its sound card's `resume` on the
+queue's own page, and the press to motion in the workspace by reading the
+bars on every animation frame after a `keydown` of the space bar sent in
+the page.
 
 The `<video>` element was left because a cut was a seek in the middle of
 playing. Every gap between the pieces of a clip held the last frame before

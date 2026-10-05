@@ -238,20 +238,27 @@ The video preview plays the episode from its own queue of frames, see
 the sound straight from the episode file, a range at a time, decodes them
 with the system's decoders a few frames ahead of the playhead, draws each
 frame onto one canvas and hands the sound to the sound card, which keeps
-the time. A cut is frames never queued: the last frame before a cut is
-followed one frame later by the first frame after it, and the sound meets
-at the sample, faded over 15 ms either side the way the render fades it.
-So a clip plays in the video preview the way it plays in the short.
+the time. Each frame is drawn when the sound heard reaches where that
+frame begins, through the clip's pieces, whatever moment the play began
+at. A cut is frames never queued: the last frame before a cut is followed
+straight by the first frame after it, both always drawn, and the sound
+meets at the sample, faded over 15 ms either side the way the render
+fades it. So a clip plays in the video preview the way it plays in the
+short.
 
 Paused, the picture is the frame that holds the playhead, exactly, wherever
 the playhead was put: a click, a drag, a step of an arrow key or a word.
 The play from there is already prepared, its first frames and its first
 sound decoded, so the space bar starts it at once rather than decoding the
-same frames again. While it plays, the playhead is the sound being heard,
+same frames again. The picture moves about 80 ms after the space bar in
+the harness, most of it the sound card's own latency and the first
+frame's own time on screen, since the picture waits for the sound to be
+heard. While it plays, the playhead is the sound being heard,
 on every animation frame, so it moves smoothly, jumps a cut with the sound
 and stands in the frame on screen. It never goes back while playing. A
-click while it plays goes on from where it landed, the clip's or the
-episode's by where that is. A clip's pieces changing while it plays, a cut
+click while it plays puts the playhead where it landed in that frame and
+goes on from there, the clip's or the episode's by where that is, a click
+across the clip's edge as well. A clip's pieces changing while it plays, a cut
 made, moved or put back, or loop switched on or off, goes on from the
 playhead on what the clip is now.
 
