@@ -17,16 +17,19 @@ package main
 // side tells the interface comes as server-sent events on /events.
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -350,7 +353,12 @@ func TestBridge(t *testing.T) {
 		t.Skip("FRAMEFAIRY_BRIDGE is not set")
 	}
 	b := openBridge(t)
-	server := &http.Server{Addr: addr, Handler: bridgeHandler(b, bridgeDist(t))}
+	server := &http.Server{Handler: bridgeHandler(b, bridgeDist(t))}
+	// Port 0 is any free port, and the line below says which one.
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Stopped, it closes, so the test ends and takes its folder with it.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -358,8 +366,16 @@ func TestBridge(t *testing.T) {
 		<-stop
 		_ = server.Close()
 	}()
-	fmt.Printf("bridge on http://%s with %s\n", addr, b.first)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// Started by TestWalks, it also closes when its standard input does,
+	// so a walk run that was killed leaves no bridge behind.
+	if os.Getenv("FRAMEFAIRY_BRIDGE_WALKER") != "" {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			_ = server.Close()
+		}()
+	}
+	fmt.Printf("bridge on http://%s with %s\n", listener.Addr(), b.first)
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		t.Fatal(err)
 	}
 }
@@ -533,6 +549,12 @@ func bridgeDist(t *testing.T) string {
 // The walks are seeds 1 to WALKS, the same every time, so a walk that
 // breaks a rule breaks it again on the next run, and a change that only
 // moves what a seed walks into is not a red run of its own.
+//
+// They run side by side, as many at once as the machine has cores, or
+// WALKERS. Each runs against a bridge of its own, started as a process of
+// its own: a desk sets HOME for the whole process it is in, so two bridges
+// in one would share the app's settings. One after another they took nine
+// minutes.
 func TestWalks(t *testing.T) {
 	if os.Getenv("FRAMEFAIRY_WALKS") == "" {
 		t.Skip("make walks runs these")
@@ -555,27 +577,12 @@ func TestWalks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The desk gives the Go side a home of its own, and the walks get the
-	// real one back: Playwright finds its Chromium in the home it was
-	// installed into, and looked in the desk's, where there is none.
-	home := os.Getenv("HOME")
-	server := httptest.NewServer(bridgeHandler(openBridge(t), dist))
-	defer server.Close()
 
-	run := func(script string, env ...string) {
-		t.Helper()
-		cmd := exec.Command(node, filepath.Join(walks, script))
-		cmd.Dir = walks
-		cmd.Env = append(append(os.Environ(), "HOME="+home, "BRIDGE_URL="+server.URL+"/"), env...)
-		out, err := cmd.CombinedOutput()
-		what := strings.TrimSpace(script + " " + strings.Join(env, " "))
-		if err != nil {
-			t.Errorf("%s:\n%s", what, out)
-			return
-		}
-		t.Logf("%s:\n%s", what, out)
+	type walkRun struct {
+		script string
+		env    []string
 	}
-	run("sequences.mjs")
+	runs := []walkRun{{script: "sequences.mjs"}}
 	walksWanted := envNumber("WALKS", 3)
 	// Each walk takes its own number of steps unless STEPS says.
 	var steps []string
@@ -583,11 +590,80 @@ func TestWalks(t *testing.T) {
 		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
 	}
 	// Every walk in the folder, each for the same seeds.
-	for _, script := range walkScripts(t, walks) {
-		for seed := 1; seed <= walksWanted; seed++ {
-			run(script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)...)
+	for seed := 1; seed <= walksWanted; seed++ {
+		for _, script := range walkScripts(t, walks) {
+			runs = append(runs, walkRun{script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
 	}
+
+	walkers := min(envNumber("WALKERS", runtime.NumCPU()), len(runs))
+	todo := make(chan walkRun)
+	var wg sync.WaitGroup
+	for range walkers {
+		url := startBridge(t)
+		wg.Go(func() {
+			for r := range todo {
+				began := time.Now()
+				cmd := exec.Command(node, filepath.Join(walks, r.script))
+				cmd.Dir = walks
+				cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+url), r.env...)
+				out, err := cmd.CombinedOutput()
+				what := fmt.Sprintf("%s (%.0f s)", strings.TrimSpace(r.script+" "+strings.Join(r.env, " ")), time.Since(began).Seconds())
+				if err != nil {
+					t.Errorf("%s:\n%s", what, out)
+					continue
+				}
+				t.Logf("%s:\n%s", what, out)
+			}
+		})
+	}
+	for _, r := range runs {
+		todo <- r
+	}
+	close(todo)
+	wg.Wait()
+}
+
+// startBridge starts TestBridge in a process of its own, on a free port,
+// and gives back where it answers. It is stopped when the test ends.
+func startBridge(t *testing.T) string {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestBridge$", "-test.timeout", "0")
+	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What it says, read until it says where it answers and let go of
+	// after that.
+	said, says := io.Pipe()
+	cmd.Stdout, cmd.Stderr = says, says
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ended := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		_ = says.Close()
+		close(ended)
+	}()
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		<-ended
+	})
+	lines := bufio.NewScanner(said)
+	var before []string
+	for lines.Scan() {
+		line := lines.Text()
+		if rest, ok := strings.CutPrefix(line, "bridge on "); ok {
+			url, _, _ := strings.Cut(rest, " ")
+			go func() { _, _ = io.Copy(io.Discard, said) }()
+			return url + "/"
+		}
+		before = append(before, line)
+	}
+	t.Fatalf("the bridge did not start:\n%s", strings.Join(before, "\n"))
+	return ""
 }
 
 // walkScripts are the walks in the folder: every script that walks with

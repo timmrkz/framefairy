@@ -50,6 +50,24 @@ async function staysPaused(what) {
   }
 }
 
+// Puts the playhead a moment before the last cut, or before the clip's
+// end when it has no cut, with a click on the clip timeline. Where on the
+// clip timeline a moment is comes from the two edge handles, which stand
+// centred on the clip's start and end. Left where it was when that place
+// is close to a handle, which a click there would take hold of.
+async function nearEnd(p, g) {
+  const last = p[p.length - 1];
+  const before = p[p.length - 2];
+  const t = before ? Math.max(before.start + 0.1, before.end - 1.5) : Math.max(last.start + 0.1, last.end - 3);
+  const s = middle(g.start);
+  const e = middle(g.end);
+  const x = s + ((t - p[0].start) / (last.end - p[0].start)) * (e - s);
+  const handle = [g.start, g.end, ...g.cutEdges].some((h) => Math.abs(middle(h) - x) < 10);
+  if (handle || !inside(g.track, x)) return;
+  await page.mouse.click(x, high(g.track));
+  await page.waitForFunction(() => !document.querySelector("video").seeking, null, { timeout: 5000 });
+}
+
 const gestures = [
   {
     name: "play",
@@ -78,10 +96,17 @@ const gestures = [
     name: "end",
     weight: 1,
     when: () => true,
-    async run() {
+    async run(g) {
       const p = await pieces();
-      const from = (await video(page)).at;
       if (!(await playsClip())) return "nothing, the playhead is on the video";
+      // Played from anywhere, a clip takes up to half a minute of real
+      // time to reach its end, and that was most of what the walks took.
+      // So the playhead goes a moment before the last cut first, which is
+      // still a cut to jump on the way, or before the end when there is
+      // none.
+      await nearEnd(p, g);
+      if (!(await playsClip())) return "a click on the clip timeline, which put the playhead on the video";
+      const from = (await video(page)).at;
       // A clip at its end starts over, so as long as the whole clip.
       const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
       const stop = await recordFrames(page);

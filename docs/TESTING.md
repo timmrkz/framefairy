@@ -63,7 +63,8 @@ To open it by hand:
     FRAMEFAIRY_BRIDGE=127.0.0.1:8123 go test -run '^TestBridge$' -timeout 0 ./cmd/framefairy-app
 
 It hears and searches the episode first, which takes a few seconds, then
-says where it is and serves until it is stopped.
+says where it is and serves until it is stopped. Port 0 is any free
+port, and the line it prints says which.
 
 ## Walks
 
@@ -141,7 +142,8 @@ rules. `TestWalks` runs every one it finds, for the same seeds.
 ### `playback.mjs`: playing a clip
 
 The gestures: the space bar, playing for a moment and pausing, playing a
-clip to its end, a double-click that cuts a part out, one that puts a cut
+clip to its end from a moment before its last cut, or before its end
+when it has none, a double-click that cuts a part out, one that puts a cut
 back, a click on the clip timeline, and Shift and an arrow. While a clip
 plays, the walk records every frame the video preview puts on screen, by
 what the browser says it put up, `requestVideoFrameCallback`, not by the
@@ -213,10 +215,27 @@ in a page of its own.
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
 which plays in real time, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
-which starts the bridge on a port of its own and fails with what a
-sequence or a walk printed. The seeds are the same every time, so a walk
-that breaks a rule breaks it again on the next run. `make walks WALKS=40`
-looks further. It takes about nine minutes as it is.
+which fails with what a sequence or a walk printed. The seeds are the
+same every time, so a walk that breaks a rule breaks it again on the
+next run. `make walks WALKS=40` looks further.
+
+They run side by side, as many at once as the machine has cores, or
+`WALKERS`. Each runs against a bridge of its own, which `TestWalks`
+starts as a process of its own on a free port, because a desk sets
+`HOME` for the whole process it is in. On four cores, the cloud's and
+CI's, the thirteen runs take a little over two minutes, where one after
+another they took nine, and each takes as long as it does alone.
+
+Where a walk's time goes, measured: a walk of 60 steps takes about 30
+seconds, and more than half of that is waiting after each step until no call
+has been on its way for a quarter of a second. That is as long as the
+app's own short delays, the 150 ms before the clip timeline reads its
+waveform and the 240 ms before a newly chosen clip is shown, and a
+shorter wait would check a step before the app had finished it. Opening
+the browser takes a second or two. The rest is the gestures, and the
+ones that play wait in real time: playing a clip to its end once took
+most of the playback walk, so it now starts a moment before the clip's
+last cut.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
