@@ -418,8 +418,10 @@ func SnapStart(words []Cue, at, keepPause float64) float64 {
 }
 
 // SnapEnd is where a clip ending at the word nearest to at ends: a little
-// after the word, never reaching into the word after it.
-func SnapEnd(words []Cue, at, keepPause float64) float64 {
+// after the word, never reaching into the word after it. Where a caption
+// goes, one of goes, is a place to end too, when it is nearer than the word
+// and in the pause after it.
+func SnapEnd(words []Cue, goes []float64, at, keepPause float64) float64 {
 	if len(words) == 0 {
 		return at
 	}
@@ -433,7 +435,23 @@ func SnapEnd(words []Cue, at, keepPause float64) float64 {
 	if best+1 < len(words) {
 		edge = math.Min(edge, words[best+1].Start)
 	}
+	near := math.Abs(words[best].End - at)
+	for _, g := range goes {
+		if math.Abs(g-at) < near && inPause(words, g, keepPause) {
+			edge, near = g, math.Abs(g-at)
+		}
+	}
 	return roundTo(edge, 3)
+}
+
+// inPause says whether at is in the air between two words, more than
+// keepPause after the one before and before the next begins.
+func inPause(words []Cue, at, keepPause float64) bool {
+	i := sort.Search(len(words), func(j int) bool { return words[j].End > at }) - 1
+	if i < 0 || at <= words[i].End+keepPause {
+		return false
+	}
+	return i+1 == len(words) || at < words[i+1].Start
 }
 
 // MaxClipSpan keeps a trimmed clip to a sensible length.
@@ -532,9 +550,20 @@ func editPieces(planPath, clipID string, change func(pieces []*object) ([]*objec
 		if err != nil {
 			return err
 		}
-		out, err := checkedPieces(change, segmentObjects(c))
+		before := segmentObjects(c)
+		out, err := checkedPieces(change, before)
 		if err != nil {
 			return err
+		}
+		// Where the clip's edges were before anything changed them, kept
+		// the first time anything does, so a double-click on an edge can
+		// put it back. A clip that has it already keeps what it has.
+		if _, ok := c.values[keyFound]; !ok && len(before) > 0 {
+			start, err1 := ParseTime(before[0].values[keyStart])
+			end, err2 := ParseTime(before[len(before)-1].values[keyEnd])
+			if err1 == nil && err2 == nil && end > start {
+				c.set(keyFound, []any{roundTo(start, 3), roundTo(end, 3)})
+			}
 		}
 		kept := make([]any, len(out))
 		for i, seg := range out {
@@ -579,7 +608,11 @@ func checkedPieces(change func(pieces []*object) ([]*object, error), pieces []*o
 // air on each side that stays, without reaching into a word that is going.
 // A cut dragged over a pause takes the whole pause, and a cut dragged over
 // speech takes whole words.
-func snapCut(words []Cue, from, to, keepPause float64) (float64, float64) {
+//
+// Its left edge stops where a caption goes too, one of goes, when that is
+// in the pause before it: a caption stays up a little after its last word,
+// and the cut then begins where its block ends rather than inside it.
+func snapCut(words []Cue, goes []float64, from, to, keepPause float64) (float64, float64) {
 	// What the cut touches goes with it.
 	swallowedFrom, swallowedTo := math.Inf(1), math.Inf(-1)
 	for _, w := range words {
@@ -604,6 +637,11 @@ func snapCut(words []Cue, from, to, keepPause float64) (float64, float64) {
 	}
 	if !math.IsInf(before, -1) {
 		start = math.Min(before+keepPause, swallowedFrom)
+		for _, g := range goes {
+			if g > start && g <= math.Min(from, swallowedFrom) && inPause(words, g, keepPause) {
+				start = g
+			}
+		}
 	}
 	if !math.IsInf(after, 1) {
 		end = math.Max(after-keepPause, swallowedTo)

@@ -27,6 +27,7 @@ import {
   playingPiece,
   shouldChase,
   inEpisode,
+  endInEpisode,
   inClip,
   draftCaptions,
   litWord,
@@ -618,6 +619,35 @@ describe("pieceAt", () => {
   test("gives the last piece past the end, and zero with no pieces", () => {
     expect(pieceAt(two, 99)).toBe(1);
     expect(pieceAt([], 99)).toBe(0);
+  });
+});
+
+describe("endInEpisode", () => {
+  const two = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+
+  // A caption that goes where the cut begins goes at 14, not at 16: drawn
+  // to 16 it lay over the whole cut.
+  test("an end at a cut is the end of the piece before", () => {
+    expect(endInEpisode(two, 4)).toBe(14);
+    expect(inEpisode(two, 4)).toBe(16);
+  });
+
+  test("anywhere else it is where inEpisode puts it", () => {
+    for (const at of [0, 1.5, 3.99, 4.01, 6, 8]) {
+      expect(endInEpisode(two, at)).toBeCloseTo(inEpisode(two, at), 9);
+    }
+  });
+
+  test("a hair past the cut on the other clock is still at the cut", () => {
+    expect(endInEpisode(two, 4 + 1e-9)).toBe(14);
+  });
+
+  test("stops at the end of the clip, and gives the time back with no pieces", () => {
+    expect(endInEpisode(two, 99)).toBe(20);
+    expect(endInEpisode([], 7)).toBe(7);
   });
 });
 
