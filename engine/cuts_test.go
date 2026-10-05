@@ -361,8 +361,12 @@ func TestACutThatSwallowsAPieceDropsIt(t *testing.T) {
 	}
 }
 
-// Putting a cut back is the undo of making one, so the two pieces become
-// one again and the clip plays the part it used to leave out.
+// Putting a cut back is the undo of making one, so the clip plays the part
+// it used to leave out. The two pieces of this clip are two shots, framed
+// apart, and the search left out the part where the camera switched, so
+// where the switch is nobody knows: the part goes with the first shot, and
+// the second keeps its own crop from where it started. Pieces of one shot
+// become one piece, see shots_test.go.
 func TestJoiningACutPutsThePartBack(t *testing.T) {
 	path := cutsPlanPath(t)
 	before := clipByID(t, path, "02")
@@ -373,15 +377,16 @@ func TestJoiningACutPutsThePartBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := clipByID(t, path, "02")
-	if len(c.Segments) != 1 {
+	if len(c.Segments) != 2 {
 		t.Fatalf("segments %+v", c.Segments)
 	}
-	if c.Segments[0].Start != 20 || c.Segments[0].End != 26 {
-		t.Errorf("the joined piece runs %v to %v", c.Segments[0].Start, c.Segments[0].End)
+	if c.Segments[0].Start != 20 || c.Segments[0].End != 24 || c.Segments[1].Start != 24 || c.Segments[1].End != 26 {
+		t.Errorf("the pieces run %+v", c.Segments)
 	}
-	// The joined piece opens on the shot the first piece opened on.
-	if c.Segments[0].CropX == nil || *c.Segments[0].CropX != 300 {
-		t.Errorf("the joined piece took the wrong framing: %+v", c.Segments[0])
+	for i, crop := range []int{300, 900} {
+		if c.Segments[i].CropX == nil || *c.Segments[i].CropX != crop {
+			t.Errorf("piece %d took the wrong framing: %+v", i, c.Segments[i])
+		}
 	}
 	if len(ClipCuts(c)) != 0 {
 		t.Errorf("there is still a cut: %+v", ClipCuts(c))
