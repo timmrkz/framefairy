@@ -7,7 +7,7 @@
 //
 //   SEED=12 STEPS=30 BRIDGE_URL=http://127.0.0.1:8123/ node searching.mjs
 import { begin, walk } from "./walk.mjs";
-import { ask, clipList, control, settle, pressHead as pressHeadOn, fromSidebar } from "./bridge.mjs";
+import { ask, clipList, control, settle, pressHead as pressHeadOn, fromSidebar, episodeOn as episodeOnIn } from "./bridge.mjs";
 
 const w = await begin({ steps: 30 });
 const { page, rng, watch, url } = w;
@@ -18,9 +18,7 @@ const model = { hang: false, fail: false };
 let pace = 0;
 const setModel = () => control(url, `/model?hang=${model.hang ? 1 : 0}&fail=${model.fail ? 1 : 0}`);
 
-// The episode on screen: the one the interface last asked the clips of.
-const episodeOn = () =>
-  page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0] ?? null);
+const episodeOn = () => episodeOnIn(page);
 
 // The last search of an episode, as the engine has it.
 async function searchOf(path) {

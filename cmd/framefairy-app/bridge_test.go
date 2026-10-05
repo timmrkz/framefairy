@@ -597,11 +597,21 @@ func TestWalks(t *testing.T) {
 	}
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()), len(runs))
-	todo := make(chan walkRun)
+	todo := make(chan walkRun, len(runs))
+	for _, r := range runs {
+		todo <- r
+	}
+	close(todo)
+	// The bridges start at once, each in its walker, since each takes a
+	// few seconds to hear and search its episode.
 	var wg sync.WaitGroup
 	for range walkers {
-		url := startBridge(t)
 		wg.Go(func() {
+			url, err := startBridge(t)
+			if err != nil {
+				t.Error(err)
+				return
+			}
 			for r := range todo {
 				began := time.Now()
 				cmd := exec.Command(node, filepath.Join(walks, r.script))
@@ -617,29 +627,27 @@ func TestWalks(t *testing.T) {
 			}
 		})
 	}
-	for _, r := range runs {
-		todo <- r
-	}
-	close(todo)
 	wg.Wait()
+	if left := len(todo); left > 0 {
+		t.Errorf("%d runs were not walked, since no bridge started", left)
+	}
 }
 
 // startBridge starts TestBridge in a process of its own, on a free port,
 // and gives back where it answers. It is stopped when the test ends.
-func startBridge(t *testing.T) string {
-	t.Helper()
+func startBridge(t *testing.T) (string, error) {
 	cmd := exec.Command(os.Args[0], "-test.run", "^TestBridge$", "-test.timeout", "0")
 	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		t.Fatal(err)
+		return "", err
 	}
 	// What it says, read until it says where it answers and let go of
 	// after that.
 	said, says := io.Pipe()
 	cmd.Stdout, cmd.Stderr = says, says
 	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
+		return "", err
 	}
 	ended := make(chan struct{})
 	go func() {
@@ -658,12 +666,11 @@ func startBridge(t *testing.T) string {
 		if rest, ok := strings.CutPrefix(line, "bridge on "); ok {
 			url, _, _ := strings.Cut(rest, " ")
 			go func() { _, _ = io.Copy(io.Discard, said) }()
-			return url + "/"
+			return url + "/", nil
 		}
 		before = append(before, line)
 	}
-	t.Fatalf("the bridge did not start:\n%s", strings.Join(before, "\n"))
-	return ""
+	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
 }
 
 // walkScripts are the walks in the folder: every script that walks with

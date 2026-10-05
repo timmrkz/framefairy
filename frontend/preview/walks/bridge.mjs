@@ -77,27 +77,32 @@ export async function settle(page) {
   await page.evaluate(() => (window.__quietSince = 0));
 }
 
+// Which episode is on screen: the one the sidebar marks as the current
+// one, by its path in the library. Not the last one the interface asked
+// the clips of: a video just added asks for them only later, and a walk
+// then held its clip list to the episode before.
+export async function episodeOn(page) {
+  const name = await page.evaluate(
+    () => document.querySelector("aside button.episode.current .name")?.textContent ?? null,
+  );
+  if (!name) return null;
+  const library = await ask(page, "Library");
+  return library.find((e) => e.name === name)?.source ?? null;
+}
+
 // Which clip is on screen: the card the clip list marks as the current
-// one, in the episode the interface last asked the clips of, by its plan
-// and id as the engine names them. Not the last captions asked for: an
-// episode just opened shows its clip before that, and a walk then held
-// the clip on screen to another episode's.
+// one, in the episode on screen, by its plan and id as the engine names
+// them. Not the last captions asked for: an episode just opened shows its
+// clip before that, and a walk then held the clip on screen to another
+// episode's.
 export async function chosen(page) {
-  const on = await page.evaluate(() => ({
-    path: [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0] ?? null,
-    key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
-  }));
-  if (!on.path || !on.key) return null;
-  const clips = await page.evaluate(async (path) => {
-    const answer = await fetch("/call", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Clips", args: [path] }),
-    });
-    return answer.json();
-  }, on.path);
-  const entry = clips.find((c) => c.key === on.key);
-  return entry ? { path: on.path, plan: entry.plan, clip: entry.id } : null;
+  const path = await episodeOn(page);
+  const key = await page.evaluate(
+    () => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
+  );
+  if (!path || !key) return null;
+  const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
+  return entry ? { path, plan: entry.plan, clip: entry.id } : null;
 }
 
 // What the engine says about the clip on screen, asked directly: its
