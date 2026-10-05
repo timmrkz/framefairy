@@ -29,6 +29,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -271,7 +272,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, nil, b.reset())
 	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
-		path, err := b.pick(r.URL.Query().Get("seconds"))
+		q := r.URL.Query()
+		path, err := b.pick(q.Get("seconds"), q.Get("rate"))
 		answer(w, path, err)
 	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
@@ -470,18 +472,74 @@ func makeEpisode(path string, seconds int) error {
 	return nil
 }
 
+// filmedBits is how many bits the frame number of a filmed episode has, so
+// it says the number of every frame up to 2048, more than a minute at
+// 29.97 fps. Its bands are bandHeight pixels high each, of a picture 180
+// high. The walks read them back with the same numbers, see shortFrames in
+// walks/bridge.mjs.
+const filmedBits, bandHeight = 11, 4
+
+// makeFilmedEpisode makes a video of this many seconds at the frame rate a
+// camera records at, rate as ffmpeg takes it, 30000/1001 for 29.97 fps, so
+// a walk can render a clip of it and read the short back. Its picture says
+// which frame it is in a way the render keeps: a short is a narrow part of
+// the picture made larger, so bars side by side would be cut away. The
+// frame number is bands one above the other across the whole width, the
+// highest bit at the top, each bandHeight pixels high, light for one and
+// dark for nought, and whatever part of the width the crop keeps holds
+// every band. They take 44 of the picture's 180 pixels, a quarter, and
+// light and dark are only 100 apart, so no two frames differ by a camera
+// switch, see makeEpisode: bands of 220 and 30 made six of them in 45
+// seconds. They are worked out two pixels a bit, since a picture is an even
+// number of pixels high. Below them is the grey that grows lighter. The
+// sound is a steady tone, so padded silence at a cut can be heard.
+func makeFilmedEpisode(path string, seconds int, rate string) error {
+	d := strconv.Itoa(seconds)
+	bands := filmedBits * bandHeight
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x%d:r=%s:d=%s", 2*filmedBits, rate, d),
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x2:r=%s:d=%s", rate, d),
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d="+d,
+		"-filter_complex",
+		fmt.Sprintf("[0]geq=lum='if(bitand(N\\,pow(2\\,%d-floor(Y/2)))\\,160\\,60)':cb=128:cr=128,scale=320:%d:flags=neighbor[b];", filmedBits-1, bands)+
+			fmt.Sprintf("[1]geq=lum='30+180*T/%s':cb=128:cr=128,scale=320:%d:flags=neighbor[g];", d, 180-bands)+
+			"[b][g]vstack,format=yuv420p[v]",
+		"-map", "[v]", "-map", "2",
+		"-shortest", "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "realtime", "-cpu-used", "8",
+		"-g", "15", "-c:a", "libopus", "-b:a", "64k", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
+	}
+	return nil
+}
+
+// frameRate is a frame rate as ffmpeg takes it, a whole number or one
+// whole number over another, and nothing else, since it goes into a
+// filter.
+var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
+
 // pick makes a new video, not in the library, and has the Add button's box
-// hand it over next.
-func (b *bridge) pick(seconds string) (string, error) {
+// hand it over next. Without a rate it is the bridge's own kind of
+// episode, at five frames a second, and with one it is filmed at that
+// rate, see makeFilmedEpisode.
+func (b *bridge) pick(seconds, rate string) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
+	}
+	if rate != "" && !frameRate.MatchString(rate) {
+		return "", fmt.Errorf("%q is no frame rate", rate)
 	}
 	b.mu.Lock()
 	b.made++
 	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
 	b.mu.Unlock()
-	if err := makeEpisode(path, n); err != nil {
+	if rate != "" {
+		err = makeFilmedEpisode(path, n, rate)
+	} else {
+		err = makeEpisode(path, n)
+	}
+	if err != nil {
 		return "", err
 	}
 	b.mu.Lock()
