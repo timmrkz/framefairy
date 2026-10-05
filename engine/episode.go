@@ -386,13 +386,16 @@ type SegmentView struct {
 // WordView is one word. In a caption it also says which word of the
 // episode it stands for: Said is when that word starts in the episode, and
 // Whole is all of it, for a word the captions show in halves or a
-// correction that reads as several words.
+// correction that reads as several words. Part is, for a correction that
+// reads as several words, which of them this is, counted from nought, so
+// one of them can be corrected or removed without the others.
 type WordView struct {
 	Start float64  `json:"start"`
 	End   float64  `json:"end"`
 	Text  string   `json:"text"`
 	Said  *float64 `json:"said,omitempty"`
 	Whole string   `json:"whole,omitempty"`
+	Part  *int     `json:"part,omitempty"`
 }
 
 // PlanView is a plan with everything the candidates screen needs.
@@ -652,6 +655,10 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 					if heard, ok := t.HeardAt(at.Start); ok {
 						start := heard.Start
 						word.Said, word.Whole = &start, Scrub(heard.Text, 200)
+						if len(strings.Fields(heard.Text)) > 1 {
+							part := t.PartOf(heard, at)
+							word.Part = &part
+						}
 					}
 				}
 				row.Words = append(row.Words, word)

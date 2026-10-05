@@ -477,9 +477,43 @@ bubble scrolled by those eight pixels.
   - **A correction may hold more than one word.** Where the recogniser heard
     one word and two were said, writing both splits the word it measured
     between them, so the captions break and highlight them one by one.
-    Writing one word again makes it one word again. A word that was split is
-    drawn in two halves, and clicking either one hands back the whole of it
-    to correct, with the other half out of the way while it is being typed.
+    Writing one word again makes it one word again. Each of the words is a
+    field of its own in the caption box: "weil" made "weil es", a click on
+    "es" opens "es", and delete on it removes "es" and leaves "weil". The
+    engine says which of the words each is, `part` in the captions. Before
+    it did, the field went on reading "weil es" with "es" drawn after it as
+    well, a click on either opened both, and removing either removed both.
+    A word the captions hyphenate is drawn in two halves, and clicking
+    either one hands back the whole of it to correct, with the other half
+    out of the way while it is being typed.
+  - **Removing a word:** delete, the key marked delete on the Mac and the
+    forward delete key alike, removes the word in the frame, and a word
+    typed empty and saved is removed the same way. The word leaves the
+    caption box with the key, before the engine has answered, and comes
+    back if the engine refuses. A removal is a correction to nothing,
+    kept in `corrections.json` like any other, so the word is gone from
+    the transcript, the captions and the render, and Cmd+Z brings it
+    back. A word removed then corrected again comes back with the new
+    text. Delete in a word open for typing is the field's own and takes
+    out letters. The caption the word stood in stays as it was, with the
+    word gone from it: the word was still said, so the time it held is no
+    pause, see `Captions` in `engine/lines.go`. Before, the gap it left
+    read as a pause, so the caption ended at the word before it, nothing
+    was on screen for a moment, and the words after it went on to a
+    caption of their own. Removing a word lost its way when the words
+    became one list: the engine refused an empty word and the caption box
+    put the old one back.
+  - **Putting a word back:** Cmd+Z, or type it into the word beside it,
+    "das" made "das ein". Both end the same way: the word is back where
+    it was heard, with its own time, lit while it is said, and no
+    correction is left on either word. The engine sees a word typed
+    before or after what its neighbour read, beside a removed word, as
+    that word coming back, `putBack` in `engine/corrections.go`. Each
+    removed word there takes one, the nearest first, and a word that
+    reads as the recogniser heard it keeps no correction. Typed back
+    otherwise, "das eine", it comes back corrected. It used to take its
+    time from the neighbour it was typed into, so it was lit while the
+    neighbour was said and not while it was.
   - **The captions run on the clip's clock and a correction belongs to the
     episode.** A clip's clock has its cuts taken out of it, so the two
     clocks run apart by however much the cuts hold. The middle of the

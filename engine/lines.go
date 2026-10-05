@@ -371,17 +371,44 @@ const (
 // A word alone says is too wide for a line gets a caption of its own, which
 // is how it is read as two lines of one caption, hyphenated, rather than
 // as a third line under the words around it. alone may be nil.
+//
+// A word with no text is a word removed, see Transcript.Correct. It is
+// not shown, but it was still said, so the time it holds is no pause: the
+// caption it stood in goes on over it, laid out the way it was. Without
+// this, removing a word left a gap that read as a pause, so the caption
+// ended at the word before it and the rest moved on to the next one.
 func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Caption {
-	words, was := clipWords(clip, said)
+	all, allWas := clipWords(clip, said)
+	// The words shown, the same words on the episode's clock, and for each
+	// where the words removed straight after it end, on either clock, or
+	// where it ends when none were.
+	var words, was []Cue
+	var reach, wasReach []float64
+	for k, w := range all {
+		if strings.TrimSpace(w.Text) != "" {
+			words, was = append(words, w), append(was, allWas[k])
+			reach, wasReach = append(reach, w.End), append(wasReach, allWas[k].End)
+		} else if len(reach) > 0 {
+			reach[len(reach)-1] = math.Max(reach[len(reach)-1], w.End)
+			wasReach[len(wasReach)-1] = math.Max(wasReach[len(wasReach)-1], allWas[k].End)
+		}
+	}
 	if len(words) == 0 {
 		return nil
 	}
-	// The pause after a word, as long as it is in the episode.
-	pauseAfter := func(i int) float64 { return was[i+1].Start - was[i].End }
+	shown := make([]Cue, 0, len(said))
+	for _, w := range said {
+		if strings.TrimSpace(w.Text) != "" {
+			shown = append(shown, w)
+		}
+	}
+	// The pause after a word, as long as it is in the episode, from where
+	// the words removed after it end.
+	pauseAfter := func(i int) float64 { return was[i+1].Start - wasReach[i] }
 	type group struct {
 		words []Cue
 		alone bool
-		// Where its first and last word are in the clip's words.
+		// Where its first and last word are in the words shown.
 		first, last int
 	}
 	var groups []group
@@ -429,8 +456,8 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	// It used to wait for its next word: a cut moved a frame further into
 	// a short first word took the word, and the caption jumped past the
 	// pause after it, though it had been on screen there a moment before.
-	saidHere := make(map[float64]bool, len(was))
-	for _, w := range was {
+	saidHere := make(map[float64]bool, len(allWas))
+	for _, w := range allWas {
 		saidHere[w.Start] = true
 	}
 	appears := func(k int) float64 {
@@ -461,10 +488,9 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		if len(out) > 0 {
 			start = math.Max(start, out[len(out)-1].Start)
 		}
-		lastWord := g.words[len(g.words)-1]
 		// Held for as long as it is in the episode, and gone where a cut
 		// begins inside that hold.
-		end := math.Max(lastWord.End, ClipTime(clip, was[g.last].End+captionHold))
+		end := math.Max(reach[g.last], ClipTime(clip, wasReach[g.last]+captionHold))
 		if i+1 < len(groups) {
 			next := appears(groups[i+1].first)
 			if pauseAfter(g.last) < captionPause {
@@ -499,7 +525,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	if out[0].Start < 0.12 {
 		out[0].Start = 0
 	}
-	return moveCaptions(clip, said, out)
+	return moveCaptions(clip, shown, out)
 }
 
 // The shortest a caption moved by hand may be shown for.

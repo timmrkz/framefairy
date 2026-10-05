@@ -23,7 +23,9 @@ func (t *Transcript) hear(raw []Cue) {
 }
 
 // Correct makes the words again with an episode's corrections, keyed by the
-// millisecond a word starts, as corrections.json keeps them.
+// millisecond a word starts, as corrections.json keeps them. A word
+// corrected to nothing is removed: it stays among the words heard, so it
+// can be corrected again, and is left out of the words said.
 func (t *Transcript) Correct(corrections map[string]string) {
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
@@ -32,10 +34,32 @@ func (t *Transcript) Correct(corrections map[string]string) {
 			w.Text = text
 		}
 		heard = append(heard, w)
+		if strings.TrimSpace(w.Text) == "" {
+			continue
+		}
 		words = append(words, splitWord(w)...)
 	}
 	t.HeardWords, t.Words = heard, words
 	t.Language = wordsLanguage(words)
+}
+
+// captionWords are the words with the words removed among them, with no
+// text, in the order they were said. A removed word is not shown, but the
+// captions still know it was said, see Captions.
+func (t *Transcript) captionWords() []Cue {
+	out := t.Words
+	for _, w := range t.HeardWords {
+		if strings.TrimSpace(w.Text) == "" {
+			if len(out) == len(t.Words) {
+				out = append([]Cue(nil), t.Words...)
+			}
+			out = append(out, w)
+		}
+	}
+	if len(out) != len(t.Words) {
+		sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
+	}
+	return out
 }
 
 // splitWord turns a word that reads as several words into one word each. The
@@ -75,6 +99,16 @@ func (t *Transcript) HeardAt(at float64) (Cue, bool) {
 		return t.HeardWords[i], true
 	}
 	return Cue{}, false
+}
+
+// PartOf is which of the words a correction made of a heard word a word
+// is, counted from nought: the words before it that the same heard word
+// made. The words a heard word makes start inside it, one after the
+// other, see splitWord.
+func (t *Transcript) PartOf(heard, word Cue) int {
+	from := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= heard.Start-0.0015 })
+	to := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= word.Start-0.0005 })
+	return max(to-from, 0)
 }
 
 // Said gives the words a clip says, on the episode clock: every word of
@@ -195,6 +229,6 @@ func HoldsWord(start, end float64, w Cue) bool {
 // app alike: from the words the clip says, in the clip's style, hyphenated
 // for the episode's language.
 func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
-	captions := Captions(clip, t.Words, max(8, int(s.MaxChars)), TooWide(s))
+	captions := Captions(clip, t.captionWords(), max(8, int(s.MaxChars)), TooWide(s))
 	return LayOutCaptions(captions, s, t.Language)
 }
