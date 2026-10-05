@@ -73,6 +73,10 @@ type Transcript struct {
 	// Language is what the words are in, as ISO 639-1, read off them once.
 	Language string
 	snapped  []Cue
+	// removedAs is, for each heard word removed, what it read when it was
+	// removed, by its place in HeardWords. The captions are laid out with
+	// it, see captionWords.
+	removedAs map[int]string
 	// Loudness in dB every FrameSeconds, starting at Start.
 	Frames []float32
 	Start  float64

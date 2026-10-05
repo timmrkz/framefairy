@@ -32,10 +32,12 @@
 #   make changed    what this branch changed against main, and only that:
 #                   the tests of the Go packages it reaches, the interface,
 #                   the build, before every push
-#   make test       all tests: unit, fuzz and interface
+#   make test       all tests: unit, fuzz, interface and walks
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check and its own tests
+#   make walks      the interface against the real Go side, in Chromium:
+#                   the sequences and WALKS walks of STEPS steps each
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -109,7 +111,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -326,7 +328,7 @@ motion: frontend/node_modules/.package-lock.json
 changed:
 	@GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
-test: unit fuzz interface
+test: unit fuzz interface walks
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -346,6 +348,16 @@ unit: toolchain modules
 # testdata/fuzz/ next to the code, where it stays as a seed.
 fuzz: toolchain modules
 	@GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
+
+# The interface in Chromium against the real Go side, see docs/TESTING.md:
+# the sequences, and walks of seeds 1 to WALKS. It needs Node, ffmpeg and
+# the Chromium Playwright drives, which CI installs and a cloud session
+# already has. Built for the bridge first, which takes seconds.
+WALKS ?= 4
+STEPS ?= 60
+walks: toolchain modules frontend/node_modules/.package-lock.json
+	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
+	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The interface needs Node and nothing else, no Go and no system libraries,
 # which is why it is worth having on its own: it answers in well under a
@@ -378,6 +390,6 @@ speechbench: toolchain modules
 	@$(GO) run -ldflags '$(LDFLAGS)' ./scripts/speechbench -audio "$(AUDIO)" $(ARGS)
 
 clean:
-	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion
+	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion frontend/preview/dist-bridge
 	@$(GO) clean -fuzzcache
 	@echo "Removed bin/, .build/, frontend/node_modules/, the preview builds and the fuzz corpus"

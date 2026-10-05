@@ -535,6 +535,92 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	}
 }
 
+// The room a removed word took on its line stays taken, so the first word
+// of the next caption is not pulled up into it. Found by a sequence in
+// frontend/preview/walks: removing "auf" brought "irgendein" up from the
+// caption after.
+func TestRemovingAWordPullsNoWordUp(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}}
+	clip := Clip{Segments: []Segment{{Start: 59.9, End: 63}}}
+	laid := func(tr *Transcript) string {
+		var out []string
+		for _, c := range Captions(clip, tr.captionWords(), 33, nil) {
+			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, c.Text))
+		}
+		return strings.Join(out, " ")
+	}
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	before := laid(tr)
+	if !strings.Contains(before, "Schulhof]") {
+		t.Fatalf("the test needs a break after Schulhof: %s", before)
+	}
+	logs := filepath.Join(t.TempDir(), "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	if err := SetWordText(logs, 60.6, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+	// A caption whose first word is removed appears when that word is
+	// said, as it did. Found by a walk: it waited for the word after.
+	if err := SetWordText(logs, 61.5, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want = strings.Replace(want, " irgendein Typ]", " Typ]", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
+// A word corrected and then removed keeps the room of what it read when
+// it was removed, not of what the recogniser heard. Found by a walk:
+// "vielleicht" corrected to "auf" and removed took ten letters' room again,
+// and the caption overflowed.
+func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 61.2, "vielleicht"},
+		{61.25, 61.4, "dem"}, {61.45, 61.9, "Schulhof"}, {61.95, 62.4, "irgendein"},
+		{62.45, 62.7, "Typ"}}
+	clip := Clip{Segments: []Segment{{Start: 59.9, End: 63}}}
+	laid := func(tr *Transcript) string {
+		var out []string
+		for _, c := range Captions(clip, tr.captionWords(), 33, nil) {
+			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, c.Text))
+		}
+		return strings.Join(out, " ")
+	}
+	logs := filepath.Join(t.TempDir(), "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	if err := SetWordText(logs, 60.8, "auf", tr); err != nil {
+		t.Fatal(err)
+	}
+	before := laid(tr)
+	if err := SetWordText(logs, 60.8, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+	// And read again from the file, the same.
+	again := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	again.Correct(LoadCorrections(logs))
+	if got := laid(again); got != want {
+		t.Errorf("read again\n got %s\nwant %s", got, want)
+	}
+	// Removed a second time, it keeps what it read the first time.
+	if err := SetWordText(logs, 60.8, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := laid(tr); got != want {
+		t.Errorf("removed again\n got %s\nwant %s", got, want)
+	}
+}
+
 // A removed word typed back in beside its neighbour is the word put back
 // where it was heard, the same as an undo would put it: its own time, so
 // it is lit while it is said, and no correction left on either word.
@@ -552,8 +638,8 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 		{"before", []float64{11.2}, 11.6, "ein echtes", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
 		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"11000": "eine"}},
 		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"11000": "ein so"}},
-		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{"10500": ""}},
-		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es", "11000": ""}},
+		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{"10500": removedMark + "das"}},
+		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es", "11000": removedMark + "ein"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			logs := filepath.Join(t.TempDir(), "logs")

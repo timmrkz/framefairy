@@ -372,11 +372,15 @@ const (
 // is how it is read as two lines of one caption, hyphenated, rather than
 // as a third line under the words around it. alone may be nil.
 //
-// A word with no text is a word removed, see Transcript.Correct. It is
-// not shown, but it was still said, so the time it holds is no pause: the
-// caption it stood in goes on over it, laid out the way it was. Without
-// this, removing a word left a gap that read as a pause, so the caption
-// ended at the word before it and the rest moved on to the next one.
+// A word with no text, or with its text behind removedMark, is a word
+// removed, see Transcript.Correct. It is not shown, but it was still said,
+// so the captions are laid out as if it were there, and then it is left
+// out of them: the time it holds is no pause, the room it took on a line
+// is still taken, and a sentence it ended still ends there. Taking a word
+// out takes out the word and changes no caption. Without this, removing a
+// word left a gap that read as a pause, so the caption ended at the word
+// before it and the rest moved on to the next one, and once the gap was
+// closed, the room it left pulled the first word of the next caption up.
 func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Caption {
 	all, allWas := clipWords(clip, said)
 	// The words shown, the same words on the episode's clock, and for each
@@ -384,8 +388,15 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	// where it ends when none were.
 	var words, was []Cue
 	var reach, wasReach []float64
+	// For each of all the words, what it takes on a line, and where it is
+	// among the words shown, or -1 for a word removed.
+	laid := make([]string, len(all))
+	shownAt := make([]int, len(all))
 	for k, w := range all {
-		if strings.TrimSpace(w.Text) != "" {
+		text, gone := removedText(w.Text)
+		laid[k], shownAt[k] = text, -1
+		if !gone {
+			shownAt[k] = len(words)
 			words, was = append(words, w), append(was, allWas[k])
 			reach, wasReach = append(reach, w.End), append(wasReach, allWas[k].End)
 		} else if len(reach) > 0 {
@@ -398,7 +409,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	}
 	shown := make([]Cue, 0, len(said))
 	for _, w := range said {
-		if strings.TrimSpace(w.Text) != "" {
+		if _, gone := removedText(w.Text); !gone {
 			shown = append(shown, w)
 		}
 	}
@@ -410,9 +421,11 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		alone bool
 		// Where its first and last word are in the words shown.
 		first, last int
+		// Where its first word is said on the clip's clock, a word removed
+		// among them, since a caption is on screen from there as it was.
+		from float64
 	}
 	var groups []group
-	var current []Cue
 	text := func(ws []Cue) string {
 		parts := make([]string, len(ws))
 		for i, w := range ws {
@@ -420,28 +433,54 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		}
 		return strings.Join(parts, " ")
 	}
-	closeGroup := func(end int) {
-		groups = append(groups, group{words: current, first: end - len(current) + 1, last: end})
+	// The words are grouped as laid, the removed ones among them, and a
+	// group is then the words shown in it. One with none shown is no
+	// caption.
+	var current []int
+	line := func(ks []int) string {
+		parts := make([]string, 0, len(ks))
+		for _, k := range ks {
+			if laid[k] != "" {
+				parts = append(parts, laid[k])
+			}
+		}
+		return strings.Join(parts, " ")
+	}
+	closeGroup := func(isAlone bool) {
+		g := group{alone: isAlone, first: -1, from: all[current[0]].Start}
+		for _, k := range current {
+			if i := shownAt[k]; i >= 0 {
+				if g.first < 0 {
+					g.first = i
+				}
+				g.last = i
+				g.words = append(g.words, words[i])
+			}
+		}
+		if len(g.words) > 0 {
+			groups = append(groups, g)
+		}
 		current = nil
 	}
-	for i, word := range words {
-		if alone != nil && alone(word.Text) {
+	for k := range all {
+		if alone != nil && laid[k] != "" && alone(laid[k]) {
 			if len(current) > 0 {
-				closeGroup(i - 1)
+				closeGroup(false)
 			}
-			groups = append(groups, group{words: []Cue{word}, alone: true, first: i, last: i})
+			current = []int{k}
+			closeGroup(true)
 			continue
 		}
-		if len(current) > 0 && runeLen(text(append(current[:len(current):len(current)], word))) > maxChars {
-			closeGroup(i - 1)
+		if len(current) > 0 && runeLen(line(append(current[:len(current):len(current)], k))) > maxChars {
+			closeGroup(false)
 		}
-		current = append(current, word)
-		last := i == len(words)-1
-		pauseNext := !last && pauseAfter(i) >= captionPause
-		sentence := endsWithBreak(word.Text) &&
-			float64(runeLen(text(current))) >= float64(maxChars)*0.55
+		current = append(current, k)
+		last := k == len(all)-1
+		pauseNext := !last && allWas[k+1].Start-allWas[k].End >= captionPause
+		sentence := endsWithBreak(laid[k]) &&
+			float64(runeLen(line(current))) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
-			closeGroup(i)
+			closeGroup(false)
 		}
 	}
 
@@ -484,7 +523,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	}
 
 	for i, g := range groups {
-		start := appears(g.first)
+		start := math.Min(appears(g.first), g.from)
 		if len(out) > 0 {
 			start = math.Max(start, out[len(out)-1].Start)
 		}
@@ -492,7 +531,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// begins inside that hold.
 		end := math.Max(reach[g.last], ClipTime(clip, wasReach[g.last]+captionHold))
 		if i+1 < len(groups) {
-			next := appears(groups[i+1].first)
+			next := math.Min(appears(groups[i+1].first), groups[i+1].from)
 			if pauseAfter(g.last) < captionPause {
 				end = next
 			} else {
@@ -526,6 +565,21 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		out[0].Start = 0
 	}
 	return moveCaptions(clip, shown, out)
+}
+
+// removedMark comes before the text of a word removed, in the words the
+// captions are laid out from, see Transcript.captionWords. No correction
+// has it, since Scrub takes control characters out of every one, and no
+// recogniser writes one. A word that did would be hidden and nothing more.
+const removedMark = "\x00"
+
+// removedText is what a word takes on a line and whether it was removed.
+// A removed word with no text left takes nothing.
+func removedText(text string) (string, bool) {
+	if rest, ok := strings.CutPrefix(text, removedMark); ok {
+		return rest, true
+	}
+	return text, strings.TrimSpace(text) == ""
 }
 
 // The shortest a caption moved by hand may be shown for.

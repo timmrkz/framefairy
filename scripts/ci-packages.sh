@@ -6,7 +6,8 @@
 #
 #   sh scripts/ci-packages.sh            # the fuzzing, govulncheck
 #   sh scripts/ci-packages.sh patchelf   # the build, which carries the speech library
-#   sh scripts/ci-packages.sh ffmpeg     # the tests, some of which render
+#   sh scripts/ci-packages.sh ffmpeg     # the tests, some of which render,
+#                                        # and the walks, whose episode it makes
 #
 # The packages are downloaded into CACHE, which the workflow keeps from one
 # run to the next, so a run downloads only what changed since. The mirror

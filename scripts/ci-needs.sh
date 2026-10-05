@@ -15,7 +15,7 @@
 # losing the waiting.
 set -eu
 
-kind=${1:?say what to decide about: go, interface or build}
+kind=${1:?say what to decide about: go, interface, build or walks}
 
 say() { echo "$*" >&2; }
 
@@ -108,6 +108,14 @@ build)
 	# is a reason to prove they still go together.
 	if [ "$go" -gt 0 ] || [ "$frontend" -gt 0 ]; then
 		answer true "code changed on one side or the other"
+	fi
+	answer false "only docs changed"
+	;;
+walks)
+	# The interface driven against the Go side, see docs/TESTING.md, so
+	# either side changing moves them.
+	if [ "$go" -gt 0 ] || [ "$frontend" -gt 0 ]; then
+		answer true "the interface or the Go side changed"
 	fi
 	answer false "only docs changed"
 	;;
