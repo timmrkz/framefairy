@@ -77,13 +77,27 @@ export async function settle(page) {
   await page.evaluate(() => (window.__quietSince = 0));
 }
 
-// Which clip is on screen: the episode, the plan and the clip the
-// interface last asked the captions of.
+// Which clip is on screen: the card the clip list marks as the current
+// one, in the episode the interface last asked the clips of, by its plan
+// and id as the engine names them. Not the last captions asked for: an
+// episode just opened shows its clip before that, and a walk then held
+// the clip on screen to another episode's.
 export async function chosen(page) {
-  return page.evaluate(() => {
-    const last = [...window.__calls].reverse().find((c) => c.name === "Captions");
-    return last ? { path: last.args[0], plan: last.args[1], clip: last.args[2] } : null;
-  });
+  const on = await page.evaluate(() => ({
+    path: [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0] ?? null,
+    key: document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? null,
+  }));
+  if (!on.path || !on.key) return null;
+  const clips = await page.evaluate(async (path) => {
+    const answer = await fetch("/call", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Clips", args: [path] }),
+    });
+    return answer.json();
+  }, on.path);
+  const entry = clips.find((c) => c.key === on.key);
+  return entry ? { path: on.path, plan: entry.plan, clip: entry.id } : null;
 }
 
 // What the engine says about the clip on screen, asked directly: its
@@ -229,4 +243,61 @@ export async function video(page) {
     const v = document.querySelector("video");
     return { at: v.currentTime, paused: v.paused, seeking: v.seeking };
   });
+}
+
+// What the clip list shows: the button in its head, the count beside the
+// word Clips, the clip cards by their keys, and the rows that say what the
+// work on the clips is doing, each with its words and its line under them.
+export async function clipList(page) {
+  return page.evaluate(() => {
+    const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+    if (!pane) return null;
+    const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+    return {
+      head: text(pane.querySelector(".listhead button.new")),
+      count: Number(text(pane.querySelector(".listhead .num")) || 0),
+      cards: [...pane.querySelectorAll("ol li[data-key]")].map((li) => li.dataset.key),
+      rows: [...pane.querySelectorAll("ol li.ghost")]
+        .map((li) => ({ what: text(li.querySelector(".title")), meta: text(li.querySelector(".meta")) }))
+        .filter((r) => r.what),
+    };
+  });
+}
+
+// Asks the bridge itself for something a walk needs and the interface
+// cannot do: a file for the Add button's box, the model holding or
+// failing its answers, the speech model's pace, the app opened again.
+export async function control(url, path) {
+  const answer = await fetch(new URL(path, url), { method: "POST" });
+  if (!answer.ok) throw new Error(`the bridge said no to ${path}: ${await answer.text()}`);
+  return answer.json();
+}
+
+// Presses the clip list's head button, and reads what the list says in
+// the very next frame.
+export async function pressHead(page) {
+  return page.evaluate(
+    () =>
+      new Promise((done) => {
+        const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+        pane.querySelector(".listhead button.new").click();
+        requestAnimationFrame(() => {
+          const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+          done({
+            head: text(pane.querySelector(".listhead button.new")),
+            rows: [...pane.querySelectorAll("ol li.ghost .title")].map(text),
+          });
+        });
+      }),
+  );
+}
+
+// Reaches into the sidebar, which is a rail until the pointer is on it,
+// does something there and leaves it again.
+export async function fromSidebar(page, click) {
+  await page.mouse.move(20, 500);
+  await page.waitForTimeout(400);
+  await click();
+  await page.mouse.move(750, 400);
+  await page.waitForTimeout(400);
 }
