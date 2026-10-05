@@ -723,7 +723,11 @@ video on VideoToolbox` or `on the processor`. The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
-roughly towards the camera.
+roughly towards the camera. It takes about 50 milliseconds a frame and a
+clip is some sixty frames, so the frames of a clip are looked at on half
+the cores at once, the other half left to the speech model, which usually
+hears the rest of the episode meanwhile. Each answer lands in its frame's
+place, so the framing is the same as one frame after another.
 
 ## How much one search can read
 
