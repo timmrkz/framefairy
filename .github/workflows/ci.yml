@@ -175,12 +175,22 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # The packages apt downloaded, kept for a week and for this job's
+      # list, so a run downloads only what changed. See ci-packages.sh.
+      - id: week
+        if: steps.needs.outputs.run == 'true'
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/apt
+          key: apt-walks-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
+          restore-keys: apt-walks-
+      # ffmpeg makes the bridge's episode and reads it.
       - name: System packages
         if: steps.needs.outputs.run == 'true'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+        timeout-minutes: 10
+        run: sh scripts/ci-packages.sh ffmpeg
       # The version of Chromium the pinned Playwright was made for, with the
       # libraries it needs.
       - name: Chromium

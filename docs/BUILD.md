@@ -270,7 +270,8 @@ ffmpeg on the path.
 `scripts/ci-packages.sh`. Every Go job compiles the app's package, the
 fuzzing too because one of its targets is there, so GTK, WebKit and
 pkg-config are in every one. ffmpeg is only in `linux`, whose tests
-render, and patchelf only in `build`, which carries the speech library.
+render, and `walks`, whose bridge makes its episode with it, and patchelf
+only in `build`, which carries the speech library.
 ffmpeg was once in all three, and it is most of what apt downloads: on a
 day the Ubuntu mirror crawled, the fuzzing waited fifteen minutes for a
 speech synthesis library ffmpeg depends on, for a job that never runs
