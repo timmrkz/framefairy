@@ -500,7 +500,9 @@ bubble scrolled by those eight pixels.
     text. Delete in a word open for typing is the field's own and takes
     out letters. The caption the word stood in stays as it was, with the
     word gone from it: the captions are laid out as if the word were still
-    there and then it is left out, see `Captions` in `engine/lines.go`. The
+    there, reading what it read when it was removed, and then it is left
+    out, see `Captions` in `engine/lines.go`. What it read is kept with the
+    removal in `corrections.json`, behind a mark no typed word can have. The
     time it held is no pause, the room it took on its line stays taken, so
     no word of the next caption is pulled up into it, and a caption whose
     first word it was appears when that word is said. A caption whose

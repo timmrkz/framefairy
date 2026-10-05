@@ -422,7 +422,8 @@ messages, pull request text, code comments and chat replies.
   moving above. It checks what
   the branch changed against main and only that: the Go tests of the
   packages that changed and every package that imports them, the fuzz
-  targets that go through a changed file, `make interface` for `frontend/`, the build for the Makefile and
+  targets that go through a changed file, `make interface` for `frontend/`,
+  `make walks` for the interface and for whatever reaches the app, the build for the Makefile and
   the scripts, the rules tests for the rules, nothing for docs. A change
   to one package is checked in seconds rather than the ten minutes of
   everything, and a change that reaches everything, `go.mod` or the
@@ -495,12 +496,13 @@ the skills listed last show their name without what they are for.
   claiming one. Read it before changing anything in `frontend/`.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
-  fuzzes on both. It is six jobs at once rather than one after another, so
+  fuzzes on both, and drives the interface against the real Go side, see
+  [docs/TESTING.md](docs/TESTING.md). It is seven jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
   to do. A push to main narrows nothing. `make changed` runs what a branch
-  reaches, `make test` runs the lot, and `make unit`, `make fuzz` and
-  `make interface` are the three parts of it, see
+  reaches, `make test` runs the lot, and `make unit`, `make fuzz`,
+  `make interface` and `make walks` are the four parts of it, see
   [docs/BUILD.md](docs/BUILD.md).
 
 ## Open work

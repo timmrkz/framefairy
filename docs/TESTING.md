@@ -123,6 +123,23 @@ for nothing.
 Each sequence starts from the bridge's episode as it was first searched,
 in a page of its own.
 
+### Where they run
+
+`make walks` runs the sequences and walks of seeds 1 to `WALKS`, 4 unless
+set, of `STEPS` steps, 60 unless set, through the Go test `TestWalks`,
+which starts the bridge on a port of its own and fails with what a
+sequence or a walk printed. The seeds are the same every time, so a walk
+that breaks a rule breaks it again on the next run. `make walks WALKS=40`
+looks further. It takes about two minutes as it is.
+
+`make changed` runs it whenever the interface changed, the preview's own
+stand-in aside, or a package the app reaches, the engine among them. CI
+runs it in the job `walks`, the only one that installs Chromium, on the
+same rules as the build.
+
+A walk that breaks a rule leaves a picture of the app at that moment in
+`/tmp/walk-<seed>.png`.
+
 ### Does it find anything
 
 Against the video preview from before the fixes in #106, five walks of
@@ -136,4 +153,8 @@ pulled the first word of the next caption up into the room it left, and
 the walks, once the rule was that a removal changes no caption, that a
 caption whose first word was removed waited for the word after it. The
 engine now lays the captions out as if a removed word were still there,
-`TestRemovingAWordPullsNoWordUp`.
+`TestRemovingAWordPullsNoWordUp`. Then the walks in `make changed` found
+that a word corrected to a short one and then removed took the room of
+what the recogniser had heard, ten letters where it had read three, and
+the caption overflowed. A removal now keeps what the word read,
+`TestARemovedWordKeepsTheRoomItHad`.

@@ -1,7 +1,7 @@
 // What every walk needs: the interface opened on the bridge's episode with
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
-import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 
 // A random number generator that a seed decides, so a walk that breaks a
 // rule can be walked again step for step. mulberry32.

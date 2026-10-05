@@ -21,11 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -374,4 +376,69 @@ func bridgeDist(t *testing.T) string {
 		t.Skip("the interface is not built for the bridge: cd frontend && npx vite build --config preview/bridge.config.ts")
 	}
 	return dist
+}
+
+// TestWalks runs the sequences and a set of walks in frontend/preview/walks
+// against the bridge, and fails with what they printed when one breaks a
+// rule or a sequence does not come out as it should. make walks runs it,
+// with the interface built for the bridge first, and it only runs when
+// asked, because it needs Node, Playwright's Chromium and the build:
+//
+//	make walks
+//	make walks WALKS=40 STEPS=80   to look further
+//
+// The walks are seeds 1 to WALKS, the same every time, so a walk that
+// breaks a rule breaks it again on the next run, and a change that only
+// moves what a seed walks into is not a red run of its own.
+func TestWalks(t *testing.T) {
+	if os.Getenv("FRAMEFAIRY_WALKS") == "" {
+		t.Skip("make walks runs these")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("the walks need Node")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Fatal("the walks need ffmpeg")
+	}
+	dist, err := filepath.Abs("../../frontend/preview/dist-bridge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dist, "index.html")); err != nil {
+		t.Fatal("the interface is not built for the bridge, which make walks does")
+	}
+	walks, err := filepath.Abs("../../frontend/preview/walks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _, reset := openBridge(t)
+	server := httptest.NewServer(bridgeHandler(d, dist, reset))
+	defer server.Close()
+
+	run := func(script string, env ...string) {
+		t.Helper()
+		cmd := exec.Command(node, filepath.Join(walks, script))
+		cmd.Dir = walks
+		cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+server.URL+"/"), env...)
+		out, err := cmd.CombinedOutput()
+		what := strings.TrimSpace(script + " " + strings.Join(env, " "))
+		if err != nil {
+			t.Errorf("%s:\n%s", what, out)
+			return
+		}
+		t.Logf("%s:\n%s", what, out)
+	}
+	run("sequences.mjs")
+	walksWanted, steps := envNumber("WALKS", 4), envNumber("STEPS", 60)
+	for seed := 1; seed <= walksWanted; seed++ {
+		run("words.mjs", fmt.Sprintf("SEED=%d", seed), fmt.Sprintf("STEPS=%d", steps))
+	}
+}
+
+func envNumber(name string, otherwise int) int {
+	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
+		return n
+	}
+	return otherwise
 }

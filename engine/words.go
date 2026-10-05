@@ -29,9 +29,18 @@ func (t *Transcript) hear(raw []Cue) {
 func (t *Transcript) Correct(corrections map[string]string) {
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
-	for _, w := range t.snapped {
+	t.removedAs = nil
+	for i, w := range t.snapped {
 		if text, ok := corrections[wordKey(w.Start)]; ok {
 			w.Text = text
+			// A word removed keeps what it read then, behind the mark.
+			if was, gone := strings.CutPrefix(text, removedMark); gone {
+				w.Text = ""
+				if t.removedAs == nil {
+					t.removedAs = map[int]string{}
+				}
+				t.removedAs[i] = was
+			}
 		}
 		heard = append(heard, w)
 		if strings.TrimSpace(w.Text) == "" {
@@ -47,9 +56,13 @@ func (t *Transcript) Correct(corrections map[string]string) {
 // text, in the order they were said. A removed word is not shown, but the
 // captions still know it was said, see Captions.
 //
-// A removed word carries what the recogniser heard, behind removedMark, so
-// the captions are laid out as if it were still there: a word taken out
-// takes out the word and changes no caption.
+// A removed word carries what it read when it was removed, or what the
+// recogniser heard when that is not known, behind removedMark, so the
+// captions are laid out as they were before it went: a word taken out
+// takes out the word and changes no caption. What the recogniser heard
+// alone was not enough: a word corrected to a short one and then removed
+// took the room of the long one it had been, and words moved. A walk
+// found it.
 func (t *Transcript) captionWords() []Cue {
 	out := t.Words
 	for i, w := range t.HeardWords {
@@ -57,7 +70,9 @@ func (t *Transcript) captionWords() []Cue {
 			if len(out) == len(t.Words) {
 				out = append([]Cue(nil), t.Words...)
 			}
-			if i < len(t.snapped) {
+			if was, ok := t.removedAs[i]; ok {
+				w.Text = removedMark + was
+			} else if i < len(t.snapped) {
 				w.Text = removedMark + strings.Join(strings.Fields(t.snapped[i].Text), " ")
 			}
 			out = append(out, w)

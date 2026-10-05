@@ -134,6 +134,46 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         run: make unit
 
+  # The interface in Chromium against the real Go side: the sequences of
+  # the cases found by hand and the walks, see docs/TESTING.md. It needs
+  # what the Go tests need, the interface's Node, and the Chromium
+  # Playwright drives, which only this job installs.
+  walks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh walks >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: System packages
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+      # The version of Chromium the pinned Playwright was made for, with the
+      # libraries it needs.
+      - name: Chromium
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          make frontend/node_modules/.package-lock.json
+          cd frontend && npm exec -- playwright install --with-deps chromium
+      - name: Sequences and walks
+        if: steps.needs.outputs.run == 'true'
+        run: make walks
+
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
   fuzz:
