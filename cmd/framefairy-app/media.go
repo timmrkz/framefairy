@@ -97,18 +97,3 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	}
 	return t.Peaks(from, to, min(max(buckets, 1), 4000)), nil
 }
-
-// Still returns a frame of the episode at a moment, as a media path.
-func (s *FrameFairy) Still(ctx context.Context, path string, at float64, width int) (string, error) {
-	if !s.store.Known(path) {
-		return "", errNotInLibrary
-	}
-	// The frame rate says which frame the moment falls in, the one the
-	// video preview shows there. It is read once per episode and kept.
-	fps := 0.0
-	if info, err := s.probe(ctx, path); err == nil && info.FPSDen > 0 {
-		fps = info.FPS()
-	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	return e.Still(ctx, path, at, fps, width)
-}

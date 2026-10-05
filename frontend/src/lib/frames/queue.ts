@@ -449,6 +449,9 @@ export class FrameQueue {
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("the canvas has no 2d context");
     this.draw2d = ctx;
+    // Black until the first frame, never the last frame of an episode
+    // drawn on this canvas before.
+    this.paint();
     this.reader = new Reader(url);
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
