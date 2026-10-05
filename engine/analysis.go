@@ -439,6 +439,11 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 	windowSmall := max(1, pyround(float64(cropW)/float64(source.Width)*FaceWidth))
 
 	detector := e.faceDetector()
+	var centres []float64
+	var found []bool
+	if detector != nil {
+		centres, found = detector.faceCentres(frames, FaceWidth, FaceHeight, faceWorkers())
+	}
 	var faces, details []timed
 	for index, frame := range frames {
 		if len(frame) < FaceWidth*FaceHeight {
@@ -447,7 +452,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 		when := times[index]
 
 		if detector != nil {
-			if centre, ok := detector.largestFace(frame, FaceWidth, FaceHeight); ok {
+			if centre, ok := centres[index], found[index]; ok {
 				faces = append(faces, timed{when,
 					math.Max(0, math.Min((centre-float64(windowSmall)/2)*scale, limit))})
 				continue

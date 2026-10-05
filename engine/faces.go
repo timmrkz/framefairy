@@ -16,7 +16,10 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"math"
+	"runtime"
 	"sort"
+	"sync"
+	"sync/atomic"
 )
 
 //go:embed facefinder
@@ -237,4 +240,44 @@ func (d *faceDetector) largestFace(frame []byte, width, height int) (float64, bo
 		}
 	}
 	return bestCentre, found
+}
+
+// faceCentres looks for the largest face in every frame, the way
+// largestFace does, and says where each one's centre is and whether there
+// was one. The frames are shared out over workers looking at once, and
+// each answer lands in its frame's place, so what comes back is the same
+// whatever the number of workers.
+//
+// One frame takes the detector about 50 milliseconds, and a clip is some
+// sixty frames, so a clip was three seconds of one core while the others
+// had nothing to do. Every clip of a search waited for that, the first
+// one too.
+func (d *faceDetector) faceCentres(frames [][]byte, width, height, workers int) ([]float64, []bool) {
+	centres := make([]float64, len(frames))
+	found := make([]bool, len(frames))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range min(max(workers, 1), len(frames)) {
+		wg.Go(func() {
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(frames) {
+					return
+				}
+				if len(frames[i]) < width*height {
+					continue
+				}
+				centres[i], found[i] = d.largestFace(frames[i], width, height)
+			}
+		})
+	}
+	wg.Wait()
+	return centres, found
+}
+
+// faceWorkers is how many frames are looked at for faces at once: half the
+// cores, because a search usually frames while the speech model hears the
+// rest of the episode in the other lane, and that wants cores too.
+func faceWorkers() int {
+	return max(1, runtime.GOMAXPROCS(0)/2)
 }
