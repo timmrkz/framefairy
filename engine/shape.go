@@ -139,8 +139,12 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	case "trim":
 		start, end := first, last
 		var words []Cue
+		var goes []float64
 		if g.ToWords {
 			words = stops(math.Min(g.From, first), math.Max(g.To, last))
+			if g.Edge == "end" {
+				goes = captionsGo(plan, runOn(clip, g.From), t)
+			}
 		}
 		switch g.Edge {
 		case "start":
@@ -148,11 +152,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			start = math.Min(start, end-MinClip)
 			start = math.Max(start, end-MaxClipSpan)
 		case "end":
-			end = g.landEnd(words, g.From, keepPause)
+			end = g.landEnd(words, goes, g.From, keepPause)
 			end = math.Max(end, start+MinClip)
 			end = math.Min(end, start+MaxClipSpan)
 		case "both":
-			start, end = g.landStart(words, g.From, keepPause), g.landEnd(words, g.To, keepPause)
+			start, end = g.landStart(words, g.From, keepPause), g.landEnd(words, nil, g.To, keepPause)
 			if end-start < MinClip {
 				return nil, -1, renderErr("a clip needs at least one second")
 			}
@@ -178,7 +182,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		case g.Kind == "restore":
 			from, to = roundTo(math.Max(0, from), 3), roundTo(to, 3)
 		case g.ToWords:
-			from, to = snapCut(stops(from, to), from, to, keepPause)
+			from, to = snapCut(stops(from, to), nil, from, to, keepPause)
 		default:
 			var ok bool
 			if from, to, ok = g.cutOnFrames(clip, from, to); !ok {
@@ -203,7 +207,13 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		}
 		from, to := g.From, g.To
 		if g.ToWords {
-			from, to = snapCut(stops(from, to), from, to, keepPause)
+			// Where the captions go is read with this cut left out, the
+			// way they go when the edge is dragged back over them.
+			joined := clip
+			joined.Segments = append(append([]Segment{}, clip.Segments[:i]...),
+				Segment{Start: clip.Segments[i].Start, End: clip.Segments[i+1].End})
+			joined.Segments = append(joined.Segments, clip.Segments[i+2:]...)
+			from, to = snapCut(stops(from, to), captionsGo(plan, joined, t), from, to, keepPause)
 		} else {
 			from, to = g.onFrame(from), g.onFrame(to)
 		}
@@ -279,11 +289,48 @@ func (g Gesture) landStart(words []Cue, at, keepPause float64) float64 {
 	return math.Max(0, g.onFrame(at))
 }
 
-func (g Gesture) landEnd(words []Cue, at, keepPause float64) float64 {
+func (g Gesture) landEnd(words []Cue, goes []float64, at, keepPause float64) float64 {
 	if g.ToWords {
-		return SnapEnd(words, at, keepPause)
+		return SnapEnd(words, goes, at, keepPause)
 	}
 	return g.onFrame(at)
+}
+
+// captionsGo is where the captions of a clip go off the screen, on the
+// episode's clock: the ends of the blocks the clip timeline draws. An edge
+// put on words stops there as well as at the words, because a caption
+// stays up a little after its last word and its block shows that. An edge
+// that only knew the words went past the end of the block Tim was looking
+// at, into it, and the block shrank under the edge. Only an end inside a
+// piece is one: a caption a cut cuts short goes where the cut is.
+func captionsGo(plan Plan, clip Clip, t *Transcript) []float64 {
+	s := ResolveStyle(captionStyle(plan, clip, nil))
+	var ends []float64
+	for _, c := range ClipCaptions(clip, t, s) {
+		at := EpisodeTime(clip, c.End)
+		for _, p := range clip.Segments {
+			if at > p.Start && at < p.End {
+				ends = append(ends, roundTo(at, 3))
+				break
+			}
+		}
+	}
+	return ends
+}
+
+// runOn is a clip as it would be with its end dragged out past at, a
+// minute on, so the captions around at go where they would with nothing
+// after them cut.
+func runOn(clip Clip, at float64) Clip {
+	var out []Segment
+	for _, s := range clip.Segments {
+		if len(out) == 0 || s.Start < at {
+			out = append(out, s)
+		}
+	}
+	out[len(out)-1].End = math.Max(out[len(out)-1].End, at) + 60
+	clip.Segments = out
+	return clip
 }
 
 // edgePlayhead is where the playhead stands while an edge of a clip is

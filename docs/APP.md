@@ -920,6 +920,14 @@ bubble scrolled by those eight pixels.
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two
       words, are two stops, the same words the arrow keys walk.
+    - **Shift stops where a caption goes, too.** A caption stays up a
+      little after its last word, and its block on the clip timeline is
+      that long. The end of a clip and the left edge of a cut dragged with
+      shift stop at the end of the block before they go on to the word,
+      when it lies in the pause after it. They used to know only the word,
+      so the edge went past the end of the block into it and the block
+      shrank under it, and the block looked longer than the words it
+      stood for.
     - **The engine answers for every drag.** The timeline sends what the
       hand is doing, `Shape`, and draws what comes back: the pieces, the
       captions and where the playhead goes. Letting go saves the same

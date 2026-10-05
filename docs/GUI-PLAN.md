@@ -214,6 +214,7 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.21 | A double-click on a clip's edge puts it back where the clip was found, the way one on a caption's edge does. The clip keeps its first edges in the plan from its first change on. Asked for by Tim | `[x]` |
 | 3.22 | A caption is drawn only where the clip is, never over a cut, and the last caption is held past the end only when it is on screen there, so trimming the end no longer stretches the caption before. Asked for by Tim | `[x]` |
 | 3.23 | Moving one edge of a cut never moves the other, a click on a cut's edge puts the playhead there, and a caption whose first word a cut takes appears where the cut ends. Asked for by Tim | `[x]` |
+| 3.24 | An edge dragged with shift stops where a caption goes off the screen, the end of its block on the clip timeline, before it goes on to the word. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 

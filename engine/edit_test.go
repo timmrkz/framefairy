@@ -1154,3 +1154,52 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 		t.Error("a move of an edge called middle was taken")
 	}
 }
+
+// A caption stays up a little after its last word, and the clip timeline
+// draws its block that long. An edge put on words stops where that block
+// ends before it goes on to the word. It went straight to the word, past
+// the end of the block Tim was looking at, and the block shrank under it.
+func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
+	tr := editableTranscript()
+	// zwei ends at 11.0 and drei begins at 12.0, so "eins zwei" stays up
+	// until 11.4. The clip's cut takes 11.1 to 11.9 and with it that hold.
+	segments := func(path string, g Gesture) []Segment {
+		t.Helper()
+		g.Frame, g.ToWords = 0.04, true
+		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return clips[0].Segments
+	}
+	cases := []struct {
+		name string
+		g    Gesture
+		end  float64
+	}{
+		{"the left edge of a cut past where the caption goes",
+			Gesture{Kind: "move", Edge: "from", From: 11.6, To: 11.9}, 11.4},
+		{"the left edge of a cut inside the time the caption stays",
+			Gesture{Kind: "move", Edge: "from", From: 11.3, To: 11.9}, 11.1},
+		{"the left edge of a cut into the word",
+			Gesture{Kind: "move", Edge: "from", From: 10.9, To: 11.9}, 10.6},
+		{"the end of the clip near where the caption goes",
+			Gesture{Kind: "trim", Edge: "end", From: 11.45}, 11.4},
+		{"the end of the clip near the word",
+			Gesture{Kind: "trim", Edge: "end", From: 11.15}, 11.1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := segments(editablePlanPath(t), c.g)
+			if got[0].End != c.end {
+				t.Errorf("the edge landed at %v, want %v: %+v", got[0].End, c.end, got)
+			}
+			if c.g.Kind == "move" && got[1].Start != 11.9 {
+				t.Errorf("the right edge moved to %v", got[1].Start)
+			}
+		})
+	}
+}
