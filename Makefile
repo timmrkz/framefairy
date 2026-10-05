@@ -378,6 +378,6 @@ speechbench: toolchain modules
 	@$(GO) run -ldflags '$(LDFLAGS)' ./scripts/speechbench -audio "$(AUDIO)" $(ARGS)
 
 clean:
-	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion
+	@rm -rf $(BIN) $(STAMPS) frontend/node_modules frontend/preview/dist frontend/preview/dist-motion frontend/preview/dist-bridge
 	@$(GO) clean -fuzzcache
 	@echo "Removed bin/, .build/, frontend/node_modules/, the preview builds and the fuzz corpus"

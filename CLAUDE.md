@@ -60,6 +60,7 @@ Start with [README.md](README.md). In short:
 | desktop app `framefairy-app` | `cmd/framefairy-app/` (Go), `frontend/` (Svelte) | [docs/APP.md](docs/APP.md) |
 | training tool `framefairy-train` | `cmd/framefairy-train/`, `train/` | [docs/TRAINING.md](docs/TRAINING.md) |
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
+| interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | plan and status | | [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
