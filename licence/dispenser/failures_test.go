@@ -37,6 +37,8 @@ type breaking struct {
 	// The step inside a transaction that fails, counted over the whole
 	// call, reads and writes alike, 0 for none.
 	steps, stepAt int
+	// down fails every step, the database gone for as long as it lasts.
+	down bool
 }
 
 func (b *breaking) Update(ctx context.Context, fn func(Tx) error) error {
@@ -257,7 +259,7 @@ func (b *breaking) step() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.steps++
-	if b.steps == b.stepAt {
+	if b.down || b.steps == b.stepAt {
 		return errBroken
 	}
 	return nil
@@ -553,4 +555,110 @@ func outcomeOf(f *fixture, _ []licence.Key) string {
 	letters = slices.Compact(letters)
 	fmt.Fprintf(&b, "letters: %s", strings.Join(letters, " | "))
 	return b.String()
+}
+
+// With the database gone, every endpoint says so with an error its caller
+// tries again on, never a success it did not have: Paddle sends its
+// webhook again, the signer hands its batch over again, the cron runs
+// again. And when the database is back, nothing of the time without it is
+// left in the store.
+func TestEveryEndpointWithTheDatabaseDown(t *testing.T) {
+	mem := &Memory{}
+	store := &breaking{Memory: mem}
+	w := newWebOn(t, newFixtureOn(t, mem, store))
+	w.stock(6)
+	w.shop.sold("txn_a", "anna@example.com")
+	keys := w.assign("txn_a", 1)
+	w.shop.sold("txn_b", "ben@example.com")
+	fp := keys[0].Fingerprint().String()
+	store.mu.Lock()
+	store.down = true
+	store.mu.Unlock()
+
+	requests := []struct {
+		method, path, token string
+		body                any
+	}{
+		{"GET", "/v1/thanks/txn_a", "", nil},
+		{"POST", "/v1/lost", "", map[string]string{"email": "anna@example.com"}},
+		{"POST", "/v1/orders", bundleToken, map[string]any{"ref": "1001", "seats": 1, "email": "max@example.com"}},
+		{"GET", "/v1/orders/1001", bundleToken, nil},
+		{"POST", "/v1/orders/1001/revoke", bundleToken, map[string]string{"why": "refund"}},
+		{"GET", "/v1/pool", signerToken, nil},
+		{"GET", "/v1/feed", releaseToken, nil},
+		{"POST", "/v1/cron/mail", cronToken, nil},
+		{"POST", "/v1/cron/daily", cronToken, nil},
+		{"POST", "/v1/admin/replace", adminToken, map[string]string{"fingerprint": fp, "why": "posted"}},
+		{"POST", "/v1/admin/revoke", adminToken, map[string]string{"source": "paddle", "ref": "txn_a", "why": "x"}},
+		{"POST", "/v1/admin/restore", adminToken, map[string]string{"source": "paddle", "ref": "txn_a", "why": "x"}},
+		{"POST", "/v1/admin/settle", adminToken, map[string]string{"ref": "txn_b"}},
+		{"POST", "/v1/admin/reconcile", adminToken, map[string]string{"since": now.Add(-time.Hour).Format(time.RFC3339)}},
+		{"POST", "/v1/admin/retire", adminToken, map[string]string{"why": "restored"}},
+		{"POST", "/v1/admin/audit", adminToken, map[string]string{}},
+		{"GET", "/healthz", "", nil},
+	}
+	for _, r := range requests {
+		if code, out := w.call(r.method, r.path, r.token, r.body); code < 500 {
+			t.Errorf("%s %s with the database down: %d %v", r.method, r.path, code, out)
+		}
+	}
+	if code, out := w.webhook("transaction.completed", "txn_b", now); code < 500 {
+		t.Errorf("Paddle's webhook with the database down: %d %v, and Paddle would not send it again", code, out)
+	}
+
+	store.mu.Lock()
+	store.down = false
+	store.mu.Unlock()
+	w.audit()
+	if got, _ := w.engine.Keys(w.ctx, "paddle", "txn_b"); len(got) != 0 {
+		t.Error("a sale went through while the database was down")
+	}
+	if len(w.revoked()) != 0 {
+		t.Error("a key was revoked while the database was down")
+	}
+}
+
+// Use case 7 with the mail service down: the lost-key page cannot send
+// the keys, says so to its caller, and sends them when asked again once
+// the mail is back. Nothing about the sale changes.
+func TestLostKeyWhileTheMailIsDown(t *testing.T) {
+	f := newFixture(t, false)
+	f.stock(4)
+	f.shop.sold("txn_a", "anna@example.com")
+	keys := f.assign("txn_a", 1)
+	f.mail.failing(func(string, Letter) bool { return true })
+	before := len(f.mail.sent())
+	if err := f.engine.Resend(f.ctx, "anna@example.com"); err == nil {
+		t.Fatal("the keys were said to be sent with the mail service down")
+	}
+	f.mail.failing(nil)
+	if err := f.engine.Resend(f.ctx, "anna@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	sent := f.mail.sent()[before:]
+	if len(sent) != 1 || sent[0].to != "anna@example.com" || sent[0].letter.Kind != MailResend ||
+		!slices.Equal(fingerprints(sent[0].letter.Keys), fingerprints(keys)) {
+		t.Fatalf("sent %+v, want the sale's key to its buyer", sent)
+	}
+	f.audit()
+}
+
+// Use case 19 with Paddle down: the daily catch-up cannot ask what was
+// sold, says so, and catches everything up the next time it runs.
+func TestCatchUpWhilePaddleIsDown(t *testing.T) {
+	f := newFixture(t, false)
+	f.stock(4)
+	f.shop.sold("txn_missed", "anna@example.com")
+	f.shop.setDown(true)
+	if n, err := f.engine.Reconcile(f.ctx, now.Add(-time.Hour)); err == nil || n != 0 {
+		t.Fatalf("caught up %d with Paddle down: %v", n, err)
+	}
+	f.shop.setDown(false)
+	if n, err := f.engine.Reconcile(f.ctx, now.Add(-time.Hour)); err != nil || n != 1 {
+		t.Fatalf("caught up %d once Paddle was back: %v", n, err)
+	}
+	if keys, _ := f.engine.Keys(f.ctx, "paddle", "txn_missed"); len(keys) != 1 {
+		t.Fatal("the missed sale has no key")
+	}
+	f.audit()
 }
