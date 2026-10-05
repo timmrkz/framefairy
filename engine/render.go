@@ -40,12 +40,13 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 	}
 	var parts []string
 	for i, seg := range clip.Segments {
+		cut := source.cutOf(seg)
 		cropY := (source.Height - cropH) / 2
 		cropY -= cropY % 2
 		cropX := ClampCropX(seg.CropX, cropW, source.Width)
 
 		chain := []string{
-			"setpts=PTS-STARTPTS",
+			cut.picture + "setpts=PTS-STARTPTS",
 			fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, cropX, cropY),
 		}
 		if rs.ScaleUp && (cropW != rs.OutW || cropH != rs.OutH) {
@@ -60,7 +61,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		// the sound of 30 ms.
 		fadeOutAt := math.Max(0, seg.Duration()-Fade)
 		achain := []string{
-			"asetpts=PTS-STARTPTS",
+			"asetpts=PTS-STARTPTS" + cut.sound,
 			"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
 		}
 		if i == 0 || seg.Start-clip.Segments[i-1].End > 0.0005 {
@@ -121,8 +122,8 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 	for _, seg := range clip.Segments {
 		// -ss before -i seeks rather than decoding up to the point, and -t
 		// limits how much is read. Both are input options on purpose.
-		cmd = append(cmd, "-ss", fixed(seg.Start, 3), "-t", fixed(seg.Duration(), 3),
-			"-i", abs)
+		cut := source.cutOf(seg)
+		cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-i", abs)
 	}
 	video, err := e.VideoArgs(ctx, rs)
 	if err != nil {
@@ -145,6 +146,56 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		cmd = append(cmd, "-"+tag[0], tag[1])
 	}
 	return append(cmd, outPath), nil
+}
+
+// pieceCut is how one piece of a clip is read from the episode: where the
+// read starts and how long it runs, as ffmpeg takes them, and the filters
+// that keep what belongs to the piece out of what was read.
+type pieceCut struct {
+	seek, read     string
+	picture, sound string
+}
+
+// cutOf works out a piece on the frames of the episode, by their number
+// and not by a time rounded to a millisecond, which is how a render cuts.
+//
+// The piece is the frames from the one its start is on up to the one
+// before its end, the frame that holds each moment, as the video preview
+// shows it. Its sound is the sound of exactly those frames. ffmpeg takes a
+// time to the microsecond, and most frames at 29.97 fps land on none, so
+// a time rounded to the millisecond fell a little after a frame as often
+// as before it. The frame at the start was then lost, the next piece's
+// first frame came in at the end, and the sound ran 30 ms over its picture
+// at every cut, which the joining filled with silence. So the read starts
+// half a frame before the first frame, where no rounding can move it past
+// a frame, and runs a frame longer than the piece. The picture keeps as
+// many frames as the piece holds, and the sound is cut where the first
+// frame starts and where the frame after the last one starts, to the
+// sample. Both are worked out from the frame numbers, so no piece is a
+// sample longer than its frames, however many there are.
+func (s SourceInfo) cutOf(seg Segment) pieceCut {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return pieceCut{seek: fixed(seg.Start, 6), read: fixed(seg.Duration(), 6)}
+	}
+	num, den := int64(s.FPSNum), int64(s.FPSDen)
+	first := int64(math.Round(seg.Start * float64(num) / float64(den)))
+	end := max(int64(math.Round(seg.End*float64(num)/float64(den))), first+1)
+	// When frame k starts, in microseconds: k·den/num seconds.
+	start := func(k int64) int64 { return (2*k*den*1_000_000 + num) / (2 * num) }
+	seek := max(0, (2*first-1)*den*1_000_000/(2*num))
+	read := ((end-first+1)*den*1_000_000 + num - 1) / num
+	return pieceCut{
+		seek:    micros(seek),
+		read:    micros(read),
+		picture: fmt.Sprintf("trim=end_frame=%d,", end-first),
+		sound: fmt.Sprintf(",atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
+			micros(start(first)-seek), micros(start(end)-seek)),
+	}
+}
+
+// micros is a number of microseconds as seconds, written out exactly.
+func micros(us int64) string {
+	return fmt.Sprintf("%d.%06d", us/1_000_000, us%1_000_000)
 }
 
 // OnFrames is a clip with every edge of its pieces moved to the nearest
