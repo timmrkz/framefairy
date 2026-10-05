@@ -253,13 +253,18 @@
   // says whether it is about the chosen clip, see placeOf. Paused, the
   // frame that holds the moment is drawn, exactly. Playing, the play goes
   // on from there, the clip's or the episode's by where it landed.
+  //
+  // The moment and the program go to the queue in one call. In two, a click
+  // across the clip's edge while playing was lost: the new program started
+  // the play again from where it was, the queue said so at once, that set
+  // the playhead back, and the seek after it went to the playhead.
   export function seek(t: number, about?: "clip") {
-    time = Math.max(0, Math.min(t, source.duration));
-    placed = placeOf(pieces, clip?.key ?? "", time, 1 / frameOf, about);
+    const at = Math.max(0, Math.min(t, source.duration));
+    time = at;
+    placed = placeOf(pieces, clip?.key ?? "", at, 1 / frameOf, about);
     if (!queue) return;
     if (!paused) playedClip = placed.place !== "video";
-    queue.setProgram(...programOf(placeFor(placed, clip?.key)));
-    queue.seek(time);
+    queue.seek(at, programOf(placeFor(placed, clip?.key)));
   }
 
   export function toggle() {

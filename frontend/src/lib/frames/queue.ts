@@ -572,21 +572,40 @@ export class FrameQueue {
   // playhead is, on the new pieces, and a cue made for the old one is made
   // again.
   setProgram(pieces: Piece[] | null, loop: boolean) {
-    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
-    const key = JSON.stringify([copy, loop]);
-    if (key === this.wantedKey) return;
-    this.wantedKey = key;
-    this.wanted = { pieces: copy, loop };
-    this.built = null;
+    if (!this.want(pieces, loop)) return;
     if (this.state === "playing" || this.state === "starting") this.start(this.at);
     else if (this.state === "cued" || this.vplan) this.seek(this.at);
   }
 
-  // The playhead to a moment of the episode. Paused, the frame that holds
-  // it is decoded and drawn, and the play from it is cued. Playing, play
-  // goes on from there.
-  seek(at: number) {
+  // Takes a program as the one play plays, and says whether it is another
+  // than the one before. Nothing is started.
+  private want(pieces: Piece[] | null, loop: boolean): boolean {
+    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
+    const key = JSON.stringify([copy, loop]);
+    if (key === this.wantedKey) return false;
+    this.wantedKey = key;
+    this.wanted = { pieces: copy, loop };
+    this.built = null;
+    return true;
+  }
+
+  // The playhead to a moment of the episode, and with a program, what play
+  // plays from there. Paused, the frame that holds it is decoded and drawn,
+  // and the play from it is cued. Playing, play goes on from there.
+  //
+  // The program comes with the moment because a click that takes the
+  // playhead across the edge of a clip while it plays changes both, and
+  // the play has to start once, from the click. Told the program first,
+  // the queue started again from where it was and said so, and that old
+  // moment came back as the playhead the seek after it was sent to: the
+  // click was lost.
+  seek(at: number, program?: [Piece[] | null, boolean]) {
     if (this.closed) return;
+    const changed = program ? this.want(...program) : false;
+    // A play starting from this very moment on this program is the play
+    // asked for. A click seeks as the hand goes down and again as it comes
+    // up, and starting over would throw away what was decoded between.
+    if (!changed && this.state === "starting" && at === this.startFrom) return;
     this.at = at;
     if (this.state === "playing" || this.state === "starting") {
       this.start(at);
