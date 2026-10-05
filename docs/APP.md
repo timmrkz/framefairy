@@ -963,6 +963,16 @@ bubble scrolled by those eight pixels.
       because it is the key Tim reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
+    - **A double-click on an edge puts it back where the clip was found**,
+      the way a double-click on a caption's edge puts that back where its
+      words put it. Tim asked for the two to be the same. The clip keeps
+      where its edges were in the plan, `found`, written by `editPieces` in
+      `engine/edit.go` the first time anything changes its pieces and never
+      after, so a clip never changed needs none and is where it was found.
+      A clip changed before this was written keeps the edges it had at its
+      first change after it. The edge's title says when it was moved by
+      hand, and the double-click is a trim to the edge it was found with, so
+      Undo takes it back like any other trim.
     - **The playhead goes with the edge.** While either edge of a clip is
       dragged, the playhead stands on it and the video preview shows that
       frame, the clip as it is being dragged, with its captions. On frames
@@ -977,6 +987,14 @@ bubble scrolled by those eight pixels.
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two
       words, are two stops, the same words the arrow keys walk.
+    - **Shift stops where a caption goes, too.** A caption stays up a
+      little after its last word, and its block on the clip timeline is
+      that long. The end of a clip and the left edge of a cut dragged with
+      shift stop at the end of the block before they go on to the word,
+      when it lies in the pause after it. They used to know only the word,
+      so the edge went past the end of the block into it and the block
+      shrank under it, and the block looked longer than the words it
+      stood for.
     - **The engine answers for every drag.** The timeline sends what the
       hand is doing, `Shape`, and draws what comes back: the pieces, the
       captions and where the playhead goes. Letting go saves the same
@@ -1017,11 +1035,17 @@ bubble scrolled by those eight pixels.
     - **The cuts can be changed.** Each one carries a handle on either edge,
       in the accent's lighter shade so it is not taken for the clip's own
       edge. Dragging a handle moves that edge of the cut, and a double-click
-      on the block puts the part back.
-    - **Shift is the cutting hand.** Holding it and dragging across the clip
-      takes out the part dragged over. Holding it and double-clicking
-      takes one out where the click lands, forty pixels wide, which is wide
-      enough to see and to take hold of by either edge and drag to size.
+      on the block or on either handle removes the cut, so the part plays
+      again.
+    - **A double-click in the clip cuts a part out** where it lands, forty
+      pixels wide, which is wide enough to see and to take hold of by either
+      edge and drag to size. Outside the clip a double-click does nothing,
+      and nothing else on the track makes a cut. Shift and a drag used to
+      draw one, and a double-click in the place a cut had just been removed
+      took it out again: Tim found neither, and the second made a double-
+      click in the clip cut something only sometimes. Shift means words and
+      clips everywhere else in the app, so a drag with it held moves the
+      playhead like any other drag.
       Forty pixels and not a quarter of a second, because what has to stay
       the same is what the hand sees: the timeline goes from a whole four
       hour episode down to a second across, and a width in seconds is
@@ -1031,36 +1055,55 @@ bubble scrolled by those eight pixels.
       of the two 12 pixel edge handles and then a quarter of the track.
       Forty pixels comes out as 40 and 47, the 47 being the frame rounding:
       a cut is a whole number of frames wide, rounded up, so it is never
-      too short for the engine to take. Either way the view never moves: a gesture that
-      cuts and zooms at the same time is a gesture nobody can aim, and
-      before this a shift double-click only zoomed, which is why it read as
-      nothing happening. A shift double-click inside a cut does nothing,
-      because there is nothing there left to take out. Without shift the
-      same drag moves the playhead, so nothing that worked before works
-      differently, and a shift-click with no drag does nothing.
-    - **A part put back goes back in with the same gesture.** The
-      double-click that puts a cut back is remembered, so a second
-      double-click in the same place takes the part out again, edge for
-      edge. It is forgotten as soon as anything else about that clip
-      changes, because a part put back into a clip that has moved on is
-      not the part that was taken out.
+      too short for the engine to take. The view never moves: a gesture
+      that cuts and zooms at the same time is a gesture nobody can aim.
+    - **Moving one edge never moves the other**, of a cut or of the clip.
+      A drag of a cut's edge says which edge it moves, `Edge` "from" or
+      "to" in a `move` gesture, and the engine puts only that edge on a
+      word with shift, and stops it at the other rather than pushing the
+      other along. Shift on the right edge of a cut used to put the left
+      one on a word as well. A click on an edge of a cut that does not
+      drag puts the playhead on it, the way a click on an edge of the clip
+      does.
+    - **A caption that a cut takes the first word of** appears where the
+      cut ends, when that word ran straight on into the rest of it. It
+      used to wait for its next word, so a cut's right edge moved a frame
+      further into a short first word made the caption jump past the
+      pause after it, though it had been on screen there a moment before.
+    - **A caption is drawn only where the clip is.** Its block lies over
+      the parts the clip keeps and never over a cut, in as many pieces as
+      it takes. Where a caption goes at a cut, its end is the end of the
+      piece before, `endInEpisode` in `frontend/src/lib/flow.ts`: a moment
+      at a cut is both the end of the piece before and the start of the
+      one after, and an end taken as the start of the next piece drew the
+      caption across the whole cut. Tim saw it moving the left edge of a
+      cut into a caption, and with shift on a cut's edge, where the next
+      caption begins right where the cut ends. A block has no padding, so
+      one a few pixels long is a few pixels long and does not reach into
+      a cut.
+    - **A double-click is told from the two presses**, not from the
+      browser's dblclick. The first press moves the playhead under the
+      pointer, so the second lands on the playhead's line or on a cut's
+      handle, and a dblclick goes to whatever the second landed on. Over
+      the line it went nowhere, which is why a double-click in the clip did
+      nothing while one on a cut's handle did. Two presses within half a
+      second and six pixels of each other are a double-click wherever the
+      second lands.
     - **A cut lands on the frame.** The edges stay where the hand put them,
       rounded to a whole frame of the episode and no further, because a
       double-click and a drag both say where exactly and moving the edges
       somewhere else is not what was asked. A cut made this way may stop
       inside a word, which is the point of it.
     - **Shift lands on whole words instead.** Holding shift while dragging a
-      handle of a cut, or alt as well as shift while drawing one across the
-      clip, where shift already draws, puts the edges where the render would cut
-      them, so a cut dragged over a pause takes the whole pause and a cut
-      dragged over speech takes whole words, and it can never stop half way
-      through a word. That is the right thing when a whole phrase is to go
-      and the wrong thing when a breath is: a drag of a few pixels in a
-      silence came out as the whole silence, which is why this is the
-      modifier now and not the default. The key is
-      read while the hand moves rather than when it goes down, so letting
-      go of it part way through goes back to frames and the block says
-      so before the drag ends.
+      handle of a cut puts the edges where the render would cut them, so a
+      cut dragged over a pause takes the whole pause and a cut dragged over
+      speech takes whole words, and it can never stop half way through a
+      word. That is the right thing when a whole phrase is to go and the
+      wrong thing when a breath is: a drag of a few pixels in a silence came
+      out as the whole silence, which is why this is the modifier and not
+      the default. The key is read while the hand moves rather than when it
+      goes down, so letting go of it part way through goes back to frames
+      and the block says so before the drag ends.
     - Nothing is written over the waveform. The captions are in the video
       preview as they are spoken, and that is the one place they are
       written out, so the waveform has the whole track to itself.
@@ -1099,9 +1142,12 @@ bubble scrolled by those eight pixels.
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
       wherever the playhead goes. The crosshair in the row under the track
-      goes to the playhead and puts it in the middle. A double-click lets
-      go of the view, and so does clicking a clip in the list, the one that
-      is already selected included, which puts that clip back in view. The words and the waveform of the whole episode
+      goes to the playhead and puts it in the middle. Clicking a clip in
+      the list, the one that is already selected included, puts that clip
+      back in view. A double-click on the track never did: one was meant
+      to, and it went nowhere for the reason above. Its info bubble says
+      only what the track itself does, a line each, and leaves the row
+      under it to its own titles. The words and the waveform of the whole episode
       are read once and kept, so swiping does not wait for a file to be
       read again.
     - **Every clip is on it, not only the chosen one.** The other clips

@@ -183,6 +183,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     thumbnails: (((window as any).__thumbs ??= {})[`0${n}`] ?? [])
       .filter((t: number) => segments.some((p) => t >= p.start && t < p.end))
       .sort((a: number, b: number) => a - b),
+    // Where the edges were before anything changed them, kept the first
+    // time anything does, the way the engine's editPieces keeps them.
+    found: (((window as any).__found ??= {})[`0${n}`] ?? [first, last]) as [number, number],
     key: `clips.json/0${n}`,
     plan: "/eps/ep.framefairy/logs/clips.json",
     cropLefts: segments.map((p) => p.cropX),
@@ -253,8 +256,17 @@ const gestured = (now: Piece[], g: StubGesture, at: number): { pieces: Piece[]; 
     const i = g.index;
     if (i < 0 || i + 1 >= now.length) return null;
     let [a, b] = g.toWords ? snapCut(said, g.from, g.to) : [on(g.from), on(g.to)];
-    a = Math.min(Math.max(a, now[i].start + least), now[i + 1].end - 2 * least);
-    b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    // Moving one edge never moves the other, the engine's rule.
+    if (g.edge === "from") {
+      b = now[i + 1].start;
+      a = Math.min(Math.max(a, now[i].start + least), b - least);
+    } else if (g.edge === "to") {
+      a = now[i].end;
+      b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    } else {
+      a = Math.min(Math.max(a, now[i].start + least), now[i + 1].end - 2 * least);
+      b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    }
     const out = now.map((p) => ({ ...p }));
     out[i].end = a;
     out[i + 1].start = b;
@@ -1591,6 +1603,8 @@ export const Call = {
           // keeps it, see history.go.
           ((window as any).__reshapeSteps ??= []).push({ plan, id, was: now, is: out.pieces, playhead });
           (window as any).__reshapeRedo = [];
+          const found = ((window as any).__found ??= {}) as Record<string, [number, number]>;
+          if (!found[id] && now.length) found[id] = [now[0].start, now[now.length - 1].end];
           held()[id] = out.pieces;
           return Promise.resolve(clip(Number(id), at, title, rendered));
         }

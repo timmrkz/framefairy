@@ -49,6 +49,12 @@ type Clip struct {
 	// here: one a trim or a cut left outside stays in the plan and comes
 	// back when the piece does.
 	Thumbnails []float64
+	// Found is where the clip's outer edges were before anything changed
+	// them, start and end in seconds of the episode, so a double-click on an
+	// edge can put it back. It is written the first time a clip's pieces
+	// change, so a clip that was never changed has none and needs none. Nil
+	// when it is not there or not two numbers in order.
+	Found *[2]float64
 }
 
 // MaxThumbnails is how many pictures one clip may ask for.
@@ -369,6 +375,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			CaptionY:     captionY,
 			CaptionTimes: readCaptionTimes(entry[keyCaptionTimes]),
 			Thumbnails:   readThumbnails(entry[keyThumbnails], segments),
+			Found:        readFound(entry[keyFound]),
 			ID:           SanitiseName(idText, fallback),
 			Slug:         SanitiseName(slugText, ""),
 			Title:        Scrub(titleText, 200),
@@ -505,6 +512,21 @@ func readThumbnails(raw any, segments []Segment) []float64 {
 		out = out[:MaxThumbnails]
 	}
 	return out
+}
+
+// readFound takes a clip's first edges out of a plan, which is untrusted:
+// two finite numbers, the start before the end, or nothing.
+func readFound(raw any) *[2]float64 {
+	list, ok := raw.([]any)
+	if !ok || len(list) != 2 {
+		return nil
+	}
+	start, ok1 := toFloat(list[0])
+	end, ok2 := toFloat(list[1])
+	if !ok1 || !ok2 || !isFinite(start) || !isFinite(end) || start < 0 || end <= start {
+		return nil
+	}
+	return &[2]float64{roundTo(start, 3), roundTo(end, 3)}
 }
 
 // insidePieces says whether a moment of the episode is in the short.

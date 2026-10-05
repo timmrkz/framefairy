@@ -368,6 +368,10 @@ type ClipView struct {
 	// Thumbnails are the moments of the episode the render takes a picture
 	// of the short at, in time order.
 	Thumbnails []float64 `json:"thumbnails"`
+	// Found is where the clip's outer edges were before anything changed
+	// them, start and end, which a double-click on an edge puts it back to.
+	// A clip never changed is where it was found.
+	Found [2]float64 `json:"found"`
 }
 
 // SegmentView is one kept part of the source.
@@ -437,6 +441,10 @@ func ReadPlan(path string) (*PlanView, error) {
 			CaptionYMoved: c.CaptionY != nil, Thumbnails: c.Thumbnails}
 		if v.Thumbnails == nil {
 			v.Thumbnails = []float64{}
+		}
+		v.Found = [2]float64{v.Start, v.End}
+		if c.Found != nil {
+			v.Found = *c.Found
 		}
 		if c.CaptionY != nil {
 			v.CaptionY = *c.CaptionY

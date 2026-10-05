@@ -32,6 +32,7 @@ const (
 	keyCaptionY     = "caption_y"
 	keyCaptionTimes = "caption_times"
 	keyThumbnails   = "thumbnails"
+	keyFound        = "found"
 
 	// A segment of a clip.
 	keyStart = "start"
