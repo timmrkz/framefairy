@@ -271,9 +271,11 @@ first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
 
-**The tests use the ffmpeg the programs ship with.** `make unit`, `make
-fuzz` and `make changed` put `bin/` first on the `PATH`, so a test finds
-the ffmpeg and llama-server `make` built before any other. A Mac with
+**On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
+`make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a
+test finds the ffmpeg and llama-server `make` built before any other. Not
+on Linux, where ours has no H.264 encoder yet and every test that renders
+would fail, so a Linux machine keeps the system's. A Mac with
 Homebrew's ffmpeg tested that one before, which is not the version the
 app ships and not built the same way, and a test that failed there said
 nothing about the app. `make walks` is the exception. It makes its

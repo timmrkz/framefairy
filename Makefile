@@ -60,14 +60,15 @@ NPM ?= npm
 FUZZTIME ?= 10000x
 BIN := bin
 STAMPS := .build
-# The tests take ffmpeg and llama-server from the PATH, and make puts the
-# ones it built first, the ones the programs ship with and take no other.
-# Without it a Mac tested Homebrew's ffmpeg, which is not the version the
-# app ships and not built the same way. Where make built none, on a Linux
-# runner, the PATH has the system's. The walks are the one exception: they make their episode in
-# VP9, which Chromium plays and ours cannot write, so they take the
-# system's ffmpeg.
-TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
+# The tests take ffmpeg and llama-server from the PATH, and on a Mac make
+# puts the ones it built first, the ones the programs ship with and take no
+# other. Without it a Mac tested Homebrew's ffmpeg, which is not the
+# version the app ships and not built the same way. Only on a Mac, because
+# that is the one system ours has an H.264 encoder on: on Linux it has
+# none yet, and every test that renders failed with ours first. There the
+# PATH keeps the system's. The walks keep it everywhere: they make their
+# episode in VP9, which Chromium plays and ours cannot write.
+TOOLS_FIRST := $(PATH)
 EXE :=
 ifeq ($(OS),Windows_NT)
 EXE := .exe
@@ -82,6 +83,7 @@ UNAME := $(shell uname -s 2>/dev/null)
 MACOS_MIN := 13.0
 LDFLAGS :=
 ifeq ($(UNAME),Darwin)
+TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
