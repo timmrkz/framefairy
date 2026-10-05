@@ -15,6 +15,20 @@ import (
 // click a hard audio cut makes.
 const Fade = 0.015
 
+// audioSeek is how much earlier than its segment a render reads the
+// sound, which atrim then cuts off at the timestamp of the segment's start.
+//
+// After a seek, ffmpeg 8.1 kept the part of the first audio packet after
+// the seek point, and 9.0 drops that packet whole, up to 21 ms of 48 kHz
+// AAC. The timestamps stay right, but the sound of each piece is laid
+// from its first sample, so with 9.0 it came early against the picture,
+// by a different amount at every cut. Read from earlier and cut by
+// timestamp, it lands on the sample in both. A fifth of a second is
+// longer than any packet of sound and the decoder's start after a seek.
+func audioSeek(start float64) float64 {
+	return math.Min(start, 0.2)
+}
+
 // RenderSettings are the encoder choices for one run.
 type RenderSettings struct {
 	OutW, OutH   int
@@ -30,7 +44,8 @@ type RenderSettings struct {
 //
 // Every segment is a separate -i with its own -ss, so ffmpeg seeks to a
 // keyframe near the segment and decodes only what the clip needs, instead of
-// decoding the episode from frame zero.
+// decoding the episode from frame zero. A segment has two inputs, its
+// picture from input 2i and its sound from input 2i+1, see audioSeek.
 func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceInfo,
 	rs RenderSettings, assName string) (graph, videoLabel, audioLabel string, err error) {
 	cropW, cropH := CropWindow(source, rs.OutW, rs.OutH)
@@ -52,16 +67,17 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
 		}
 		chain = append(chain, "fps="+source.FPSString(), "format=yuv420p", "setsar=1")
-		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", i, strings.Join(chain, ","), i))
+		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", 2*i, strings.Join(chain, ","), i))
 
 		fadeOutAt := math.Max(0, seg.Duration()-Fade)
 		achain := []string{
+			"atrim=start=" + fixed(audioSeek(seg.Start), 3),
 			"asetpts=PTS-STARTPTS",
 			"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
 			fmt.Sprintf("afade=t=in:st=0:d=%s", pyFloatRepr(Fade)),
 			fmt.Sprintf("afade=t=out:st=%s:d=%s", fixed(fadeOutAt, 4), pyFloatRepr(Fade)),
 		}
-		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", i, strings.Join(achain, ","), i))
+		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", 2*i+1, strings.Join(achain, ","), i))
 	}
 
 	n := len(clip.Segments)
@@ -112,9 +128,13 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 	cmd := []string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"}
 	for _, seg := range clip.Segments {
 		// -ss before -i seeks rather than decoding up to the point, and -t
-		// limits how much is read. Both are input options on purpose.
+		// limits how much is read. Both are input options on purpose. The
+		// sound is read again from a little earlier, see audioSeek.
+		early := audioSeek(seg.Start)
 		cmd = append(cmd, "-ss", fixed(seg.Start, 3), "-t", fixed(seg.Duration(), 3),
-			"-i", abs)
+			"-an", "-i", abs,
+			"-ss", fixed(seg.Start-early, 3), "-t", fixed(seg.Duration()+early, 3),
+			"-vn", "-i", abs)
 	}
 	video, err := e.VideoArgs(ctx, rs)
 	if err != nil {

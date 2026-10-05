@@ -274,13 +274,11 @@ ffmpeg on the path.
 **The tests use the ffmpeg the programs ship with.** `make unit`, `make
 fuzz` and `make changed` put `bin/` first on the `PATH`, so a test finds
 the ffmpeg and llama-server `make` built before any other. A Mac with
-Homebrew's ffmpeg 9 tested that one before, and
-`TestMeasureLevelsGoesWhereTheClipTimelineLooks` failed there: ffmpeg 9
-starts AAC up to one audio frame late after a seek, which is why the
-ffmpeg we ship stays on 8.1 for now, see `scripts/build-ffmpeg.sh`. `make
-walks` is the exception. It makes its episode in VP9, the one video
-Chromium plays without the proprietary codecs, and our ffmpeg has no VP9
-encoder, so the walks use the system's.
+Homebrew's ffmpeg tested that one before, which is not the version the
+app ships and not built the same way, and a test that failed there said
+nothing about the app. `make walks` is the exception. It makes its
+episode in VP9, the one video Chromium plays without the proprietary
+codecs, and our ffmpeg has no VP9 encoder, so the walks use the system's.
 
 **The tests that render share their episodes and skip the face detector.**
 A test episode is made once for each length and every test gets a copy,

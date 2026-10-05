@@ -122,15 +122,19 @@ only what of it is not heard yet, wherever that is. A playhead near the end
 of a four hour episode no longer waits for the hours before it.
 
 A part is read the way the loudness is, `audioFrom`: ffmpeg seeks before
-the input to the frame, decodes a fifth of a second early and throws that
-away. It lands on the sample: read from 4 s on, a tone gated five times a
+the input to a fifth of a second before the frame, and `atrim` cuts at the
+timestamp of the frame. It lands on the sample: read from 4 s on, a tone gated five times a
 second reads the same as the whole episode at the same moment, frame for
 frame, but for a frame or two a dB apart on an edge of the tone, where a
 shift of 10 ms differs on every edge, `TestAPartOfAudioLinesUpWithTheWholeEpisode`.
 Before the parts, carrying on counted samples from the start instead, and
 the reason given was that a seek lands on the packet and differs by up to
-23 ms between builds. With the seek before the input, ffmpeg trims what it
-decoded before the point, and the measurement says it lands.
+23 ms between builds. With the seek before the input, ffmpeg 8.1 trimmed
+what it decoded before the point and landed. ffmpeg 9.0 drops the first
+packet after the seek point whole instead, up to 64 ms of 16 kHz AAC,
+while its timestamps stay right. The samples in the pipe carry no time,
+so the part started late by that much. Cut by timestamp, it lands with
+both, and a render's sound does the same, see `audioSeek`.
 
 Each part is read with 3 s of audio on either side, `hearingPad`, so every
 word in it is heard whole: audio cut inside a word is heard as another
@@ -160,9 +164,11 @@ first, then on from there, then from the start. Every half second it asks
 again, and when the view has moved to a part not measured yet, it stops
 ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
 seeks rather than decodes its way there. It starts a fifth of a second
-early and throws that away, `levelsLead`: the first 40 ms after a seek
-came out up to 4 dB off, because a packet of compressed audio is decoded
-together with the one before it. A run ends where it meets a part
+early and `atrim` cuts that off by timestamp, `levelsLead`: the first
+40 ms after a seek came out up to 4 dB off, because a packet of
+compressed audio is decoded together with the one before it, and ffmpeg
+9 drops the first packet after the seek point whole. A part that ends
+between two of those half seconds is written when it ends. A run ends where it meets a part
 measured already, so nothing is measured twice.
 
 What it has is written every half second, frames first and the json

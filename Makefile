@@ -62,11 +62,9 @@ BIN := bin
 STAMPS := .build
 # The tests take ffmpeg and llama-server from the PATH, and make puts the
 # ones it built first, the ones the programs ship with and take no other.
-# Without it a Mac with Homebrew's ffmpeg 9 tested that one, which starts
-# AAC up to one audio frame late after a seek where ours, 8.1, is exact,
-# see scripts/build-ffmpeg.sh, and a levels test failed there that passes
-# with ours. Where make built none, on a Linux runner, the PATH has the
-# system's. The walks are the one exception: they make their episode in
+# Without it a Mac tested Homebrew's ffmpeg, which is not the version the
+# app ships and not built the same way. Where make built none, on a Linux
+# runner, the PATH has the system's. The walks are the one exception: they make their episode in
 # VP9, which Chromium plays and ours cannot write, so they take the
 # system's ffmpeg.
 TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
