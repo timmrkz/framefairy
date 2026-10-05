@@ -538,22 +538,81 @@ func pieceSpan(pieces []*object) float64 {
 	return pysum(lengths)
 }
 
+// pieceChange is what a gesture does to a clip's pieces. It is handed the
+// pieces in order and the pieces the clip was found with, and answers with
+// the pieces that replace them.
+type pieceChange func(pieces []*object, found []foundPiece) ([]*object, error)
+
+// foundPiece is one piece a clip was found with, with its edges read.
+type foundPiece struct {
+	start, end float64
+	seg        *object
+}
+
+// foundPieces are the pieces a clip was found with, each with the framing
+// of its shot. They are kept in the plan, found_segments, the first time
+// anything changes the clip's pieces, the way found keeps its edges, so a
+// clip never changed was found with the pieces it has. A list that is not
+// pieces in order, one after the other, is not read, and the pieces the
+// clip has stand in for it.
+func foundPieces(c *object) []foundPiece {
+	read := func(list []*object) []foundPiece {
+		var out []foundPiece
+		for _, seg := range list {
+			start, err1 := ParseTime(seg.values[keyStart])
+			end, err2 := ParseTime(seg.values[keyEnd])
+			if err1 != nil || err2 != nil || end <= start ||
+				(len(out) > 0 && start < out[len(out)-1].end) {
+				return nil
+			}
+			out = append(out, foundPiece{start, end, seg})
+		}
+		return out
+	}
+	if list, ok := c.values[keyFoundSegments].([]any); ok && len(list) <= MaxSegments {
+		var kept []*object
+		for _, item := range list {
+			if seg, ok := item.(*object); ok {
+				kept = append(kept, seg)
+			}
+		}
+		if len(kept) == len(list) {
+			if found := read(kept); len(found) > 0 {
+				return found
+			}
+		}
+	}
+	return read(segmentObjects(c))
+}
+
 // editPieces is the one way the pieces of a clip are rebuilt. The change is
 // handed the pieces in order and answers with the pieces that replace them.
 // What comes back has to be a clip a person can still watch and the render
 // can still make, so it is checked before anything is written. The words are
 // taken again from the transcript, the caption file goes, because the
 // captions are built from the words, and the edit is recorded for training.
-func editPieces(planPath, clipID string, change func(pieces []*object) ([]*object, error)) error {
+func editPieces(planPath, clipID string, change pieceChange) error {
 	err := editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
 		}
 		before := segmentObjects(c)
-		out, err := checkedPieces(change, before)
+		found := foundPieces(c)
+		out, err := checkedPieces(change, before, found)
 		if err != nil {
 			return err
+		}
+		// The pieces the clip was found with, kept the first time anything
+		// changes them, so what a gesture puts back later is framed by the
+		// shot it shows. A clip changed before this was kept keeps the
+		// pieces it has now.
+		if _, ok := c.values[keyFoundSegments]; !ok && len(found) > 0 {
+			kept := make([]any, len(found))
+			for i, f := range found {
+				kept[i] = copyObject(f.seg)
+			}
+			c.set(keyFoundSegments, kept)
 		}
 		// Where the clip's edges were before anything changed them, kept
 		// the first time anything does, so a double-click on an edge can
@@ -581,8 +640,8 @@ func editPieces(planPath, clipID string, change func(pieces []*object) ([]*objec
 
 // checkedPieces makes a change to a clip's pieces and checks that what comes
 // back is a clip a person can still watch and the render can still make.
-func checkedPieces(change func(pieces []*object) ([]*object, error), pieces []*object) ([]*object, error) {
-	out, err := change(pieces)
+func checkedPieces(change pieceChange, pieces []*object, found []foundPiece) ([]*object, error) {
+	out, err := change(pieces, found)
 	if err != nil {
 		return nil, err
 	}

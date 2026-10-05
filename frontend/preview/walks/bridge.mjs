@@ -354,6 +354,122 @@ export async function fromSidebar(page, click) {
   await page.waitForTimeout(400);
 }
 
+// What a picture shows, in a band across it from a tenth of its height
+// to a half: below the strip that carries the frame number, and above
+// the captions a short burns in. The mean of red, green and blue, and how
+// far the brightness strays from its mean, which is high where there is
+// detail, a subject in focus, and next to nothing on a plain backdrop.
+export function lookOf(rgba, width, height, channels = 4) {
+  let r = 0, g = 0, b = 0, n = 0;
+  const lum = [];
+  for (let y = Math.floor(height * 0.1); y < Math.floor(height * 0.5); y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * channels;
+      r += rgba[i];
+      g += rgba[i + 1];
+      b += rgba[i + 2];
+      lum.push(0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]);
+      n++;
+    }
+  }
+  const mean = lum.reduce((s, v) => s + v, 0) / n;
+  const spread = Math.sqrt(lum.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
+  return { r: r / n, g: g / n, b: b / n, spread };
+}
+
+// Whether two looks are of the same thing: the same colour within a few
+// levels, and as much detail within a share, so a subject in focus is
+// never taken for a plain backdrop.
+export function sameLook(a, b) {
+  const near = (x, y) => Math.abs(x - y) <= 24;
+  const ratio = (Math.max(a.spread, b.spread) + 4) / (Math.min(a.spread, b.spread) + 4);
+  return near(a.r, b.r) && near(a.g, b.g) && near(a.b, b.b) && ratio < 1.6;
+}
+
+export const sayLook = (l) =>
+  `rgb ${l.r.toFixed(0)} ${l.g.toFixed(0)} ${l.b.toFixed(0)}, detail ${l.spread.toFixed(0)}`;
+
+// Where a moment of the clip is on the clip timeline, in pixels across
+// the page: placed by the clip's own frame there, the rules that run from
+// its first piece to its last.
+export async function xOf(page, at) {
+  const t = await timeline(page);
+  const span = await page.evaluate(() => {
+    const b = document.querySelector(".clip-timeline .span.frame").getBoundingClientRect();
+    return { x: b.left, w: b.width };
+  });
+  return span.x + ((at - t.start) / (t.end - t.start)) * span.w;
+}
+
+// Puts the playhead on a moment of the clip with a click on the clip
+// timeline, the way a hand does, and waits until the video preview shows
+// the frame that holds it, at fps frames a second. Says whether that
+// frame came.
+export async function seekTo(page, at, fps) {
+  const g = await handles(page);
+  await page.mouse.click(await xOf(page, at), high(g.track));
+  await settle(page);
+  await reader(page);
+  return page
+    .waitForFunction(
+      (fps) => {
+        const at = Number(document.querySelector(".screen").dataset.playhead);
+        return window.__pictured() === Math.floor(at * fps + 1e-6);
+      },
+      fps,
+      { polling: 50, timeout: 5000 },
+    )
+    .then(() => true, () => false);
+}
+
+// The crop frame in the video preview, where the playhead is: where it
+// stands, as shares of the picture, and what the picture shows inside it,
+// read off the canvas under it. Null while the playhead is outside the
+// clip and there is no frame.
+export async function cropFrame(page) {
+  const got = await page.evaluate(() => {
+    const frame = document.querySelector(".screen .frame");
+    const canvas = document.querySelector(".screen canvas");
+    if (!frame || !canvas?.width) return null;
+    const f = frame.getBoundingClientRect();
+    const c = canvas.getBoundingClientRect();
+    const left = (f.left - c.left) / c.width;
+    const width = f.width / c.width;
+    // A pixel in from either side, past the line the frame is drawn with.
+    const x0 = Math.ceil((left + 0.01) * canvas.width);
+    const x1 = Math.floor((left + width - 0.01) * canvas.width);
+    const pixels = canvas.getContext("2d").getImageData(x0, 0, x1 - x0, canvas.height).data;
+    return { left, width, w: x1 - x0, h: canvas.height, pixels: [...pixels] };
+  });
+  if (!got) return null;
+  return { left: got.left, width: got.width, look: lookOf(got.pixels, got.w, got.h) };
+}
+
+// A short read back from disk with ffmpeg: every frame, small, as what it
+// looks like, and the sound, one channel at 48 kHz.
+export function readShort(path) {
+  const w = 90, h = 160;
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `scale=${w}:${h}`,
+    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
+  const frames = [];
+  for (let at = 0; at + w * h * 3 <= raw.length; at += w * h * 3) {
+    frames.push(lookOf(raw.subarray(at, at + w * h * 3), w, h, 3));
+  }
+  const sound = shortSound(path);
+  const rate = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
+    "stream=r_frame_rate", "-of", "csv=p=0", path]).toString().trim().split("/");
+  return { frames, fps: Number(rate[0]) / Number(rate[1] ?? 1), sound, rate: 48000 };
+}
+
+// How loud the sound is over 10 ms from a moment, as its root mean square.
+export function loudness(short, at) {
+  const from = Math.round(at * short.rate);
+  const n = Math.round(0.01 * short.rate);
+  let sum = 0;
+  for (let i = from; i < from + n; i++) sum += (short.sound[i] ?? 0) ** 2;
+  return Math.sqrt(sum / n);
+}
+
 // A filmed episode, made by /pick with a rate, carries its frame number
 // in a way a render keeps, see makeFilmedEpisode in bridge_test.go: bands
 // one above the other across the whole width of a picture 180 pixels

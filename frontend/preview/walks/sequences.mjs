@@ -21,6 +21,13 @@
 //   ["trim", edge, px] drags the clip's "start" or "end" edge by px
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
+//   ["cut switch", n]  double-clicks on the clip timeline where the clip's
+//                      nth shot meets the next, from 1, which cuts a part
+//                      out across the camera switch
+//   ["trim past", edge, n]
+//                      drags the clip's "start" or "end" edge two seconds
+//                      past the nth camera switch, so the shot beyond it is
+//                      gone
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
 //   ["add", seconds]   adds a new video of so many seconds with Add
@@ -29,6 +36,13 @@
 //                      29.97 fps, whose frames keep their numbers in a
 //                      short
 //   ["render"]         presses Render and waits until the short is written
+//   ["add cameras", seconds, switch]
+//                      adds one filmed by two cameras that switch so many
+//                      seconds in, each looking at its own subject
+//   ["look", label]    remembers, for every piece of the clip, the crop
+//                      frame in the video preview with the playhead in the
+//                      middle of the piece, put there with a click on the
+//                      clip timeline: where it stands and what it shows
 //   ["head"]           presses the clip list's head button, New, Cancel or
 //                      Continue
 //   ["restart"]        closes the app and opens it again on the episode
@@ -45,6 +59,14 @@
 //   ["row", words]     a row of the clip list says this
 //   ["cards", n]       the clip list holds n clips
 //   ["spans", label]   every caption appears and goes when it did at the mark
+//   ["pieces", n]      the clip timeline draws the clip in n pieces
+//   ["framed", label]  the clip timeline draws as many pieces as at the
+//                      look, and at each moment looked at the crop frame
+//                      stands where it stood and shows what it showed
+//   ["shots", label]   the short, read back from disk: every frame shows
+//                      what the crop frame showed on its shot at the look,
+//                      and at every camera switch the sound runs straight
+//                      on, no 10 ms of it quieter than 80% of the tone
 //   ["short", cuts]    the clip has at least so many cuts, none of them on
 //                      a frame that starts on a whole millisecond, and the
 //                      short Render wrote, read back from disk, holds
@@ -58,7 +80,8 @@
 // Schulhof irgendein Typ geschubst hat."
 import { existsSync } from "node:fs";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, settle, ask, shortFrames, shortSound } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
+import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness } from "./bridge.mjs";
 import { Watch, same, describe } from "./rules.mjs";
 
 export const sequences = [
@@ -238,6 +261,31 @@ export const sequences = [
     ],
   },
   {
+    // Tim's steps for #116, on a clip a search parted at a camera switch
+    // into two pieces, each with the crop of its own shot.
+    name: "a cut or an edge put back keeps the camera switch, and the short runs straight through it",
+    steps: [
+      ["add cameras", 30, 12],
+      ["wait for", "New"],
+      ["pieces", 2],
+      ["mark", "found"],
+      ["look", "found"],
+      ["cut switch", 1],
+      ["cuts", 1],
+      ["join", 1],
+      ["cuts", 0],
+      ["framed", "found"],
+      ["same", "found"],
+      ["trim past", "end", 1],
+      ["pieces", 1],
+      ["reset", "end"],
+      ["framed", "found"],
+      ["same", "found"],
+      ["render"],
+      ["shots", "found"],
+    ],
+  },
+  {
     // Found while 2.124 was proven: from a 29.97 fps episode every piece
     // of a short had a frame too many and about 30 ms of padded silence at
     // each cut, because a piece went to ffmpeg rounded to the millisecond.
@@ -265,6 +313,26 @@ export const sequences = [
     ],
   },
 ];
+
+// Where the clip's shots meet: every place one piece runs straight into
+// the next, with nothing cut out between them.
+const switches = (pieces) =>
+  pieces.slice(1).filter((p, i) => Math.abs(p.start - pieces[i].end) < 0.0005).map((p) => p.start);
+
+const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
+
+// Frames a second of the episode on screen.
+const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
+
+// Where the clip's short is written: beside the episode, or in the folder
+// the settings name for shorts, which the clip does not know of. Empty
+// when there is no such clip, or no folder is named and the clip has none.
+async function shortOf(page, at) {
+  const clip = (await ask(page, "Clips", at.path)).find((c) => c.plan === at.plan && c.id === at.clip);
+  if (clip?.rendered) return clip.rendered;
+  const { outputDir } = await ask(page, "GetSettings");
+  return outputDir && clip ? `${outputDir}/${clip.basename}.mp4` : "";
+}
 
 // What is wrong with the short Render wrote for a clip, read back from
 // disk, or null. Its pieces are cut the way the render cuts them, see
@@ -368,6 +436,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   const watch = new Watch(page, at, errors);
   await watch.start();
   const marks = {};
+  const looks = {};
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -431,6 +500,111 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await watch.step("reset", s);
         break;
       }
+      case "cut switch": {
+        const at = switches((await engineState(page, watch.at)).segments)[arg - 1];
+        const g = await handles(page);
+        await page.mouse.dblclick(await xOf(page, at), high(g.track));
+        await watch.step("cut", s);
+        break;
+      }
+      case "trim past": {
+        const [edge, n] = arg;
+        const at = switches((await engineState(page, watch.at)).segments)[n - 1];
+        const g = await handles(page);
+        const to = await xOf(page, edge === "end" ? at - 2 : at + 2);
+        await drag(page, middle(g[edge]), high(g.track), to - middle(g[edge]), false);
+        await watch.step("trim", s);
+        break;
+      }
+      case "look": {
+        const fps = await rate(page);
+        looks[arg] = [];
+        for (const p of (await engineState(page, watch.at)).segments) {
+          const at = (p.start + p.end) / 2;
+          if (!(await seekTo(page, at, fps))) {
+            wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+            break;
+          }
+          looks[arg].push({ ...p, at, frame: await cropFrame(page) });
+        }
+        break;
+      }
+      case "pieces": {
+        const n = await page.locator(".clip-timeline .piece").count();
+        if (n !== arg) wrong = `the clip timeline draws ${pieceCount(n)}, not ${arg}`;
+        break;
+      }
+      case "framed": {
+        // What a person sees first: the crop frame on every shot, where
+        // it stood and with the same picture inside it. Then the pieces.
+        const then = looks[arg];
+        const fps = await rate(page);
+        for (const was of then) {
+          if (!(await seekTo(page, was.at, fps))) {
+            wrong = `the video preview never showed the frame at ${was.at.toFixed(2)}`;
+            break;
+          }
+          const now = await cropFrame(page);
+          if (!now) {
+            wrong = `at ${was.at.toFixed(2)} the video preview has no crop frame`;
+          } else if (Math.abs(now.left - was.frame.left) > 0.005) {
+            wrong = `at ${was.at.toFixed(2)} the crop frame stands ${(100 * now.left).toFixed(1)}% in, not ${(100 * was.frame.left).toFixed(1)}% as at "${arg}", and shows ${sayLook(now.look)}, not ${sayLook(was.frame.look)}`;
+          } else if (!sameLook(now.look, was.frame.look)) {
+            wrong = `at ${was.at.toFixed(2)} the crop frame shows ${sayLook(now.look)}, not ${sayLook(was.frame.look)} as at "${arg}"`;
+          }
+          if (wrong) break;
+        }
+        const n = await page.locator(".clip-timeline .piece").count();
+        if (!wrong && n !== then.length) {
+          wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.length} as at "${arg}"`;
+        }
+        break;
+      }
+      case "shots": {
+        const pieces = (await engineState(page, watch.at)).segments;
+        const short = readShort(await shortOf(page, watch.at));
+        // Each frame by the moment of the episode in its middle, through
+        // the pieces, and what the crop frame showed there at the look.
+        let into = 0;
+        const placed = pieces.map((p) => {
+          const q = { ...p, from: into };
+          into += p.end - p.start;
+          return q;
+        });
+        let compared = 0;
+        for (let i = 0; i < short.frames.length && !wrong; i++) {
+          const t = (i + 0.5) / short.fps;
+          const p = placed.find((q) => t < q.from + q.end - q.start) ?? placed[placed.length - 1];
+          const at = p.start + t - p.from;
+          const was = looks[arg].find((l) => at >= l.start && at < l.end);
+          if (was) compared++;
+          if (was && !sameLook(short.frames[i], was.frame.look)) {
+            wrong = `frame ${i} of the short, ${at.toFixed(2)} in the episode, shows ${sayLook(short.frames[i])}, not ${sayLook(was.frame.look)} as the crop frame did at "${arg}"`;
+          }
+        }
+        // A short with no frame to compare proves nothing.
+        if (!wrong && !compared) wrong = `no frame of the short was compared, of ${short.frames.length}`;
+        if (process.env.VERBOSE) {
+          console.log(`      ${compared} frames of ${short.frames.length} compared, pieces ${placed.map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ")}`);
+        }
+        // Heard: where one piece runs straight into the next, no 10 ms
+        // within a tenth of a second either side is quieter than 80% of
+        // the tone half a second before.
+        for (const p of placed.slice(1)) {
+          const before = placed[placed.indexOf(p) - 1];
+          if (wrong || p.start - before.end > 0.0005) continue;
+          const steady = loudness(short, p.from - 0.5);
+          let least = { l: Infinity, t: 0 };
+          for (let t = p.from - 0.1; t < p.from + 0.1; t += 0.0025) {
+            const l = loudness(short, t);
+            if (l < least.l) least = { l, t };
+          }
+          if (least.l < 0.8 * steady) {
+            wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two shots meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
+          }
+        }
+        break;
+      }
       case "cuts": {
         const t = await timeline(page);
         if (t?.cuts.length !== arg) wrong = `the clip timeline shows ${t?.cuts.length ?? "no"} cuts, not ${arg}`;
@@ -444,6 +618,13 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "add": {
         const [seconds, rate] = [arg].flat();
         await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}`);
+        await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+        await watch.step("add", s);
+        break;
+      }
+      case "add cameras": {
+        const [seconds, at] = arg;
+        await control(url, `/pick?seconds=${seconds}&switch=${at}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
         break;
@@ -495,6 +676,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           )
           .then(() => true, () => false);
         if (!came) wrong = `the clip list's head says ${(await clipList(page))?.head}, not ${arg}, after a minute`;
+        // The clip on screen may be a new one now, the first of a video
+        // just added, and the watch follows it.
+        else await watch.step("wait", s);
         break;
       }
       case "row": {
@@ -508,7 +692,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "mark":
-        marks[arg] = await engineState(page, at);
+        marks[arg] = await engineState(page, watch.at);
         break;
       case "box": {
         const box = s.map((w) => w.text).join(" ");
@@ -521,13 +705,13 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "same": {
-        const now = await engineState(page, at);
+        const now = await engineState(page, watch.at);
         if (!same(now, marks[arg])) wrong = `the captions are not what they were at "${arg}"\n${describe(marks[arg], now)}`;
         break;
       }
       case "spans": {
         const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");
-        const now = await engineState(page, at);
+        const now = await engineState(page, watch.at);
         if (spans(now) !== spans(marks[arg])) {
           wrong = `the captions do not appear and go when they did at "${arg}"\nthen ${spans(marks[arg])}\nnow  ${spans(now)}\n${describe(marks[arg], now)}`;
         }
@@ -537,10 +721,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const on = await chosen(page);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
         const { fps } = await ask(page, "Source", on.path);
-        // The short is where the clip says, or in the output folder when
-        // the settings name one, which the clip does not know of.
-        const folder = (await ask(page, "GetSettings")).outputDir;
-        const short = entry?.rendered ?? (folder && entry ? `${folder}/${entry.basename}.mp4` : "");
+        const short = await shortOf(page, on);
         wrong = shortProblem(entry, short, fps, arg);
         break;
       }
