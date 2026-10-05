@@ -808,13 +808,23 @@ anybody's data.
   Once the world calms down: every paid sale has its keys and a letter
   with them, or we were told the letter was given up, and the revocation
   list is exactly what Paddle and the posted keys say. One seed decides
-  every step, so a failure runs again the same way:
-  `go test ./licence/dispenser -run TestSimulation -seed 1234 -v`.
-  `make changed` runs 100 seeds of 400 steps, and `-seeds` and `-steps`
-  run more. Before it was merged it ran 5,000 seeds and 500 seeds of
-  2,000 steps. It drives the dispenser through its endpoints, as Paddle,
-  the signer, a partner, the buyers, the scheduled runs and we do, and
-  the daily audit must never fail.
+  every step, so a failure runs again the same way. It is fuzzing, not a
+  unit test: `FuzzSimulation`, whose input is the seed. `make fuzz`
+  plays 300 new histories of 400 steps on every run, and a seed that
+  fails is kept in `testdata/fuzz/FuzzSimulation/`, where every unit run
+  plays it again: `go test ./licence/dispenser -run
+  'FuzzSimulation/<its file>' -v -sim.verbose` writes out every step.
+  Before it was merged it ran 5,000 seeds and 500 seeds of 2,000 steps.
+  It drives the dispenser through its endpoints, as Paddle, the signer, a
+  partner, the buyers, the scheduled runs and we do, and the daily audit
+  must never fail.
+- **The database failing at every moment.** What the simulation reaches
+  by chance is tested on purpose too, every run: for ten use cases the
+  database fails at each of their writes, before and after it saved, and
+  at each step inside a transaction, and the same call made again has to
+  end where an undisturbed one ends. Every endpoint is called with the
+  database down, and every rule of the audit gets a record it has to
+  refuse. These reach every line the simulation does.
 - **What these tests found**, each now a rule of the code above. The
   simulation: a batch handed over again after a restore sold keys a
   second time (the pool generation), and a letter given up while the

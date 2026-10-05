@@ -321,9 +321,14 @@ fi
 if [ -n "$affected" ]; then
 	$GO vet $affected
 	printf 'ok  \tgo vet\n'
-	# The same flags make unit passes, so a test here is the test there.
+	# The same flags and the same PATH make unit passes, so a test here is
+	# the test there. The walks below keep the PATH they came with, see
+	# the Makefile.
+	path=$PATH
+	PATH=${TOOLS_FIRST:-$PATH}
 	$GO test -race -ldflags "${LDFLAGS:-}" $affected
 	fuzz_what_changed
+	PATH=$path
 fi
 
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface

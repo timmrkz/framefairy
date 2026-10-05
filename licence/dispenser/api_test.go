@@ -33,7 +33,11 @@ type web struct {
 }
 
 func newWeb(t testing.TB, twice bool) *web {
-	f := newFixture(t, twice)
+	return newWebOn(t, newFixture(t, twice))
+}
+
+// newWebOn puts the endpoints over the engine of f.
+func newWebOn(t testing.TB, f *fixture) *web {
 	h, err := f.engine.Handler(APIConfig{
 		PaddleSecrets: []string{paddleSecret},
 		Partners:      map[string]string{TokenHash(bundleToken): "bundle-hunt", TokenHash(stackToken): "stacksocial"},
