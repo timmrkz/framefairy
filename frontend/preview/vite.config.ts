@@ -20,6 +20,14 @@ export default defineConfig({
     // Everything the interface asks the Go side for comes from here.
     alias: { "@wailsio/runtime": resolve(here, "wails-stub.ts") },
   },
-  build: { outDir: resolve(here, "dist"), emptyOutDir: true },
+  build: {
+    outDir: resolve(here, "dist"),
+    emptyOutDir: true,
+    // The frame queue on its own is a page of its own beside the app, at
+    // /preview/frames/, see open.mjs.
+    rollupOptions: {
+      input: { app: resolve(frontend, "index.html"), frames: resolve(here, "frames/index.html") },
+    },
+  },
   plugins: [svelte({ configFile: resolve(frontend, "svelte.config.js") })],
 });

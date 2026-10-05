@@ -6,11 +6,12 @@
 //
 //   SEED=12 STEPS=25 BRIDGE_URL=http://127.0.0.1:8123/ node playback.mjs
 import { begin, walk } from "./walk.mjs";
-import { handles, inside, middle, high, ask, recordFrames, video, engineState } from "./bridge.mjs";
+import { handles, inside, middle, high, ask, recordFrames, preview, engineState } from "./bridge.mjs";
 
 const w = await begin({ steps: 25 });
 const { page, rng, watch } = w;
 const frame = 1 / (await ask(page, "Source", watch.at.path)).fps;
+const at = () => preview(page, frame);
 
 // The clip as the engine has it now.
 const pieces = async () => (await engineState(page, watch.at)).segments;
@@ -28,8 +29,8 @@ const playsClip = () =>
   });
 
 // Every frame put on screen while a clip played is one of the clip's: in
-// one of its pieces, a frame of give either side, since the jump over a
-// cut is made once the frame at its edge is up.
+// one of its pieces, a frame of give either side, since the frame that
+// holds a piece's first moment starts before it.
 function framesInClip(frames, p) {
   const out = frames.filter((t) => !p.some((x) => t >= x.start - frame - 1e-3 && t < x.end + frame));
   if (out.length) {
@@ -40,13 +41,21 @@ function framesInClip(frames, p) {
   }
 }
 
-// Paused, the picture stays where it was paused.
+// Paused, the picture stays where it was paused: the playhead stays, and
+// the frame on screen is the one that holds it, or the one that ends on it
+// where a play stopped on the clip's end.
 async function staysPaused(what) {
-  const a = await video(page);
+  const a = await at();
   await page.waitForTimeout(400);
-  const b = await video(page);
-  if (!a.paused || Math.abs(a.at - b.at) > 1e-3) {
-    watch.broke("paused, the picture stays", `${what}: at ${a.at.toFixed(3)}, then ${b.at.toFixed(3)}, paused ${b.paused}`);
+  const b = await at();
+  const holds = Math.floor(b.at / frame + 1e-6) * frame;
+  const endsOn = Math.abs(holds - b.at) < 1e-6 ? holds - frame : holds;
+  const pictured = Math.abs(b.frame - holds) < 1e-6 || Math.abs(b.frame - endsOn) < 1e-6;
+  if (!a.paused || !b.paused || Math.abs(a.at - b.at) > 1e-3 || !pictured) {
+    watch.broke(
+      "paused, the picture stays",
+      `${what}: at ${a.at.toFixed(3)}, then ${b.at.toFixed(3)}, frame ${b.frame.toFixed(2)} on screen, paused ${a.paused} then ${b.paused}`,
+    );
   }
 }
 
@@ -57,18 +66,18 @@ const gestures = [
     when: () => true,
     async run() {
       const p = await pieces();
-      const from = (await video(page)).at;
+      const from = (await at()).at;
       const clip = await playsClip();
       const ms = 300 + rng.int(2700);
-      const stop = await recordFrames(page);
+      const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
       await page.waitForTimeout(ms);
       // A clip that reached its end has stopped by itself, and the space
       // bar would play it again from its start.
-      if (!(await video(page)).paused) await page.keyboard.press("Space");
-      const frames = await stop();
-      if (!frames.length) watch.broke("the space bar plays", `played for ${ms} ms from ${from.toFixed(3)} and no frame came`);
+      if (!(await at()).paused) await page.keyboard.press("Space");
+      const { frames, moved } = await stop();
+      if (!frames.length && !moved) watch.broke("the space bar plays", `played for ${ms} ms from ${from.toFixed(3)} and no frame came`);
       if (clip) framesInClip(frames, p);
       await staysPaused(`after playing for ${ms} ms`);
       return `play ${clip ? "the clip" : "the episode"} from ${from.toFixed(2)} for ${ms} ms`;
@@ -80,20 +89,23 @@ const gestures = [
     when: () => true,
     async run() {
       const p = await pieces();
-      const from = (await video(page)).at;
+      const from = (await at()).at;
       if (!(await playsClip())) return "nothing, the playhead is on the video";
       // A clip at its end starts over, so as long as the whole clip.
       const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
-      const stop = await recordFrames(page);
+      const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
-      await page.waitForFunction(() => document.querySelector("video").paused, null, {
+      // Playing, the play button says Pause, and once the clip has stopped
+      // at its end, Play again.
+      await page.locator('button[aria-label="Pause"]').waitFor({ timeout: 2000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelector('button[aria-label="Play"]') !== null, null, {
         timeout: (length + 5) * 1000,
         polling: 100,
       }).catch(() => {});
-      const frames = await stop();
+      const { frames } = await stop();
       framesInClip(frames, p);
-      const v = await video(page);
+      const v = await at();
       const end = p[p.length - 1].end;
       if (!v.paused || Math.abs(v.at - end) > frame + 0.1) {
         watch.broke("a clip played to its end stops there", `end ${end.toFixed(3)}, stopped ${v.paused} at ${v.at.toFixed(3)}`);
@@ -150,7 +162,7 @@ const gestures = [
 await walk(w, gestures, {
   look: handles,
   async show(page) {
-    const v = await video(page);
+    const v = await at();
     return `at ${v.at.toFixed(2)}${v.paused ? "" : " playing"}`;
   },
 });

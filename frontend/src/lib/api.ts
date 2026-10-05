@@ -611,7 +611,6 @@ export const api = {
   // Continue: carries on a search or a render that stopped.
   continueJob: (id: string) => call<Job>("Continue", id),
   makeClip: (path: string, at: number, backward: boolean) => call<Job>("MakeClip", path, at, backward),
-  still: (path: string, at: number, width: number) => call<string>("Still", path, at, width),
   // The words said in a part of the episode, for walking the playhead
   // from word to word.
   words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),

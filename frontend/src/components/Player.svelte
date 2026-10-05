@@ -18,20 +18,9 @@
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
   import { onMount, untrack, type Snippet } from "svelte";
-  import {
-    insideClip,
-    jumpStep,
-    litWord,
-    pictureIsStale,
-    playingAt,
-    stillFits,
-    shouldChase,
-    pieceAt as pieceIndex,
-    playingPiece,
-    frameStart,
-    type Presented,
-  } from "../lib/flow";
-  import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "../lib/playhead";
+  import { insideClip, litWord, type Piece } from "../lib/flow";
+  import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
+  import { FrameQueue, type Shown } from "../lib/frames/queue";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -49,10 +38,7 @@
     clip,
     captions = null,
     time = $bindable(0),
-    still = "",
-    stillAt = -1,
     onplayclip,
-    onstill,
     oncaptionmoved,
     oncrop,
     onresetcrop,
@@ -71,15 +57,7 @@
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
     time?: number;
-    still?: string;
-    // Where the frame the still was read for starts. It is only shown while
-    // the playhead is in that frame, never wherever the playhead happens
-    // to be when the picture goes stale.
-    stillAt?: number;
     onplayclip?: (clip: ClipEntry) => void;
-    // Asks for the frame at a moment of the episode, for as long as the
-    // app cannot show that moment itself, and says null once it can.
-    onstill?: (at: number | null) => void;
     // Where the caption box is while it is being dragged, so the setting
     // beside it says what you are doing as you do it. Letting go saves,
     // this only shows.
@@ -128,59 +106,105 @@
   // changes or it is placed by hand again.
   let undoCrop = $state<{ key: string; piece: number; at: number; left: number } | null>(null);
 
-  let video: HTMLVideoElement;
+  // The episode, played from its own file onto the canvas by the frame
+  // queue, see lib/frames/. Every frame drawn, playing or paused, comes
+  // from it, and while it plays so does the playhead.
+  let canvas: HTMLCanvasElement;
+  let queue: FrameQueue | null = null;
+  // Why the episode cannot be shown, in a sentence, where the picture
+  // would be. And why it plays without sound, or stopped decoding.
   let failed = $state("");
-  // The moment the picture is really showing, and whether it shows
-  // anything at all. While the machine is busy the app often cannot
-  // read the file, and then a seek is dropped and the picture stays where
-  // it was. The workspace fills in with a frame read from the file.
-  let ready = $state(false);
-  let shows = $state(-1);
+  let trouble = $state("");
+  // How many device pixels the stylesheet gave the canvas, read from it as
+  // it changes, so a new queue is told at once.
+  let pixels: [number, number] = [0, 0];
   // One frame of the episode. The playhead can only ever stand on one, so
   // it is the smallest difference between two moments that means anything.
   const frameOf = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
-  const stale = $derived(pictureIsStale({ ready, shows, at: time, frame: frameOf }));
 
-  // Which frame is really on screen, where the browser can say, and Safari
-  // can since 15.4: requestVideoFrameCallback answers with the moment of
-  // every frame the video puts up. The video's clock cannot say it. Safari
-  // says a seek has landed, seeked, and moves its clock there, before the
-  // new frame is on screen: 1 to 15 ms later on an idle Mac, 110 ms for a
-  // cold first frame, and longer while the machine is busy, which right
-  // after a search it is, placing the crop of every clip. Taken from the
-  // clock, the picture read as the playhead's the moment seeked came, the
-  // frame the engine read was taken away, and the frame before showed: on
-  // the first press of the space bar after a search, a frame from wherever
-  // the video preview was before, then the clip. With the frames known,
-  // nothing else sets shows, and the clock only stands in where the
-  // browser cannot say.
-  //
-  // The same frame is where the playhead goes while the video plays, see
-  // playingAt: presented is the last frame put up, and since is when the
-  // play began or the video was last sent somewhere, on the page's clock in
-  // seconds. A frame from before that is the picture from before.
-  const framesKnown = typeof HTMLVideoElement !== "undefined" && "requestVideoFrameCallback" in HTMLVideoElement.prototype;
-  let watching = 0;
-  let presented: Presented | null = null;
-  let since = 0;
-  function watchFrames() {
-    if (!framesKnown || !video) return;
-    video.cancelVideoFrameCallback(watching);
-    watching = video.requestVideoFrameCallback((_, meta) => {
-      // A jump the playing clip makes by itself moves the playhead and the
-      // picture together, in the frame loop, see tick.
-      if (!jumping) shows = meta.mediaTime;
-      // A frame put up while a seek is on its way is the picture from
-      // where the video was, not where it was sent.
-      if (!video.seeking) presented = { media: meta.mediaTime, shown: meta.presentationTime / 1000 };
-      watchFrames();
-    });
-  }
+  // A queue for each episode. The one before is closed with everything it
+  // holds, its decoders and its sound card among them.
   $effect(() => {
-    onstill?.(stale ? time : null);
+    const url = mediaURL(path);
+    const q = untrack(() => open(url));
+    return () => {
+      q.close();
+      if (queue === q) queue = null;
+    };
   });
-  let atPiece = 0;
-  let frame = 0;
+
+  function open(url: string): FrameQueue {
+    failed = "";
+    trouble = "";
+    const q = new FrameQueue(canvas, url);
+    queue = q;
+    if (pixels[0]) q.resize(pixels[0], pixels[1]);
+    q.listen((s) => {
+      if (queue === q) heard(s);
+    });
+    q.ready.catch((e: Error) => {
+      if (queue !== q) return;
+      failed = e.message;
+      paused = true;
+    });
+    q.setProgram(...programOf(place));
+    q.seek(time);
+    return q;
+  }
+
+  // What the queue says: where the playhead is and whether it plays. While
+  // it plays the playhead is the sound being heard, on every animation
+  // frame. A play of the clip that reaches its end leaves the playhead on
+  // the clip, at its end, see lib/playhead.ts.
+  function heard(s: Shown) {
+    trouble = s.trouble;
+    if (s.ended) {
+      paused = true;
+      if (playedClip) {
+        time = clipEnd;
+        placed = playedToEnd(placed, false);
+      } else {
+        time = s.at;
+      }
+      playedClip = false;
+      return;
+    }
+    if (s.playing) {
+      time = s.at;
+      return;
+    }
+    // Paused: where the queue stopped, or where it was sent, which is
+    // where the playhead already is. A correction holds the caption on its
+    // own moment, frozen, so this changes nothing under the caret.
+    time = s.at;
+  }
+
+  // What play plays for a place: on the video the whole episode straight
+  // on, on the clip its pieces with the cuts jumped, looping or not.
+  function programOf(where: Place): [Piece[] | null, boolean] {
+    return where === "video" || !pieces.length ? [null, false] : [pieces, looping];
+  }
+
+  // The canvas is told its device pixels as the stylesheet lays it out.
+  // Nothing is laid out from the answer.
+  function watchSize(node: HTMLCanvasElement) {
+    const seen = (entries: ResizeObserverEntry[]) => {
+      const e = entries[entries.length - 1];
+      const device = e.devicePixelContentBoxSize?.[0];
+      const ratio = window.devicePixelRatio || 1;
+      pixels = device
+        ? [device.inlineSize, device.blockSize]
+        : [Math.round(e.contentRect.width * ratio), Math.round(e.contentRect.height * ratio)];
+      queue?.resize(pixels[0], pixels[1]);
+    };
+    const watch = new ResizeObserver(seen);
+    try {
+      watch.observe(node, { box: "device-pixel-content-box" });
+    } catch {
+      watch.observe(node);
+    }
+    return { destroy: () => watch.disconnect() };
+  }
 
   // The row above the clip timeline draws the buttons, so it is told what
   // there is to offer.
@@ -207,126 +231,59 @@
     return sum;
   }
 
-  function pieceAt(t: number): number {
-    return pieceIndex(pieces, t);
-  }
-
   // Where the playhead is, on the clip or on the video, as the last gesture
   // that put it somewhere left it, see lib/playhead.ts. Only a gesture sets
-  // it, through seek, and a play of the clip that reaches its end. The
-  // video's clock never does: the paused video answers with where the
-  // frame it shows begins, up to a frame early, and measured against the
-  // clip that answer played the episode straight through a clip just
-  // picked.
+  // it, through seek, and a play of the clip that reaches its end.
   let placed = $state<Playhead>(onVideo);
-  // Where the last gesture put the playhead while paused, which is where
-  // the video really is, whatever it answers. -1 once a play moves it on.
-  let putAt = -1;
   const place = $derived(placeFor(placed, clip?.key));
   $effect(() => {
     onClip = place !== "video";
   });
 
-  // A video that has not read its own index yet drops a seek on the floor,
-  // which used to leave the playhead somewhere the picture never went. The
-  // moment it knows its length, it is sent there.
-  //
+  // The queue plays what the place says, and a clip whose pieces change
+  // while it plays, a cut made, moved or put back, or loop switched on or
+  // off, goes on from the playhead on what it is now. The same program
+  // again changes nothing.
+  $effect(() => {
+    const program = programOf(place);
+    untrack(() => queue?.setProgram(...program));
+  });
+
   // Every gesture that puts the playhead somewhere comes through here, and
-  // says whether it is about the chosen clip, see placeOf.
+  // says whether it is about the chosen clip, see placeOf. Paused, the
+  // frame that holds the moment is drawn, exactly. Playing, the play goes
+  // on from there, the clip's or the episode's by where it landed.
+  //
+  // The moment and the program go to the queue in one call. In two, a click
+  // across the clip's edge while playing was lost: the new program started
+  // the play again from where it was, the queue said so at once, that set
+  // the playhead back, and the seek after it went to the playhead.
   export function seek(t: number, about?: "clip") {
-    if (!video) return;
-    time = Math.max(0, Math.min(t, source.duration));
-    placed = placeOf(pieces, clip?.key ?? "", time, 1 / frameOf, about);
-    putAt = time;
-    atPiece = pieceAt(time);
-    goTo(time);
-  }
-
-  // Where the picture was asked to go, while it is still on its way there.
-  let wanted = -1;
-  let tries = 0;
-  let chasing = 0;
-
-  function goTo(t: number) {
-    if (!video) return;
-    if (video.readyState === 0 || !Number.isFinite(video.duration)) {
-      // onloadedmetadata sends it to the playhead, wherever that stands
-      // by then. A listener of its own for every seek asked for meanwhile
-      // sent it to each of them in turn when the file came, the clip
-      // chosen before the last among them, and Chromium could be left
-      // seeking for good, with the play waiting on it.
-      //
-      // An element that has not started reading the file does not start by
-      // itself, so it is asked to. NETWORK_EMPTY and NETWORK_NO_SOURCE are
-      // the two states where nothing is on its way.
-      if (video.networkState === 0 || video.networkState === 3) video.load();
-      return;
-    }
-    wanted = t;
-    tries = 0;
-    put(t);
-    chase();
-  }
-
-  function put(t: number) {
-    since = performance.now() / 1000;
-    try {
-      video.currentTime = t;
-    } catch {
-      // A webview that refuses the seek keeps the frame it has. It is
-      // asked again below, and the time under the video preview is the
-      // truth either way.
-    }
-  }
-
-  // A seek that is never answered leaves the picture on the frame it had,
-  // which reads as a broken video preview. The machine is busy while it
-  // transcribes, so a seek that has not landed is made again, and then the
-  // file is read once more before giving up.
-  function chase() {
-    clearTimeout(chasing);
-    chasing = window.setTimeout(() => {
-      if (!video) return;
-      if (!shouldChase({ wanted, at: video.currentTime, playing: !video.paused, tries })) {
-        wanted = -1;
-        return;
-      }
-      tries++;
-      if (tries === 2) {
-        const t = wanted;
-        video.addEventListener("loadedmetadata", () => put(t), { once: true });
-        video.load();
-      } else {
-        put(wanted);
-      }
-      chase();
-    }, 1200);
+    const at = Math.max(0, Math.min(t, source.duration));
+    time = at;
+    placed = placeOf(pieces, clip?.key ?? "", at, 1 / frameOf, about);
+    if (!queue) return;
+    if (!paused) playedClip = placed.place !== "video";
+    queue.seek(at, programOf(placeFor(placed, clip?.key)));
   }
 
   export function toggle() {
-    if (!video || failed) return;
-    if (video.paused) {
-      play();
-    } else {
-      wantPlay = false;
-      video.pause();
+    if (!queue || failed) return;
+    if (paused) play();
+    else {
+      queue.pause();
+      paused = true;
     }
   }
 
-  // True from the moment playing is asked for until it is stopped again. A
-  // video element that has not read the file yet refuses to play, which
-  // used to mean the first press of the space bar did nothing at all and
-  // the second one worked. The press is remembered instead, and the picture
-  // starts the moment it can.
-  let wantPlay = false;
+  // Whether the play under way is the chosen clip's, so its end leaves the
+  // playhead on the clip, at its end.
+  let playedClip = false;
 
-  // Whether a play is the chosen clip's, with its cuts jumped and a stop at
-  // its end, or the episode's, straight on from the playhead. It is the
-  // place, so a gesture made while the video plays changes it at once.
-  const playsClip = $derived(place !== "video");
-
+  // Called from the space bar, the play button or a click on the picture,
+  // so the sound card starts inside the gesture that asked for it.
   function play() {
-    if (!video) return;
+    if (!queue) return;
     endCorrection();
     // Playing moves the playhead on, so the keyboard's word goes.
     keyed = null;
@@ -337,159 +294,23 @@
     // clip or no clip, so any part of it can be heard while a clip is
     // chosen. See playFrom.
     const from = playFrom(place, pieces, time);
+    playedClip = !!clip && from.clip;
     if (clip && from.clip) {
       placed = { place: "clip", clip: clip.key };
-      atPiece = pieceAt(from.at);
-      // And only when the picture really has to move: when the frame it
-      // shows is not the frame the play begins in. The paused video answers
-      // with where that frame begins, which can be most of a frame before
-      // the clip just picked, and the picture is still the right one. A
-      // seek that changes nothing still interrupts, still answers with
-      // nothing, still leaves a chase running with nothing to answer it, and
-      // a seek is the one thing that can refuse a play.
-      //
-      // A play that does not start where the playhead stands, from the
-      // clip's start or the end of a cut, starts where the video is only
-      // when a gesture put it exactly there. A frame step off the clip and
-      // back lands on the start of the frame the clip begins in, inside
-      // that frame and before the clip, and played from there it played
-      // the part of the frame before the clip.
-      const moved = from.at !== time;
-      time = from.at;
-      if (
-        frameStart(video.currentTime, source.fps) !== frameStart(time, source.fps) ||
-        (moved && putAt !== time)
-      )
-        goTo(time);
-      onplayclip?.(clip);
-    }
-    // Playing moves the video on from wherever it was put.
-    putAt = -1;
-    since = performance.now() / 1000;
-    wantPlay = true;
-    video.play().catch(() => {
-      if (!wantPlay || !video) return;
-      // Two things refuse a play, and they are answered by two different
-      // events. A picture that has not read enough of the file yet says so
-      // with canplay. A picture interrupted by a seek says so with seeked,
-      // and it may never say canplay again, because it could already play
-      // and nothing about that changed. Waiting only for canplay is how a
-      // press of the space bar was lost and the second one worked.
-      const again = () => {
-        if (wantPlay && video && video.paused) void video.play().catch(() => {});
-      };
-      video.addEventListener("canplay", again, { once: true });
-      video.addEventListener("seeked", again, { once: true });
-    });
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(tick);
-  }
-
-  // A jump the playing clip makes by itself, over a cut or from its end back
-  // to its start while it loops. Until the picture has landed, the playhead
-  // stays with the picture: moved at once, it would take the crop frame and
-  // the captions with it while the old frame is still on screen, and the
-  // picture would read as not showing the playhead, which is what calls in
-  // a still frame from the file. That still, read for another moment, was
-  // the frame that flashed on every loop.
-  let jumping = false;
-
-  function tick() {
-    frame = 0;
-    if (!video) return;
-    // Where the video is now. A jump this loop made has just landed when it
-    // is no longer seeking, and then the playhead goes wherever it went,
-    // back to the start of a loop too. A pause while it was on its way
-    // ends it there, and onseeked and ontimeupdate follow it the way they
-    // follow any seek made while paused, see jumpStep.
-    const step = jumpStep(jumping, video);
-    if (step === "wait") {
-      frame = requestAnimationFrame(tick);
-      return;
-    }
-    jumping = false;
-    if (step === "paused") return;
-    const landed = step === "landed";
-    // Where the playhead goes on this frame: with the frame on screen, on
-    // from it between frames, and never back, see playingAt. Not with the
-    // video's clock, which on the Mac runs ahead of the picture as playing
-    // starts and then stands still until the picture has caught up. And a
-    // video that has read nothing of the file yet has no clock at all, so
-    // the playhead stands where it is.
-    const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
-    const now = playingAt(time, {
-      clock: video.currentTime,
-      empty,
-      seeking: video.seeking,
-      landed,
-      presented: framesKnown ? presented : null,
-      now: performance.now() / 1000,
-      since,
-      rate: video.playbackRate,
-      frame: frameOf,
-    });
-    if (clip && playsClip && pieces.length) {
-      // The episode plays through what the clip cuts out, so the playhead
-      // jumps every cut and stops where the clip ends, when the picture
-      // gets there. The clock on the Mac runs ahead as playing starts, and
-      // a jump made by it cut the end of a piece short.
-      // The pieces change under the player whenever a cut is taken out or
-      // put back, so the piece being played can be gone by this frame.
-      atPiece = playingPiece(pieces, atPiece, now);
-      const piece = pieces[atPiece];
-      // Nothing is decided while a jump is still being made, or a stale
-      // position could be read as the end of the piece jumped to.
-      if (!video.seeking && now >= piece.end - 0.02) {
-        atPiece++;
-        if (atPiece >= pieces.length) {
-          if (!looping) {
-            wantPlay = false;
-            video.pause();
-            time = clipEnd;
-            placed = playedToEnd(placed, false);
-            return;
-          }
-          placed = playedToEnd(placed, true);
-          atPiece = 0;
-        }
-        jumping = true;
-        since = performance.now() / 1000;
-        video.currentTime = pieces[atPiece].start;
-        frame = requestAnimationFrame(tick);
-        return;
+      queue.setProgram(pieces, looping);
+      // Only where the play does not start at the playhead, from the
+      // clip's start or the end of a cut. Anywhere else the play is cued
+      // already, its first frames and sound decoded.
+      if (from.at !== time) {
+        time = from.at;
+        queue.seek(time);
       }
+      onplayclip?.(clip);
+    } else {
+      queue.setProgram(null, false);
     }
-    time = now;
-    // Where the browser says which frame is on screen, that is the picture,
-    // see watchFrames, and the clock is not. Once a jump the playing clip
-    // made has landed, the picture goes with the playhead for the frame or
-    // two until the next frame is put up, so no still is read for it.
-    //
-    // Where it cannot say, playing, the picture is where the playhead is,
-    // once no seek is on its way, so no still is ever read from the file
-    // for it. Not while the video has no frame of where it is, HAVE_NOTHING
-    // or HAVE_METADATA: the still is the only picture there is, and it
-    // stays until the video has landed where it was sent, see onseeked.
-    if (framesKnown) {
-      if (landed) shows = time;
-    } else if (!video.seeking && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      shows = time;
-    }
-    if (!video.paused) frame = requestAnimationFrame(tick);
-  }
-
-  function onError() {
-    // Nothing is on screen once it has failed, so the still takes over.
-    ready = false;
-    shows = -1;
-    const code = video?.error?.code ?? 0;
-    const names: Record<number, string> = {
-      1: "loading was stopped",
-      2: "a network error",
-      3: "the video could not be decoded",
-      4: "the format or the way it is served is not supported",
-    };
-    failed = `The episode cannot play in the app: ${names[code] ?? "unknown error"} (code ${code}).`;
+    queue.play();
+    paused = false;
   }
 
   // The piece under the playhead, or the one nearest to it. Nearest, not
@@ -619,14 +440,13 @@
   // a click takes it, and Escape or a click anywhere else leaves the
   // colour as it was.
   //
-  // What is read is the episode's own frame, from the video or the still
-  // drawn over it, not the screen: the crop, its shade and the captions
-  // lie over the picture, and a colour read through them would be the
-  // app's and not the episode's.
+  // What is read is the episode's own frame, the one the queue drew, not
+  // the screen: the crop, its shade and the captions lie over the picture,
+  // and a colour read through them would be the app's and not the
+  // episode's.
   let sampling = $state<{ over: (hex: string | null) => void; done: (hex: string | null) => void } | null>(null);
   let loupe = $state<{ x: number; y: number; hex: string } | null>(null);
   let lens = $state<HTMLCanvasElement>();
-  let stillImage = $state<HTMLImageElement>();
 
   export function sampleColour(over: (hex: string | null) => void, done: (hex: string | null) => void) {
     finishSampling(null);
@@ -645,12 +465,11 @@
   // point is in the video preview, or nothing off the picture. The lens
   // is drawn on the way, nine pixels by nine around it.
   function pixelAt(clientX: number, clientY: number): { x: number; y: number; hex: string } | null {
-    if (!lens || !screen) return null;
-    const source: HTMLVideoElement | HTMLImageElement =
-      stillImage && stillImage.complete && stillImage.naturalWidth > 0 ? stillImage : video;
-    const w = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
-    const h = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
-    if (!w || !h || (source instanceof HTMLVideoElement && source.readyState < 2)) return null;
+    const source = queue?.picture();
+    if (!lens || !screen || !source) return null;
+    const w = source.displayWidth;
+    const h = source.displayHeight;
+    if (!w || !h) return null;
     // The picture is contained in the screen and keeps its shape, so it is
     // as large as the side that runs out first allows, in the middle.
     const r = screen.getBoundingClientRect();
@@ -801,7 +620,7 @@
   ) {
     if (!said || !correctable) return;
     frozen = time;
-    if (video && !video.paused) toggle();
+    if (!paused) toggle();
     fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text };
     // The caret is already where the hand put it. It is only moved when
     // what is drawn here is half of the word being corrected: a word split
@@ -1185,7 +1004,6 @@
   }
 
   onMount(() => {
-    watchFrames();
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", forget, true);
     window.addEventListener("focusin", focusMoves);
@@ -1193,8 +1011,6 @@
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", forget, true);
       window.removeEventListener("focusin", focusMoves);
-      cancelAnimationFrame(frame);
-      if (framesKnown) video?.cancelVideoFrameCallback(watching);
     };
   });
 </script>
@@ -1204,7 +1020,10 @@
      range picker and the controls, is measured rather than guessed at, so
      nothing is left over and nothing has to be scrolled to. -->
 <div class="player" bind:this={shell}>
-  <div class="screen asks" bind:this={screen} bind:clientHeight={screenHeight}>
+  <!-- data-playhead says where the playhead is. Nothing on screen reads
+       it: it is there so a probe can follow the playhead across a cut on
+       every frame, the way the caption words say their moments. -->
+  <div class="screen asks" bind:this={screen} bind:clientHeight={screenHeight} data-playhead={time}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">
@@ -1217,75 +1036,14 @@
         frame, and so does saving it empty.
       </Info>
     </span>
-    <!-- The still of the frame the playhead is in, and while playing of
-         where the play began, see stillFits. -->
-    {#if still && stale && stillFits(stillAt, time, source.fps, !paused)}
-      <img src={still} alt="" bind:this={stillImage} />
+    <!-- The picture. The queue draws every frame onto it, the size the
+         stylesheet makes it, in the episode's own shape. -->
+    <canvas bind:this={canvas} use:watchSize onclick={toggle}></canvas>
+    {#if failed}
+      <p class="failed selectable">{failed}</p>
+    {:else if trouble}
+      <p class="trouble selectable">{trouble}</p>
     {/if}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <video
-      bind:this={video}
-      src={mediaURL(path)}
-      preload="metadata"
-      bind:paused
-      ontimeupdate={() => {
-        // Only an element that has read the file has a time worth
-        // following. One that has nothing reports zero, and that would
-        // throw away the playhead the moment it is put somewhere.
-        if (video.readyState === 0) return;
-        // While a seek is on its way the element answers with where it was
-        // sent, and the picture is still the frame it had. Taken as the
-        // picture, every jump over a cut read as a picture somewhere else,
-        // and a still was read from the file in the middle of playing. A
-        // jump the playing clip makes is the frame loop's to the end, see
-        // onseeked.
-        if (!framesKnown && !video.seeking && !jumping) shows = video.currentTime;
-        if (video.paused) time = video.currentTime;
-      }}
-      onloadedmetadata={() => {
-        // Nothing is decoded until the picture is sent somewhere, so an
-        // episode that is opened and not played would stay black. A hair
-        // past the start counts as somewhere.
-        goTo(time > 0 ? time : 0.05);
-      }}
-      onloadeddata={() => {
-        ready = true;
-        if (framesKnown) watchFrames();
-        else shows = video.currentTime;
-      }}
-      onseeked={() => {
-        ready = true;
-        // Landed is not shown: Safari says seeked before the frame is on
-        // screen, see watchFrames, which is what says when it is.
-        //
-        // A jump the playing clip made by itself moves the playhead and the
-        // picture together, in the frame loop. Moved here, the picture was
-        // a frame ahead of the playhead and read as stale for that frame.
-        if (framesKnown) watchFrames();
-        else if (!jumping) shows = video.currentTime;
-        wanted = -1;
-      }}
-      onemptied={() => {
-        // The element has just been reset and is showing nothing at all.
-        // load() does that, and chase() calls load() when a seek will not
-        // land, which is exactly when the machine is busy and the picture
-        // matters most.
-        //
-        // Saying so is what puts the still in its place. pictureIsStale
-        // asks whether the picture is ready and what second it is showing,
-        // and ready was set in two places and cleared in none, so after a
-        // reset the app went on believing a black element was showing
-        // the right frame. With the seek that failed anywhere within half
-        // a second of the playhead, nothing counted as stale, no frame was
-        // asked for, and nothing was drawn over the black. That is a video
-        // preview that goes and does not come back, and clicking about
-        // near a cut is all it takes, because those are the small seeks.
-        ready = false;
-        shows = -1;
-      }}
-      onerror={onError}
-      onclick={toggle}
-    ></video>
     <!-- The crop is drawn only while the playhead stands in the clip. Anywhere
          else the picture is the episode, not the short, so nothing is laid
          over it. -->
@@ -1424,7 +1182,6 @@
   </div>
   <div class="under">
     {@render strip?.()}
-    {#if failed}<p class="error selectable">{failed}</p>{/if}
   </div>
 </div>
 
@@ -1455,18 +1212,36 @@
     overflow: hidden;
   }
 
-  video,
-  img {
+  canvas {
     position: absolute;
     inset: 0;
+    display: block;
     width: 100%;
     height: 100%;
-    object-fit: contain;
   }
 
-  img {
-    z-index: 1;
-    pointer-events: none;
+  /* Why the episode cannot be shown, where the picture would be, and why
+     it plays without sound, at the foot of the picture. */
+  .failed,
+  .trouble {
+    position: absolute;
+    left: var(--edge);
+    right: var(--edge);
+    z-index: 4;
+    margin: 0;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .failed {
+    top: 0;
+    bottom: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .trouble {
+    bottom: var(--edge);
   }
 
   .shade {
