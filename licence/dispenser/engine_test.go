@@ -73,9 +73,16 @@ func stores(t *testing.T, test func(t *testing.T, f *fixture)) {
 }
 
 func newFixture(t testing.TB, twice bool) *fixture {
-	f := &fixture{t: t, store: &Memory{Twice: twice}, ctx: context.Background(),
+	mem := &Memory{Twice: twice}
+	return newFixtureOn(t, mem, mem)
+}
+
+// newFixtureOn runs the engine on store, which keeps what it is given in
+// mem, for a test that puts something between the two.
+func newFixtureOn(t testing.TB, mem *Memory, store Store) *fixture {
+	f := &fixture{t: t, store: mem, ctx: context.Background(),
 		clock: &clock{at: now}, mail: &fakeMail{}, shop: &fakeShop{}}
-	e, err := New(f.store, Config{
+	e, err := New(store, Config{
 		Signers: map[uint8]ed25519.PublicKey{0: testSigner().Public().(ed25519.PublicKey)},
 		Batch:   1000,
 		Now:     f.clock.now,

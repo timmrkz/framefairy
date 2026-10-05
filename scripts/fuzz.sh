@@ -19,8 +19,17 @@ esac
 if [ "${1:-}" = "--one" ]; then
 	pkg=$2
 	target=$3
-	if out=$($GO test -run '^$' -fuzz "^$target\$" -fuzztime "$FUZZTIME" -parallel 1 "$pkg" 2>&1); then
-		printf 'ok  \t%s %s\n' "$target" "$FUZZTIME"
+	work=$FUZZTIME
+	# One execution of the licence dispenser's simulation is a whole
+	# history of 400 steps, a fifth of a second, where every other target
+	# reads one input in well under a millisecond. Ten thousand of them
+	# would be half an hour, so it plays 300 new histories a run, 36
+	# seconds on the cloud machine.
+	if [ "$target" = FuzzSimulation ]; then
+		work=${SIMTIME:-300x}
+	fi
+	if out=$($GO test -run '^$' -fuzz "^$target\$" -fuzztime "$work" -parallel 1 "$pkg" 2>&1); then
+		printf 'ok  \t%s %s\n' "$target" "$work"
 		exit 0
 	fi
 	printf 'FAIL\t%s\n%s\n' "$target" "$out"

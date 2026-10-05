@@ -408,3 +408,84 @@ func TestEverythingAtOnce(t *testing.T) {
 		f.audit()
 	})
 }
+
+// The audit plays the record from its first line and refuses a line that
+// could not have happened at that point, even in a record whose chain is
+// whole, the way a dispenser with a bug in it, or a hand in its database,
+// would write one. Each case adds one such line to a record that holds a
+// sale of one seat.
+func TestAuditRefusesALineThatCouldNotHaveHappened(t *testing.T) {
+	type forged struct {
+		lines func(k []licence.Fingerprint) []Line
+		says  string
+	}
+	at := func(event string, f licence.Fingerprint, ref string, seat int) Line {
+		return Line{At: now, Event: event, Fingerprint: f, Source: "paddle", Ref: ref, Seat: seat}
+	}
+	cases := map[string]forged{
+		"a key stocked twice": {func(k []licence.Fingerprint) []Line {
+			return []Line{{At: now, Event: EventStock, Fingerprint: k[0]}}
+		}, "a key stocked twice"},
+		"a sold key sold again": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventAssign, k[0], "txn_b", 1)}
+		}, `a key that is "sold" assigned`},
+		"a seat given a second key": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventAssign, k[1], "txn_a", 1)}
+		}, "a seat assigned that holds a key"},
+		"a second seat before a first": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventAssign, k[1], "txn_b", 2)}
+		}, "a seat assigned before the seat before it"},
+		"an unsold key revoked": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventRevoke, k[1], "txn_a", 1)}
+		}, "a key revoked that is not that seat's"},
+		"a key revoked twice": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventRevoke, k[0], "txn_a", 1), at(EventRevoke, k[0], "txn_a", 1)}
+		}, "a key revoked twice"},
+		"a key restored that was never revoked": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventRestore, k[0], "txn_a", 1)}
+		}, "a key restored that was not revoked at that seat"},
+		"a key replaced that is not the seat's": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventReplace, k[1], "txn_a", 1)}
+		}, "a key replaced that is not that seat's"},
+		"a revoked key replaced": {func(k []licence.Fingerprint) []Line {
+			return []Line{at(EventRevoke, k[0], "txn_a", 1), at(EventReplace, k[0], "txn_a", 1)}
+		}, "a revoked key replaced"},
+		"a sold key retired": {func(k []licence.Fingerprint) []Line {
+			return []Line{{At: now, Event: EventRetire, Fingerprint: k[0]}}
+		}, `a key that is "sold" set aside`},
+		"a key nobody stocked burned": {func(k []licence.Fingerprint) []Line {
+			return []Line{{At: now, Event: EventBurn, Fingerprint: licence.Fingerprint{1}}}
+		}, `a key that is "" set aside`},
+		"an event nobody knows": {func(k []licence.Fingerprint) []Line {
+			return []Line{{At: now, Event: "gift", Fingerprint: k[1]}}
+		}, "an event the dispenser does not know"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, false)
+			keys := f.stock(4)
+			if got := f.assign("txn_a", 1); got[0].Fingerprint() != keys[0].Fingerprint() {
+				t.Fatal("the sale did not get the first key")
+			}
+			f.audit()
+			err := f.store.Update(f.ctx, func(tx Tx) error {
+				for _, l := range c.lines(fingerprintsInOrder(keys)) {
+					if err := write(tx, l); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.engine.VerifyRecord(f.ctx); err != nil {
+				t.Fatalf("the forged record's chain is broken, so this tests the chain: %v", err)
+			}
+			_, err = f.engine.Audit(f.ctx)
+			if !errors.Is(err, ErrAudit) || !strings.Contains(err.Error(), c.says) {
+				t.Errorf("the audit said %v, want it to say %q", err, c.says)
+			}
+		})
+	}
+}

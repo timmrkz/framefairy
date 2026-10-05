@@ -60,6 +60,16 @@ NPM ?= npm
 FUZZTIME ?= 10000x
 BIN := bin
 STAMPS := .build
+# The tests take ffmpeg and llama-server from the PATH, and make puts the
+# ones it built first, the ones the programs ship with and take no other.
+# Without it a Mac with Homebrew's ffmpeg 9 tested that one, which starts
+# AAC up to one audio frame late after a seek where ours, 8.1, is exact,
+# see scripts/build-ffmpeg.sh, and a levels test failed there that passes
+# with ours. Where make built none, on a Linux runner, the PATH has the
+# system's. The walks are the one exception: they make their episode in
+# VP9, which Chromium plays and ours cannot write, so they take the
+# system's ffmpeg.
+TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
 EXE :=
 ifeq ($(OS),Windows_NT)
 EXE := .exe
@@ -327,7 +337,7 @@ motion: frontend/node_modules/.package-lock.json
 # file, and only that. See scripts/changed.sh for what each kind of file
 # runs. CI still runs everything.
 changed:
-	@GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
+	@TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
 test: unit fuzz interface walks
 
@@ -339,7 +349,7 @@ test: unit fuzz interface walks
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
 unit: toolchain modules
-	@$(GO) test -race -ldflags '$(LDFLAGS)' ./...
+	@PATH="$(TOOLS_FIRST)" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -348,7 +358,7 @@ unit: toolchain modules
 # targets at a time as the machine has cores. A new crasher is written to
 # testdata/fuzz/ next to the code, where it stays as a seed.
 fuzz: toolchain modules
-	@GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
+	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
 
 # The interface in Chromium against the real Go side, see docs/TESTING.md:
 # the sequences, and every walk for seeds 1 to WALKS. It needs Node, ffmpeg and
@@ -358,7 +368,7 @@ WALKS ?= 3
 STEPS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The interface needs Node and nothing else, no Go and no system libraries,
 # which is why it is worth having on its own: it answers in well under a
