@@ -1195,7 +1195,10 @@
      range picker and the controls, is measured rather than guessed at, so
      nothing is left over and nothing has to be scrolled to. -->
 <div class="player" bind:this={shell}>
-  <div class="screen asks" bind:this={screen} bind:clientHeight={screenHeight}>
+  <!-- data-playhead says where the playhead is. Nothing on screen reads
+       it: it is there so a probe can follow the playhead across a cut on
+       every frame, the way the caption words say their moments. -->
+  <div class="screen asks" bind:this={screen} bind:clientHeight={screenHeight} data-playhead={time}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">

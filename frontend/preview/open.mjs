@@ -177,6 +177,11 @@ export async function screen({
   // 2 for a retina picture, which is what Tim sees. 1 makes a measurement
   // in whole pixels easier to read.
   scale = 1,
+  // A script to run in the page before anything of the app does, with its
+  // argument, the way page.addInitScript takes them: a probe's own
+  // recorder, or window.__pieces set before the episode is opened.
+  init = null,
+  initArg = undefined,
 } = {}) {
   // ?unread=12 holds the episode back from the video for the first 12
   // seconds after it first asks for it, the way the webview cannot read the
@@ -229,14 +234,46 @@ export async function screen({
   // seeking says yes and the clock says where it was sent. The real seek,
   // with its own seeking and seeked, is made when the time is up. A seek
   // asked for meanwhile replaces it, and load() drops it.
+  //
+  // A seek made while the element plays holds the picture and the sound
+  // where they were until it lands, and then plays on from where it was
+  // sent, the way a browser does. The element still says it plays. It went
+  // on playing at first, so a jump over a cut showed the frames inside the
+  // cut for 150 ms, which no browser does. Every element is slowed, the
+  // video preview's waiting element too, see Playback in the interface
+  // skill: a cut it absorbs is a seek it made slowly ahead of time.
   const slowseek = Number(/[?&]slowseek=(\d+)/.exec(query)?.[1] ?? 0);
   if (slowseek) {
     await page.addInitScript((ms) => {
       const proto = HTMLMediaElement.prototype;
       const clock = Object.getOwnPropertyDescriptor(proto, "currentTime");
       const seeking = Object.getOwnPropertyDescriptor(proto, "seeking");
+      const pausedOf = Object.getOwnPropertyDescriptor(proto, "paused");
       const load = proto.load;
+      const play = proto.play;
+      const pause = proto.pause;
       const pending = new WeakMap();
+      // The play and pause events of the hold itself are the element's
+      // business, not the page's.
+      const quiet = new WeakMap();
+      for (const type of ["play", "pause"]) {
+        window.addEventListener(
+          type,
+          (e) => {
+            const q = quiet.get(e.target);
+            if (q?.[type]) {
+              q[type]--;
+              e.stopImmediatePropagation();
+            }
+          },
+          true,
+        );
+      }
+      const hush = (el, type) => {
+        const q = quiet.get(el) ?? { play: 0, pause: 0 };
+        q[type]++;
+        quiet.set(el, q);
+      };
       Object.defineProperty(proto, "currentTime", {
         configurable: true,
         get() {
@@ -244,12 +281,23 @@ export async function screen({
           return p ? p.to : clock.get.call(this);
         },
         set(to) {
-          clearTimeout(pending.get(this)?.timer);
-          const timer = setTimeout(() => {
+          const was = pending.get(this);
+          clearTimeout(was?.timer);
+          const resume = was ? was.resume : !pausedOf.get.call(this);
+          if (!was && resume) {
+            hush(this, "pause");
+            pause.call(this);
+          }
+          const p = { to, resume, timer: 0 };
+          p.timer = setTimeout(() => {
             pending.delete(this);
             clock.set.call(this, to);
+            if (p.resume) {
+              hush(this, "play");
+              play.call(this).catch(() => {});
+            }
           }, ms);
-          pending.set(this, { to, timer });
+          pending.set(this, p);
         },
       });
       Object.defineProperty(proto, "seeking", {
@@ -258,6 +306,30 @@ export async function screen({
           return pending.has(this) || seeking.get.call(this);
         },
       });
+      Object.defineProperty(proto, "paused", {
+        configurable: true,
+        get() {
+          const p = pending.get(this);
+          return p ? !p.resume : pausedOf.get.call(this);
+        },
+      });
+      proto.play = function () {
+        const p = pending.get(this);
+        if (!p) return play.call(this);
+        if (!p.resume) {
+          p.resume = true;
+          this.dispatchEvent(new Event("play"));
+        }
+        return Promise.resolve();
+      };
+      proto.pause = function () {
+        const p = pending.get(this);
+        if (!p) return pause.call(this);
+        if (p.resume) {
+          p.resume = false;
+          this.dispatchEvent(new Event("pause"));
+        }
+      };
       proto.load = function () {
         clearTimeout(pending.get(this)?.timer);
         pending.delete(this);
@@ -310,6 +382,7 @@ export async function screen({
   // A probe that reports nothing because the page threw is worse than no
   // probe at all, so anything thrown is printed.
   page.on("pageerror", (e) => console.log("pageerror", String(e)));
+  if (init) await page.addInitScript(init, initArg);
   await page.goto(`http://127.0.0.1:${at}/${query}`);
   await page.waitForTimeout(700);
 
@@ -334,8 +407,10 @@ export async function workspace({
   // Picking a clip is what puts the caption settings and the clip panel on
   // screen. Without it half the workspace is not there to look at.
   clip = true,
+  init = null,
+  initArg = undefined,
 } = {}) {
-  const open = await screen({ query, width, height, scale });
+  const open = await screen({ query, width, height, scale, init, initArg });
   const { page } = open;
   await page.getByText("Mein Arm ist zersprungen").first().click();
   await page.waitForTimeout(1100);
