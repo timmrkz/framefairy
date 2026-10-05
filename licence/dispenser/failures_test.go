@@ -34,6 +34,9 @@ type breaking struct {
 	n     int
 	at    int  // the write that fails, 0 for none
 	after bool // after it saved, rather than before
+	// The step inside a transaction that fails, counted over the whole
+	// call, reads and writes alike, 0 for none.
+	steps, stepAt int
 }
 
 func (b *breaking) Update(ctx context.Context, fn func(Tx) error) error {
@@ -44,18 +47,244 @@ func (b *breaking) Update(ctx context.Context, fn func(Tx) error) error {
 	if fails && !b.after {
 		return errBroken
 	}
-	err := b.Memory.Update(ctx, fn)
+	err := b.Memory.Update(ctx, func(tx Tx) error { return fn(failingTx{tx, b}) })
 	if err == nil && fails {
 		return errBroken
 	}
 	return err
 }
 
+// failingTx is a transaction whose steps can fail one at a time, the way a
+// statement of a real database can, and the transaction then saves
+// nothing.
+type failingTx struct {
+	Tx
+	b *breaking
+}
+
+func (t failingTx) AddKey(k PoolKey) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.AddKey(k)
+}
+
+func (t failingTx) Key(f licence.Fingerprint) (PoolKey, error) {
+	if err := t.b.step(); err != nil {
+		var zero PoolKey
+		return zero, err
+	}
+	return t.Tx.Key(f)
+}
+
+func (t failingTx) NextUnsold() (PoolKey, error) {
+	if err := t.b.step(); err != nil {
+		var zero PoolKey
+		return zero, err
+	}
+	return t.Tx.NextUnsold()
+}
+
+func (t failingTx) SetState(f licence.Fingerprint, s State) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.SetState(f, s)
+}
+
+func (t failingTx) Count(s State) (int, error) {
+	if err := t.b.step(); err != nil {
+		var zero int
+		return zero, err
+	}
+	return t.Tx.Count(s)
+}
+
+func (t failingTx) Seats(source, ref string) ([]Seat, error) {
+	if err := t.b.step(); err != nil {
+		var zero []Seat
+		return zero, err
+	}
+	return t.Tx.Seats(source, ref)
+}
+
+func (t failingTx) AddSeat(s Seat) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.AddSeat(s)
+}
+
+func (t failingTx) SeatOf(f licence.Fingerprint) (Seat, error) {
+	if err := t.b.step(); err != nil {
+		var zero Seat
+		return zero, err
+	}
+	return t.Tx.SeatOf(f)
+}
+
+func (t failingTx) SetSeatKey(source, ref string, seat int, f licence.Fingerprint) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.SetSeatKey(source, ref, seat, f)
+}
+
+func (t failingTx) AllSeats() ([]Seat, error) {
+	if err := t.b.step(); err != nil {
+		var zero []Seat
+		return zero, err
+	}
+	return t.Tx.AllSeats()
+}
+
+func (t failingTx) Pool() ([]PoolKey, error) {
+	if err := t.b.step(); err != nil {
+		var zero []PoolKey
+		return zero, err
+	}
+	return t.Tx.Pool()
+}
+
+func (t failingTx) Revoke(f licence.Fingerprint, kind Revocation) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.Revoke(f, kind)
+}
+
+func (t failingTx) Unrevoke(f licence.Fingerprint) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.Unrevoke(f)
+}
+
+func (t failingTx) Revocation(f licence.Fingerprint) (Revocation, error) {
+	if err := t.b.step(); err != nil {
+		var zero Revocation
+		return zero, err
+	}
+	return t.Tx.Revocation(f)
+}
+
+func (t failingTx) Revoked() (map[licence.Fingerprint]Revocation, error) {
+	if err := t.b.step(); err != nil {
+		var zero map[licence.Fingerprint]Revocation
+		return zero, err
+	}
+	return t.Tx.Revoked()
+}
+
+func (t failingTx) AddMail(m Mail) (int64, error) {
+	if err := t.b.step(); err != nil {
+		var zero int64
+		return zero, err
+	}
+	return t.Tx.AddMail(m)
+}
+
+func (t failingTx) DueMail(now time.Time, limit int) ([]Mail, error) {
+	if err := t.b.step(); err != nil {
+		var zero []Mail
+		return zero, err
+	}
+	return t.Tx.DueMail(now, limit)
+}
+
+func (t failingTx) Mail(id int64) (Mail, error) {
+	if err := t.b.step(); err != nil {
+		var zero Mail
+		return zero, err
+	}
+	return t.Tx.Mail(id)
+}
+
+func (t failingTx) UpdateMail(m Mail) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.UpdateMail(m)
+}
+
+func (t failingTx) RemoveMail(id int64) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.RemoveMail(id)
+}
+
+func (t failingTx) Note(name string) (string, error) {
+	if err := t.b.step(); err != nil {
+		var zero string
+		return zero, err
+	}
+	return t.Tx.Note(name)
+}
+
+func (t failingTx) SetNote(name, value string) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.SetNote(name, value)
+}
+
+func (t failingTx) Head() (Line, error) {
+	if err := t.b.step(); err != nil {
+		var zero Line
+		return zero, err
+	}
+	return t.Tx.Head()
+}
+
+func (t failingTx) Append(l Line) error {
+	if err := t.b.step(); err != nil {
+		return err
+	}
+	return t.Tx.Append(l)
+}
+
+func (t failingTx) Lines(after int64, limit int) ([]Line, error) {
+	if err := t.b.step(); err != nil {
+		var zero []Line
+		return zero, err
+	}
+	return t.Tx.Lines(after, limit)
+}
+
+// step counts a step of a transaction and fails the one asked for.
+func (b *breaking) step() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.steps++
+	if b.steps == b.stepAt {
+		return errBroken
+	}
+	return nil
+}
+
+func (b *breaking) View(ctx context.Context, fn func(Tx) error) error {
+	return b.Memory.View(ctx, func(tx Tx) error { return fn(failingTx{tx, b}) })
+}
+
 // arm makes the store fail its at'th write from now on, and disarm stops it.
 func (b *breaking) arm(at int, after bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.n, b.at, b.after = 0, at, after
+	b.n, b.at, b.after, b.steps, b.stepAt = 0, at, after, 0, 0
+}
+
+// armStep makes the store fail the at'th step of a transaction from now on.
+func (b *breaking) armStep(at int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.n, b.at, b.steps, b.stepAt = 0, 0, 0, at
+}
+
+func (b *breaking) stepsTaken() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.steps
 }
 
 func (b *breaking) writes() int {
@@ -127,7 +356,13 @@ var failureCases = []failureCase{
 	{"use case 12, a batch from the signer",
 		func(f *fixture) []licence.Key { return f.stock(2) },
 		func(f *fixture, _ []licence.Key) error {
-			_, err := f.engine.Stock(f.ctx, f.generation(), batchFor(f))
+			// The signer asks for the pool's generation first, and that
+			// can fail too.
+			level, err := f.engine.PoolLevel(f.ctx)
+			if err != nil {
+				return err
+			}
+			_, err = f.engine.Stock(f.ctx, level.Generation, batchFor(f))
 			return err
 		}},
 	{"use case 14, database stolen",
@@ -213,10 +448,35 @@ func TestEveryWriteFailing(t *testing.T) {
 			if err := c.call(f, keys); err != nil {
 				t.Fatalf("undisturbed: %v", err)
 			}
-			writes := store.writes()
+			writes, steps := store.writes(), store.stepsTaken()
 			want := outcomeOf(f, keys)
 			if writes == 0 {
 				t.Fatal("the call wrote nothing, so nothing could fail")
+			}
+			// The call once with the store broken as arm says, then again
+			// with it working.
+			again := func(t *testing.T, arm func(*breaking)) {
+				mem := &Memory{}
+				store := &breaking{Memory: mem}
+				f := newFixtureOn(t, mem, store)
+				keys := c.setUp(f)
+				arm(store)
+				// A write made after the sale is saved, like the one that
+				// says a letter went out, may fail without the caller
+				// hearing: the mail run catches it up.
+				if err := c.call(f, keys); err != nil && !errors.Is(err, errBroken) {
+					t.Fatalf("the failure came back as %v", err)
+				}
+				store.arm(0, false)
+				// Called again, it may say it has nothing left to do, the
+				// way a key replaced already is no seat's any more. What
+				// counts is where it ends.
+				if err := c.call(f, keys); err != nil {
+					t.Logf("called again: %v", err)
+				}
+				if got := outcomeOf(f, keys); got != want {
+					t.Errorf("called again, it ended\n%s\nwhere undisturbed it ended\n%s", got, want)
+				}
 			}
 			for at := 1; at <= writes; at++ {
 				for _, after := range []bool{false, true} {
@@ -225,29 +485,16 @@ func TestEveryWriteFailing(t *testing.T) {
 						when = "after"
 					}
 					t.Run(fmt.Sprintf("write %d of %d fails %s it saved", at, writes, when), func(t *testing.T) {
-						mem := &Memory{}
-						store := &breaking{Memory: mem}
-						f := newFixtureOn(t, mem, store)
-						keys := c.setUp(f)
-						store.arm(at, after)
-						// A write made after the sale is saved, like the
-						// one that says a letter went out, may fail without
-						// the caller hearing: the mail run catches it up.
-						if err := c.call(f, keys); err != nil && !errors.Is(err, errBroken) {
-							t.Fatalf("the failure came back as %v", err)
-						}
-						store.arm(0, false)
-						// Called again, it may say it has nothing left to
-						// do, the way a key replaced already is no seat's
-						// any more. What counts is where it ends.
-						if err := c.call(f, keys); err != nil {
-							t.Logf("called again: %v", err)
-						}
-						if got := outcomeOf(f, keys); got != want {
-							t.Errorf("called again, it ended\n%s\nwhere undisturbed it ended\n%s", got, want)
-						}
+						again(t, func(b *breaking) { b.arm(at, after) })
 					})
 				}
+			}
+			// A step inside a transaction, a read or a write, fails, and
+			// the transaction saves none of what it did.
+			for at := 1; at <= steps; at++ {
+				t.Run(fmt.Sprintf("step %d of %d fails", at, steps), func(t *testing.T) {
+					again(t, func(b *breaking) { b.armStep(at) })
+				})
 			}
 		})
 	}
