@@ -17,7 +17,7 @@ export async function begin({ steps: usual = 60 } = {}) {
   const steps = Number(process.env.STEPS || usual);
   const { browser, page, errors } = await open(url);
   const watch = new Watch(page, await chosen(page), errors);
-  return { seed, steps, rng: random(seed), browser, page, watch };
+  return { url, seed, steps, rng: random(seed), browser, page, watch };
 }
 
 // Walks: look is what a gesture's when and run are handed, the caption box

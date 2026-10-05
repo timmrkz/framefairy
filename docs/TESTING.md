@@ -75,13 +75,27 @@ So nothing a walk presses downloads a model or installs a build. The setup
 counts the two stand-ins as installed, so the app opens on its episodes
 rather than on its first-run screen.
 
+The Add button asks the system for files, and the system's box is the
+bridge: it hands over what a walk picked, or nothing, the way the box
+answers Cancel. Besides the interface's calls, a walk can ask the bridge,
+each with a POST:
+
+| Path | What it does |
+| --- | --- |
+| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next |
+| `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
+| `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
+| `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back |
+| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, and the app is opened again on them |
+
 To open it by hand:
 
     cd frontend && npx vite build --config preview/bridge.config.ts
     FRAMEFAIRY_BRIDGE=127.0.0.1:8123 go test -run '^TestBridge$' -timeout 0 ./cmd/framefairy-app
 
 It hears and searches the episode first, which takes a few seconds, then
-says where it is and serves until it is stopped.
+says where it is and serves until it is stopped. Port 0 is any free
+port, and the line it prints says which.
 
 ## Walks
 
@@ -159,7 +173,8 @@ rules. `TestWalks` runs every one it finds, for the same seeds.
 ### `playback.mjs`: playing a clip
 
 The gestures: the space bar, playing for a moment and pausing, playing a
-clip to its end, a double-click that cuts a part out, one that puts a cut
+clip to its end from a moment before its last cut, or before its end
+when it has none, a double-click that cuts a part out, one that puts a cut
 back, a click on the clip timeline, and Shift and an arrow. While a clip
 plays, the walk records every frame the video preview puts on screen, by
 the frame number read back from the bars on its canvas on every animation
@@ -182,6 +197,29 @@ playhead is on the video, never worked out by the walk: one that decided
 it by itself was a second idea of where play starts, and drifted from the
 app's the day 2.121 made it a state.
 
+### `searching.mjs`: from a new video to its clips, and a search
+
+The gestures: adding a video with Add, New, Cancel, Continue, the model
+holding its answers, failing or answering again, the speech slow or
+quick, the app closed and opened again, another episode opened, and a
+wait. With the speech quick and the model answering, adding a video waits
+for its first clips. With the speech slow the walk goes on while the
+video is transcribed, so the next steps land in the middle of it. The
+rules, besides every walk's:
+
+| Rule | |
+| --- | --- |
+| A new video gets its first clips with no click | while the models answer and the speech is quick |
+| Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | |
+| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, New otherwise | asked again for a few seconds, since a row is held a moment to be read |
+| No row speaks of a failure the engine did not have | |
+| At rest, as many cards and the count beside Clips as the engine has clips | |
+| How work ended stays after a restart: a search running is interrupted, one that stopped stays stopped | |
+
+The clip on screen is the card the clip list marks as the current one,
+not the captions the interface last asked for: an episode just opened
+shows its clip before that, and a walk then held it to another episode's.
+
 ### `sequences.mjs`: the cases found by hand
 
     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
@@ -196,7 +234,10 @@ pixels and `reset` an edge. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
 appearing and going when it did at a mark, and `cuts`, how many cuts the
-clip timeline shows. Every step is also checked against the
+clip timeline shows. For finding clips: `model` holds, fails or answers,
+`add` a video, press the clip list's `head` button and `restart` the app,
+and then `wait for` the head to say a word, a `row` to say something, and
+how many `cards` the list holds. Every step is also checked against the
 walk's rules, so a sequence asks for its own result and gets the rest
 for nothing.
 
@@ -207,11 +248,28 @@ in a page of its own.
 
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
-which plays in real time, unless `STEPS` is set, through the Go test `TestWalks`,
-which starts the bridge on a port of its own and fails with what a
-sequence or a walk printed. The seeds are the same every time, so a walk
-that breaks a rule breaks it again on the next run. `make walks WALKS=40`
-looks further. It takes about seven minutes as it is.
+which plays in real time, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
+which fails with what a sequence or a walk printed. The seeds are the
+same every time, so a walk that breaks a rule breaks it again on the
+next run. `make walks WALKS=40` looks further.
+
+They run side by side, as many at once as the machine has cores, or
+`WALKERS`. Each runs against a bridge of its own, which `TestWalks`
+starts as a process of its own on a free port, because a desk sets
+`HOME` for the whole process it is in. On four cores, the cloud's and
+CI's, the thirteen runs take a little over two minutes, where one after
+another they took nine, and each takes as long as it does alone.
+
+Where a walk's time goes, measured: a walk of 60 steps takes about 30
+seconds, and more than half of that is waiting after each step until no call
+has been on its way for a quarter of a second. That is as long as the
+app's own short delays, the 150 ms before the clip timeline reads its
+waveform and the 240 ms before a newly chosen clip is shown, and a
+shorter wait would check a step before the app had finished it. Opening
+the browser takes a second or two. The rest is the gestures, and the
+ones that play wait in real time: playing a clip to its end once took
+most of the playback walk, so it now starts a moment before the clip's
+last cut.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
@@ -222,6 +280,12 @@ A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.
 
 ### Does it find anything
+
+The walks and sequences over finding clips found nothing wrong with the
+app. What they found was in the walks: a rule that wanted Stopping in the
+frame after Cancel, where a search that stops within that frame already
+says Continue, and the clip on screen read off the last captions asked
+for. Both were the walk's, and both are put right.
 
 Against the video preview from before the fixes in #106, five walks of
 ten broke a rule within sixty steps, all of them showing a word typed in

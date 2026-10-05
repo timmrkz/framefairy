@@ -38,7 +38,7 @@
 #   make interface  the interface type check and its own tests
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
-#                   its own length unless STEPS says
+#                   its own length unless STEPS says, WALKERS at once
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -364,14 +364,16 @@ fuzz: toolchain modules
 	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
 
 # The interface in Chromium against the real Go side, see docs/TESTING.md:
-# the sequences, and every walk for seeds 1 to WALKS. It needs Node, ffmpeg and
+# the sequences, and every walk for seeds 1 to WALKS, as many at once as the
+# machine has cores unless WALKERS says. It needs Node, ffmpeg and
 # the Chromium Playwright drives, which CI installs and a cloud session
 # already has. Built for the bridge first, which takes seconds.
 WALKS ?= 3
 STEPS ?=
+WALKERS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The interface needs Node and nothing else, no Go and no system libraries,
 # which is why it is worth having on its own: it answers in well under a

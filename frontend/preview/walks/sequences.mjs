@@ -21,6 +21,12 @@
 //   ["trim", edge, px] drags the clip's "start" or "end" edge by px
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
+//   ["model", how]     the language model "holds" its answers, "fails" or
+//                      "answers"
+//   ["add", seconds]   adds a new video of so many seconds with Add
+//   ["head"]           presses the clip list's head button, New, Cancel or
+//                      Continue
+//   ["restart"]        closes the app and opens it again on the episode
 //
 // and what has to come of them:
 //
@@ -29,12 +35,17 @@
 //   ["same", label]    the engine's captions and pieces are what they were
 //                      at the mark
 //   ["cuts", n]        the clip timeline shows n cuts
+//   ["wait for", word] the clip list's head button comes to say this, in a
+//                      minute at most
+//   ["row", words]     a row of the clip list says this
+//   ["cards", n]       the clip list holds n clips
 //   ["spans", label]   every caption appears and goes when it did at the mark
 //
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, settle } from "./bridge.mjs";
 import { Watch, same, describe } from "./rules.mjs";
 
 export const sequences = [
@@ -168,6 +179,52 @@ export const sequences = [
     ],
   },
   {
+    name: "a new video gets its first clips with no click",
+    steps: [
+      ["add", 60],
+      ["wait for", "New"],
+      ["cards", 1],
+    ],
+  },
+  {
+    name: "Cancel stops a search, and Continue carries it on to its clips",
+    steps: [
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["model", "answers"],
+      ["head"],
+      ["wait for", "New"],
+      ["cards", 1],
+    ],
+  },
+  {
+    name: "a search the app was closed on says Interrupted, after it opens again",
+    steps: [
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["restart"],
+      ["wait for", "Continue"],
+      ["row", "Interrupted. Click Continue"],
+    ],
+  },
+  {
+    name: "a search that failed says so, and Continue tries again",
+    steps: [
+      ["model", "fails"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["row", "Failed. Click Continue"],
+      ["model", "answers"],
+      ["head"],
+      ["wait for", "New"],
+    ],
+  },
+  {
     name: "removing a word in the middle of a caption leaves the caption whole",
     steps: [
       ["mark", "start"],
@@ -255,6 +312,53 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "cuts": {
         const t = await timeline(page);
         if (t?.cuts.length !== arg) wrong = `the clip timeline shows ${t?.cuts.length ?? "no"} cuts, not ${arg}`;
+        break;
+      }
+      case "model": {
+        const how = { holds: "hang=1&fail=0", fails: "hang=0&fail=1", answers: "hang=0&fail=0" }[arg];
+        await control(url, `/model?${how}`);
+        break;
+      }
+      case "add":
+        await control(url, `/pick?seconds=${arg}`);
+        await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+        await watch.step("add", s);
+        break;
+      case "head":
+        await pressHead(page);
+        await watch.step("head", s);
+        break;
+      case "restart": {
+        const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0]);
+        await control(url, "/reopen");
+        await page.reload();
+        await page.waitForTimeout(1200);
+        await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
+        await settle(page);
+        break;
+      }
+      case "wait for": {
+        const came = await page
+          .waitForFunction(
+            (word) => {
+              const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+              return pane?.querySelector(".listhead button.new")?.textContent.replace(/\s+/g, " ").trim() === word;
+            },
+            arg,
+            { timeout: 60000, polling: 200 },
+          )
+          .then(() => true, () => false);
+        if (!came) wrong = `the clip list's head says ${(await clipList(page))?.head}, not ${arg}, after a minute`;
+        break;
+      }
+      case "row": {
+        const list = await clipList(page);
+        if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "cards": {
+        const list = await clipList(page);
+        if (list?.cards.length !== arg) wrong = `the clip list holds ${list?.cards.length} clips, not ${arg}`;
         break;
       }
       case "mark":
