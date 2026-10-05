@@ -422,14 +422,51 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	// Whether the caption made last is a word on its own, which nothing
 	// may ride with.
 	lastAlone := false
+	// Where a caption appears: with its first word, or where a cut ends
+	// when the cut took a word it ran straight on from. A caption was on
+	// screen from that word, so a cut that takes it shows the caption from
+	// where the clip comes back, the way a cut into the word itself does.
+	// It used to wait for its next word: a cut moved a frame further into
+	// a short first word took the word, and the caption jumped past the
+	// pause after it, though it had been on screen there a moment before.
+	saidHere := make(map[float64]bool, len(was))
+	for _, w := range was {
+		saidHere[w.Start] = true
+	}
+	appears := func(k int) float64 {
+		at := words[k].Start
+		i := sort.Search(len(said), func(j int) bool { return said[j].Start >= was[k].Start })
+		if i == 0 || len(clip.Segments) == 0 {
+			return at
+		}
+		before := said[i-1]
+		if saidHere[before.Start] || before.End <= clip.Segments[0].Start ||
+			was[k].Start-before.End >= captionPause {
+			return at
+		}
+		// From where the piece its first word is in begins: the word cut
+		// out may end a hair inside that piece, too little of it to be
+		// said, and the caption would then wait for that hair.
+		piece := clip.Segments[0].Start
+		for _, seg := range clip.Segments {
+			if seg.Start <= was[k].Start+wordTouch {
+				piece = seg.Start
+			}
+		}
+		return math.Min(at, ClipTime(clip, math.Max(piece, before.Start)))
+	}
+
 	for i, g := range groups {
-		start := g.words[0].Start
+		start := appears(g.first)
+		if len(out) > 0 {
+			start = math.Max(start, out[len(out)-1].Start)
+		}
 		lastWord := g.words[len(g.words)-1]
 		// Held for as long as it is in the episode, and gone where a cut
 		// begins inside that hold.
 		end := math.Max(lastWord.End, ClipTime(clip, was[g.last].End+captionHold))
 		if i+1 < len(groups) {
-			next := groups[i+1].words[0].Start
+			next := appears(groups[i+1].first)
 			if pauseAfter(g.last) < captionPause {
 				end = next
 			} else {

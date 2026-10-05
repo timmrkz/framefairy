@@ -227,8 +227,17 @@ const gestured = (now: Piece[], g: StubGesture, at: number): { pieces: Piece[]; 
     const i = g.index;
     if (i < 0 || i + 1 >= now.length) return null;
     let [a, b] = g.toWords ? snapCut(said, g.from, g.to) : [on(g.from), on(g.to)];
-    a = Math.min(Math.max(a, now[i].start + least), now[i + 1].end - 2 * least);
-    b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    // Moving one edge never moves the other, the engine's rule.
+    if (g.edge === "from") {
+      b = now[i + 1].start;
+      a = Math.min(Math.max(a, now[i].start + least), b - least);
+    } else if (g.edge === "to") {
+      a = now[i].end;
+      b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    } else {
+      a = Math.min(Math.max(a, now[i].start + least), now[i + 1].end - 2 * least);
+      b = Math.max(Math.min(b, now[i + 1].end - least), a + least);
+    }
     const out = now.map((p) => ({ ...p }));
     out[i].end = a;
     out[i + 1].start = b;

@@ -1098,3 +1098,59 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 		}
 	}
 }
+
+// Moving one edge of a cut never moves the other. Shift on the right edge
+// put the left one on a word as well, and Tim saw it jump.
+func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
+	tr := editableTranscript()
+	// Each case starts from the clip with its cut's left edge moved into
+	// zwei on a frame, where no word ends, so a word would move it.
+	fresh := func() string {
+		path := editablePlanPath(t)
+		if err := Reshape(path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frame: 0.04}, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	move := func(path string, g Gesture) []Segment {
+		t.Helper()
+		g.Kind, g.Index, g.Frame = "move", 0, 0.04
+		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return clips[0].Segments
+	}
+
+	// The right edge onto words with shift: the left one stays at 10.8.
+	got := move(fresh(), Gesture{Edge: "to", From: 10.8, To: 12.2, ToWords: true})
+	if got[0].End != 10.8 {
+		t.Errorf("the left edge moved to %v when the right one was put on words", got[0].End)
+	}
+	if got[1].Start == 11.9 {
+		t.Errorf("the right edge did not move: %+v", got)
+	}
+
+	// The left edge onto words with shift: the right one stays at 11.9.
+	got = move(fresh(), Gesture{Edge: "from", From: 10.7, To: 11.9, ToWords: true})
+	if got[1].Start != 11.9 {
+		t.Errorf("the right edge moved to %v when the left one was put on words", got[1].Start)
+	}
+	if got[0].End == 10.8 {
+		t.Errorf("the left edge did not move: %+v", got)
+	}
+
+	// An edge dragged past the other stops at it rather than pushing it.
+	got = move(fresh(), Gesture{Edge: "to", From: 10.8, To: 10.3})
+	if got[0].End != 10.8 || got[1].Start <= 10.8 {
+		t.Errorf("dragging the right edge past the left one gave %+v", got)
+	}
+
+	// An edge a cut does not have is refused.
+	if err := Reshape(fresh(), "01", Gesture{Kind: "move", Edge: "middle", From: 10.8, To: 11.9}, tr, 0.1); err == nil {
+		t.Error("a move of an edge called middle was taken")
+	}
+}

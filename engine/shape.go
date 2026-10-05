@@ -19,7 +19,9 @@ type Gesture struct {
 	// the edges of a cut moved; "join", a cut put back; or "restore", a part
 	// taken out again exactly as it was before it was put back.
 	Kind string `json:"kind"`
-	// Edge is the edge a trim moves, "start" or "end", or "both".
+	// Edge is the edge a trim moves, "start" or "end", or "both", and the
+	// edge of a cut a move moves, "from" or "to", or "" for both. The edge
+	// that is not moved stays exactly where it is.
 	Edge string `json:"edge"`
 	// Index is the cut a move moves, counted from the first.
 	Index int `json:"index"`
@@ -209,8 +211,23 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		// squeezed out of existence, so the edges are held inside them.
 		low := clip.Segments[i].Start + MinCut
 		high := clip.Segments[i+1].End - MinCut
-		from = math.Min(math.Max(from, low), high-MinCut)
-		to = math.Max(math.Min(to, high), from+MinCut)
+		// Moving one edge never moves the other. The other edge is where
+		// it was, not put on a word too, and the edge moved stops at it
+		// rather than pushing it along. Shift on the right edge of a cut
+		// put the left one on a word as well, and Tim saw it jump.
+		switch g.Edge {
+		case "from":
+			to = clip.Segments[i+1].Start
+			from = math.Min(math.Max(from, low), to-MinCut)
+		case "to":
+			from = clip.Segments[i].End
+			to = math.Max(math.Min(to, high), from+MinCut)
+		case "":
+			from = math.Min(math.Max(from, low), high-MinCut)
+			to = math.Max(math.Min(to, high), from+MinCut)
+		default:
+			return nil, -1, renderErr("a cut has a from and a to edge, not %s", Scrub(g.Edge, 20))
+		}
 		from, to = roundTo(from, 3), roundTo(to, 3)
 		return func(pieces []*object) ([]*object, error) {
 			if i+1 >= len(pieces) {

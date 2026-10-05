@@ -349,3 +349,32 @@ func TestTheLastCaptionIsHeldOnlyWhenItIsShownAtTheEnd(t *testing.T) {
 		t.Errorf("trimmed over Ja. the caption before goes at %v, it went at %v untrimmed", trimmed[0].End, whole[0].End)
 	}
 }
+
+// A cut that takes a caption's first word shows the caption from where the
+// clip comes back, as a cut into the word does. It used to wait for the
+// next word: a cut moved a frame further into a short first word took it,
+// and the caption jumped past the pause after it.
+func TestACutThatTakesTheFirstWordShowsTheCaptionWhereItEnds(t *testing.T) {
+	words := []Cue{
+		{3.0, 3.6, "vorher"},
+		{6.2, 6.4, "Und"}, {6.6, 7.3, "dann"}, {7.3, 7.9, "kam"}, {7.9, 8.5, "er."},
+	}
+	last := 0.0
+	for _, end := range []float64{6.30, 6.35, 6.38, 6.39, 6.40, 6.45, 6.50, 6.55} {
+		clip := Clip{Segments: []Segment{{Start: 2.8, End: 4.0}, {Start: end, End: 11}}}
+		cs := Captions(clip, words, 38, nil)
+		at := EpisodeTime(clip, cs[1].Start)
+		if !near(at, end) {
+			t.Errorf("with the cut ending at %.2f the caption %q appears at %.3f, want where the cut ends", end, cs[1].Text, at)
+		}
+		if at < last {
+			t.Errorf("the caption went back from %.3f to %.3f", last, at)
+		}
+		last = at
+	}
+	// Words with a pause before them are not carried back to the cut.
+	clip := Clip{Segments: []Segment{{Start: 2.8, End: 4.0}, {Start: 4.5, End: 11}}}
+	if cs := Captions(clip, words, 38, nil); !near(EpisodeTime(clip, cs[1].Start), 6.2) {
+		t.Errorf("a caption after a pause appears at %.3f, want with its word at 6.2", EpisodeTime(clip, cs[1].Start))
+	}
+}

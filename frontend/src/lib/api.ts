@@ -128,7 +128,7 @@ export interface Word {
 // clock. toWords puts edges on words, and frame is one frame of the episode.
 export interface Gesture {
   kind: "trim" | "cut" | "move" | "join" | "restore";
-  edge: "start" | "end" | "both" | "";
+  edge: "start" | "end" | "both" | "from" | "to" | "";
   index: number;
   from: number;
   to: number;

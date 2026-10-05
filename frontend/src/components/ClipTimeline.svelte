@@ -274,7 +274,12 @@
   function doubled(clientX: number) {
     if (!editable || !onreshape || !clip) return;
     const at = timeAt(clientX);
-    const hit = cuts.find((c) => at >= c.from && at <= c.to);
+    // A cut is as wide as its handles reach, six pixels past either edge.
+    // A click on an edge puts the playhead on it, so the second press of a
+    // double-click there lands on the playhead's line, a hair outside the
+    // cut, and cut a new part beside it instead of removing this one.
+    const reach = Math.abs(timeAt(clientX + 6) - at);
+    const hit = cuts.find((c) => at >= c.from - reach && at <= c.to + reach);
     if (hit) {
       void removeCut(hit.index);
       return;
@@ -494,7 +499,7 @@
       shape(
         gesture({
           kind: "move",
-          edge: "",
+          edge: side,
           index,
           from: side === "from" ? t : was.from,
           to: side === "to" ? t : was.to,
@@ -506,6 +511,9 @@
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
+      // A click without a drag puts the playhead on the edge, the way a
+      // click on an edge of the clip does.
+      if (!moved) onseek(side === "from" ? was.from : was.to);
       await letGo(moved);
     };
     target.addEventListener("pointermove", move);

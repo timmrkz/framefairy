@@ -982,6 +982,19 @@ bubble scrolled by those eight pixels.
       a cut is a whole number of frames wide, rounded up, so it is never
       too short for the engine to take. The view never moves: a gesture
       that cuts and zooms at the same time is a gesture nobody can aim.
+    - **Moving one edge never moves the other**, of a cut or of the clip.
+      A drag of a cut's edge says which edge it moves, `Edge` "from" or
+      "to" in a `move` gesture, and the engine puts only that edge on a
+      word with shift, and stops it at the other rather than pushing the
+      other along. Shift on the right edge of a cut used to put the left
+      one on a word as well. A click on an edge of a cut that does not
+      drag puts the playhead on it, the way a click on an edge of the clip
+      does.
+    - **A caption that a cut takes the first word of** appears where the
+      cut ends, when that word ran straight on into the rest of it. It
+      used to wait for its next word, so a cut's right edge moved a frame
+      further into a short first word made the caption jump past the
+      pause after it, though it had been on screen there a moment before.
     - **A caption is drawn only where the clip is.** Its block lies over
       the parts the clip keeps and never over a cut, in as many pieces as
       it takes. Where a caption goes at a cut, its end is the end of the
