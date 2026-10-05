@@ -83,9 +83,19 @@ func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 		// A word that reads as the recogniser heard it again keeps no
 		// correction, so a word put back is the word it was before.
 		key := wordKey(t.HeardWords[j].Start)
-		if j < len(t.snapped) && says == strings.Join(strings.Fields(t.snapped[j].Text), " ") {
+		switch {
+		case says == "":
+			// A word removed keeps what it read, behind removedMark, so
+			// the captions keep the room it took. Removed again, it keeps
+			// what it read the first time.
+			if was := t.HeardWords[j].Text; was != "" {
+				corrections[key] = removedMark + was
+			} else if _, kept := corrections[key]; !kept {
+				corrections[key] = removedMark
+			}
+		case j < len(t.snapped) && says == strings.Join(strings.Fields(t.snapped[j].Text), " "):
 			delete(corrections, key)
-		} else {
+		default:
 			corrections[key] = says
 		}
 	}

@@ -446,7 +446,10 @@ bubble scrolled by those eight pixels.
     the way Enter renames what is chosen in the Finder, so typing replaces
     it. Enter again saves it, the caret goes, and the frame stays on the
     word. Escape in an open word leaves it as it was and goes back to the
-    frame. The frame is the caption holding the keyboard: anything else
+    frame. Enter opens the word in the frame, wherever the playhead is: a
+    word clicked and let go of keeps the frame and leaves the playhead
+    where it was, and Enter used to open the word at the playhead, a word
+    with no frame on it. The frame is the caption holding the keyboard: anything else
     takes it away, a press of the pointer wherever it lands, a field
     getting the keyboard, Escape, any other key, the arrows without Shift
     among them, and the clip playing. It is the same with the highlight
@@ -496,8 +499,15 @@ bubble scrolled by those eight pixels.
     back. A word removed then corrected again comes back with the new
     text. Delete in a word open for typing is the field's own and takes
     out letters. The caption the word stood in stays as it was, with the
-    word gone from it: the word was still said, so the time it held is no
-    pause, see `Captions` in `engine/lines.go`. Before, the gap it left
+    word gone from it: the captions are laid out as if the word were still
+    there, reading what it read when it was removed, and then it is left
+    out, see `Captions` in `engine/lines.go`. What it read is kept with the
+    removal in `corrections.json`, behind a mark no typed word can have. The
+    time it held is no pause, the room it took on its line stays taken, so
+    no word of the next caption is pulled up into it, and a caption whose
+    first word it was appears when that word is said. A caption whose
+    words are all removed goes, and the one before it stays up through
+    its time. Before, the gap it left
     read as a pause, so the caption ended at the word before it, nothing
     was on screen for a moment, and the words after it went on to a
     caption of their own. Removing a word lost its way when the words
