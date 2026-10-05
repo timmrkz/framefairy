@@ -155,6 +155,10 @@ func (m *made) make(name, seconds string) (string, error) {
 
 func TestMain(m *testing.M) {
 	toolsFromThePath()
+	// The face detector finds no face in a grey test video and framing
+	// falls back to what is in focus, after some 50 milliseconds a frame of
+	// looking. The engine's TestProjectSteps frames with it.
+	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
 	code := m.Run()
 	if videos.dir != "" {
 		_ = os.RemoveAll(videos.dir)
