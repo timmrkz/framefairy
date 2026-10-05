@@ -10,6 +10,9 @@ const listeners = new Map<string, Set<Listener>>();
 // The calls made and how each ended, for a walk to read.
 const calls: { name: string; args: unknown[]; failed?: string }[] = [];
 (window as any).__calls = calls;
+// How many calls are on their way, so a walk can wait for the app to
+// settle before it compares the screen with the engine.
+(window as any).__pending = 0;
 
 let source: EventSource | null = null;
 function listen() {
@@ -32,12 +35,19 @@ export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const call: (typeof calls)[number] = { name: name.split(".").pop() ?? name, args };
     calls.push(call);
-    const answer = await fetch("/call", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, args }),
-    });
-    const body = await answer.text();
+    (window as any).__pending++;
+    let answer: Response;
+    let body: string;
+    try {
+      answer = await fetch("/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, args }),
+      });
+      body = await answer.text();
+    } finally {
+      (window as any).__pending--;
+    }
     if (!answer.ok) {
       call.failed = body.trim();
       throw new Error(call.failed);

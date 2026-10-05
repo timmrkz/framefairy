@@ -446,7 +446,10 @@ bubble scrolled by those eight pixels.
     the way Enter renames what is chosen in the Finder, so typing replaces
     it. Enter again saves it, the caret goes, and the frame stays on the
     word. Escape in an open word leaves it as it was and goes back to the
-    frame. The frame is the caption holding the keyboard: anything else
+    frame. Enter opens the word in the frame, wherever the playhead is: a
+    word clicked and let go of keeps the frame and leaves the playhead
+    where it was, and Enter used to open the word at the playhead, a word
+    with no frame on it. The frame is the caption holding the keyboard: anything else
     takes it away, a press of the pointer wherever it lands, a field
     getting the keyboard, Escape, any other key, the arrows without Shift
     among them, and the clip playing. It is the same with the highlight

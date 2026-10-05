@@ -23,10 +23,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"framefairy/engine"
@@ -217,10 +219,15 @@ func callSafely(method reflect.Value, in []reflect.Value) (out []reflect.Value, 
 // bridgeHandler is everything the browser asks for: the calls, the events,
 // the episode's files the way the app serves them, and the interface
 // itself, built into dist.
-func bridgeHandler(d *desk, dist string) http.Handler {
+func bridgeHandler(d *desk, dist string, reset func() error) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/call", callHandler(d.svc))
 	mux.Handle("/events", d.bus)
+	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+		if err := reset(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
 	mux.Handle("/", mediaMiddleware(d.svc.store)(http.FileServer(http.Dir(dist))))
 	return mux
 }
@@ -279,17 +286,26 @@ func TestBridge(t *testing.T) {
 	if addr == "" {
 		t.Skip("FRAMEFAIRY_BRIDGE is not set")
 	}
-	d, path := openBridge(t)
-	server := &http.Server{Addr: addr, Handler: bridgeHandler(d, bridgeDist(t))}
+	d, path, reset := openBridge(t)
+	server := &http.Server{Addr: addr, Handler: bridgeHandler(d, bridgeDist(t), reset)}
+	// Stopped, it closes, so the test ends and takes its folder with it.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-stop
+		_ = server.Close()
+	}()
 	fmt.Printf("bridge on http://%s with %s\n", addr, path)
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		t.Fatal(err)
 	}
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
-// one episode in it, heard and searched, so the workspace has a clip.
-func openBridge(t *testing.T) (*desk, string) {
+// one episode in it, heard and searched, so the workspace has a clip. reset
+// puts the episode back the way it was then, so every walk starts from the
+// same place and a seed walks the same way every time.
+func openBridge(t *testing.T) (*desk, string, func() error) {
 	t.Helper()
 	d := open(t)
 	words := &prose{}
@@ -324,7 +340,27 @@ func openBridge(t *testing.T) (*desk, string) {
 	if len(d.clips(path)) == 0 {
 		t.Fatalf("the episode has no clip to work on: %+v", d.svc.jobs.list())
 	}
-	return d, path
+	work := strings.TrimSuffix(path, filepath.Ext(path)) + ".framefairy"
+	kept := filepath.Join(t.TempDir(), "kept")
+	if err := os.CopyFS(kept, os.DirFS(work)); err != nil {
+		t.Fatal(err)
+	}
+	reset := func() error {
+		d.idle(path)
+		if err := os.RemoveAll(work); err != nil {
+			return err
+		}
+		if err := os.CopyFS(work, os.DirFS(kept)); err != nil {
+			return err
+		}
+		// What the service keeps of the episode goes with it: its undo
+		// and the transcript it read.
+		d.svc.mu.Lock()
+		d.svc.histories, d.svc.said, d.svc.saidBy = nil, nil, ""
+		d.svc.mu.Unlock()
+		return nil
+	}
+	return d, path, reset
 }
 
 // bridgeDist is where the interface built for the bridge is.

@@ -51,3 +51,64 @@ To open it by hand:
 
 It hears and searches the episode first, which takes a few seconds, then
 says where it is and serves until it is stopped.
+
+## Walks
+
+A walk is a person at the keyboard who never tires and never does the
+same thing twice: it makes the gestures of one part of the interface in a
+random order, and after every step it checks rules that must hold
+whatever was done. The walks are in `frontend/preview/walks/`, one file
+for each part, and they run against the bridge.
+
+    SEED=12 STEPS=60 node frontend/preview/walks/words.mjs
+
+`BRIDGE_URL` says where the bridge is, `http://127.0.0.1:8123/` unless
+set. The bridge puts the episode back the way it was first searched
+before every walk, `POST /reset`, so a walk starts from the same place
+every time.
+
+### How a walk picks its steps
+
+Each gesture is the real key or click, pressed in Chromium, with a test
+of when it can be made and a weight for how often it comes up among those
+that can. A seed decides every choice, so the same seed walks the same
+way step for step: a walk that breaks a rule prints its seed and its
+steps, and walking that seed again shows it happen. Without `SEED` a walk
+picks one and prints it. `VERBOSE=1` prints the caption box after every
+step, with the open word in square brackets and the framed one in angle
+brackets.
+
+### `words.mjs`: the words of a clip
+
+The gestures: Shift and an arrow, a click on a word, Enter on the framed
+word, typing a word after or before what a word reads, replacing it,
+clearing it, Enter to save, Escape, delete on the framed word, Undo,
+Redo, and playing for a moment. The words typed are some of the
+episode's own, the words the walk has removed above all, so it types
+them back in, and some it never says.
+
+The rules, after every step, once no call has been on its way for a
+quarter of a second:
+
+| Rule | What it would have caught |
+| --- | --- |
+| No call failed and the page threw nothing | |
+| The caption box shows one of the engine's captions exactly, the same words in the same order at the same moments, whenever no word is open | a word typed in beside another shown twice, "weil ein \| ein" |
+| Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
+| One word at most wears the frame, and one at most is open | |
+| An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
+| Taking a word out never makes a caption more | the caption that broke where a removed word had been |
+| Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
+
+The engine's captions are asked for directly, `Captions` through
+`/call`, and are what the screen is compared with: the walk knows
+nothing of what a correction should do. It only knows what must not
+happen, which is what keeps it from being a third engine.
+
+### Does it find anything
+
+Against the video preview from before the fixes in #106, five walks of
+ten broke a rule within sixty steps, all of them showing a word typed in
+beside another twice. The first walks against the code of the day found
+a bug of their own within twenty steps: Enter opened the word at the
+playhead rather than the word in the frame.
