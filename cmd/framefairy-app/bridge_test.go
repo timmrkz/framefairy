@@ -412,6 +412,10 @@ func TestWalks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The desk gives the Go side a home of its own, and the walks get the
+	// real one back: Playwright finds its Chromium in the home it was
+	// installed into, and looked in the desk's, where there is none.
+	home := os.Getenv("HOME")
 	d, _, reset := openBridge(t)
 	server := httptest.NewServer(bridgeHandler(d, dist, reset))
 	defer server.Close()
@@ -420,7 +424,7 @@ func TestWalks(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command(node, filepath.Join(walks, script))
 		cmd.Dir = walks
-		cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+server.URL+"/"), env...)
+		cmd.Env = append(append(os.Environ(), "HOME="+home, "BRIDGE_URL="+server.URL+"/"), env...)
 		out, err := cmd.CombinedOutput()
 		what := strings.TrimSpace(script + " " + strings.Join(env, " "))
 		if err != nil {
