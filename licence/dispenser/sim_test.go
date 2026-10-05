@@ -25,9 +25,17 @@ import (
 // after it commits, the mail service fails or fails after it sent, Paddle
 // goes down, the pool runs dry, the signer's hand-over drops, keys are
 // posted in public, and the database comes back from a backup. Every step
-// is drawn from one seed, so a run that fails runs again the same way:
+// is drawn from one seed, so a run that fails runs again the same way.
 //
-//	go test ./licence/dispenser -run TestSimulation -seed 1234 -v
+// It is fuzzing, not a unit test: random histories find what nobody
+// thought to write down, and the cases somebody did think of are tests of
+// their own, in failures_test.go and beside each use case. So it is a fuzz
+// target whose input is the seed. make fuzz plays new histories on every
+// run, and a seed that fails is kept by Go in
+// testdata/fuzz/FuzzSimulation/, where every unit run plays it again from
+// then on. Every step of one of them written out:
+//
+//	go test ./licence/dispenser -run 'FuzzSimulation/<its file>' -v -sim.verbose
 //
 // After every step the rules that must always hold are checked: no key is
 // ever given to two sales, no letter carries a key of someone else's sale,
@@ -36,23 +44,19 @@ import (
 // are checked: every paid sale has its keys and the letter with them, and
 // the revocation list is exactly what Paddle and the posted keys say.
 
-var (
-	simSeed  = flag.Uint64("seed", 0, "run the simulation with this seed only")
-	simSeeds = flag.Int("seeds", 100, "how many seeds the simulation runs")
-	simSteps = flag.Int("steps", 400, "how many steps each seed runs")
-)
+var simVerbose = flag.Bool("sim.verbose", false, "write out every step of the simulation")
 
-func TestSimulation(t *testing.T) {
-	if *simSeed != 0 {
-		simulate(t, *simSeed, *simSteps, true)
-		return
-	}
-	for seed := range uint64(*simSeeds) {
-		t.Run(fmt.Sprint(seed+1), func(t *testing.T) {
-			t.Parallel()
-			simulate(t, seed+1, *simSteps, false)
-		})
-	}
+// simSteps is how long one history is.
+const simSteps = 400
+
+func FuzzSimulation(f *testing.F) {
+	// One seed with each store, the plain one and the one that runs every
+	// transaction twice, so the unit run knows the simulation still runs.
+	f.Add(uint64(1))
+	f.Add(uint64(2))
+	f.Fuzz(func(t *testing.T, seed uint64) {
+		simulate(t, seed, simSteps, *simVerbose)
+	})
 }
 
 var errCrash = errors.New("the database went away")
