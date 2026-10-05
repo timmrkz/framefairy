@@ -821,6 +821,7 @@ node frontend/preview/frames/cuts.mjs                 # the clip, once
 node frontend/preview/frames/cuts.mjs loop slowread=200
 node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek while playing
 node frontend/preview/frames/cuts.mjs memory          # a minute straight on
+node frontend/preview/frames/added.mjs                # an episode just added, see docs/TESTING.md
 ```
 
 `frames()` in `open.mjs` opens it on its own episode, ten minutes made by
