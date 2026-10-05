@@ -1091,6 +1091,25 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 		t.Errorf("start %v, found %v", clips[0].Segments[0].Start, clips[0].Found)
 	}
 
+	// Exactly, though the edge was found between two frames: at five
+	// frames a second 13.1 is no frame's edge, and the end went back to
+	// 13.2.
+	if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 13.1, Frame: 0.2}, tr, 0.1); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, _ = LoadClips(path)
+	if got := clips[0].Segments[len(clips[0].Segments)-1].End; got != 13.1 {
+		t.Errorf("the end put back with frames is at %v, want 13.1 where it was found", got)
+	}
+	// A drag that ends well away from it still lands on a frame.
+	if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frame: 0.2}, tr, 0.1); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, _ = LoadClips(path)
+	if got := clips[0].Segments[len(clips[0].Segments)-1].End; got != 12.8 {
+		t.Errorf("a drag to 12.73 lands at %v, want the frame at 12.8", got)
+	}
+
 	// The plan is untrusted: anything but two numbers in order is no edges.
 	for _, raw := range []any{nil, "10", []any{1.0}, []any{5.0, 2.0}, []any{-1.0, 2.0}, []any{"a", 2.0}} {
 		if got := readFound(raw); got != nil {

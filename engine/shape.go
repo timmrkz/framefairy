@@ -135,6 +135,10 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	}
 	first := clip.Segments[0].Start
 	last := clip.Segments[len(clip.Segments)-1].End
+	found := [2]float64{first, last}
+	if clip.Found != nil {
+		found = *clip.Found
+	}
 	switch g.Kind {
 	case "trim":
 		start, end := first, last
@@ -148,11 +152,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		}
 		switch g.Edge {
 		case "start":
-			start = g.landStart(words, g.From, keepPause)
+			start = g.onFound(g.landStart(words, g.From, keepPause), found[0])
 			start = math.Min(start, end-MinClip)
 			start = math.Max(start, end-MaxClipSpan)
 		case "end":
-			end = g.landEnd(words, goes, g.From, keepPause)
+			end = g.onFound(g.landEnd(words, goes, g.From, keepPause), found[1])
 			end = math.Max(end, start+MinClip)
 			end = math.Min(end, start+MaxClipSpan)
 		case "both":
@@ -278,6 +282,19 @@ func (g Gesture) onFrame(at float64) float64 {
 		at = math.Round(at/g.Frame) * g.Frame
 	}
 	return roundTo(at, 3)
+}
+
+// onFound is where an edge lands that the hand put where the clip was
+// found, or within half a frame of it: there exactly. A search finds a
+// clip on the episode's own clock, not on its frames, so putting an edge
+// back, which is a trim to where it was found, landed on the frame nearest
+// and not where it had been: 24.80 where the clip had ended at 24.72. A
+// sequence found it.
+func (g Gesture) onFound(at, found float64) float64 {
+	if !g.ToWords && math.Abs(g.From-found) <= g.Frame/2 {
+		return found
+	}
+	return at
 }
 
 // landStart and landEnd are where a clip's first and last edge land: on the

@@ -3,19 +3,34 @@
 // and the engine's answer with itself before and after, and know nothing
 // of what a correction should do, so they cannot drift into a third
 // engine. See docs/TESTING.md.
-import { settle, engineCaptions, shown } from "./bridge.mjs";
+import { settle, engineState, shown, timeline } from "./bridge.mjs";
 
 // The engine's captions as a list of words, and as one comparable value.
 export const words = (caps) =>
   caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words.map((w) => ({ ...w }))));
-export const same = (a, b) => JSON.stringify(a.captions) === JSON.stringify(b.captions);
+export const same = (a, b) =>
+  JSON.stringify(a.captions) === JSON.stringify(b.captions) &&
+  JSON.stringify(a.segments) === JSON.stringify(b.segments);
 export const editing = (s) => s.some((w) => w.focused);
 export const keyed = (s) => s.find((w) => w.keyed);
 
 export function describe(a, b) {
   const line = (caps) =>
     caps.captions.map((c) => `[${c.lines.flatMap((l) => l.words.map((w) => w.text)).join(" ")}]`).join(" ");
-  return `before ${line(a)}\nafter  ${line(b)}`;
+  const pieces = (s) => (s.segments ?? []).map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ");
+  return `before ${line(a)}\n       pieces ${pieces(a)}\nafter  ${line(b)}\n       pieces ${pieces(b)}`;
+}
+
+// What the clip timeline should show for the engine's pieces: the first
+// start, the last end, and a cut wherever two pieces have time between
+// them. Pieces that touch, which a crop moved part way makes, are no cut.
+export function expectedTimeline(segments) {
+  if (!segments.length) return null;
+  const cuts = [];
+  for (let i = 1; i < segments.length; i++) {
+    if (segments[i].start > segments[i - 1].end) cuts.push({ from: segments[i - 1].end, to: segments[i].start });
+  }
+  return { start: segments[0].start, end: segments[segments.length - 1].end, cuts };
 }
 
 // Watches one page through the steps made on it.
@@ -32,7 +47,7 @@ export class Watch {
   }
 
   async start() {
-    this.before = await engineCaptions(this.page, this.at);
+    this.before = await engineState(this.page, this.at);
     this.callsSeen = await this.page.evaluate(() => window.__calls.length);
   }
 
@@ -48,7 +63,7 @@ export class Watch {
     const { page } = this;
     await settle(page);
     const now = await shown(page);
-    const after = await engineCaptions(page, this.at);
+    const after = await engineState(page, this.at);
     const before = this.before;
 
     // No call failed and the page threw nothing.
@@ -67,6 +82,23 @@ export class Watch {
           "Enter opens the word in the frame",
           `framed "${was.text}" at ${was.at}, opened ${open ? `"${open.text}" at ${open.at}` : "nothing"}`,
         );
+      }
+    }
+
+    // The clip timeline shows the clip the engine has: where it starts and
+    // ends and every cut, to a millisecond.
+    const drawn = await timeline(page);
+    const want = expectedTimeline(after.segments);
+    if (drawn && want) {
+      const near = (a, b) => Math.abs(a - b) < 1e-3;
+      const fine =
+        near(drawn.start, want.start) &&
+        near(drawn.end, want.end) &&
+        drawn.cuts.length === want.cuts.length &&
+        drawn.cuts.every((c, i) => near(c.from, want.cuts[i].from) && near(c.to, want.cuts[i].to));
+      if (!fine) {
+        const say = (t) => `${t.start.toFixed(3)}-${t.end.toFixed(3)} cuts ${t.cuts.map((c) => `${c.from.toFixed(3)}-${c.to.toFixed(3)}`).join(" ")}`;
+        this.broke("the clip timeline is the engine's clip", `drawn  ${say(drawn)}\nengine ${say(want)}`);
       }
     }
 

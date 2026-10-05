@@ -40,6 +40,15 @@ export async function open(url) {
   await page.goto(url);
   await page.locator("aside li", { hasText: ".mp4" }).first().waitFor();
   await page.locator("aside li", { hasText: ".mp4" }).first().click();
+  // The sidebar of a new library is pinned open, over the left of the
+  // workspace and the start of the clip timeline. It is let go of, the way
+  // a person who works in the workspace would, so a hand can reach what is
+  // under it.
+  if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
+    await page.locator("aside .head .glyph").click();
+    await page.mouse.move(750, 500);
+    await page.waitForTimeout(400);
+  }
   await page.locator("aside .list li button.pick").first().waitFor();
   await page.locator("aside .list li button.pick").first().click();
   await page.locator(".captions .word").first().waitFor();
@@ -77,16 +86,47 @@ export async function chosen(page) {
   });
 }
 
-// What the engine says the clip's captions are, asked directly.
-export async function engineCaptions(page, at) {
+// What the engine says about the clip on screen, asked directly: its
+// captions and its pieces, on the episode's clock. A walk compares what is
+// on screen with this, and this before a step with this after it.
+export async function engineState(page, at) {
   return page.evaluate(async ({ path, plan, clip }) => {
-    const answer = await fetch("/call", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Captions", args: [path, plan, clip] }),
-    });
-    return answer.json();
+    const ask = async (name, args) => {
+      const answer = await fetch("/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, args }),
+      });
+      return answer.json();
+    };
+    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), ask("Clips", [path])]);
+    const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
+    return { ...captions, segments: (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end })) };
   }, at);
+}
+
+// What the clip timeline shows: where the clip starts and ends and where
+// each cut is, on the episode's clock, read off its handles.
+export async function timeline(page) {
+  return page.evaluate(() => {
+    const value = (el) => Number(el?.getAttribute("aria-valuenow"));
+    const box = document.querySelector(".clip-timeline");
+    const start = box?.querySelector('[aria-label="Clip start"]');
+    if (!start) return null;
+    const cuts = [];
+    for (const edge of box.querySelectorAll(".cutedge")) {
+      const hit = /cut (\d+) (starts|ends)/.exec(edge.getAttribute("aria-label") ?? "");
+      if (!hit) continue;
+      const i = Number(hit[1]) - 1;
+      cuts[i] ??= {};
+      cuts[i][hit[2] === "starts" ? "from" : "to"] = value(edge);
+    }
+    return {
+      start: value(start),
+      end: value(box.querySelector('[aria-label="Clip end"]')),
+      cuts: cuts.filter(Boolean),
+    };
+  });
 }
 
 // What the caption box shows: each word, the moment it stands for, and
@@ -101,4 +141,92 @@ export async function shown(page) {
       focused: document.activeElement === w,
     })),
   );
+}
+
+// Where everything a hand can take hold of on the clip timeline is on
+// screen.
+export async function handles(page) {
+  return page.evaluate(() => {
+    const rect = (el) => {
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { x: b.left, y: b.top, w: b.width, h: b.height };
+    };
+    const box = document.querySelector(".clip-timeline");
+    return {
+      track: rect(box.querySelector(".track")),
+      start: rect(box.querySelector('[aria-label="Clip start"]')),
+      end: rect(box.querySelector('[aria-label="Clip end"]')),
+      cuts: [...box.querySelectorAll(".cut")].map(rect),
+      cutEdges: [...box.querySelectorAll(".cutedge")].map(rect),
+    };
+  });
+}
+
+// A point is one a hand can reach when it is over the track.
+export const inside = (t, x) => x > t.x + 2 && x < t.x + t.w - 2;
+export const middle = (r) => r.x + r.w / 2;
+// High on the track, over the waveform rather than the captions' band.
+export const high = (t) => t.y + t.h * 0.2;
+
+// A drag of the pointer from a point, by dx, in steps the way a hand
+// moves, with shift held when asked.
+export async function drag(page, x, y, dx, shift) {
+  if (shift) await page.keyboard.down("Shift");
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  const n = 6;
+  for (let i = 1; i <= n; i++) {
+    await page.mouse.move(x + (dx * i) / n, y);
+    await page.waitForTimeout(30);
+  }
+  await page.mouse.up();
+  if (shift) await page.keyboard.up("Shift");
+}
+
+// Asks the Go side something directly, the way the interface does.
+export async function ask(page, name, ...args) {
+  return page.evaluate(
+    async ({ name, args }) => {
+      const answer = await fetch("/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, args }),
+      });
+      return answer.json();
+    },
+    { name, args },
+  );
+}
+
+// Records every frame the video preview puts on screen, by the moment of
+// the episode it shows, until stopped: what the browser says it put up,
+// requestVideoFrameCallback, not what the clock says.
+export async function recordFrames(page) {
+  await page.evaluate(() => {
+    const v = document.querySelector("video");
+    window.__frames = [];
+    window.__recording = true;
+    const watch = () =>
+      v.requestVideoFrameCallback((now, meta) => {
+        if (!window.__recording) return;
+        window.__frames.push(meta.mediaTime);
+        watch();
+      });
+    watch();
+  });
+  return async () =>
+    page.evaluate(() => {
+      window.__recording = false;
+      return window.__frames;
+    });
+}
+
+// Where the video preview's picture is, on the episode's clock, and
+// whether it plays.
+export async function video(page) {
+  return page.evaluate(() => {
+    const v = document.querySelector("video");
+    return { at: v.currentTime, paused: v.paused, seeking: v.seeking };
+  });
 }

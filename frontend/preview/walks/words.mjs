@@ -4,20 +4,15 @@
 // the same seed. See docs/TESTING.md.
 //
 //   SEED=12 STEPS=80 BRIDGE_URL=http://127.0.0.1:8123/ node words.mjs
-import { random, open, chosen, shown } from "./bridge.mjs";
-import { Watch, editing, keyed } from "./rules.mjs";
+import { begin, walk } from "./walk.mjs";
+import { editing, keyed } from "./rules.mjs";
 
-const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
-const seed = Number(process.env.SEED ?? Math.floor(Math.random() * 1e6));
-const steps = Number(process.env.STEPS ?? 60);
-const rng = random(seed);
+const w = await begin();
+const { page, rng } = w;
 
 // Words to type: some of the episode's own, and some it never says.
 const pool = ["auf", "dem", "Schulhof", "Typ", "eine", "Arm", "ja", "Kaffee", "zwei Worte"];
 
-const { browser, page, errors } = await open(url);
-const watch = new Watch(page, await chosen(page), errors);
-const walked = [];
 // The words removed in this walk, to be typed back in.
 const removed = [];
 
@@ -163,27 +158,4 @@ const gestures = [
   },
 ];
 
-await watch.start();
-for (let step = 1; step <= steps && !watch.failed; step++) {
-  const s = await shown(page);
-  const can = gestures.filter((g) => g.when(s));
-  const g = rng.weighted(can);
-  const said = await g.run(s);
-  walked.push(`${String(step).padStart(3)}  ${said}`);
-  const { now } = await watch.step(g.name, s);
-  if (process.env.VERBOSE) {
-    const box = now.map((w) => (w.focused ? `[${w.text}]` : w.keyed ? `<${w.text}>` : w.text)).join(" ");
-    console.log(`${walked[walked.length - 1].padEnd(36)} ${box}`);
-  }
-}
-
-const failed = watch.failed;
-console.log(`seed ${seed}, ${walked.length} steps`);
-if (failed) {
-  console.log(walked.join("\n"));
-  console.log(`\nbroke: ${failed.rule}\n${failed.detail}`);
-  await page.screenshot({ path: `/tmp/walk-${seed}.png` });
-  console.log(`picture: /tmp/walk-${seed}.png`);
-}
-await browser.close();
-process.exit(failed ? 1 : 0);
+await walk(w, gestures);
