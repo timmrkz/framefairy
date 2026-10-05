@@ -257,9 +257,17 @@ and it never goes back: it can only stand still. Playing starts on that
 clock before the picture underneath has started, so it runs ahead, and when
 a report says where the picture is, it stands until the picture catches up.
 Followed, the playhead stopped for up to half a second a moment after the
-space bar, while the picture and the sound played on. Until the picture of
-a play has moved, the playhead stands with it, and where a browser cannot
-say which frame is on screen, the clock is all there is. The jump over a
+space bar, while the picture and the sound played on. A click on the clip
+timeline while it plays is the same start over again: the clock runs on
+from where the seek went as soon as it lands, and the picture starts after
+it. Until the picture of a play or a seek has moved, the playhead stands
+with it, for as long as that takes, up to four seconds. Taken after one
+second, the clock put the playhead ahead of the picture on the Mac, where
+the picture after a seek can take longer than that, and the playhead
+stopped a second time when the picture came. The playhead holds still only
+while the frame on screen is the frame it stands in, never longer. Where a
+browser cannot say which frame is on screen, or has stopped saying, the
+clock is all there is. The jump over a
 cut and the stop at the clip's end are decided on the same position, so the
 clock running ahead cannot cut the end of a piece short. A
 jump the app makes itself, over a cut or back to the start of a loop, still

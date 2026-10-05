@@ -62,7 +62,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?crossclips` | one clip list read comes back 400 ms late and the next at once, so a read asked later answers first. A card on its way and the clip it became must never both be on screen |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
-| `?webkitclock` | the video's clock while it plays is WebKit's: an estimate that never goes back. The picture starts 400 ms after play is asked for, the clock runs on from the ask at once, and the first report from the player, at 800 ms, makes it stand still until the picture has caught up. Chromium's clock and picture start together, so this is the only way to see a clock run ahead of the picture and then stand |
+| `?webkitclock` | the video's clock while it plays is WebKit's: an estimate that never goes back. The picture starts 400 ms after play is asked for, the clock runs on from the ask at once, and the first report from the player, at 800 ms, makes it stand still until the picture has caught up. Chromium's clock and picture start together, so this is the only way to see a clock run ahead of the picture and then stand. A seek while it plays starts over the same way from where it was sent: the clock says the target until the seek lands, then runs on from it by the wall clock, the picture starts 400 ms after the landing, and no frame is put up before it, so with `?slowseek=700` the first frame after a click comes 1.1 s after it, the way it can on the Mac |
 | `?fps=25` | the episode at 25 frames a second, each second's frame shown 25 times, the way an episode on the Mac is. At one frame a second the browser says a new frame is on screen once a second, so anything that follows the frames, the playhead while it plays above all, moves in steps of a second. The file is made once, in about a minute |
 | `?framelag=1500` | the frame a seek lands on is put on screen 1.5 seconds after the video says seeked, the way Safari does, through a wrapped `requestVideoFrameCallback`. `window.__presented` is the moment of the frame on screen, for a probe to compare with where the app thinks the picture is. It is `open.mjs` that wraps it, not the stub |
 | `?framestart` | the paused video answers with where the frame it shows begins, in the episode's own frames, one a second here, the way the video on the Mac answers 1677.60 when sent to 1677.63. Chromium answers with the exact second it was sent to. The stub's clips start on whole seconds, which are frame starts, so a probe sets `window.__pieces` before it opens the episode to start a clip inside a frame |
@@ -751,11 +751,34 @@ output by `updateLastPixelBuffer` in `MediaPlayerPrivateAVFoundationObjC.mm`,
 not the estimate. A frame put up before the play began, or before the
 last seek, is the picture from before, so until a frame of this play
 comes the playhead stands, and that is the picture not having moved yet.
-It never goes back by a little. A seek, a jump over a cut and a loop are
+It holds still only while the frame on screen is the frame it stands in,
+and so never goes back. A seek, a jump over a cut and a loop are
 followed at once through the clock, as before, and the frames lead again
 from the first one after. The jump over a cut and the stop at the end are
 decided on the same position. Where the browser cannot say, or has said
-nothing for a second, the clock is all there is.
+nothing of a frame of this play for a second, the clock is all there is.
+
+**The first frame of a play or a seek is waited for, not timed out.** A
+click on the clip timeline while it played stood for the second the seek
+took on the Mac, moved, and often stood once more. The playhead took the
+clock once a second had gone by with no frame of the seek, the same
+second that is right in the middle of a play. But WebKit's
+`seekToTarget` hands the estimate the player's answer as the seek lands,
+playing, so the clock runs on from the target before the picture has
+started again, and it was a third of a second ahead when the first frame
+came. The playhead then held until the picture caught up, because the
+hold allowed anything up to half a second behind. Now the first frame is
+waited for up to four seconds, `unseen` in `lib/flow.ts`, and the hold
+covers only the frame on screen. "Often" was the clue: a seek and a
+picture that came back inside the second never left the frames.
+
+The proof for a seek: under `?webkitclock&fps=25&slowseek=700`, play,
+click a bare point of the clip timeline ahead of the playhead and behind
+it, and read the playhead on every animation frame for three seconds.
+Count the longest still from the second frame after the click, when the
+picture has moved again. It was 20 to 22 frames, 334 to 366 ms, at 700 and
+1500 ms seeks, none at 0 and 150. It is none at all four, and it never goes
+back. Revert `playingAt` and keep the harness to see the old number.
 
 The proof: under `?webkitclock&fps=25`, press the space bar and the play
 button, read the playhead on every animation frame for three seconds,
