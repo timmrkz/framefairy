@@ -89,12 +89,21 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # The packages apt downloaded, kept for a week and for this job's
+      # list, so a run downloads only what changed. See ci-packages.sh.
+      - id: week
+        if: steps.needs.outputs.run == 'true'
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/apt
+          key: apt-build-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
+          restore-keys: apt-build-
       - name: System packages
         if: steps.needs.outputs.run == 'true'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+        timeout-minutes: 10
+        run: sh scripts/ci-packages.sh patchelf
       # make tidies go.mod and go.sum quietly, so a change that leaves them
       # untidy builds everywhere and is committed that way. This says so,
       # before make has had the chance to tidy them.
@@ -124,12 +133,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # The packages apt downloaded, kept for a week and for this job's
+      # list, so a run downloads only what changed. See ci-packages.sh.
+      - id: week
+        if: steps.needs.outputs.run == 'true'
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/apt
+          key: apt-linux-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
+          restore-keys: apt-linux-
       - name: System packages
         if: steps.needs.outputs.run == 'true'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+        timeout-minutes: 10
+        run: sh scripts/ci-packages.sh ffmpeg
       - name: Go tests
         if: steps.needs.outputs.run == 'true'
         run: make unit
@@ -149,12 +167,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # The packages apt downloaded, kept for a week and for this job's
+      # list, so a run downloads only what changed. See ci-packages.sh.
+      - id: week
+        if: steps.needs.outputs.run == 'true'
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/apt
+          key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
+          restore-keys: apt-fuzz-
       - name: System packages
         if: steps.needs.outputs.run == 'true'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+        timeout-minutes: 10
+        run: sh scripts/ci-packages.sh
       - name: Fuzz
         if: steps.needs.outputs.run == 'true'
         run: make fuzz

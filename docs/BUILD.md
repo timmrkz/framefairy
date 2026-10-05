@@ -263,6 +263,19 @@ first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
 
+**A Linux job installs what it uses and nothing else**, through
+`scripts/ci-packages.sh`. Every Go job compiles the app's package, the
+fuzzing too because one of its targets is there, so GTK, WebKit and
+pkg-config are in every one. ffmpeg is only in `linux`, whose tests
+render, and patchelf only in `build`, which carries the speech library.
+ffmpeg was once in all three, and it is most of what apt downloads: on a
+day the Ubuntu mirror crawled, the fuzzing waited fifteen minutes for a
+speech synthesis library ffmpeg depends on, for a job that never runs
+ffmpeg. The packages apt downloads are kept by the workflow for a week,
+so a run normally downloads only the package lists, a download that
+stalls is tried again, and the step gives up after ten minutes rather
+than holding the job for hours.
+
 ## Keeping up
 
 What the app is made of and did not write is watched four ways, because a
