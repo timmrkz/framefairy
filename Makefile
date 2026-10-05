@@ -62,10 +62,13 @@ BIN := bin
 STAMPS := .build
 # The tests take ffmpeg and llama-server from the PATH, and make puts the
 # ones it built first, the ones the programs ship with and take no other.
-# Without it a Mac with Homebrew's ffmpeg 9 tested that one, which decodes
-# AAC 16 ms later after a seek than ours, 8.1, see scripts/build-ffmpeg.sh,
-# and a levels test failed there that passes with ours. Where make built
-# none, on a Linux runner, the PATH has the system's.
+# Without it a Mac with Homebrew's ffmpeg 9 tested that one, which starts
+# AAC up to one audio frame late after a seek where ours, 8.1, is exact,
+# see scripts/build-ffmpeg.sh, and a levels test failed there that passes
+# with ours. Where make built none, on a Linux runner, the PATH has the
+# system's. The walks are the one exception: they make their episode in
+# VP9, which Chromium plays and ours cannot write, so they take the
+# system's ffmpeg.
 TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
 EXE :=
 ifeq ($(OS),Windows_NT)
@@ -334,7 +337,7 @@ motion: frontend/node_modules/.package-lock.json
 # file, and only that. See scripts/changed.sh for what each kind of file
 # runs. CI still runs everything.
 changed:
-	@PATH="$(TOOLS_FIRST)" GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
+	@TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
 test: unit fuzz interface walks
 
@@ -365,7 +368,7 @@ WALKS ?= 3
 STEPS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The interface needs Node and nothing else, no Go and no system libraries,
 # which is why it is worth having on its own: it answers in well under a
