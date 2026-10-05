@@ -17,7 +17,6 @@ import {
   followingWindow,
   gridStep,
   onGrid,
-  onward,
   pictureIsStale,
   stillFits,
   pieceAt,
@@ -440,41 +439,12 @@ describe("pictureIsStale", () => {
   });
 });
 
-// WebKit works the clock of a playing video out from the wall clock between
-// the reports of the player underneath, and sets it back when a report says
-// the picture is behind. It does that most while playing starts, and the
-// playhead, the lit word, the caption and the crop followed it back and
-// forth. Chromium's clock never steps back, so the harness cannot show
-// this: it is held here as a rule.
-describe("onward", () => {
-  test("follows the clock forward", () => {
-    expect(onward(55.0, 55.04)).toBe(55.04);
-    expect(onward(55.0, 55.0)).toBe(55.0);
-  });
-
-  test("stands still while the clock is put back by a little", () => {
-    expect(onward(55.3, 55.1)).toBe(55.3);
-    expect(onward(55.3, 55.29)).toBe(55.3);
-  });
-
-  test("and goes on once the clock is past it again", () => {
-    let at = 55.3;
-    for (const clock of [55.1, 55.2, 55.31, 55.35]) at = onward(at, clock);
-    expect(at).toBe(55.35);
-  });
-
-  test("follows a clock that is really somewhere else", () => {
-    expect(onward(70.2, 57)).toBe(57);
-    expect(onward(55.5, 55.0)).toBe(55.0);
-  });
-});
-
 // A video that has read nothing of the file answers zero for its clock,
 // playing or not. The first press of the space bar after a search followed
 // it to the start of the episode, and the picture with it, until the file
 // came and the video went to the clip. The harness shows this with
 // ?unread=12, see frontend/preview/open.mjs.
-describe("playingAt", () => {
+describe("playingAt, without the frames", () => {
   const playing = { clock: 62.53, empty: false, seeking: false, landed: false };
 
   test("stands still while the video has read nothing", () => {
@@ -485,17 +455,136 @@ describe("playingAt", () => {
     expect(at).toBe(62.5);
   });
 
-  test("goes with the clock once the video has something", () => {
+  test("goes with the clock where the browser cannot say which frame is on screen", () => {
     expect(playingAt(62.5, playing)).toBe(62.53);
-  });
-
-  test("only forward while it plays, the way onward goes", () => {
-    expect(playingAt(62.5, { ...playing, clock: 62.4 })).toBe(62.5);
+    expect(playingAt(62.5, { ...playing, presented: null, now: 10, since: 9 })).toBe(62.53);
   });
 
   test("to where a seek was sent, and to where a jump landed", () => {
     expect(playingAt(62.5, { ...playing, clock: 70, seeking: true })).toBe(70);
     expect(playingAt(70.2, { ...playing, clock: 70, landed: true })).toBe(70);
+  });
+});
+
+// On the Mac the clock of a playing video is an estimate that never goes
+// back: TimeProgressEstimator in WebKit's MediaPlayerPrivateRemote.cpp
+// returns the larger of the wall clock since the last report and what it
+// returned last. Playing starts on it before the picture underneath does,
+// so it runs ahead, and when a report says where the picture is, it stands
+// still until the picture catches up. The playhead stood still with it for
+// up to half a second, a moment after the space bar, while the picture and
+// the sound played on. The playhead follows the frame on screen instead.
+// The harness shows this with ?webkitclock.
+describe("playingAt, with the frames", () => {
+  // 25 frames a second. The play began at 100 s on the page's clock, from
+  // 62.5 in the episode, the frame from 62.48 on screen since long before.
+  const frame = 0.04;
+  const base = { empty: false, seeking: false, landed: false, rate: 1, frame, since: 100 };
+  const paused = { media: 62.48, shown: 40 };
+
+  // A play as the Mac gives it: the picture starts 0.4 s after the space
+  // bar, the clock at once, and the first report comes at 0.8 s. Sampled
+  // at 60 frames a second for three seconds, the clock stands from the
+  // report until the picture has caught up.
+  function play(seconds = 3) {
+    const out: { now: number; at: number; clock: number }[] = [];
+    let at = 62.5;
+    let said = -Infinity;
+    for (let i = 0; i <= seconds * 60; i++) {
+      const now = 100 + i / 60;
+      const t = now - 100;
+      const picture = t < 0.4 ? 62.5 : 62.5 + (t - 0.4);
+      const estimate = t < 0.8 ? 62.5 + t : picture;
+      said = Math.max(said, estimate);
+      // The frame on screen: the last that started at or before the
+      // picture, put up when the picture got to it.
+      const media = Math.floor(picture / frame + 1e-6) * frame;
+      const presented = t < 0.4 ? paused : { media, shown: 100 + 0.4 + (media - 62.5) };
+      at = playingAt(at, { ...base, clock: said, presented, now });
+      out.push({ now, at, clock: said });
+    }
+    return out;
+  }
+
+  function longestStill(list: { at: number }[], from = 0): number {
+    let longest = 0;
+    let run = 0;
+    for (let i = from + 1; i < list.length; i++) {
+      run = list[i].at === list[i - 1].at ? run + 1 : 0;
+      longest = Math.max(longest, run);
+    }
+    return longest;
+  }
+
+  test("the clock that runs ahead and then stands, as the Mac's does", () => {
+    const run = play();
+    // The clock itself stands still for a third of a second after the
+    // report, which is what the playhead used to do.
+    expect(longestStill(run.map((r) => ({ at: r.clock })), 1)).toBeGreaterThan(20);
+  });
+
+  test("stands until the picture moves, then moves on every frame", () => {
+    const run = play();
+    const first = run.findIndex((r) => r.at !== run[0].at);
+    // Not before the picture has started.
+    expect(run[first].now - 100).toBeGreaterThanOrEqual(0.4);
+    // And from then on it never stands, through the report and after.
+    expect(longestStill(run, first)).toBe(0);
+  });
+
+  test("never goes back, and stays with the picture", () => {
+    const run = play();
+    for (let i = 1; i < run.length; i++) expect(run[i].at).toBeGreaterThanOrEqual(run[i - 1].at);
+    const end = run[run.length - 1];
+    // Three seconds after the space bar the picture is 2.6 s on.
+    expect(end.at).toBeGreaterThan(62.5 + 2.6 - frame);
+    expect(end.at).toBeLessThanOrEqual(62.5 + 2.6 + frame);
+  });
+
+  test("goes on from the frame by the time since it was put up, at most a frame", () => {
+    const presented = { media: 70, shown: 101 };
+    expect(playingAt(70, { ...base, clock: 70, presented, now: 101.01 })).toBeCloseTo(70.01, 6);
+    expect(playingAt(70, { ...base, clock: 70, presented, now: 101.5 })).toBeCloseTo(70.04, 6);
+  });
+
+  test("stands with a picture that stalls, however far the clock goes", () => {
+    const presented = { media: 70, shown: 101 };
+    let at = 70;
+    for (let i = 0; i < 30; i++) at = playingAt(at, { ...base, clock: 70 + i / 60, presented, now: 101 + i / 60 });
+    expect(at).toBeCloseTo(70.04, 6);
+  });
+
+  test("takes the clock once the browser has said nothing for a second", () => {
+    const presented = { media: 70, shown: 101 };
+    expect(playingAt(70.04, { ...base, clock: 72, presented, now: 102.1 })).toBe(72);
+    // A play that has had no frame at all since it began, the same.
+    expect(playingAt(62.5, { ...base, clock: 63.6, presented: paused, now: 101.1 })).toBe(63.6);
+  });
+
+  test("a frame a hair behind the playhead is the same picture", () => {
+    // The frame a clip starts inside begins before the clip.
+    expect(playingAt(62.5, { ...base, clock: 62.5, presented: { media: 62.48, shown: 100.5 }, now: 100.5 })).toBe(62.5);
+  });
+
+  test("follows a seek, and a jump over a cut, at once, then the frames from there", () => {
+    // While it is on its way and as it lands, the clock says where it was sent.
+    expect(playingAt(66.2, { ...base, clock: 75, seeking: true, presented: { media: 66.2, shown: 103 }, now: 103.01, since: 103 })).toBe(75);
+    expect(playingAt(66.2, { ...base, clock: 75, landed: true, presented: { media: 66.2, shown: 103 }, now: 103.02, since: 103 })).toBe(75);
+    // A frame from before the jump says nothing about where the video is.
+    expect(playingAt(75, { ...base, clock: 75.1, presented: { media: 66.2, shown: 103 }, now: 103.05, since: 103.001 })).toBe(75);
+    // The first frame from where it landed is followed.
+    expect(playingAt(75, { ...base, clock: 75.1, presented: { media: 75, shown: 103.1 }, now: 103.12, since: 103.001 })).toBeCloseTo(75.02, 6);
+  });
+
+  test("a loop back to the start goes back with it", () => {
+    // The jump back to the clip's start lands like any jump.
+    expect(playingAt(88, { ...base, clock: 60, landed: true, presented: { media: 87.96, shown: 110 }, now: 110.1, since: 110.05 })).toBe(60);
+    // And from there the frames lead.
+    expect(playingAt(60, { ...base, clock: 60.3, presented: { media: 60.2, shown: 110.3 }, now: 110.32, since: 110.05 })).toBeCloseTo(60.22, 6);
+  });
+
+  test("a picture half a second or more behind is the video somewhere else, and is followed", () => {
+    expect(playingAt(70.2, { ...base, clock: 57, presented: { media: 57, shown: 101 }, now: 101 })).toBe(57);
   });
 });
 

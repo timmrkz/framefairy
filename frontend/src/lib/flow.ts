@@ -64,17 +64,10 @@ export function pictureIsStale(s: PictureState): boolean {
   return s.shows - s.at > 0.5;
 }
 
-// Where the playhead goes while the video plays, from where it stands and
-// what the video's clock says now. On with the clock, never back by a
-// little: a clock that steps back while playing is the clock being put
-// right, not the picture going back, see Player.svelte. A step back of half
-// a second or more is the video really being somewhere else, the same half
-// second pictureIsStale takes for the same place, and is followed, so a
-// playhead can never be held away from a picture that moved.
-export function onward(at: number, clock: number): number {
-  if (clock >= at || at - clock >= 0.5) return clock;
-  return at;
-}
+// The frame on screen, as requestVideoFrameCallback says it: the moment of
+// the episode it shows, its mediaTime, and when it was put on screen, its
+// presentationTime, in seconds on the page's own clock, performance.now.
+export type Presented = { media: number; shown: number };
 
 // What the video is doing on a frame of a play, as far as the playhead is
 // concerned.
@@ -87,21 +80,76 @@ export type PlayingClock = {
   seeking: boolean;
   // A jump the playing clip made by itself has just landed.
   landed: boolean;
+  // The last frame put on screen, where the browser says, or null where
+  // it cannot.
+  presented?: Presented | null;
+  // Now, and when this play began or the video was last sent somewhere,
+  // whichever came later, on the same clock as shown.
+  now?: number;
+  since?: number;
+  // How fast it plays, and how long one frame of the episode lasts.
+  rate?: number;
+  frame?: number;
 };
 
-// Where the playhead goes on a frame of a play, from where it stands. A
-// video that has read nothing of the file has a clock that says nothing:
+// How long a play may go without the browser saying of a frame before the
+// clock is taken instead, in seconds on top of a frame. A browser that
+// says which frame is on screen says so a frame or two after the picture
+// starts, and on every frame after that. One that has said nothing for
+// this long is not going to, or the picture has stopped, and then the
+// clock stops too.
+const quiet = 1;
+
+// Where the playhead goes on a frame of a play, from where it stands.
+//
+// It goes with the picture, the frame the browser says is on screen, and
+// on from it by the time since it was put up, at most a frame, so it moves
+// smoothly between frames and never runs ahead of a picture that stopped.
+// Not with the video's clock. On the Mac the clock of a playing video is
+// an estimate, TimeProgressEstimator in WebKit's
+// MediaPlayerPrivateRemote.cpp: the wall clock since the last report from
+// the player underneath, never lower than what it said last. Playing
+// starts on that clock before the picture underneath has started, so the
+// clock runs ahead, and once a report says where the picture really is,
+// the clock stands still until the picture has caught up. Followed, the
+// playhead stopped for up to half a second a moment after the space bar,
+// while the picture and the sound played on.
+//
+// Until the browser has said of a frame of this play, the picture has not
+// moved yet, and the playhead stands with it. A frame said before the play
+// or before a seek is the picture from before, wherever that was, and
+// says nothing about where the video is now. Where the browser cannot say
+// at all, or has said nothing for a second, the clock is all there is.
+// Chromium's and WebKit's never go back while a play runs.
+//
+// It never goes back while it plays, by a little: a frame a hair behind
+// the playhead, like the frame a paused clip starts inside, is the same
+// picture. Half a second or more behind is the video really being
+// somewhere else, and is followed, the same half second pictureIsStale
+// takes for the same place.
+//
+// A video that has read nothing of the file has a clock that says nothing:
 // it answers zero, playing or not. Followed, the first press of the space
 // bar after a search took the playhead to the start of the episode, the
 // still of the clip's first frame gave way to a black picture and then to
 // the start of the episode, and only once the file came did the video go
 // to the clip and play it. So the playhead stands, with the still that
-// shows it, until the video has something. Otherwise it goes with the
-// clock, and only forward, see onward.
+// shows it, until the video has something.
 export function playingAt(at: number, v: PlayingClock): number {
   if (v.empty) return at;
   if (v.landed || v.seeking) return v.clock;
-  return onward(at, v.clock);
+  const frame = v.frame ?? 0;
+  const p = v.presented;
+  if (p && v.now !== undefined && v.since !== undefined && v.now - Math.max(p.shown, v.since) < quiet + frame) {
+    if (p.shown < v.since) return at;
+    const on = Math.min(Math.max(v.now - p.shown, 0), frame) * (v.rate ?? 1);
+    return forward(at, p.media + on);
+  }
+  return forward(at, v.clock);
+}
+
+function forward(at: number, to: number): number {
+  return to >= at || at - to >= 0.5 ? to : at;
 }
 
 // What a frame of a play does about a jump over a cut the playing clip

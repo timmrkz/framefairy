@@ -9,30 +9,103 @@ const noticeTexts = import.meta.glob("../../notices/texts/*.txt", {
 }) as Record<string, string>;
 
 // ?webkitclock gives the video the clock WebKit gives it while it plays.
-// WebKit works the time out from the wall clock between the reports of the
-// player underneath, and puts it back whenever a report says the picture
-// is behind, which is most of all while playing starts and whenever the
-// file is slow to read. See TimeProgressEstimator in WebKit's
-// MediaPlayerPrivateRemote.cpp. Chromium's clock only goes forward, so
-// without this a playhead going back and forth over the picture could not
-// be made here at all. It is put back by 0.15 s for 60 ms of every 400.
+// WebKit works a playing video's time out from the wall clock between the
+// reports of the player underneath, TimeProgressEstimator in WebKit's
+// MediaPlayerPrivateRemote.cpp, and never lets it go back: it returns the
+// larger of the estimate and what it returned last. What it can do is run
+// ahead. Playing starts on the clock before the picture underneath has
+// started, and when the first report says where the picture really is,
+// the clock stands still until the picture has caught up, while the
+// picture and the sound play on. That is the playhead Tim saw stop for half
+// a second soon after the space bar.
+//
+// Here the picture starts 400 ms after play is asked for, the way the
+// player underneath gets going, while the element already says it plays.
+// Until the first report, 800 ms after the ask, the clock is the wall
+// clock from where the play began. After it, and after any seek, it is the
+// real clock, never lower than what it said last. Chromium's clock and
+// picture start together, so without this nothing here could run ahead of
+// the picture and then stand.
 if (location.search.includes("webkitclock")) {
-  const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
-  Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+  const proto = HTMLMediaElement.prototype;
+  const clock = Object.getOwnPropertyDescriptor(proto, "currentTime")!;
+  const pausedOf = Object.getOwnPropertyDescriptor(proto, "paused")!;
+  const realPlay = proto.play;
+  const realPause = proto.pause;
+  const lead = 400;
+  const report = 800;
+  type Run = { from: number; asked: number; said: number; reported: boolean; starting: boolean; timer: number };
+  const runs = new WeakMap<HTMLMediaElement, Run>();
+  proto.play = function (this: HTMLMediaElement) {
+    const was = runs.get(this);
+    if (was) return was.starting ? Promise.resolve() : realPlay.call(this);
+    const run: Run = {
+      from: clock.get!.call(this) as number,
+      asked: performance.now(),
+      said: -Infinity,
+      reported: false,
+      starting: true,
+      timer: 0,
+    };
+    runs.set(this, run);
+    // The element says it plays the moment it is asked, as WebKit's does.
+    this.dispatchEvent(new Event("play"));
+    return new Promise<void>((done, fail) => {
+      run.timer = window.setTimeout(() => {
+        if (runs.get(this) !== run) return done();
+        run.starting = false;
+        realPlay.call(this).then(done, fail);
+      }, lead);
+    });
+  };
+  proto.pause = function (this: HTMLMediaElement) {
+    const run = runs.get(this);
+    runs.delete(this);
+    if (run) clearTimeout(run.timer);
+    if (run?.starting) {
+      this.dispatchEvent(new Event("pause"));
+      return;
+    }
+    realPause.call(this);
+  };
+  Object.defineProperty(proto, "paused", {
+    configurable: true,
     get(this: HTMLMediaElement) {
-      const t = real.get!.call(this) as number;
-      if (this.paused || this.seeking || performance.now() % 400 >= 60) return t;
-      return Math.max(0, t - 0.15);
-    },
-    set(this: HTMLMediaElement, t: number) {
-      real.set!.call(this, t);
+      if (runs.get(this)?.starting) return false;
+      return pausedOf.get!.call(this);
     },
   });
+  Object.defineProperty(proto, "currentTime", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      const t = clock.get!.call(this) as number;
+      const run = runs.get(this);
+      if (!run || this.seeking) return t;
+      const now = performance.now();
+      if (!run.reported && now - run.asked >= report) run.reported = true;
+      const estimate = run.reported ? t : run.from + (now - run.asked) / 1000;
+      run.said = Math.max(run.said, estimate);
+      return run.said;
+    },
+    set(this: HTMLMediaElement, t: number) {
+      // A seek puts the clock where it was sent, and from there on it is
+      // the player's again.
+      const run = runs.get(this);
+      if (run) {
+        run.reported = true;
+        run.said = -Infinity;
+      }
+      clock.set!.call(this, t);
+    },
+  });
+  // The element ending a play by itself ends the run too.
+  document.addEventListener("ended", (e) => runs.delete(e.target as HTMLMediaElement), true);
 }
 
-// The frame rate of the episode the harness plays, one frame a second, see
-// open.mjs. Source says it, and ?framestart counts in it.
-const harnessFps = 1;
+// The frame rate of the episode the harness plays, one frame a second, or
+// what ?fps says, see open.mjs. Source says it, and ?framestart counts in
+// it.
+const harnessFps = Number(/[?&]fps=(\d+)/.exec(location.search)?.[1] ?? 1);
 
 // ?framestart makes the paused video answer with where the frame it shows
 // begins, the way the video on the Mac does: sent to 1677.63 in an episode

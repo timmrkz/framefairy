@@ -29,6 +29,7 @@
     pieceAt as pieceIndex,
     playingPiece,
     frameStart,
+    type Presented,
   } from "../lib/flow";
   import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "../lib/playhead";
   import Info from "./Info.svelte";
@@ -153,8 +154,15 @@
   // the video preview was before, then the clip. With the frames known,
   // nothing else sets shows, and the clock only stands in where the
   // browser cannot say.
+  //
+  // The same frame is where the playhead goes while the video plays, see
+  // playingAt: presented is the last frame put up, and since is when the
+  // play began or the video was last sent somewhere, on the page's clock in
+  // seconds. A frame from before that is the picture from before.
   const framesKnown = typeof HTMLVideoElement !== "undefined" && "requestVideoFrameCallback" in HTMLVideoElement.prototype;
   let watching = 0;
+  let presented: Presented | null = null;
+  let since = 0;
   function watchFrames() {
     if (!framesKnown || !video) return;
     video.cancelVideoFrameCallback(watching);
@@ -162,6 +170,9 @@
       // A jump the playing clip makes by itself moves the playhead and the
       // picture together, in the frame loop, see tick.
       if (!jumping) shows = meta.mediaTime;
+      // A frame put up while a seek is on its way is the picture from
+      // where the video was, not where it was sent.
+      if (!video.seeking) presented = { media: meta.mediaTime, shown: meta.presentationTime / 1000 };
       watchFrames();
     });
   }
@@ -258,6 +269,7 @@
   }
 
   function put(t: number) {
+    since = performance.now() / 1000;
     try {
       video.currentTime = t;
     } catch {
@@ -353,6 +365,7 @@
     }
     // Playing moves the video on from wherever it was put.
     putAt = -1;
+    since = performance.now() / 1000;
     wantPlay = true;
     video.play().catch(() => {
       if (!wantPlay || !video) return;
@@ -397,16 +410,36 @@
     jumping = false;
     if (step === "paused") return;
     const landed = step === "landed";
+    // Where the playhead goes on this frame: with the frame on screen, on
+    // from it between frames, and never back, see playingAt. Not with the
+    // video's clock, which on the Mac runs ahead of the picture as playing
+    // starts and then stands still until the picture has caught up. And a
+    // video that has read nothing of the file yet has no clock at all, so
+    // the playhead stands where it is.
+    const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
+    const now = playingAt(time, {
+      clock: video.currentTime,
+      empty,
+      seeking: video.seeking,
+      landed,
+      presented: framesKnown ? presented : null,
+      now: performance.now() / 1000,
+      since,
+      rate: video.playbackRate,
+      frame: frameOf,
+    });
     if (clip && playsClip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
-      // jumps every cut and stops where the clip ends.
+      // jumps every cut and stops where the clip ends, when the picture
+      // gets there. The clock on the Mac runs ahead as playing starts, and
+      // a jump made by it cut the end of a piece short.
       // The pieces change under the player whenever a cut is taken out or
       // put back, so the piece being played can be gone by this frame.
-      atPiece = playingPiece(pieces, atPiece, video.currentTime);
+      atPiece = playingPiece(pieces, atPiece, now);
       const piece = pieces[atPiece];
       // Nothing is decided while a jump is still being made, or a stale
       // position could be read as the end of the piece jumped to.
-      if (!video.seeking && video.currentTime >= piece.end - 0.02) {
+      if (!video.seeking && now >= piece.end - 0.02) {
         atPiece++;
         if (atPiece >= pieces.length) {
           if (!looping) {
@@ -420,23 +453,13 @@
           atPiece = 0;
         }
         jumping = true;
+        since = performance.now() / 1000;
         video.currentTime = pieces[atPiece].start;
         frame = requestAnimationFrame(tick);
         return;
       }
     }
-    // Otherwise the playhead only goes forward while the video plays. The
-    // clock WebKit hands out while playing is worked out from the wall clock
-    // between the reports of the player underneath, and it is set back
-    // whenever a report says the picture is behind, which it is while
-    // playing starts and whenever the file is slow to read. Followed as it
-    // is, the playhead, the lit word, the caption and the crop went back
-    // and forth over the picture for as long as playing took to settle.
-    //
-    // And a video that has read nothing of the file yet has no clock at
-    // all, so the playhead stands where it is, see playingAt.
-    const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
-    time = playingAt(time, { clock: video.currentTime, empty, seeking: video.seeking, landed });
+    time = now;
     // Where the browser says which frame is on screen, that is the picture,
     // see watchFrames, and the clock is not. Once a jump the playing clip
     // made has landed, the picture goes with the playhead for the frame or
