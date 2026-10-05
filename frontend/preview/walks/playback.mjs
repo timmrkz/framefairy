@@ -83,8 +83,16 @@ const gestures = [
       await page.keyboard.press("Space");
       await page.waitForTimeout(ms);
       // A clip that reached its end has stopped by itself, and the space
-      // bar would play it again from its start.
-      if (!(await video(page)).paused) await page.keyboard.press("Space");
+      // bar would play it again from its start. So whether it still plays
+      // is asked in the same moment as the space bar is pressed, inside
+      // the page: asked first and pressed after, the clip reached its end
+      // in between and played again.
+      await page.evaluate(() => {
+        if (document.querySelector("video").paused) return;
+        const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+        document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+        document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+      });
       const frames = await stop();
       if (!frames.length) watch.broke("the space bar plays", `played for ${ms} ms from ${from.toFixed(3)} and no frame came`);
       if (clip) framesInClip(frames, p);
