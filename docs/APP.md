@@ -499,8 +499,13 @@ bubble scrolled by those eight pixels.
     back. A word removed then corrected again comes back with the new
     text. Delete in a word open for typing is the field's own and takes
     out letters. The caption the word stood in stays as it was, with the
-    word gone from it: the word was still said, so the time it held is no
-    pause, see `Captions` in `engine/lines.go`. Before, the gap it left
+    word gone from it: the captions are laid out as if the word were still
+    there and then it is left out, see `Captions` in `engine/lines.go`. The
+    time it held is no pause, the room it took on its line stays taken, so
+    no word of the next caption is pulled up into it, and a caption whose
+    first word it was appears when that word is said. A caption whose
+    words are all removed goes, and the one before it stays up through
+    its time. Before, the gap it left
     read as a pause, so the caption ended at the word before it, nothing
     was on screen for a moment, and the words after it went on to a
     caption of their own. Removing a word lost its way when the words

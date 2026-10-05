@@ -535,6 +535,47 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	}
 }
 
+// The room a removed word took on its line stays taken, so the first word
+// of the next caption is not pulled up into it. Found by a sequence in
+// frontend/preview/walks: removing "auf" brought "irgendein" up from the
+// caption after.
+func TestRemovingAWordPullsNoWordUp(t *testing.T) {
+	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
+		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
+		{61.95, 62.2, "Typ"}}
+	clip := Clip{Segments: []Segment{{Start: 59.9, End: 63}}}
+	laid := func(tr *Transcript) string {
+		var out []string
+		for _, c := range Captions(clip, tr.captionWords(), 33, nil) {
+			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, c.Text))
+		}
+		return strings.Join(out, " ")
+	}
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	before := laid(tr)
+	if !strings.Contains(before, "Schulhof]") {
+		t.Fatalf("the test needs a break after Schulhof: %s", before)
+	}
+	logs := filepath.Join(t.TempDir(), "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	if err := SetWordText(logs, 60.6, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+	// A caption whose first word is removed appears when that word is
+	// said, as it did. Found by a walk: it waited for the word after.
+	if err := SetWordText(logs, 61.5, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want = strings.Replace(want, " irgendein Typ]", " Typ]", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
 // A removed word typed back in beside its neighbour is the word put back
 // where it was heard, the same as an undo would put it: its own time, so
 // it is lit while it is said, and no correction left on either word.

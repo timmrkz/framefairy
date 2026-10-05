@@ -46,12 +46,19 @@ func (t *Transcript) Correct(corrections map[string]string) {
 // captionWords are the words with the words removed among them, with no
 // text, in the order they were said. A removed word is not shown, but the
 // captions still know it was said, see Captions.
+//
+// A removed word carries what the recogniser heard, behind removedMark, so
+// the captions are laid out as if it were still there: a word taken out
+// takes out the word and changes no caption.
 func (t *Transcript) captionWords() []Cue {
 	out := t.Words
-	for _, w := range t.HeardWords {
+	for i, w := range t.HeardWords {
 		if strings.TrimSpace(w.Text) == "" {
 			if len(out) == len(t.Words) {
 				out = append([]Cue(nil), t.Words...)
+			}
+			if i < len(t.snapped) {
+				w.Text = removedMark + strings.Join(strings.Fields(t.snapped[i].Text), " ")
 			}
 			out = append(out, w)
 		}

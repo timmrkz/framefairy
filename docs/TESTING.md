@@ -97,13 +97,31 @@ quarter of a second:
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
 | An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
-| Taking a word out never makes a caption more | the caption that broke where a removed word had been |
+| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, the one before it then staying up through its time | the caption that broke where a removed word had been, and the next caption's first word pulled up into the room a removed word left |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
 
 The engine's captions are asked for directly, `Captions` through
 `/call`, and are what the screen is compared with: the walk knows
 nothing of what a correction should do. It only knows what must not
 happen, which is what keeps it from being a third engine.
+
+### `sequences.mjs`: the cases found by hand
+
+    BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
+
+A sequence is a named list of steps and of what has to come of them,
+written as data at the top of the file, so a case found by hand is kept
+as it was found. The steps are the walk's gestures by name, `frame` a
+word, `click` it, `press` a key, `type`, `undo`, `redo`, and `mark` the
+engine's captions under a label. What has to come of them: `box`, what
+the caption box reads, `open`, which word is open, `same`, the engine's
+captions as they were at a mark, and `spans`, every caption appearing
+and going when it did at a mark. Every step is also checked against the
+walk's rules, so a sequence asks for its own result and gets the rest
+for nothing.
+
+Each sequence starts from the bridge's episode as it was first searched,
+in a page of its own.
 
 ### Does it find anything
 
@@ -112,3 +130,10 @@ ten broke a rule within sixty steps, all of them showing a word typed in
 beside another twice. The first walks against the code of the day found
 a bug of their own within twenty steps: Enter opened the word at the
 playhead rather than the word in the frame.
+
+The sequences then found that removing a word in the middle of a caption
+pulled the first word of the next caption up into the room it left, and
+the walks, once the rule was that a removal changes no caption, that a
+caption whose first word was removed waited for the word after it. The
+engine now lays the captions out as if a removed word were still there,
+`TestRemovingAWordPullsNoWordUp`.
