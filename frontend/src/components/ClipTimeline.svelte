@@ -100,8 +100,9 @@
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, see placeOf in lib/playhead.ts.
     onseek: (t: number, about?: "clip") => void;
-    // Whether the playhead is on the video rather than on the clip, so the
-    // clip's frame is drawn dimmed: its rules are not in play.
+    // Whether the playhead is on the video rather than on the clip, so
+    // everything drawn for the clip is dimmed as one: its rules are not in
+    // play.
     dimmed?: boolean;
     // A gesture let go of: an edge of the clip trimmed, a part taken out,
     // the edges of a cut moved, a cut put back. The engine makes the change
@@ -1337,67 +1338,6 @@
     {#each ticks as t (t)}
       <span class="num time" style="left: {x(t)}%">{clock(t)}</span>
     {/each}
-    <!-- The clip, whole, from its first piece to its last. The rules above
-         and below run the length of it whatever is cut out in between,
-         because the holes are inside one clip and not between several: a
-         rule that broke at every cut would read as three clips standing in
-         a row. -->
-    {#if wholeClip}
-      <div
-        class="span frame"
-        class:lit={!!clip && clip.key === hovered}
-        class:dim={dimmed}
-        style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
-      ></div>
-    {/if}
-    {#each drawnPieces as p, i (i)}
-      <div
-        class="piece"
-        class:first={i === 0}
-        class:last={i === drawnPieces.length - 1}
-        style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"
-      ></div>
-    {/each}
-    <!-- A cut is drawn over the pieces rather than between them, so a cut
-         being dragged wider is seen taking the piece rather than waiting
-         for the piece to give way. -->
-    {#each cuts as c (c.index)}
-      <div
-        class="cut"
-        class:editable
-        class:drawing={drawing(c)}
-        style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
-        title={editable
-          ? "A part the clip leaves out. Drag an edge to change it, double-click to put it back."
-          : "A part the clip leaves out."}
-      ></div>
-    {/each}
-    {#if editable && onreshape}
-      <!-- The handles come after every cut, so a handle is never drawn
-           under the next cut's block. -->
-      {#each cuts as c (c.index)}
-        <div
-          class="cutedge"
-          class:active={hand?.kind === "move" && hand.index === c.index}
-          style="left: {x(c.from)}%"
-          role="slider"
-          tabindex="-1"
-          aria-label="Where cut {c.index + 1} starts"
-          aria-valuenow={c.from}
-          onpointerdown={(e) => grabCut(c.index, "from", e)}
-        ></div>
-        <div
-          class="cutedge"
-          class:active={hand?.kind === "move" && hand.index === c.index}
-          style="left: {x(c.to)}%"
-          role="slider"
-          tabindex="-1"
-          aria-label="Where cut {c.index + 1} ends"
-          aria-valuenow={c.to}
-          onpointerdown={(e) => grabCut(c.index, "to", e)}
-        ></div>
-      {/each}
-    {/if}
     <!-- The other clips, the same marks the range picker draws, so the
          timeline zoomed out shows where they all are. A click chooses one. -->
     {#each shownMarks as m (m.id)}
@@ -1414,125 +1354,192 @@
         onclick={() => onmark?.(m.pick ?? m.key)}
       ></button>
     {/each}
-    {#if clip && !locked}
-      <div
-        class="edge"
-        class:active={hand?.kind === "trim" && hand.edge === "start"}
-        style="left: {x(start)}%"
-        role="slider"
-        tabindex="-1"
-        aria-label="Clip start"
-        aria-valuenow={start}
-        onpointerdown={(e) => grab("start", e)}
-      ></div>
-      <div
-        class="edge"
-        class:active={hand?.kind === "trim" && hand.edge === "end"}
-        style="left: {x(end)}%"
-        role="slider"
-        tabindex="-1"
-        aria-label="Clip end"
-        aria-valuenow={end}
-        onpointerdown={(e) => grab("end", e)}
-      ></div>
-    {/if}
-    {#if captionsReadable}
-      <!-- The captions across the middle of the track, each a block from
-           where it appears to where it goes. -->
-      <div
-        class="captions"
-        class:arriving
-        style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
-          'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
-      >
-        {#each captionBlocks as b (b.i)}
-          <!-- A click puts the playhead on the caption's first word, where
-               the video preview shows it spoken. That is where it appears,
-               except for the first caption of a clip, which is on screen
-               from the clip's first frame, before its first word. -->
-          <!-- A block takes no focus. The keys walk the words wherever the
-               focus is, and a block that kept it from a click wore the
-               focus ring the moment a key was pressed, round a caption the
-               video preview had long left. -->
-          <!-- Drawn afresh on every word of the caption shown, which is what
-               starts its pop again. A key on the list would not do it: the
-               list is only looked at again when the captions change. -->
-          {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
-            <div
-              class="caption"
-              class:showing={time >= b.from && time < b.to}
-              style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px); --i: {b.i}"
-              role="button"
-              title="Put the playhead where this caption appears"
-              onpointerdown={(e) => e.stopPropagation()}
-              onclick={() => onseek(firstWordOf(b.c) ?? b.from, "clip")}
-            ><i></i></div>
-          {/key}
-        {/each}
-      </div>
-      {#if !locked && oncaptiontime && !shapedShown}
-        {#each captionBlocks as b (b.i)}
+    <!-- Everything drawn for the chosen clip, its frame, its pieces, its
+         cuts and their edges, its trim edges, its captions and their edges
+         and its thumbnails, in one place, so it is dimmed as one thing
+         while the playhead is on the video, see .chosen.dim in app.css.
+         It lays nothing out: each part is still placed on the track. -->
+    <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
+      <!-- The clip, whole, from its first piece to its last. The rules above
+           and below run the length of it whatever is cut out in between,
+           because the holes are inside one clip and not between several: a
+           rule that broke at every cut would read as three clips standing in
+           a row. -->
+      {#if wholeClip}
+        <div
+          class="span frame"
+          class:lit={!!clip && clip.key === hovered}
+          style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
+        ></div>
+      {/if}
+      {#each drawnPieces as p, i (i)}
+        <div
+          class="piece"
+          class:first={i === 0}
+          class:last={i === drawnPieces.length - 1}
+          style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"
+        ></div>
+      {/each}
+      <!-- A cut is drawn over the pieces rather than between them, so a cut
+           being dragged wider is seen taking the piece rather than waiting
+           for the piece to give way. -->
+      {#each cuts as c (c.index)}
+        <div
+          class="cut"
+          class:editable
+          class:drawing={drawing(c)}
+          style="left: {x(c.from)}%; width: {x(c.to) - x(c.from)}%"
+          title={editable
+            ? "A part the clip leaves out. Drag an edge to change it, double-click to put it back."
+            : "A part the clip leaves out."}
+        ></div>
+      {/each}
+      {#if editable && onreshape}
+        <!-- The handles come after every cut, so a handle is never drawn
+             under the next cut's block. -->
+        {#each cuts as c (c.index)}
           <div
-            class="capedge start"
-            class:active={capDraft?.index === b.i && capDraft.edge === "start"}
-            style="left: {x(b.from)}%"
+            class="cutedge"
+            class:active={hand?.kind === "move" && hand.index === c.index}
+            style="left: {x(c.from)}%"
             role="slider"
             tabindex="-1"
-            aria-label="When caption {b.i + 1} appears"
-            aria-valuenow={b.c.start}
-            title={b.c.startMoved
-              ? "When this caption appears, put here by hand. Drag to move it, double-click to put it back where its words put it."
-              : "When this caption appears. Drag to move it."}
-            onpointerdown={(e) => grabCaption(b.i, "start", e)}
-            ondblclick={(e) => {
-              e.stopPropagation();
-              resetCaption(b.i, "start");
-            }}
+            aria-label="Where cut {c.index + 1} starts"
+            aria-valuenow={c.from}
+            onpointerdown={(e) => grabCut(c.index, "from", e)}
           ></div>
           <div
-            class="capedge end"
-            class:active={capDraft?.index === b.i && capDraft.edge === "end"}
-            style="left: {x(b.to)}%"
+            class="cutedge"
+            class:active={hand?.kind === "move" && hand.index === c.index}
+            style="left: {x(c.to)}%"
             role="slider"
             tabindex="-1"
-            aria-label="When caption {b.i + 1} goes"
-            aria-valuenow={b.c.end}
-            title={b.c.endMoved
-              ? "When this caption goes, put here by hand. Drag to move it, double-click to put it back where its words put it."
-              : "When this caption goes. Drag to move it."}
-            onpointerdown={(e) => grabCaption(b.i, "end", e)}
-            ondblclick={(e) => {
-              e.stopPropagation();
-              resetCaption(b.i, "end");
-            }}
+            aria-label="Where cut {c.index + 1} ends"
+            aria-valuenow={c.to}
+            onpointerdown={(e) => grabCut(c.index, "to", e)}
           ></div>
         {/each}
       {/if}
-    {/if}
-    {#if clip}
-      <!-- The thumbnails along the foot of the track, each a picture in the
-           shape of a short, over the captions, lit when the playhead is on
-           its frame. -->
-      {#each thumbMarks as m, i (m.at)}
+      {#if clip && !locked}
         <div
-          class="thumb"
-          class:here={Math.floor(m.shown / frame) === playFrame}
-          class:active={thumbDrag?.from === m.at}
-          style="left: {x(m.shown)}%"
+          class="edge"
+          class:active={hand?.kind === "trim" && hand.edge === "start"}
+          style="left: {x(start)}%"
           role="slider"
           tabindex="-1"
-          aria-label="Thumbnail {i + 1}"
-          aria-valuenow={m.shown}
-          title={locked
-            ? "A thumbnail. Click to see it"
-            : "A thumbnail. Click to see it, drag it to another frame. The thumbnail button or T removes it"}
-          onpointerdown={(e) => grabThumb(m.at, e)}
+          aria-label="Clip start"
+          aria-valuenow={start}
+          onpointerdown={(e) => grab("start", e)}
+        ></div>
+        <div
+          class="edge"
+          class:active={hand?.kind === "trim" && hand.edge === "end"}
+          style="left: {x(end)}%"
+          role="slider"
+          tabindex="-1"
+          aria-label="Clip end"
+          aria-valuenow={end}
+          onpointerdown={(e) => grab("end", e)}
+        ></div>
+      {/if}
+      {#if captionsReadable}
+        <!-- The captions across the middle of the track, each a block from
+             where it appears to where it goes. -->
+        <div
+          class="captions"
+          class:arriving
+          style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
+            'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
         >
-          <Icon name="thumbnail" size={18} />
+          {#each captionBlocks as b (b.i)}
+            <!-- A click puts the playhead on the caption's first word, where
+                 the video preview shows it spoken. That is where it appears,
+                 except for the first caption of a clip, which is on screen
+                 from the clip's first frame, before its first word. -->
+            <!-- A block takes no focus. The keys walk the words wherever the
+                 focus is, and a block that kept it from a click wore the
+                 focus ring the moment a key was pressed, round a caption the
+                 video preview had long left. -->
+            <!-- Drawn afresh on every word of the caption shown, which is what
+                 starts its pop again. A key on the list would not do it: the
+                 list is only looked at again when the captions change. -->
+            {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+              <div
+                class="caption"
+                class:showing={time >= b.from && time < b.to}
+                style="left: {x(b.from)}%; width: calc({Math.max(x(b.to) - x(b.from), 0)}% - 2px); --i: {b.i}"
+                role="button"
+                title="Put the playhead where this caption appears"
+                onpointerdown={(e) => e.stopPropagation()}
+                onclick={() => onseek(firstWordOf(b.c) ?? b.from, "clip")}
+              ><i></i></div>
+            {/key}
+          {/each}
         </div>
-      {/each}
-    {/if}
+        {#if !locked && oncaptiontime && !shapedShown}
+          {#each captionBlocks as b (b.i)}
+            <div
+              class="capedge start"
+              class:active={capDraft?.index === b.i && capDraft.edge === "start"}
+              style="left: {x(b.from)}%"
+              role="slider"
+              tabindex="-1"
+              aria-label="When caption {b.i + 1} appears"
+              aria-valuenow={b.c.start}
+              title={b.c.startMoved
+                ? "When this caption appears, put here by hand. Drag to move it, double-click to put it back where its words put it."
+                : "When this caption appears. Drag to move it."}
+              onpointerdown={(e) => grabCaption(b.i, "start", e)}
+              ondblclick={(e) => {
+                e.stopPropagation();
+                resetCaption(b.i, "start");
+              }}
+            ></div>
+            <div
+              class="capedge end"
+              class:active={capDraft?.index === b.i && capDraft.edge === "end"}
+              style="left: {x(b.to)}%"
+              role="slider"
+              tabindex="-1"
+              aria-label="When caption {b.i + 1} goes"
+              aria-valuenow={b.c.end}
+              title={b.c.endMoved
+                ? "When this caption goes, put here by hand. Drag to move it, double-click to put it back where its words put it."
+                : "When this caption goes. Drag to move it."}
+              onpointerdown={(e) => grabCaption(b.i, "end", e)}
+              ondblclick={(e) => {
+                e.stopPropagation();
+                resetCaption(b.i, "end");
+              }}
+            ></div>
+          {/each}
+        {/if}
+      {/if}
+      {#if clip}
+        <!-- The thumbnails along the foot of the track, each a picture in the
+             shape of a short, over the captions, lit when the playhead is on
+             its frame. -->
+        {#each thumbMarks as m, i (m.at)}
+          <div
+            class="thumb"
+            class:here={Math.floor(m.shown / frame) === playFrame}
+            class:active={thumbDrag?.from === m.at}
+            style="left: {x(m.shown)}%"
+            role="slider"
+            tabindex="-1"
+            aria-label="Thumbnail {i + 1}"
+            aria-valuenow={m.shown}
+            title={locked
+              ? "A thumbnail. Click to see it"
+              : "A thumbnail. Click to see it, drag it to another frame. The thumbnail button or T removes it"}
+            onpointerdown={(e) => grabThumb(m.at, e)}
+          >
+            <Icon name="thumbnail" size={18} />
+          </div>
+        {/each}
+      {/if}
+    </div>
   </div>
     {#if time >= view.from && time <= view.to}
       <div class="at" style="left: {x(time)}%">
