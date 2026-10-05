@@ -9,7 +9,7 @@
 import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -96,6 +96,14 @@ async function episode(fps = 1) {
   }
 }
 
+let framesBytes = null;
+async function framesBody() {
+  const file = await framesEpisode();
+  if (!file) return null;
+  framesBytes ??= await readFile(file);
+  return framesBytes;
+}
+
 // The whole file, read once. It was read from disk on every range request,
 // and a video element asks for a great many of them.
 const episodeBytes = new Map();
@@ -137,17 +145,65 @@ async function still(res, path) {
   res.end(body);
 }
 
+// The episode the frame queue plays, see frames() below. VP9 and Opus,
+// which the Chromium Playwright brings can decode, in an MP4, which is
+// what the frame queue reads, made the way a real episode is shaped: 25
+// frames a second and a key frame every four seconds, so a cut lands in
+// the middle of a group of pictures the way it does in a camera's file.
+//
+// The picture says which frame it is. Its top half is the frame number in
+// sixteen bars, the highest bit on the left, so a probe reads back from
+// the canvas what was drawn rather than trusting what it was told. The
+// bottom half is the grey that climbs, as in the other episode.
+//
+// The sound says where it is. A tone whose pitch climbs, 200 Hz at the
+// start and 2 Hz higher every second, with a little noise under it that
+// is never the same twice. The tone is what a person hears move. The
+// noise is what makes every few milliseconds of the sound unlike every
+// other, so a probe can lay what was played over the episode's own sound,
+// decoded by ffmpeg, and find a single sample missing, doubled or taken
+// from inside a cut.
+//
+// Ten minutes, made in about half a minute, 8 MB, kept in the temp folder.
+export const framesAt = join(tmpdir(), "framefairy-preview-frames-v1.mp4");
+
+export async function framesEpisode() {
+  try {
+    await stat(framesAt);
+    return framesAt;
+  } catch {}
+  try {
+    await run("ffmpeg", [
+      "-v", "error",
+      "-f", "lavfi", "-i", "color=c=black:s=192x108:r=25",
+      "-f", "lavfi", "-i", "aevalsrc=0.35*sin(2*PI*(200*t+t*t))+0.15*(random(0)*2-1):s=48000:c=mono",
+      "-t", "600",
+      "-vf", "geq=lum='if(lt(Y\\,54)\\,if(bitand(N\\,pow(2\\,15-floor(X/12)))\\,220\\,30)\\,40+160*T/600)':cb=128:cr=128",
+      "-c:v", "libvpx-vp9", "-b:v", "200k", "-deadline", "realtime", "-cpu-used", "8",
+      "-g", "100", "-keyint_min", "100", "-pix_fmt", "yuv420p",
+      "-c:a", "libopus", "-b:a", "96k",
+      "-movflags", "+faststart",
+      framesAt + ".part.mp4", "-y",
+    ]);
+    await rename(framesAt + ".part.mp4", framesAt);
+    return framesAt;
+  } catch {
+    return null;
+  }
+}
+
 // The video element asks for a stretch at a time and will not seek at all
 // without a 206, so the range is answered rather than the whole file.
-async function media(res, range, fps) {
-  const body = await episodeBody(fps);
+async function media(res, range, fps, frames = false) {
+  const body = frames ? await framesBody() : await episodeBody(fps);
+  const type = frames ? "video/mp4" : "video/webm";
   if (!body) {
     res.writeHead(404).end("no ffmpeg, so no episode to play");
     return;
   }
   const hit = /bytes=(\d*)-(\d*)/.exec(range ?? "");
   if (!hit) {
-    res.writeHead(200, { "content-type": "video/webm", "content-length": body.length, "accept-ranges": "bytes" });
+    res.writeHead(200, { "content-type": type, "content-length": body.length, "accept-ranges": "bytes" });
     res.end(body);
     return;
   }
@@ -155,7 +211,7 @@ async function media(res, range, fps) {
   const to = hit[2] ? Number(hit[2]) : body.length - 1;
   const part = body.subarray(from, to + 1);
   res.writeHead(206, {
-    "content-type": "video/webm",
+    "content-type": type,
     "content-length": part.length,
     "accept-ranges": "bytes",
     "content-range": `bytes ${from}-${to}/${body.length}`,
@@ -182,7 +238,15 @@ export async function screen({
   // recorder, or window.__pieces set before the episode is opened.
   init = null,
   initArg = undefined,
+  // The page to open, the app unless it says otherwise.
+  page: path = "",
+  // More for the browser's command line.
+  args = [],
 } = {}) {
+  // ?slowread=200 answers every range of the frame queue's episode 200 ms
+  // late, the way a busy disk or a long episode can. The frame queue reads
+  // ahead so a cut never waits on the file, and this is how to show it.
+  const slowread = Number(/[?&]slowread=(\d+)/.exec(query)?.[1] ?? 0);
   // ?unread=12 holds the episode back from the video for the first 12
   // seconds after it first asks for it, the way the webview cannot read the
   // file while the machine transcribes an episode just added. The video
@@ -200,6 +264,11 @@ export async function screen({
       const asked = url.searchParams.get("path") ?? "";
       if (/still-\d+/.test(asked)) {
         await still(res, asked);
+        return;
+      }
+      if (asked === "/frames.mp4") {
+        if (slowread) await new Promise((r) => setTimeout(r, slowread));
+        await media(res, req.headers.range, fps, true);
         return;
       }
       if (unread) {
@@ -222,7 +291,7 @@ export async function screen({
   const at = port++;
   await new Promise((r) => server.listen(at, r));
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args });
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
   // ?slowseek=150 makes every seek take 150 ms to land, the way WebKit's
   // can on a Mac with a long episode, where the picture is decoded from the
@@ -383,7 +452,7 @@ export async function screen({
   // probe at all, so anything thrown is printed.
   page.on("pageerror", (e) => console.log("pageerror", String(e)));
   if (init) await page.addInitScript(init, initArg);
-  await page.goto(`http://127.0.0.1:${at}/${query}`);
+  await page.goto(`http://127.0.0.1:${at}/${path}${query}`);
   await page.waitForTimeout(700);
 
   return {
@@ -490,4 +559,25 @@ export async function rows(page, clip) {
     }
     return out;
   }, png);
+}
+
+// The frame queue on its own, see frontend/src/lib/frames/ and "The frame
+// queue" in the interface skill: one canvas playing the episode
+// framesEpisode() makes, and window.__queue to drive it. ?read and ?hear
+// write down what was drawn and what was heard, see preview/frames/main.ts,
+// and ?slowread slows the file. The sound card is let go without a gesture,
+// which the app gets from the space bar.
+export async function frames({ query = "", width = 900, height = 520 } = {}) {
+  if (!(await framesEpisode())) throw new Error("no ffmpeg, so no episode for the frame queue");
+  const open = await screen({
+    query,
+    width,
+    height,
+    page: "preview/frames/index.html",
+    args: ["--autoplay-policy=no-user-gesture-required"],
+  });
+  await open.page.waitForFunction(() => window.__ready, null, { timeout: 20000 });
+  const ready = await open.page.evaluate(() => window.__ready);
+  if (ready !== true) throw new Error(`the frame queue did not open: ${ready}`);
+  return open;
 }
