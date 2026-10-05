@@ -434,10 +434,45 @@ func TestWalks(t *testing.T) {
 		t.Logf("%s:\n%s", what, out)
 	}
 	run("sequences.mjs")
-	walksWanted, steps := envNumber("WALKS", 4), envNumber("STEPS", 60)
-	for seed := 1; seed <= walksWanted; seed++ {
-		run("words.mjs", fmt.Sprintf("SEED=%d", seed), fmt.Sprintf("STEPS=%d", steps))
+	walksWanted := envNumber("WALKS", 3)
+	// Each walk takes its own number of steps unless STEPS says.
+	var steps []string
+	if n := envNumber("STEPS", 0); n > 0 {
+		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
 	}
+	// Every walk in the folder, each for the same seeds.
+	for _, script := range walkScripts(t, walks) {
+		for seed := 1; seed <= walksWanted; seed++ {
+			run(script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)...)
+		}
+	}
+}
+
+// walkScripts are the walks in the folder: every script that walks with
+// walk.mjs, so a new walk runs without being named anywhere else.
+func walkScripts(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".mjs") || e.Name() == "walk.mjs" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), `from "./walk.mjs"`) {
+			out = append(out, e.Name())
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("no walks found in " + dir)
+	}
+	return out
 }
 
 func envNumber(name string, otherwise int) int {
