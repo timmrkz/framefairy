@@ -18,6 +18,10 @@ import (
 type sideBySide struct {
 	inner  Recognizer
 	copies int
+	// pair holds the first piece until a second one is being heard, for
+	// the test that checks two are. Without it a part heard in one piece
+	// waited ten seconds for a second that never came.
+	pair bool
 	// The inner recogniser is heard one piece at a time. The waiting is
 	// outside it, so the pieces still overtake each other.
 	mu   sync.Mutex
@@ -50,7 +54,7 @@ func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 	// is held, so the wait has a limit: once it runs out, no piece waits
 	// again, and the test fails as it should.
 	release := func() { s.pairOnce.Do(func() { close(s.pairedChan()) }) }
-	if now >= 2 {
+	if now >= 2 || !s.pair {
 		release()
 	} else {
 		select {
@@ -112,7 +116,7 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	var mu sync.Mutex
 	var problems []string
 	last := 0.0
-	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4}
+	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4, pair: true}
 	copies.seen = func() {
 		file, words, _, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
 		if !ok {

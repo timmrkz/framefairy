@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -60,7 +62,50 @@ func testEpisode(t *testing.T, seconds string) string {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg is not installed")
 	}
+	made, err := episodes.make(seconds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A copy of its own, because a test works in the folder beside its
+	// episode, and one test makes "the same episode again" to have one
+	// nothing was heard of before.
+	body, err := os.ReadFile(made)
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(t.TempDir(), "episode.mp4")
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// episodes are the test episodes made for this run of the tests, one of
+// each length, in a folder of their own that TestMain takes away at the
+// end. Forty tests used to make their own, all of them the same picture
+// and the same tone, at four seconds each for the 70 second one.
+var episodes = &testEpisodes{files: map[string]string{}}
+
+type testEpisodes struct {
+	mu    sync.Mutex
+	dir   string
+	files map[string]string
+}
+
+func (m *testEpisodes) make(seconds string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if path, ok := m.files[seconds]; ok {
+		return path, nil
+	}
+	if m.dir == "" {
+		dir, err := os.MkdirTemp("", "framefairy-episodes-")
+		if err != nil {
+			return "", err
+		}
+		m.dir = dir
+	}
+	path := filepath.Join(m.dir, seconds+".mp4")
 	// mpeg4 and aac are in every ffmpeg, the one we ship included, which
 	// has no libx264. Test episodes made with libx264 could not be made on
 	// the macOS runner once it tested against our ffmpeg.
@@ -69,9 +114,10 @@ func testEpisode(t *testing.T, seconds string) string {
 		"-f", "lavfi", "-i", "sine=f=220:d="+seconds,
 		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
 	if err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
+		return "", fmt.Errorf("making the test episode: %s %s", err, out)
 	}
-	return path
+	m.files[seconds] = path
+	return path, nil
 }
 
 func TestProjectSteps(t *testing.T) {
@@ -88,6 +134,9 @@ func TestProjectSteps(t *testing.T) {
 	log.SetSink(rec.sink)
 	e := NewEngine(log)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	// The one test that frames with the face detector, the way the app
+	// does, see TestMain.
+	e.NoFaces = false
 
 	base := DefaultOptions()
 	base.LLMURL = server.URL

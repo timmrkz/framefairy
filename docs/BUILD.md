@@ -263,6 +263,15 @@ first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
 
+**The tests that render share their episodes and skip the face detector.**
+A test episode is made once for each length and every test gets a copy,
+the way the app's tests share their videos. The face detector finds no
+face in a test picture, so the tests turn it off and framing falls back
+to what is in focus, as it did anyway. It cost some 50 milliseconds a
+frame, and with forty identical episodes made one by one it was most of
+the five minutes the engine's tests took. `TestProjectSteps` still frames
+with it.
+
 **A Linux job installs what it uses and nothing else**, through
 `scripts/ci-packages.sh`. Every Go job compiles the app's package, the
 fuzzing too because one of its targets is there, so GTK, WebKit and
