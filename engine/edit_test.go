@@ -473,8 +473,19 @@ func FuzzPlanEdits(f *testing.F) {
 	// Thumbnails added, moved and removed while the clip is cut and
 	// trimmed under them.
 	f.Add([]byte{9, 104, 0, 9, 104, 120, 6, 110, 125, 9, 120, 0, 0, 100, 112})
+	// Trim clip 02 past the camera switch and put the end back, then cut
+	// across the switch and put the cut back.
+	f.Add([]byte{0, 201, 205, 0, 201, 220, 6, 205, 215, 7, 211, 0})
 	f.Fuzz(func(t *testing.T, script []byte) {
 		path := editablePlanPath(t)
+		// Clip 02 is two shots that meet at a camera switch at 21, the way
+		// a search parts a clip, and no edit may make one piece of them.
+		if err := os.WriteFile(path, []byte(strings.Replace(editablePlan,
+			`"segments": [{"start": 20.0, "end": 22.0}]`,
+			`"segments": [{"start": 20.0, "end": 21.0, "crop_x": 100}, {"start": 21.0, "end": 22.0, "crop_x": 500}]`,
+			1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		tr := editableTranscript()
 		// Times are read as tenths of a second from 0 to 25.5, which covers
 		// the whole plan and a good part either side of it.
@@ -554,6 +565,9 @@ func FuzzPlanEdits(f *testing.F) {
 							c.ID, k, seg.Start, previous)
 					}
 					previous = seg.End
+					if c.ID == "02" && seg.Start < 21 && seg.End > 21 {
+						t.Fatalf("step %d made one piece of two shots: %+v", i/3, c.Segments)
+					}
 				}
 				if c.Duration() <= 0 {
 					t.Fatalf("clip %s is %v long", c.ID, c.Duration())

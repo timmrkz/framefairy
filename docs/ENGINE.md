@@ -441,6 +441,27 @@ its pieces change and never after, and read by `readFound` in
 `engine/clips.go`, which takes nothing but two numbers in order. A double-click
 on an edge of the clip on the clip timeline trims it back there.
 
+**What is put back keeps its camera switch.** A search parts a clip at
+every camera switch, and each piece carries the crop of its own shot. So a
+clip also keeps the pieces it was found with, `found_segments`, written by
+`editPieces` with `found` and read by `foundPieces` in `engine/edit.go`,
+which takes them only as pieces in order and otherwise uses the pieces the
+clip has. Whatever a gesture brings back, a cut put back or an edge moved
+out over what the clip leaves out, is framed by the shots it shows,
+`framedBack` in `engine/shape.go`: a shot runs from the start of its piece
+to the start of the next, and a shot a piece of the clip still shows takes
+that piece's crop, so a crop placed by hand comes back with it. Pieces of
+one shot that meet become one piece again, `meet`, and two shots stay two.
+A join used to stretch the piece before the cut over the one after it, so
+a cut made across the switch at 12.80 and put back left one piece from
+9.60 to 16.00, and the second shot was shown through the first shot's
+crop. An edge put back after it had trimmed a shot away did the same.
+Where a search had already left out the part with the switch in it,
+nobody knows where the switch is, and the part goes with the shot before.
+Two pieces that meet have no cut between them, so a join or a move there
+is refused. `engine/shots_test.go` holds the cases, and `FuzzPlanEdits`
+checks that no edit ever makes one piece of two shots.
+
 Thumbnails are kept per clip in `thumbnails`, the moments of the episode a
 picture of the short is taken at. `readThumbnails` in `engine/clips.go`
 keeps only numbers inside a kept piece, each once, in time order, at most
