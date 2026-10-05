@@ -434,11 +434,16 @@ func TestWalks(t *testing.T) {
 		t.Logf("%s:\n%s", what, out)
 	}
 	run("sequences.mjs")
-	walksWanted, steps := envNumber("WALKS", 3), envNumber("STEPS", 60)
+	walksWanted := envNumber("WALKS", 3)
+	// Each walk takes its own number of steps unless STEPS says.
+	var steps []string
+	if n := envNumber("STEPS", 0); n > 0 {
+		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
+	}
 	// Every walk in the folder, each for the same seeds.
 	for _, script := range walkScripts(t, walks) {
 		for seed := 1; seed <= walksWanted; seed++ {
-			run(script, fmt.Sprintf("SEED=%d", seed), fmt.Sprintf("STEPS=%d", steps))
+			run(script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)...)
 		}
 	}
 }

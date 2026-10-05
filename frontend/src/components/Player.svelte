@@ -26,6 +26,7 @@
     stillFits,
     shouldChase,
     pieceAt as pieceIndex,
+    playFrom,
     playingPiece,
   } from "../lib/flow";
   import Info from "./Info.svelte";
@@ -312,6 +313,8 @@
       // the space bar after picking a clip seeked before it played, and a
       // seek is the one thing that can refuse a play.
       if (time < clipStart - frameOf / 2 || time >= clipEnd - 0.05) time = clipStart;
+      // And from where a cut ends when the playhead stands in one.
+      time = playFrom(pieces, time, frameOf);
       atPiece = pieceAt(time);
       // And only when the picture really has to move. A seek that changes
       // nothing still interrupts, still answers with nothing, and still

@@ -33,6 +33,19 @@ export function pieceAt(pieces: Piece[], at: number): number {
   return index < 0 ? Math.max(pieces.length - 1, 0) : index;
 }
 
+// Where a clip plays from when the playhead stands at a time: there, when
+// that is in one of its pieces, half a frame of give either side, and
+// otherwise where the piece it runs into next begins. A playhead in a cut
+// stands on something the clip does not have, and the clip played it: a
+// double-click that cuts a part out leaves the playhead in it, and the
+// space bar then played the part just cut, which the render does not. A
+// walk found it.
+export function playFrom(pieces: Piece[], at: number, frame: number): number {
+  if (!pieces.length) return at;
+  const piece = pieces[pieceAt(pieces, at)];
+  return at < piece.start - frame / 2 ? piece.start : at;
+}
+
 // The piece the player is playing, kept inside the pieces that exist.
 //
 // The pieces change under the player whenever a cut is taken out or put

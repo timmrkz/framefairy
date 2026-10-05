@@ -37,7 +37,8 @@
 #   make fuzz       the fuzz targets, FUZZTIME executions each
 #   make interface  the interface type check and its own tests
 #   make walks      the interface against the real Go side, in Chromium:
-#                   the sequences, and every walk WALKS times, STEPS steps each
+#                   the sequences, and every walk WALKS times, each of
+#                   its own length unless STEPS says
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -354,7 +355,7 @@ fuzz: toolchain modules
 # the Chromium Playwright drives, which CI installs and a cloud session
 # already has. Built for the bridge first, which takes seconds.
 WALKS ?= 3
-STEPS ?= 60
+STEPS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
 	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' $(GO) test -count=1 -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app

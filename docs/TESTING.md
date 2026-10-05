@@ -125,6 +125,25 @@ A walk is a script in the folder that walks with `walk.mjs`, which runs
 the loop: look, pick a gesture that can be made, make it, check the
 rules. `TestWalks` runs every one it finds, for the same seeds.
 
+### `playback.mjs`: playing a clip
+
+The gestures: the space bar, playing for a moment and pausing, playing a
+clip to its end, a double-click that cuts a part out, one that puts a cut
+back, a click on the clip timeline, and Shift and an arrow. While a clip
+plays, the walk records every frame the video preview puts on screen, by
+what the browser says it put up, `requestVideoFrameCallback`, not by the
+clock. The rules, besides every walk's:
+
+| Rule | What it would have caught |
+| --- | --- |
+| Every frame put on screen while a clip plays is in one of its pieces, a frame of give either side | the part just cut played when the space bar was pressed with the playhead in it |
+| The space bar plays: a frame comes | a press of the space bar lost while the file was still being read |
+| Paused, the picture stays where it was paused | |
+| A clip played to its end stops at its end | |
+
+The bridge's episode runs at five frames a second, so a frame of give is
+a fifth of a second.
+
 ### `sequences.mjs`: the cases found by hand
 
     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
@@ -149,11 +168,12 @@ in a page of its own.
 ### Where they run
 
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
-unless set, of `STEPS` steps, 60 unless set, through the Go test `TestWalks`,
+unless set, each walk as long as it says, 60 steps, or 25 for playback,
+which plays in real time, unless `STEPS` is set, through the Go test `TestWalks`,
 which starts the bridge on a port of its own and fails with what a
 sequence or a walk printed. The seeds are the same every time, so a walk
 that breaks a rule breaks it again on the next run. `make walks WALKS=40`
-looks further. It takes about five minutes as it is.
+looks further. It takes about seven minutes as it is.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
@@ -188,3 +208,8 @@ rather than there: 24.80 where the clip had ended at 24.72, because a
 search finds a clip on the episode's clock and not on its frames. An
 edge put back now lands where the clip was found exactly,
 `TestAClipKeepsWhereItWasFound`.
+
+The playback walk found that a clip played from a playhead in a cut
+played the cut: a double-click that cuts a part out leaves the playhead
+in it. Every one of six walks showed it within sixteen steps, and none
+does with the fix, `playFrom` in `lib/flow.ts`.

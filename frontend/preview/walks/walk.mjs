@@ -8,11 +8,13 @@
 import { random, open, chosen, shown } from "./bridge.mjs";
 import { Watch } from "./rules.mjs";
 
-// The page on the bridge, the seed's random numbers, and the watch.
-export async function begin() {
+// The page on the bridge, the seed's random numbers, and the watch. A walk
+// says how many steps it takes unless STEPS says otherwise: one whose steps
+// play the episode in real time takes fewer.
+export async function begin({ steps: usual = 60 } = {}) {
   const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
   const seed = Number(process.env.SEED ?? Math.floor(Math.random() * 1e6));
-  const steps = Number(process.env.STEPS ?? 60);
+  const steps = Number(process.env.STEPS || usual);
   const { browser, page, errors } = await open(url);
   const watch = new Watch(page, await chosen(page), errors);
   return { seed, steps, rng: random(seed), browser, page, watch };

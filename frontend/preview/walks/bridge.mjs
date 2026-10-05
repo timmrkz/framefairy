@@ -183,3 +183,50 @@ export async function drag(page, x, y, dx, shift) {
   await page.mouse.up();
   if (shift) await page.keyboard.up("Shift");
 }
+
+// Asks the Go side something directly, the way the interface does.
+export async function ask(page, name, ...args) {
+  return page.evaluate(
+    async ({ name, args }) => {
+      const answer = await fetch("/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, args }),
+      });
+      return answer.json();
+    },
+    { name, args },
+  );
+}
+
+// Records every frame the video preview puts on screen, by the moment of
+// the episode it shows, until stopped: what the browser says it put up,
+// requestVideoFrameCallback, not what the clock says.
+export async function recordFrames(page) {
+  await page.evaluate(() => {
+    const v = document.querySelector("video");
+    window.__frames = [];
+    window.__recording = true;
+    const watch = () =>
+      v.requestVideoFrameCallback((now, meta) => {
+        if (!window.__recording) return;
+        window.__frames.push(meta.mediaTime);
+        watch();
+      });
+    watch();
+  });
+  return async () =>
+    page.evaluate(() => {
+      window.__recording = false;
+      return window.__frames;
+    });
+}
+
+// Where the video preview's picture is, on the episode's clock, and
+// whether it plays.
+export async function video(page) {
+  return page.evaluate(() => {
+    const v = document.querySelector("video");
+    return { at: v.currentTime, paused: v.paused, seeking: v.seeking };
+  });
+}

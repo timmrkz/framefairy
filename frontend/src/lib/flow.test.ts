@@ -25,6 +25,7 @@ import {
   playingAt,
   jumpStep,
   playingPiece,
+  playFrom,
   shouldChase,
   inEpisode,
   endInEpisode,
@@ -547,6 +548,28 @@ describe("jumpStep", () => {
       running = !f.paused;
     }
     expect(jumping).toBe(false);
+  });
+});
+
+describe("playFrom", () => {
+  const two = [
+    { start: 0, end: 3.4 },
+    { start: 4.4, end: 24.72 },
+  ];
+  it("plays from the playhead inside a piece", () => {
+    expect(playFrom(two, 1.2, 0.2)).toBe(1.2);
+    expect(playFrom(two, 10, 0.2)).toBe(10);
+  });
+  it("plays from where the cut ends when the playhead is in it", () => {
+    expect(playFrom(two, 3.9, 0.2)).toBe(4.4);
+    expect(playFrom(two, 3.4, 0.2)).toBe(4.4);
+  });
+  it("gives half a frame at a piece's start", () => {
+    expect(playFrom(two, 4.35, 0.2)).toBe(4.35);
+    expect(playFrom(two, 4.25, 0.2)).toBe(4.4);
+  });
+  it("leaves a clip of no pieces alone", () => {
+    expect(playFrom([], 7, 0.2)).toBe(7);
   });
 });
 

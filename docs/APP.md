@@ -260,6 +260,10 @@ and every seek after it shows the video's own frame. The jump used to wait
 for the next play, and until then every seek made while paused, a click on
 the clip timeline or a press of an arrow key, had a frame from the engine
 drawn over a video that had already landed, each one waiting on the engine.
+A clip played from a playhead that stands in one of its cuts plays from
+where that cut ends, see `playFrom` in `lib/flow.ts`. A double-click that
+cuts a part out leaves the playhead in it, and the space bar then played
+the part just cut, which the render does not have. A walk found it.
 
 Until the video has read anything of the file, it has no picture and no
 clock, and that is often so for an episode just added, whose file is read by
