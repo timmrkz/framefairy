@@ -575,6 +575,15 @@ number of frames long. They found two things, both fixed:
   `SourceInfo.OnFrames`, and makes its captions from that same clip, so
   the two add up to the same. An edge moves by half a frame at most.
 
+The sound fades for 15 ms at the clip's two ends and at every cut, which
+keeps a hard cut from clicking, and nowhere else. Two pieces that meet at
+a camera switch are heard straight on: each piece used to fade out and in
+as if something were cut, a dip of 30 ms in the middle of a word.
+`TestTwoShotsThatMeetRenderWithoutASeam` in `engine/seam_test.go` renders
+two shots that meet from a steady tone and a picture a step brighter on
+every frame, and checks that no frame is lost or shown twice at the switch
+and that the tone neither dips nor jumps there.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and

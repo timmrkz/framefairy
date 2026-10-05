@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// Fade is the audio fade at each internal join, in seconds. It kills the
-// click a hard audio cut makes.
+// Fade is the audio fade at each cut and at the clip's two ends, in
+// seconds. It kills the click a hard audio cut makes.
 const Fade = 0.015
 
 // RenderSettings are the encoder choices for one run.
@@ -54,12 +54,20 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		chain = append(chain, "fps="+source.FPSString(), "format=yuv420p", "setsar=1")
 		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", i, strings.Join(chain, ","), i))
 
+		// A piece that runs straight on from the one before, the way a
+		// search parts a clip at a camera switch, is heard straight on.
+		// Nothing is cut there, and a fade out and in would be a dip in
+		// the sound of 30 ms.
 		fadeOutAt := math.Max(0, seg.Duration()-Fade)
 		achain := []string{
 			"asetpts=PTS-STARTPTS",
 			"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
-			fmt.Sprintf("afade=t=in:st=0:d=%s", pyFloatRepr(Fade)),
-			fmt.Sprintf("afade=t=out:st=%s:d=%s", fixed(fadeOutAt, 4), pyFloatRepr(Fade)),
+		}
+		if i == 0 || seg.Start-clip.Segments[i-1].End > 0.0005 {
+			achain = append(achain, fmt.Sprintf("afade=t=in:st=0:d=%s", pyFloatRepr(Fade)))
+		}
+		if i+1 == len(clip.Segments) || clip.Segments[i+1].Start-seg.End > 0.0005 {
+			achain = append(achain, fmt.Sprintf("afade=t=out:st=%s:d=%s", fixed(fadeOutAt, 4), pyFloatRepr(Fade)))
 		}
 		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", i, strings.Join(achain, ","), i))
 	}
