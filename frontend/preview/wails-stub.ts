@@ -294,7 +294,10 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
     segments,
     words: allWords()
       .filter((w) => segments.some((p) => holds(p, w)))
-      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text }))
+      // A word corrected to nothing is removed, the way Transcript.Correct
+      // leaves it out.
+      .filter((w) => w.text !== ""),
   };
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
@@ -1457,8 +1460,8 @@ export const Call = {
         return Promise.resolve(null);
       }
       case "SetWord": {
-        const text = String(args[4]).trim();
-        if (!text) return Promise.reject(new Error("a word cannot be empty"));
+        // Nothing removes the word, the way SetWordText does.
+        const text = String(args[4]).replace(/\s+/g, " ").trim();
         if (location.search.includes("refuse")) {
           return Promise.reject(new Error("there is no word at 0:57"));
         }
@@ -1542,7 +1545,9 @@ export const Call = {
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve([]);
         return Promise.resolve(
-          words(Number(args[1]), Number(args[2])).map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+          words(Number(args[1]), Number(args[2]))
+            .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text }))
+            .filter((w) => w.text !== ""),
         );
       case "Still":
         // One file per frame, and the harness episode has a frame a second,

@@ -725,6 +725,33 @@
     at?.addRange(range);
   }
 
+  // The words removed whose removal is still on its way to the engine,
+  // by the moment they were heard. A removed word leaves the caption box
+  // with the key that removed it, and the engine's answer, the captions
+  // without it, takes over when it lands.
+  let gone = $state<Set<number>>(new Set());
+  $effect(() => {
+    void captions;
+    untrack(() => {
+      if (gone.size) gone = new Set();
+    });
+  });
+
+  async function removeWord(said: number) {
+    // The frame goes with the word, since there is nothing left to frame.
+    keyed = null;
+    walked = 0;
+    gone = new Set([...gone, said]);
+    try {
+      await onword?.(said, "");
+    } catch {
+      // The workspace says what went wrong, and the word comes back.
+      const back = new Set(gone);
+      back.delete(said);
+      gone = back;
+    }
+  }
+
   async function dropWord(node: HTMLElement, word: { start: number; text: string }) {
     const was = fixing;
     fixing = null;
@@ -732,7 +759,14 @@
     // A word is one word on a line, whatever was typed into it: the
     // newlines a paste brings are spaces, and a run of spaces is one.
     const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
-    if (!text || text === was.whole) {
+    // A word emptied is a word removed. The text goes back in first, so
+    // the word is never drawn empty while it leaves.
+    if (!text) {
+      node.textContent = word.text;
+      if (was.whole) removeWord(was.said);
+      return;
+    }
+    if (text === was.whole) {
       node.textContent = word.text;
       return;
     }
@@ -969,6 +1003,9 @@
   // has the keyboard. The arrows bring the keyboard's word, and Enter opens
   // it.
   function onKey(event: KeyboardEvent) {
+    // Delete removes the keyboard's word, the one in the frame, unless a
+    // field has the keyboard and the key is its own.
+    if (removeKeyed(event)) return;
     // Any key but the ones that walk and open takes the keyboard's word
     // away, the arrows without Shift and Escape among them. A key held on
     // its own to make a shortcut takes nothing yet.
@@ -1006,6 +1043,24 @@
     if (event.code !== "Space" || event.shiftKey) return;
     event.preventDefault();
     toggle();
+  }
+
+  // On the Mac the key marked delete is Backspace to the browser, and the
+  // forward delete key is Delete. Either removes the word in the frame.
+  function removeKeyed(event: KeyboardEvent): boolean {
+    if (event.key !== "Backspace" && event.key !== "Delete") return false;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return false;
+    if (!keyed || fixing) return false;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return false;
+    if (document.querySelector("dialog[open]")) return false;
+    const at = keyed.start;
+    const found = rows.flat().find(({ word, said }) => !!said && word.start === at);
+    if (!found?.said || gone.has(found.said.start)) return false;
+    event.preventDefault();
+    removeWord(found.said.start);
+    return true;
   }
 
   // The keyboard's word is the caption holding the keyboard, so whatever
@@ -1049,7 +1104,8 @@
         The space bar plays and pauses, and so does a click on the picture. Drag the crop frame
         sideways to place it, and the black box up or down for the captions. Click a word in the
         caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
-        saves it, Escape leaves it, and two words split it in two.
+        saves it, Escape leaves it, and two words split it in two. Delete removes the word in the
+        frame, and so does saving it empty.
       </Info>
     </span>
     <!-- The still of the frame the playhead is in, and while playing of
@@ -1203,7 +1259,7 @@
                    playhead landing a thousandth of a millisecond before a
                    word start, and so lighting nothing, was found with
                    these and could not have been found without them. -->
-              {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said)}{#if i > 0}{" "}{/if}<span
+              {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said) && !(said && gone.has(said.start))}{#if i > 0}{" "}{/if}<span
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
@@ -1216,7 +1272,7 @@
                     role={said ? "textbox" : null}
                     aria-label={said ? "Correct this word" : null}
                     title={said
-                      ? "Click to correct this word. Enter saves it, Escape leaves it. Two words split it in two"
+                      ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
                     style="--pill: {captions.style.highlightColour}"
                     use:says={word.text}

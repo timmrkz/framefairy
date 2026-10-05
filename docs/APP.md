@@ -452,6 +452,18 @@ bubble scrolled by those eight pixels.
     among them, and the clip playing. It is the same with the highlight
     off, and that is what it is for there: with no pill nothing else says
     which word is spoken.
+  - **Removing a word:** delete, the key marked delete on the Mac and the
+    forward delete key alike, removes the word in the frame, and a word
+    typed empty and saved is removed the same way. The word leaves the
+    caption box with the key, before the engine has answered, and comes
+    back if the engine refuses. A removal is a correction to nothing,
+    kept in `corrections.json` like any other, so the word is gone from
+    the transcript, the captions and the render, and Cmd+Z brings it
+    back. A word removed then corrected again comes back with the new
+    text. Delete in a word open for typing is the field's own and takes
+    out letters. Removing a word lost its way when the words became one
+    list: the engine refused an empty word and the caption box put the
+    old one back.
     The caret went on blinking in a word already saved, because WebKit
     keeps the selection in a field the keyboard has left, so a word let go
     of takes its selection with it.
