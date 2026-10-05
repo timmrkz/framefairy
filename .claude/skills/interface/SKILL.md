@@ -767,7 +767,7 @@ from something, and that is the question that never settles.
 ## The frame queue
 
 The video preview plays from a queue of frames the app decodes itself,
-plan row 2.122. It is in `frontend/src/lib/frames/`: `mp4.ts` reads the
+plan row 2.123. It is in `frontend/src/lib/frames/`: `mp4.ts` reads the
 index of the episode file, `plan.ts` decides everything, with tests, and
 `queue.ts` is only the glue to the browser's decoders, the canvas and the
 sound card. `Player.svelte` makes one `FrameQueue` per episode on its
@@ -854,6 +854,11 @@ early, in the middle of the seek.
   is decoded on its own as before.
 - A paused seek to a moment in the frame already on screen draws nothing,
   so it has to say so anyway, or whatever waits for it waits for ever.
+- The frames of a play are drawn on a grid of frames from where it began.
+  A play that began inside a frame reached the clip's end with the frame
+  before the last on screen, and the last never drawn. The playback walk
+  found it, at five frames a second, where a frame is long enough to see.
+  A play that ends now draws the last frame of what played.
 - Plain sound in a MOV counts every moment as a sample, hundreds of
   millions in four hours. It is read by the chunk, and turned into the
   sound card's numbers without a decoder.

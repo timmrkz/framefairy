@@ -783,7 +783,9 @@ export class FrameQueue {
 
   // ---- A paused frame on its own
 
-  private async still(at: number) {
+  // The frame drawn is the one that holds the moment it is given, the
+  // playhead unless said otherwise.
+  private async still(at: number, holds = at) {
     try {
       await this.ready;
     } catch {
@@ -793,7 +795,7 @@ export class FrameQueue {
     const slot = this.slots[0];
     this.release(slot);
     const s = this.video!.samples;
-    const feed = stillFeed(s, at);
+    const feed = stillFeed(s, holds);
     // Already on screen: nothing to decode.
     if (this.shown && this.shown.rank === feed.rank) {
       this.at = at;
@@ -1058,10 +1060,32 @@ export class FrameQueue {
     this.k = plan.lastK;
     this.report();
     // The sound card is held once the last of the sound has been heard.
-    const ticket = this.ticket;
+    // Anything that plays or seeks after the end clears this first.
     this.suspendTimer = window.setTimeout(() => {
-      if (ticket === this.ticket) void this.audio.suspend();
+      if (this.state === "ended") void this.audio.suspend();
     }, 300);
+    // Stopped at the end, the picture is the last frame of what played.
+    // The frames are drawn on a grid of frames from where the play began,
+    // so a play that began inside a frame reaches the end with the frame
+    // before the last on screen, and the last never drawn: the playback
+    // walk found it, the frame 24.40 standing on a clip that ended at
+    // 24.72. Nearly always it is decoded already, and where it is not, it
+    // is decoded on its own, as a paused frame is.
+    if (!last || !this.video) return;
+    // A tenth of a millisecond before the end, past the hair rankAt
+    // counts as the next frame's own start.
+    const holds = Math.max(last.start, last.end - 1e-4);
+    const want = rankAt(this.video.samples, holds);
+    if (this.shown?.rank === want) return;
+    for (const slot of this.slots) {
+      const i = slot.ready.findIndex((h) => h.rank === want);
+      if (i < 0 || !slot.run) continue;
+      const [h] = slot.ready.splice(i, 1);
+      this.put(h.frame, slot.run.id, h.rank);
+      this.report(true);
+      return;
+    }
+    void this.still(this.at, holds);
   }
 
   private slotOf(run: number): Slot | null {

@@ -38,9 +38,13 @@ from the path tests in `driver_test.go`: the real queue, engine, words,
 waveform and ffmpeg, with stand-ins only for the two models. The speech
 stand-in says a few German sentences over and over, with a pause after
 each, so a word on screen twice can be told from the words around it. The
-language model stand-in finds one clip. The episode is two minutes of a
-grey that grows lighter, VP9 and Opus in an MP4, because the video
-preview reads MP4 and the Chromium Playwright brings has no H.264.
+language model stand-in finds one clip. The episode is two minutes at
+five frames a second, VP9 and Opus in an MP4, because the video preview
+reads MP4 and the Chromium Playwright brings has no H.264. Its picture
+says which frame it is, the recipe of the harness's own episodes: a thin
+strip along the top is the frame number in ten bars, and below it is a
+grey that grows lighter. Thin, so no two frames differ enough to be a
+camera switch, which would split the clip the search finds.
 
 In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes
@@ -115,6 +119,52 @@ The engine's captions are asked for directly, `Captions` through
 nothing of what a correction should do. It only knows what must not
 happen, which is what keeps it from being a third engine.
 
+### `timeline.mjs`: the clip timeline
+
+The gestures: dragging an edge of the clip, with shift or without,
+double-clicking in the clip, which cuts a part out, double-clicking a
+cut, which puts it back, dragging an edge of a cut, double-clicking an
+edge of the clip, which puts it back where the clip was found, a click
+on the clip timeline, Undo, Redo, and playing for a moment. Every
+gesture lands where a hand would, high on the track, over the waveform
+rather than the captions' band.
+
+Every walk also checks, after every step, that the clip timeline shows
+the clip the engine has: where it starts and ends and every cut, read
+off the handles' `aria-valuenow`, to a millisecond. The engine's state a
+walk compares before and after a step, for Undo and Redo, is the clip's
+pieces as well as its captions.
+
+A walk is a script in the folder that walks with `walk.mjs`, which runs
+the loop: look, pick a gesture that can be made, make it, check the
+rules. `TestWalks` runs every one it finds, for the same seeds.
+
+### `playback.mjs`: playing a clip
+
+The gestures: the space bar, playing for a moment and pausing, playing a
+clip to its end, a double-click that cuts a part out, one that puts a cut
+back, a click on the clip timeline, and Shift and an arrow. While a clip
+plays, the walk records every frame the video preview puts on screen, by
+the frame number read back from the bars on its canvas on every animation
+frame, not by the clock and not by what the frame queue says it drew.
+Where the playhead is, it reads off `data-playhead` on `.screen`, and
+whether it plays off the play button, Play or Pause. The rules, besides
+every walk's:
+
+| Rule | What it would have caught |
+| --- | --- |
+| Every frame put on screen while a clip plays is in one of its pieces, a frame of give either side | the part just cut played when the space bar was pressed with the playhead in it |
+| The space bar plays: a frame comes, or the playhead moves | a press of the space bar lost while the file was still being read |
+| Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
+| A clip played to its end stops at its end | |
+
+The bridge's episode runs at five frames a second, so a frame of give is
+a fifth of a second. Whether a press plays the clip or the episode is
+read off the app, the chosen clip dimmed on the clip timeline while the
+playhead is on the video, never worked out by the walk: one that decided
+it by itself was a second idea of where play starts, and drifted from the
+app's the day 2.121 made it a state.
+
 ### `sequences.mjs`: the cases found by hand
 
     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
@@ -122,11 +172,14 @@ happen, which is what keeps it from being a third engine.
 A sequence is a named list of steps and of what has to come of them,
 written as data at the top of the file, so a case found by hand is kept
 as it was found. The steps are the walk's gestures by name, `frame` a
-word, `click` it, `press` a key, `type`, `undo`, `redo`, and `mark` the
-engine's captions under a label. What has to come of them: `box`, what
+word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
+engine's captions and pieces under a label, and on the clip timeline
+`cut at` a share of the clip, `join` a cut, `trim` an edge by some
+pixels and `reset` an edge. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
-captions as they were at a mark, and `spans`, every caption appearing
-and going when it did at a mark. Every step is also checked against the
+captions and pieces as they were at a mark, `spans`, every caption
+appearing and going when it did at a mark, and `cuts`, how many cuts the
+clip timeline shows. Every step is also checked against the
 walk's rules, so a sequence asks for its own result and gets the rest
 for nothing.
 
@@ -135,12 +188,13 @@ in a page of its own.
 
 ### Where they run
 
-`make walks` runs the sequences and walks of seeds 1 to `WALKS`, 4 unless
-set, of `STEPS` steps, 60 unless set, through the Go test `TestWalks`,
+`make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
+unless set, each walk as long as it says, 60 steps, or 25 for playback,
+which plays in real time, unless `STEPS` is set, through the Go test `TestWalks`,
 which starts the bridge on a port of its own and fails with what a
 sequence or a walk printed. The seeds are the same every time, so a walk
 that breaks a rule breaks it again on the next run. `make walks WALKS=40`
-looks further. It takes about two minutes as it is.
+looks further. It takes about seven minutes as it is.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
@@ -168,3 +222,23 @@ that a word corrected to a short one and then removed took the room of
 what the recogniser had heard, ten letters where it had read three, and
 the caption overflowed. A removal now keeps what the word read,
 `TestARemovedWordKeepsTheRoomItHad`.
+
+The first sequences on the clip timeline found that a double-click on a
+trimmed edge put it back on the frame nearest where the clip was found
+rather than there: 24.80 where the clip had ended at 24.72, because a
+search finds a clip on the episode's clock and not on its frames. An
+edge put back now lands where the clip was found exactly,
+`TestAClipKeepsWhereItWasFound`.
+
+The playback walk found that a clip played from a playhead in a cut
+played the cut: a double-click that cuts a part out leaves the playhead
+in it. Every one of six walks showed it within sixteen steps. 2.121
+fixed it on main at the same time, `playFrom` in `lib/playhead.ts`, and
+the walk now holds it there.
+
+Ported to the frame queue, 2.123, the playback walk found within two
+steps that a clip played from a playhead inside a frame stopped at its
+end with the frame before its last on screen, 24.40 on a clip that ends
+at 24.72. The queue draws frames on a grid of frames from where the play
+began, so the last frame never came up. A play that ends now draws the
+last frame of what played.
