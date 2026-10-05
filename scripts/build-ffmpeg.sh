@@ -60,7 +60,7 @@ SYSTEM=$(uname -s 2>/dev/null)
 # where 8.1 kept the part of it after the seek point, so the sound came
 # up to one packet late in the waveform and the transcription and early
 # against the picture in a render. The engine now seeks early and cuts by
-# timestamp, see audioFrom and audioSeek, which lands on the sample with
+# timestamp, see audioFrom and soundLead, which lands on the sample with
 # both. TestMeasureLevelsGoesWhereTheClipTimelineLooks found it, and
 # TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts holds a render to it.
 FFMPEG_VERSION=9.0.2

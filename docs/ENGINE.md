@@ -134,7 +134,7 @@ what it decoded before the point and landed. ffmpeg 9.0 drops the first
 packet after the seek point whole instead, up to 64 ms of 16 kHz AAC,
 while its timestamps stay right. The samples in the pipe carry no time,
 so the part started late by that much. Cut by timestamp, it lands with
-both, and a render's sound does the same, see `audioSeek`.
+both, and a render's sound does the same, see `soundLead`.
 
 Each part is read with 3 s of audio on either side, `hearingPad`, so every
 word in it is heard whole: audio cut inside a word is heard as another
@@ -540,7 +540,8 @@ that each caption and each move of the pill lands on the first frame at
 or after the moment the subtitle file gives it, and that each word is
 heard within 15 ms of the moment it is shown. One clip has a cut that
 does not fall on a frame, the other six pieces none of which is a whole
-number of frames long. They found two things, both fixed:
+number of frames long. They found two things, both fixed, and a third
+was found later:
 
 - **A frame late, one boundary in three.** ffmpeg's subtitle filter hands
   libass the frame's time in whole milliseconds, worked out in floating
@@ -552,6 +553,30 @@ number of frames long. They found two things, both fixed:
   the clock in microseconds and moves it on half a millisecond while
   libass reads it, and back after, so every frame reads as the millisecond
   it is.
+- **A frame too many at every cut, at most frame rates.** A piece went to
+  ffmpeg as a start and a length rounded to the millisecond, `-ss` and
+  `-t`. A frame at 25 or 50 fps starts on a whole millisecond, but at
+  29.97, 23.976, 24, 30 or 60 fps most do not, and the rounded start fell
+  a little after its frame as often as before it. That frame was lost and
+  the next piece's first frame came in at the end, or the piece got a
+  frame more, and its sound ran about 30 ms over its picture, which the
+  join filled with silence. After two cuts the sound of a 24 fps episode
+  was 42 ms behind its picture. Now a render cuts by frame number, `cutOf` in
+  `engine/render.go`: a piece is the frames from the one its start is on
+  up to the one before its end, the frame that holds each moment as the
+  video preview shows it. The read starts half a frame before the first
+  frame, where no rounding to the microsecond can move it past a frame,
+  and runs a frame longer than the piece. The picture keeps the piece's
+  number of frames, `trim=end_frame`, and the sound is cut to the sample
+  where the first frame starts and where the frame after the last one
+  starts, `atrim`, both worked out from the frame numbers.
+  `TestARenderCutsOnWholeFrames` in `engine/framecuts_test.go` renders a
+  clip of three pieces from episodes at 29.97, 23.976, 24, 30, 60 and 25
+  fps, and one at 29.97 in Matroska, which keeps time in milliseconds. The
+  picture is a step brighter on every frame and the sound a steady tone,
+  and it checks that the short has exactly the frames of its pieces, in
+  order and each once, and that the sound is quiet at a cut only for its
+  fade and exactly where the picture cuts.
 - **Drift at every cut.** A piece becomes a whole number of frames in the
   short, so a piece that was not one came out longer, and its sound with
   it, while the captions added the pieces up as they are. By the sixth

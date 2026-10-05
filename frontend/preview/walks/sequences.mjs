@@ -24,6 +24,11 @@
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
 //   ["add", seconds]   adds a new video of so many seconds with Add
+//   ["add", seconds, rate]
+//                      adds one filmed at a frame rate, "30000/1001" for
+//                      29.97 fps, whose frames keep their numbers in a
+//                      short
+//   ["render"]         presses Render and waits until the short is written
 //   ["head"]           presses the clip list's head button, New, Cancel or
 //                      Continue
 //   ["restart"]        closes the app and opens it again on the episode
@@ -40,12 +45,20 @@
 //   ["row", words]     a row of the clip list says this
 //   ["cards", n]       the clip list holds n clips
 //   ["spans", label]   every caption appears and goes when it did at the mark
+//   ["short", cuts]    the clip has at least so many cuts, none of them on
+//                      a frame that starts on a whole millisecond, and the
+//                      short Render wrote, read back from disk, holds
+//                      exactly the frames of the clip's pieces, each the
+//                      right frame of the episode, with its sound as long
+//                      as its picture and quiet at a cut for no longer
+//                      than the render's fade
 //
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
+import { existsSync } from "node:fs";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, settle } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, settle, ask, shortFrames, shortSound } from "./bridge.mjs";
 import { Watch, same, describe } from "./rules.mjs";
 
 export const sequences = [
@@ -225,6 +238,23 @@ export const sequences = [
     ],
   },
   {
+    // Found while 2.124 was proven: from a 29.97 fps episode every piece
+    // of a short had a frame too many and about 30 ms of padded silence at
+    // each cut, because a piece went to ffmpeg rounded to the millisecond.
+    // TestARenderCutsOnWholeFrames holds the engine to it, this the app.
+    name: "a render of a 29.97 fps episode cuts on whole frames",
+    steps: [
+      ["add", 40, "30000/1001"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.3],
+      ["cut at", 0.7],
+      ["cuts", 2],
+      ["render"],
+      ["short", 2],
+    ],
+  },
+  {
     name: "removing a word in the middle of a caption leaves the caption whole",
     steps: [
       ["mark", "start"],
@@ -235,6 +265,98 @@ export const sequences = [
     ],
   },
 ];
+
+// What is wrong with the short Render wrote for a clip, read back from
+// disk, or null. Its pieces are cut the way the render cuts them, see
+// cutOf in engine/render.go: the frames from the one a piece's start is on
+// up to the one before its end, at least one. Which frame of the episode a
+// frame of the short is comes from its bands, see shortFrames, and is
+// compared with the frame it should be, so a frame too many, one lost or
+// one from the wrong place shows. The episode's sound is a steady tone, so
+// padded silence at a cut, or sound that runs on after its picture, shows.
+// The engine's own test of this is TestARenderCutsOnWholeFrames.
+function shortProblem(entry, short, fps, cutsWanted) {
+  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
+  const pieces = entry.segments;
+  const problems = [];
+  // The case is the one it says: a clip with cuts whose edges, on the
+  // frames of the episode where the render puts them, fall between
+  // milliseconds, where rounding to one moved a piece by a frame. The
+  // engine keeps an edge where a word starts or ends, which here is a
+  // whole millisecond, so it is the frame it lands on that counts.
+  const edges = pieces.slice(1).flatMap((p, i) => [pieces[i].end, p.start]).map((t) => Math.round(t * fps) / fps);
+  if (pieces.length - 1 < cutsWanted) problems.push(`the clip has ${pieces.length - 1} cuts, not ${cutsWanted}`);
+  const whole = edges.filter((t) => Math.abs(t * 1000 - Math.round(t * 1000)) < 0.01);
+  if (whole.length) problems.push(`cuts on frames that start on a whole millisecond, ${whole.join(" ")}, not the case this is about`);
+
+  // Seen: the frames of each piece in order, each once, and nothing else.
+  const want = [];
+  const cuts = [];
+  for (const p of pieces) {
+    const first = Math.round(p.start * fps);
+    const end = Math.max(Math.round(p.end * fps), first + 1);
+    for (let k = first; k < end; k++) want.push(k);
+    cuts.push(want.length / fps);
+  }
+  cuts.pop();
+  const { frames, modulo } = shortFrames(short);
+  if (frames.length !== want.length) problems.push(`the short has ${frames.length} frames, its pieces hold ${want.length}`);
+  let wrongFrames = 0;
+  for (let i = 0; i < Math.min(frames.length, want.length); i++) {
+    if (frames[i] !== want[i] % modulo && ++wrongFrames <= 5) {
+      problems.push(`frame ${i} of the short is frame ${frames[i]} of the episode, not ${want[i]}`);
+    }
+  }
+  if (wrongFrames > 5) problems.push(`and ${wrongFrames - 5} frames more are the wrong frame`);
+
+  // Heard: as long as the picture, the tone right up to each cut, and
+  // quiet there only for the fade out and in, 15 ms, Fade in
+  // engine/render.go, and that quiet where the picture cuts.
+  const rate = 48000;
+  const samples = shortSound(short);
+  const heard = samples.length / rate;
+  const pictured = want.length / fps;
+  if (Math.abs(heard - pictured) > 0.025) {
+    problems.push(`the sound is ${heard.toFixed(3)} s long, the picture ${pictured.toFixed(3)} s`);
+  }
+  // The loudest sample in the 2.5 ms around each one, more than one swing
+  // of the tone, so how loud the tone is there.
+  const loud = (k) => {
+    let most = 0;
+    for (let j = Math.max(0, k - 60); j < Math.min(samples.length, k + 60); j++) most = Math.max(most, Math.abs(samples[j]));
+    return most;
+  };
+  const steady = loud(Math.round(0.5 * rate));
+  cuts.forEach((cut, n) => {
+    const from = Math.round((cut - 0.06) * rate);
+    const to = Math.round((cut + 0.06) * rate);
+    if (to > samples.length) {
+      problems.push(`the sound ends before cut ${n + 1} at ${cut.toFixed(3)} s`);
+      return;
+    }
+    let first = -1;
+    let last = -1;
+    for (let k = from; k < to; k++) {
+      if (loud(k) < 0.25 * steady) {
+        if (first < 0) first = k;
+        last = k;
+      }
+    }
+    if (first < 0) {
+      problems.push(`cut ${n + 1} at ${cut.toFixed(3)} s has no fade in its sound`);
+      return;
+    }
+    const quiet = (last - first) / rate;
+    const mid = (first + last) / 2 / rate;
+    if (quiet > 0.015) problems.push(`the sound is quiet for ${(1000 * quiet).toFixed(1)} ms at cut ${n + 1}, more than its fade`);
+    if (Math.abs(mid - cut) > 0.003) {
+      problems.push(`the sound cuts at ${mid.toFixed(4)} s, the picture at ${cut.toFixed(4)} s, cut ${n + 1}`);
+    }
+  });
+  if (!problems.length) return null;
+  const said = pieces.map((p) => `${p.start}-${p.end}`).join(" ");
+  return `${problems.join("\n")}\npieces ${said} at ${fps} fps, the short ${short}`;
+}
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 const only = process.argv[2] ?? "";
@@ -319,11 +441,35 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await control(url, `/model?${how}`);
         break;
       }
-      case "add":
-        await control(url, `/pick?seconds=${arg}`);
+      case "add": {
+        const [seconds, rate] = [arg].flat();
+        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
         break;
+      }
+      case "render": {
+        const on = await chosen(page);
+        await page.waitForFunction(
+          (r) => {
+            const b = document.querySelector(r);
+            return b && !b.disabled && b.textContent.trim().startsWith("Render");
+          },
+          "button.primary.render",
+          { timeout: 60000, polling: 200 },
+        );
+        const renders = async () => (await ask(page, "Jobs")).filter((j) => j.kind === "render" && j.episode === on.path);
+        const before = (await renders()).length;
+        await page.locator("button.primary.render").click();
+        let job = null;
+        for (let i = 0; i < 600 && !job; i++) {
+          await page.waitForTimeout(200);
+          job = (await renders()).slice(before).find((j) => j.state === "done" || j.state === "failed") ?? null;
+        }
+        if (job?.state !== "done") wrong = `Render ${job ? `failed: ${job.error}` : "wrote no short in two minutes"}`;
+        await watch.step("render", s);
+        break;
+      }
       case "head":
         await pressHead(page);
         await watch.step("head", s);
@@ -385,6 +531,17 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (spans(now) !== spans(marks[arg])) {
           wrong = `the captions do not appear and go when they did at "${arg}"\nthen ${spans(marks[arg])}\nnow  ${spans(now)}\n${describe(marks[arg], now)}`;
         }
+        break;
+      }
+      case "short": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const { fps } = await ask(page, "Source", on.path);
+        // The short is where the clip says, or in the output folder when
+        // the settings name one, which the clip does not know of.
+        const folder = (await ask(page, "GetSettings")).outputDir;
+        const short = entry?.rendered ?? (folder && entry ? `${folder}/${entry.basename}.mp4` : "");
+        wrong = shortProblem(entry, short, fps, arg);
         break;
       }
       default:
