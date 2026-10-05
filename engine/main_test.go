@@ -24,6 +24,13 @@ func TestMain(m *testing.M) {
 		return
 	}
 	toolsFromThePath()
+	// The face detector finds no face in a test episode, which is a test
+	// picture and a tone, and framing falls back to what is in focus. It
+	// looks for one all the same, about 50 milliseconds a frame and some
+	// sixty frames a clip, and that was a third of the time these tests
+	// took. TestProjectSteps turns it back on, so the whole way a clip is
+	// framed is still tested once.
+	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
 	// The tests start fake servers, whatever the machine they run on has
 	// free, so what is free is not asked. TestTheMemoryFreeNow asks it.
 	freeMemory = func() int64 { return 0 }
@@ -37,6 +44,9 @@ func TestMain(m *testing.M) {
 	SetSpeedFile(filepath.Join(dir, "speed.json"))
 	code := m.Run()
 	_ = os.RemoveAll(dir)
+	if episodes.dir != "" {
+		_ = os.RemoveAll(episodes.dir)
+	}
 	os.Exit(code)
 }
 
