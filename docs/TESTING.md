@@ -73,6 +73,18 @@ dark are only 100 apart, so the bands change no more of the picture than
 a camera switch would. Its sound is a steady tone. `shortFrames` and
 `shortSound` in `walks/bridge.mjs` read a short of it back from disk.
 
+A video filmed by two cameras, which `/pick` makes with a switch, has the
+same strip, and below it each camera looks at a chequerboard on its own
+side of the picture, the first on the left against dark grey and the
+second on the right against light red. The switch changes the whole
+picture at once, so the search finds it and parts its clip there, and
+frames each shot on its own subject, so the two pieces have crops far
+apart. A shot shown through the other's crop is a plain backdrop, which
+the video preview and a short both show at a glance. Its sound is a
+steady tone in plain samples rather than Opus: a render seeks into each
+piece, and the first 80 ms of Opus after a seek are decoded quiet, a dip
+of the file's own at every piece.
+
 In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes
 as server-sent events on `/events`. `window.__calls` lists every call and
@@ -92,7 +104,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, see below |
+| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, and with `&switch=S` by two cameras that switch S seconds in, see below |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back |
@@ -252,11 +264,45 @@ frame rate, press `render` and wait for the short, and `short`, the short
 read back from disk holding exactly the frames of the clip's pieces, each
 the right frame of the episode by its bands, with its sound as long as
 its picture and quiet at each cut for no longer than the render's fade.
-Every step is also checked against the walk's rules, so a sequence asks
-for its own result and gets the rest for nothing.
+For a clip of two shots: `add cameras`, a video filmed by two cameras,
+`cut switch`, a double-click where two shots meet, `trim past` a switch,
+which drags an edge two seconds beyond it, and `look` at every piece,
+which puts the playhead in its middle with a click on the clip timeline
+and remembers the crop frame there and what the picture shows inside it.
+Then `pieces`, how many pieces the clip timeline draws, `framed`, the
+crop frame on every piece where it stood at a look and showing what it
+showed, and `shots`, the short read back from disk with every frame
+showing what the crop frame showed on its shot and the sound straight on
+where two shots meet. Every step is also checked against the walk's
+rules, so a sequence asks for its own result and gets the rest for
+nothing.
 
 Each sequence starts from the bridge's episode as it was first searched,
 in a page of its own.
+
+`a cut or an edge put back keeps the camera switch` is Tim's test of
+#116 done the way he would do it. It adds a video of 30 seconds whose
+camera switches at 12, and its search finds one clip in two pieces that
+meet there. It looks at both pieces, double-clicks across the switch to
+cut it, and double-clicks the cut to put it back. Then the clip timeline
+has to draw two pieces again, and with the playhead in the second shot
+the crop frame has to stand where it stood, on the second shot's subject,
+with the picture inside it what it was. It drags the clip's end to two
+seconds before the switch, so the second shot is gone, double-clicks the
+end to put it back, and asks the same. Last it presses Render and reads
+the short back from disk: every frame has to look like what the crop
+frame showed on its shot, by its colour and its detail, so a frame of the
+second shot through the first shot's crop, a plain red, fails. And the
+sound has to run straight on where the two shots meet: no 10 ms within a
+tenth of a second of the switch quieter than 80% of the tone.
+
+Against main's engine it fails at the first put-back: with the playhead
+in the second shot, the crop frame stands 2.5% in rather than 65%, over a
+plain red with no detail rather than the chequerboard, because the cut
+was put back as one piece in the first shot's crop. Without the first
+put-back it fails the same way at the second. With only main's render it
+fails at the short: by the switch the sound is down to 19% of the tone,
+the fade out and in of a cut where nothing is cut.
 
 ### Where they run
 

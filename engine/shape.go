@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 	"os"
 )
@@ -89,7 +90,7 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 	if err != nil {
 		return Shaped{}, err
 	}
-	out, err := checkedPieces(change, segmentObjects(c))
+	out, err := checkedPieces(change, segmentObjects(c), foundPieces(c))
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -120,7 +121,7 @@ func Reshape(planPath, clipID string, g Gesture, t *Transcript, keepPause float6
 // change is what a gesture does to a clip's pieces, with its edges where
 // they land, and where the playhead goes while it is made.
 func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) (
-	func([]*object) ([]*object, error), float64, error) {
+	pieceChange, float64, error) {
 	if !isFinite(g.From) || !isFinite(g.To) || !isFinite(g.Frame) || g.Frame < 0 {
 		return nil, -1, renderErr("a gesture has to say where, in numbers")
 	}
@@ -176,8 +177,8 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		if g.Edge != "both" {
 			playhead = g.edgePlayhead(words, start, end)
 		}
-		return func(pieces []*object) ([]*object, error) {
-			return trimPieces(pieces, start, end)
+		return func(pieces []*object, found []foundPiece) ([]*object, error) {
+			return trimPieces(pieces, found, start, end)
 		}, playhead, nil
 
 	case "cut", "restore":
@@ -196,7 +197,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		if to-from < MinCut-1e-6 {
 			return nil, -1, renderErr("a cut has to take out more than that")
 		}
-		return func(pieces []*object) ([]*object, error) {
+		return func(pieces []*object, _ []foundPiece) ([]*object, error) {
 			out := applyCut(pieces, from, to)
 			if len(out) == len(pieces) && pieceSpan(out) >= pieceSpan(pieces) {
 				return nil, renderErr("that cut falls outside the clip")
@@ -205,8 +206,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		}, -1, nil
 
 	case "move":
+		// A cut is a gap between two pieces. Two pieces that meet have
+		// none, which is where a search parts a clip at a camera switch,
+		// and moving that edge would pull one shot over the other.
 		i := g.Index
-		if i < 0 || i+1 >= len(clip.Segments) {
+		if i < 0 || i+1 >= len(clip.Segments) || clip.Segments[i+1].Start <= clip.Segments[i].End {
 			return nil, -1, renderErr("this clip has no cut number %d", i+1)
 		}
 		from, to := g.From, g.To
@@ -243,8 +247,8 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			return nil, -1, renderErr("a cut has a from and a to edge, not %s", Scrub(g.Edge, 20))
 		}
 		from, to = roundTo(from, 3), roundTo(to, 3)
-		return func(pieces []*object) ([]*object, error) {
-			if i+1 >= len(pieces) {
+		return func(pieces []*object, _ []foundPiece) ([]*object, error) {
+			if i+1 >= len(pieces) || number(pieces[i+1].values[keyStart]) <= number(pieces[i].values[keyEnd]) {
 				return nil, renderErr("this clip has no cut number %d", i+1)
 			}
 			out := append([]*object{}, pieces...)
@@ -256,16 +260,19 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		}, -1, nil
 
 	case "join":
+		// The part the cut left out comes back framed by the shots it
+		// shows, so a cut made across a camera switch and put back leaves
+		// the switch where it was, and each shot its own crop. Pieces of
+		// one shot become one piece again.
 		at := g.From
-		return func(pieces []*object) ([]*object, error) {
+		return func(pieces []*object, found []foundPiece) ([]*object, error) {
 			for i := 0; i+1 < len(pieces); i++ {
 				end := number(pieces[i].values[keyEnd])
 				next := number(pieces[i+1].values[keyStart])
-				if at >= end && at <= next {
-					joined := copyObject(pieces[i])
-					joined.set(keyEnd, pieces[i+1].values[keyEnd])
+				if at >= end && at <= next && next > end {
+					back := meet(meet(pieces[i:i+1], framedBack(end, next, pieces, found)), pieces[i+1:i+2])
 					out := append([]*object{}, pieces[:i]...)
-					out = append(out, joined)
+					out = append(out, back...)
 					return append(out, pieces[i+2:]...), nil
 				}
 			}
@@ -446,16 +453,26 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 }
 
 // trimPieces gives a clip's pieces with its first and last edge moved.
-// Pieces left outside go, the first and last piece keep their framing, and
-// edges that hold none of the old pieces make one piece with the framing of
-// the nearest.
-func trimPieces(pieces []*object, start, end float64) ([]*object, error) {
+// Pieces left outside go, and the first and last piece keep their framing.
+// An edge moved out over what the clip had left out puts it back framed by
+// the shots it shows, see framedBack, so an edge put back where the clip was
+// found brings back a shot it had trimmed away, with its own crop, from
+// the camera switch. Edges that hold none of the old pieces are framed the
+// same way, by the shots between them.
+func trimPieces(pieces []*object, found []foundPiece, start, end float64) ([]*object, error) {
 	var kept []*object
 	for _, seg := range pieces {
 		if number(seg.values[keyEnd]) <= start || number(seg.values[keyStart]) >= end {
 			continue
 		}
-		kept = append(kept, copyObject(seg))
+		kept = append(kept, seg)
+	}
+	if len(kept) == 0 {
+		kept = framedBack(start, end, pieces, found)
+	} else {
+		first := number(kept[0].values[keyStart])
+		last := number(kept[len(kept)-1].values[keyEnd])
+		kept = meet(meet(framedBack(start, first, pieces, found), kept), framedBack(last, end, pieces, found))
 	}
 	if len(kept) == 0 {
 		var nearest *object
@@ -468,9 +485,83 @@ func trimPieces(pieces []*object, start, end float64) ([]*object, error) {
 		if nearest == nil {
 			return nil, renderErr("the clip has no pieces")
 		}
-		kept = []*object{copyObject(nearest)}
+		kept = []*object{nearest}
 	}
-	kept[0].set(keyStart, start)
-	kept[len(kept)-1].set(keyEnd, end)
-	return kept, nil
+	out := make([]*object, len(kept))
+	for i, seg := range kept {
+		out[i] = copyObject(seg)
+	}
+	out[0].set(keyStart, start)
+	out[len(out)-1].set(keyEnd, end)
+	return out, nil
+}
+
+// framedBack is the pieces that bring back the part of the episode from from
+// to to, which the clip leaves out, each with the framing of the shot it
+// shows. The shots are the pieces the clip was found with, which a search
+// parts at every camera switch: a shot runs from the start of its piece to
+// the start of the next, so a part the search had already left out between
+// two shots goes with the one before it, and a part before the first or
+// after the last goes with that one. A shot a piece of the clip still
+// shows takes that piece's framing, so a crop placed by hand comes back
+// with it.
+func framedBack(from, to float64, pieces []*object, found []foundPiece) []*object {
+	var out []*object
+	for k, f := range found {
+		low, high := math.Inf(-1), math.Inf(1)
+		if k > 0 {
+			low = f.start
+		}
+		if k+1 < len(found) {
+			high = found[k+1].start
+		}
+		a, b := roundTo(math.Max(from, low), 3), roundTo(math.Min(to, high), 3)
+		if b <= a {
+			continue
+		}
+		like := f.seg
+		for _, seg := range pieces {
+			if fmt.Sprint(autoCrop(seg)) == fmt.Sprint(autoCrop(f.seg)) {
+				like = seg
+				break
+			}
+		}
+		piece := copyObject(like)
+		piece.set(keyStart, a)
+		piece.set(keyEnd, b)
+		out = meet(out, []*object{piece})
+	}
+	return out
+}
+
+// meet is two runs of pieces one after the other, with the last of the
+// first and the first of the second made one piece when they meet and are
+// framed the same: one shot, which a cut had parted. Two pieces that meet
+// at a camera switch stay two.
+func meet(a, b []*object) []*object {
+	out := append([]*object{}, a...)
+	if len(a) == 0 || len(b) == 0 {
+		return append(out, b...)
+	}
+	last, next := a[len(a)-1], b[0]
+	if number(next.values[keyStart]) > number(last.values[keyEnd]) || !sameFraming(last, next) {
+		return append(out, b...)
+	}
+	one := copyObject(last)
+	one.set(keyEnd, next.values[keyEnd])
+	out[len(out)-1] = one
+	return append(out, b[1:]...)
+}
+
+// sameFraming says whether two pieces are framed alike: the same crop, and
+// the same automatic crop behind it.
+func sameFraming(a, b *object) bool {
+	for _, key := range []string{keyCropX, keyCropXAuto} {
+		x, okA := a.get(key)
+		y, okB := b.get(key)
+		if okA != okB || fmt.Sprint(x) != fmt.Sprint(y) {
+			return false
+		}
+	}
+	return true
 }
