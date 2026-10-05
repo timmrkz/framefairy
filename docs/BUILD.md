@@ -175,6 +175,11 @@ process, so `scripts/fuzz.sh` runs as many targets side by side as the
 machine has cores, with one worker each. That is around 50 seconds on a small
 four core machine and less on a laptop with more.
 
+One target is the exception. `FuzzSimulation`, the licence dispenser's
+simulation, plays a whole history of 400 steps in one execution, a fifth
+of a second, so it does `SIMTIME` executions, 300 by default, instead of
+10000, which would be half an hour.
+
 `FUZZTIME` also takes a duration, for a deep run by hand:
 
 ```
