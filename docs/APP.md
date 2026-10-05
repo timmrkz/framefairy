@@ -949,7 +949,11 @@ bubble scrolled by those eight pixels.
       A clip changed before this was written keeps the edges it had at its
       first change after it. The edge's title says when it was moved by
       hand, and the double-click is a trim to the edge it was found with, so
-      Undo takes it back like any other trim.
+      Undo takes it back like any other trim. It lands there exactly, not on
+      the frame nearest: a search finds a clip on the episode's clock, so
+      its edges are seldom on a frame, and the end went back to 24.80 where
+      the clip had ended at 24.72. A trim within half a frame of where the
+      clip was found lands there, see `onFound` in `engine/shape.go`.
     - **The playhead goes with the edge.** While either edge of a clip is
       dragged, the playhead stands on it and the video preview shows that
       frame, the clip as it is being dragged, with its captions. On frames

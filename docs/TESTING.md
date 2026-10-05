@@ -105,6 +105,26 @@ The engine's captions are asked for directly, `Captions` through
 nothing of what a correction should do. It only knows what must not
 happen, which is what keeps it from being a third engine.
 
+### `timeline.mjs`: the clip timeline
+
+The gestures: dragging an edge of the clip, with shift or without,
+double-clicking in the clip, which cuts a part out, double-clicking a
+cut, which puts it back, dragging an edge of a cut, double-clicking an
+edge of the clip, which puts it back where the clip was found, a click
+on the clip timeline, Undo, Redo, and playing for a moment. Every
+gesture lands where a hand would, high on the track, over the waveform
+rather than the captions' band.
+
+Every walk also checks, after every step, that the clip timeline shows
+the clip the engine has: where it starts and ends and every cut, read
+off the handles' `aria-valuenow`, to a millisecond. The engine's state a
+walk compares before and after a step, for Undo and Redo, is the clip's
+pieces as well as its captions.
+
+A walk is a script in the folder that walks with `walk.mjs`, which runs
+the loop: look, pick a gesture that can be made, make it, check the
+rules. `TestWalks` runs every one it finds, for the same seeds.
+
 ### `sequences.mjs`: the cases found by hand
 
     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
@@ -112,11 +132,14 @@ happen, which is what keeps it from being a third engine.
 A sequence is a named list of steps and of what has to come of them,
 written as data at the top of the file, so a case found by hand is kept
 as it was found. The steps are the walk's gestures by name, `frame` a
-word, `click` it, `press` a key, `type`, `undo`, `redo`, and `mark` the
-engine's captions under a label. What has to come of them: `box`, what
+word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
+engine's captions and pieces under a label, and on the clip timeline
+`cut at` a share of the clip, `join` a cut, `trim` an edge by some
+pixels and `reset` an edge. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
-captions as they were at a mark, and `spans`, every caption appearing
-and going when it did at a mark. Every step is also checked against the
+captions and pieces as they were at a mark, `spans`, every caption
+appearing and going when it did at a mark, and `cuts`, how many cuts the
+clip timeline shows. Every step is also checked against the
 walk's rules, so a sequence asks for its own result and gets the rest
 for nothing.
 
@@ -125,12 +148,12 @@ in a page of its own.
 
 ### Where they run
 
-`make walks` runs the sequences and walks of seeds 1 to `WALKS`, 4 unless
-set, of `STEPS` steps, 60 unless set, through the Go test `TestWalks`,
+`make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
+unless set, of `STEPS` steps, 60 unless set, through the Go test `TestWalks`,
 which starts the bridge on a port of its own and fails with what a
 sequence or a walk printed. The seeds are the same every time, so a walk
 that breaks a rule breaks it again on the next run. `make walks WALKS=40`
-looks further. It takes about two minutes as it is.
+looks further. It takes about five minutes as it is.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
@@ -158,3 +181,10 @@ that a word corrected to a short one and then removed took the room of
 what the recogniser had heard, ten letters where it had read three, and
 the caption overflowed. A removal now keeps what the word read,
 `TestARemovedWordKeepsTheRoomItHad`.
+
+The first sequences on the clip timeline found that a double-click on a
+trimmed edge put it back on the frame nearest where the clip was found
+rather than there: 24.80 where the clip had ended at 24.72, because a
+search finds a clip on the episode's clock and not on its frames. An
+edge put back now lands where the clip was found exactly,
+`TestAClipKeepsWhereItWasFound`.
