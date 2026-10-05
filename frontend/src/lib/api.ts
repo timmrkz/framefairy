@@ -116,9 +116,12 @@ export interface Word {
   text: string;
   // In a caption, the word of the episode it stands for: when that word
   // starts, and all of it, for a word shown in halves or a correction that
-  // reads as several words. It is what a correction is kept against.
+  // reads as several words. It is what a correction is kept against. Part
+  // is, for a correction that reads as several words, which of them this
+  // is, counted from nought.
   said?: number;
   whole?: string;
+  part?: number;
 }
 
 // What a hand does to a clip on the clip timeline, see engine/shape.go:

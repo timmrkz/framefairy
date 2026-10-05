@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -454,11 +455,159 @@ func TestWordCorrections(t *testing.T) {
 	if said := Said(clips[0], tr.Words); len(said) == 0 || said[0].Text != "Tippfehler" {
 		t.Errorf("trim lost the correction: %v", said)
 	}
-	if err := SetWordText(logs, 10, "   ", tr); err == nil {
-		t.Errorf("an empty word was accepted")
-	}
 	if err := SetWordText(logs, 99, "x", tr); err == nil {
 		t.Errorf("a word that does not exist was accepted")
+	}
+}
+
+// A word corrected to nothing is removed. The clip no longer says it and
+// the captions no longer show it, and it is still the word heard there, so
+// correcting it again brings it back, and so does reading the transcript
+// again from what the recogniser heard.
+func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "ep.framefairy", "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	words := []Cue{{10, 10.5, "äh"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
+	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	clip := Clip{Segments: []Segment{{Start: 9.9, End: 12.5}}}
+	said := func() string {
+		var out []string
+		for _, w := range Said(clip, tr.Words) {
+			out = append(out, w.Text)
+		}
+		return strings.Join(out, " ")
+	}
+
+	if err := SetWordText(logs, 10.2, "  ", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := said(); got != "zwei drei" {
+		t.Errorf("after removing, the clip says %q", got)
+	}
+	if w, ok := tr.HeardAt(10.2); !ok || w.Text != "" {
+		t.Errorf("the word heard there is %+v, %v", w, ok)
+	}
+	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	again.Correct(LoadCorrections(logs))
+	if len(again.Words) != 2 || again.Words[0].Text != "zwei" {
+		t.Errorf("the removal was not kept: %v", again.Words)
+	}
+	if err := SetWordText(logs, 10.2, "ja", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := said(); got != "ja zwei drei" {
+		t.Errorf("after correcting it again, the clip says %q", got)
+	}
+}
+
+// Removing a word takes the word out of its caption and nothing else. The
+// time it was said in is no pause, so the caption goes on over it and is
+// laid out the way it was. It ended at the word before, and the words
+// after went on to the next caption, with nothing on screen between.
+func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
+	heard := []Cue{{60, 60.4, "wurde"}, {60.45, 61, "irgendein"}, {61.05, 61.4, "Typ"},
+		{61.45, 62.1, "auf"}, {62.15, 62.4, "dem"}, {62.45, 63, "Schulhof."},
+		{64, 64.4, "Und"}, {64.45, 64.9, "dann"}}
+	clip := Clip{Segments: []Segment{{Start: 59.9, End: 65}}}
+	style := ResolveStyle(nil)
+	laid := func(tr *Transcript) string {
+		var out []string
+		for _, c := range ClipCaptions(clip, tr, style) {
+			var words []string
+			for _, w := range c.Words {
+				words = append(words, w.Text)
+			}
+			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, strings.Join(words, " ")))
+		}
+		return strings.Join(out, " ")
+	}
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	before := laid(tr)
+	logs := filepath.Join(t.TempDir(), "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	if err := SetWordText(logs, 61.7, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(before, "Typ auf dem", "Typ dem", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
+// A removed word typed back in beside its neighbour is the word put back
+// where it was heard, the same as an undo would put it: its own time, so
+// it is lit while it is said, and no correction left on either word.
+func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
+	heard := []Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}, {11.5, 12, "echtes"}}
+	for _, c := range []struct {
+		name   string
+		remove []float64
+		at     float64
+		text   string
+		want   string
+		fixes  map[string]string
+	}{
+		{"after", []float64{11.2}, 10.6, "das ein", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
+		{"before", []float64{11.2}, 11.6, "ein echtes", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
+		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"11000": "eine"}},
+		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"11000": "ein so"}},
+		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{"10500": ""}},
+		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es", "11000": ""}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			logs := filepath.Join(t.TempDir(), "logs")
+			_ = os.MkdirAll(logs, 0o755)
+			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+			for _, at := range c.remove {
+				if err := SetWordText(logs, at, "", tr); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := SetWordText(logs, c.at, c.text, tr); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, w := range tr.Words {
+				got = append(got, fmt.Sprintf("%s@%g", w.Text, math.Round(w.Start*10)/10))
+			}
+			if strings.Join(got, " ") != c.want {
+				t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), c.want)
+			}
+			if fixes := LoadCorrections(logs); !maps.Equal(fixes, c.fixes) {
+				t.Errorf("corrections %v, want %v", fixes, c.fixes)
+			}
+		})
+	}
+}
+
+// A word typed into the one before it, which is how a removed word is put
+// back, makes a heard word of two words. Each says which of the two it is,
+// so the caption box can correct or remove one without the other.
+func TestTheWordsOfOneCorrectionSayWhichTheyAre(t *testing.T) {
+	tr := fromStored([]Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}}, nil, 0, 0, nil)
+	tr.Correct(map[string]string{wordKey(10): "weil es", wordKey(11): ""})
+	clip := Clip{Segments: []Segment{{Start: 9.9, End: 11.5}}}
+	view := captionsView(Plan{}, clip, tr, nil)
+	var got []string
+	for _, c := range view.Captions {
+		for _, line := range c.Lines {
+			for _, w := range line.Words {
+				part := "-"
+				if w.Part != nil {
+					part = itoa(*w.Part)
+				}
+				said := -1.0
+				if w.Said != nil {
+					said = *w.Said
+				}
+				got = append(got, fmt.Sprintf("%s@%g:%s/%s", w.Text, said, part, w.Whole))
+			}
+		}
+	}
+	want := "weil@10:0/weil es es@10:1/weil es das@10.5:-/das"
+	if strings.Join(got, " ") != want {
+		t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), want)
 	}
 }
 
