@@ -103,8 +103,15 @@ const CUE_AHEAD = 1;
 const SOUND_AHEAD = 1;
 // Sound decoded before a play starts, seconds.
 const SOUND_FIRST = 0.15;
-// How long the sound card is given to start, seconds.
-const START_LEAD = 0.05;
+// How far ahead of the sound card's clock a play's first sound is put,
+// seconds. The sound card renders a buffer at a time, and a stretch put
+// where it has rendered already starts late and out of step with the
+// picture. A buffer is 512 to 1024 samples on the Mac, 11 to 21 ms at
+// 48 kHz, and 25 ms is a whole one of the larger with room left. It was
+// 50, and the harness played to the sample from 2, so this is the Mac's
+// margin and not the harness's. Every millisecond here is a millisecond
+// from the press to the picture moving.
+const START_LEAD = 0.025;
 // Samples in one stretch of sound handed to the sound card.
 const CHUNK = 4096;
 // Bytes of the file kept read, at most.
