@@ -211,6 +211,12 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open.
 | 3.16 | Target holds its suggestion as a real number rather than a grey placeholder, so the arrow keys step from it and the down arrow on 6 gives 5, not 1. Asked for by Tim | `[x]` |
 | 3.17 | A clip fitted on the clip timeline stands under the video preview and the range picker, not under the middle of the app, which the wider clip list puts a little to the right. Asked for by Tim | `[x]` |
 | 3.18 | Every info bubble wholly inside the app: under, over or beside its mark, wider when a long text fits nowhere at the narrow width, and scrolling only in an app too small for it at any width. Asked for by Tim | `[x]` |
+| 3.19 | The clip timeline's info bubble cut to what the track itself does, a line each. A double-click in the clip cuts a part out and one on a cut removes it, told from the two presses so it works wherever the second lands. Shift and a drag no longer cuts, and a double-click no longer fits the clip. Asked for by Tim | `[x]` |
+| 3.20 | A cut takes out what lies in it and nothing else: the captions keep the pauses the episode has, so a cut in a pause no longer joins the two captions around it. Asked for by Tim | `[x]` |
+| 3.21 | A double-click on a clip's edge puts it back where the clip was found, the way one on a caption's edge does. The clip keeps its first edges in the plan from its first change on. Asked for by Tim | `[x]` |
+| 3.22 | A caption is drawn only where the clip is, never over a cut, and the last caption is held past the end only when it is on screen there, so trimming the end no longer stretches the caption before. Asked for by Tim | `[x]` |
+| 3.23 | Moving one edge of a cut never moves the other, a click on a cut's edge puts the playhead there, and a caption whose first word a cut takes appears where the cut ends. Asked for by Tim | `[x]` |
+| 3.24 | An edge dragged with shift stops where a caption goes off the screen, the end of its block on the clip timeline, before it goes on to the word. Asked for by Tim | `[x]` |
 
 ## Phase 4: caption editor
 

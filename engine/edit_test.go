@@ -256,27 +256,36 @@ func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Captions) != 1 {
+	// The cut between the two pieces lies in the second of quiet between
+	// zwei and drei, and a cut takes out what is in it and nothing else: the
+	// pause still parts the two captions the episode has there. They were
+	// one, because the pause was measured on the clip's clock, where the
+	// cut had made it short.
+	if len(view.Captions) != 2 {
 		t.Fatalf("captions %+v", view.Captions)
 	}
 	caption := view.Captions[0]
 	if caption.Start != 0 || caption.End <= caption.Start {
 		t.Errorf("caption runs %v to %v", caption.Start, caption.End)
 	}
+	// It is held after zwei until the cut begins, 1.1 into the clip, where
+	// the episode would still have held it.
+	if math.Abs(caption.End-1.1) > 0.002 {
+		t.Errorf("the first caption goes at %v, want where the cut begins, 1.1", caption.End)
+	}
+	if got := fmt.Sprint(captionWords(caption)); got != "[eins zwei]" {
+		t.Errorf("first caption %v", got)
+	}
+	second := view.Captions[1]
 	// The clip says four words: the second piece ends a tenth into vier,
 	// and a word is said while the clip holds some of its sound.
-	if len(caption.Lines) != 1 || len(caption.Lines[0].Words) != 4 {
-		t.Fatalf("lines %+v", caption.Lines)
-	}
-	words := caption.Lines[0].Words
-	if words[0].Text != "eins" || words[2].Text != "drei" || words[3].Text != "vier" ||
-		words[2].Start <= words[0].Start {
-		t.Errorf("words %+v", words)
+	if got := fmt.Sprint(captionWords(second)); got != "[drei vier]" {
+		t.Errorf("second caption %v", got)
 	}
 	// The cut between the two pieces is gone from the clock, so the third
 	// word sits a good deal earlier than in the episode.
-	if words[2].Start > 2 {
-		t.Errorf("drei starts at %v, so the cut is still in", words[2].Start)
+	if drei := second.Lines[0].Words[0]; drei.Start > 2 || drei.Start <= caption.Lines[0].Words[0].Start {
+		t.Errorf("drei starts at %v, so the cut is still in", drei.Start)
 	}
 
 	// The look comes as shares of the frame height and as web colours.
@@ -1028,5 +1037,169 @@ func TestAnEditWaitsForAnotherProgram(t *testing.T) {
 	case <-got:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the lock was not taken once the other program let go")
+	}
+}
+
+// captionWords is the text of every word of a laid out caption, in order.
+func captionWords(c CaptionView) []string {
+	var out []string
+	for _, l := range c.Lines {
+		for _, w := range l.Words {
+			out = append(out, w.Text)
+		}
+	}
+	return out
+}
+
+// A double-click on a clip's edge puts it back where the clip was found, so
+// the clip keeps where its edges were the first time anything changes them,
+// and never after. A clip never changed is where it was found.
+func TestAClipKeepsWhereItWasFound(t *testing.T) {
+	path := editablePlanPath(t)
+	tr := editableTranscript()
+	view, err := ReadPlan(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Clips[0].Found; got != [2]float64{10, 13.1} {
+		t.Fatalf("a clip never changed is found at %v, want its edges", got)
+	}
+
+	trim := func(edge string, at float64) {
+		t.Helper()
+		if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: edge, From: at}, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	trim("start", 10.55)
+	trim("end", 12.6)
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clips[0].Found == nil || *clips[0].Found != [2]float64{10, 13.1} {
+		t.Fatalf("found %v after two trims, want the edges before the first", clips[0].Found)
+	}
+	if clips[0].Segments[0].Start == 10 {
+		t.Fatal("the trim did not move the start")
+	}
+
+	// Putting the start back is a trim to where it was found.
+	trim("start", 10)
+	_, clips, _ = LoadClips(path)
+	if clips[0].Segments[0].Start != 10 || *clips[0].Found != [2]float64{10, 13.1} {
+		t.Errorf("start %v, found %v", clips[0].Segments[0].Start, clips[0].Found)
+	}
+
+	// The plan is untrusted: anything but two numbers in order is no edges.
+	for _, raw := range []any{nil, "10", []any{1.0}, []any{5.0, 2.0}, []any{-1.0, 2.0}, []any{"a", 2.0}} {
+		if got := readFound(raw); got != nil {
+			t.Errorf("readFound(%v) = %v", raw, *got)
+		}
+	}
+}
+
+// Moving one edge of a cut never moves the other. Shift on the right edge
+// put the left one on a word as well, and Tim saw it jump.
+func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
+	tr := editableTranscript()
+	// Each case starts from the clip with its cut's left edge moved into
+	// zwei on a frame, where no word ends, so a word would move it.
+	fresh := func() string {
+		path := editablePlanPath(t)
+		if err := Reshape(path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frame: 0.04}, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	move := func(path string, g Gesture) []Segment {
+		t.Helper()
+		g.Kind, g.Index, g.Frame = "move", 0, 0.04
+		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return clips[0].Segments
+	}
+
+	// The right edge onto words with shift: the left one stays at 10.8.
+	got := move(fresh(), Gesture{Edge: "to", From: 10.8, To: 12.2, ToWords: true})
+	if got[0].End != 10.8 {
+		t.Errorf("the left edge moved to %v when the right one was put on words", got[0].End)
+	}
+	if got[1].Start == 11.9 {
+		t.Errorf("the right edge did not move: %+v", got)
+	}
+
+	// The left edge onto words with shift: the right one stays at 11.9.
+	got = move(fresh(), Gesture{Edge: "from", From: 10.7, To: 11.9, ToWords: true})
+	if got[1].Start != 11.9 {
+		t.Errorf("the right edge moved to %v when the left one was put on words", got[1].Start)
+	}
+	if got[0].End == 10.8 {
+		t.Errorf("the left edge did not move: %+v", got)
+	}
+
+	// An edge dragged past the other stops at it rather than pushing it.
+	got = move(fresh(), Gesture{Edge: "to", From: 10.8, To: 10.3})
+	if got[0].End != 10.8 || got[1].Start <= 10.8 {
+		t.Errorf("dragging the right edge past the left one gave %+v", got)
+	}
+
+	// An edge a cut does not have is refused.
+	if err := Reshape(fresh(), "01", Gesture{Kind: "move", Edge: "middle", From: 10.8, To: 11.9}, tr, 0.1); err == nil {
+		t.Error("a move of an edge called middle was taken")
+	}
+}
+
+// A caption stays up a little after its last word, and the clip timeline
+// draws its block that long. An edge put on words stops where that block
+// ends before it goes on to the word. It went straight to the word, past
+// the end of the block Tim was looking at, and the block shrank under it.
+func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
+	tr := editableTranscript()
+	// zwei ends at 11.0 and drei begins at 12.0, so "eins zwei" stays up
+	// until 11.4. The clip's cut takes 11.1 to 11.9 and with it that hold.
+	segments := func(path string, g Gesture) []Segment {
+		t.Helper()
+		g.Frame, g.ToWords = 0.04, true
+		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		_, clips, err := LoadClips(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return clips[0].Segments
+	}
+	cases := []struct {
+		name string
+		g    Gesture
+		end  float64
+	}{
+		{"the left edge of a cut past where the caption goes",
+			Gesture{Kind: "move", Edge: "from", From: 11.6, To: 11.9}, 11.4},
+		{"the left edge of a cut inside the time the caption stays",
+			Gesture{Kind: "move", Edge: "from", From: 11.3, To: 11.9}, 11.1},
+		{"the left edge of a cut into the word",
+			Gesture{Kind: "move", Edge: "from", From: 10.9, To: 11.9}, 10.6},
+		{"the end of the clip near where the caption goes",
+			Gesture{Kind: "trim", Edge: "end", From: 11.45}, 11.4},
+		{"the end of the clip near the word",
+			Gesture{Kind: "trim", Edge: "end", From: 11.15}, 11.1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := segments(editablePlanPath(t), c.g)
+			if got[0].End != c.end {
+				t.Errorf("the edge landed at %v, want %v: %+v", got[0].End, c.end, got)
+			}
+			if c.g.Kind == "move" && got[1].Start != 11.9 {
+				t.Errorf("the right edge moved to %v", got[1].Start)
+			}
+		})
 	}
 }

@@ -119,7 +119,12 @@ func lookAt(frame []byte, w int, pill [3]int) look {
 		}
 	}
 	l := look{caption: white > 40, pill: -1}
-	if purple > 40 {
+	// The pill pops in from seven tenths of its size, so on the first frame
+	// of a caption the pill behind a short word is small: 53 pixels behind
+	// neun here, with x264, and under 40 with VideoToolbox on a Mac, which
+	// read it as there a frame after its caption. A frame with no caption
+	// has none of the colour at all, so a low count is still a pill.
+	if purple > 10 {
 		l.pill = float64(sumX) / float64(purple)
 	}
 	return l
