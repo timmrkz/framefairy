@@ -463,13 +463,24 @@ bubble scrolled by those eight pixels.
     text. Delete in a word open for typing is the field's own and takes
     out letters.
   - **Putting a word back:** Cmd+Z, or type it into the word beside it,
-    "weil" made "weil ein". The engine keeps that as one heard word that
-    reads as two, and the caption box shows two words, each a field of
-    its own: a click on "ein" opens "ein", and delete on it removes
-    "ein" and leaves "weil". The engine says which of the two each is,
-    `part` in the captions. Before it did, the field went on reading
-    "weil ein" with "ein" drawn after it as well, a click on either
-    opened both, and removing either removed both. Removing a word lost its way when the words became one
+    "das" made "das ein". Both end the same way: the word is back where
+    it was heard, with its own time, lit while it is said, and no
+    correction is left on either word. The engine sees a word typed
+    before or after what its neighbour read, beside a removed word, as
+    that word coming back, `putBack` in `engine/corrections.go`. Each
+    removed word there takes one, the nearest first, and a word that
+    reads as the recogniser heard it keeps no correction. Typed back
+    otherwise, "das eine", it comes back corrected. It used to take its
+    time from the neighbour it was typed into, so it was lit while the
+    neighbour was said and not while it was.
+  - **Two words in one:** a word typed beside a word with no removed word
+    next to it, "weil" made "weil es", stays one heard word that reads as
+    two. The caption box shows two words, each a field of its own: a
+    click on "es" opens "es", and delete on it removes "es" and leaves
+    "weil". The engine says which of the two each is, `part` in the
+    captions. Before it did, the field went on reading "weil es" with
+    "es" drawn after it as well, a click on either opened both, and
+    removing either removed both. Removing a word lost its way when the words became one
     list: the engine refused an empty word and the caption box put the
     old one back.
     The caret went on blinking in a word already saved, because WebKit

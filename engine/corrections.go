@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -73,9 +75,20 @@ func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 	if !ok {
 		return renderErr("there is no word at %s", HMS(at))
 	}
+	i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= word.Start })
+	put := putBack(t.HeardWords, i, text)
 	trainingMu.Lock()
 	corrections := LoadCorrections(logsDir)
-	corrections[wordKey(word.Start)] = text
+	for j, says := range put {
+		// A word that reads as the recogniser heard it again keeps no
+		// correction, so a word put back is the word it was before.
+		key := wordKey(t.HeardWords[j].Start)
+		if j < len(t.snapped) && says == strings.Join(strings.Fields(t.snapped[j].Text), " ") {
+			delete(corrections, key)
+		} else {
+			corrections[key] = says
+		}
+	}
 	body, err := marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
 	if err == nil {
 		err = writeAtomic(correctionsPath(logsDir), append(body, '\n'))
@@ -86,4 +99,56 @@ func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 	}
 	t.Correct(corrections)
 	return nil
+}
+
+// putBack is what a correction of the i-th heard word changes, by heard
+// word. A removed word is put back by typing it into the word beside it,
+// "weil" made "weil ein", and that is the removed word coming back, so it
+// goes back where it was heard, not into its neighbour: the words typed
+// after what the word read go into the removed words that follow it, and
+// the words typed before into the removed words before it. Without this
+// the word took its time from its neighbour, and was lit while the
+// neighbour was said and not while it was. Undo put it back where it was,
+// and typing it back did not, though both are the same word in the same
+// place.
+//
+// Each removed word takes one word, the nearest first. Words typed beyond
+// the removed ones there are go to the farthest of them, which is the
+// word they were typed beside.
+func putBack(heard []Cue, i int, text string) map[int]string {
+	put := map[int]string{i: text}
+	was, now := strings.Fields(heard[i].Text), strings.Fields(text)
+	if len(was) == 0 || len(now) <= len(was) {
+		return put
+	}
+	removed := func(j int) bool { return j >= 0 && j < len(heard) && strings.TrimSpace(heard[j].Text) == "" }
+	if slices.Equal(now[:len(was)], was) && removed(i+1) {
+		extra := now[len(was):]
+		var slots []int
+		for j := i + 1; removed(j) && len(slots) < len(extra); j++ {
+			slots = append(slots, j)
+		}
+		put[i] = strings.Join(was, " ")
+		last := len(slots) - 1
+		for k, j := range slots[:last] {
+			put[j] = extra[k]
+		}
+		put[slots[last]] = strings.Join(extra[last:], " ")
+		return put
+	}
+	if slices.Equal(now[len(now)-len(was):], was) && removed(i-1) {
+		extra := now[:len(now)-len(was)]
+		var slots []int
+		for j := i - 1; removed(j) && len(slots) < len(extra); j-- {
+			slots = append(slots, j)
+		}
+		put[i] = strings.Join(was, " ")
+		// slots run back from the word, the nearest first.
+		last := len(slots) - 1
+		for k, j := range slots[:last] {
+			put[j] = extra[len(extra)-1-k]
+		}
+		put[slots[last]] = strings.Join(extra[:len(extra)-last], " ")
+	}
+	return put
 }

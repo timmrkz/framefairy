@@ -1465,7 +1465,36 @@ export const Call = {
         if (location.search.includes("refuse")) {
           return Promise.reject(new Error("there is no word at 0:57"));
         }
-        fixed()[said(Number(args[3]))] = text;
+        // A removed word typed back in beside its neighbour goes back where
+        // it was heard, the way the engine's putBack does it.
+        const all = allWords();
+        const i = all.findIndex((w) => said(w.start) === said(Number(args[3])));
+        const put = new Map<number, string>([[i, text]]);
+        const reads = (j: number) => (fixed()[said(all[j].start)] ?? all[j].text).split(" ").filter(Boolean);
+        const gone = (j: number) => j >= 0 && j < all.length && reads(j).length === 0;
+        const was = i >= 0 ? reads(i) : [];
+        const now = text.split(" ").filter(Boolean);
+        const same = (a: string[], b: string[]) => a.join(" ") === b.join(" ");
+        if (was.length > 0 && now.length > was.length) {
+          const after = same(now.slice(0, was.length), was) && gone(i + 1);
+          const before = !after && same(now.slice(now.length - was.length), was) && gone(i - 1);
+          if (after || before) {
+            const extra = after ? now.slice(was.length) : now.slice(0, now.length - was.length);
+            const slots: number[] = [];
+            for (let j = after ? i + 1 : i - 1; gone(j) && slots.length < extra.length; j += after ? 1 : -1) slots.push(j);
+            const last = slots.length - 1;
+            put.set(i, was.join(" "));
+            slots.forEach((j, k) => {
+              if (after) put.set(j, k < last ? extra[k] : extra.slice(last).join(" "));
+              else put.set(j, k < last ? extra[extra.length - 1 - k] : extra.slice(0, extra.length - last).join(" "));
+            });
+          }
+        }
+        for (const [j, says] of put) {
+          const key = j >= 0 ? said(all[j].start) : said(Number(args[3]));
+          if (j >= 0 && says === all[j].text) delete fixed()[key];
+          else fixed()[key] = says;
+        }
         return Promise.resolve(clipOf(String(args[2])));
       }
       case "Waveform": {

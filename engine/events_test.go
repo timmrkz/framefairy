@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -497,6 +498,52 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 	}
 	if got := said(); got != "ja zwei drei" {
 		t.Errorf("after correcting it again, the clip says %q", got)
+	}
+}
+
+// A removed word typed back in beside its neighbour is the word put back
+// where it was heard, the same as an undo would put it: its own time, so
+// it is lit while it is said, and no correction left on either word.
+func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
+	heard := []Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}, {11.5, 12, "echtes"}}
+	for _, c := range []struct {
+		name   string
+		remove []float64
+		at     float64
+		text   string
+		want   string
+		fixes  map[string]string
+	}{
+		{"after", []float64{11.2}, 10.6, "das ein", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
+		{"before", []float64{11.2}, 11.6, "ein echtes", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
+		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"11000": "eine"}},
+		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"11000": "ein so"}},
+		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{"10500": ""}},
+		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es", "11000": ""}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			logs := filepath.Join(t.TempDir(), "logs")
+			_ = os.MkdirAll(logs, 0o755)
+			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+			for _, at := range c.remove {
+				if err := SetWordText(logs, at, "", tr); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := SetWordText(logs, c.at, c.text, tr); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, w := range tr.Words {
+				got = append(got, fmt.Sprintf("%s@%g", w.Text, math.Round(w.Start*10)/10))
+			}
+			if strings.Join(got, " ") != c.want {
+				t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), c.want)
+			}
+			if fixes := LoadCorrections(logs); !maps.Equal(fixes, c.fixes) {
+				t.Errorf("corrections %v, want %v", fixes, c.fixes)
+			}
+		})
 	}
 }
 
