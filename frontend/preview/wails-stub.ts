@@ -301,7 +301,7 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
   };
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
-  const onClipClock: { start: number; end: number; text: string; said: number; whole: string }[] = [];
+  const onClipClock: { start: number; end: number; text: string; said: number; whole: string; part?: number }[] = [];
   // The engine's ClipWords: a word is captioned in the piece that holds
   // the most of it, from the edge on when an edge cuts into it.
   const offsets: number[] = [];
@@ -347,7 +347,7 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
     parts.forEach((part, i) => {
       const to =
         i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
-      drawn.push({ start: from, end: to, text: part, said: w.said, whole: w.whole });
+      drawn.push({ start: from, end: to, text: part, said: w.said, whole: w.whole, part: i });
       from = to;
     });
   }

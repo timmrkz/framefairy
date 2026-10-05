@@ -500,6 +500,36 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 	}
 }
 
+// A word typed into the one before it, which is how a removed word is put
+// back, makes a heard word of two words. Each says which of the two it is,
+// so the caption box can correct or remove one without the other.
+func TestTheWordsOfOneCorrectionSayWhichTheyAre(t *testing.T) {
+	tr := fromStored([]Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}}, nil, 0, 0, nil)
+	tr.Correct(map[string]string{wordKey(10): "weil es", wordKey(11): ""})
+	clip := Clip{Segments: []Segment{{Start: 9.9, End: 11.5}}}
+	view := captionsView(Plan{}, clip, tr, nil)
+	var got []string
+	for _, c := range view.Captions {
+		for _, line := range c.Lines {
+			for _, w := range line.Words {
+				part := "-"
+				if w.Part != nil {
+					part = itoa(*w.Part)
+				}
+				said := -1.0
+				if w.Said != nil {
+					said = *w.Said
+				}
+				got = append(got, fmt.Sprintf("%s@%g:%s/%s", w.Text, said, part, w.Whole))
+			}
+		}
+	}
+	want := "weil@10:0/weil es es@10:1/weil es das@10.5:-/das"
+	if strings.Join(got, " ") != want {
+		t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), want)
+	}
+}
+
 // A word the recogniser heard as one where two were said is corrected by
 // typing both. The words then hold them one by one, so the captions break
 // and highlight them one by one.

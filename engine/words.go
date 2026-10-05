@@ -82,6 +82,16 @@ func (t *Transcript) HeardAt(at float64) (Cue, bool) {
 	return Cue{}, false
 }
 
+// PartOf is which of the words a correction made of a heard word a word
+// is, counted from nought: the words before it that the same heard word
+// made. The words a heard word makes start inside it, one after the
+// other, see splitWord.
+func (t *Transcript) PartOf(heard, word Cue) int {
+	from := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= heard.Start-0.0015 })
+	to := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= word.Start-0.0005 })
+	return max(to-from, 0)
+}
+
 // Said gives the words a clip says, on the episode clock: every word of
 // the episode some of whose sound one of the clip's pieces holds, see
 // HoldsWord. A clip keeps no words of its own. It is its pieces, and what

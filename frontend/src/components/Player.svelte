@@ -468,7 +468,13 @@
   // The word being corrected: where it stands in the caption, which word of
   // the episode it is, the whole of that word, and the piece of it drawn
   // here. The last two differ only for a word that was split in two.
-  let fixing = $state<{ at: number; said: number; whole: string; piece: string } | null>(null);
+  let fixing = $state<{
+    at: number;
+    said: number;
+    part: number | null;
+    whole: string;
+    piece: string;
+  } | null>(null);
   // The word a correction is on its way to disk for, so it says it is not
   // settled yet the way everything else in the app does.
   let savingWord = $state<number | null>(null);
@@ -665,36 +671,60 @@
   // Every word of the caption beside the word of the episode it stands for,
   // which the engine says with the word. A correction that reads as two
   // words, or a word shown in halves, is drawn as two, and both point back
-  // at the one word they came from.
+  // at the one word they came from. A correction of several words also
+  // says which of them each is, part, so each is a word of its own in the
+  // caption box: text is that one word, the one corrected or removed
+  // when this is, and the others stay as they are. A word typed in after
+  // another, the way a removed word is put back, is one of these.
+  type Heard = { start: number; whole: string; part: number | null; text: string };
   const rows = $derived.by(() =>
     (caption?.lines ?? []).map((line) =>
-      line.words.map((word) => ({
-        word,
-        said:
-          correctable && word.said !== undefined
-            ? { start: word.said, text: word.whole ?? word.text }
-            : null,
-      })),
+      line.words.map((word) => {
+        if (!correctable || word.said === undefined) return { word, said: null };
+        const whole = word.whole ?? word.text;
+        const part = word.part ?? null;
+        const text = part === null ? whole : (whole.split(" ")[part] ?? whole);
+        return { word, said: { start: word.said, whole, part, text } as Heard };
+      }),
     ),
   );
 
-  // A word is in the caption twice when it was split in two, and while one
-  // half is being corrected it holds the whole word, so the other half is
-  // not drawn at all.
-  function doubled(word: { start: number }, said: { start: number } | null): boolean {
-    return !!fixing && !!said && said.start === fixing.said && word.start !== fixing.at;
+  // What a heard word reads as with one of its words changed, or taken
+  // out when the text is empty.
+  function withPart(said: Heard, text: string): string {
+    if (said.part === null) return text;
+    const words = said.whole.split(" ");
+    words.splice(said.part, 1, ...(text ? [text] : []));
+    return words.join(" ");
+  }
+
+  // A word is in the caption twice when the captions show it in halves,
+  // and while one half is being corrected it holds the whole word, so the
+  // other half is not drawn at all.
+  function doubled(word: { start: number }, said: Heard | null): boolean {
+    return (
+      !!fixing &&
+      !!said &&
+      said.start === fixing.said &&
+      said.part === fixing.part &&
+      word.start !== fixing.at
+    );
   }
 
   // A caption word says what it says by hand, not through the template.
   // While a word is being corrected the browser owns what is inside it,
   // and a template that wrote there would take the caret with it. This
-  // writes only when the word itself has changed, which never happens
-  // while a hand is in it.
-  function says(node: HTMLElement, text: string) {
+  // writes whenever the captions come back from the engine, and never
+  // into a word a hand is in. It wrote only when the word's own text
+  // changed, so a word typed in after another, "weil" made "weil ein",
+  // went on reading "weil ein" with "ein" drawn after it as well: the
+  // first word is still "weil", so nothing told it to let go of what was
+  // typed.
+  function says(node: HTMLElement, [text]: [string, unknown]) {
     node.textContent = text;
     return {
-      update(next: string) {
-        if (node.textContent !== next) node.textContent = next;
+      update([next]: [string, unknown]) {
+        if (document.activeElement !== node && node.textContent !== next) node.textContent = next;
       },
     };
   }
@@ -705,12 +735,12 @@
   function takeWord(
     node: HTMLElement,
     word: { start: number; text: string },
-    said: { start: number; text: string } | null,
+    said: Heard | null,
   ) {
     if (!said || !correctable) return;
     frozen = time;
     if (video && !video.paused) toggle();
-    fixing = { at: word.start, said: said.start, whole: said.text, piece: word.text };
+    fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text };
     // The caret is already where the hand put it. It is only moved when
     // what is drawn here is half of the word being corrected: a word split
     // in two is drawn in two halves, and correcting either hands back the
@@ -725,11 +755,13 @@
     at?.addRange(range);
   }
 
-  // The words removed whose removal is still on its way to the engine,
-  // by the moment they were heard. A removed word leaves the caption box
-  // with the key that removed it, and the engine's answer, the captions
-  // without it, takes over when it lands.
-  let gone = $state<Set<number>>(new Set());
+  // The words removed whose removal is still on its way to the engine. A
+  // removed word leaves the caption box with the key that removed it, and
+  // the engine's answer, the captions without it, takes over when it
+  // lands. A word is the moment it was heard, and which of its words it
+  // is when a correction made it several.
+  const goneKey = (said: Heard) => (said.part === null ? `${said.start}` : `${said.start}:${said.part}`);
+  let gone = $state<Set<string>>(new Set());
   $effect(() => {
     void captions;
     untrack(() => {
@@ -737,22 +769,26 @@
     });
   });
 
-  async function removeWord(said: number) {
+  // Removing one of the words a correction made removes that word and
+  // keeps the others. It took the whole heard word, so removing a word
+  // typed in after another took the other with it.
+  async function removeWord(said: Heard) {
     // The frame goes with the word, since there is nothing left to frame.
     keyed = null;
     walked = 0;
-    gone = new Set([...gone, said]);
+    const key = goneKey(said);
+    gone = new Set([...gone, key]);
     try {
-      await onword?.(said, "");
+      await onword?.(said.start, withPart(said, ""));
     } catch {
       // The workspace says what went wrong, and the word comes back.
       const back = new Set(gone);
-      back.delete(said);
+      back.delete(key);
       gone = back;
     }
   }
 
-  async function dropWord(node: HTMLElement, word: { start: number; text: string }) {
+  async function dropWord(node: HTMLElement, word: { start: number; text: string }, said: Heard | null) {
     const was = fixing;
     fixing = null;
     if (!was) return;
@@ -763,7 +799,7 @@
     // the word is never drawn empty while it leaves.
     if (!text) {
       node.textContent = word.text;
-      if (was.whole) removeWord(was.said);
+      if (was.whole && said) removeWord(said);
       return;
     }
     if (text === was.whole) {
@@ -772,7 +808,7 @@
     }
     savingWord = was.at;
     try {
-      await onword?.(was.said, text);
+      await onword?.(was.said, said ? withPart(said, text) : text);
       // What comes back is the engine's answer, drawn by the template.
       // Until it lands the word keeps what was typed, so the correction is
       // never shown coming undone and going in again.
@@ -1057,9 +1093,9 @@
     if (document.querySelector("dialog[open]")) return false;
     const at = keyed.start;
     const found = rows.flat().find(({ word, said }) => !!said && word.start === at);
-    if (!found?.said || gone.has(found.said.start)) return false;
+    if (!found?.said || gone.has(goneKey(found.said))) return false;
     event.preventDefault();
-    removeWord(found.said.start);
+    removeWord(found.said);
     return true;
   }
 
@@ -1259,7 +1295,7 @@
                    playhead landing a thousandth of a millisecond before a
                    word start, and so lighting nothing, was found with
                    these and could not have been found without them. -->
-              {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said) && !(said && gone.has(said.start))}{#if i > 0}{" "}{/if}<span
+              {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said) && !(said && gone.has(goneKey(said)))}{#if i > 0}{" "}{/if}<span
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
@@ -1275,9 +1311,9 @@
                       ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
                     style="--pill: {captions.style.highlightColour}"
-                    use:says={word.text}
+                    use:says={[word.text, captions]}
                     onfocusin={(e) => takeWord(e.currentTarget, word, said)}
-                    onfocusout={(e) => dropWord(e.currentTarget, word)}
+                    onfocusout={(e) => dropWord(e.currentTarget, word, said)}
                     onkeydown={wordKey}
                   ></span
                   >{/if}{/each}

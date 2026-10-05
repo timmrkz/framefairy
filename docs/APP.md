@@ -461,7 +461,15 @@ bubble scrolled by those eight pixels.
     the transcript, the captions and the render, and Cmd+Z brings it
     back. A word removed then corrected again comes back with the new
     text. Delete in a word open for typing is the field's own and takes
-    out letters. Removing a word lost its way when the words became one
+    out letters.
+  - **Putting a word back:** Cmd+Z, or type it into the word beside it,
+    "weil" made "weil ein". The engine keeps that as one heard word that
+    reads as two, and the caption box shows two words, each a field of
+    its own: a click on "ein" opens "ein", and delete on it removes
+    "ein" and leaves "weil". The engine says which of the two each is,
+    `part` in the captions. Before it did, the field went on reading
+    "weil ein" with "ein" drawn after it as well, a click on either
+    opened both, and removing either removed both. Removing a word lost its way when the words became one
     list: the engine refused an empty word and the caption box put the
     old one back.
     The caret went on blinking in a word already saved, because WebKit
