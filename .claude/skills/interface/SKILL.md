@@ -62,7 +62,8 @@ not the workspace: the first run, the settings, the empty window.
 | `?crossclips` | one clip list read comes back 400 ms late and the next at once, so a read asked later answers first. A card on its way and the clip it became must never both be on screen |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
-| `?webkitclock` | the video's clock while it plays is put back by 0.15 s now and then, the way WebKit's is corrected by reports from the player underneath. Chromium's clock only goes forward, so this is the only way to see what the app does with a clock that steps back |
+| `?webkitclock` | the video's clock while it plays is WebKit's: an estimate that never goes back. The picture starts 400 ms after play is asked for, the clock runs on from the ask at once, and the first report from the player, at 800 ms, makes it stand still until the picture has caught up. Chromium's clock and picture start together, so this is the only way to see a clock run ahead of the picture and then stand |
+| `?fps=25` | the episode at 25 frames a second, each second's frame shown 25 times, the way an episode on the Mac is. At one frame a second the browser says a new frame is on screen once a second, so anything that follows the frames, the playhead while it plays above all, moves in steps of a second. The file is made once, in about a minute |
 | `?framelag=1500` | the frame a seek lands on is put on screen 1.5 seconds after the video says seeked, the way Safari does, through a wrapped `requestVideoFrameCallback`. `window.__presented` is the moment of the frame on screen, for a probe to compare with where the app thinks the picture is. It is `open.mjs` that wraps it, not the stub |
 | `?framestart` | the paused video answers with where the frame it shows begins, in the episode's own frames, one a second here, the way the video on the Mac answers 1677.60 when sent to 1677.63. Chromium answers with the exact second it was sent to. The stub's clips start on whole seconds, which are frame starts, so a probe sets `window.__pieces` before it opens the episode to start a clip inside a frame |
 | `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
@@ -513,14 +514,19 @@ bugs in one afternoon were that one fact read exactly:
   the one thing that can refuse a play
 
 And while it plays, the clock is not the picture either. WebKit works a
-playing video's time out from the wall clock between reports from the
-player underneath, `TimeProgressEstimator` in `MediaPlayerPrivateRemote.cpp`,
-and puts it back whenever a report says the picture is behind, which is
-most of all while playing starts. The playhead followed it back and forth,
-and so did the lit word, the caption and the crop, and Tim saw the video
-preview jump back and forth before it played. The playhead only goes
-forward while a play runs, `onward` in `lib/flow.ts`, and `?webkitclock`
-gives the harness that clock. The same goes for a seek on its way: the
+playing video's time out from the wall clock since the last report from
+the player underneath, `TimeProgressEstimator` in
+`MediaPlayerPrivateRemote.cpp`, and returns the larger of that and what it
+returned last, so it never goes back. It can only stand still. Playing
+starts on it before the picture underneath has started, so it runs ahead,
+and when the first report says where the picture is, it stands until the
+picture has caught up. The playhead stood with it for up to half a second
+a moment after the space bar, while the picture and the sound played on.
+It was once read as a clock that steps back, and a forward-only rule was
+built on that, which held the playhead still in the same place. Read the
+source before building on what a browser is said to do: the clamp is four
+lines. So the playhead follows the frame on screen while it plays, see
+Playback below. The same goes for a seek on its way: the
 element answers with where it was sent, while the picture is still the
 frame it had. Taken as the picture, every jump over a cut asked the engine
 for a still in the middle of playing.
@@ -712,11 +718,54 @@ from the start, the way QuickTime starts over at the end of a video.
 **On the video**, the space bar plays the episode from the playhead,
 straight on, through the chosen clip and its cuts, with no jump and no
 stop. Playing through the clip leaves it on the video. The chosen clip is
-dimmed wherever it is drawn while the playhead is on the video, `.frame.dim`
-and `.clipmark.selected.dim` in `app.css`: the crop frame, the clip on the
-clip timeline and its mark on the range picker. A person sees that the
+dimmed wherever it is drawn while the playhead is on the video, `.frame.dim`,
+`.clipmark.selected.dim` and `.chosen.dim` in `app.css`: the crop frame,
+everything drawn for the clip on the clip timeline and its mark on the
+range picker. A person sees that the
 clip's rules are not in play, and the dimming changes in the frame the
 state does.
+
+**The whole clip dims, as one thing.** Only the frames were dimmed at
+first, and Tim saw the caption blocks and the cut edges stay bright inside
+a dim frame, which reads as a clip that is half in play. Everything drawn
+for the chosen clip on the clip timeline, its frame, pieces, cuts and their
+edges, trim edges, caption blocks and their edges and thumbnails, is held
+by `.chosen`, which lays nothing out, and one rule in `app.css` dims it
+with the crop frame and the range picker mark, `opacity: var(--dimmed)`,
+the brightness of a button that cannot be pressed. Brightness, so the
+colours a person chose for the captions stay theirs. The waveform on the
+canvas is the episode's and not the clip's, so it does not dim. Lit whole
+while the hand is on the clip somewhere else. A new part drawn for the
+chosen clip goes inside `.chosen`, or it stays bright. Prove it by reading
+the opacity of every part, the product down its ancestors, on the clip
+and on the video, and on the first animation frame after the click that
+moves the playhead.
+
+**While it plays, the playhead is the frame on screen.** `playingAt` in
+`lib/flow.ts` takes the frame `requestVideoFrameCallback` last said was
+put up, its `mediaTime`, and goes on from it by the time since its
+`presentationTime`, at most a frame, so it moves on every frame of the
+app between the frames of the episode, and stands with a picture that
+stops. On the Mac that frame is AVFoundation's own, read from the video
+output by `updateLastPixelBuffer` in `MediaPlayerPrivateAVFoundationObjC.mm`,
+not the estimate. A frame put up before the play began, or before the
+last seek, is the picture from before, so until a frame of this play
+comes the playhead stands, and that is the picture not having moved yet.
+It never goes back by a little. A seek, a jump over a cut and a loop are
+followed at once through the clock, as before, and the frames lead again
+from the first one after. The jump over a cut and the stop at the end are
+decided on the same position. Where the browser cannot say, or has said
+nothing for a second, the clock is all there is.
+
+The proof: under `?webkitclock&fps=25`, press the space bar and the play
+button, read the playhead on every animation frame for three seconds,
+and count the longest run of frames it stood still while the video
+played. Following the clock it was 23 frames, 383 ms, on this branch and
+on main alike, the same number as the clock's own stand. Following the
+frames it is none, after the 400 ms the picture takes to start, and it
+never goes back. Measure at `?fps=25`: at one frame a second the first new
+frame after the space bar comes up to a second later, and the playhead
+waits for it.
 
 Where a gesture lands exactly on an edge, the side it is about decides.
 The start edge belongs to the clip, and so does the end edge: a click on
