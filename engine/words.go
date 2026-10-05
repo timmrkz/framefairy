@@ -23,7 +23,9 @@ func (t *Transcript) hear(raw []Cue) {
 }
 
 // Correct makes the words again with an episode's corrections, keyed by the
-// millisecond a word starts, as corrections.json keeps them.
+// millisecond a word starts, as corrections.json keeps them. A word
+// corrected to nothing is removed: it stays among the words heard, so it
+// can be corrected again, and is left out of the words said.
 func (t *Transcript) Correct(corrections map[string]string) {
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
@@ -32,6 +34,9 @@ func (t *Transcript) Correct(corrections map[string]string) {
 			w.Text = text
 		}
 		heard = append(heard, w)
+		if strings.TrimSpace(w.Text) == "" {
+			continue
+		}
 		words = append(words, splitWord(w)...)
 	}
 	t.HeardWords, t.Words = heard, words

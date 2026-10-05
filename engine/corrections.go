@@ -55,10 +55,19 @@ func CleanWordText(text string) (string, error) {
 // heard, and the words are made again with it, see Transcript.Correct. No
 // clip keeps words of its own, so every clip that says the word says it
 // corrected from here on.
+//
+// A word corrected to nothing is removed: it is kept as an empty
+// correction, so the word heard is still there to correct again and an
+// undo puts it back, and the words leave it out. Removing a word was
+// lost when the words became one list, because an empty word was refused.
 func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
-	text, err := CleanWordText(text)
-	if err != nil {
-		return err
+	if strings.TrimSpace(Scrub(text, 200)) == "" {
+		text = ""
+	} else {
+		var err error
+		if text, err = CleanWordText(text); err != nil {
+			return err
+		}
 	}
 	word, ok := t.HeardAt(at)
 	if !ok {

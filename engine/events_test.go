@@ -454,11 +454,49 @@ func TestWordCorrections(t *testing.T) {
 	if said := Said(clips[0], tr.Words); len(said) == 0 || said[0].Text != "Tippfehler" {
 		t.Errorf("trim lost the correction: %v", said)
 	}
-	if err := SetWordText(logs, 10, "   ", tr); err == nil {
-		t.Errorf("an empty word was accepted")
-	}
 	if err := SetWordText(logs, 99, "x", tr); err == nil {
 		t.Errorf("a word that does not exist was accepted")
+	}
+}
+
+// A word corrected to nothing is removed. The clip no longer says it and
+// the captions no longer show it, and it is still the word heard there, so
+// correcting it again brings it back, and so does reading the transcript
+// again from what the recogniser heard.
+func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "ep.framefairy", "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	words := []Cue{{10, 10.5, "äh"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
+	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	clip := Clip{Segments: []Segment{{Start: 9.9, End: 12.5}}}
+	said := func() string {
+		var out []string
+		for _, w := range Said(clip, tr.Words) {
+			out = append(out, w.Text)
+		}
+		return strings.Join(out, " ")
+	}
+
+	if err := SetWordText(logs, 10.2, "  ", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := said(); got != "zwei drei" {
+		t.Errorf("after removing, the clip says %q", got)
+	}
+	if w, ok := tr.HeardAt(10.2); !ok || w.Text != "" {
+		t.Errorf("the word heard there is %+v, %v", w, ok)
+	}
+	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
+	again.Correct(LoadCorrections(logs))
+	if len(again.Words) != 2 || again.Words[0].Text != "zwei" {
+		t.Errorf("the removal was not kept: %v", again.Words)
+	}
+	if err := SetWordText(logs, 10.2, "ja", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := said(); got != "ja zwei drei" {
+		t.Errorf("after correcting it again, the clip says %q", got)
 	}
 }
 
