@@ -142,7 +142,11 @@ clock. The rules, besides every walk's:
 | A clip played to its end stops at its end | |
 
 The bridge's episode runs at five frames a second, so a frame of give is
-a fifth of a second.
+a fifth of a second. Whether a press plays the clip or the episode is
+read off the app, the chosen clip dimmed on the clip timeline while the
+playhead is on the video, never worked out by the walk: one that decided
+it by itself was a second idea of where play starts, and drifted from the
+app's the day 2.121 made it a state.
 
 ### `sequences.mjs`: the cases found by hand
 
@@ -211,5 +215,6 @@ edge put back now lands where the clip was found exactly,
 
 The playback walk found that a clip played from a playhead in a cut
 played the cut: a double-click that cuts a part out leaves the playhead
-in it. Every one of six walks showed it within sixteen steps, and none
-does with the fix, `playFrom` in `lib/flow.ts`.
+in it. Every one of six walks showed it within sixteen steps. 2.121
+fixed it on main at the same time, `playFrom` in `lib/playhead.ts`, and
+the walk now holds it there.

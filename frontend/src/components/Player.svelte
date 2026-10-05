@@ -12,8 +12,9 @@
 
 <script lang="ts">
   // The episode, with the crop of the selected clip laid over it. One Play
-  // button, one playhead: playing starts where the playhead stands, and with
-  // a clip selected it jumps the clip's cuts and stops where the clip ends.
+  // button, one playhead: playing starts where the playhead stands. With
+  // the playhead on the selected clip it jumps the clip's cuts and stops
+  // where the clip ends, and on the video it plays the episode straight on.
   // While the playhead is inside a clip, its captions are drawn inside the
   // crop the way the render will burn them in.
   import { onMount, untrack, type Snippet } from "svelte";
@@ -26,9 +27,11 @@
     stillFits,
     shouldChase,
     pieceAt as pieceIndex,
-    playFrom,
     playingPiece,
+    frameStart,
+    type Presented,
   } from "../lib/flow";
+  import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "../lib/playhead";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -59,6 +62,7 @@
     strip,
     paused = $bindable(true),
     looping = $bindable(false),
+    onClip = $bindable(false),
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
   }: {
     path: string;
@@ -101,6 +105,10 @@
     // Play and Pause stand in the row above the clip timeline, with Render.
     paused?: boolean;
     looping?: boolean;
+    // Whether the playhead is on the chosen clip, so the space bar plays
+    // the clip, or on the video, so it plays the episode straight on and
+    // the clip is drawn dimmed wherever it is drawn. See lib/playhead.ts.
+    onClip?: boolean;
     offers?: PlayerOffers;
   } = $props();
 
@@ -146,8 +154,15 @@
   // the video preview was before, then the clip. With the frames known,
   // nothing else sets shows, and the clock only stands in where the
   // browser cannot say.
+  //
+  // The same frame is where the playhead goes while the video plays, see
+  // playingAt: presented is the last frame put up, and since is when the
+  // play began or the video was last sent somewhere, on the page's clock in
+  // seconds. A frame from before that is the picture from before.
   const framesKnown = typeof HTMLVideoElement !== "undefined" && "requestVideoFrameCallback" in HTMLVideoElement.prototype;
   let watching = 0;
+  let presented: Presented | null = null;
+  let since = 0;
   function watchFrames() {
     if (!framesKnown || !video) return;
     video.cancelVideoFrameCallback(watching);
@@ -155,6 +170,9 @@
       // A jump the playing clip makes by itself moves the playhead and the
       // picture together, in the frame loop, see tick.
       if (!jumping) shows = meta.mediaTime;
+      // A frame put up while a seek is on its way is the picture from
+      // where the video was, not where it was sent.
+      if (!video.seeking) presented = { media: meta.mediaTime, shown: meta.presentationTime / 1000 };
       watchFrames();
     });
   }
@@ -193,12 +211,33 @@
     return pieceIndex(pieces, t);
   }
 
+  // Where the playhead is, on the clip or on the video, as the last gesture
+  // that put it somewhere left it, see lib/playhead.ts. Only a gesture sets
+  // it, through seek, and a play of the clip that reaches its end. The
+  // video's clock never does: the paused video answers with where the
+  // frame it shows begins, up to a frame early, and measured against the
+  // clip that answer played the episode straight through a clip just
+  // picked.
+  let placed = $state<Playhead>(onVideo);
+  // Where the last gesture put the playhead while paused, which is where
+  // the video really is, whatever it answers. -1 once a play moves it on.
+  let putAt = -1;
+  const place = $derived(placeFor(placed, clip?.key));
+  $effect(() => {
+    onClip = place !== "video";
+  });
+
   // A video that has not read its own index yet drops a seek on the floor,
   // which used to leave the playhead somewhere the picture never went. The
   // moment it knows its length, it is sent there.
-  export function seek(t: number) {
+  //
+  // Every gesture that puts the playhead somewhere comes through here, and
+  // says whether it is about the chosen clip, see placeOf.
+  export function seek(t: number, about?: "clip") {
     if (!video) return;
     time = Math.max(0, Math.min(t, source.duration));
+    placed = placeOf(pieces, clip?.key ?? "", time, 1 / frameOf, about);
+    putAt = time;
     atPiece = pieceAt(time);
     goTo(time);
   }
@@ -230,6 +269,7 @@
   }
 
   function put(t: number) {
+    since = performance.now() / 1000;
     try {
       video.currentTime = t;
     } catch {
@@ -280,9 +320,10 @@
   // starts the moment it can.
   let wantPlay = false;
 
-  // Whether this play is the chosen clip's, with its cuts jumped and a stop
-  // at its end, or the episode's, straight on from the playhead.
-  let playsClip = false;
+  // Whether a play is the chosen clip's, with its cuts jumped and a stop at
+  // its end, or the episode's, straight on from the playhead. It is the
+  // place, so a gesture made while the video plays changes it at once.
+  const playsClip = $derived(place !== "video");
 
   function play() {
     if (!video) return;
@@ -290,38 +331,41 @@
     // Playing moves the playhead on, so the keyboard's word goes.
     keyed = null;
     walked = 0;
-    // The clip plays when the playhead stands in it, when it has just played
-    // to its end, which is where the playhead is left, and when it loops.
-    // Anywhere else the playhead was put there to look at that part of the
-    // episode, clip or no clip, so the episode plays on from there. It used
-    // to go back to the start of the chosen clip, and a part of the episode
-    // could not be heard at all while a clip was chosen.
-    playsClip =
-      !!clip &&
-      (looping ||
-        (time >= clipStart - frameOf / 2 && time < clipEnd - 0.05) ||
-        Math.abs(time - clipEnd) <= 0.05 + frameOf);
-    if (clip && playsClip) {
-      // A clip plays from the playhead while the playhead stands inside it,
-      // otherwise from its start.
+    // On the clip, the clip plays from the playhead, from the end of a cut
+    // the playhead is in, and from its start where the playhead is at its
+    // end. On the video, the episode plays straight on from the playhead,
+    // clip or no clip, so any part of it can be heard while a clip is
+    // chosen. See playFrom.
+    const from = playFrom(place, pieces, time);
+    if (clip && from.clip) {
+      placed = { place: "clip", clip: clip.key };
+      atPiece = pieceAt(from.at);
+      // And only when the picture really has to move: when the frame it
+      // shows is not the frame the play begins in. The paused video answers
+      // with where that frame begins, which can be most of a frame before
+      // the clip just picked, and the picture is still the right one. A
+      // seek that changes nothing still interrupts, still answers with
+      // nothing, still leaves a chase running with nothing to answer it, and
+      // a seek is the one thing that can refuse a play.
       //
-      // Half a frame of room at that start, because the playhead is not
-      // where it was put: picking a clip sends it to the clip's first
-      // second and the picture answers with the frame it is showing, which
-      // begins a hair before. Read exactly, the playhead was then outside
-      // the clip it had just been put at the start of, so every press of
-      // the space bar after picking a clip seeked before it played, and a
-      // seek is the one thing that can refuse a play.
-      if (time < clipStart - frameOf / 2 || time >= clipEnd - 0.05) time = clipStart;
-      // And from where a cut ends when the playhead stands in one.
-      time = playFrom(pieces, time, frameOf);
-      atPiece = pieceAt(time);
-      // And only when the picture really has to move. A seek that changes
-      // nothing still interrupts, still answers with nothing, and still
-      // leaves a chase running with nothing to answer it.
-      if (Math.abs(video.currentTime - time) > frameOf / 2) goTo(time);
+      // A play that does not start where the playhead stands, from the
+      // clip's start or the end of a cut, starts where the video is only
+      // when a gesture put it exactly there. A frame step off the clip and
+      // back lands on the start of the frame the clip begins in, inside
+      // that frame and before the clip, and played from there it played
+      // the part of the frame before the clip.
+      const moved = from.at !== time;
+      time = from.at;
+      if (
+        frameStart(video.currentTime, source.fps) !== frameStart(time, source.fps) ||
+        (moved && putAt !== time)
+      )
+        goTo(time);
       onplayclip?.(clip);
     }
+    // Playing moves the video on from wherever it was put.
+    putAt = -1;
+    since = performance.now() / 1000;
     wantPlay = true;
     video.play().catch(() => {
       if (!wantPlay || !video) return;
@@ -366,44 +410,56 @@
     jumping = false;
     if (step === "paused") return;
     const landed = step === "landed";
+    // Where the playhead goes on this frame: with the frame on screen, on
+    // from it between frames, and never back, see playingAt. Not with the
+    // video's clock, which on the Mac runs ahead of the picture as playing
+    // starts and then stands still until the picture has caught up. And a
+    // video that has read nothing of the file yet has no clock at all, so
+    // the playhead stands where it is.
+    const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
+    const now = playingAt(time, {
+      clock: video.currentTime,
+      empty,
+      seeking: video.seeking,
+      landed,
+      presented: framesKnown ? presented : null,
+      now: performance.now() / 1000,
+      since,
+      rate: video.playbackRate,
+      frame: frameOf,
+    });
     if (clip && playsClip && pieces.length) {
       // The episode plays through what the clip cuts out, so the playhead
-      // jumps every cut and stops where the clip ends.
+      // jumps every cut and stops where the clip ends, when the picture
+      // gets there. The clock on the Mac runs ahead as playing starts, and
+      // a jump made by it cut the end of a piece short.
       // The pieces change under the player whenever a cut is taken out or
       // put back, so the piece being played can be gone by this frame.
-      atPiece = playingPiece(pieces, atPiece, video.currentTime);
+      atPiece = playingPiece(pieces, atPiece, now);
       const piece = pieces[atPiece];
       // Nothing is decided while a jump is still being made, or a stale
       // position could be read as the end of the piece jumped to.
-      if (!video.seeking && video.currentTime >= piece.end - 0.02) {
+      if (!video.seeking && now >= piece.end - 0.02) {
         atPiece++;
         if (atPiece >= pieces.length) {
           if (!looping) {
             wantPlay = false;
             video.pause();
             time = clipEnd;
+            placed = playedToEnd(placed, false);
             return;
           }
+          placed = playedToEnd(placed, true);
           atPiece = 0;
         }
         jumping = true;
+        since = performance.now() / 1000;
         video.currentTime = pieces[atPiece].start;
         frame = requestAnimationFrame(tick);
         return;
       }
     }
-    // Otherwise the playhead only goes forward while the video plays. The
-    // clock WebKit hands out while playing is worked out from the wall clock
-    // between the reports of the player underneath, and it is set back
-    // whenever a report says the picture is behind, which it is while
-    // playing starts and whenever the file is slow to read. Followed as it
-    // is, the playhead, the lit word, the caption and the crop went back
-    // and forth over the picture for as long as playing took to settle.
-    //
-    // And a video that has read nothing of the file yet has no clock at
-    // all, so the playhead stands where it is, see playingAt.
-    const empty = video.readyState === HTMLMediaElement.HAVE_NOTHING;
-    time = playingAt(time, { clock: video.currentTime, empty, seeking: video.seeking, landed });
+    time = now;
     // Where the browser says which frame is on screen, that is the picture,
     // see watchFrames, and the clock is not. Once a jump the playing clip
     // made has landed, the picture goes with the playhead for the frame or
@@ -464,6 +520,9 @@
       left: (left / source.width) * 100,
       width: (source.cropWidth / source.width) * 100,
       inside: insideClip(clip.segments, time, frameOf),
+      // On the video, the clip's rules are not in play, and its frame says
+      // so by being dimmed.
+      dim: place === "video",
       moved: clip.segments[piece]?.moved ?? false,
     };
   });
@@ -1149,7 +1208,9 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">
-        The space bar plays and pauses, and so does a click on the picture. Drag the crop frame
+        The space bar plays and pauses, and so does a click on the picture. With the playhead on
+        the chosen clip it plays the clip, its cuts jumped, and anywhere else the episode straight
+        on, with the clip's frame dimmed. Drag the crop frame
         sideways to place it, and the black box up or down for the captions. Click a word in the
         caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
         saves it, Escape leaves it, and two words split it in two. Delete removes the word in the
@@ -1234,6 +1295,7 @@
       <div
         class="frame"
         class:lit={dragLeft !== null}
+        class:dim={crop.dim}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}

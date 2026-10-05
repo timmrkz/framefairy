@@ -16,9 +16,16 @@ const frame = 1 / (await ask(page, "Source", watch.at.path)).fps;
 const pieces = async () => (await engineState(page, watch.at)).segments;
 
 // Whether a press of the space bar plays the clip rather than the episode
-// from the playhead: when the playhead stands in the clip, the way the
-// video preview decides it.
-const playsClip = (p, at) => at >= p[0].start - frame / 2 && at < p[p.length - 1].end - 0.05;
+// from the playhead: when the playhead is on the clip, which the app
+// shows by not dimming the chosen clip on the clip timeline. Read off the
+// app, never worked out here: a walk that decided it by itself was a
+// second idea of where play starts, and drifted from the app's when 2.121
+// made it a state.
+const playsClip = () =>
+  page.evaluate(() => {
+    const chosen = document.querySelector(".clip-timeline .chosen");
+    return !!chosen && !chosen.classList.contains("dim");
+  });
 
 // Every frame put on screen while a clip played is one of the clip's: in
 // one of its pieces, a frame of give either side, since the jump over a
@@ -51,7 +58,7 @@ const gestures = [
     async run() {
       const p = await pieces();
       const from = (await video(page)).at;
-      const clip = playsClip(p, from);
+      const clip = await playsClip();
       const ms = 300 + rng.int(2700);
       const stop = await recordFrames(page);
       await page.evaluate(() => document.body.focus());
@@ -74,8 +81,9 @@ const gestures = [
     async run() {
       const p = await pieces();
       const from = (await video(page)).at;
-      if (!playsClip(p, from)) return "nothing, the playhead is not in the clip";
-      const length = p.reduce((sum, x) => sum + Math.max(0, x.end - Math.max(x.start, from)), 0);
+      if (!(await playsClip())) return "nothing, the playhead is on the video";
+      // A clip at its end starts over, so as long as the whole clip.
+      const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
       const stop = await recordFrames(page);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");

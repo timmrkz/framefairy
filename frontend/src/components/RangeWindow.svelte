@@ -35,6 +35,7 @@
     onmark,
     playhead = -1,
     onseek,
+    dimmed = false,
     locked = false,
     onmove,
     onreset,
@@ -67,6 +68,9 @@
     onmark?: (key: string) => void;
     playhead?: number;
     onseek?: (time: number) => void;
+    // Whether the playhead is on the video rather than on the chosen clip,
+    // so the chosen clip's mark is drawn dimmed, as its frame is.
+    dimmed?: boolean;
     // Clips are being found for the window, which wears the shimmer.
     locked?: boolean;
     // The window at rest dragged by its outline, with where its edges are
@@ -311,6 +315,7 @@
       class="clipmark"
       class:rendered={m.rendered}
       class:selected={(m.pick ?? m.key) === selected}
+      class:dim={dimmed && (m.pick ?? m.key) === selected}
       class:lit={m.key === hovered}
       class:waiting={m.arriving}
       style="left: {at(m.start)}px; width: {Math.max(at(m.end) - at(m.start), 4)}px"
