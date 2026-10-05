@@ -361,14 +361,38 @@ const (
 // A word alone says is too wide for a line gets a caption of its own, which
 // is how it is read as two lines of one caption, hyphenated, rather than
 // as a third line under the words around it. alone may be nil.
+//
+// A word with no text is a word removed, see Transcript.Correct. It is
+// not shown, but it was still said, so the time it holds is no pause: the
+// caption it stood in goes on over it, laid out the way it was. Without
+// this, removing a word left a gap that read as a pause, so the caption
+// ended at the word before it and the rest moved on to the next one.
 func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Caption {
-	words := ClipWords(clip, said)
+	var words []Cue
+	// reach is, for each word shown, where the words removed straight
+	// after it end, or where it ends when none were.
+	var reach []float64
+	for _, w := range ClipWords(clip, said) {
+		if strings.TrimSpace(w.Text) != "" {
+			words, reach = append(words, w), append(reach, w.End)
+		} else if len(reach) > 0 {
+			reach[len(reach)-1] = math.Max(reach[len(reach)-1], w.End)
+		}
+	}
 	if len(words) == 0 {
 		return nil
+	}
+	shown := make([]Cue, 0, len(said))
+	for _, w := range said {
+		if strings.TrimSpace(w.Text) != "" {
+			shown = append(shown, w)
+		}
 	}
 	type group struct {
 		words []Cue
 		alone bool
+		// reach is where the group's last word reaches, see above.
+		reach float64
 	}
 	var groups []group
 	var current []Cue
@@ -382,23 +406,23 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	for i, word := range words {
 		if alone != nil && alone(word.Text) {
 			if len(current) > 0 {
-				groups = append(groups, group{words: current})
+				groups = append(groups, group{words: current, reach: reach[i-1]})
 				current = nil
 			}
-			groups = append(groups, group{words: []Cue{word}, alone: true})
+			groups = append(groups, group{words: []Cue{word}, alone: true, reach: reach[i]})
 			continue
 		}
 		if len(current) > 0 && runeLen(text(append(current[:len(current):len(current)], word))) > maxChars {
-			groups = append(groups, group{words: current})
+			groups = append(groups, group{words: current, reach: reach[i-1]})
 			current = nil
 		}
 		current = append(current, word)
 		last := i == len(words)-1
-		pauseNext := !last && words[i+1].Start-word.End >= captionPause
+		pauseNext := !last && words[i+1].Start-reach[i] >= captionPause
 		sentence := endsWithBreak(word.Text) &&
 			float64(runeLen(text(current))) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
-			groups = append(groups, group{words: current})
+			groups = append(groups, group{words: current, reach: reach[i]})
 			current = nil
 		}
 	}
@@ -409,11 +433,10 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	lastAlone := false
 	for i, g := range groups {
 		start := g.words[0].Start
-		lastWord := g.words[len(g.words)-1]
-		end := lastWord.End + captionHold
+		end := g.reach + captionHold
 		if i+1 < len(groups) {
 			next := groups[i+1].words[0].Start
-			if next-lastWord.End < captionPause {
+			if next-g.reach < captionPause {
 				end = next
 			} else {
 				end = math.Min(end, next)
@@ -438,7 +461,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	if out[0].Start < 0.12 {
 		out[0].Start = 0
 	}
-	return moveCaptions(clip, said, out)
+	return moveCaptions(clip, shown, out)
 }
 
 // The shortest a caption moved by hand may be shown for.

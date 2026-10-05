@@ -294,11 +294,14 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
     segments,
     words: allWords()
       .filter((w) => segments.some((p) => holds(p, w)))
-      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text }))
+      // A word corrected to nothing is removed, the way Transcript.Correct
+      // leaves it out.
+      .filter((w) => w.text !== ""),
   };
   // Each word also keeps when it starts in the episode, which is what a
   // caption moved by hand is kept against.
-  const onClipClock: { start: number; end: number; text: string; said: number; whole: string }[] = [];
+  const onClipClock: { start: number; end: number; text: string; said: number; whole: string; part?: number }[] = [];
   // The engine's ClipWords: a word is captioned in the piece that holds
   // the most of it, from the edge on when an edge cuts into it.
   const offsets: number[] = [];
@@ -344,7 +347,7 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
     parts.forEach((part, i) => {
       const to =
         i === parts.length - 1 ? w.end : from + ((w.end - w.start) * part.length) / letters;
-      drawn.push({ start: from, end: to, text: part, said: w.said, whole: w.whole });
+      drawn.push({ start: from, end: to, text: part, said: w.said, whole: w.whole, part: i });
       from = to;
     });
   }
@@ -1457,12 +1460,41 @@ export const Call = {
         return Promise.resolve(null);
       }
       case "SetWord": {
-        const text = String(args[4]).trim();
-        if (!text) return Promise.reject(new Error("a word cannot be empty"));
+        // Nothing removes the word, the way SetWordText does.
+        const text = String(args[4]).replace(/\s+/g, " ").trim();
         if (location.search.includes("refuse")) {
           return Promise.reject(new Error("there is no word at 0:57"));
         }
-        fixed()[said(Number(args[3]))] = text;
+        // A removed word typed back in beside its neighbour goes back where
+        // it was heard, the way the engine's putBack does it.
+        const all = allWords();
+        const i = all.findIndex((w) => said(w.start) === said(Number(args[3])));
+        const put = new Map<number, string>([[i, text]]);
+        const reads = (j: number) => (fixed()[said(all[j].start)] ?? all[j].text).split(" ").filter(Boolean);
+        const gone = (j: number) => j >= 0 && j < all.length && reads(j).length === 0;
+        const was = i >= 0 ? reads(i) : [];
+        const now = text.split(" ").filter(Boolean);
+        const same = (a: string[], b: string[]) => a.join(" ") === b.join(" ");
+        if (was.length > 0 && now.length > was.length) {
+          const after = same(now.slice(0, was.length), was) && gone(i + 1);
+          const before = !after && same(now.slice(now.length - was.length), was) && gone(i - 1);
+          if (after || before) {
+            const extra = after ? now.slice(was.length) : now.slice(0, now.length - was.length);
+            const slots: number[] = [];
+            for (let j = after ? i + 1 : i - 1; gone(j) && slots.length < extra.length; j += after ? 1 : -1) slots.push(j);
+            const last = slots.length - 1;
+            put.set(i, was.join(" "));
+            slots.forEach((j, k) => {
+              if (after) put.set(j, k < last ? extra[k] : extra.slice(last).join(" "));
+              else put.set(j, k < last ? extra[extra.length - 1 - k] : extra.slice(0, extra.length - last).join(" "));
+            });
+          }
+        }
+        for (const [j, says] of put) {
+          const key = j >= 0 ? said(all[j].start) : said(Number(args[3]));
+          if (j >= 0 && says === all[j].text) delete fixed()[key];
+          else fixed()[key] = says;
+        }
         return Promise.resolve(clipOf(String(args[2])));
       }
       case "Waveform": {
@@ -1542,7 +1574,9 @@ export const Call = {
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve([]);
         return Promise.resolve(
-          words(Number(args[1]), Number(args[2])).map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text })),
+          words(Number(args[1]), Number(args[2]))
+            .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text }))
+            .filter((w) => w.text !== ""),
         );
       case "Still":
         // One file per frame, and the harness episode has a frame a second,
