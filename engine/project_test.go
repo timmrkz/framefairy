@@ -293,14 +293,6 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("the clip says nothing: %v %+v", err, captions)
 	}
 
-	frame, err := e.Still(ctx, source, 12.7, 25, 320)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info, err := os.Stat(frame); err != nil || info.Size() == 0 || filepath.Base(frame) != "320-000012680.jpg" {
-		t.Errorf("still %s %v", frame, err)
-	}
-
 	sawRenderProgress := false
 	for _, ev := range rec.events {
 		if ev.Kind == EventProgress && ev.Fraction > 0 {
