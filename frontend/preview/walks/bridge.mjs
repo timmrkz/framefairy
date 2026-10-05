@@ -1,6 +1,7 @@
 // What every walk needs: the interface opened on the bridge's episode with
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
+import { execFileSync } from "node:child_process";
 import { chromium } from "playwright";
 
 // A random number generator that a seed decides, so a walk that breaks a
@@ -351,4 +352,42 @@ export async function fromSidebar(page, click) {
   await click();
   await page.mouse.move(750, 400);
   await page.waitForTimeout(400);
+}
+
+// A filmed episode, made by /pick with a rate, carries its frame number
+// in a way a render keeps, see makeFilmedEpisode in bridge_test.go: bands
+// one above the other across the whole width of a picture 180 pixels
+// high, FILMED_BITS of them, the highest bit at the top, each BAND pixels
+// high, light for one and dark for nought.
+const FILMED_BITS = 11;
+const BAND = 4;
+
+// The frame of the episode each frame of a rendered short is, by its
+// number read back from the bands, in the order the short shows them. A
+// short keeps the whole height of the episode, so ffmpeg makes each frame
+// of it 180 pixels high again, and four wide, the average of each row,
+// where the captions burned in lower down change nothing.
+export function shortFrames(path) {
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", "scale=4:180:flags=area",
+    "-f", "rawvideo", "-pix_fmt", "gray", "-"], { maxBuffer: 1 << 30 });
+  const size = 4 * 180;
+  const frames = [];
+  for (let at = 0; at + size <= raw.length; at += size) {
+    let n = 0;
+    for (let b = 0; b < FILMED_BITS; b++) {
+      const row = at + Math.floor((b + 0.5) * BAND) * 4;
+      const level = (raw[row] + raw[row + 1] + raw[row + 2] + raw[row + 3]) / 4;
+      // Light is 160 and dark 60.
+      n = n * 2 + (level > 110 ? 1 : 0);
+    }
+    frames.push(n);
+  }
+  return { frames, modulo: 2 ** FILMED_BITS };
+}
+
+// The sound of a rendered short, one channel at 48 kHz, sample by sample.
+export function shortSound(path) {
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-ac", "1", "-ar", "48000",
+    "-f", "f32le", "-"], { maxBuffer: 1 << 30 });
+  return new Float32Array(Uint8Array.from(raw).buffer);
 }
