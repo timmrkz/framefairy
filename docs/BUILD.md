@@ -175,6 +175,11 @@ process, so `scripts/fuzz.sh` runs as many targets side by side as the
 machine has cores, with one worker each. That is around 50 seconds on a small
 four core machine and less on a laptop with more.
 
+One target is the exception. `FuzzSimulation`, the licence dispenser's
+simulation, plays a whole history of 400 steps in one execution, a fifth
+of a second, so it does `SIMTIME` executions, 300 by default, instead of
+10000, which would be half an hour.
+
 `FUZZTIME` also takes a duration, for a deep run by hand:
 
 ```
@@ -265,6 +270,17 @@ nothing that renders, frames or listens was tested on the system that ships
 first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
+
+**The tests use the ffmpeg the programs ship with.** `make unit`, `make
+fuzz` and `make changed` put `bin/` first on the `PATH`, so a test finds
+the ffmpeg and llama-server `make` built before any other. A Mac with
+Homebrew's ffmpeg 9 tested that one before, and
+`TestMeasureLevelsGoesWhereTheClipTimelineLooks` failed there: ffmpeg 9
+starts AAC up to one audio frame late after a seek, which is why the
+ffmpeg we ship stays on 8.1 for now, see `scripts/build-ffmpeg.sh`. `make
+walks` is the exception. It makes its episode in VP9, the one video
+Chromium plays without the proprietary codecs, and our ffmpeg has no VP9
+encoder, so the walks use the system's.
 
 **The tests that render share their episodes and skip the face detector.**
 A test episode is made once for each length and every test gets a copy,
