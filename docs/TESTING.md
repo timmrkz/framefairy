@@ -21,13 +21,15 @@ a time and knew nothing of pauses, so a caption breaking where a removed
 word had been could not be seen in it at all. Anything about what the
 engine answers is tried against the bridge.
 
-The frame queue the video preview is moving onto, `frontend/src/lib/frames/`,
+The frame queue the video preview plays from, `frontend/src/lib/frames/`,
 has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
 sound can be laid over the episode's own sample by sample.
 `frontend/preview/frames/cuts.mjs` plays a clip with cuts on it and checks
-every frame drawn and every sample heard. What it measures and how to read
-it is in the interface skill, under The frame queue.
+every frame drawn and every sample heard. The preview's own episode is
+made the same way, so the same is measured in the workspace. What it
+measures and how to read it is in the interface skill, under Playback and
+The frame queue.
 
 ## The bridge
 
@@ -37,8 +39,8 @@ waveform and ffmpeg, with stand-ins only for the two models. The speech
 stand-in says a few German sentences over and over, with a pause after
 each, so a word on screen twice can be told from the words around it. The
 language model stand-in finds one clip. The episode is two minutes of a
-grey that grows lighter, in VP9 and Opus, because the Chromium Playwright
-brings has no H.264 and would not play it.
+grey that grows lighter, VP9 and Opus in an MP4, because the video
+preview reads MP4 and the Chromium Playwright brings has no H.264.
 
 In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes

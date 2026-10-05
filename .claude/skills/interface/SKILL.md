@@ -62,13 +62,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?crossclips` | one clip list read comes back 400 ms late and the next at once, so a read asked later answers first. A card on its way and the clip it became must never both be on screen |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
-| `?webkitclock` | the video's clock while it plays is WebKit's: an estimate that never goes back. The picture starts 400 ms after play is asked for, the clock runs on from the ask at once, and the first report from the player, at 800 ms, makes it stand still until the picture has caught up. Chromium's clock and picture start together, so this is the only way to see a clock run ahead of the picture and then stand. A seek while it plays starts over the same way from where it was sent: the clock says the target until the seek lands, then runs on from it by the wall clock, the picture starts 400 ms after the landing, and no frame is put up before it, so with `?slowseek=700` the first frame after a click comes 1.1 s after it, the way it can on the Mac |
-| `?fps=25` | the episode at 25 frames a second, each second's frame shown 25 times, the way an episode on the Mac is. At one frame a second the browser says a new frame is on screen once a second, so anything that follows the frames, the playhead while it plays above all, moves in steps of a second. The file is made once, in about a minute |
-| `?framelag=1500` | the frame a seek lands on is put on screen 1.5 seconds after the video says seeked, the way Safari does, through a wrapped `requestVideoFrameCallback`. `window.__presented` is the moment of the frame on screen, for a probe to compare with where the app thinks the picture is. It is `open.mjs` that wraps it, not the stub |
-| `?framestart` | the paused video answers with where the frame it shows begins, in the episode's own frames, one a second here, the way the video on the Mac answers 1677.60 when sent to 1677.63. Chromium answers with the exact second it was sent to. The stub's clips start on whole seconds, which are frame starts, so a probe sets `window.__pieces` before it opens the episode to start a clip inside a frame |
-| `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
-| `?slowseek=150` | every seek takes 150 ms to land, the way WebKit's can on a Mac with a long episode. Chromium lands one in this file in about 3 ms, inside one frame, so nothing could ever happen in the middle of a seek, a press of the space bar during a jump over a cut above all. `open.mjs` slows the element itself: while a seek is on its way `seeking` says yes and the clock says where it was sent, the way a browser answers |
-| `?slowread=200` | for the frame queue's page only, every range of its episode is answered 200 ms late, the way a busy disk or a long episode can. The frame queue reads ahead so a cut never waits on the file, and this is how to show it, see The frame queue below |
+| `?slowread=200` | every range of the episode is answered 200 ms late, the way a busy disk or a long episode can, in the workspace and on the frame queue's page alike. The frame queue reads ahead so a cut never waits on the file, and this is how to show it, see The frame queue below. It is `open.mjs`'s server that is slow, not the stub |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
@@ -119,48 +113,46 @@ Write one-off probes outside the repository, in the scratchpad.
 
 ## The episode the harness can play
 
-The video preview is a real `<video>` and the harness serves it a real
-episode, made with ffmpeg on the first run and kept in the temp folder:
-four hours at a frame a second, 192 by 108, about 700 KB. Without ffmpeg
-there is no episode, playing fails, and a probe that needs it has to say
-so rather than pass.
+The video preview reads the episode file itself, see The frame queue
+below, and the harness serves it a real one, made with ffmpeg on the first
+run and kept in the temp folder: four hours at 25 frames a second, 96 by
+54, VP9 and Opus in an MP4, about 45 MB, made in about four minutes. Without
+ffmpeg there is no episode, the video preview says it cannot read the file,
+and a probe that needs one has to say so rather than pass.
 
-Two things about it are deliberate.
+Three things about it are deliberate.
 
-**It is VP9 in a WebM, not H.264 in an MP4.** The Chromium that comes with
-Playwright is built without the proprietary codecs, so an MP4 loads,
-errors and never plays, which looks exactly like a video that is paused.
-The app itself runs in a WebKit view and plays the MP4 the Go side serves.
+**It is VP9 and Opus, not H.264 and AAC.** The Chromium that comes with
+Playwright is built without the proprietary codecs. The app itself runs in
+a WebKit view and decodes what the Mac decodes.
 
-**It is a grey that climbs from the first second to the last, not black.**
-Black is unreadable in the one way that matters: a black picture and no
-picture at all look the same, so a probe cannot tell a video preview that
-has gone blank from one showing a frame, and that is the whole question
-about anything the player does. Grey answers it, and because the grey
-climbs, a probe can also say roughly where in the episode the picture is
-and that it moved. Roughly: the luma comes back through a limited range
-and a lossy encoder, so it is good for *it is showing something* and *it
-moved about that far*, not for a second exactly. Anything needing the
-exact second reads the app's own clock.
+**The picture says which frame it is.** Its top half is the frame number
+in 24 bars of four pixels, the highest bit on the left, light for one, so
+a probe reads back from the canvas the frame really drawn and never trusts
+what the app says it drew. Read the bars from `.screen canvas` with
+`getImageData`, a row through the middle of the top half, in the middle of
+each bar: the frame is scaled up smoothly and the edges of a bar are a
+blend. The bottom half is a grey that climbs from the first second to the
+last, because black and no picture look the same: around 28 is a picture.
 
-Read it by taking a screenshot of the middle of `.screen` and averaging
-the pixels. The middle, because the picture is letterboxed in the preview
-and a sample anywhere else reads the black bars and calls a good picture
-blank. Around 28 is a picture, 0 is nothing.
+**The sound says where it is.** A tone whose pitch climbs with a little
+noise under it that never repeats, so what the sound card was handed can be
+laid over the episode's own sound, decoded by ffmpeg, sample by sample. The
+sound card is the app's own `AudioContext`, so a probe taps it from an init
+script: a subclass of `AudioContext` that adds an `AudioWorklet` recorder,
+and `AudioNode.prototype.connect` patched to send whatever goes to the
+destination to the recorder as well. Where the program starts in the
+recording is found by fitting it, a few thousand samples either way.
 
-The fallback still is served too: the fake Go side answers `Still` with a
-path per second, and the harness cuts that second out of the same episode
-and hands it back as a PNG. Without that the `<img>` drawn over a stale
-picture asked for a jpg and was handed a video, so the one thing that
-covers a blank preview could not be reached here at all.
+`open.mjs` exports `episode()` and `episodeAt`, and `framesEpisode()` and
+`framesAt` for the frame queue's own page, made by the same recipe.
 
 **A page error is a result.** Attach `page.on("pageerror", ...)` in any
-probe that plays or edits while playing. The player's frame loop threw
+probe that plays or edits while playing. The old player's frame loop threw
 `Cannot read properties of undefined (reading 'end')` when a cut was put
 back while the clip played past it, which ended the loop for good, and the
-throw is the only clean signal of it: the video's own `currentTime` goes
-on rising either way, because the element is still playing. Measuring the
-video's clock would have said everything was fine.
+throw was the only clean signal of it: everything else went on looking as
+if it played.
 
 ## The motion bench
 
@@ -491,59 +483,27 @@ press from `getBoundingClientRect().left` landed six pixels early on every
 drag, and the cut came back a sixth of a second off: a real number, a real
 measurement, and the wrong answer. Take the middle of the box.
 
-**The webview cannot always read the episode file** while the machine is
-busy, so a seek is dropped silently and the picture stays where it was.
-Anything that assumes a seek worked will be wrong while transcribing.
-
-**The playhead is never where it was put.** This is the big one. A video
-element answers with the moment of the frame it is showing, which begins a
-little before the second it was sent to and can be a little after. Five
-bugs in one afternoon were that one fact read exactly:
-
-- the crop frame went dashed at the start of the very clip it belonged to,
-  because the playhead sat a hair outside it
-- stepping by words landed on word edges, where the caption's clock and
-  the playhead's disagree by a thousandth of a millisecond, and two words
-  in five lit nothing
-- stepping back could not get out of a word at all, because it measured
-  how far the playhead was from one, the clock had drifted past the word
-  it was on, so back found that same word and sent the playhead where it
-  already stood
-- which list the arrow keys walk was read exactly, so the first press
-  after picking a clip walked the wrong one and jumped out of the clip
-- playing seeked before it played even with nothing to move, and a seek is
-  the one thing that can refuse a play
-
-And while it plays, the clock is not the picture either. WebKit works a
-playing video's time out from the wall clock since the last report from
-the player underneath, `TimeProgressEstimator` in
-`MediaPlayerPrivateRemote.cpp`, and returns the larger of that and what it
-returned last, so it never goes back. It can only stand still. Playing
-starts on it before the picture underneath has started, so it runs ahead,
-and when the first report says where the picture is, it stands until the
-picture has caught up. The playhead stood with it for up to half a second
-a moment after the space bar, while the picture and the sound played on.
-It was once read as a clock that steps back, and a forward-only rule was
-built on that, which held the playhead still in the same place. Read the
-source before building on what a browser is said to do: the clamp is four
-lines. So the playhead follows the frame on screen while it plays, see
-Playback below. The same goes for a seek on its way: the
-element answers with where it was sent, while the picture is still the
-frame it had. Taken as the picture, every jump over a cut asked the engine
-for a still in the middle of playing.
-
-So never compare a playhead to a moment. Compare it to a frame, or better,
-do not compare it at all: **decide by the state the playhead is in, not by
-how far it is from something.** Which word is it in, which piece is it in.
-A distance can round its way into the answer it started from, which is a
-key that does nothing and cannot be got out of. A state cannot. Whether
-the space bar plays the clip or the episode is the clearest case, see
+**Decide by the state the playhead is in, not by how far it is from
+something.** Which word is it in, which piece is it in. A distance can
+round its way into the answer it started from, which is a key that does
+nothing and cannot be got out of. A state cannot. Five bugs in one
+afternoon came from comparing the playhead to a moment while the video
+preview was a `<video>` element, which answered a seek with the start of
+the frame it showed, a hair off where it was sent: the crop frame went
+dashed at the start of its own clip, two words in five lit nothing,
+stepping back could not get out of a word, the arrow keys walked the wrong
+list, and playing seeked before it played. The frame queue puts a paused
+playhead exactly where it was sent, but the rule stands: a moment that goes
+through two clocks still comes back a hair off, see below. Whether the
+space bar plays the clip or the episode is the clearest case, see
 Playback below.
 
-And note where this could not be reproduced: the harness's video answers
-with the exact second it was sent to, so none of these five happen in
-Chromium at all. They are proved as rules in `lib/` with tests, and the
-tests say so.
+**Read the source before building on what a browser is said to do.** The
+clock of a playing `<video>` in WebKit was once read as a clock that steps
+back, and a forward-only rule was built on that, which held the playhead
+still. It was an estimate that never goes back and runs ahead of the
+picture, `TimeProgressEstimator` in `MediaPlayerPrivateRemote.cpp`, four
+lines.
 
 **A floating thing is measured before the stylesheet has finished with
 it.** Which way a list grows from the edge it is hung on is decided from
@@ -611,35 +571,14 @@ landed before the caption, so a click on it lit no word. A seek meant to
 land in something lands a frame into it, `intoWord`, the way the arrow
 keys already did.
 
-**Stale state waits to be shown.** The video preview kept the last frame
-it had read from the file and drew it whenever the picture looked stuck.
-Looping a clip made it look stuck for the length of one seek, and a frame
-from anywhere in the episode flashed up. Anything kept for later is shown
-only for what it was made for, and a jump the app makes by itself holds
-the playhead until the picture has landed. The probe for this passed
+**Stale state waits to be shown.** The `<video>` video preview kept the
+last still it had read from the file and drew it whenever the picture
+looked stuck, and looping a clip made it look stuck for the length of one
+seek, so a frame from anywhere in the episode flashed up. Anything kept for
+later is shown only for what it was made for. The probe for this passed
 against the broken code until it first loaded a still the way a busy
 machine does: reproduce the state before trusting a probe that says the
 state is gone.
-
-**A video that has read nothing has no clock.** It answers zero, paused or
-playing. The still drawn over it made everything look right while paused,
-and the first press of the space bar after a search took that zero as the
-playhead: the playhead went to the start of the episode, the picture went
-black and then to the episode's first frame, and only when the file came
-did the video go to the clip. Tim saw "another frame, then it plays from
-the clip". No harness video was ever in that state until `?unread` held
-the file back, because the harness serves the file at once. Before reading
-anything from the video, ask whether it has anything: `readyState`.
-
-**Seeked is not the picture.** Safari says a seek has landed, and moves its
-clock there, before the new frame is on screen. The app took seeked as the
-picture and took the still away, so the frame before showed, for longer
-the busier the machine: after a search, a frame from wherever the video
-preview was, then the clip. #97 fixed the video that had read nothing and
-Tim still saw it, because the harness puts a frame up before it says
-seeked and so could never be in the state he was in. `?framelag` holds the
-frame back the way Safari does. What is on screen is what
-`requestVideoFrameCallback` says, and nothing else may say it.
 
 **Contrast is judged with daylight on the screen.** A fill of 7 to 22
 percent of the accent read as no fill at all on Tim's Mac by a window. A
@@ -694,8 +633,8 @@ They are `.frame` in `app.css` now. Before styling something that is
 
 Where the playhead is, as far as playing goes, is a state and not a
 measurement. It is **on the clip** or **on the video**, and the gesture
-that put it there says which. Nothing else does: not the video's clock,
-not `ontimeupdate`, not `onseeked`, not a rounding. The rules are
+that put it there says which. Nothing else does: not a clock, not where
+the queue says it is, not a rounding. The rules are
 `placeOf` and `playFrom` in `frontend/src/lib/playhead.ts`, with tests.
 
 | the gesture | leaves the playhead |
@@ -707,14 +646,14 @@ not `ontimeupdate`, not `onseeked`, not a rounding. The rules are
 | the same into any frame from the one that holds the clip's first moment on, cuts included | on the clip |
 | the same into any frame before or after those | on the video |
 | no clip chosen, or a clip chosen with no gesture, while the video plays | on the video |
-| pausing, the video's answer, a jump over a cut, a loop | where it was |
+| pausing, a jump over a cut, a loop | where it was |
 
 **On the clip**, the space bar plays the clip from the playhead: its cuts
 are jumped and it stops at its end, where the playhead stays, on the clip,
 at its end. With loop on it goes back to its start instead. From a cut it
-plays from the end of that cut, from before the clip, which only the
-video's answer can put it, from the start, and from the end it starts over
-from the start, the way QuickTime starts over at the end of a video.
+plays from the end of that cut, from inside the frame the clip begins in,
+before its start, from the start, and from the end it starts over from the
+start, the way QuickTime starts over at the end of a video.
 
 **On the video**, the space bar plays the episode from the playhead,
 straight on, through the chosen clip and its cuts, with no jump and no
@@ -742,54 +681,38 @@ the opacity of every part, the product down its ancestors, on the clip
 and on the video, and on the first animation frame after the click that
 moves the playhead.
 
-**While it plays, the playhead is the frame on screen.** `playingAt` in
-`lib/flow.ts` takes the frame `requestVideoFrameCallback` last said was
-put up, its `mediaTime`, and goes on from it by the time since its
-`presentationTime`, at most a frame, so it moves on every frame of the
-app between the frames of the episode, and stands with a picture that
-stops. On the Mac that frame is AVFoundation's own, read from the video
-output by `updateLastPixelBuffer` in `MediaPlayerPrivateAVFoundationObjC.mm`,
-not the estimate. A frame put up before the play began, or before the
-last seek, is the picture from before, so until a frame of this play
-comes the playhead stands, and that is the picture not having moved yet.
-It holds still only while the frame on screen is the frame it stands in,
-and so never goes back. A seek, a jump over a cut and a loop are
-followed at once through the clock, as before, and the frames lead again
-from the first one after. The jump over a cut and the stop at the end are
-decided on the same position. Where the browser cannot say, or has said
-nothing of a frame of this play for a second, the clock is all there is.
+**While it plays, the playhead is the sound being heard.** The frame
+queue reports on every animation frame where the program is by the sound
+card's clock, `heardAt` in `lib/frames/plan.ts`, located in the episode
+through the program, cuts included, and the frame it draws on that same
+animation frame is the frame for that same position. So the playhead
+moves on every frame of the app, jumps a cut in the frame the sound does,
+and stands in the frame on screen, at most a frame ahead of where that
+frame begins. It never goes back while playing: the queue keeps the
+furthest it got. A play or a seek while playing reports where it starts
+at once, so the playhead is at a click in the frame of the click, and it
+stands there until the first frame and the first sound are in hand, about
+130 ms in the harness, of which 42 are the sound card's latency, with the
+first frame of the new place already on the canvas. That is the picture
+and the playhead waiting for the sound together, not a hold.
 
-**The first frame of a play or a seek is waited for, not timed out.** A
-click on the clip timeline while it played stood for the second the seek
-took on the Mac, moved, and often stood once more. The playhead took the
-clock once a second had gone by with no frame of the seek, the same
-second that is right in the middle of a play. But WebKit's
-`seekToTarget` hands the estimate the player's answer as the seek lands,
-playing, so the clock runs on from the target before the picture has
-started again, and it was a third of a second ahead when the first frame
-came. The playhead then held until the picture caught up, because the
-hold allowed anything up to half a second behind. Now the first frame is
-waited for up to four seconds, `unseen` in `lib/flow.ts`, and the hold
-covers only the frame on screen. "Often" was the clue: a seek and a
-picture that came back inside the second never left the frames.
+Paused, the playhead is exactly where it was put and the picture is the
+frame that holds it. A pause keeps the playhead where the sound stopped and
+draws the frame that holds it, which is nearly always decoded already.
 
-The proof for a seek: under `?webkitclock&fps=25&slowseek=700`, play,
-click a bare point of the clip timeline ahead of the playhead and behind
-it, and read the playhead on every animation frame for three seconds.
-Count the longest still from the second frame after the click, when the
-picture has moved again. It was 20 to 22 frames, 334 to 366 ms, at 700 and
-1500 ms seeks, none at 0 and 150. It is none at all four, and it never goes
-back. Revert `playingAt` and keep the harness to see the old number.
-
-The proof: under `?webkitclock&fps=25`, press the space bar and the play
-button, read the playhead on every animation frame for three seconds,
-and count the longest run of frames it stood still while the video
-played. Following the clock it was 23 frames, 383 ms, on this branch and
-on main alike, the same number as the clock's own stand. Following the
-frames it is none, after the 400 ms the picture takes to start, and it
-never goes back. Measure at `?fps=25`: at one frame a second the first new
-frame after the space bar comes up to a second later, and the playhead
-waits for it.
+The proof, in the workspace, with a clip of three pieces whose cuts are
+not on frame edges set through `window.__pieces`: press the space bar, or
+click the play button, and read on every animation frame the playhead,
+`data-playhead` on `.screen`, and the frame number in the bars of the
+canvas, for nine seconds. Both cuts take one frame's time, 33 or 50 ms,
+no frame from inside a cut is drawn, no frame stays longer than 50 ms,
+the playhead stands for no animation frame after it first moves and never
+goes back, the playhead and the frame on screen are less than a frame
+apart on the program, and it stops paused on the clip's end, the last
+frame of the clip on screen. The same with `?slowread=200`, with loop on
+across the seam, and played again from the end. The sound, tapped as
+above, is the episode's own to the sample across both cuts, the best lag
+0, and nothing is heard past the end.
 
 Where a gesture lands exactly on an edge, the side it is about decides.
 The start edge belongs to the clip, and so does the end edge: a click on
@@ -805,10 +728,10 @@ bar still plays straight on. And a clip chosen while the video plays,
 which does not move the playhead, leaves it on the video, because no
 gesture put it on that clip.
 
-**Where a gesture lands is a frame, not a second.** The playhead the
-next gesture starts from is still the video's answer, and on the Mac a
-paused playhead stands on the start of the frame it shows. Decided by
-the second, a frame step left off a clip that starts inside a frame and
+**Where a gesture lands is a frame, not a second.** What is on screen is
+a frame. With the video element the playhead the next gesture started
+from was the video's answer, the start of the frame it showed, and decided
+by the second, a frame step left off a clip that starts inside a frame and
 one step right landed on the start of that frame, before the clip, and
 the clip dimmed while its own first frame was on screen: the old fault,
 a comparison of seconds, in a new place. So `placeOf` takes the
@@ -821,8 +744,8 @@ over at once, as it did before.
 
 **Why it is a state.** It was a distance: the clip played when the
 playhead was within half a frame of its start and before its end. That
-went wrong three times, every time from the same fact, the playhead is
-never where it was put:
+went wrong three times while the video preview was a `<video>` element,
+every time from the same fact, the playhead was never where it was put:
 
 - picking a clip and pressing the space bar seeked before it played,
   because the paused picture answered with its frame's start, a hair
@@ -837,22 +760,24 @@ never where it was put:
   on the playhead were tried for this, #99, and closed: each fix only moved
   the place the measurement could round to the wrong side
 
-A gesture knows what it is about. The video's clock can only say how far
-it is from something, and that is the question that never settles.
-
-`?framestart` in the harness gives the video the Mac's paused answer, the
-start of the frame it shows. With a clip whose start lies more than half a
-frame into a frame, set through `window.__pieces` before the episode is
-opened, picking it and pressing the space bar is the test.
+A gesture knows what it is about. A clock can only say how far it is
+from something, and that is the question that never settles.
 
 ## The frame queue
 
-The video preview is moving off the `<video>` element onto a queue of
-frames the app decodes itself, plan row 2.122. It is in
-`frontend/src/lib/frames/`: `mp4.ts` reads the index of the episode file,
-`plan.ts` decides everything, with tests, and `queue.ts` is only the glue
-to the browser's decoders, the canvas and the sound card. Until the video
-preview runs on it, it has a page of its own in the harness.
+The video preview plays from a queue of frames the app decodes itself,
+plan row 2.122. It is in `frontend/src/lib/frames/`: `mp4.ts` reads the
+index of the episode file, `plan.ts` decides everything, with tests, and
+`queue.ts` is only the glue to the browser's decoders, the canvas and the
+sound card. `Player.svelte` makes one `FrameQueue` per episode on its
+canvas and drives it with four calls: `setProgram`, the clip's pieces or
+null for the episode straight on, `seek`, `play` and `pause`. What the
+queue reports, `Shown`, is the playhead and nothing else sets it while
+playing.
+
+The queue also has a page of its own in the harness, `preview/frames/`,
+one canvas and `window.__queue` to drive, which is the quickest way to
+look at the queue alone:
 
 ```
 npx vite build --config frontend/preview/vite.config.ts
@@ -862,39 +787,46 @@ node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek wh
 node frontend/preview/frames/cuts.mjs memory          # a minute straight on
 ```
 
-`frames()` in `open.mjs` opens `preview/frames/`, one canvas playing an
-episode made for it, with `window.__queue` to drive. It is an MP4 of VP9
-and Opus, because the queue reads MP4 and Chromium has no H.264, at 25
-frames a second with a key frame every four seconds, so a cut lands in
-the middle of a group of pictures the way it does in a camera's file.
+`frames()` in `open.mjs` opens it on its own episode, ten minutes made by
+the same recipe as the workspace's, see The episode the harness can play.
+`?read` reads the frame number back from the canvas and `?hear` records
+every sample handed to the sound card, and the probe lays it over the
+episode's own sound decoded by ffmpeg, cut and faded the way the render
+does it. A sample missing, doubled or taken from inside a cut no longer
+matches. `SHIFT=1` moves the expected sound by one sample after each cut:
+the check has to fail with it, and it does, from 2 percent off to 35.
 
-**The episode says what it is.** Its top half is the frame number in
-sixteen bars, so `?read` reads back from the canvas the frame really
-drawn, and a probe never trusts what the queue says it drew. Its sound is
-a climbing tone over noise that never repeats, so `?hear` records every
-sample handed to the sound card, with the sound card's frame, and the
-probe lays it over the episode's own sound decoded by ffmpeg, cut and
-faded the way the render does it. A sample missing, doubled or taken from
-inside a cut no longer matches. `SHIFT=1` moves the expected sound by one
-sample after each cut: the check has to fail with it, and it does, from 2
-percent off to 35.
+In the workspace the same is measured on the path a person takes, see
+the proof under Playback above: the clip picked from the list, the space
+bar or the play button, the bars read from `.screen canvas`, the
+playhead from `data-playhead`, and the sound card tapped from an init
+script.
 
-What the proof measures, and what it read on this branch:
+What the proofs read, the clip of three pieces with cuts off the frame
+edges, 25 frames a second:
 
-| | the frame queue | the `<video>` path |
-| --- | --- | --- |
-| last frame before a cut to the first after it | 33 or 50 ms | 33 ms, 183 to 200 ms with `?slowseek=150` |
-| the playhead across a cut | moves with each frame drawn, as anywhere else | still for 1 animation frame, 10 with `?slowseek=150` |
-| the same with the file 200 ms late | 33 or 50 ms | |
-| frames from inside a cut drawn | none | none |
-| the longest any frame stayed while playing | 50 ms | 200 ms with `?slowseek=150` |
-| the sound across a cut | the episode's own samples to the sample, best lag 0 | stops for the seek |
-| the loop seam | the same as a cut | |
-| paused frames | the frame that holds the moment, 11 of 11 | |
-| frames open over a minute of play | 4 to 5 | |
+| | the frame queue, its own page | the frame queue, the workspace | the `<video>` path, the workspace |
+| --- | --- | --- | --- |
+| last frame before a cut to the first after it | 33 or 50 ms | 33 or 50 ms | 16 to 49 ms, 184 to 199 ms with `?slowseek=150` |
+| the same with the file 200 ms late | 33 or 50 ms | 33 ms | |
+| frames from inside a cut drawn | none | none | none |
+| the longest any frame stayed while playing | 50 ms | 50 ms | 93 ms, 199 ms with `?slowseek=150`, 417 ms with `?webkitclock` |
+| the playhead while playing | moves with the sound | still for no animation frame, never back | still for 1 animation frame, 10 with `?slowseek=150`, 24 with `?webkitclock` |
+| the playhead and the frame on screen | | less than a frame apart | up to 2 frames apart |
+| from the press to the first new frame | 146 ms | 134 to 151 ms, 33 ms from the end | 47 to 56 ms, 429 ms with `?webkitclock` |
+| where the play stops | 65.000, frame 64.96 | 65, frame 64.96 | 64.976 to 64.994, frame 64.96 |
+| the sound across a cut | the episode's own to the sample, best lag 0 | the same | stops for the seek |
+| the loop seam | the same as a cut | the same as a cut | |
+| paused frames | the frame that holds the moment, 11 of 11 | 14 of 14 gestures, 3 to 25 ms | a still from the engine while the seek lands |
+| frames open over a minute of play | 4 to 5 | | |
 
 A frame interval is 40 ms and the display draws every 16.7 ms, so one
-frame's time shows as 33 or 50. A gap above 50 is a frame held.
+frame's time shows as 33 or 50. A gap above 50 is a frame held. The
+`<video>` path was measured on the harness of f10a0b6, the last commit
+that had it, with its `?fps=25`, `?slowseek` and `?webkitclock`, which
+went with it, and the frame on screen from `requestVideoFrameCallback`
+through its `?framelag=1`. Its 16 ms is the frame after the cut put up
+early, in the middle of the seek.
 
 **What it taught.** Each of these cost a round of probing:
 
@@ -913,6 +845,33 @@ frame's time shows as 33 or 50. A gap above 50 is a frame held.
 - The first frame of a play stays until the sound is heard, about 130 ms
   here, of which 42 are the sound card's latency. That is the picture
   keeping to the sound, not a hold.
+- A paused seek used to decode the frame on its own, and the space bar
+  then decoded the same group of pictures again for the play. Now a paused
+  seek cues the play, the cue's first frame is the paused frame, and the
+  space bar only starts the clock. Where the paused frame is not the
+  first frame of the play, in a cut of the clip or past its end, the frame
+  is decoded on its own as before.
+- A paused seek to a moment in the frame already on screen draws nothing,
+  so it has to say so anyway, or whatever waits for it waits for ever.
+- Plain sound in a MOV counts every moment as a sample, hundreds of
+  millions in four hours. It is read by the chunk, and turned into the
+  sound card's numbers without a decoder.
+- HE-AAC comes out of the decoder at twice its core's rate. The file
+  usually says so, and where it does not, the rate the decoder puts the
+  first sound out at is taken and the play starts over at it, before
+  anything is heard.
+
+The `<video>` element was left because a cut was a seek in the middle of
+playing. Every gap between the pieces of a clip held the last frame before
+it for as long as the seek took, a fifth of a second and more on a long
+episode on the Mac, and the sound stopped with it, where the render plays
+straight on. Around that one fact grew everything this skill used to say
+about the video element: a still from the engine laid over the picture
+while a seek landed, the playhead following `requestVideoFrameCallback`
+because the clock ran ahead of the picture, waiting for the first frame of
+a seek, a chase for seeks the webview dropped while the machine was busy,
+and harness modes that imitated each of WebKit's answers. None of it
+could make a cut take one frame's time.
 
 **WebKit, but not the Mac.** WebKitGTK runs the page too, see below, once
 `gstreamer1.0-plugins-bad` and `gstreamer1.0-libav` are installed: VP9

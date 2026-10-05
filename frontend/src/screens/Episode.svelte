@@ -36,7 +36,6 @@
   import { jobs } from "../lib/state.svelte";
   import {
     draftCaptions,
-    frameStart,
     waitShare,
     Heard,
     covers,
@@ -45,7 +44,6 @@
     inEpisode,
     endInEpisode,
     Newest,
-    Grace,
     nextWindow,
     timesIn,
     followingWindow,
@@ -95,9 +93,6 @@
   let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
   let starting = $state(false);
-  // The frame the video preview shows while it cannot show the playhead
-  // itself.
-  let still = $state("");
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
   let coverage = $state<CoverageView>({ searched: [], free: [], passes: [] });
@@ -535,58 +530,6 @@
   const shape = $derived(`${source?.width || 16} / ${source?.height || 9}`);
   const ratio = $derived((source?.width || 16) / (source?.height || 9));
 
-  // A video element that cannot read the episode file, which is what
-  // happens while the machine is busy, drops a seek and leaves the picture
-  // on a frame that has nothing to do with the playhead. Whenever the video
-  // preview says it cannot show the playhead, the frame under it is read
-  // from the file instead: the frame the playhead is in, the one the video
-  // preview will show once it lands, so nothing changes when it does. The
-  // engine keeps every frame it has read, so going back over a part costs
-  // nothing.
-  //
-  // The ask waits a moment first, see Grace, because the video usually
-  // lands a few milliseconds after it was sent, and it is called off the
-  // moment the video preview shows the playhead.
-  const asking = new Grace<number>(readStill, 180);
-  // Which ask the picture is from. Several are in the air whenever the
-  // playhead is moved quickly, and an answer that took longer to read
-  // would otherwise land after a newer one and paint over it, leaving the
-  // picture on somewhere the playhead has left, for good, because nothing
-  // asks again.
-  const stills = new Newest();
-  // The frame the picture on screen is of, by where it starts, which is
-  // not the same as the frame last asked for. Going to one clip, then another, then back to
-  // the first used to skip the last ask, because it matched what had been
-  // asked for, and leave the second clip's frame on screen.
-  let showing = $state(-1);
-
-  // The moment the video preview cannot show, or null once it shows the
-  // playhead. The frame the still already is of needs no ask, and nothing
-  // still waiting may replace it. A frame on and straight back, within the
-  // wait, used to read the frame left behind anyway and put it in place of
-  // the one the playhead was back on, so the picture had no still at all
-  // until that one was read again.
-  function askStill(at: number | null) {
-    const frame = at === null || !source || status?.missing ? null : frameStart(at, source.fps);
-    asking.need(frame === showing ? null : frame);
-  }
-
-  function readStill(frame: number) {
-    const ticket = stills.send();
-    api
-      .still(path, frame, 960)
-      .then((file) => {
-        if (!stills.keep(ticket)) return;
-        still = mediaURL(file);
-        showing = frame;
-      })
-      .catch(() => {
-        // A frame that cannot be read is not worth a message. The
-        // picture keeps the one it has, and the second it is of is
-        // left alone so it can be asked for again.
-        stills.keep(ticket);
-      });
-  }
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
   const current = $derived(clips.find((c) => c.key === selected) ?? null);
   // The rows of removed clips whose time is over and which are still
@@ -2569,11 +2512,8 @@
           {source}
           clip={shownClip}
           bind:time
-          {still}
-          stillAt={showing}
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
-          onstill={askStill}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
