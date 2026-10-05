@@ -67,6 +67,9 @@ export type Stats = {
   late: number;
   // Stretches of sound scheduled after their time had come.
   lateSound: number;
+  // Packets of sound decoded, and stretches handed to the sound card.
+  soundDecoded: number;
+  soundScheduled: number;
   reads: number;
   bytesRead: number;
   errors: string[];
@@ -221,6 +224,8 @@ export class FrameQueue {
     drawn: 0,
     late: 0,
     lateSound: 0,
+    soundDecoded: 0,
+    soundScheduled: 0,
     reads: 0,
     bytesRead: 0,
     errors: [],
@@ -942,6 +947,7 @@ export class FrameQueue {
       q.shift();
     }
     const fed = q.shift();
+    this.stats.soundDecoded++;
     if (!fed || !this.aplan) {
       d.close();
       return;
@@ -1013,6 +1019,7 @@ export class FrameQueue {
     } else {
       src.start(when);
     }
+    this.stats.soundScheduled++;
     src.onended = () => {
       this.sources.delete(src);
       src.disconnect();

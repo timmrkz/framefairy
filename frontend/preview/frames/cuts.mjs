@@ -5,6 +5,7 @@
 //   npx vite build --config frontend/preview/vite.config.ts
 //   node frontend/preview/frames/cuts.mjs [loop] [slowread=200] [seconds=8]
 //   node frontend/preview/frames/cuts.mjs memory
+//   node frontend/preview/frames/cuts.mjs seeks
 //
 // What it checks, for the picture: across each cut the time between the
 // last frame drawn before it and the first after it, that no frame from
@@ -17,7 +18,9 @@
 // stretch that no longer matches.
 //
 // memory plays a minute of the episode straight on and reads how many
-// frames are open each second.
+// frames are open each second. seeks puts the playhead on moments inside
+// frames while paused and reads back the frame drawn for each, then seeks
+// into a cut while the clip plays.
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { promisify } from "node:util";
@@ -27,6 +30,7 @@ const run = promisify(execFile);
 const args = process.argv.slice(2);
 const loop = args.includes("loop");
 const memory = args.includes("memory");
+const seeking = args.includes("seeks");
 const slow = Number(args.find((a) => a.startsWith("slowread="))?.split("=")[1] ?? 0);
 const seconds = Number(args.find((a) => /^\d+$/.test(a)) ?? (loop ? 14 : 8));
 const R = 48000;
@@ -68,6 +72,54 @@ if (memory) {
   console.log(`a minute from 100 s: frames open ${Math.min(...opens)} to ${Math.max(...opens)}, most ever ${rows[rows.length - 1].most}`);
   console.log(`JS heap ${rows[0].heap} MB after a second, ${rows[rows.length - 1].heap} MB after a minute`);
   console.log(`drawn ${rows[rows.length - 1].drawn}, late ${rows[rows.length - 1].late}, playhead at ${rows[rows.length - 1].at.toFixed(2)}`);
+  await stop();
+  process.exit(0);
+}
+
+if (seeking) {
+  // Moments anywhere in the episode, most of them inside a frame rather
+  // than on its start, and some a hair before a frame's start.
+  const moments = [0, 0.039, 3.999, 4.0, 57.013, 59.5299, 61.003, 133.37, 299.98, 4.04 - 1e-9, 599.95];
+  let wrong = 0;
+  const rows = [];
+  for (const t of moments) {
+    const r = await page.evaluate(async (t) => {
+      window.__drawn = [];
+      const from = performance.now();
+      window.__queue.seek(t);
+      while (!window.__drawn.length) await new Promise((r) => setTimeout(r, 5));
+      return { ...window.__drawn[window.__drawn.length - 1], took: performance.now() - from };
+    }, t);
+    const holds = Math.floor(t / d + 1e-6);
+    const ok = r.pictured === holds && Math.abs(r.at - t) < 1e-9;
+    if (!ok) wrong++;
+    rows.push(`| ${t.toFixed(4).padStart(9)} | ${(holds * d).toFixed(2).padStart(7)} | ${(r.pictured * d).toFixed(2).padStart(7)} | ${r.took.toFixed(0).padStart(4)} |`);
+  }
+  console.log("| seek to   | holds   | drawn   | ms   |");
+  console.log("| --------: | ------: | ------: | ---: |");
+  for (const r of rows) console.log(r);
+  console.log(`paused seeks that drew another frame than the one that holds the moment: ${wrong}`);
+  // A seek into a cut while the clip plays goes on from the next piece.
+  await page.evaluate((pieces) => {
+    window.__queue.setProgram(pieces, false);
+    window.__queue.seek(57);
+  }, pieces);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__queue.play());
+  await page.waitForTimeout(800);
+  const jumped = await page.evaluate(async () => {
+    window.__drawn = [];
+    const from = performance.now();
+    window.__queue.seek(60.0);
+    await new Promise((r) => setTimeout(r, 700));
+    return window.__drawn.filter((x) => x.playing).map((x) => ({ frame: x.frame, after: x.drawnAt - from }));
+  });
+  console.log(
+    `seek to 60.00, in the cut, while playing: first frame ${jumped[0].frame.toFixed(2)} after ${jumped[0].after.toFixed(0)} ms, then ${jumped
+      .slice(1, 4)
+      .map((x) => x.frame.toFixed(2))
+      .join(" ")}`,
+  );
   await stop();
   process.exit(0);
 }
@@ -172,9 +224,14 @@ for (let v = 0, from = 0; from < (loop ? 3 : 1) * length; v++) {
   visits.push({ start: p.start, out: Math.round(from * R), end: Math.round((from + p.end - p.start) * R) });
   from += p.end - p.start;
 }
+// SHIFT=1 moves every piece after the first by a sample in what is
+// expected, which is how to see that the check catches a cut one sample
+// off: it has to fail with it.
+const shift = Number(process.env.SHIFT ?? 0);
 function expected(m) {
   const v = visits.find((x) => m >= x.out && m < x.end);
   if (!v) return 0;
+  if (v !== visits[0]) m += shift;
   const inside = Math.min(m - v.out + 0.5, v.end - m - 0.5);
   const gain = inside >= FADE * R ? 1 : Math.max(0, inside / (FADE * R));
   return ref[Math.round(v.start * R) + (m - v.out)] * gain;

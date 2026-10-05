@@ -268,4 +268,11 @@ describe("heardAt", () => {
     expect(heardAt(null, 10.05, 0.03, 1016)).toBeCloseTo(10.02);
     expect(heardAt({ contextTime: 0, performanceTime: 0 }, 0.5, 0.1, 5)).toBeCloseTo(0.4);
   });
+  test("is never ahead of the clock, so a stamp from before a pause cannot carry play on", () => {
+    // Held at 10.05 for 700 ms: the stamp would say 10.716.
+    expect(heardAt({ contextTime: 10, performanceTime: 1000 }, 10.05, 0.03, 1716)).toBe(10.05);
+  });
+  test("leaves a stamp on another clock for the clock less its latency", () => {
+    expect(heardAt({ contextTime: 9.17, performanceTime: 21540 }, 9.186, 0.003, 8000)).toBeCloseTo(9.183);
+  });
 });
