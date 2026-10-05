@@ -21,6 +21,33 @@ a time and knew nothing of pauses, so a caption breaking where a removed
 word had been could not be seen in it at all. Anything about what the
 engine answers is tried against the bridge.
 
+The frame queue the video preview plays from, `frontend/src/lib/frames/`,
+has a third page, the preview's `preview/frames/`: one canvas playing an
+episode made for it, whose picture carries its frame number and whose
+sound can be laid over the episode's own sample by sample.
+`frontend/preview/frames/cuts.mjs` plays a clip with cuts on it and checks
+every frame drawn and every sample heard. The preview's own episode is
+made the same way, so the same is measured in the workspace. What it
+measures and how to read it is in the interface skill, under Playback and
+The frame queue.
+
+Adding a video does not run against the bridge: the bridge adds its
+episode and searches it before it serves, and answers `AddEpisodes` with
+nothing. So what the video preview shows while an episode just added is
+heard and searched is a probe on the preview,
+`frontend/preview/frames/added.mjs`, with `?growing&lagging&hear=100`:
+the first search started by the Go side, job events, twelve clips landing
+and the earliest chosen when it is over, then three clips picked. On
+every animation frame from the click that opens the episode it reads the
+playhead and the frame on the canvas from its bars, and it exits 1 when
+the first picture is not the episode's first frame with the playhead at
+0, when the picture goes black, when any frame holds neither the
+playhead nor where it was a moment before, or when a seek's frame takes
+longer than a quarter of a second. Tim saw the video preview of an episode
+just added on another frame than its first, in the days of the `<video>`
+element. The frame queue shows the first frame there, on the code of
+e8ca612 and after it. Put back to draw 7.3 seconds in, the probe fails.
+
 ## The bridge
 
 The bridge serves the interface with the service the app runs, over a desk
@@ -28,9 +55,13 @@ from the path tests in `driver_test.go`: the real queue, engine, words,
 waveform and ffmpeg, with stand-ins only for the two models. The speech
 stand-in says a few German sentences over and over, with a pause after
 each, so a word on screen twice can be told from the words around it. The
-language model stand-in finds one clip. The episode is two minutes of a
-grey that grows lighter, in VP9 and Opus, because the Chromium Playwright
-brings has no H.264 and would not play it.
+language model stand-in finds one clip. The episode is two minutes at
+five frames a second, VP9 and Opus in an MP4, because the video preview
+reads MP4 and the Chromium Playwright brings has no H.264. Its picture
+says which frame it is, the recipe of the harness's own episodes: a thin
+strip along the top is the frame number in ten bars, and below it is a
+grey that grows lighter. Thin, so no two frames differ enough to be a
+camera switch, which would split the clip the search finds.
 
 In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes
@@ -146,14 +177,17 @@ clip to its end from a moment before its last cut, or before its end
 when it has none, a double-click that cuts a part out, one that puts a cut
 back, a click on the clip timeline, and Shift and an arrow. While a clip
 plays, the walk records every frame the video preview puts on screen, by
-what the browser says it put up, `requestVideoFrameCallback`, not by the
-clock. The rules, besides every walk's:
+the frame number read back from the bars on its canvas on every animation
+frame, not by the clock and not by what the frame queue says it drew.
+Where the playhead is, it reads off `data-playhead` on `.screen`, and
+whether it plays off the play button, Play or Pause. The rules, besides
+every walk's:
 
 | Rule | What it would have caught |
 | --- | --- |
 | Every frame put on screen while a clip plays is in one of its pieces, a frame of give either side | the part just cut played when the space bar was pressed with the playhead in it |
-| The space bar plays: a frame comes | a press of the space bar lost while the file was still being read |
-| Paused, the picture stays where it was paused | |
+| The space bar plays: a frame comes, or the playhead moves | a press of the space bar lost while the file was still being read |
+| Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
 | A clip played to its end stops at its end | |
 
 The bridge's episode runs at five frames a second, so a frame of give is
@@ -282,3 +316,10 @@ played the cut: a double-click that cuts a part out leaves the playhead
 in it. Every one of six walks showed it within sixteen steps. 2.121
 fixed it on main at the same time, `playFrom` in `lib/playhead.ts`, and
 the walk now holds it there.
+
+Ported to the frame queue, 2.123, the playback walk found within two
+steps that a clip played from a playhead inside a frame stopped at its
+end with the frame before its last on screen, 24.40 on a clip that ends
+at 24.72. The queue draws frames on a grid of frames from where the play
+began, so the last frame never came up. A play that ends now draws the
+last frame of what played.

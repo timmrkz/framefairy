@@ -440,15 +440,30 @@ func workOf(video string) string {
 
 // makeEpisode makes a video of this many seconds. VP9 and Opus rather than
 // the path tests' MPEG-4 and AAC, because the Chromium a walk drives is
-// built without the proprietary codecs and would not play it at all. A
-// grey that grows lighter, so a frame shows where in the episode it is.
+// built without the proprietary codecs and would not play it at all. The
+// picture says which frame it is, the recipe of the harness's own episodes
+// in frontend/preview/open.mjs: a strip along its top, 12 pixels high, is
+// the frame number in ten bars of 32 pixels, the highest bit on the left,
+// light for one and dark for nought, so a walk reads back from the video
+// preview's canvas the frame on screen, see recordFrames in
+// walks/bridge.mjs. Below it is a grey that grows lighter. The strip is
+// thin so that no two frames differ by a camera switch, which a half of
+// bars did every 16 frames, and the search then split its clip into
+// pieces at every one. The bars are worked out on a picture one pixel a
+// bit and made large without smoothing.
 func makeEpisode(path string, seconds int) error {
 	d := strconv.Itoa(seconds)
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=320x180:r=5:d="+d+",geq=lum='30+180*T/"+d+"':cb=128:cr=128",
+		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d="+d,
+		"-f", "lavfi", "-i", "color=c=black:s=2x2:r=5:d="+d,
 		"-f", "lavfi", "-i", "sine=f=220:sample_rate=48000:d="+d,
-		"-shortest", "-c:v", "libvpx-vp9", "-b:v", "40k", "-deadline", "realtime", "-cpu-used", "8",
-		"-g", "10", "-pix_fmt", "yuv420p", "-c:a", "libopus", "-b:a", "24k", path).CombinedOutput()
+		"-filter_complex",
+		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];"+
+			"[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g];"+
+			"[b][g]vstack,format=yuv420p[v]",
+		"-map", "[v]", "-map", "2",
+		"-shortest", "-c:v", "libvpx-vp9", "-b:v", "100k", "-deadline", "realtime", "-cpu-used", "8",
+		"-g", "10", "-c:a", "libopus", "-b:a", "24k", path).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
 	}

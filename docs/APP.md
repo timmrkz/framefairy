@@ -233,92 +233,80 @@ Selecting an episode opens its workspace. It is three columns, the settings
 on the left, the video preview in the middle and the clips on the right, with
 the clip up close under all three. It fits the app without scrolling.
 
-The picture always agrees with the playhead. Whenever the app cannot show
-the moment the playhead stands on, which is what happens while the machine is
-busy transcribing or searching and a seek is dropped, the frame under the
-playhead is read from the file by the engine and shown instead. The moment
-the app catches up it takes over by itself. The engine keeps every frame it
-has read in the episode's work folder, so going back over a part costs
-nothing. The app waits a fifth of a second before it asks, and a picture
-that lands in that time, which it nearly always does when the machine is
-not busy, has no frame read for it at all. It used to wait and then ask
-anyway, so every click on the clip timeline and every clip picked had a
-frame read by ffmpeg that was never shown.
+The video preview plays the episode from its own queue of frames, see
+`frontend/src/lib/frames/`. The app reads the samples of the picture and
+the sound straight from the episode file, a range at a time, decodes them
+with the system's decoders a few frames ahead of the playhead, draws each
+frame onto one canvas and hands the sound to the sound card, which keeps
+the time. Each frame is drawn when the sound heard reaches where that
+frame begins, through the clip's pieces, whatever moment the play began
+at. A cut is frames never queued: the last frame before a cut is followed
+straight by the first frame after it, both always drawn, and the sound
+meets at the sample, faded over 15 ms either side the way the render
+fades it. So a clip plays in the video preview the way it plays in the
+short.
 
-While the video plays, the picture is the video's alone. No frame is read
-from the file for it and none is drawn over it, not while playing starts and
-not while a clip jumps over a cut, because the video is already on its way
-to the frame. And the playhead goes with the picture while it plays, the
-frame the browser says is on screen, `requestVideoFrameCallback`, and on
-from it by the time since it was put up, at most a frame, never back. Not
-with the video's clock. The clock WebKit gives a playing video is an
-estimate, the wall clock since the last report from the player underneath,
-and it never goes back: it can only stand still. Playing starts on that
-clock before the picture underneath has started, so it runs ahead, and when
-a report says where the picture is, it stands until the picture catches up.
-Followed, the playhead stopped for up to half a second a moment after the
-space bar, while the picture and the sound played on. A click on the clip
-timeline while it plays is the same start over again: the clock runs on
-from where the seek went as soon as it lands, and the picture starts after
-it. Until the picture of a play or a seek has moved, the playhead stands
-with it, for as long as that takes, up to four seconds. Taken after one
-second, the clock put the playhead ahead of the picture on the Mac, where
-the picture after a seek can take longer than that, and the playhead
-stopped a second time when the picture came. The playhead holds still only
-while the frame on screen is the frame it stands in, never longer. Where a
-browser cannot say which frame is on screen, or has stopped saying, the
-clock is all there is. The jump over a
-cut and the stop at the clip's end are decided on the same position, so the
-clock running ahead cannot cut the end of a piece short. A
-jump the app makes itself, over a cut or back to the start of a loop, still
-takes the playhead with it. A pause pressed while the video is on its way
-over a cut ends the jump there: the playhead stands where the video lands,
-and every seek after it shows the video's own frame. The jump used to wait
-for the next play, and until then every seek made while paused, a click on
-the clip timeline or a press of an arrow key, had a frame from the engine
-drawn over a video that had already landed, each one waiting on the engine.
+Paused, the picture is the frame that holds the playhead, exactly, wherever
+the playhead was put: a click, a drag, a step of an arrow key or a word.
+The play from there is already prepared, its first frames and its first
+sound decoded, so the space bar starts it at once rather than decoding the
+same frames again. The picture moves about 80 ms after the space bar in
+the harness, most of it the sound card's own latency and the first
+frame's own time on screen, since the picture waits for the sound to be
+heard. While it plays, the playhead is the sound being heard,
+on every animation frame, so it moves smoothly, jumps a cut with the sound
+and stands in the frame on screen. It never goes back while playing. A
+click while it plays puts the playhead where it landed in that frame and
+goes on from there, the clip's or the episode's by where that is, a click
+across the clip's edge as well. A clip's pieces changing while it plays, a cut
+made, moved or put back, or loop switched on or off, goes on from the
+playhead on what the clip is now.
+
 A clip played from a playhead that stands in one of its cuts plays from
-where that cut ends, see `playFrom` in `lib/playhead.ts`. A double-click
-that cuts a part out leaves the playhead in it, and the space bar then
-played the part just cut, which the render does not have. The playback
-walk found it while 2.121 fixed it, and holds it fixed.
+where that cut ends, see `playFrom` in `lib/playhead.ts`: the queue is
+given the clip's pieces and a seek to the end of the cut before it plays,
+so not one frame or sample of the cut is queued. A double-click that cuts
+a part out leaves the playhead in it, and the space bar then played the
+part just cut, which the render does not have. The playback walk found it
+while 2.121 fixed it, and holds it fixed: it records every frame the queue
+draws while a clip plays and fails on one from inside a cut.
 
-Until the video has read anything of the file, it has no picture and no
-clock, and that is often so for an episode just added, whose file is read by
-the transcription from the moment it is added. Playing then keeps the
-playhead where it stands and the frame the engine read for it on screen, and
-the video takes over at the playhead once it has the file. It used to take
-the video's clock, which says zero, so the first press of the space bar
-after a search took the playhead to the start of the episode and showed a
-black picture and then the episode's first frame, before the video went to
-the clip and played it.
+The canvas is as many device pixels as the stylesheet makes it, and the
+frame is drawn into it in its own shape, so a 4K episode is never kept at
+its full size. Opening another episode closes the queue of the one before,
+its decoders and its sound card with it.
 
-Which frame is on screen is what the browser says it has put up, through
-`requestVideoFrameCallback`, and not where the video says it is. Safari
-says a seek has landed before the new frame is shown, a few milliseconds
-later on an idle Mac and longer while the machine places the crop of every
-clip a search found. The frame the engine read for the playhead stayed off
-from the moment the video said it had landed, so the frame before showed:
-after a search, the frame of wherever the video preview was before, and on
-the first press of the space bar it stayed while playing began and then
-gave way to the clip. Now the frame the engine read stays until the video
-really shows the playhead's frame, and while playing begins it stands for
-the half second after where the play began. Only the fifth of a second it
-takes the engine to read that frame shows the frame before.
+The queue reads MP4 and MOV, H.264, HEVC and VP9 for the picture, AAC,
+HE-AAC, Opus and plain sound for the sound, as far as the system decodes
+them. A file it cannot play, a codec the system cannot decode, a
+fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
+sentence where the picture would be, with the reason, and nothing else in
+the workspace changes. A sound it cannot decode plays the picture without
+it and says so at the foot of the picture. The playback copy of the
+episode for such files is plan row 1.5b.
+
+It used to be a `<video>` element, and everything about it was a
+workaround. The element answers a seek before its frame is on screen,
+answers a paused seek with the start of the frame it shows, runs its clock
+ahead of the picture as playing starts and then stands, drops a seek while
+the machine is busy, and has no clock at all before it has read the file.
+A still read by the engine stood in for the picture while it caught up,
+and a cut was a seek in the middle of playing, which held the last frame
+before the cut for as long as the seek took. The frame queue has none of
+that to work around, because the app decides every frame it draws.
 
 **The space bar plays the clip or the video, and the playhead says which.**
 The playhead is either on the chosen clip or on the video, and the gesture
-that put it there decides, never the video's clock. Picking a clip puts it
+that put it there decides, never a clock. Picking a clip puts it
 on the clip, at its start. So does a click on the clip's start edge, a
 trim, a click on a caption, and a click, a drag or a step into any frame
 of the clip, cuts included, from the frame that holds its first moment.
 A click on the end edge, a landing in the frame that holds the clip's
 last moment, and the clip playing to its end, leave it on the clip at its
 end. Any frame before or after the clip is on the video, and so is having
-no clip chosen. It goes by frames and not by seconds because the paused
-video on the Mac answers with where its frame begins: a step back and a
-step forward off a clip that starts inside a frame land on that frame's
-start, which by the second is before the clip.
+no clip chosen. It goes by frames and not by seconds because what is on
+screen is a frame: a clip that starts inside a frame shows its own first
+frame from that frame's start, which by the second is before the clip.
 
 On the clip, the space bar plays the clip from the playhead: its cuts are
 jumped and it stops at its end, or with loop on goes back to its start.
@@ -340,11 +328,11 @@ does. With the hand on the clip somewhere else, its card or its mark, it is
 lit whole.
 
 It used to be measured: the clip played when the playhead was within half
-a frame of its start. The paused video on the Mac answers with where the
-frame it shows begins, up to a frame before the moment it was sent to, so
-a clip just picked measured as before its own start, and the space bar
-played the episode straight through its cuts and past its end. See the
-rules in `frontend/src/lib/playhead.ts`.
+a frame of its start. The paused video element on the Mac answered with
+where the frame it showed began, up to a frame before the moment it was
+sent to, so a clip just picked measured as before its own start, and the
+space bar played the episode straight through its cuts and past its end.
+See the rules in `frontend/src/lib/playhead.ts`.
 
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The

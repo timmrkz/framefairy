@@ -218,36 +218,82 @@ export async function ask(page, name, ...args) {
   );
 }
 
-// Records every frame the video preview puts on screen, by the moment of
-// the episode it shows, until stopped: what the browser says it put up,
-// requestVideoFrameCallback, not what the clock says.
-export async function recordFrames(page) {
-  await page.evaluate(() => {
-    const v = document.querySelector("video");
-    window.__frames = [];
-    window.__recording = true;
-    const watch = () =>
-      v.requestVideoFrameCallback((now, meta) => {
-        if (!window.__recording) return;
-        window.__frames.push(meta.mediaTime);
-        watch();
-      });
-    watch();
-  });
-  return async () =>
-    page.evaluate(() => {
-      window.__recording = false;
-      return window.__frames;
-    });
+// The bridge's episode carries its frame number in its picture, see
+// bridge_test.go: a strip along its top, STRIP of its height, is BITS
+// bars, the highest bit on the left, light for one and dark for nought,
+// the recipe of the harness's own episodes in open.mjs. So a walk reads
+// back from the video preview's canvas the frame that is on screen, as
+// the probes of the frame queue do, rather than taking anybody's word for
+// it.
+const BITS = 10;
+const STRIP = 12 / 180;
+
+// Puts the reader on the page once: the number of the frame on the
+// canvas of the video preview, or -1 while it has none.
+async function reader(page) {
+  await page.evaluate(([bits, strip]) => {
+    if (window.__pictured) return;
+    window.__pictured = () => {
+      const c = document.querySelector(".screen canvas");
+      if (!c || !c.width || !c.height) return -1;
+      const g = c.getContext("2d");
+      const row = g.getImageData(0, Math.floor((c.height * strip) / 2), c.width, 1).data;
+      let n = 0;
+      for (let b = 0; b < bits; b++) {
+        const x = Math.floor(((b + 0.5) * c.width) / bits);
+        n = n * 2 + (row[x * 4] > 125 ? 1 : 0);
+      }
+      return n;
+    };
+  }, [BITS, STRIP]);
 }
 
-// Where the video preview's picture is, on the episode's clock, and
-// whether it plays.
-export async function video(page) {
-  return page.evaluate(() => {
-    const v = document.querySelector("video");
-    return { at: v.currentTime, paused: v.paused, seeking: v.seeking };
+// Records every frame the video preview puts on screen, as the moment of
+// the episode it starts at, until stopped: the picture read back from the
+// canvas on every animation frame, not what the clock says. The frame on
+// screen when recording starts is where it starts from and is not one of
+// them, since it was put up before. Also whether the playhead moved,
+// data-playhead on the video preview, so a play whose first frame is the
+// one already on screen is seen to have started.
+export async function recordFrames(page, frame) {
+  await reader(page);
+  await page.evaluate(() => {
+    const screen = document.querySelector(".screen");
+    const from = screen.dataset.playhead;
+    let last = window.__pictured();
+    window.__frames = [];
+    window.__moved = false;
+    window.__recording = true;
+    const watch = () => {
+      if (!window.__recording) return;
+      const n = window.__pictured();
+      if (n >= 0 && n !== last) window.__frames.push(n);
+      last = n;
+      if (screen.dataset.playhead !== from) window.__moved = true;
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
   });
+  return async () => {
+    const r = await page.evaluate(() => {
+      window.__recording = false;
+      return { frames: window.__frames, moved: window.__moved };
+    });
+    return { frames: r.frames.map((n) => n * frame), moved: r.moved };
+  };
+}
+
+// Where the video preview is: the playhead, data-playhead, the moment the
+// frame on its canvas starts at, and whether it plays, which the play
+// button says as it says it to a person.
+export async function preview(page, frame) {
+  await reader(page);
+  const r = await page.evaluate(() => ({
+    at: Number(document.querySelector(".screen").dataset.playhead),
+    pictured: window.__pictured(),
+    paused: document.querySelector('button[aria-label="Play"]') !== null,
+  }));
+  return { at: r.at, frame: r.pictured < 0 ? NaN : r.pictured * frame, paused: r.paused };
 }
 
 // What the clip list shows: the button in its head, the count beside the
