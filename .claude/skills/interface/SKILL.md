@@ -68,6 +68,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?framestart` | the paused video answers with where the frame it shows begins, in the episode's own frames, one a second here, the way the video on the Mac answers 1677.60 when sent to 1677.63. Chromium answers with the exact second it was sent to. The stub's clips start on whole seconds, which are frame starts, so a probe sets `window.__pieces` before it opens the episode to start a clip inside a frame |
 | `?unread=12` | the episode file is held back from the video for 12 seconds after it first asks, the way the webview cannot read it while an episode just added is transcribed. The video has read nothing, `HAVE_NOTHING`, and its clock says zero, while the stills still come. It is `open.mjs`'s server that holds the file, not the stub. With `?growing` it is the first play after the first search |
 | `?slowseek=150` | every seek takes 150 ms to land, the way WebKit's can on a Mac with a long episode. Chromium lands one in this file in about 3 ms, inside one frame, so nothing could ever happen in the middle of a seek, a press of the space bar during a jump over a cut above all. `open.mjs` slows the element itself: while a seek is on its way `seeking` says yes and the clock says where it was sent, the way a browser answers |
+| `?slowread=200` | for the frame queue's page only, every range of its episode is answered 200 ms late, the way a busy disk or a long episode can. The frame queue reads ahead so a cut never waits on the file, and this is how to show it, see The frame queue below |
 
 Add a mode when the state you need is not there. A bug that only happens
 while something is running cannot be found in a stub that is never busy:
@@ -843,6 +844,84 @@ it is from something, and that is the question that never settles.
 start of the frame it shows. With a clip whose start lies more than half a
 frame into a frame, set through `window.__pieces` before the episode is
 opened, picking it and pressing the space bar is the test.
+
+## The frame queue
+
+The video preview is moving off the `<video>` element onto a queue of
+frames the app decodes itself, plan row 2.122. It is in
+`frontend/src/lib/frames/`: `mp4.ts` reads the index of the episode file,
+`plan.ts` decides everything, with tests, and `queue.ts` is only the glue
+to the browser's decoders, the canvas and the sound card. Until the video
+preview runs on it, it has a page of its own in the harness.
+
+```
+npx vite build --config frontend/preview/vite.config.ts
+node frontend/preview/frames/cuts.mjs                 # the clip, once
+node frontend/preview/frames/cuts.mjs loop slowread=200
+node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek while playing
+node frontend/preview/frames/cuts.mjs memory          # a minute straight on
+```
+
+`frames()` in `open.mjs` opens `preview/frames/`, one canvas playing an
+episode made for it, with `window.__queue` to drive. It is an MP4 of VP9
+and Opus, because the queue reads MP4 and Chromium has no H.264, at 25
+frames a second with a key frame every four seconds, so a cut lands in
+the middle of a group of pictures the way it does in a camera's file.
+
+**The episode says what it is.** Its top half is the frame number in
+sixteen bars, so `?read` reads back from the canvas the frame really
+drawn, and a probe never trusts what the queue says it drew. Its sound is
+a climbing tone over noise that never repeats, so `?hear` records every
+sample handed to the sound card, with the sound card's frame, and the
+probe lays it over the episode's own sound decoded by ffmpeg, cut and
+faded the way the render does it. A sample missing, doubled or taken from
+inside a cut no longer matches. `SHIFT=1` moves the expected sound by one
+sample after each cut: the check has to fail with it, and it does, from 2
+percent off to 35.
+
+What the proof measures, and what it read on this branch:
+
+| | the frame queue | the `<video>` path |
+| --- | --- | --- |
+| last frame before a cut to the first after it | 33 or 50 ms | 33 ms, 183 to 200 ms with `?slowseek=150` |
+| the playhead across a cut | moves with each frame drawn, as anywhere else | still for 1 animation frame, 10 with `?slowseek=150` |
+| the same with the file 200 ms late | 33 or 50 ms | |
+| frames from inside a cut drawn | none | none |
+| the longest any frame stayed while playing | 50 ms | 200 ms with `?slowseek=150` |
+| the sound across a cut | the episode's own samples to the sample, best lag 0 | stops for the seek |
+| the loop seam | the same as a cut | |
+| paused frames | the frame that holds the moment, 11 of 11 | |
+| frames open over a minute of play | 4 to 5 | |
+
+A frame interval is 40 ms and the display draws every 16.7 ms, so one
+frame's time shows as 33 or 50. A gap above 50 is a frame held.
+
+**What it taught.** Each of these cost a round of probing:
+
+- Chromium stamps decoded sound with times of its own, counting on from
+  the first packet after a start. Sound is matched to its packet by
+  order, not by stamp.
+- Opus told its pre-skip cuts it again from the first packet after every
+  start, on top of the edit list. The decoder is told there is none.
+- An AudioWorklet in Chromium now and then hands two render quanta the
+  same `currentFrame`. The recorder labels a quantum by the last one plus
+  128 when that happens, or the check fails on a sound that is right.
+- `getOutputTimestamp` is the heard sound, but a stamp taken before the
+  sound card was held counts on through the pause, and WebKitGTK without
+  a sound device gives stamps on another clock. `heardAt` takes a stamp
+  only when it is fresh and near the clock.
+- The first frame of a play stays until the sound is heard, about 130 ms
+  here, of which 42 are the sound card's latency. That is the picture
+  keeping to the sound, not a hold.
+
+**WebKit, but not the Mac.** WebKitGTK runs the page too, see below, once
+`gstreamer1.0-plugins-bad` and `gstreamer1.0-libav` are installed: VP9
+needs `vp9parse`, H.264 needs `h264parse` and `avdec_h264`. An MP4 of
+H.264 with B-frames and AAC played the clip there with every frame in
+order, the cuts one frame's time and the canvas the frame said. That is
+GStreamer decoding. On the Mac, WebKit decodes with VideoToolbox and
+AudioToolbox, and only Tim's Mac can say how those order their output,
+stamp their sound and report the sound card's latency.
 
 ## A click is answered in the frame it lands in
 

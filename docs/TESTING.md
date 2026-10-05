@@ -21,6 +21,14 @@ a time and knew nothing of pauses, so a caption breaking where a removed
 word had been could not be seen in it at all. Anything about what the
 engine answers is tried against the bridge.
 
+The frame queue the video preview is moving onto, `frontend/src/lib/frames/`,
+has a third page, the preview's `preview/frames/`: one canvas playing an
+episode made for it, whose picture carries its frame number and whose
+sound can be laid over the episode's own sample by sample.
+`frontend/preview/frames/cuts.mjs` plays a clip with cuts on it and checks
+every frame drawn and every sample heard. What it measures and how to read
+it is in the interface skill, under The frame queue.
+
 ## The bridge
 
 The bridge serves the interface with the service the app runs, over a desk
