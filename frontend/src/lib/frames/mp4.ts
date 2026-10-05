@@ -223,6 +223,8 @@ export function parseMoov(bytes: Uint8Array): Movie {
   const v = new View(bytes);
   const moov = [...boxesIn(v)].find((b) => b.type === "moov");
   if (!moov) fail("this is not a moov box");
+  // A fragmented file says so in moov, and keeps its samples elsewhere.
+  if (child(v, moov, "mvex")) fail("the file is a fragmented MP4, which the video preview cannot read");
   const mvhd = child(v, moov, "mvhd");
   if (!mvhd) fail("the file has no mvhd box");
   const movieScale = v.u8(mvhd.body) === 1 ? v.u32(mvhd.body + 20) : v.u32(mvhd.body + 12);

@@ -62,6 +62,7 @@ not the workspace: the first run, the settings, the empty window.
 | `?crossclips` | one clip list read comes back 400 ms late and the next at once, so a read asked later answers first. A card on its way and the clip it became must never both be on screen |
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
+| `?fragmented` | the episode is a fragmented MP4, ten seconds written the way a live recording is, which the video preview cannot read, so it says why where the picture would be. It is `open.mjs`'s server that serves it, not the stub |
 | `?slowread=200` | every range of the episode is answered 200 ms late, the way a busy disk or a long episode can, in the workspace and on the frame queue's page alike. The frame queue reads ahead so a cut never waits on the file, and this is how to show it, see The frame queue below. It is `open.mjs`'s server that is slow, not the stub |
 
 Add a mode when the state you need is not there. A bug that only happens

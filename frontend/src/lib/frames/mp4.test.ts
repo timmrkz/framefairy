@@ -224,6 +224,11 @@ describe("parseMoov", () => {
     expect(() => parseMoov(lying)).toThrow(MP4Error);
   });
 
+  test("says a fragmented file is one, whose samples are not in moov", () => {
+    const m = new Uint8Array(box("moov", mvhd(1000), box("mvex", full("trex", 0, zeros(20)))));
+    expect(() => parseMoov(m)).toThrow(/fragmented/);
+  });
+
   test("names a codec it cannot decode", () => {
     const prores = box("apch", zeros(6), u16(1), zeros(70));
     expect(() =>
