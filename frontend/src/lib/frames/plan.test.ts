@@ -78,27 +78,94 @@ describe("VideoPlan", () => {
   const plan = new VideoPlan(video, frame, program, 0);
   plan.extend(Infinity);
 
-  test("draws a frame every frame and never one from inside a cut", () => {
-    const drawn: number[] = [];
-    for (let k = 0; k <= plan.lastK; k++) drawn.push(shownAt(plan.need(k)!.rank));
-    for (const t of drawn) {
-      expect(t >= 59.52 - 1e-9 && t < 60.28 - 1e-9 && t > 59.52 + 1e-9).toBe(false);
-      expect(t > 62.16 + 1e-9 && t < 63.04 - 1e-9).toBe(false);
-    }
-    // One frame on screen per grid point, so a cut is one frame's time.
-    expect(plan.lastK + 1).toBe(Math.ceil(program.length / frame - 1e-9));
-    // Across the cuts: the last frame before, then the first after.
-    const i1 = drawn.findIndex((t) => t > 60);
-    expect(drawn[i1 - 1]).toBeCloseTo(59.52);
-    expect(drawn[i1]).toBeCloseTo(60.32);
-    // The second piece is 46.5 frames long, so no grid point falls in the
-    // last 10 ms of it and the frame before the cut is 62.12, as in a
-    // render at 25 a second.
-    const i2 = drawn.findIndex((t) => t > 63);
-    expect(drawn[i2 - 1]).toBeCloseTo(62.12);
-    expect(drawn[i2]).toBeCloseTo(63.04);
-    // And the last frame drawn is the one that holds the clip's end.
-    expect(drawn[drawn.length - 1]).toBeCloseTo(64.96);
+  // Every frame of every piece, from the frame that holds its start to the
+  // frame that holds the moment just before its end, and each drawn where
+  // it begins.
+  const frames = (from: number, to: number) => {
+    const out: string[] = [];
+    for (let t = from; t <= to + 1e-9; t += frame) out.push(t.toFixed(2));
+    return out;
+  };
+  const drawnBy = (p: VideoPlan) => {
+    const out: string[] = [];
+    for (let k = 0; k <= p.lastK; k++) out.push(shownAt(p.need(k)!.rank).toFixed(2));
+    return out;
+  };
+
+  test("draws every frame of every piece and never one from inside a cut", () => {
+    expect(drawnBy(plan)).toEqual([...frames(57, 59.52), ...frames(60.28, 62.16), ...frames(63.04, 64.96)]);
+  });
+
+  test("draws each frame where it begins, carried onto the program", () => {
+    // The first piece from the start of the program, a frame each 40 ms.
+    expect(plan.at(0)).toBeCloseTo(0);
+    expect(plan.at(1)).toBeCloseTo(0.04);
+    expect(plan.at(63)).toBeCloseTo(2.52);
+    // The second piece begins at 2.53 on the program with the frame that
+    // holds 60.31, and the frame of 60.32 begins 10 ms later.
+    expect(plan.at(64)).toBeCloseTo(2.53);
+    expect(shownAt(plan.need(64)!.rank)).toBeCloseTo(60.28);
+    expect(plan.at(65)).toBeCloseTo(2.54);
+    // The last frame of the second piece, 62.16, begins 10 ms before the
+    // cut, and the third piece's first frame follows it.
+    expect(shownAt(plan.need(111)!.rank)).toBeCloseTo(62.16);
+    expect(plan.at(111)).toBeCloseTo(2.53 + 1.85);
+    expect(plan.at(112)).toBeCloseTo(2.53 + 1.86);
+  });
+
+  test("finds the point a position is in, and the one past the end", () => {
+    expect(plan.gridAt(0)).toBe(0);
+    expect(plan.gridAt(0.0399)).toBe(0);
+    expect(plan.gridAt(0.04)).toBe(1);
+    expect(plan.gridAt(2.5299)).toBe(63);
+    expect(plan.gridAt(2.53)).toBe(64);
+    expect(plan.gridAt(2.5399)).toBe(64);
+    expect(plan.gridAt(program.length - 0.001)).toBe(plan.lastK);
+    expect(plan.gridAt(program.length)).toBe(plan.lastK + 1);
+  });
+
+  test("the edges of a piece are never passed over", () => {
+    // From inside the first piece the next that must be drawn is its last
+    // frame, then the second piece's first, then that one's last.
+    expect(plan.nextEdge(10)).toBe(63);
+    expect(plan.nextEdge(63)).toBe(64);
+    expect(plan.nextEdge(64)).toBe(111);
+    expect(plan.nextEdge(plan.lastK)).toBe(plan.lastK + 1);
+  });
+
+  // A play begun inside a frame drew the frames on a grid from where it
+  // began: each up to a frame late, and the last frame of a piece passed
+  // over when the piece ended less than that into it.
+  test.each([0.001, 0.013, 0.02, 0.039])("a play begun %f into a frame draws every frame where it begins", (into) => {
+    const p0 = program.place(57.4 + into);
+    const p = new VideoPlan(video, frame, program, p0);
+    p.extend(Infinity);
+    expect(p.at(0)).toBeCloseTo(p0);
+    expect(shownAt(p.need(0)!.rank)).toBeCloseTo(57.4);
+    expect(p.at(1)).toBeCloseTo(0.44);
+    expect(drawnBy(p)).toEqual([...frames(57.4, 59.52), ...frames(60.28, 62.16), ...frames(63.04, 64.96)]);
+  });
+
+  test("a play begun at a cut starts on the next piece's first frame", () => {
+    const p = new VideoPlan(video, frame, program, program.place(60));
+    p.extend(Infinity);
+    expect(drawnBy(p)).toEqual([...frames(60.28, 62.16), ...frames(63.04, 64.96)]);
+    expect(p.at(1)).toBeCloseTo(2.54);
+  });
+
+  test("a play begun at the end of the clip has nothing to draw", () => {
+    const p = new VideoPlan(video, frame, program, program.length);
+    p.extend(Infinity);
+    expect(p.lastK).toBe(-1);
+    expect(p.gridAt(program.length)).toBe(0);
+  });
+
+  test("a piece ending on a frame's start ends on the frame before", () => {
+    const p = new VideoPlan(video, frame, new Program([{ start: 10, end: 10.4 }, { start: 20.02, end: 20.1 }], false), 0);
+    p.extend(Infinity);
+    expect(drawnBy(p)).toEqual([...frames(10, 10.36), "20.00", "20.04", "20.08"]);
+    expect(p.at(10)).toBeCloseTo(0.4);
+    expect(p.at(11)).toBeCloseTo(0.42);
   });
 
   test("feeds each piece from the key frame before it, and carries a run on inside what it decoded", () => {
@@ -115,11 +182,12 @@ describe("VideoPlan", () => {
     const loop = new VideoPlan(video, frame, new Program(clip, true), 0);
     loop.extend(new Program(clip, true).length * 2 + 1);
     expect(loop.runs.slice(0, 4).map((r) => r.key)).toEqual([1400, 1500, 1400, 1500]);
-    // The seam of the loop is one frame, like a cut.
-    const n = Math.ceil(new Program(clip, true).length / frame - 1e-9);
-    const around = [n - 2, n - 1, n, n + 1].map((k) => shownAt(loop.need(k)!.rank).toFixed(2));
-    expect(around[1]).toBe("64.96");
-    expect(Number(around[2])).toBeLessThan(57.08);
+    // The seam of the loop is a cut: the clip's last frame, then its first.
+    const drawn: string[] = [];
+    for (let k = 0; k < 170; k++) drawn.push(shownAt(loop.need(k)!.rank).toFixed(2));
+    const seam = drawn.indexOf("64.96");
+    expect(drawn.slice(seam, seam + 2)).toEqual(["64.96", "57.00"]);
+    expect(loop.at(seam + 1)).toBeCloseTo(program.length);
   });
 
   test("a play from the middle starts on the frame under the playhead", () => {

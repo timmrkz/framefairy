@@ -13,13 +13,17 @@
 //   loop, so it never goes back while playing.
 // - A visit is one piece played once. With a loop the second time round is
 //   another visit of the same piece.
-// - The grid is the moments of the program a frame is drawn for, one
-//   frame apart from where play started. The frame drawn for a grid point
-//   is the frame of the episode that holds the moment the program is at
-//   there, so every frame is on screen for one frame's time, a cut
-//   included: the last frame before it is followed one frame later by the
-//   first frame after it. That is what a render at a constant frame rate
-//   does too.
+// - The grid is the moments of the program a frame is drawn at: where each
+//   frame of the episode begins, carried onto the program through the
+//   pieces, so every frame is drawn when the sound heard reaches its own
+//   start. A visit's first point is where the visit begins on the program,
+//   or where the play began, with the frame that holds that moment, the
+//   piece-start frame. Its last is the frame that holds the moment just
+//   before the piece ends, the piece-end frame. So the last frame before a
+//   cut is followed straight by the first frame after it, both drawn,
+//   whatever moment the play began at. A grid that began where the play
+//   began drew each frame up to a frame late, and a play begun inside a
+//   frame never drew the last frame of a piece at all.
 // - A run is what one decoder is fed in one go, in decode order, from a
 //   key frame on. A piece that starts after the last one ends, inside what
 //   has already been decoded, carries the run on. Any other piece starts a
@@ -138,7 +142,14 @@ export type Run = {
   lastRank: number;
 };
 
-type Span = { visit: Visit; run: number; kFirst: number; kLast: number };
+// One visit on the grid: its points kFirst to kLast draw the frames of
+// rank first to first + kLast - kFirst, one point a frame. Where on the
+// program its points begin and where the visit ends.
+type Span = { visit: Visit; run: number; kFirst: number; kLast: number; first: number; from: number; to: number };
+
+// The hair before a piece's end that the piece-end frame holds. A frame
+// that begins within it would be on screen for no time at all.
+const HAIR = 1e-4;
 
 // Which frames the picture needs, from a play that starts at P0 on the
 // program, worked out a visit at a time as far ahead as it is asked.
@@ -146,11 +157,12 @@ export class VideoPlan {
   readonly runs: Run[] = [];
   private spans: Span[] = [];
   private nextVisit: number;
+  private nextK = 0;
   private done = false;
 
   constructor(
     readonly samples: Samples,
-    // How long a frame lasts, the grid's step.
+    // How long a frame lasts, for how far ahead a decoder starts.
     readonly frame: number,
     readonly program: Program,
     readonly p0: number,
@@ -160,14 +172,58 @@ export class VideoPlan {
     if (!first) this.done = true;
   }
 
-  // The position of grid point k.
-  at(k: number): number {
-    return this.p0 + k * this.frame;
+  // Where a frame of the episode begins, in seconds.
+  private begins(rank: number): number {
+    const s = this.samples;
+    return s.pts[s.order[rank]] / s.timescale;
   }
 
-  // The grid point a position is in.
+  private posOf(sp: Span, k: number): number {
+    if (k === sp.kFirst) return sp.from;
+    return sp.visit.from + (this.begins(sp.first + (k - sp.kFirst)) - sp.visit.start);
+  }
+
+  // The position of grid point k on the program, or NaN where it is not
+  // worked out.
+  at(k: number): number {
+    const sp = this.spanOf(k);
+    return sp ? this.posOf(sp, k) : NaN;
+  }
+
+  // The grid point a position is in: the last one at or before it. Past
+  // the end of a program worked out to its end, the point after the last.
   gridAt(pos: number): number {
-    return Math.floor((pos - this.p0) / this.frame + 1e-9);
+    const all = this.spans;
+    if (!all.length) return this.nextK;
+    let lo = 0;
+    let hi = all.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (all[mid].from <= pos + 1e-9) lo = mid;
+      else hi = mid - 1;
+    }
+    const sp = all[lo];
+    if (pos < sp.from - 1e-9) return sp.kFirst;
+    if (pos >= sp.to - 1e-9 && lo === all.length - 1) return this.done ? sp.kLast + 1 : sp.kLast;
+    let a = sp.kFirst;
+    let b = sp.kLast;
+    while (a < b) {
+      const mid = (a + b + 1) >> 1;
+      if (this.posOf(sp, mid) <= pos + 1e-9) a = mid;
+      else b = mid - 1;
+    }
+    return a;
+  }
+
+  // The next grid point after k that has to be drawn, whatever is due: the
+  // piece-end frame of k's visit, or the piece-start frame of the next. A
+  // frame that is on screen for less than a display frame, at the edge of a
+  // piece that ends just after a frame begins, is drawn for one, and the
+  // frame after it waits that long. Any other frame due at the same moment
+  // as a later one is passed over.
+  nextEdge(k: number): number {
+    const sp = this.spanOf(k);
+    return sp && k < sp.kLast ? sp.kLast : k + 1;
   }
 
   // Works out the visits that start before a position on the program.
@@ -195,7 +251,7 @@ export class VideoPlan {
   // not yet worked out to the end.
   get lastK(): number {
     if (!this.done) return Infinity;
-    return this.spans.length ? this.spans[this.spans.length - 1].kLast : -1;
+    return this.nextK - 1;
   }
 
   // The first grid point still worked out, after forget.
@@ -206,32 +262,32 @@ export class VideoPlan {
   private add(visit: Visit) {
     const s = this.samples;
     const length = visit.end - visit.start;
-    const startPos = Math.max(visit.from, this.p0);
-    const endPos = visit.from + length;
-    const kFirst = Math.max(0, Math.ceil((startPos - this.p0) / this.frame - 1e-9));
-    const kLast = Math.ceil((endPos - this.p0) / this.frame - 1e-9) - 1;
-    if (kLast < kFirst || s.count === 0) return;
-    const a = this.rankFor(visit, kFirst);
-    const b = this.rankFor(visit, kLast);
+    const from = Math.max(visit.from, this.p0);
+    const to = visit.from + length;
+    if (to - from <= 1e-9 || s.count === 0) return;
+    const moment = visit.start + (from - visit.from);
+    const a = rankAt(s, moment);
+    const b = Math.max(a, rankAt(s, Math.max(moment, visit.end - HAIR)));
+    const kFirst = this.nextK;
+    const kLast = kFirst + (b - a);
+    this.nextK = kLast + 1;
     const key = keyBefore(s, a);
     let last = s.order[a];
     for (let r = a; r <= b; r++) if (s.order[r] > last) last = s.order[r];
+    const span: Span = { visit, run: 0, kFirst, kLast, first: a, from, to };
     const run = this.runs[this.runs.length - 1];
     if (run && run.key <= key && key <= run.last + 1 && a >= run.lastRank) {
       run.last = Math.max(run.last, last);
       run.kLast = kLast;
       run.lastRank = b;
-      this.spans.push({ visit, run: run.id, kFirst, kLast });
+      span.run = run.id;
+      this.spans.push(span);
       return;
     }
     const id = this.runs.length;
     this.runs.push({ id, key, last, kFirst, kLast, lastRank: b });
-    this.spans.push({ visit, run: id, kFirst, kLast });
-  }
-
-  private rankFor(visit: Visit, k: number): number {
-    const at = visit.start + (this.at(k) - visit.from);
-    return rankAt(this.samples, Math.min(Math.max(at, visit.start), visit.end));
+    span.run = id;
+    this.spans.push(span);
   }
 
   // The frame drawn at grid point k, or null where the program has none,
@@ -239,14 +295,14 @@ export class VideoPlan {
   need(k: number): Need | null {
     const span = this.spanOf(k);
     if (!span) return null;
-    return { run: span.run, rank: this.rankFor(span.visit, k) };
+    return { run: span.run, rank: span.first + (k - span.kFirst) };
   }
 
   // The moment of the episode grid point k stands for.
   moment(k: number): number | null {
     const span = this.spanOf(k);
     if (!span) return null;
-    return span.visit.start + (this.at(k) - span.visit.from);
+    return span.visit.start + (this.posOf(span, k) - span.visit.from);
   }
 
   private spanOf(k: number): Span | null {

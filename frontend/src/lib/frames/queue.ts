@@ -1021,7 +1021,11 @@ export class FrameQueue {
     this.reached = pos;
     plan.extend(pos + READ_AHEAD);
     this.aplan?.extend(pos + READ_AHEAD);
-    const k = Math.max(this.k, plan.gridAt(pos));
+    // The frame due, but never past a piece's first or last frame without
+    // drawing it: a frame at the edge of a piece can be due for less than a
+    // display frame, and the frame before a cut is the one that says where
+    // the cut is.
+    const k = Math.max(this.k, Math.min(plan.gridAt(pos), plan.nextEdge(this.k)));
     if (plan.finished && k > plan.lastK) {
       this.end();
       return;
@@ -1158,7 +1162,7 @@ export class FrameQueue {
     // once it is close.
     for (const run of plan.runs) {
       if (run.kLast < this.k || this.slotOf(run.id)) continue;
-      if ((run.kFirst - this.k) * this.video!.frame > NEXT_AHEAD) break;
+      if (plan.at(run.kFirst) - plan.at(this.k) > NEXT_AHEAD) break;
       const slot = this.slots[run.id % 2];
       if (slot.run) break;
       slot.run = run;
