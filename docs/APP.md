@@ -248,11 +248,28 @@ frame read by ffmpeg that was never shown.
 While the video plays, the picture is the video's alone. No frame is read
 from the file for it and none is drawn over it, not while playing starts and
 not while a clip jumps over a cut, because the video is already on its way
-to the frame. And the playhead only goes forward while it plays. The clock
-WebKit gives a playing video is worked out between reports from the player
-underneath and is put back a little whenever a report says the picture is
-behind, and followed as it was, the playhead, the lit word, the caption and
-the crop went back and forth over the picture while playing got going. A
+to the frame. And the playhead goes with the picture while it plays, the
+frame the browser says is on screen, `requestVideoFrameCallback`, and on
+from it by the time since it was put up, at most a frame, never back. Not
+with the video's clock. The clock WebKit gives a playing video is an
+estimate, the wall clock since the last report from the player underneath,
+and it never goes back: it can only stand still. Playing starts on that
+clock before the picture underneath has started, so it runs ahead, and when
+a report says where the picture is, it stands until the picture catches up.
+Followed, the playhead stopped for up to half a second a moment after the
+space bar, while the picture and the sound played on. A click on the clip
+timeline while it plays is the same start over again: the clock runs on
+from where the seek went as soon as it lands, and the picture starts after
+it. Until the picture of a play or a seek has moved, the playhead stands
+with it, for as long as that takes, up to four seconds. Taken after one
+second, the clock put the playhead ahead of the picture on the Mac, where
+the picture after a seek can take longer than that, and the playhead
+stopped a second time when the picture came. The playhead holds still only
+while the frame on screen is the frame it stands in, never longer. Where a
+browser cannot say which frame is on screen, or has stopped saying, the
+clock is all there is. The jump over a
+cut and the stop at the clip's end are decided on the same position, so the
+clock running ahead cannot cut the end of a piece short. A
 jump the app makes itself, over a cut or back to the start of a loop, still
 takes the playhead with it. A pause pressed while the video is on its way
 over a cut ends the jump there: the playhead stands where the video lands,
@@ -283,6 +300,46 @@ gave way to the clip. Now the frame the engine read stays until the video
 really shows the playhead's frame, and while playing begins it stands for
 the half second after where the play began. Only the fifth of a second it
 takes the engine to read that frame shows the frame before.
+
+**The space bar plays the clip or the video, and the playhead says which.**
+The playhead is either on the chosen clip or on the video, and the gesture
+that put it there decides, never the video's clock. Picking a clip puts it
+on the clip, at its start. So does a click on the clip's start edge, a
+trim, a click on a caption, and a click, a drag or a step into any frame
+of the clip, cuts included, from the frame that holds its first moment.
+A click on the end edge, a landing in the frame that holds the clip's
+last moment, and the clip playing to its end, leave it on the clip at its
+end. Any frame before or after the clip is on the video, and so is having
+no clip chosen. It goes by frames and not by seconds because the paused
+video on the Mac answers with where its frame begins: a step back and a
+step forward off a clip that starts inside a frame land on that frame's
+start, which by the second is before the clip.
+
+On the clip, the space bar plays the clip from the playhead: its cuts are
+jumped and it stops at its end, or with loop on goes back to its start.
+From inside a cut it plays from the end of that cut, and from the clip's
+end it starts the clip over, the way QuickTime starts over at the end of a
+video. On the video, the space bar plays the episode straight on from the
+playhead, through the chosen clip and its cuts, with no jump and no stop,
+so any part of the episode can be heard with a clip chosen. Playing through
+the clip leaves the playhead on the video, and loop changes nothing there.
+While the playhead is on the video the chosen clip is dimmed as one thing,
+wherever it is drawn: the crop frame in the video preview, its mark on the
+range picker, and on the clip timeline everything drawn for it, its frame,
+its pieces, its cuts and their edges, its trim edges, its caption blocks and
+their edges and its thumbnails. So it shows that the clip's rules are not in
+play. It is one rule, `.chosen.dim` with `.frame.dim` and
+`.clipmark.selected.dim` in `app.css`, at the brightness of a button that
+cannot be pressed, `--dimmed`, and it changes in the frame the playhead
+does. With the hand on the clip somewhere else, its card or its mark, it is
+lit whole.
+
+It used to be measured: the clip played when the playhead was within half
+a frame of its start. The paused video on the Mac answers with where the
+frame it shows begins, up to a frame before the moment it was sent to, so
+a clip just picked measured as before its own start, and the space bar
+played the episode straight through its cuts and past its end. See the
+rules in `frontend/src/lib/playhead.ts`.
 
 Opening an episode that already has clips opens on one of them: the clip it
 was last worked on, or the first one where it has never been opened. The
