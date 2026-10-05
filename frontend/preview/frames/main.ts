@@ -24,6 +24,9 @@ const params = new URLSearchParams(location.search);
 const canvas = document.querySelector("canvas")!;
 const src = params.get("src") ?? `/media/?path=${encodeURIComponent("/frames.mp4")}`;
 const queue = new FrameQueue(canvas, src);
+// The canvas is as many device pixels as the stylesheet makes it, the way
+// the video preview tells it.
+queue.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio);
 window.__queue = queue;
 window.__drawn = [];
 window.__heard = [];
@@ -43,9 +46,11 @@ function pictured(): number {
   return n;
 }
 
+// Every report, which while playing is every animation frame. While
+// playing only the ones that drew a frame are read back.
 queue.listen((s) => {
   const d: Drawn = { ...s };
-  if (read) d.pictured = pictured();
+  if (read && (s.drew || !s.playing)) d.pictured = pictured();
   window.__drawn.push(d);
 });
 

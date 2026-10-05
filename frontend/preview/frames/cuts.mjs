@@ -112,7 +112,7 @@ if (seeking) {
     const from = performance.now();
     window.__queue.seek(60.0);
     await new Promise((r) => setTimeout(r, 700));
-    return window.__drawn.filter((x) => x.playing).map((x) => ({ frame: x.frame, after: x.drawnAt - from }));
+    return window.__drawn.filter((x) => x.playing && x.drew).map((x) => ({ frame: x.frame, after: x.drawnAt - from }));
   });
   console.log(
     `seek to 60.00, in the cut, while playing: first frame ${jumped[0].frame.toFixed(2)} after ${jumped[0].after.toFixed(0)} ms, then ${jumped
@@ -152,7 +152,7 @@ await stop();
 
 // ---- The picture
 
-const playing = rec.drawn.filter((x) => x.playing);
+const playing = rec.drawn.filter((x) => x.playing && x.drew);
 const length = pieces.reduce((s, p) => s + p.end - p.start, 0);
 const cuts = pieces.slice(0, -1).map((p, i) => [p.end, pieces[i + 1].start]);
 if (loop) cuts.push([pieces[pieces.length - 1].end, pieces[0].start]);

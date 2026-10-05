@@ -12,7 +12,13 @@
 //   on the program it belongs, so the stretches meet without a gap.
 // - A frame is drawn when the sound heard has reached its grid point, on
 //   the animation frame before it is due on screen. The playhead is the
-//   frame drawn, reported to whoever listens as it is drawn.
+//   sound heard, through the program, cuts included, reported to whoever
+//   listens on every animation frame, so it moves smoothly and stands in
+//   the frame drawn.
+// - Paused, the frame that holds the playhead is on the canvas, and the
+//   play from there is already prepared, its first frames decoded and its
+//   first sound with them, so the space bar starts it at once rather than
+//   decoding the same frames again. That is the cue.
 // - Two picture decoders take turns: while one plays a piece, the other is
 //   already decoding the next piece from its key frame, closing the frames
 //   before the piece's start unseen, and holds the first few of it. So a
@@ -21,7 +27,7 @@
 //   decoder holds at most a few, so memory stays flat over any length.
 // - Nothing polls. Work is started by the decoders' own events, by a read
 //   arriving, and by the animation frame that draws while playing.
-import { findMoov, MP4Error, parseMoov, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
+import { findMoov, MP4Error, parseMoov, pcmPlanes, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
   fade,
@@ -39,18 +45,27 @@ import {
 
 export type { Piece } from "./plan";
 
-// What is on the canvas, told to whoever listens each time it changes.
+// Where the playhead is and what is on the canvas, told to whoever
+// listens each time either changes, which while playing is every
+// animation frame.
 export type Shown = {
-  // The moment of the episode the frame drawn stands for: where the
-  // playhead is. Paused, it is exactly where the playhead was put.
+  // Where the playhead is, in the episode. Paused, exactly where it was
+  // put. Playing, the sound being heard, through the program, so it moves
+  // on every animation frame, jumps a cut with the sound, and stands in
+  // the frame drawn.
   at: number;
-  // Where the frame drawn begins, in the episode.
+  // Where the frame on the canvas begins, in the episode.
   frame: number;
+  // A new frame was drawn for this report.
+  drew: boolean;
   playing: boolean;
   // The program played to its end and stopped there.
   ended: boolean;
-  // performance.now() when it was drawn.
+  // performance.now() when it was reported.
   drawnAt: number;
+  // Why the sound cannot be played, or the picture stopped decoding, in a
+  // sentence, or nothing.
+  trouble: string;
 };
 
 export type Stats = {
@@ -81,6 +96,9 @@ const DEPTH = 4;
 const NEXT_AHEAD = 2;
 // How far ahead the plan is worked out and the file is read, seconds.
 const READ_AHEAD = 4;
+// How far a cue reads ahead, seconds. A drag on the clip timeline makes a
+// cue at every step, and only the last one is played.
+const CUE_AHEAD = 1;
 // How much sound is decoded ahead of what is heard, seconds.
 const SOUND_AHEAD = 1;
 // Sound decoded before a play starts, seconds.
@@ -114,7 +132,7 @@ class Reader {
   async read(from: number, to: number): Promise<Uint8Array> {
     this.reads++;
     const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` } });
-    if (res.status !== 206 && res.status !== 200) throw new Error(`the episode file answered ${res.status}`);
+    if (res.status !== 206 && res.status !== 200) throw new MP4Error(`the episode file could not be read, it answered ${res.status}`);
     const total = /\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
     if (total) this.size = Number(total[1]);
     let body = new Uint8Array(await res.arrayBuffer());
@@ -184,6 +202,130 @@ class Reader {
   }
 }
 
+// Sound out of a decoder, the part of AudioData the queue reads.
+type Sound = {
+  timestamp: number;
+  numberOfFrames: number;
+  numberOfChannels: number;
+  sampleRate: number;
+  copyTo(dst: Float32Array, options: { planeIndex: number; format: "f32-planar" }): void;
+  close(): void;
+};
+
+// A sound decoder, the browser's or the one for plain sound, which needs
+// none. restart drops everything and waits for the first packet of a run.
+interface SoundDecoder {
+  readonly state: string;
+  readonly decodeQueueSize: number;
+  decode(timestamp: number, data: Uint8Array): void;
+  flush(): Promise<void>;
+  restart(): void;
+  close(): void;
+}
+
+class WebSound implements SoundDecoder {
+  private d: AudioDecoder;
+  constructor(
+    private config: AudioDecoderConfig,
+    output: (s: Sound) => void,
+    error: (what: string) => void,
+    dequeue: () => void,
+  ) {
+    this.d = new AudioDecoder({ output, error: (e) => error(e.message) });
+    this.d.configure(config);
+    this.d.addEventListener("dequeue", dequeue);
+  }
+  get state() {
+    return this.d.state;
+  }
+  get decodeQueueSize() {
+    return this.d.decodeQueueSize;
+  }
+  decode(timestamp: number, data: Uint8Array) {
+    this.d.decode(new EncodedAudioChunk({ type: "key", timestamp, data }));
+  }
+  flush() {
+    return this.d.flush();
+  }
+  restart() {
+    if (this.d.state !== "configured") return;
+    this.d.reset();
+    this.d.configure(this.config);
+  }
+  close() {
+    if (this.d.state !== "closed") this.d.close();
+  }
+}
+
+// Plain sound, as it lies in the file, turned into the sound card's
+// numbers. It answers the way a decoder does, after the call that fed it,
+// so the queue cannot tell the two apart.
+class PlainSound implements SoundDecoder {
+  state = "configured";
+  private waiting: { timestamp: number; data: Uint8Array }[] = [];
+  private flushes: { done: () => void; fail: (e: Error) => void }[] = [];
+  private due = false;
+  constructor(
+    private track: AudioTrack,
+    private output: (s: Sound) => void,
+    private dequeue: () => void,
+  ) {}
+  get decodeQueueSize() {
+    return this.waiting.length;
+  }
+  decode(timestamp: number, data: Uint8Array) {
+    this.waiting.push({ timestamp, data });
+    this.kick();
+  }
+  flush() {
+    return new Promise<void>((done, fail) => {
+      this.flushes.push({ done, fail });
+      this.kick();
+    });
+  }
+  restart() {
+    this.waiting = [];
+    const was = this.flushes;
+    this.flushes = [];
+    for (const f of was) f.fail(new Error("restarted"));
+  }
+  close() {
+    this.restart();
+    this.state = "closed";
+  }
+  private kick() {
+    if (this.due) return;
+    this.due = true;
+    setTimeout(() => this.run(), 0);
+  }
+  private run() {
+    this.due = false;
+    const pcm = this.track.pcm!;
+    const channels = this.track.channels;
+    while (this.waiting.length && this.state === "configured") {
+      const p = this.waiting.shift()!;
+      const n = Math.floor(p.data.length / (pcm.bytes * channels));
+      const planes = Array.from({ length: channels }, () => new Float32Array(n));
+      pcmPlanes(p.data, pcm, channels, planes);
+      this.output({
+        timestamp: p.timestamp,
+        numberOfFrames: n,
+        numberOfChannels: channels,
+        sampleRate: this.track.sampleRate,
+        copyTo: (dst, o) => dst.set(planes[o.planeIndex].subarray(0, Math.min(n, dst.length))),
+        close() {},
+      });
+    }
+    if (this.state !== "configured") return;
+    this.dequeue();
+    if (!this.waiting.length) {
+      const was = this.flushes;
+      this.flushes = [];
+      for (const f of was) f.done();
+    }
+  }
+}
+
 // A stretch of sound on its way to the sound card: where on the program it
 // goes, in samples, and its samples, one array a channel.
 type Chunk = { out: number; length: number; data: Float32Array<ArrayBuffer>[] };
@@ -207,9 +349,21 @@ type Slot = {
   firstRank: number;
 };
 
-type State = "paused" | "starting" | "playing" | "ended";
+// Paused with nothing prepared, paused with a cue, starting a play until
+// its first frame and sound are in hand, playing, and stopped at the end
+// of the program.
+type State = "paused" | "cued" | "starting" | "playing" | "ended";
+
+// A reason, in a sentence, from whatever went wrong.
+function sentence(e: unknown): string {
+  const said = e instanceof Error ? e.message : String(e);
+  const text = said.trim().replace(/\.$/, "") || "it could not be read";
+  return text[0].toUpperCase() + text.slice(1) + ".";
+}
 
 export class FrameQueue {
+  // Settles once the file is read and the decoders are set up, and fails
+  // with the reason in a sentence when the file cannot be played here.
   readonly ready: Promise<void>;
   movie: Movie | null = null;
   // The sound card. Everything played goes through out, which a probe can
@@ -238,16 +392,33 @@ export class FrameQueue {
   private video: VideoTrack | null = null;
   private sound: AudioTrack | null = null;
   private slots: Slot[] = [];
-  private soundDecoder: AudioDecoder | null = null;
+  private soundDecoder: SoundDecoder | null = null;
+  private videoConfig: VideoDecoderConfig | null = null;
+  private closed = false;
+  private trouble = "";
 
-  private program = new Program([], false);
+  // What play plays, as it was asked for: pieces, or null for the whole
+  // episode straight on, and whether it loops. The program is made from
+  // it once the length of the episode is known.
+  private wanted: { pieces: Piece[] | null; loop: boolean } = { pieces: null, loop: false };
+  private wantedKey = "";
+  private built: Program | null = null;
+
   private state: State = "paused";
-  // Where the playhead is, in the episode, while paused.
+  // Where the playhead is, in the episode.
   private at = 0;
-  // A play under way: its plans and where it stands.
+  // A play under way or cued: its plans and where it stands.
   private vplan: VideoPlan | null = null;
   private aplan: AudioPlan | null = null;
   private k = 0;
+  // Where the play began, in the episode, and the furthest the playhead
+  // has got on the program, so it never goes back while playing.
+  private startFrom = 0;
+  private reached = 0;
+  // The moment of the episode the frame drawn last was drawn for, and
+  // whether the first frame of the play or cue is up.
+  private drawnFor = 0;
+  private firstShown = false;
   private shown: { frame: VideoFrame; run: number; rank: number } | null = null;
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
@@ -257,6 +428,7 @@ export class FrameQueue {
   private unscheduled: Chunk[] = [];
   private soundRun: AudioRun | null = null;
   private soundNext = 0;
+  private soundRunDone = new Set<number>();
   // The packets fed and not yet out, in the order they were fed. A sound
   // decoder puts out one stretch per packet, in order, but it may stamp it
   // with a time of its own: Chromium counts on from the first packet after
@@ -267,7 +439,7 @@ export class FrameQueue {
   private soundDone = false;
   private frameRequest = 0;
   private suspendTimer = 0;
-  // Every play and seek gets a ticket, and work from an older one is
+  // Every play, cue and seek gets a ticket, and work from an older one is
   // dropped when it comes back.
   private ticket = 0;
   private scratch: Float32Array[] = [];
@@ -278,21 +450,22 @@ export class FrameQueue {
     if (!ctx) throw new Error("the canvas has no 2d context");
     this.draw2d = ctx;
     this.reader = new Reader(url);
-    this.ready = this.open();
+    this.ready = this.open().catch((e) => {
+      throw new Error(sentence(e));
+    });
+    // Whoever needs the reason asks ready for it. Nobody asking is not an
+    // error of its own.
+    this.ready.catch(() => {});
   }
 
   private async open() {
+    if (typeof VideoDecoder === "undefined") throw new MP4Error("the app cannot decode video on this system");
     const movie = await this.reader.open();
+    if (this.closed) throw new Error("closed");
     this.movie = movie;
     this.video = movie.video ?? null;
     this.sound = movie.audio ?? null;
     if (!this.video) throw new MP4Error("the episode has no picture the video preview can decode");
-    // A sound card at the episode's own rate, so the sound is resampled
-    // once, on its way out, rather than stretch by stretch. It starts held,
-    // and the first play, a gesture, lets it go.
-    this.audio = new AudioContext(this.sound ? { sampleRate: this.sound.sampleRate } : {});
-    this.out = this.audio.createGain();
-    this.out.connect(this.audio.destination);
     const v = this.video;
     const config: VideoDecoderConfig = {
       codec: v.codec,
@@ -301,49 +474,56 @@ export class FrameQueue {
       codedHeight: v.height,
       optimizeForLatency: true,
     };
-    const support = await VideoDecoder.isConfigSupported(config);
-    if (!support.supported) throw new MP4Error(`this browser cannot decode ${v.codec}`);
+    const support = await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
+    if (this.closed) throw new Error("closed");
+    if (!support.supported) throw new MP4Error(`the app cannot decode the picture of this episode, ${v.codec}`);
+    // A sound card at the episode's own rate, so the sound is resampled
+    // once, on its way out, rather than stretch by stretch. It starts held,
+    // and the first play, a gesture, lets it go.
+    try {
+      this.audio = new AudioContext(this.sound ? { sampleRate: this.sound.sampleRate } : {});
+    } catch {
+      this.audio = new AudioContext();
+    }
+    this.out = this.audio.createGain();
+    this.out.connect(this.audio.destination);
     for (let i = 0; i < 2; i++) this.slots.push(this.makeSlot(config));
-    if (this.sound) {
-      const a = this.sound;
-      // The pre-skip of Opus is cut by the edit list already, see editShift
-      // in mp4.ts, and a run starts ahead of what it plays anyway. Told it
-      // as well, the decoder would cut it a second time from the first
-      // packet after every start, so it is told there is none.
-      let description = a.description;
-      if (a.codec === "opus" && description && description.length >= 12) {
-        description = description.slice();
-        description[10] = 0;
-        description[11] = 0;
-      }
-      const aconfig: AudioDecoderConfig = {
-        codec: a.codec,
-        description,
-        sampleRate: a.sampleRate,
-        numberOfChannels: a.channels,
-      };
-      const asupport = await AudioDecoder.isConfigSupported(aconfig);
-      if (asupport.supported) {
-        this.soundDecoder = new AudioDecoder({
-          output: (d) => this.soundOut(d),
-          error: (e) => this.fault(`sound decoder: ${e.message}`),
-        });
-        this.soundDecoder.configure(aconfig);
-        this.soundDecoder.addEventListener("dequeue", () => this.pumpSound());
-        this.soundConfig = aconfig;
-      } else {
-        this.fault(`this browser cannot decode the sound, ${a.codec}`);
-      }
-    }
-    if (this.canvas.width !== v.width || this.canvas.height !== v.height) {
-      this.canvas.width = v.width;
-      this.canvas.height = v.height;
-    }
-    this.program = new Program([{ start: 0, end: movie.duration }], false);
+    if (this.sound) await this.openSound(this.sound);
+    if (this.closed) throw new Error("closed");
   }
 
-  private soundConfig: AudioDecoderConfig | null = null;
-  private videoConfig: VideoDecoderConfig | null = null;
+  private async openSound(a: AudioTrack) {
+    const output = (d: Sound) => this.soundOut(d);
+    const dequeue = () => this.pumpSound();
+    if (a.pcm) {
+      this.soundDecoder = new PlainSound(a, output, dequeue);
+      return;
+    }
+    // The pre-skip of Opus is cut by the edit list already, see editShift
+    // in mp4.ts, and a run starts ahead of what it plays anyway. Told it
+    // as well, the decoder would cut it a second time from the first
+    // packet after every start, so it is told there is none.
+    let description = a.description;
+    if (a.codec === "opus" && description && description.length >= 12) {
+      description = description.slice();
+      description[10] = 0;
+      description[11] = 0;
+    }
+    const config: AudioDecoderConfig = {
+      codec: a.codec,
+      description,
+      sampleRate: a.decoderRate,
+      numberOfChannels: a.channels,
+    };
+    const ok =
+      typeof AudioDecoder !== "undefined" &&
+      (await AudioDecoder.isConfigSupported(config).catch(() => ({ supported: false }))).supported;
+    if (!ok) {
+      this.fault(`The app cannot decode the sound of this episode, ${a.codec}, so it plays without sound.`);
+      return;
+    }
+    this.soundDecoder = new WebSound(config, output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
+  }
 
   private makeSlot(config: VideoDecoderConfig): Slot {
     this.videoConfig = config;
@@ -360,7 +540,7 @@ export class FrameQueue {
     };
     slot.decoder = new VideoDecoder({
       output: (f) => this.frameOut(slot, f),
-      error: (e) => this.fault(`picture decoder: ${e.message}`),
+      error: (e) => this.fault(`The picture stopped decoding: ${e.message}.`),
     });
     slot.decoder.configure(config);
     slot.decoder.addEventListener("dequeue", () => this.pump());
@@ -377,18 +557,33 @@ export class FrameQueue {
     return () => this.listeners.delete(fn);
   }
 
-  // What play plays. A change while playing goes on from where the
-  // playhead is, on the new pieces.
-  setProgram(pieces: Piece[], loop: boolean) {
-    this.program = new Program(pieces, loop);
+  private get program(): Program {
+    if (!this.movie) return new Program([], false);
+    this.built ??= new Program(this.wanted.pieces ?? [{ start: 0, end: this.movie.duration }], this.wanted.loop);
+    return this.built;
+  }
+
+  // What play plays: the pieces of a clip, cuts jumped, or null for the
+  // whole episode straight on, and whether it loops. The same program
+  // again changes nothing. A new one while playing goes on from where the
+  // playhead is, on the new pieces, and a cue made for the old one is made
+  // again.
+  setProgram(pieces: Piece[] | null, loop: boolean) {
+    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
+    const key = JSON.stringify([copy, loop]);
+    if (key === this.wantedKey) return;
+    this.wantedKey = key;
+    this.wanted = { pieces: copy, loop };
+    this.built = null;
     if (this.state === "playing" || this.state === "starting") this.start(this.at);
-    // A play held in the middle was a play of the old pieces.
-    else if (this.vplan) this.stopPlay();
+    else if (this.state === "cued" || this.vplan) this.seek(this.at);
   }
 
   // The playhead to a moment of the episode. Paused, the frame that holds
-  // it is decoded and drawn. Playing, play goes on from there.
+  // it is decoded and drawn, and the play from it is cued. Playing, play
+  // goes on from there.
   seek(at: number) {
+    if (this.closed) return;
     this.at = at;
     if (this.state === "playing" || this.state === "starting") {
       this.start(at);
@@ -396,11 +591,30 @@ export class FrameQueue {
     }
     this.stopPlay();
     this.state = "paused";
-    void this.still(at);
+    this.settle(at);
+  }
+
+  // A paused playhead: the play from it is cued when its first frame is the
+  // frame that holds the playhead, and the frame is decoded on its own
+  // where it is not, in a cut of the clip or past its end.
+  private settle(at: number) {
+    const ticket = this.ticket;
+    this.ready.then(
+      () => {
+        if (ticket !== this.ticket || this.closed) return;
+        const s = this.video!.samples;
+        const program = this.program;
+        const p0 = program.place(at);
+        const there = p0 < program.length ? program.locate(p0) : null;
+        if (there && rankAt(s, there.at) === rankAt(s, at)) this.start(at, true);
+        else void this.still(at);
+      },
+      () => {},
+    );
   }
 
   play() {
-    if (this.state === "playing" || this.state === "starting") return;
+    if (this.closed || this.state === "playing" || this.state === "starting") return;
     // The sound card starts on the gesture that asked for it, or a browser
     // keeps it silent.
     void this.audio?.resume();
@@ -410,11 +624,19 @@ export class FrameQueue {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
       this.ramp(1);
+      this.report();
       this.loop();
       return;
     }
+    // Cued: everything is there but the clock.
+    if (this.state === "cued") {
+      this.state = "starting";
+      this.report();
+      this.maybeBegin();
+      return;
+    }
     let from = this.at;
-    if (this.state === "ended" || this.program.place(from) >= this.program.length) {
+    if (this.state === "ended" || (this.movie && this.program.place(from) >= this.program.length)) {
       from = this.program.pieces[0]?.start ?? 0;
     }
     this.start(from);
@@ -422,10 +644,12 @@ export class FrameQueue {
 
   pause() {
     if (this.state === "starting") {
-      // Nothing was heard yet: stop it and stay on the frame shown.
+      // Nothing was heard yet: stop it, stay on the frame shown, and cue
+      // the play again from there.
       this.stopPlay();
       this.state = "paused";
       this.report();
+      this.settle(this.at);
       return;
     }
     if (this.state !== "playing") return;
@@ -435,10 +659,31 @@ export class FrameQueue {
     // held, with everything scheduled kept, so play goes on from here.
     this.ramp(0);
     this.suspendTimer = window.setTimeout(() => void this.audio.suspend(), FADE * 1000 + 10);
+    this.hold();
     this.report();
   }
 
+  // Paused, the picture is the frame that holds the playhead. The playhead
+  // runs up to a frame ahead of the frame drawn for it, and that frame is
+  // nearly always decoded already. Where it is not, the playhead goes back
+  // to the moment the frame on screen was drawn for.
+  private hold() {
+    if (!this.shown || !this.video) return;
+    const want = rankAt(this.video.samples, this.at);
+    if (this.shown.rank === want) return;
+    for (const slot of this.slots) {
+      const i = slot.ready.findIndex((h) => h.rank === want);
+      if (i < 0 || !slot.run) continue;
+      const [h] = slot.ready.splice(i, 1);
+      this.put(h.frame, slot.run.id, h.rank);
+      return;
+    }
+    this.at = this.drawnFor;
+  }
+
   close() {
+    if (this.closed) return;
+    this.closed = true;
     this.stopPlay();
     for (const s of this.slots) {
       this.release(s);
@@ -446,8 +691,27 @@ export class FrameQueue {
     }
     if (this.shown) this.closeFrame(this.shown.frame);
     this.shown = null;
-    if (this.soundDecoder && this.soundDecoder.state !== "closed") this.soundDecoder.close();
-    void this.audio.close();
+    this.soundDecoder?.close();
+    if (this.audio && this.audio.state !== "closed") void this.audio.close();
+    this.reader.forget();
+    this.listeners.clear();
+  }
+
+  // The canvas has this many device pixels, as the stylesheet laid it out.
+  // The frame on it is drawn again to fit.
+  resize(width: number, height: number) {
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    if (this.canvas.width === w && this.canvas.height === h) return;
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.paint();
+  }
+
+  // The frame on the canvas, in its own pixels, for a colour taken from the
+  // picture, or null.
+  picture(): VideoFrame | null {
+    return this.shown?.frame ?? null;
   }
 
   private ramp(to: number) {
@@ -460,19 +724,24 @@ export class FrameQueue {
   private fault(what: string) {
     this.stats.errors.push(what);
     console.error("frame queue:", what);
+    if (this.closed) return;
+    this.trouble = what;
+    this.report();
   }
 
   private emit(s: Shown) {
     for (const fn of this.listeners) fn(s);
   }
 
-  private report() {
+  private report(drew = false) {
     this.emit({
       at: this.at,
       frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
+      drew,
       playing: this.state === "playing" || this.state === "starting",
       ended: this.state === "ended",
       drawnAt: performance.now(),
+      trouble: this.trouble,
     });
   }
 
@@ -483,10 +752,25 @@ export class FrameQueue {
 
   // Draws a frame and closes the one it replaces.
   private put(frame: VideoFrame, run: number, rank: number) {
-    this.draw2d.drawImage(frame, 0, 0, this.canvas.width, this.canvas.height);
     if (this.shown && this.shown.frame !== frame) this.closeFrame(this.shown.frame);
     this.shown = { frame, run, rank };
+    this.paint();
     this.stats.drawn++;
+  }
+
+  // The frame on screen, as large as the canvas allows and in its own
+  // shape, in the middle, on whole pixels, and black around it.
+  private paint() {
+    const c = this.canvas;
+    const g = this.draw2d;
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, c.width, c.height);
+    const f = this.shown?.frame;
+    if (!f || !f.displayWidth || !f.displayHeight) return;
+    const scale = Math.min(c.width / f.displayWidth, c.height / f.displayHeight);
+    const w = Math.round(f.displayWidth * scale);
+    const h = Math.round(f.displayHeight * scale);
+    g.drawImage(f, Math.round((c.width - w) / 2), Math.round((c.height - h) / 2), w, h);
   }
 
   private shownAt(rank: number): number {
@@ -494,17 +778,22 @@ export class FrameQueue {
     return s.pts[s.order[rank]] / s.timescale;
   }
 
-  // ---- A paused frame
+  // ---- A paused frame on its own
 
   private async still(at: number) {
-    await this.ready;
+    try {
+      await this.ready;
+    } catch {
+      return;
+    }
     const ticket = ++this.ticket;
     const slot = this.slots[0];
     this.release(slot);
     const s = this.video!.samples;
     const feed = stillFeed(s, at);
     // Already on screen: nothing to decode.
-    if (this.shown && this.shownAt(this.shown.rank) === this.shownAt(feed.rank) && this.shown.run === -1) {
+    if (this.shown && this.shown.rank === feed.rank) {
+      this.at = at;
       this.report();
       return;
     }
@@ -523,9 +812,7 @@ export class FrameQueue {
       if (ticket !== this.ticket || slot.decoder.state !== "configured") return;
       const ts = stamp(0, s.pts[i] / s.timescale);
       slot.fed.set(ts, s.rank[i]);
-      slot.decoder.decode(
-        new EncodedVideoChunk({ type: s.key[i] ? "key" : "delta", timestamp: ts, data }),
-      );
+      slot.decoder.decode(new EncodedVideoChunk({ type: s.key[i] ? "key" : "delta", timestamp: ts, data }));
     }
     try {
       await slot.decoder.flush();
@@ -534,13 +821,15 @@ export class FrameQueue {
     }
     if (ticket !== this.ticket) return;
     const got = slot.ready.findIndex((h) => h.rank === feed.rank);
+    let drew = false;
     if (got >= 0) {
       const [h] = slot.ready.splice(got, 1);
       this.put(h.frame, -1, h.rank);
+      drew = true;
     }
     this.release(slot);
     this.at = at;
-    this.report();
+    this.report(drew);
   }
 
   // ---- Playing
@@ -557,10 +846,7 @@ export class FrameQueue {
     }
     this.sources.clear();
     for (const s of this.slots) this.release(s);
-    if (this.soundDecoder && this.soundDecoder.state === "configured") {
-      this.soundDecoder.reset();
-      this.soundDecoder.configure(this.soundConfig!);
-    }
+    this.soundDecoder?.restart();
     this.soundFed = [];
     this.soundRunDone.clear();
     this.soundRun = null;
@@ -569,7 +855,6 @@ export class FrameQueue {
     this.vplan = null;
     this.aplan = null;
     this.c0 = null;
-    this.reader.forget();
   }
 
   // Empties a decoder and lets go of its run.
@@ -590,48 +875,76 @@ export class FrameQueue {
     }
   }
 
-  private start(from: number) {
+  // A play from a moment of the episode, or with cue, the same play
+  // prepared and waiting for play.
+  private start(from: number, cue = false) {
     this.stopPlay();
     const ticket = this.ticket;
-    this.state = "starting";
-    void this.audio?.resume();
-    void this.ready.then(() => {
-      if (ticket !== this.ticket) return;
-      this.out.gain.cancelScheduledValues(this.audio.currentTime);
-      this.out.gain.setValueAtTime(1, this.audio.currentTime);
-      const p0 = this.program.place(from);
-      if (!this.program.loop && p0 >= this.program.length) {
-        this.state = "ended";
-        this.report();
-        return;
-      }
-      this.vplan = new VideoPlan(this.video!.samples, this.video!.frame, this.program, p0);
-      this.vplan.extend(p0 + READ_AHEAD);
-      if (this.sound && this.soundDecoder) {
-        this.aplan = new AudioPlan(this.sound.samples, this.sound.sampleRate, this.program, p0);
-        this.aplan.extend(p0 + READ_AHEAD);
-        this.m0 = this.aplan.m0;
-        this.soundReach = this.m0;
-        this.soundDone = false;
-      } else {
-        this.m0 = Math.round(p0 * this.sampleRate);
-        this.soundDone = true;
-      }
-      this.k = 0;
-      this.readAhead();
-      this.pump();
-      this.pumpSound();
-    });
+    this.state = cue ? "cued" : "starting";
+    this.firstShown = false;
+    this.startFrom = from;
+    this.at = from;
+    if (!cue) {
+      void this.audio?.resume();
+      this.report();
+    }
+    this.ready.then(
+      () => {
+        if (ticket !== this.ticket || this.closed) return;
+        this.out.gain.cancelScheduledValues(this.audio.currentTime);
+        this.out.gain.setValueAtTime(1, this.audio.currentTime);
+        const p0 = this.program.place(from);
+        if (!this.program.loop && p0 >= this.program.length) {
+          this.state = "ended";
+          this.report();
+          return;
+        }
+        this.reached = p0;
+        this.vplan = new VideoPlan(this.video!.samples, this.video!.frame, this.program, p0);
+        this.vplan.extend(p0 + READ_AHEAD);
+        if (this.sound && this.soundDecoder) {
+          this.aplan = new AudioPlan(this.sound.samples, this.sound.sampleRate, this.program, p0);
+          this.aplan.extend(p0 + READ_AHEAD);
+          this.m0 = this.aplan.m0;
+          this.soundReach = this.m0;
+          this.soundDone = false;
+        } else {
+          this.m0 = Math.round(p0 * this.sampleRate);
+          this.soundDone = true;
+        }
+        this.k = 0;
+        this.readAhead();
+        this.pump();
+        this.pumpSound();
+      },
+      () => {},
+    );
   }
 
-  // Starts the sound card's clock once the first frame and the first of
-  // the sound are in hand.
+  // Puts the first frame of a play or a cue up the moment it is decoded,
+  // and starts the sound card's clock once the first frame and the first
+  // of the sound are in hand and play was asked for.
   private maybeBegin() {
-    if (this.state !== "starting" || !this.vplan) return;
+    if ((this.state !== "starting" && this.state !== "cued") || !this.vplan) return;
     const need = this.vplan.need(0);
     const slot = need ? this.slotOf(need.run) : null;
-    const frameIn =
-      !need || (this.shown && this.shown.run === need.run && this.shown.rank === need.rank) || slot?.ready[0]?.rank === need.rank;
+    let frameIn = !need || (!!this.shown && this.shown.run === need.run && this.shown.rank === need.rank);
+    if (need && !frameIn && slot?.ready[0]?.rank === need.rank) {
+      const h = slot.ready.shift()!;
+      this.put(h.frame, need.run, h.rank);
+      this.drawnFor = this.vplan.moment(0) ?? this.at;
+      frameIn = true;
+      this.firstShown = true;
+      this.report(true);
+    }
+    // A cue says once that its frame is on the canvas, drawn now or there
+    // already, the way a still does.
+    if (frameIn && !this.firstShown) {
+      this.firstShown = true;
+      this.drawnFor = this.vplan.moment(0) ?? this.at;
+      if (this.state === "cued") this.report();
+    }
+    if (this.state === "cued") return;
     const soundIn =
       this.soundDone || this.soundReach - this.m0 >= SOUND_FIRST * this.sampleRate || (this.aplan?.finished && this.soundRun === null);
     if (!frameIn || !soundIn) return;
@@ -678,7 +991,10 @@ export class FrameQueue {
   private tick(now: number) {
     if (this.state !== "playing" || !this.vplan) return;
     const plan = this.vplan;
-    const pos = this.position(now);
+    // Never back: the sound heard only ever moves on, and a stamp that says
+    // a hair less than the last one is the clock's jitter.
+    const pos = Math.max(this.position(now), this.reached);
+    this.reached = pos;
     plan.extend(pos + READ_AHEAD);
     this.aplan?.extend(pos + READ_AHEAD);
     const k = Math.max(this.k, plan.gridAt(pos));
@@ -687,6 +1003,7 @@ export class FrameQueue {
       return;
     }
     this.k = k;
+    let drew = false;
     const need = plan.need(k);
     if (need) {
       const slot = this.slotOf(need.run);
@@ -699,8 +1016,8 @@ export class FrameQueue {
           if (slot.ready[0]?.rank === need.rank) {
             const h = slot.ready.shift()!;
             this.put(h.frame, need.run, h.rank);
-            this.at = plan.moment(k) ?? this.at;
-            this.emit({ at: this.at, frame: this.shownAt(h.rank), playing: true, ended: false, drawnAt: now });
+            this.drawnFor = plan.moment(k) ?? this.drawnFor;
+            drew = true;
           } else {
             this.stats.late++;
           }
@@ -709,6 +1026,17 @@ export class FrameQueue {
         }
       }
     }
+    const there = this.program.locate(pos);
+    if (there) this.at = there.at;
+    this.emit({
+      at: this.at,
+      frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
+      drew,
+      playing: true,
+      ended: false,
+      drawnAt: now,
+      trouble: this.trouble,
+    });
     // A run whose frames are all behind the playhead is done with.
     for (const s of this.slots) if (s.run && s.run.id >= 0 && s.run.kLast < k) this.release(s);
     plan.forget(k);
@@ -743,8 +1071,9 @@ export class FrameQueue {
   private readAhead() {
     const want: { from: number; to: number }[] = [];
     const v = this.video!.samples;
+    const ahead = this.state === "cued" ? CUE_AHEAD : READ_AHEAD;
     if (this.vplan) {
-      const frames = Math.ceil(READ_AHEAD / this.video!.frame);
+      const frames = Math.ceil(ahead / this.video!.frame);
       let budget = frames * 2;
       for (const run of this.vplan.runs) {
         if (run.kLast < this.k) continue;
@@ -757,7 +1086,9 @@ export class FrameQueue {
     }
     if (this.aplan && this.sound) {
       const a = this.sound.samples;
-      let budget = Math.ceil((READ_AHEAD * this.sound.sampleRate) / 960);
+      // Packets of 20 ms, the shortest any codec here has, so a budget is
+      // never short. Plain sound is read by the chunk.
+      let budget = Math.ceil(ahead / 0.02);
       for (const run of this.aplan.runs) {
         if (budget <= 0) break;
         if (this.soundRun && run.id < this.soundRun.id) continue;
@@ -776,7 +1107,7 @@ export class FrameQueue {
 
   private pump() {
     const plan = this.vplan;
-    if (!plan || (this.state !== "starting" && this.state !== "playing")) return;
+    if (!plan || (this.state !== "starting" && this.state !== "playing" && this.state !== "cued")) return;
     // Put runs on free decoders: the run being drawn, and the next one
     // once it is close.
     for (const run of plan.runs) {
@@ -839,7 +1170,7 @@ export class FrameQueue {
     const rank = slot.fed.get(frame.timestamp);
     slot.fed.delete(frame.timestamp);
     const run = slot.run;
-    if (rank === undefined || !run) {
+    if (rank === undefined || !run || this.closed) {
       this.stats.unseen++;
       this.closeFrame(frame);
       return;
@@ -860,7 +1191,7 @@ export class FrameQueue {
     } else {
       slot.ready.push({ frame, rank });
     }
-    if (this.state === "starting") this.maybeBegin();
+    if (this.state === "starting" || this.state === "cued") this.maybeBegin();
     this.pump();
   }
 
@@ -870,11 +1201,11 @@ export class FrameQueue {
     const plan = this.aplan;
     const dec = this.soundDecoder;
     if (!plan || !dec || dec.state !== "configured" || this.soundDone) return;
-    if (this.state !== "starting" && this.state !== "playing") return;
+    if (this.state !== "starting" && this.state !== "playing" && this.state !== "cued") return;
     const s = this.sound!.samples;
     const rate = this.sampleRate;
     const heard = this.c0 === null ? this.m0 : Math.round(this.position(performance.now()) * rate);
-    const ahead = (this.state === "starting" ? SOUND_FIRST * 2 : SOUND_AHEAD) * rate;
+    const ahead = (this.c0 === null ? SOUND_FIRST * 2 : SOUND_AHEAD) * rate;
     for (;;) {
       if (!this.soundRun) {
         const next = plan.runs.find((r) => !this.soundRunDone.has(r.id));
@@ -908,14 +1239,12 @@ export class FrameQueue {
       }
       const ts = stamp(run.id, s.pts[j] / s.timescale);
       this.soundFed.push({ ts, run, j, length: (s.duration[j] / s.timescale) * 1e6 });
-      dec.decode(new EncodedAudioChunk({ type: "key", timestamp: ts, data }));
       this.soundNext++;
       const p = plan.packet(j);
       for (const sl of plan.slices(run, j, p.n)) this.soundReach = Math.max(this.soundReach, sl.out + (sl.to - sl.from));
+      dec.decode(ts, data);
     }
   }
-
-  private soundRunDone = new Set<number>();
 
   private finishSound() {
     if (this.soundDone || !this.soundDecoder) return;
@@ -934,7 +1263,16 @@ export class FrameQueue {
     );
   }
 
-  private soundOut(d: AudioData) {
+  private soundOut(d: Sound) {
+    // The decoder says the rate it puts the sound out at. Where that is not
+    // the rate the file said, HE-AAC said only inside its sound above all,
+    // the play starts over at the decoder's rate, before anything is heard.
+    if (this.sound && this.c0 === null && Math.abs(d.sampleRate - this.sound.sampleRate) > 1) {
+      d.close();
+      this.sound.sampleRate = d.sampleRate;
+      this.start(this.startFrom, this.state === "cued");
+      return;
+    }
     // A packet that came out as nothing is passed over: the stretch is
     // further on than that packet could be by its stamp, and as near to
     // the next one as it should be.
@@ -965,7 +1303,7 @@ export class FrameQueue {
         let at = sl.from;
         while (at < sl.to) {
           const out = sl.out + (at - sl.from);
-          if (this.pending && this.pending.out + this.pending.length !== out) {
+          if (this.pending && (this.pending.out + this.pending.length !== out || this.pending.data.length !== channels)) {
             this.hand(this.pending);
             this.pending = null;
           }
@@ -992,7 +1330,7 @@ export class FrameQueue {
       }
     }
     d.close();
-    if (this.state === "starting") this.maybeBegin();
+    if (this.state === "starting" || this.state === "cued") this.maybeBegin();
     this.pumpSound();
   }
 

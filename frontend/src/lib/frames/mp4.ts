@@ -38,10 +38,23 @@ export type AudioTrack = {
   kind: "audio";
   codec: string;
   description?: Uint8Array;
+  // The samples a second the sound comes out of the decoder at, which is
+  // what it is played at. For HE-AAC that is twice the rate of its core,
+  // and the core rate is what the decoder is set up with, decoderRate.
   sampleRate: number;
+  decoderRate: number;
   channels: number;
   samples: Samples;
+  // Sound that is stored as it is played, which needs no decoder at all.
+  // Its samples are the file's chunks, not the single sound frames the
+  // file counts, see pcmSamples.
+  pcm?: Pcm;
 };
+
+// How plain sound is laid out: bytes per sample of one channel, whether
+// they are floating point, little-endian and signed. The channels of one
+// moment lie next to each other.
+export type Pcm = { bytes: number; float: boolean; little: boolean; signed: boolean };
 
 // The samples of one track, in the order they are decoded. Times are in
 // the track's own ticks, already moved by its edit list, so a time of zero
@@ -254,9 +267,27 @@ function parseTrak(v: View, trak: Box, movieScale: number): VideoTrack | AudioTr
   const entry = [...boxesIn(v, stsd.body + 8, stsd.end)][0];
   if (!entry) fail("a track has no sample description");
   const shift = editShift(v, trak, movieScale, timescale);
-  const samples = parseSamples(v, stbl, shift, timescale, handler === "vide");
-  if (handler === "vide") return videoEntry(v, entry, samples);
-  return audioEntry(v, entry, samples);
+  if (handler === "vide") return videoEntry(v, entry, parseSamples(v, stbl, shift, timescale, true));
+  // Plain sound counts every moment of every channel as a sample of its
+  // own, so four hours of it are hundreds of millions of samples. It is
+  // read by the chunk instead.
+  const pcm = pcmOf(v, entry);
+  if (pcm) {
+    const channels = soundChannels(v, entry);
+    if (![1, 2, 3, 4, 8].includes(pcm.bytes) || (pcm.float && pcm.bytes < 4) || channels < 1 || channels > 32) {
+      fail("the plain sound is laid out in a way that is not read");
+    }
+    return {
+      kind: "audio",
+      codec: "pcm",
+      sampleRate: soundRate(v, entry) || timescale,
+      decoderRate: soundRate(v, entry) || timescale,
+      channels,
+      samples: pcmSamples(v, stbl, shift, timescale, pcm.bytes * channels),
+      pcm,
+    };
+  }
+  return audioEntry(v, entry, parseSamples(v, stbl, shift, timescale, false));
 }
 
 // How far the edit list moves the track, in the track's ticks. The usual
@@ -448,22 +479,199 @@ export function hevcCodec(type: string, d: Uint8Array): string {
   return parts.join(".");
 }
 
-function audioEntry(v: View, entry: Box, samples: Samples): AudioTrack {
-  // The sound description is the ISO one, or QuickTime's version 1 or 2,
-  // which put more fields before the boxes inside.
-  const version = v.u16(entry.body + 8);
-  let channels = v.u16(entry.body + 16);
-  let sampleRate = v.u32(entry.body + 24) / 65536;
-  let inner = entry.body + 28;
-  if (version === 1) inner += 16;
-  if (version === 2) {
+// The sound description is the ISO one, or QuickTime's version 1 or 2,
+// which put more fields before the boxes inside.
+function soundVersion(v: View, entry: Box): number {
+  return v.u16(entry.body + 8);
+}
+
+function soundChannels(v: View, entry: Box): number {
+  return soundVersion(v, entry) === 2 ? v.u32(entry.body + 40) : v.u16(entry.body + 16);
+}
+
+function soundRate(v: View, entry: Box): number {
+  if (soundVersion(v, entry) === 2) {
     v.u32(entry.body + 36);
-    sampleRate = new DataView(v.bytes.buffer, v.bytes.byteOffset).getFloat64(entry.body + 32);
-    channels = v.u32(entry.body + 40);
-    inner = entry.body + 64;
+    return new DataView(v.bytes.buffer, v.bytes.byteOffset).getFloat64(entry.body + 32);
   }
-  const box = { body: inner, end: entry.end };
+  return v.u32(entry.body + 24) / 65536;
+}
+
+// Where the boxes inside a sound description begin.
+function soundBoxes(v: View, entry: Box): { body: number; end: number } {
+  const version = soundVersion(v, entry);
+  const inner = entry.body + (version === 2 ? 64 : version === 1 ? 44 : 28);
   if (inner > entry.end) fail("the sound description is too short");
+  return { body: inner, end: entry.end };
+}
+
+// Plain sound, by the four letters QuickTime and ISO give it, or nothing
+// when the sound has to be decoded. QuickTime's in24, in32, fl32 and fl64
+// are big-endian unless an enda box says otherwise, and lpcm says
+// everything in the fields of its version 2 description.
+function pcmOf(v: View, entry: Box): Pcm | undefined {
+  const type = entry.type;
+  const bits = () => v.u16(entry.body + 18);
+  const little = (): boolean => {
+    const inner = soundBoxes(v, entry);
+    const enda = child(v, inner, "enda") ?? path(v, inner, "wave", "enda");
+    return !!enda && enda.end - enda.body >= 2 && v.u16(enda.body) === 1;
+  };
+  switch (type) {
+    case "sowt":
+      return { bytes: Math.max(bits(), 8) / 8, float: false, little: true, signed: true };
+    case "twos":
+      return { bytes: Math.max(bits(), 8) / 8, float: false, little: false, signed: true };
+    case "raw ":
+      return { bytes: 1, float: false, little: false, signed: false };
+    case "in24":
+      return { bytes: 3, float: false, little: little(), signed: true };
+    case "in32":
+      return { bytes: 4, float: false, little: little(), signed: true };
+    case "fl32":
+      return { bytes: 4, float: true, little: little(), signed: true };
+    case "fl64":
+      return { bytes: 8, float: true, little: little(), signed: true };
+    case "lpcm": {
+      if (soundVersion(v, entry) !== 2) fail("an lpcm track without its version 2 description");
+      const depth = v.u32(entry.body + 48);
+      const flags = v.u32(entry.body + 52);
+      const float = (flags & 1) !== 0;
+      return { bytes: depth / 8, float, little: (flags & 2) === 0, signed: float || (flags & 4) !== 0 };
+    }
+    case "ipcm":
+    case "fpcm": {
+      const pcmC = child(v, soundBoxes(v, entry), "pcmC");
+      if (!pcmC) fail(`a ${type} track has no pcmC box`);
+      return { bytes: v.u8(pcmC.body + 5) / 8, float: type === "fpcm", little: (v.u8(pcmC.body + 4) & 1) === 1, signed: true };
+    }
+  }
+  return undefined;
+}
+
+// The samples of plain sound, one a chunk of the file: where the chunk
+// starts, how many bytes it is, and the sound frames in it as its length.
+// A file counts one sample for each moment of the sound, every channel
+// together, so the chunk table says how many lie in each chunk.
+function pcmSamples(v: View, stbl: Box, shift: number, timescale: number, frameBytes: number): Samples {
+  if (frameBytes <= 0 || frameBytes > 256) fail("the plain sound is laid out in a way that is not read");
+  const chunks = child(v, stbl, "stco") ?? child(v, stbl, "co64");
+  if (!chunks) fail("a track has no chunk offsets");
+  const wide = chunks.type === "co64";
+  const chunkCount = v.u32(chunks.body + 4);
+  if (chunkCount > 50_000_000) fail("a track has more chunks than any episode");
+  const stsc = child(v, stbl, "stsc");
+  if (!stsc) fail("a track has no sample to chunk table");
+  const stts = child(v, stbl, "stts");
+  if (!stts) fail("a track has no time to sample table");
+  // Every moment lasts the same, in all but very rare files.
+  const step = v.u32(stts.body + 4) ? v.u32(stts.body + 12) || 1 : 1;
+  const runs = v.u32(stsc.body + 4);
+  const count = chunkCount;
+  const offset = new Float64Array(count);
+  const size = new Uint32Array(count);
+  const pts = new Float64Array(count);
+  const duration = new Float64Array(count);
+  let frames = 0;
+  for (let r = 0; r < runs; r++) {
+    const first = v.u32(stsc.body + 8 + r * 12) - 1;
+    const perChunk = v.u32(stsc.body + 12 + r * 12);
+    const last = r + 1 < runs ? v.u32(stsc.body + 8 + (r + 1) * 12) - 1 : chunkCount;
+    if (first < 0 || last > chunkCount || last < first) fail("the sample to chunk table is broken");
+    for (let c = first; c < last; c++) {
+      offset[c] = wide ? v.u64(chunks.body + 8 + c * 8) : v.u32(chunks.body + 8 + c * 4);
+      size[c] = perChunk * frameBytes;
+      pts[c] = frames * step + shift;
+      duration[c] = perChunk * step;
+      frames += perChunk;
+    }
+  }
+  const key = new Uint8Array(count).fill(1);
+  const order = new Uint32Array(count);
+  for (let i = 0; i < count; i++) order[i] = i;
+  return { count, timescale, offset, size, pts, duration, key, order, rank: order.slice() };
+}
+
+// The sound of plain samples as one array a channel, the way the sound
+// card takes it, written into out from the start.
+export function pcmPlanes(bytes: Uint8Array, pcm: Pcm, channels: number, out: Float32Array[]): number {
+  const frame = pcm.bytes * channels;
+  const n = Math.floor(bytes.length / frame);
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const le = pcm.little;
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < channels; c++) {
+      const at = i * frame + c * pcm.bytes;
+      let x: number;
+      if (pcm.float) {
+        x = pcm.bytes === 8 ? dv.getFloat64(at, le) : dv.getFloat32(at, le);
+      } else if (pcm.bytes === 1) {
+        x = pcm.signed ? dv.getInt8(at) / 128 : (dv.getUint8(at) - 128) / 128;
+      } else if (pcm.bytes === 2) {
+        x = dv.getInt16(at, le) / 32768;
+      } else if (pcm.bytes === 3) {
+        const b0 = bytes[at];
+        const b1 = bytes[at + 1];
+        const b2 = bytes[at + 2];
+        let u = le ? b0 | (b1 << 8) | (b2 << 16) : (b0 << 16) | (b1 << 8) | b2;
+        if (u & 0x800000) u -= 0x1000000;
+        x = u / 8388608;
+      } else {
+        x = dv.getInt32(at, le) / 2147483648;
+      }
+      out[c][i] = x;
+    }
+  }
+  return n;
+}
+
+// The rate AAC comes out of the decoder at, from its AudioSpecificConfig.
+// HE-AAC is a core at half the rate with the top half of the sound made
+// back on top of it, so it comes out at twice the core rate, in frames of
+// 2048 rather than 1024. The file says it either by its object type, 5 or
+// 29, or with the core's type and an extension after the core's own
+// config, which a decoder that does not know HE-AAC can pass over.
+export function aacRate(config: Uint8Array): { core: number; out: number } {
+  const rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  let at = 0;
+  const bits = (n: number): number => {
+    let x = 0;
+    for (let i = 0; i < n; i++) {
+      const byte = config[at >> 3];
+      if (byte === undefined) fail("the AAC configuration is too short");
+      x = x * 2 + ((byte >> (7 - (at & 7))) & 1);
+      at++;
+    }
+    return x;
+  };
+  const type = () => {
+    const t = bits(5);
+    return t === 31 ? 32 + bits(6) : t;
+  };
+  const rate = () => {
+    const i = bits(4);
+    return i === 15 ? bits(24) : (rates[i] ?? 0);
+  };
+  let kind = type();
+  const core = rate();
+  bits(4);
+  if (kind === 5 || kind === 29) return { core, out: rate() };
+  // The extension after the core's config, for plain AAC: the frame
+  // length, the core coder and the extension flag, then the sync word.
+  if (kind === 2 && config.length * 8 - at >= 3 + 16) {
+    bits(3);
+    if (config.length * 8 - at >= 16 && bits(11) === 0x2b7) {
+      kind = type();
+      if (kind === 5 && bits(1) === 1) return { core, out: rate() };
+    }
+  }
+  return { core, out: core };
+}
+
+function audioEntry(v: View, entry: Box, samples: Samples): AudioTrack {
+  const channels = soundChannels(v, entry);
+  const sampleRate = soundRate(v, entry);
+  const box = soundBoxes(v, entry);
   switch (entry.type) {
     case "mp4a": {
       // MOV keeps esds inside a wave box.
@@ -471,11 +679,19 @@ function audioEntry(v: View, entry: Box, samples: Samples): AudioTrack {
       if (!esds) fail("an AAC track has no esds box");
       const config = audioSpecificConfig(v, esds);
       const objectType = config[0] >> 3 === 31 ? 32 + (((config[0] & 7) << 3) | (config[1] >> 5)) : config[0] >> 3;
+      let rates = { core: 0, out: 0 };
+      try {
+        rates = aacRate(config);
+      } catch {
+        // The rate the decoder says on its first sound is taken instead.
+      }
+      const core = rates.core || sampleRate || samples.timescale;
       return {
         kind: "audio",
         codec: `mp4a.40.${objectType}`,
         description: config,
-        sampleRate: sampleRate || samples.timescale,
+        sampleRate: rates.out || core,
+        decoderRate: core,
         channels,
         samples,
       };
@@ -483,7 +699,7 @@ function audioEntry(v: View, entry: Box, samples: Samples): AudioTrack {
     case "Opus": {
       const dOps = child(v, box, "dOps");
       if (!dOps) fail("an Opus track has no dOps box");
-      return { kind: "audio", codec: "opus", description: opusHead(v, dOps), sampleRate: 48000, channels, samples };
+      return { kind: "audio", codec: "opus", description: opusHead(v, dOps), sampleRate: 48000, decoderRate: 48000, channels, samples };
     }
     default:
       fail(`the sound is ${entry.type.trim()}, which the video preview cannot decode`);

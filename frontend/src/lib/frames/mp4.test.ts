@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { findMoov, hevcCodec, MP4Error, parseMoov, rankAt } from "./mp4";
+import { aacRate, findMoov, hevcCodec, MP4Error, parseMoov, pcmPlanes, rankAt, type Pcm } from "./mp4";
 
 // The boxes are written out here by hand, the way a muxer writes them, so
 // the tests need no file and no ffmpeg. Each test builds only what it is
@@ -153,6 +153,53 @@ describe("parseMoov", () => {
     expect(Array.from(a.samples.pts)).toEqual([-1024, 0, 1024]);
   });
 
+  test("reads plain sound by the chunk, however many moments the file counts", () => {
+    // QuickTime's 16 bit little-endian sound, two channels at 48000, the
+    // way ffmpeg writes pcm_s16le into a MOV: a sample for every moment,
+    // here 48000 and 24000 of them in two chunks.
+    const sowt = box("sowt", zeros(6), u16(1), u16(0), zeros(6), u16(2), u16(16), zeros(4), u32(48000 * 65536));
+    const m = parseMoov(
+      movie(trak(tkhd(), "soun", 48000, sowt, [stts([[72000, 1]]), full("stsz", 0, u32(4), u32(72000)), stsc([[1, 48000], [2, 24000]]), stco([1000, 500000])])),
+    );
+    const a = m.audio!;
+    expect(a.codec).toBe("pcm");
+    expect(a.pcm).toEqual({ bytes: 2, float: false, little: true, signed: true });
+    expect([a.sampleRate, a.channels]).toEqual([48000, 2]);
+    expect(a.samples.count).toBe(2);
+    expect(Array.from(a.samples.offset)).toEqual([1000, 500000]);
+    expect(Array.from(a.samples.size)).toEqual([192000, 96000]);
+    expect(Array.from(a.samples.pts)).toEqual([0, 48000]);
+    expect(Array.from(a.samples.duration)).toEqual([48000, 24000]);
+    expect(m.duration).toBe(1.5);
+  });
+
+  test("reads which way round plain sound is from its four letters, enda and lpcm's flags", () => {
+    const desc = (type: string, bits: number, ...inner: number[][]) =>
+      box(type, zeros(6), u16(1), u16(0), zeros(6), u16(1), u16(bits), zeros(4), u32(44100 * 65536), ...inner);
+    const lpcm = (flags: number, bits: number) =>
+      box("lpcm", zeros(6), u16(1), u16(2), zeros(6), u16(3), u16(16), [0xff, 0xfe], u16(0), u32(65536), u32(72), [0x40, 0xe7, 0x70, 0, 0, 0, 0, 0], u32(1), u32(0x7f000000), u32(bits), u32(flags), u32(bits / 8), u32(1));
+    const pcmOf = (entry: number[]) =>
+      parseMoov(movie(trak(tkhd(), "soun", 44100, entry, [stts([[10, 1]]), full("stsz", 0, u32(2), u32(10)), stsc([[1, 10]]), stco([0])]))).audio!;
+    expect(pcmOf(desc("twos", 16)).pcm).toEqual({ bytes: 2, float: false, little: false, signed: true });
+    expect(pcmOf(desc("in24", 24)).pcm).toEqual({ bytes: 3, float: false, little: false, signed: true });
+    expect(pcmOf(desc("in24", 24, box("wave", box("enda", u16(1))))).pcm).toEqual({ bytes: 3, float: false, little: true, signed: true });
+    expect(pcmOf(desc("fl32", 32)).pcm).toEqual({ bytes: 4, float: true, little: false, signed: true });
+    expect(pcmOf(desc("fl64", 64, box("enda", u16(1)))).pcm).toEqual({ bytes: 8, float: true, little: true, signed: true });
+    expect(pcmOf(desc("ipcm", 16, full("pcmC", 0, [1, 24]))).pcm).toEqual({ bytes: 3, float: false, little: true, signed: true });
+    // lpcm: float 1, big-endian 2, signed 4.
+    const l = pcmOf(lpcm(1 | 8, 32));
+    expect(l.pcm).toEqual({ bytes: 4, float: true, little: true, signed: true });
+    expect(l.sampleRate).toBe(48000);
+    expect(pcmOf(lpcm(2 | 4 | 8, 24)).pcm).toEqual({ bytes: 3, float: false, little: false, signed: true });
+  });
+
+  test("names sound it cannot play", () => {
+    const alaw = box("alaw", zeros(6), u16(1), u16(0), zeros(6), u16(1), u16(8), zeros(4), u32(8000 * 65536));
+    expect(() =>
+      parseMoov(movie(trak(tkhd(), "soun", 8000, alaw, [stts([[1, 160]]), stsz([160]), stsc([[1, 1]]), stco([0])]))),
+    ).toThrow(/alaw/);
+  });
+
   test("leaves out a track that is switched off", () => {
     const m = parseMoov(
       movie(
@@ -249,5 +296,44 @@ describe("rankAt", () => {
     expect(rankAt(s, 0.1 + 0.2 - 0.3 + 0.04 - 1e-12)).toBe(1);
     expect(rankAt(s, -5)).toBe(0);
     expect(rankAt(s, 1000)).toBe(99);
+  });
+});
+
+describe("pcmPlanes", () => {
+  const planes = (bytes: number[], pcm: Pcm, channels: number) => {
+    const out = Array.from({ length: channels }, () => new Float32Array(8));
+    const n = pcmPlanes(new Uint8Array(bytes), pcm, channels, out);
+    return out.map((c) => Array.from(c.subarray(0, n)));
+  };
+  test("splits the channels and scales every layout to the same loudness", () => {
+    const half = 0.5;
+    expect(planes([0x00, 0x40, 0x00, 0xc0], { bytes: 2, float: false, little: true, signed: true }, 2)).toEqual([[half], [-half]]);
+    expect(planes([0x40, 0x00, 0xc0, 0x00], { bytes: 2, float: false, little: false, signed: true }, 1)).toEqual([[half, -half]]);
+    expect(planes([0x00, 0x00, 0x40, 0x00, 0x00, 0xc0], { bytes: 3, float: false, little: true, signed: true }, 1)).toEqual([[half, -half]]);
+    expect(planes([0x40, 0x00, 0x00, 0xc0, 0x00, 0x00], { bytes: 3, float: false, little: false, signed: true }, 1)).toEqual([[half, -half]]);
+    expect(planes([0x40, 0, 0, 0], { bytes: 4, float: false, little: false, signed: true }, 1)).toEqual([[half]]);
+    expect(planes([0x3f, 0, 0, 0], { bytes: 4, float: true, little: false, signed: true }, 1)).toEqual([[half]]);
+    expect(planes([0, 0, 0, 0, 0, 0, 0xe0, 0x3f], { bytes: 8, float: true, little: true, signed: true }, 1)).toEqual([[half]]);
+    expect(planes([0xc0, 0x40], { bytes: 1, float: false, little: false, signed: false }, 1)).toEqual([[half, -half]]);
+  });
+  test("leaves a moment cut short at the end of the bytes out", () => {
+    expect(planes([0, 0x40, 0, 0x40, 0], { bytes: 2, float: false, little: true, signed: true }, 2)).toEqual([[0.5], [0.5]]);
+  });
+});
+
+describe("aacRate", () => {
+  test("plain AAC comes out at its own rate", () => {
+    // AAC LC, 44100, two channels.
+    expect(aacRate(new Uint8Array([0x12, 0x10]))).toEqual({ core: 44100, out: 44100 });
+  });
+  test("HE-AAC said by its object type comes out at twice the core", () => {
+    // SBR, 24000 core, two channels, 48000 out, then AAC LC.
+    expect(aacRate(new Uint8Array([0x2b, 0x11, 0x88, 0x00]))).toEqual({ core: 24000, out: 48000 });
+    // PS, the same, as an iPhone writes HE-AAC v2.
+    expect(aacRate(new Uint8Array([0xeb, 0x09, 0x88, 0x00]))).toEqual({ core: 24000, out: 48000 });
+  });
+  test("HE-AAC said after the core's config, which a plain decoder passes over", () => {
+    // AAC LC at 24000 in stereo, then 0x2b7, SBR, present, 48000.
+    expect(aacRate(new Uint8Array([0x13, 0x10, 0x56, 0xe5, 0x98]))).toEqual({ core: 24000, out: 48000 });
   });
 });
