@@ -2,9 +2,10 @@
 // alike. The video preview follows the hand, which is the quickest way to
 // find a moment. One seek a frame is enough, and it keeps a four hour
 // episode moving: the pointer reports far more often than a frame is
-// drawn, and every seek a frame cannot show is a seek the video element
-// has to throw away. The last place the hand was is sought again when it
-// lets go, so the playhead ends exactly where it was let go.
+// drawn, and every seek a frame cannot show is a seek the video preview
+// has to throw away. Where the hand lets go is sought when it lets go,
+// unless it was the last moment sought, so the playhead ends exactly where
+// it was let go.
 //
 // One function for both, because the two are one playhead seen at two
 // distances: a drag that felt different on each would be two playheads.
@@ -22,12 +23,21 @@ export function scrub(
   target.setPointerCapture(event.pointerId);
   let wanted = timeAt(event.clientX);
   let queued = 0;
+  // The moment last sent, so letting go where the last seek went sends
+  // nothing more. While the video plays, a click sent again as the hand
+  // came up started the play over from the click, and the playhead that
+  // had moved on from it went back.
+  let sent = NaN;
+  const send = (t: number) => {
+    sent = t;
+    seek(t);
+  };
   const soon = (t: number) => {
     wanted = t;
     if (queued) return;
     queued = requestAnimationFrame(() => {
       queued = 0;
-      seek(wanted);
+      send(wanted);
     });
   };
   holding?.(true);
@@ -40,7 +50,7 @@ export function scrub(
     cancelAnimationFrame(queued);
     queued = 0;
     holding?.(false);
-    seek(wanted);
+    if (wanted !== sent) send(wanted);
   };
   target.addEventListener("pointermove", move);
   target.addEventListener("pointerup", up);

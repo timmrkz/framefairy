@@ -1,13 +1,14 @@
 // Where the playhead is, as far as playing goes: on the chosen clip or on
 // the video. It is a state, set by the gesture that put the playhead
-// there, and never worked out from the video's clock.
+// there, and never worked out from a clock.
 //
-// It used to be a distance. The space bar played the clip when the
-// playhead stood within half a frame of its start and before its end, and
-// the episode anywhere else. But the playhead is never where it was put:
-// the paused video on the Mac answers with where the frame it shows
-// begins, up to a frame before the moment it was sent to, a video that has
-// read nothing answers zero, and every answer replaced the playhead. A
+// It used to be a distance, when the video preview was a video element.
+// The space bar played the clip when the playhead stood within half a
+// frame of its start and before its end, and the episode anywhere else.
+// But the playhead was never where it was put: the paused video on the
+// Mac answered with where the frame it showed began, up to a frame before
+// the moment it was sent to, a video that had read nothing answered zero,
+// and every answer replaced the playhead. A
 // clip just picked then measured as before its own start, and the space
 // bar played the episode straight through its cuts and past its end. Each
 // fix moved the place the measurement could round to the wrong side. A
@@ -18,8 +19,8 @@ import type { Piece } from "./flow";
 
 // On the clip, on the clip at its end, or on the video. The end is a place
 // of its own because the space bar starts the clip over from there, and
-// the video's answer, a frame before the end, must not make that a play
-// of the clip's last frame.
+// a playhead in the clip's last frame, where a trim on frames leaves it,
+// must not make that a play of that one frame.
 export type Place = "video" | "clip" | "end";
 
 // The place, and the clip it is about. A place on one clip says nothing
@@ -43,14 +44,15 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 // on the clip, and any other frame is on the video. Either way, the frame
 // that holds the clip's last moment is its end, and so is the end itself.
 //
-// By frame and not by second, because the playhead the next gesture
-// starts from is the video's answer, and the paused video on the Mac
-// answers with where the frame it shows begins. A clip starting at 12.37
-// at twenty-five frames a second is in the frame from 12.36, so a step
-// back and a step forward land on 12.36, which by the second is before the
-// clip, and the clip dimmed while its own first frame was on screen. And
-// a trim of the end on frames leaves the playhead a frame before the end,
-// in the clip's last frame, which is where a play of the clip stops.
+// By frame and not by second, because what is on screen is a frame. A
+// clip starting at 12.37 at twenty-five frames a second begins in the
+// frame from 12.36, and a step onto 12.36 shows the clip's own first
+// frame. Decided by the second, that was before the clip, and the clip
+// dimmed while its own first frame was on screen: the video element on
+// the Mac answered a seek with where its frame began, and steps went from
+// there. And a trim of the end on frames leaves the playhead a frame
+// before the end, in the clip's last frame, which is where a play of the
+// clip stops.
 export function placeOf(pieces: Piece[], key: string, at: number, fps: number, about?: "clip"): Playhead {
   if (!key || !pieces.length) return onVideo;
   const start = pieces[0].start;
@@ -65,8 +67,8 @@ export function placeOf(pieces: Piece[], key: string, at: number, fps: number, a
   return { place: at >= end || frame >= last ? "end" : "clip", clip: key };
 }
 
-// Which frame of the episode a moment falls in, counted from its start,
-// the same frame frameStart in lib/flow.ts begins.
+// Which frame of the episode a moment falls in, counted from its start, in
+// an episode of a steady rate: the frame the video preview draws for it.
 function frameIndex(t: number, fps: number): number {
   return Math.floor(Math.max(t, 0) * fps + 1e-6);
 }
@@ -84,9 +86,9 @@ export function placeFor(p: Playhead, key: string | null | undefined): Place {
 // clip's rules are not in play.
 //
 // On the clip it is the clip from the playhead. From a cut, the end of that
-// cut. From before the clip's start, which only the video's answer can put
-// the playhead at, and from its end, the start: the clip starts over, the
-// way QuickTime starts a video over from its end.
+// cut. From before the clip's start, inside the frame the clip begins in,
+// and from its end, the start: the clip starts over, the way QuickTime
+// starts a video over from its end.
 export function playFrom(place: Place, pieces: Piece[], at: number): { clip: boolean; at: number } {
   if (place === "video" || !pieces.length) return { clip: false, at };
   const start = pieces[0].start;
