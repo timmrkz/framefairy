@@ -131,7 +131,7 @@ export interface Word {
 // clock. toWords puts edges on words, and frame is one frame of the episode.
 export interface Gesture {
   kind: "trim" | "cut" | "move" | "join" | "restore";
-  edge: "start" | "end" | "both" | "";
+  edge: "start" | "end" | "both" | "from" | "to" | "";
   index: number;
   from: number;
   to: number;
@@ -174,6 +174,9 @@ export interface ClipView {
   // The moments of the episode the render takes a picture of the short at,
   // in time order.
   thumbnails: number[];
+  // Where the clip's outer edges were before anything changed them, start
+  // and end, which a double-click on an edge puts it back to.
+  found: [number, number];
 }
 
 // One line of a caption, the way the render lays it out.
