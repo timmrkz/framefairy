@@ -9,20 +9,199 @@ const noticeTexts = import.meta.glob("../../notices/texts/*.txt", {
 }) as Record<string, string>;
 
 // ?webkitclock gives the video the clock WebKit gives it while it plays.
-// WebKit works the time out from the wall clock between the reports of the
-// player underneath, and puts it back whenever a report says the picture
-// is behind, which is most of all while playing starts and whenever the
-// file is slow to read. See TimeProgressEstimator in WebKit's
-// MediaPlayerPrivateRemote.cpp. Chromium's clock only goes forward, so
-// without this a playhead going back and forth over the picture could not
-// be made here at all. It is put back by 0.15 s for 60 ms of every 400.
+// WebKit works a playing video's time out from the wall clock between the
+// reports of the player underneath, TimeProgressEstimator in WebKit's
+// MediaPlayerPrivateRemote.cpp, and never lets it go back: it returns the
+// larger of the estimate and what it returned last. What it can do is run
+// ahead. Playing starts on the clock before the picture underneath has
+// started, and when the first report says where the picture really is,
+// the clock stands still until the picture has caught up, while the
+// picture and the sound play on. That is the playhead Tim saw stop for half
+// a second soon after the space bar.
+//
+// Here the picture starts 400 ms after play is asked for, the way the
+// player underneath gets going, while the element already says it plays.
+// Until the first report, 800 ms after the ask, the clock is the wall
+// clock from where the play began. After it, it is the real clock, never
+// lower than what it said last. Chromium's clock and picture start
+// together, so without this nothing here could run ahead of the picture
+// and then stand.
+//
+// A seek while it plays is the same start over again, from where it was
+// sent, the way WebKit's seekToTarget hands the estimate the player's
+// answer once the seek has landed, with the rate it plays at. While the
+// seek is on its way the clock says where it was sent. From the moment it
+// lands the clock runs on from there by the wall clock, the picture starts
+// 400 ms later, and the first report, 800 ms after the landing, makes the
+// clock stand until the picture has caught up. No frame is put on screen
+// before the picture starts, so requestVideoFrameCallback says nothing in
+// between, and with ?slowseek=700 the first frame after a click on the
+// clip timeline comes 1.1 s after it, the way it can on the Mac.
 if (location.search.includes("webkitclock")) {
+  const proto = HTMLMediaElement.prototype;
+  const clock = Object.getOwnPropertyDescriptor(proto, "currentTime")!;
+  const pausedOf = Object.getOwnPropertyDescriptor(proto, "paused")!;
+  const realPlay = proto.play;
+  const realPause = proto.pause;
+  const lead = 400;
+  const report = 800;
+  type Run = { from: number; asked: number; said: number; reported: boolean; starting: boolean; timer: number };
+  const runs = new WeakMap<HTMLMediaElement, Run>();
+  // A pause the model makes itself, to hold the picture while a seek
+  // starts, is not a pause the app asked for, and the app does not hear it.
+  const hushed = new WeakSet<EventTarget>();
+  document.addEventListener(
+    "pause",
+    (e) => {
+      if (!e.target || !hushed.has(e.target)) return;
+      hushed.delete(e.target);
+      e.stopImmediatePropagation();
+    },
+    true,
+  );
+  const start = (el: HTMLMediaElement, run: Run) => {
+    clearTimeout(run.timer);
+    run.timer = window.setTimeout(() => {
+      if (runs.get(el) !== run) return;
+      run.starting = false;
+      void realPlay.call(el).catch(() => {});
+    }, lead);
+  };
+  proto.play = function (this: HTMLMediaElement) {
+    const was = runs.get(this);
+    if (was) return was.starting ? Promise.resolve() : realPlay.call(this);
+    const run: Run = {
+      from: clock.get!.call(this) as number,
+      asked: performance.now(),
+      said: -Infinity,
+      reported: false,
+      starting: true,
+      timer: 0,
+    };
+    runs.set(this, run);
+    // The element says it plays the moment it is asked, as WebKit's does.
+    this.dispatchEvent(new Event("play"));
+    return new Promise<void>((done, fail) => {
+      run.timer = window.setTimeout(() => {
+        if (runs.get(this) !== run) return done();
+        run.starting = false;
+        realPlay.call(this).then(done, fail);
+      }, lead);
+    });
+  };
+  proto.pause = function (this: HTMLMediaElement) {
+    const run = runs.get(this);
+    runs.delete(this);
+    if (run) clearTimeout(run.timer);
+    // Paused while the picture has not started, the element underneath is
+    // paused already and says nothing, so the pause is said here.
+    if (run?.starting && realPausedOf(this)) {
+      this.dispatchEvent(new Event("pause"));
+      return;
+    }
+    realPause.call(this);
+  };
+  const realPausedOf = (el: HTMLMediaElement) => pausedOf.get!.call(el) as boolean;
+  Object.defineProperty(proto, "paused", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      if (runs.get(this)?.starting) return false;
+      return pausedOf.get!.call(this);
+    },
+  });
+  Object.defineProperty(proto, "currentTime", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      const t = clock.get!.call(this) as number;
+      const run = runs.get(this);
+      if (!run || this.seeking || run.asked < 0) return t;
+      const now = performance.now();
+      if (!run.reported && now - run.asked >= report) run.reported = true;
+      const estimate = run.reported ? t : run.from + (now - run.asked) / 1000;
+      run.said = Math.max(run.said, estimate);
+      return run.said;
+    },
+    set(this: HTMLMediaElement, t: number) {
+      const run = runs.get(this);
+      if (!run) {
+        clock.set!.call(this, t);
+        return;
+      }
+      // A seek while it plays holds the picture until it has landed and
+      // the player has got going again, and the clock waits for the
+      // landing, see above.
+      clearTimeout(run.timer);
+      if (!run.starting && !realPausedOf(this)) {
+        hushed.add(this);
+        realPause.call(this);
+      }
+      run.starting = true;
+      run.from = t;
+      run.said = -Infinity;
+      run.reported = false;
+      run.asked = -1;
+      clock.set!.call(this, t);
+      const landed = () => {
+        if (runs.get(this) !== run || run.from !== t || run.asked >= 0) return;
+        run.asked = performance.now();
+        start(this, run);
+      };
+      this.addEventListener("seeked", landed, { once: true });
+    },
+  });
+  // No frame is put up while the picture has not started, see above.
+  // requestVideoFrameCallback is asked again for the frame after, under
+  // the same number, so the app can still call it off.
+  const ownFrames = HTMLVideoElement.prototype.requestVideoFrameCallback;
+  const ownCancel = HTMLVideoElement.prototype.cancelVideoFrameCallback;
+  const asks = new Map<number, number>();
+  let asked = 0;
+  HTMLVideoElement.prototype.requestVideoFrameCallback = function (this: HTMLVideoElement, cb: VideoFrameRequestCallback) {
+    const id = ++asked;
+    const ask = () =>
+      asks.set(
+        id,
+        ownFrames.call(this, (now, meta) => {
+          if (runs.get(this)?.starting) return ask();
+          asks.delete(id);
+          cb(now, meta);
+        }),
+      );
+    ask();
+    return id;
+  };
+  HTMLVideoElement.prototype.cancelVideoFrameCallback = function (this: HTMLVideoElement, id: number) {
+    const real = asks.get(id);
+    asks.delete(id);
+    if (real !== undefined) ownCancel.call(this, real);
+  };
+  // The element ending a play by itself ends the run too.
+  document.addEventListener("ended", (e) => runs.delete(e.target as HTMLMediaElement), true);
+}
+
+// The frame rate of the episode the harness plays, one frame a second, or
+// what ?fps says, see open.mjs. Source says it, and ?framestart counts in
+// it.
+const harnessFps = Number(/[?&]fps=(\d+)/.exec(location.search)?.[1] ?? 1);
+
+// ?framestart makes the paused video answer with where the frame it shows
+// begins, the way the video on the Mac does: sent to 1677.63 in an episode
+// of 25 frames a second, it settles on the frame from 1677.60 and says
+// 1677.60, see the tests of insideClip. Chromium answers with the exact
+// second it was sent to, so without this the playhead is always where it
+// was put and nothing that compares it to a clip's start can go wrong
+// here. Only while paused and not seeking: a seek on its way answers with
+// where it was sent in every browser, and the clock while playing is
+// ?webkitclock's. The clips here start on whole seconds, which are frame
+// starts, so a probe moves a clip's start into a frame through
+// window.__pieces before the episode is opened.
+if (location.search.includes("framestart")) {
   const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
   Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
     get(this: HTMLMediaElement) {
       const t = real.get!.call(this) as number;
-      if (this.paused || this.seeking || performance.now() % 400 >= 60) return t;
-      return Math.max(0, t - 0.15);
+      if (!this.paused || this.seeking || this.readyState === 0) return t;
+      return Math.floor(t * harnessFps + 1e-6) / harnessFps;
     },
     set(this: HTMLMediaElement, t: number) {
       real.set!.call(this, t);
@@ -1121,10 +1300,10 @@ export const Call = {
       case "ClearTraining":
         return Promise.resolve(null);
       case "Source":
-        // The frame rate of the episode the harness plays, one frame a
-        // second, see open.mjs. Without it the app took 30, and the frame on
-        // screen was a second behind a playing clock half the time.
-        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: 1 });
+        // The frame rate of the episode the harness plays, see harnessFps.
+        // Without it the app took 30, and the frame on screen was a second
+        // behind a playing clock half the time.
+        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: harnessFps });
       case "Clips": {
         const made = [
           ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),

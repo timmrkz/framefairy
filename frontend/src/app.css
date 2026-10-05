@@ -40,6 +40,11 @@
   --ok: #5fa37a;
   --warn: #d2a441;
   --err: #e0605a;
+  /* How bright something is drawn while it is not in play: a button that
+     cannot be pressed, and the chosen clip while the playhead is on the
+     video. One share for both, so not in play looks the same wherever it
+     is. */
+  --dimmed: 0.45;
 
   /* What a control lays over whatever it sits on while the pointer is on
      it. It is a layer and not a colour on purpose. A control that names a
@@ -201,7 +206,7 @@ button:hover:not(:disabled) {
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: var(--dimmed);
   cursor: default;
 }
 
@@ -323,6 +328,7 @@ input[type="password"] {
   border-color: var(--accent-hi);
 }
 
+
 /* A clip as a mark on a track: a capsule from where it starts to where it
    ends, in the app's colour, green once it is rendered, across the middle
    of the track the way the captions run across the clip timeline. The
@@ -382,6 +388,32 @@ input[type="password"] {
 .clipmark.selected.lit {
   background: var(--accent-wash);
   border-color: var(--accent-hi);
+}
+
+/* The chosen clip while the playhead is on the video rather than on the
+   clip: the space bar plays the episode straight on and the clip's rules,
+   its cuts jumped and a stop at its end, are not in play. So the clip is
+   dimmed wherever it is drawn, as one thing, the way a control that is
+   not in play is dimmed: the crop frame, its mark on the range picker,
+   and on the clip timeline everything drawn for it, its frame, its
+   pieces, its cuts and their edges, its trim edges, its captions and
+   their edges and its thumbnails, which .chosen holds. One rule, so no
+   part of the clip can be left bright while the rest is dim. It is
+   brightness, the same share of every colour, so a caption keeps the
+   colours it was given. Lit as a whole while the hand is on the clip
+   somewhere else, and a mark under the pointer. See lib/playhead.ts.
+
+   .chosen lays nothing out, display: contents, so each part is placed
+   on the track and stacked on it as before. Each part takes the opacity
+   itself, because a box round them all would stack them as one. */
+.chosen {
+  display: contents;
+}
+
+.frame.dim:not(.lit),
+.clipmark.selected.dim:not(.lit):not(:hover),
+.chosen.dim:not(.lit) > * {
+  opacity: var(--dimmed);
 }
 
 :focus-visible {
