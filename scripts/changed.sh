@@ -102,6 +102,7 @@ gopkgs=""
 gofiles=""
 all_go=0
 interface=0
+walks=0
 build=0
 rules=0
 changed_rules=0
@@ -112,8 +113,18 @@ shells=""
 for file in $changed; do
 	case $file in
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
+	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts | frontend/package.json | frontend/package-lock.json)
+		interface=1
+		walks=1
+		read_by_tests "$file"
+		;;
+	frontend/preview/*)
+		interface=1
+		read_by_tests "$file"
+		;;
 	frontend/*)
 		interface=1
+		walks=1
 		read_by_tests "$file"
 		;;
 	go.mod | go.sum) all_go=1 ;;
@@ -184,6 +195,12 @@ fi
 
 # What will run, said first, so a run that is less than expected is seen
 # before it is trusted.
+# The walks drive the interface against the app's Go side, so whatever
+# reaches the app reaches them, the engine among it.
+for p in $affected; do
+	[ "$p" = "$module/cmd/framefairy-app" ] && walks=1
+done
+
 [ -n "$gofiles" ] && say "gofmt:     $(echo $gofiles)"
 if [ -n "$affected" ]; then
 	short=""
@@ -194,13 +211,14 @@ if [ -n "$affected" ]; then
 	say "go test:  $short"
 fi
 [ "$interface" = 1 ] && say "interface: make interface"
+[ "$walks" = 1 ] && say "walks:     make walks"
 [ "$build" = 1 ] && say "build:     make"
 [ "$rules" = 1 ] && say "rules:     scripts/ci-needs-test.sh"
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
 [ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$build$rules$changed_rules$build_rules" = 00000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules" = 000000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -208,6 +226,7 @@ if [ "$plan_only" = 1 ]; then
 	# One word per line for the tests: what kind, then what.
 	for p in $affected; do echo "go $p"; done
 	[ "$interface" = 1 ] && echo interface
+	[ "$walks" = 1 ] && echo walks
 	[ "$build" = 1 ] && echo build
 	[ "$rules" = 1 ] && echo rules
 	[ "$changed_rules" = 1 ] && echo changed-rules
@@ -308,6 +327,7 @@ if [ -n "$affected" ]; then
 fi
 
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
+[ "$walks" = 1 ] && $MAKE -s --no-print-directory walks
 
 # A script is read by the shell its first line names, so a bash script is not
 # failed for being bash. One the branch removed has nothing to read.

@@ -257,9 +257,17 @@ and it never goes back: it can only stand still. Playing starts on that
 clock before the picture underneath has started, so it runs ahead, and when
 a report says where the picture is, it stands until the picture catches up.
 Followed, the playhead stopped for up to half a second a moment after the
-space bar, while the picture and the sound played on. Until the picture of
-a play has moved, the playhead stands with it, and where a browser cannot
-say which frame is on screen, the clock is all there is. The jump over a
+space bar, while the picture and the sound played on. A click on the clip
+timeline while it plays is the same start over again: the clock runs on
+from where the seek went as soon as it lands, and the picture starts after
+it. Until the picture of a play or a seek has moved, the playhead stands
+with it, for as long as that takes, up to four seconds. Taken after one
+second, the clock put the playhead ahead of the picture on the Mac, where
+the picture after a seek can take longer than that, and the playhead
+stopped a second time when the picture came. The playhead holds still only
+while the frame on screen is the frame it stands in, never longer. Where a
+browser cannot say which frame is on screen, or has stopped saying, the
+clock is all there is. The jump over a
 cut and the stop at the clip's end are decided on the same position, so the
 clock running ahead cannot cut the end of a piece short. A
 jump the app makes itself, over a cut or back to the start of a loop, still
@@ -495,7 +503,10 @@ bubble scrolled by those eight pixels.
     the way Enter renames what is chosen in the Finder, so typing replaces
     it. Enter again saves it, the caret goes, and the frame stays on the
     word. Escape in an open word leaves it as it was and goes back to the
-    frame. The frame is the caption holding the keyboard: anything else
+    frame. Enter opens the word in the frame, wherever the playhead is: a
+    word clicked and let go of keeps the frame and leaves the playhead
+    where it was, and Enter used to open the word at the playhead, a word
+    with no frame on it. The frame is the caption holding the keyboard: anything else
     takes it away, a press of the pointer wherever it lands, a field
     getting the keyboard, Escape, any other key, the arrows without Shift
     among them, and the clip playing. It is the same with the highlight
@@ -545,8 +556,15 @@ bubble scrolled by those eight pixels.
     back. A word removed then corrected again comes back with the new
     text. Delete in a word open for typing is the field's own and takes
     out letters. The caption the word stood in stays as it was, with the
-    word gone from it: the word was still said, so the time it held is no
-    pause, see `Captions` in `engine/lines.go`. Before, the gap it left
+    word gone from it: the captions are laid out as if the word were still
+    there, reading what it read when it was removed, and then it is left
+    out, see `Captions` in `engine/lines.go`. What it read is kept with the
+    removal in `corrections.json`, behind a mark no typed word can have. The
+    time it held is no pause, the room it took on its line stays taken, so
+    no word of the next caption is pulled up into it, and a caption whose
+    first word it was appears when that word is said. A caption whose
+    words are all removed goes, and the one before it stays up through
+    its time. Before, the gap it left
     read as a pause, so the caption ended at the word before it, nothing
     was on screen for a moment, and the words after it went on to a
     caption of their own. Removing a word lost its way when the words

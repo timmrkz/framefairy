@@ -939,11 +939,20 @@
   // walk the playhead from word to word, so the two together correct a
   // caption without the pointer. Between two words, which is where a
   // pause leaves the playhead, it is the word just spoken.
+  //
+  // A word in the keyboard's frame is the word Enter opens, wherever the
+  // playhead is, because the frame is what says which word that is. A
+  // word clicked and let go of with Enter or Escape keeps the frame and
+  // leaves the playhead where it was, and Enter opened the word at the
+  // playhead instead, a word with no frame on it. A walk found it.
   function openSpoken(): boolean {
     const words = [...(screen?.querySelectorAll<HTMLElement>(".word.correctable") ?? [])];
     let pick: HTMLElement | null = null;
-    for (const node of words) {
-      if (Number(node.dataset.at) <= spoken + 1e-6) pick = node;
+    if (keyed) pick = words.find((node) => Number(node.dataset.at) === keyed!.start) ?? null;
+    if (!pick) {
+      for (const node of words) {
+        if (Number(node.dataset.at) <= spoken + 1e-6) pick = node;
+      }
     }
     pick ??= words[0] ?? null;
     if (!pick) return false;

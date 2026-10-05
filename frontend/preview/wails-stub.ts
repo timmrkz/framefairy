@@ -22,10 +22,21 @@ const noticeTexts = import.meta.glob("../../notices/texts/*.txt", {
 // Here the picture starts 400 ms after play is asked for, the way the
 // player underneath gets going, while the element already says it plays.
 // Until the first report, 800 ms after the ask, the clock is the wall
-// clock from where the play began. After it, and after any seek, it is the
-// real clock, never lower than what it said last. Chromium's clock and
-// picture start together, so without this nothing here could run ahead of
-// the picture and then stand.
+// clock from where the play began. After it, it is the real clock, never
+// lower than what it said last. Chromium's clock and picture start
+// together, so without this nothing here could run ahead of the picture
+// and then stand.
+//
+// A seek while it plays is the same start over again, from where it was
+// sent, the way WebKit's seekToTarget hands the estimate the player's
+// answer once the seek has landed, with the rate it plays at. While the
+// seek is on its way the clock says where it was sent. From the moment it
+// lands the clock runs on from there by the wall clock, the picture starts
+// 400 ms later, and the first report, 800 ms after the landing, makes the
+// clock stand until the picture has caught up. No frame is put on screen
+// before the picture starts, so requestVideoFrameCallback says nothing in
+// between, and with ?slowseek=700 the first frame after a click on the
+// clip timeline comes 1.1 s after it, the way it can on the Mac.
 if (location.search.includes("webkitclock")) {
   const proto = HTMLMediaElement.prototype;
   const clock = Object.getOwnPropertyDescriptor(proto, "currentTime")!;
@@ -36,6 +47,26 @@ if (location.search.includes("webkitclock")) {
   const report = 800;
   type Run = { from: number; asked: number; said: number; reported: boolean; starting: boolean; timer: number };
   const runs = new WeakMap<HTMLMediaElement, Run>();
+  // A pause the model makes itself, to hold the picture while a seek
+  // starts, is not a pause the app asked for, and the app does not hear it.
+  const hushed = new WeakSet<EventTarget>();
+  document.addEventListener(
+    "pause",
+    (e) => {
+      if (!e.target || !hushed.has(e.target)) return;
+      hushed.delete(e.target);
+      e.stopImmediatePropagation();
+    },
+    true,
+  );
+  const start = (el: HTMLMediaElement, run: Run) => {
+    clearTimeout(run.timer);
+    run.timer = window.setTimeout(() => {
+      if (runs.get(el) !== run) return;
+      run.starting = false;
+      void realPlay.call(el).catch(() => {});
+    }, lead);
+  };
   proto.play = function (this: HTMLMediaElement) {
     const was = runs.get(this);
     if (was) return was.starting ? Promise.resolve() : realPlay.call(this);
@@ -62,12 +93,15 @@ if (location.search.includes("webkitclock")) {
     const run = runs.get(this);
     runs.delete(this);
     if (run) clearTimeout(run.timer);
-    if (run?.starting) {
+    // Paused while the picture has not started, the element underneath is
+    // paused already and says nothing, so the pause is said here.
+    if (run?.starting && realPausedOf(this)) {
       this.dispatchEvent(new Event("pause"));
       return;
     }
     realPause.call(this);
   };
+  const realPausedOf = (el: HTMLMediaElement) => pausedOf.get!.call(el) as boolean;
   Object.defineProperty(proto, "paused", {
     configurable: true,
     get(this: HTMLMediaElement) {
@@ -80,7 +114,7 @@ if (location.search.includes("webkitclock")) {
     get(this: HTMLMediaElement) {
       const t = clock.get!.call(this) as number;
       const run = runs.get(this);
-      if (!run || this.seeking) return t;
+      if (!run || this.seeking || run.asked < 0) return t;
       const now = performance.now();
       if (!run.reported && now - run.asked >= report) run.reported = true;
       const estimate = run.reported ? t : run.from + (now - run.asked) / 1000;
@@ -88,16 +122,59 @@ if (location.search.includes("webkitclock")) {
       return run.said;
     },
     set(this: HTMLMediaElement, t: number) {
-      // A seek puts the clock where it was sent, and from there on it is
-      // the player's again.
       const run = runs.get(this);
-      if (run) {
-        run.reported = true;
-        run.said = -Infinity;
+      if (!run) {
+        clock.set!.call(this, t);
+        return;
       }
+      // A seek while it plays holds the picture until it has landed and
+      // the player has got going again, and the clock waits for the
+      // landing, see above.
+      clearTimeout(run.timer);
+      if (!run.starting && !realPausedOf(this)) {
+        hushed.add(this);
+        realPause.call(this);
+      }
+      run.starting = true;
+      run.from = t;
+      run.said = -Infinity;
+      run.reported = false;
+      run.asked = -1;
       clock.set!.call(this, t);
+      const landed = () => {
+        if (runs.get(this) !== run || run.from !== t || run.asked >= 0) return;
+        run.asked = performance.now();
+        start(this, run);
+      };
+      this.addEventListener("seeked", landed, { once: true });
     },
   });
+  // No frame is put up while the picture has not started, see above.
+  // requestVideoFrameCallback is asked again for the frame after, under
+  // the same number, so the app can still call it off.
+  const ownFrames = HTMLVideoElement.prototype.requestVideoFrameCallback;
+  const ownCancel = HTMLVideoElement.prototype.cancelVideoFrameCallback;
+  const asks = new Map<number, number>();
+  let asked = 0;
+  HTMLVideoElement.prototype.requestVideoFrameCallback = function (this: HTMLVideoElement, cb: VideoFrameRequestCallback) {
+    const id = ++asked;
+    const ask = () =>
+      asks.set(
+        id,
+        ownFrames.call(this, (now, meta) => {
+          if (runs.get(this)?.starting) return ask();
+          asks.delete(id);
+          cb(now, meta);
+        }),
+      );
+    ask();
+    return id;
+  };
+  HTMLVideoElement.prototype.cancelVideoFrameCallback = function (this: HTMLVideoElement, id: number) {
+    const real = asks.get(id);
+    asks.delete(id);
+    if (real !== undefined) ownCancel.call(this, real);
+  };
   // The element ending a play by itself ends the run too.
   document.addEventListener("ended", (e) => runs.delete(e.target as HTMLMediaElement), true);
 }
