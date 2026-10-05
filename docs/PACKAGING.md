@@ -237,14 +237,13 @@ lawyer, no ambiguity, no judgement call about where one work ends and
 another begins.
 
 **What does not change.** The engine, the command line and the filter graph
-all stay as they are. ffmpeg does five separate jobs for us and only one of
+all stay as they are. ffmpeg does four separate jobs for us and only one of
 them is touched:
 
 | Job | Where |
 | --- | --- |
 | Render a clip: seek, crop, scale, pad, audio fades, concat, burn in captions, encode | `engine/render.go` |
 | Read the episode's shape, frame rate and colour tags | `engine/ffmpeg.go` |
-| Still frames for the video preview | `engine/frames.go` |
 | Scene cuts and the grey stream the face finder reads | `engine/analysis.go` |
 | Loudness readings for the transcript | `engine/audio.go` |
 
@@ -321,7 +320,7 @@ surface, not a guarantee, and none of this is legal advice.
 
 **Use Apple's AVFoundation and drop ffmpeg on macOS.** The most native
 answer, the smallest download, the fastest encode. It also means writing all
-five jobs again in Objective-C, including rasterising the captions with Core
+four jobs again in Objective-C, including rasterising the captions with Core
 Text instead of libass, at which point a short rendered on a Mac and the
 same short rendered on Linux no longer match. It cannot be compiled or run
 in a cloud session either, so every round of it would be blind. It is a
