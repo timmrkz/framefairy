@@ -38,10 +38,8 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: System packages
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
+        timeout-minutes: 10
+        run: sh scripts/ci-packages.sh
       # The interface is embedded in the app, and Go wants the folder.
       - name: An interface to embed
         run: mkdir -p cmd/framefairy-app/dist/app && touch cmd/framefairy-app/dist/app/index.html
