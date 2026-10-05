@@ -3,225 +3,8 @@
 // it: that is the Go side's, see docs/JOBS.md, and its tests are the path
 // tests in cmd/framefairy-app.
 
-export type PictureState = {
-  // The video preview has decoded a frame of the episode at all.
-  ready: boolean;
-  // The moment the picture is showing, or -1 while it shows nothing.
-  shows: number;
-  // Where the playhead stands.
-  at: number;
-  // How long one frame of the episode lasts. A frame on screen stands for
-  // every moment from its own to the next frame's, so a playhead that has
-  // moved on inside it is still in the picture. Left out, it is taken as
-  // nothing.
-  frame?: number;
-};
-
-// The picture has to agree with the playhead. While the machine is busy
-// transcribing or searching, the app often cannot read the episode file,
-// so a seek is dropped and the picture stays on a frame that has nothing to
-// do with where the playhead is. Whenever that happens the workspace asks
-// the engine for the frame under the playhead instead.
 // A piece of a clip, in the episode's own seconds.
 export type Piece = { start: number; end: number };
-
-// The piece a time falls in, or the one it runs into next. Past the last
-// piece it is the last one, so a time beyond the clip still names a piece
-// rather than nothing.
-export function pieceAt(pieces: Piece[], at: number): number {
-  const index = pieces.findIndex((p) => at < p.end);
-  return index < 0 ? Math.max(pieces.length - 1, 0) : index;
-}
-
-// The piece the player is playing, kept inside the pieces that exist.
-//
-// The pieces change under the player whenever a cut is taken out or put
-// back, and the player holds the one it is on as a number. A clip in three
-// pieces playing its third becomes a clip in two pieces the moment a cut
-// goes back, and the number then points past the end. Reading it gave
-// undefined, and asking undefined where it ended threw inside the frame
-// loop, which ended the loop: the playhead stopped moving and the picture
-// stood still on whatever frame it had. That is a video preview that has
-// got lost, and it took nothing more than putting a cut back while the
-// clip was playing past it.
-export function playingPiece(pieces: Piece[], was: number, at: number): number {
-  if (!pieces.length) return 0;
-  if (was >= 0 && was < pieces.length) return was;
-  return pieceAt(pieces, at);
-}
-
-//
-// What the picture shows is the moment of the frame on screen, where the
-// browser can say so, see watchFrames in Player.svelte. That frame stands
-// until the next one, so a playhead ahead of it by up to a frame is in it,
-// and only the half second of room on top of that is what a seek is
-// allowed to land off by. A playing episode of one frame a second read as
-// stale for half of every second, and the frame the engine read was
-// drawn over it.
-export function pictureIsStale(s: PictureState): boolean {
-  if (!s.ready || s.shows < 0) return true;
-  if (s.at >= s.shows) return s.at - s.shows > 0.5 + (s.frame ?? 0);
-  return s.shows - s.at > 0.5;
-}
-
-// The frame on screen, as requestVideoFrameCallback says it: the moment of
-// the episode it shows, its mediaTime, and when it was put on screen, its
-// presentationTime, in seconds on the page's own clock, performance.now.
-export type Presented = { media: number; shown: number };
-
-// What the video is doing on a frame of a play, as far as the playhead is
-// concerned.
-export type PlayingClock = {
-  // The video's clock.
-  clock: number;
-  // The video has read nothing of the file yet, HAVE_NOTHING.
-  empty: boolean;
-  // A seek is on its way, so the clock is where it was sent.
-  seeking: boolean;
-  // A jump the playing clip made by itself has just landed.
-  landed: boolean;
-  // The last frame put on screen, where the browser says, or null where
-  // it cannot.
-  presented?: Presented | null;
-  // Now, and when this play began or the video was last sent somewhere,
-  // whichever came later, on the same clock as shown.
-  now?: number;
-  since?: number;
-  // How fast it plays, and how long one frame of the episode lasts.
-  rate?: number;
-  frame?: number;
-};
-
-// How long a play may go without the browser saying of a frame before the
-// clock is taken instead, in seconds on top of a frame, once it has said
-// of a frame of this play. A browser that says which frame is on screen
-// says so on every frame while the picture moves. One that has said
-// nothing for this long has stopped saying, or the picture has stopped,
-// and in the middle of a play the clock is then where the picture is.
-const quiet = 1;
-
-// How long a play or a seek may wait for its first frame before the clock
-// is taken instead, in seconds. Not quiet: while the first frame has not
-// come the picture has not moved, and the clock on the Mac has. A seek
-// while it plays lands, the clock runs on from where it was sent by the
-// wall clock, and the picture starts after it, more than a second after
-// the click on the Mac. Taken after quiet, the clock put the playhead a
-// third of a second ahead of the picture, and when the picture came the
-// playhead stood until it caught up: the second stop Tim saw after a
-// click on the clip timeline. This is only for a browser that has stopped
-// saying, and a seek that takes longer than this is lost anyway.
-const unseen = 4;
-
-// Where the playhead goes on a frame of a play, from where it stands.
-//
-// It goes with the picture, the frame the browser says is on screen, and
-// on from it by the time since it was put up, at most a frame, so it moves
-// smoothly between frames and never runs ahead of a picture that stopped.
-// Not with the video's clock. On the Mac the clock of a playing video is
-// an estimate, TimeProgressEstimator in WebKit's
-// MediaPlayerPrivateRemote.cpp: the wall clock since the last report from
-// the player underneath, never lower than what it said last. Playing
-// starts on that clock before the picture underneath has started, and a
-// seek while it plays hands it the player's answer as it lands, before the
-// picture has started again. So the clock runs ahead, and once a report
-// says where the picture really is, the clock stands still until the
-// picture has caught up. Followed, the playhead stopped for up to half a
-// second a moment after the space bar, while the picture and the sound
-// played on.
-//
-// Until the browser has said of a frame of this play, the picture has not
-// moved yet, and the playhead stands with it. A frame said before the play
-// or before a seek is the picture from before, wherever that was, and
-// says nothing about where the video is now. Where the browser cannot say
-// at all, or has stopped saying, the clock is all there is, see quiet and
-// unseen. Chromium's and WebKit's never go back while a play runs.
-//
-// It holds still while the frame on screen is the frame it stands in, and
-// for no longer: the frame a paused clip starts inside begins before the
-// clip, and the picture is the same until the next one. A frame further
-// behind is the picture somewhere else, and is followed. It held for
-// anything up to half a second behind, and anything that put the playhead
-// ahead of the picture, the clock taken after a seek above all, turned
-// into a playhead that stood while the picture played. Moving with the
-// frames it is never more than a frame ahead, so it never goes back.
-//
-// A video that has read nothing of the file has a clock that says nothing:
-// it answers zero, playing or not. Followed, the first press of the space
-// bar after a search took the playhead to the start of the episode, the
-// still of the clip's first frame gave way to a black picture and then to
-// the start of the episode, and only once the file came did the video go
-// to the clip and play it. So the playhead stands, with the still that
-// shows it, until the video has something.
-export function playingAt(at: number, v: PlayingClock): number {
-  if (v.empty) return at;
-  if (v.landed || v.seeking) return v.clock;
-  const frame = v.frame ?? 0;
-  const p = v.presented;
-  if (p && v.now !== undefined && v.since !== undefined) {
-    if (p.shown < v.since) {
-      if (v.now - v.since < unseen) return at;
-    } else if (v.now - p.shown < quiet + frame) {
-      const on = Math.min(Math.max(v.now - p.shown, 0), frame) * (v.rate ?? 1);
-      const to = p.media + on;
-      return to >= at || at - to > frame + 1e-6 ? to : at;
-    }
-  }
-  return forward(at, v.clock);
-}
-
-// The clock, where it is all there is, never back by a little: the clock of
-// a paused video on the Mac is the start of its frame, a hair before
-// where a clip starts. Half a second or more behind is the video really
-// being somewhere else, and is followed, the same half second
-// pictureIsStale takes for the same place.
-function forward(at: number, to: number): number {
-  return to >= at || at - to >= 0.5 ? to : at;
-}
-
-// What a frame of a play does about a jump over a cut the playing clip
-// made by itself, or from its end back to its start while it loops: there
-// is none, the video is still on its way so the frame waits, the video has
-// landed and the playhead goes with it, or the play was paused while the
-// video was on its way. Paused, the frame loop stops, so a jump left
-// waiting was never finished, and while it stood every seek made while
-// paused read as a picture somewhere else. A still from the engine was
-// drawn over a video that had landed, on every step of the arrow keys,
-// until the next play. So a pause ends the jump where it stands, and the
-// seek it made lands like any seek made while paused.
-export type JumpStep = "none" | "wait" | "landed" | "paused";
-
-export function jumpStep(jumping: boolean, v: { seeking: boolean; paused: boolean }): JumpStep {
-  if (!jumping) return "none";
-  if (!v.seeking) return "landed";
-  return v.paused ? "paused" : "wait";
-}
-
-// Where the frame a moment falls in starts: the frame a video element
-// shows when it is sent there, the last one that starts at or before it.
-// The still read from the file while the video preview catches up has to
-// be that same frame, or the picture changes the moment the video lands.
-// It was the nearest whole second, which from half past on is the next
-// second's frame. The engine works the frame out the same way, Still in
-// engine/frames.go. An episode whose rate is not known counts in seconds.
-export function frameStart(t: number, fps: number): number {
-  const rate = fps > 0 ? fps : 1;
-  return Math.floor(Math.max(t, 0) * rate + 1e-6) / rate;
-}
-
-// Whether the still read for one frame belongs over the picture at a
-// moment. Paused, only the still of the very frame the playhead is in: a
-// still of a frame near it was a second picture for one spot, and a third
-// once the video landed. Playing, the still of where the play began also
-// stands for the half second after it, the room a seek is given, see
-// pictureIsStale. Safari plays on before it shows the frame it plays from,
-// see watchFrames in Player.svelte, and with the still of that one frame
-// alone, the frame before it showed through again the moment the playhead
-// left it, one frame into the play.
-export function stillFits(stillAt: number, at: number, fps: number, playing: boolean): boolean {
-  const here = frameStart(at, fps);
-  if (Math.abs(stillAt - here) < 1e-6) return true;
-  return playing && stillAt < here && here - stillAt <= 0.5;
-}
 
 // Parts of the episode, from and to in seconds, in order and apart. The
 // transcript is heard in parts, wherever a search or a clip made by hand
@@ -354,13 +137,12 @@ export function timesIn(passes: Passes, from: number, to: number): number {
 
 // A run of asks where only the newest answer counts.
 //
-// The app asks the engine for the frame under the playhead every time
-// the playhead moves, and walking the clip list with the arrow keys moves
-// it as fast as a key repeats. Several asks are then in the air at once,
-// and nothing says they come back in the order they went out: a frame that
-// took longer to read lands after a newer one and paints over it, and the
-// picture is then of somewhere the playhead left. It stays wrong, because
-// nothing asks again.
+// Several asks can be in the air at once, the clip list read again while
+// a search lands its clips, the words of a clip while the arrow keys walk
+// the list, and nothing says they come back in the order they went out:
+// an answer that took longer lands after a newer one and paints over it,
+// and what is on screen is then of something the hand has left. It stays
+// wrong, because nothing asks again.
 //
 // Every ask takes a ticket. An answer is used only if no newer answer has
 // been used already.
@@ -386,56 +168,6 @@ export class Newest {
     if (ticket <= this.used) return false;
     this.used = ticket;
     return true;
-  }
-}
-
-// How something waits, which is the browser's timers in the app and a
-// clock of its own in a test.
-export type Timers = {
-  later: (run: () => void, ms: number) => unknown;
-  off: (waiting: unknown) => void;
-};
-
-const browserTimers: Timers = {
-  later: (run, ms) => setTimeout(run, ms),
-  off: (waiting) => clearTimeout(waiting as ReturnType<typeof setTimeout>),
-};
-
-// An ask that waits a moment before it is sent, so a need that passes by
-// itself costs nothing.
-//
-// The workspace asks the engine for the frame under the playhead whenever
-// the video preview cannot show it, see pictureIsStale. Most of the time
-// the video lands a few milliseconds later and the frame was never needed,
-// so the ask waits first. A newer need takes the place of the one waiting,
-// which is what keeps a hand moving the playhead from sending an ask for
-// every place it passes. null says nothing is needed any more, and calls
-// off whatever is waiting.
-//
-// It used to be only a timer, which nothing called off. Every move of the
-// playhead while paused further than the picture's room, picking a clip, a
-// click on the clip timeline, the arrow keys, had a frame read from the
-// file with ffmpeg and kept in the work folder, however soon the video
-// landed, and none of them was drawn. An ask already sent is not taken
-// back: what it brings is the newest answer's to keep or throw away, see
-// Newest.
-export class Grace<T> {
-  private waiting: unknown = undefined;
-
-  constructor(
-    private send: (what: T) => void,
-    private wait: number,
-    private timers: Timers = browserTimers,
-  ) {}
-
-  need(what: T | null): void {
-    this.timers.off(this.waiting);
-    this.waiting = undefined;
-    if (what === null) return;
-    this.waiting = this.timers.later(() => {
-      this.waiting = undefined;
-      this.send(what);
-    }, this.wait);
   }
 }
 
@@ -579,39 +311,6 @@ export function inClip(pieces: Piece[], at: number): number {
 // fraction of a frame and nothing else.
 export function insideClip(pieces: Piece[], at: number, frame: number): boolean {
   return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
-}
-
-export type ChaseState = {
-  // Where the picture was sent, or -1 when it is not on its way anywhere.
-  wanted: number;
-  // Where it says it is, and whether it is playing.
-  at: number;
-  playing: boolean;
-  // How many times the seek has been made again already.
-  tries: number;
-};
-
-// Whether a seek that has not landed should be made again.
-//
-// A seek is chased because the webview drops one silently while the
-// machine is busy, and a dropped seek leaves the picture on a frame that
-// has nothing to do with the playhead. It is asked again, and then the
-// file is read once more, and then it gives up.
-//
-// **It gives up at once when the picture is playing.** A playing clock is
-// meant to run away from where it was sent: a second and a bit later it is
-// a second and a bit further on, which reads exactly like a seek that
-// never landed. The chase would then pull the picture back to where
-// playing began, and on the try after that read the file again, which
-// empties the element and stops it dead. Every play arms a chase, because
-// playing seeks first, and the only thing that saved it was the seek
-// answering in time. A seek that changes nothing answers with nothing:
-// the playhead was already on that frame, no seeked ever comes, and the
-// chase is left running against the playing picture.
-export function shouldChase(s: ChaseState): boolean {
-  if (s.wanted < 0 || s.playing) return false;
-  if (s.tries > 2) return false;
-  return Math.abs(s.at - s.wanted) >= 0.5;
 }
 
 // A caption edge being dragged, on the clip's clock.
