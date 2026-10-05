@@ -271,6 +271,14 @@ first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
 
+**The tests use the ffmpeg the programs ship with.** `make unit`, `make
+fuzz`, `make walks` and `make changed` put `bin/` first on the `PATH`, so
+a test finds the ffmpeg and llama-server `make` built before any other.
+A Mac with Homebrew's ffmpeg 9 tested that one before, and
+`TestMeasureLevelsGoesWhereTheClipTimelineLooks` failed there: ffmpeg 9
+decodes AAC 16 ms later after a seek, which is why the ffmpeg we ship
+stays on 8.1 for now, see `scripts/build-ffmpeg.sh`.
+
 **The tests that render share their episodes and skip the face detector.**
 A test episode is made once for each length and every test gets a copy,
 the way the app's tests share their videos. The face detector finds no
