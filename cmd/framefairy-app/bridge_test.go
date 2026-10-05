@@ -17,21 +17,26 @@ package main
 // side tells the interface comes as server-sent events on /events.
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"framefairy/engine"
 )
@@ -99,7 +104,10 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // callHandler answers a call the way Wails does: the method of the service
 // by its name, the arguments by position, a leading context filled in, and
 // the error, when there is one, as a call that failed with its message.
-func callHandler(svc *FrameFairy) http.Handler {
+//
+// svc is the service now: a restart of the app is a new one. own are the
+// calls the bridge answers itself, a box from the system among them.
+func callHandler(svc func() *FrameFairy, own map[string]func() (any, error)) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +120,17 @@ func callHandler(svc *FrameFairy) http.Handler {
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
-		method := reflect.ValueOf(svc).MethodByName(name)
+		if answerOwn, ok := own[name]; ok {
+			answer, err := answerOwn()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(answer)
+			return
+		}
+		method := reflect.ValueOf(svc()).MethodByName(name)
 		if !method.IsValid() {
 			http.Error(w, "the service has no method "+name, http.StatusNotFound)
 			return
@@ -188,7 +206,7 @@ var outside = map[string]bool{
 	"Updates": true, "FollowChannel": true, "CheckForUpdates": true, "RestartToUpdate": true,
 	"InstallSpeechModel": true, "InstallLanguageModel": true,
 	"OpenKeysPage": true, "SaveAPIKey": true, "OpenCommit": true,
-	"Reveal": true, "ChooseFolder": true, "AddEpisodes": true, "Chrome": true, "StayOpen": true,
+	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true,
 }
 
 // standInsSetup is the setup as the bridge's machine has it: the real
@@ -219,18 +237,60 @@ func callSafely(method reflect.Value, in []reflect.Value) (out []reflect.Value, 
 }
 
 // bridgeHandler is everything the browser asks for: the calls, the events,
-// the episode's files the way the app serves them, and the interface
-// itself, built into dist.
-func bridgeHandler(d *desk, dist string, reset func() error) http.Handler {
+// the episode's files the way the app serves them, the interface itself,
+// built into dist, and what a walk asks of the bridge, see bridge.
+func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/call", callHandler(d.svc))
-	mux.Handle("/events", d.bus)
-	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
-		if err := reset(); err != nil {
+	svc := func() *FrameFairy { return b.d.svc }
+	// The Add button asks the system for files, and the system's box is
+	// the bridge: it hands over what a walk picked, see /pick, or nothing,
+	// the way the box answers Cancel.
+	own := map[string]func() (any, error){
+		"AddEpisodes": func() (any, error) {
+			b.mu.Lock()
+			picked := b.picks
+			b.picks = nil
+			b.mu.Unlock()
+			if len(picked) == 0 {
+				return nil, nil
+			}
+			return b.d.svc.addEpisodes(picked)
+		},
+	}
+	mux.Handle("/call", callHandler(svc, own))
+	mux.Handle("/events", b.d.bus)
+	answer := func(w http.ResponseWriter, v any, err error) {
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	}
+	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, nil, b.reset())
 	})
-	mux.Handle("/", mediaMiddleware(d.svc.store)(http.FileServer(http.Dir(dist))))
+	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
+		path, err := b.pick(r.URL.Query().Get("seconds"))
+		answer(w, path, err)
+	})
+	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		b.d.model.hangs(q.Get("hang") == "1")
+		b.d.model.fails(q.Get("fail") == "1")
+		answer(w, nil, nil)
+	})
+	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
+		ms, _ := strconv.Atoi(r.URL.Query().Get("ms"))
+		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
+		answer(w, nil, nil)
+	})
+	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, nil, b.reopen())
+	})
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mediaMiddleware(b.d.svc.store)(http.FileServer(http.Dir(dist))).ServeHTTP(w, r)
+	}))
 	return mux
 }
 
@@ -241,6 +301,9 @@ func bridgeHandler(d *desk, dist string, reset func() error) http.Handler {
 type prose struct {
 	mu   sync.Mutex
 	next int
+	// pace is how long it takes over each piece of audio it hears, in
+	// milliseconds, so a walk can see a transcript grow, and cancel it.
+	pace atomic.Int64
 }
 
 var proseText = strings.Fields(`Ich war vielleicht sechs Jahre alt, als mich auf dem Schulhof
@@ -252,6 +315,7 @@ allen erzählt, er wäre gebrochen. Das war meine erste richtige Lüge, glaube
 ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
+	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	length := float64(len(samples)) / float64(rate)
@@ -288,8 +352,13 @@ func TestBridge(t *testing.T) {
 	if addr == "" {
 		t.Skip("FRAMEFAIRY_BRIDGE is not set")
 	}
-	d, path, reset := openBridge(t)
-	server := &http.Server{Addr: addr, Handler: bridgeHandler(d, bridgeDist(t), reset)}
+	b := openBridge(t)
+	server := &http.Server{Handler: bridgeHandler(b, bridgeDist(t))}
+	// Port 0 is any free port, and the line below says which one.
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Stopped, it closes, so the test ends and takes its folder with it.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -297,17 +366,41 @@ func TestBridge(t *testing.T) {
 		<-stop
 		_ = server.Close()
 	}()
-	fmt.Printf("bridge on http://%s with %s\n", addr, path)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// Started by TestWalks, it also closes when its standard input does,
+	// so a walk run that was killed leaves no bridge behind.
+	if os.Getenv("FRAMEFAIRY_BRIDGE_WALKER") != "" {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			_ = server.Close()
+		}()
+	}
+	fmt.Printf("bridge on http://%s with %s\n", listener.Addr(), b.first)
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		t.Fatal(err)
 	}
 }
 
+// bridge is the app on a desk, with one episode heard and searched, and
+// what a walk can ask of it besides what the interface asks: a file for
+// the Add button's box, a language model that holds its answers or fails,
+// the app closed and opened again, and everything put back the way it was
+// first searched.
+type bridge struct {
+	t     *testing.T
+	d     *desk
+	words *prose
+	first string
+	// kept is the episode's work folder and the app's settings as they
+	// were once the episode was first searched.
+	kept  string
+	mu    sync.Mutex
+	picks []string
+	made  int
+}
+
 // openBridge opens a desk whose Go side tells a browser what it does, with
-// one episode in it, heard and searched, so the workspace has a clip. reset
-// puts the episode back the way it was then, so every walk starts from the
-// same place and a seed walks the same way every time.
-func openBridge(t *testing.T) (*desk, string, func() error) {
+// one episode in it, heard and searched, so the workspace has a clip.
+func openBridge(t *testing.T) *bridge {
 	t.Helper()
 	d := open(t)
 	words := &prose{}
@@ -322,62 +415,128 @@ func openBridge(t *testing.T) (*desk, string, func() error) {
 	d.svc.jobs.shutDown()
 	d.bus = newBus()
 	d.start(d.svc.store)
-	path := filepath.Join(d.home, "erste-erinnerung.mp4")
-	// VP9 and Opus rather than the path tests' MPEG-4 and AAC, because the
-	// Chromium a walk drives is built without the proprietary codecs and
-	// would not play the episode at all. The picture says which frame it
-	// is, the recipe of the harness's own episodes in
-	// frontend/preview/open.mjs: a strip along its top, 12 pixels high, is
-	// the frame number in ten bars of 32 pixels, the highest bit on the
-	// left, light for one and dark for nought, so a walk reads back from
-	// the video preview's canvas the frame on screen, see recordFrames in
-	// walks/bridge.mjs. Below it is a grey that grows lighter. The strip is
-	// thin so that no two frames differ by a camera switch, which a half
-	// of bars did every 16 frames, and the search then split its clip into
-	// pieces at every one. The bars are worked out on a picture one pixel
-	// a bit and made large without smoothing.
+	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir()}
+	if err := makeEpisode(b.first, 120); err != nil {
+		t.Fatal(err)
+	}
+	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
+		t.Fatalf("adding %s: %v", b.first, err)
+	}
+	d.idle(b.first)
+	if len(d.clips(b.first)) == 0 {
+		t.Fatalf("the episode has no clip to work on: %+v", d.svc.jobs.list())
+	}
+	for _, dir := range []string{workOf(b.first), filepath.Join(d.home, "config")} {
+		if err := os.CopyFS(filepath.Join(b.kept, filepath.Base(dir)), os.DirFS(dir)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return b
+}
+
+func workOf(video string) string {
+	return strings.TrimSuffix(video, filepath.Ext(video)) + ".framefairy"
+}
+
+// makeEpisode makes a video of this many seconds. VP9 and Opus rather than
+// the path tests' MPEG-4 and AAC, because the Chromium a walk drives is
+// built without the proprietary codecs and would not play it at all. The
+// picture says which frame it is, the recipe of the harness's own episodes
+// in frontend/preview/open.mjs: a strip along its top, 12 pixels high, is
+// the frame number in ten bars of 32 pixels, the highest bit on the left,
+// light for one and dark for nought, so a walk reads back from the video
+// preview's canvas the frame on screen, see recordFrames in
+// walks/bridge.mjs. Below it is a grey that grows lighter. The strip is
+// thin so that no two frames differ by a camera switch, which a half of
+// bars did every 16 frames, and the search then split its clip into
+// pieces at every one. The bars are worked out on a picture one pixel a
+// bit and made large without smoothing.
+func makeEpisode(path string, seconds int) error {
+	d := strconv.Itoa(seconds)
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d=120",
-		"-f", "lavfi", "-i", "color=c=black:s=2x2:r=5:d=120",
-		"-f", "lavfi", "-i", "sine=f=220:sample_rate=48000:d=120",
+		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d="+d,
+		"-f", "lavfi", "-i", "color=c=black:s=2x2:r=5:d="+d,
+		"-f", "lavfi", "-i", "sine=f=220:sample_rate=48000:d="+d,
 		"-filter_complex",
 		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];"+
-			"[1]geq=lum='30+180*T/120':cb=128:cr=128,scale=320:168:flags=neighbor[g];"+
+			"[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g];"+
 			"[b][g]vstack,format=yuv420p[v]",
 		"-map", "[v]", "-map", "2",
 		"-shortest", "-c:v", "libvpx-vp9", "-b:v", "100k", "-deadline", "realtime", "-cpu-used", "8",
 		"-g", "10", "-c:a", "libopus", "-b:a", "24k", path).CombinedOutput()
 	if err != nil {
-		t.Fatalf("making the episode: %s %s", err, out)
+		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
 	}
-	if added, err := d.svc.addEpisodes([]string{path}); err != nil || len(added) != 1 {
-		t.Fatalf("adding %s: %v", path, err)
+	return nil
+}
+
+// pick makes a new video, not in the library, and has the Add button's box
+// hand it over next.
+func (b *bridge) pick(seconds string) (string, error) {
+	n, err := strconv.Atoi(seconds)
+	if err != nil || n < 10 || n > 3600 {
+		n = 90
 	}
-	d.idle(path)
-	if len(d.clips(path)) == 0 {
-		t.Fatalf("the episode has no clip to work on: %+v", d.svc.jobs.list())
+	b.mu.Lock()
+	b.made++
+	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
+	b.mu.Unlock()
+	if err := makeEpisode(path, n); err != nil {
+		return "", err
 	}
-	work := strings.TrimSuffix(path, filepath.Ext(path)) + ".framefairy"
-	kept := filepath.Join(t.TempDir(), "kept")
-	if err := os.CopyFS(kept, os.DirFS(work)); err != nil {
-		t.Fatal(err)
+	b.mu.Lock()
+	b.picks = append(b.picks, path)
+	b.mu.Unlock()
+	return path, nil
+}
+
+// reopen closes the app and opens it again, the way quitting and starting
+// it does: the work stops, and what it did and how it ended is read back.
+func (b *bridge) reopen() error {
+	if !b.d.svc.jobs.shutDown() {
+		return fmt.Errorf("the app did not stop its work in time")
 	}
-	reset := func() error {
-		d.idle(path)
-		if err := os.RemoveAll(work); err != nil {
+	b.d.svc.levels.shutDown()
+	b.d.reopen()
+	return nil
+}
+
+// reset puts the app back the way it was once the first episode was
+// searched: the model answers again, every episode a walk added is gone,
+// the episode's work folder and the app's settings are what they were, and
+// the app is opened again on them, so nothing a walk did is kept in memory
+// either. Every walk starts from the same place, and a seed walks the same
+// way every time.
+func (b *bridge) reset() error {
+	b.words.pace.Store(0)
+	b.d.model.hangs(false)
+	b.d.model.fails(false)
+	b.mu.Lock()
+	b.picks = nil
+	b.mu.Unlock()
+	if !b.d.svc.jobs.shutDown() {
+		return fmt.Errorf("the app did not stop its work in time")
+	}
+	b.d.svc.levels.shutDown()
+	entries, err := os.ReadDir(b.d.home)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() == filepath.Base(b.first) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(b.d.home, e.Name())); err != nil {
 			return err
 		}
-		if err := os.CopyFS(work, os.DirFS(kept)); err != nil {
+	}
+	for _, dir := range []string{workOf(b.first), filepath.Join(b.d.home, "config")} {
+		if err := os.CopyFS(dir, os.DirFS(filepath.Join(b.kept, filepath.Base(dir)))); err != nil {
 			return err
 		}
-		// What the service keeps of the episode goes with it: its undo
-		// and the transcript it read.
-		d.svc.mu.Lock()
-		d.svc.histories, d.svc.said, d.svc.saidBy = nil, nil, ""
-		d.svc.mu.Unlock()
-		return nil
 	}
-	return d, path, reset
+	b.d.reopen()
+	return nil
 }
 
 // bridgeDist is where the interface built for the bridge is.
@@ -405,6 +564,12 @@ func bridgeDist(t *testing.T) string {
 // The walks are seeds 1 to WALKS, the same every time, so a walk that
 // breaks a rule breaks it again on the next run, and a change that only
 // moves what a seed walks into is not a red run of its own.
+//
+// They run side by side, as many at once as the machine has cores, or
+// WALKERS. Each runs against a bridge of its own, started as a process of
+// its own: a desk sets HOME for the whole process it is in, so two bridges
+// in one would share the app's settings. One after another they took nine
+// minutes.
 func TestWalks(t *testing.T) {
 	if os.Getenv("FRAMEFAIRY_WALKS") == "" {
 		t.Skip("make walks runs these")
@@ -427,28 +592,12 @@ func TestWalks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The desk gives the Go side a home of its own, and the walks get the
-	// real one back: Playwright finds its Chromium in the home it was
-	// installed into, and looked in the desk's, where there is none.
-	home := os.Getenv("HOME")
-	d, _, reset := openBridge(t)
-	server := httptest.NewServer(bridgeHandler(d, dist, reset))
-	defer server.Close()
 
-	run := func(script string, env ...string) {
-		t.Helper()
-		cmd := exec.Command(node, filepath.Join(walks, script))
-		cmd.Dir = walks
-		cmd.Env = append(append(os.Environ(), "HOME="+home, "BRIDGE_URL="+server.URL+"/"), env...)
-		out, err := cmd.CombinedOutput()
-		what := strings.TrimSpace(script + " " + strings.Join(env, " "))
-		if err != nil {
-			t.Errorf("%s:\n%s", what, out)
-			return
-		}
-		t.Logf("%s:\n%s", what, out)
+	type walkRun struct {
+		script string
+		env    []string
 	}
-	run("sequences.mjs")
+	runs := []walkRun{{script: "sequences.mjs"}}
 	walksWanted := envNumber("WALKS", 3)
 	// Each walk takes its own number of steps unless STEPS says.
 	var steps []string
@@ -456,11 +605,87 @@ func TestWalks(t *testing.T) {
 		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
 	}
 	// Every walk in the folder, each for the same seeds.
-	for _, script := range walkScripts(t, walks) {
-		for seed := 1; seed <= walksWanted; seed++ {
-			run(script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)...)
+	for seed := 1; seed <= walksWanted; seed++ {
+		for _, script := range walkScripts(t, walks) {
+			runs = append(runs, walkRun{script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
 	}
+
+	walkers := min(envNumber("WALKERS", runtime.NumCPU()), len(runs))
+	todo := make(chan walkRun, len(runs))
+	for _, r := range runs {
+		todo <- r
+	}
+	close(todo)
+	// The bridges start at once, each in its walker, since each takes a
+	// few seconds to hear and search its episode.
+	var wg sync.WaitGroup
+	for range walkers {
+		wg.Go(func() {
+			url, err := startBridge(t)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			for r := range todo {
+				began := time.Now()
+				cmd := exec.Command(node, filepath.Join(walks, r.script))
+				cmd.Dir = walks
+				cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+url), r.env...)
+				out, err := cmd.CombinedOutput()
+				what := fmt.Sprintf("%s (%.0f s)", strings.TrimSpace(r.script+" "+strings.Join(r.env, " ")), time.Since(began).Seconds())
+				if err != nil {
+					t.Errorf("%s:\n%s", what, out)
+					continue
+				}
+				t.Logf("%s:\n%s", what, out)
+			}
+		})
+	}
+	wg.Wait()
+	if left := len(todo); left > 0 {
+		t.Errorf("%d runs were not walked, since no bridge started", left)
+	}
+}
+
+// startBridge starts TestBridge in a process of its own, on a free port,
+// and gives back where it answers. It is stopped when the test ends.
+func startBridge(t *testing.T) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestBridge$", "-test.timeout", "0")
+	cmd.Env = append(os.Environ(), "FRAMEFAIRY_BRIDGE=127.0.0.1:0", "FRAMEFAIRY_BRIDGE_WALKER=1", "FRAMEFAIRY_WALKS=")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", err
+	}
+	// What it says, read until it says where it answers and let go of
+	// after that.
+	said, says := io.Pipe()
+	cmd.Stdout, cmd.Stderr = says, says
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	ended := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		_ = says.Close()
+		close(ended)
+	}()
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		<-ended
+	})
+	lines := bufio.NewScanner(said)
+	var before []string
+	for lines.Scan() {
+		line := lines.Text()
+		if rest, ok := strings.CutPrefix(line, "bridge on "); ok {
+			url, _, _ := strings.Cut(rest, " ")
+			go func() { _, _ = io.Copy(io.Discard, said) }()
+			return url + "/", nil
+		}
+		before = append(before, line)
+	}
+	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
 }
 
 // walkScripts are the walks in the folder: every script that walks with
