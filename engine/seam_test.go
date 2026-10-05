@@ -31,8 +31,10 @@ func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
 	}
 	for i, want := range [][2]bool{{true, false}, {false, true}, {true, true}} {
 		chain := ""
+		// Found by the label it gives its piece, since a piece reads its
+		// sound from an input of its own, see soundLead.
 		for _, part := range strings.Split(graph, ";") {
-			if strings.HasPrefix(part, fmt.Sprintf("[%d:a]", i)) {
+			if strings.HasSuffix(part, fmt.Sprintf("[a%d]", i)) {
 				chain = part
 			}
 		}
