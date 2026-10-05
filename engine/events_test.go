@@ -501,6 +501,40 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 	}
 }
 
+// Removing a word takes the word out of its caption and nothing else. The
+// time it was said in is no pause, so the caption goes on over it and is
+// laid out the way it was. It ended at the word before, and the words
+// after went on to the next caption, with nothing on screen between.
+func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
+	heard := []Cue{{60, 60.4, "wurde"}, {60.45, 61, "irgendein"}, {61.05, 61.4, "Typ"},
+		{61.45, 62.1, "auf"}, {62.15, 62.4, "dem"}, {62.45, 63, "Schulhof."},
+		{64, 64.4, "Und"}, {64.45, 64.9, "dann"}}
+	clip := Clip{Segments: []Segment{{Start: 59.9, End: 65}}}
+	style := ResolveStyle(nil)
+	laid := func(tr *Transcript) string {
+		var out []string
+		for _, c := range ClipCaptions(clip, tr, style) {
+			var words []string
+			for _, w := range c.Words {
+				words = append(words, w.Text)
+			}
+			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, strings.Join(words, " ")))
+		}
+		return strings.Join(out, " ")
+	}
+	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
+	before := laid(tr)
+	logs := filepath.Join(t.TempDir(), "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	if err := SetWordText(logs, 61.7, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(before, "Typ auf dem", "Typ dem", 1)
+	if got := laid(tr); got != want {
+		t.Errorf("captions\n got %s\nwant %s", got, want)
+	}
+}
+
 // A removed word typed back in beside its neighbour is the word put back
 // where it was heard, the same as an undo would put it: its own time, so
 // it is lit while it is said, and no correction left on either word.

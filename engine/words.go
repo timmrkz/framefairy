@@ -43,6 +43,25 @@ func (t *Transcript) Correct(corrections map[string]string) {
 	t.Language = wordsLanguage(words)
 }
 
+// captionWords are the words with the words removed among them, with no
+// text, in the order they were said. A removed word is not shown, but the
+// captions still know it was said, see Captions.
+func (t *Transcript) captionWords() []Cue {
+	out := t.Words
+	for _, w := range t.HeardWords {
+		if strings.TrimSpace(w.Text) == "" {
+			if len(out) == len(t.Words) {
+				out = append([]Cue(nil), t.Words...)
+			}
+			out = append(out, w)
+		}
+	}
+	if len(out) != len(t.Words) {
+		sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
+	}
+	return out
+}
+
 // splitWord turns a word that reads as several words into one word each. The
 // recogniser heard one word where more were said, so the span it measured
 // is shared out by how long the words are. The audio is not read again: the
@@ -196,6 +215,6 @@ func HoldsWord(start, end float64, w Cue) bool {
 // app alike: from the words the clip says, in the clip's style, hyphenated
 // for the episode's language.
 func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
-	captions := Captions(clip, t.Words, max(8, int(s.MaxChars)), TooWide(s))
+	captions := Captions(clip, t.captionWords(), max(8, int(s.MaxChars)), TooWide(s))
 	return LayOutCaptions(captions, s, t.Language)
 }
