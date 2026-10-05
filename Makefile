@@ -287,19 +287,22 @@ else
 endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
-# LGPL. make builds it once, when it is not there. This builds it again
-# whatever is there, for when scripts/build-ffmpeg.sh has changed or the
-# last one went wrong.
+# LGPL. make builds it when it is not there or scripts/build-ffmpeg.sh has
+# changed since, see scripts/tools.sh. This builds it again whatever is
+# there, for when the last one went wrong.
 ffmpeg:
 	@rm -rf $(STAMPS)/ffmpeg
 	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
+	@cksum scripts/build-ffmpeg.sh | cut -d' ' -f1 >$(STAMPS)/ffmpeg/built
 
 # The llama-server we ship, so choosing a local model is not an instruction
 # to go and install something. Same rules as ffmpeg above: make builds it
-# once when it is not there, this builds it again whatever is there.
+# when it is not there or its script changed, this builds it again
+# whatever is there.
 llama:
 	@rm -rf $(STAMPS)/llama
 	@sh scripts/build-llama.sh $(STAMPS)/llama
+	@cksum scripts/build-llama.sh | cut -d' ' -f1 >$(STAMPS)/llama/built
 
 # Both of them in one archive, with a manifest that says what each one is
 # and the sha256 to check a copy against. This is what a release picks up

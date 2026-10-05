@@ -69,8 +69,8 @@ fi
 
 # The ffmpeg and the llama-server framefairy ships, built from source: ffmpeg
 # without libx264 so the build is LGPL, llama-server from llama.cpp, which
-# is MIT. Each takes minutes and happens once: after that the file is there
-# and this is a file test.
+# is MIT. Each takes minutes and happens once for each version: after that
+# the file is there and this is a file test and a checksum.
 #
 # They are built here rather than by hand because what is run every day has
 # to be what a customer runs. A build that fails stops make. It used to
@@ -79,16 +79,26 @@ fi
 # working one with somebody else's tools in it. The programs take no tool
 # from the search path any more, so there is nothing for it to answer.
 #
+# A tool is built again when the script that builds it is not the one it
+# was built with, which is what raising a pin is. It used to be built only
+# when it was missing, so a Mac that pulled a new pin went on with the old
+# tool and said nothing. Which script built it is in built beside it, a
+# checksum of the file, which costs a read of one small file.
+#
 # A build that did not work is not tried again on every make. That would be
 # minutes of nothing before every build, for as long as it stays broken. It
 # is tried again the moment the script that does it changes, and make
 # ffmpeg and make llama always try again whatever happened.
 build_tool() {
 	name=$1 dir=$2 script=$3 target=$4
-	if [ -x "$dir/bin/$name" ]; then
+	recipe=$(cksum "$script" | cut -d' ' -f1)
+	if [ -x "$dir/bin/$name" ] && [ "$(cat "$dir/built" 2>/dev/null)" = "$recipe" ]; then
 		return 0
 	fi
-	recipe=$(cksum "$script" | cut -d' ' -f1)
+	if [ -x "$dir/bin/$name" ]; then
+		echo "$script has changed since the $name framefairy ships was built."
+		rm -rf "$dir"
+	fi
 	if [ "$(cat "$dir/failed" 2>/dev/null)" = "$recipe" ]; then
 		echo "The $name framefairy ships did not build last time, and no other is used."
 		echo "Try it again with: make $target"
@@ -97,6 +107,7 @@ build_tool() {
 	echo "Building the $name framefairy ships. This takes several minutes, once."
 	if sh "$script" "$dir"; then
 		rm -f "$dir/failed"
+		echo "$recipe" >"$dir/built"
 		return 0
 	fi
 	mkdir -p "$dir"
