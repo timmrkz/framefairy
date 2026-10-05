@@ -63,23 +63,34 @@ const stillsAt = join(tmpdir(), "framefairy-preview-stills");
 // picture blank.
 const litFilter = "geq=lum='40+160*T/14423':cb=128:cr=128";
 
-async function episode() {
+// ?fps=25 plays the same episode at 25 frames a second, each second's
+// frame shown 25 times, the way an episode on the Mac is. At one frame a
+// second the browser says a new frame is on screen once a second, and
+// anything that follows the frames, the playhead while it plays above all,
+// can only be seen moving in steps of a second. Made once like the other,
+// in about a minute, and about 8 MB.
+function episodeFile(fps) {
+  return fps > 1 ? episodeAt.replace(".webm", `-${fps}fps.webm`) : episodeAt;
+}
+
+async function episode(fps = 1) {
+  const file = episodeFile(fps);
   try {
-    await stat(episodeAt);
-    return episodeAt;
+    await stat(file);
+    return file;
   } catch {}
   try {
     await run("ffmpeg", [
       "-v", "error",
       "-f", "lavfi", "-i", "color=c=black:s=192x108:r=1",
       "-t", "14423",
-      "-vf", litFilter,
+      "-vf", fps > 1 ? `${litFilter},fps=${fps}` : litFilter,
       "-c:v", "libvpx-vp9", "-b:v", "12k",
-      "-deadline", "realtime", "-cpu-used", "8", "-g", "120",
+      "-deadline", "realtime", "-cpu-used", "8", "-g", String(fps > 1 ? 10 * fps : 120),
       "-pix_fmt", "yuv420p",
-      episodeAt, "-y",
+      file, "-y",
     ]);
-    return episodeAt;
+    return file;
   } catch {
     return null;
   }
@@ -87,12 +98,12 @@ async function episode() {
 
 // The whole file, read once. It was read from disk on every range request,
 // and a video element asks for a great many of them.
-let episodeBytes = null;
-async function episodeBody() {
-  const file = await episode();
+const episodeBytes = new Map();
+async function episodeBody(fps) {
+  const file = await episode(fps);
   if (!file) return null;
-  episodeBytes ??= await readFile(file);
-  return episodeBytes;
+  if (!episodeBytes.has(file)) episodeBytes.set(file, await readFile(file));
+  return episodeBytes.get(file);
 }
 
 // A frame of the episode as a picture, which is what the workspace puts
@@ -128,8 +139,8 @@ async function still(res, path) {
 
 // The video element asks for a stretch at a time and will not seek at all
 // without a 206, so the range is answered rather than the whole file.
-async function media(res, range) {
-  const body = await episodeBody();
+async function media(res, range, fps) {
+  const body = await episodeBody(fps);
   if (!body) {
     res.writeHead(404).end("no ffmpeg, so no episode to play");
     return;
@@ -176,6 +187,7 @@ export async function screen({
   // first press of the space bar after a search took the playhead to the
   // start of the episode in that state, see playingAt in lib/flow.ts.
   const unread = Number(/[?&]unread=(\d+)/.exec(query)?.[1] ?? 0) * 1000;
+  const fps = Number(/[?&]fps=(\d+)/.exec(query)?.[1] ?? 1);
   let unreadFrom = 0;
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
@@ -190,7 +202,7 @@ export async function screen({
         const wait = unreadFrom + unread - Date.now();
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       }
-      await media(res, req.headers.range);
+      await media(res, req.headers.range, fps);
       return;
     }
     const file = url.pathname === "/" ? "/index.html" : url.pathname;

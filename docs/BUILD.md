@@ -79,10 +79,11 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make notices` | writes the licence notices in `notices/` again, from the Go modules, the interface's packages and the source trees ffmpeg and llama-server are built from. Run it when a test or the interface build says a notice is missing or out of date. See [THIRD_PARTY.md](THIRD_PARTY.md) |
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check before every push, see [Checking a change](#checking-a-change) |
-| `make test` | everything below: `unit`, `fuzz` and `interface` |
+| `make test` | everything below: `unit`, `fuzz`, `interface` and `walks` |
 | `make unit` | every Go test under the race detector, the fuzz seeds included |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
+| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and walks of seeds 1 to `WALKS`, 4 unless set, of `STEPS` steps, 60 unless set. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
@@ -112,7 +113,8 @@ committed or not, new files included, and runs what those files can reach:
 | --- | --- |
 | Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below |
 | `go.mod`, `go.sum` | every package and every fuzz target |
-| `frontend/` | `make interface`, and for a file a Go test reads, like `api.ts`, that test's package too |
+| `frontend/` | `make interface` and `make walks`, and for a file a Go test reads, like `api.ts`, that test's package too. The preview's own files, outside `walks/` and the bridge's, are not under the walks |
+| a package the app reaches, the engine among them | `make walks` as well, since the walks drive the app |
 | `Makefile`, a build script | `make`, and for a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
@@ -200,7 +202,7 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main. It is six jobs on six machines, all at once, because none of them
+main. It is seven jobs on seven machines, all at once, because none of them
 needs any of the rest:
 
 | Job | Machine | What it runs |
@@ -208,6 +210,7 @@ needs any of the rest:
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
 | `linux` | Linux | `make unit` |
+| `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
 | `fuzz` | Linux | `make fuzz` |
 | `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
 | `macos-fuzz` | macOS | `make fuzz` |
@@ -276,7 +279,8 @@ with it.
 `scripts/ci-packages.sh`. Every Go job compiles the app's package, the
 fuzzing too because one of its targets is there, so GTK, WebKit and
 pkg-config are in every one. ffmpeg is only in `linux`, whose tests
-render, and patchelf only in `build`, which carries the speech library.
+render, and `walks`, whose bridge makes its episode with it, and patchelf
+only in `build`, which carries the speech library.
 ffmpeg was once in all three, and it is most of what apt downloads: on a
 day the Ubuntu mirror crawled, the fuzzing waited fifteen minutes for a
 speech synthesis library ffmpeg depends on, for a job that never runs

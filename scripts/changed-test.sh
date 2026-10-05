@@ -68,24 +68,31 @@ is() {
 # Docs change nothing that runs.
 is "README.md docs/APP.md CLAUDE.md .claude/skills/interface/SKILL.md" ""
 
-# The interface on its own is the interface, and no Go at all.
-is "frontend/src/App.svelte" "interface"
+# The interface on its own is the interface and the walks, and no Go at
+# all. The preview's stand-in is not under the walks, which run against
+# the bridge, but the bridge is.
+is "frontend/src/App.svelte" "interface walks"
 is "frontend/preview/wails-stub.ts" "interface"
+is "frontend/preview/walks/words.mjs" "interface walks"
+is "frontend/preview/wails-bridge.ts" "interface walks"
 
 # Except the files of the interface a Go test reads, which are that test's
 # package too. A file a Go test only names in a comment is not one of them.
-has "frontend/src/lib/api.ts" "interface" "go framefairy/cmd/framefairy-app"
+has "frontend/src/lib/api.ts" "interface" "go framefairy/cmd/framefairy-app" "walks"
 has "frontend/src/lib/suggest.cases.json" "interface" "go framefairy/engine"
-is "frontend/src/lib/flow.ts" "interface"
+is "frontend/src/lib/flow.ts" "interface walks"
 
 # A package reaches every package that imports it, and only those.
 has "updates/updates.go" "go framefairy/updates" "go framefairy/cmd/framefairy-app" \
 	"go framefairy/cmd/framefairy-release"
 lacks "updates/updates.go" "go framefairy/engine" "build" "interface"
+# A package only the release tool reaches is not under the walks.
+lacks "cmd/framefairy-release/main.go" "walks"
 
-# The engine is under both front ends and the training tool.
+# The engine is under both front ends and the training tool, and so
+# under the walks, which drive the app.
 has "engine/edit.go" "go framefairy/engine" "go framefairy/cmd/framefairy" \
-	"go framefairy/cmd/framefairy-app" "go framefairy/cmd/framefairy-train"
+	"go framefairy/cmd/framefairy-app" "go framefairy/cmd/framefairy-train" "walks"
 
 # A package at the top of the tree reaches only itself.
 is "cmd/framefairy-release/main.go" "go framefairy/cmd/framefairy-release"
@@ -93,7 +100,7 @@ is "cmd/framefairy-release/main.go" "go framefairy/cmd/framefairy-release"
 # What a package keeps beside its code belongs to it: a seed in testdata,
 # a file it embeds.
 has "engine/testdata/fuzz/FuzzValidatePlan/seed" "go framefairy/engine"
-is "cmd/framefairy-app/update-key.txt" "go framefairy/cmd/framefairy-app"
+is "cmd/framefairy-app/update-key.txt" "go framefairy/cmd/framefairy-app walks"
 
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"

@@ -42,6 +42,9 @@ type desk struct {
 	// the app, the way the models on disk would be.
 	speech *speech
 	model  *model
+	// bus carries what the Go side tells the interface, when a browser
+	// is listening, see bridge_test.go.
+	bus *bus
 }
 
 // open starts the app over a new, empty library.
@@ -77,7 +80,11 @@ func open(t *testing.T) *desk {
 // start runs the app over a store.
 func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
-	d.svc.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
+	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
+		func(episode string) { d.bus.send("episode", episode) })
+	if d.bus != nil {
+		d.svc.levels = newMeasuring(func(episode string) { d.bus.send("levels", episode) })
+	}
 	svc := d.svc
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.

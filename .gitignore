@@ -14,6 +14,7 @@
 # other.
 /frontend/preview/dist/
 /frontend/preview/dist-motion/
+/frontend/preview/dist-bridge/
 
 # Programs built by hand with go build
 /framefairy
