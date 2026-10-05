@@ -277,6 +277,11 @@ and every seek after it shows the video's own frame. The jump used to wait
 for the next play, and until then every seek made while paused, a click on
 the clip timeline or a press of an arrow key, had a frame from the engine
 drawn over a video that had already landed, each one waiting on the engine.
+A clip played from a playhead that stands in one of its cuts plays from
+where that cut ends, see `playFrom` in `lib/playhead.ts`. A double-click
+that cuts a part out leaves the playhead in it, and the space bar then
+played the part just cut, which the render does not have. The playback
+walk found it while 2.121 fixed it, and holds it fixed.
 
 Until the video has read anything of the file, it has no picture and no
 clock, and that is often so for an episode just added, whose file is read by
@@ -1006,7 +1011,11 @@ bubble scrolled by those eight pixels.
       A clip changed before this was written keeps the edges it had at its
       first change after it. The edge's title says when it was moved by
       hand, and the double-click is a trim to the edge it was found with, so
-      Undo takes it back like any other trim.
+      Undo takes it back like any other trim. It lands there exactly, not on
+      the frame nearest: a search finds a clip on the episode's clock, so
+      its edges are seldom on a frame, and the end went back to 24.80 where
+      the clip had ended at 24.72. A trim within half a frame of where the
+      clip was found lands there, see `onFound` in `engine/shape.go`.
     - **The playhead goes with the edge.** While either edge of a clip is
       dragged, the playhead stands on it and the video preview shows that
       frame, the clip as it is being dragged, with its captions. On frames
