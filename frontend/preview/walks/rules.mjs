@@ -3,7 +3,7 @@
 // and the engine's answer with itself before and after, and know nothing
 // of what a correction should do, so they cannot drift into a third
 // engine. See docs/TESTING.md.
-import { settle, engineState, shown, timeline } from "./bridge.mjs";
+import { settle, engineState, shown, timeline, chosen } from "./bridge.mjs";
 
 // The engine's captions as a list of words, and as one comparable value.
 export const words = (caps) =>
@@ -62,9 +62,19 @@ export class Watch {
   async step(kind, s) {
     const { page } = this;
     await settle(page);
+    // The clip on screen, which a step that opens another episode or
+    // another clip changes. Then what was before is another clip's, and
+    // nothing is compared across the change.
+    const at = await chosen(page);
+    const moved = at && JSON.stringify(at) !== JSON.stringify(this.at);
+    if (moved) {
+      this.at = at;
+      this.undone = [];
+      this.redone = [];
+    }
     const now = await shown(page);
     const after = await engineState(page, this.at);
-    const before = this.before;
+    const before = moved ? after : this.before;
 
     // No call failed and the page threw nothing.
     const calls = await page.evaluate((from) => window.__calls.slice(from), this.callsSeen);
