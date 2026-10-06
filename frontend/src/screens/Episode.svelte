@@ -63,6 +63,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { asking, keysElsewhere, typing } from "../lib/keys";
   import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
@@ -1204,10 +1205,7 @@
     if (!out && event.key !== "i" && event.key !== "I") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-    if (document.querySelector("dialog[open]")) return;
+    if (keysElsewhere()) return;
     event.preventDefault();
     void makeClip(out);
   }
@@ -1216,10 +1214,7 @@
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-    if (document.querySelector("dialog[open]")) return;
+    if (keysElsewhere()) return;
     if (!current) return;
     event.preventDefault();
     toggleThumbnail();
@@ -1793,11 +1788,12 @@
   // and nothing changes where nobody is looking.
   let undoing = false;
   async function undo(what: "undo" | "redo") {
-    const on = document.activeElement as HTMLElement | null;
-    if (on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA" || on.isContentEditable)) {
+    if (typing()) {
       document.execCommand(what);
       return;
     }
+    // Nothing changes behind the box asking something.
+    if (asking()) return;
     // One at a time. A key held down would otherwise ask for the same step
     // twice before the first answer is back.
     if (undoing) return;
@@ -2040,13 +2036,10 @@
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (!event.shiftKey) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
     // A box asking something, and an edge being nudged, take the arrows
     // for themselves.
-    if (on?.getAttribute("role") === "slider") return;
-    if (document.querySelector("dialog[open]")) return;
+    if (keysElsewhere()) return;
+    if (document.activeElement?.getAttribute("role") === "slider") return;
     const list = shown.filter((c) => !(c.key in removed));
     if (!list.length) return;
     event.preventDefault();
