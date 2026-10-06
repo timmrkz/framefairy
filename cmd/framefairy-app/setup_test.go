@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/ffmpegtest"
 )
 
 // A new copy of the app on a machine with nothing on it. Everything here
@@ -632,15 +633,12 @@ func TestOpenKeysPageOpensOnlyTheCompanysPage(t *testing.T) {
 // whether the file is the one the app was built with. "There is an
 // ffmpeg" said nothing about which one.
 func TestTheCheckSaysWhichToolsTheAppRuns(t *testing.T) {
-	ffmpeg, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
+	ffmpeg, _ := exec.LookPath("ffmpeg")
+	probe, _ := exec.LookPath("ffprobe")
 	s := emptyMachine(t)
 	t.Setenv("FRAMEFAIRY_FFMPEG", ffmpeg)
-	if probe, err := exec.LookPath("ffprobe"); err == nil {
-		t.Setenv("FRAMEFAIRY_FFPROBE", probe)
-	}
+	t.Setenv("FRAMEFAIRY_FFPROBE", probe)
 	placeLlamaServer(t)
 	if err := s.ChoosePlanner("local"); err != nil {
 		t.Fatal(err)

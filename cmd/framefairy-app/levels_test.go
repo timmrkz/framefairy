@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -10,15 +9,14 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/ffmpegtest"
 )
 
 // levelsLibrary is a library with n short episodes in it and a service
 // that measures their loudness the way the app does.
 func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
