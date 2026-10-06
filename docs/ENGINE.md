@@ -680,12 +680,22 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   and was right for both kinds already: on files ffmpeg made of both
   kinds, every time it read agreed with ffprobe to a microsecond. The
   sound is cut at the same moments as before.
+- **The rate of a short of uneven frames.** The rate ffmpeg reports for
+  uneven frames is the finest step they keep to, not how many come a
+  second: 50 for the phone's frames above, which average 29.75, so its
+  short came out at 50 frames a second. A short of a variable file is
+  made at the frames' average rate rounded to the nearest of 24, 25, 30,
+  50 and 60, `shortRate`, which was Tim's choice: 30 for the phone's and
+  for the one with frames left out, which averages about 28. Each frame of the
+  short is still the frame that holds its moment. A file whose frames
+  keep to their rate keeps its own rate exactly.
 
 `TestARenderShowsTheFrameThatHoldsEachMoment` in
 `engine/frametimes_test.go` renders a clip of four pieces from four such
 episodes: a phone's frames 0, 8 or 16 ms late in ticks of 1/600 s,
 frames left out, and a picture a quarter of a second late in MOV and in
-Matroska, with the clip's first piece starting before it. Each frame of
+Matroska, with the clip's first piece starting before it, and checks the
+short's rate, 30 for the first two and 29.97 for the late ones. Each frame of
 the episode carries its number in eight bars, and the tone grows through
 every second, so each frame of the short is checked to be the frame that
 holds its moment, and each piece to be heard, on the mean of its frames,

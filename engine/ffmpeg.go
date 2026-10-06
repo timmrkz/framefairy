@@ -456,7 +456,8 @@ type SourceInfo struct {
 	// over the rate after the first: a phone that records a frame a little
 	// early or late, or a screen recorder that leaves out frames where
 	// nothing moved. A render then takes the frame that holds each moment
-	// by the frames' own timestamps, see cutOf.
+	// by the frames' own timestamps, see cutOf, and the rate is not the one
+	// the file reports but the one its short is made at, see shortRate.
 	Variable bool
 	// Colour tags to copy to the output, as ffmpeg flag name and value.
 	Colour [][2]string
@@ -486,7 +487,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	res := run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",
-		"stream=width,height,r_frame_rate,start_time,color_primaries,color_transfer,color_space",
+		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
 		"-show_entries", "format=duration,start_time",
 		"-of", "json", path)
 	if res.Code != 0 {
@@ -564,7 +565,35 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	info := SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour}
 	info.Variable = hasFirst && e.uneven(ctx, path, info, first)
+	if info.Variable {
+		// The rate ffmpeg reports for uneven frames is the finest step
+		// they keep to, 50 or more for a phone's, so a short is made at
+		// their average instead, rounded to a rate shorts are played at.
+		average := float64(num) / float64(den)
+		if text, _ := stream["avg_frame_rate"].(string); text != "" {
+			a, b, _ := strings.Cut(text, "/")
+			n, err1 := strconv.ParseFloat(a, 64)
+			d, err2 := strconv.ParseFloat(b, 64)
+			if err1 == nil && err2 == nil && n > 0 && d > 0 {
+				average = n / d
+			}
+		}
+		info.FPSNum, info.FPSDen = shortRate(average), 1
+	}
 	return info, nil
+}
+
+// shortRate is the rate a short of uneven frames is made at: the nearest
+// of the rates shorts are played at to the frames' average, 30 for a phone
+// that averages 29.75.
+func shortRate(average float64) int {
+	best := 0
+	for _, rate := range []int{24, 25, 30, 50, 60} {
+		if best == 0 || math.Abs(float64(rate)-average) < math.Abs(float64(best)-average) {
+			best = rate
+		}
+	}
+	return best
 }
 
 // frameHair is how far a frame may begin from its place on the grid of
