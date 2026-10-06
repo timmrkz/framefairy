@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -444,6 +446,19 @@ type SourceInfo struct {
 	FPSNum   int
 	FPSDen   int
 	Duration float64
+	// When the picture's first frame begins, in seconds after the start of
+	// the file, which is where ffmpeg's -ss and every time in a clip count
+	// from. Most files start both together. One whose picture starts after
+	// its sound, by an edit list or a first timestamp, has its frames on a
+	// grid that begins here.
+	VideoStart float64
+	// Whether the frames come at uneven times, so that frame k is not k
+	// over the rate after the first: a phone that records a frame a little
+	// early or late, or a screen recorder that leaves out frames where
+	// nothing moved. A render then takes the frame that holds each moment
+	// by the frames' own timestamps, see cutOf, and the rate is not the one
+	// the file reports but the one its short is made at, see shortRate.
+	Variable bool
 	// Colour tags to copy to the output, as ffmpeg flag name and value.
 	Colour [][2]string
 }
@@ -472,8 +487,8 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	res := run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",
-		"stream=width,height,r_frame_rate,color_primaries,color_transfer,color_space",
-		"-show_entries", "format=duration",
+		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
+		"-show_entries", "format=duration,start_time",
 		"-of", "json", path)
 	if res.Code != 0 {
 		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, strip(res.Stderr))
@@ -538,6 +553,87 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	if _, present := stream["height"]; !present || !okH {
 		return SourceInfo{}, renderErr("%s reports no video dimensions", path)
 	}
-	return SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
-		Duration: duration, Colour: colour}, nil
+	// ffmpeg counts -ss from the start of the file, the earliest of its
+	// streams, so that is where the picture's start is measured from.
+	videoStart := 0.0
+	first, hasFirst := toFloat(stream["start_time"])
+	if hasFirst {
+		if from, ok := toFloat(data.Format["start_time"]); ok && first-from > 1e-6 {
+			videoStart = first - from
+		}
+	}
+	info := SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
+		Duration: duration, VideoStart: videoStart, Colour: colour}
+	info.Variable = hasFirst && e.uneven(ctx, path, info, first)
+	if info.Variable {
+		// The rate ffmpeg reports for uneven frames is the finest step
+		// they keep to, 50 or more for a phone's, so a short is made at
+		// their average instead, rounded to a rate shorts are played at.
+		average := float64(num) / float64(den)
+		if text, _ := stream["avg_frame_rate"].(string); text != "" {
+			a, b, _ := strings.Cut(text, "/")
+			n, err1 := strconv.ParseFloat(a, 64)
+			d, err2 := strconv.ParseFloat(b, 64)
+			if err1 == nil && err2 == nil && n > 0 && d > 0 {
+				average = n / d
+			}
+		}
+		info.FPSNum, info.FPSDen = shortRate(average), 1
+	}
+	return info, nil
+}
+
+// shortRate is the rate a short of uneven frames is made at: the nearest
+// of the rates shorts are played at to the frames' average, 30 for a phone
+// that averages 29.75.
+func shortRate(average float64) int {
+	best := 0
+	for _, rate := range []int{24, 25, 30, 50, 60} {
+		if best == 0 || math.Abs(float64(rate)-average) < math.Abs(float64(best)-average) {
+			best = rate
+		}
+	}
+	return best
+}
+
+// frameHair is how far a frame may begin from its place on the grid of
+// the rate and still be on it: more than ffmpeg's rounding of a time to
+// the ticks of a stream, half of Matroska's millisecond or of a phone's
+// 1/600 s, and much less than a frame.
+const frameHair = 0.001
+
+// uneven tells whether the frames of a file come off the grid of its rate,
+// by their timestamps in four stretches of two seconds across it: a frame
+// that begins off the grid, or two frames one after the other that are
+// not one frame apart, because a frame was left out or came twice. Only
+// the index is read there, not the picture. A file it cannot read is taken
+// as even, the way it was taken before.
+func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo, first float64) bool {
+	frame := float64(info.FPSDen) / float64(info.FPSNum)
+	for _, at := range []float64{0, 0.25, 0.5, 0.75} {
+		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+			"-read_intervals", fixed(at*info.Duration, 3)+"%+2",
+			"-show_entries", "packet=pts_time", "-of", "csv=p=0", path)
+		if res.Code != 0 {
+			return false
+		}
+		var begins []float64
+		for _, line := range strings.Fields(res.Stdout) {
+			if t, err := strconv.ParseFloat(strings.Trim(line, ","), 64); err == nil {
+				begins = append(begins, t)
+			}
+		}
+		// In the order they are shown, which B-frames change.
+		slices.Sort(begins)
+		for i, t := range begins {
+			k := (t - first) / frame
+			if math.Abs(k-math.Round(k))*frame > frameHair {
+				return true
+			}
+			if i > 0 && math.Abs(t-begins[i-1]-frame) > frameHair {
+				return true
+			}
+		}
+	}
+	return false
 }

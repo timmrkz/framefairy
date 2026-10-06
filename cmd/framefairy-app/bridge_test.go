@@ -274,7 +274,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"))
+		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"))
 		answer(w, path, err)
 	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
@@ -549,20 +549,36 @@ const filmedBits, bandHeight = 11, 4
 // seconds. They are worked out two pixels a bit, since a picture is an even
 // number of pixels high. Below them is the grey that grows lighter. The
 // sound is a steady tone, so padded silence at a cut can be heard.
-func makeFilmedEpisode(path string, seconds int, rate string) error {
+//
+// The frames come at the rate, unless timing says otherwise: "uneven" is
+// a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
+// "late" is a picture that starts a quarter of a second after the sound,
+// by an edit list. Either way each frame keeps its number.
+func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
 	d := strconv.Itoa(seconds)
 	bands := filmedBits * bandHeight
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+	shift, keep := "", []string{}
+	switch timing {
+	case "uneven":
+		shift = fmt.Sprintf(",settb=1/600,setpts='(N/(%s)+0.008*mod(N\\,3))/TB'", rate)
+		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}
+	case "late":
+		shift = ",setpts=PTS+0.25/TB"
+		keep = []string{"-fps_mode", "passthrough"}
+	}
+	args := []string{"-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x%d:r=%s:d=%s", 2*filmedBits, rate, d),
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x2:r=%s:d=%s", rate, d),
-		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d="+d,
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=" + d,
 		"-filter_complex",
-		fmt.Sprintf("[0]geq=lum='if(bitand(N\\,pow(2\\,%d-floor(Y/2)))\\,160\\,60)':cb=128:cr=128,scale=320:%d:flags=neighbor[b];", filmedBits-1, bands)+
-			fmt.Sprintf("[1]geq=lum='30+180*T/%s':cb=128:cr=128,scale=320:%d:flags=neighbor[g];", d, 180-bands)+
-			"[b][g]vstack,format=yuv420p[v]",
-		"-map", "[v]", "-map", "2",
+		fmt.Sprintf("[0]geq=lum='if(bitand(N\\,pow(2\\,%d-floor(Y/2)))\\,160\\,60)':cb=128:cr=128,scale=320:%d:flags=neighbor[b];", filmedBits-1, bands) +
+			fmt.Sprintf("[1]geq=lum='30+180*T/%s':cb=128:cr=128,scale=320:%d:flags=neighbor[g];", d, 180-bands) +
+			"[b][g]vstack,format=yuv420p" + shift + "[v]",
+		"-map", "[v]", "-map", "2"}
+	args = append(args, keep...)
+	out, err := exec.Command("ffmpeg", append(args,
 		"-shortest", "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "realtime", "-cpu-used", "8",
-		"-g", "15", "-c:a", "libopus", "-b:a", "64k", path).CombinedOutput()
+		"-g", "15", "-c:a", "libopus", "-b:a", "64k", path)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
 	}
@@ -579,13 +595,16 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // episode, at five frames a second, and with one it is filmed at that
 // rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
 // own kind is filmed by two cameras that switch then, see twoCameras.
-func (b *bridge) pick(seconds, rate, switchAt string) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
 	}
 	if rate != "" && !frameRate.MatchString(rate) {
 		return "", fmt.Errorf("%q is no frame rate", rate)
+	}
+	if timing != "" && timing != "uneven" && timing != "late" {
+		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	at, err := strconv.ParseFloat(switchAt, 64)
 	if err != nil || at <= 0 || at >= float64(n) {
@@ -596,7 +615,7 @@ func (b *bridge) pick(seconds, rate, switchAt string) (string, error) {
 	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
 	b.mu.Unlock()
 	if rate != "" {
-		err = makeFilmedEpisode(path, n, rate)
+		err = makeFilmedEpisode(path, n, rate, timing)
 	} else {
 		err = makeEpisode(path, n, at)
 	}
