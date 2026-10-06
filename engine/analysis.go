@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -134,29 +136,80 @@ var shotLimit = func(span float64) time.Duration {
 // Only the spans a clip keeps get scanned. The switches are hard cuts
 // between locked-off cameras, so detection is close to exact.
 func (e *Engine) DetectShots(ctx context.Context, path string, start, end float64) ([]float64, error) {
+	read, err := e.readSpan(ctx, path, start, end, false)
+	return read.cuts, err
+}
+
+// frameStep is how far apart the frames framing measures a shot on are.
+const frameStep = 0.4
+
+// grayFrame is a small grey frame of the episode at a moment of it.
+type grayFrame struct {
+	at  float64
+	pix []byte
+}
+
+// spanRead is what one read of a span a clip keeps gives its framing: the
+// camera switches inside it, and, when asked for, grey frames of
+// FaceWidth by FaceHeight, one every frameStep from its start and the one
+// a tenth of a second before its end, each with its moment.
+//
+// It is one decode. The switches, the frames the faces are looked for on
+// and the frames either side of a gap, to tell whether a clip comes back to
+// the camera it left, were three reads of the same seconds, eleven ffmpeg
+// runs for a clip in three pieces that decoded every kept second twice:
+// 18.1 s for a clip of 24 s on the cloud machine, 8.7 s as one read.
+type spanRead struct {
+	cuts   []float64
+	frames []grayFrame
+}
+
+// readSpan reads one span, see spanRead.
+func (e *Engine) readSpan(ctx context.Context, path string, start, end float64, frames bool) (spanRead, error) {
 	const threshold = 0.30
 	from := math.Max(0, start-0.5)
+	scene := fmt.Sprintf("scale=256:-2,select='gt(scene,%s)',showinfo", pyFloatRepr(threshold))
+	// The frames are cut to the span, one every frameStep from its
+	// start, and the first at a tenth of a second before its end, the
+	// frame the clip leaves the camera on.
+	last := math.Max(end-0.1, start) - from
+	grey := fmt.Sprintf("trim=start=%s:end=%s,"+
+		"select='isnan(prev_selected_t)+gte(t-prev_selected_t,%s)+gte(t,%s)*lt(prev_t,%s)',"+
+		"scale=%d:%d,format=gray,showinfo@frames",
+		fixed(start-from, 6), fixed(end-from, 6), fixed(frameStep-0.001, 3),
+		fixed(last, 6), fixed(last, 6), FaceWidth, FaceHeight)
 	// A scan that runs out of time is ended. ffmpeg has hung here once,
 	// decoding through the system's decoder, and a search waited on it for
 	// good. It takes seconds, so the limit is far past any honest run.
 	limit := shotLimit(end - start)
 	timedOut := false
+	var raw bytes.Buffer
 	scan := func(flags []string) (int, string) {
+		raw.Reset()
 		args := append([]string{"-hide_banner"}, flags...)
-		args = append(args,
-			"-ss", fixed(from, 3), "-to", fixed(end+0.5, 3),
-			"-i", path,
-			"-vf", fmt.Sprintf("scale=256:-2,select='gt(scene,%s)',showinfo", pyFloatRepr(threshold)),
-			"-an", "-fps_mode", "passthrough", "-f", "null", "-")
+		args = append(args, "-ss", fixed(from, 3), "-to", fixed(end+0.5, 3), "-i", path, "-an")
+		var out io.Writer
+		if frames {
+			args = append(args,
+				"-filter_complex", "[0:v]split=2[s][f];[s]"+scene+"[cuts];[f]"+grey+"[frames]",
+				"-map", "[cuts]", "-fps_mode", "passthrough", "-f", "null", "-",
+				"-map", "[frames]", "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
+			out = &raw
+		} else {
+			args = append(args, "-vf", scene, "-fps_mode", "passthrough", "-f", "null", "-")
+		}
 		scanCtx, cancel := context.WithTimeout(ctx, limit)
 		defer cancel()
-		code, stderr := e.RunFFmpeg(scanCtx, args, "finding camera switches", end-start+1.0, "")
+		code, stderr := e.runFFmpegTo(scanCtx, args, "finding camera switches", end-start+1.0, "", out)
 		timedOut = ctx.Err() == nil && scanCtx.Err() != nil
 		return code, stderr
 	}
 	flags := e.decodeFlags()
 	code, stderr := scan(flags)
-	if code != 0 && flags != nil && ctx.Err() == nil {
+	// A system decoder that fails, or that says it worked and gave no
+	// frames, is gone round: the same read on the processor, and every
+	// read after it.
+	if flags != nil && ctx.Err() == nil && (code != 0 || frames && raw.Len() < FaceWidth*FaceHeight) {
 		e.softDecode.Store(true)
 		if timedOut {
 			e.Log.Warn("finding camera switches stopped moving with the system's video decoder, decoding on the processor from now on")
@@ -166,20 +219,21 @@ func (e *Engine) DetectShots(ctx context.Context, path string, start, end float6
 		code, stderr = scan(nil)
 	}
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return spanRead{}, ctx.Err()
 	}
 	if code != 0 && timedOut {
 		// No switches found is a crop that does not follow a camera change.
 		// No clip at all is far worse.
 		e.Log.Warn("finding camera switches between %s and %s took longer than %s and was ended, so none are used there",
 			HMS(start), HMS(end), limit)
-		return nil, nil
+		return spanRead{}, nil
 	}
 	if code != 0 {
-		return nil, renderErr("shot detection failed:\n%s", tailRunes(strip(stderr), 400))
+		return spanRead{}, renderErr("shot detection failed:\n%s", tailRunes(strip(stderr), 400))
 	}
+	var read spanRead
 	seen := map[float64]bool{}
-	var cuts []float64
+	var times []float64
 	for _, line := range strings.Split(stderr, "\n") {
 		if !strings.Contains(line, "pts_time:") {
 			continue
@@ -194,16 +248,28 @@ func (e *Engine) DetectShots(ctx context.Context, path string, start, end float6
 			continue
 		}
 		absolute := from + value
+		if strings.Contains(line, "showinfo@frames") {
+			times = append(times, absolute)
+			continue
+		}
 		if start < absolute && absolute < end {
 			key := roundTo(absolute, 3)
 			if !seen[key] {
 				seen[key] = true
-				cuts = append(cuts, key)
+				read.cuts = append(read.cuts, key)
 			}
 		}
 	}
-	sort.Float64s(cuts)
-	return cuts, nil
+	sort.Float64s(read.cuts)
+	size := FaceWidth * FaceHeight
+	pix := raw.Bytes()
+	for i, at := range times {
+		if (i+1)*size > len(pix) {
+			break
+		}
+		read.frames = append(read.frames, grayFrame{at: at, pix: pix[i*size : (i+1)*size]})
+	}
+	return read, nil
 }
 
 // sampleGray pulls a handful of small greyscale frames from one part.
@@ -270,6 +336,47 @@ func (e *Engine) sameShot(ctx context.Context, path string, leave, back float64)
 		return false
 	}
 	return frameDifference(before[0], after[0]) < shotChange
+}
+
+// comesBack is sameShot for two spans already read: the frame the first
+// leaves on, a tenth of a second before its end, against the first frame
+// of the second, each made smaller by four the way sameShot compares them.
+// Spans read without those frames are asked of sameShot.
+func (e *Engine) comesBack(ctx context.Context, path string, left, came spanRead, leave, back float64) bool {
+	var before, after []byte
+	for _, f := range left.frames {
+		if f.at >= leave-0.1-0.001 {
+			before = f.pix
+			break
+		}
+	}
+	if len(came.frames) > 0 && came.frames[0].at < back+frameStep {
+		after = came.frames[0].pix
+	}
+	if before == nil || after == nil {
+		return e.sameShot(ctx, path, leave, back)
+	}
+	return frameDifference(quarter(before), quarter(after)) < shotChange
+}
+
+// quarter is a grey frame of FaceWidth by FaceHeight made four times
+// smaller each way, each pixel the mean of the sixteen it covers.
+func quarter(pix []byte) []byte {
+	w, h := FaceWidth/4, FaceHeight/4
+	out := make([]byte, w*h)
+	for y := range h {
+		for x := range w {
+			sum := 0
+			for dy := range 4 {
+				row := (y*4 + dy) * FaceWidth
+				for dx := range 4 {
+					sum += int(pix[row+x*4+dx])
+				}
+			}
+			out[y*w+x] = byte(sum / 16)
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -406,9 +513,8 @@ type timed struct {
 // subject is a person and their face is the thing a viewer looks at. Detail
 // is the fallback for frames where no face is detected, which keeps the tool
 // working on footage of something that is not a person.
-func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
+func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span, reads []spanRead,
 	source SourceInfo, cropW int) []timed {
-	const step = 0.4
 	whole := 0.0
 	for _, p := range parts {
 		whole += math.Max(p.End-p.Start, 0.05)
@@ -417,19 +523,37 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 		return nil
 	}
 	start := parts[0].Start
-	count := max(2, min(int(whole/step)+1, 200))
-	// Frames from every part of the shot the clip keeps, in proportion to
-	// how long each is, and nothing from what it leaves out.
+	count := max(2, min(int(whole/frameStep)+1, 200))
+	// The frames of every part of the shot the clip keeps, read with its
+	// span, and nothing from what it leaves out. A part too short to hold
+	// one of them is read on its own.
 	var frames [][]byte
 	var times []float64
 	for _, p := range parts {
-		duration := math.Max(p.End-p.Start, 0.05)
-		n := max(1, pyround(float64(count)*duration/whole))
-		got := e.sampleGray(ctx, path, p.Start, duration, FaceWidth, FaceHeight, n)
-		for i := range got {
-			times = append(times, p.Start+duration*float64(i)/float64(max(len(got)-1, 1)))
+		got := 0
+		for _, r := range reads {
+			for _, f := range r.frames {
+				if f.at >= p.Start-0.001 && f.at < p.End {
+					frames, times = append(frames, f.pix), append(times, f.at)
+					got++
+				}
+			}
 		}
-		frames = append(frames, got...)
+		if got == 0 {
+			duration := math.Max(p.End-p.Start, 0.05)
+			for _, pix := range e.sampleGray(ctx, path, p.Start, duration, FaceWidth, FaceHeight, 1) {
+				frames, times = append(frames, pix), append(times, p.Start)
+			}
+		}
+	}
+	// A long shot is measured on as many frames as before, spread over it.
+	if len(frames) > count {
+		keptFrames, keptTimes := make([][]byte, 0, count), make([]float64, 0, count)
+		for i := range count {
+			k := i * (len(frames) - 1) / (count - 1)
+			keptFrames, keptTimes = append(keptFrames, frames[k]), append(keptTimes, times[k])
+		}
+		frames, times = keptFrames, keptTimes
 	}
 	if len(frames) == 0 {
 		return nil
@@ -554,15 +678,19 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 		parts []Span
 	}
 	var shots []*shot
+	reads := make([]spanRead, len(ordered))
 	for i, span := range ordered {
 		work.part(span.End - span.Start)
-		cuts, err := e.DetectShots(ctx, path, span.Start, span.End)
+		read, err := e.readSpan(ctx, path, span.Start, span.End, true)
 		if err != nil {
 			return nil, err
 		}
+		reads[i] = read
+		cuts := read.cuts
 		// Coming back from what was cut out, to the camera it left or to
 		// another one.
-		back := i > 0 && len(shots) > 0 && e.sameShot(ctx, path, ordered[i-1].End, span.Start)
+		back := i > 0 && len(shots) > 0 &&
+			e.comesBack(ctx, path, reads[i-1], read, ordered[i-1].End, span.Start)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -596,7 +724,7 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			samples := e.samplePositions(ctx, path, s.parts, source, cropW)
+			samples := e.samplePositions(ctx, path, s.parts, reads, source, cropW)
 			if settled, ok := settledCrop(samples); ok {
 				x := int(settled)
 				crop = intPtr(ClampCropX(&x, cropW, source.Width))
