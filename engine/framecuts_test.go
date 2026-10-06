@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // A render cuts on whole frames at every frame rate. Every piece of a short
@@ -28,7 +30,7 @@ import (
 func TestARenderCutsOnWholeFrames(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	for _, c := range []struct{ rate, container string }{
 		{"30000/1001", "mov"}, {"24000/1001", "mov"}, {"24", "mov"},

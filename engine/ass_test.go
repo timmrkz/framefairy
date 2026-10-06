@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // Caption text is whatever the guest said, as heard by the recogniser and
@@ -332,7 +334,7 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 func TestTheMeasureAgreesWithLibass(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	for _, font := range CaptionFonts() {
 		s := ResolveStyle(map[string]any{"font": font.Name, "size": 96.0, "highlight": 0.0})
@@ -340,7 +342,7 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 		boxes, ok := e.measureMany(context.Background(),
 			[]string{`{\alpha&H00&}` + text}, s, 1920, int(s.Size))
 		if !ok || len(boxes) != 1 || boxes[0] == nil {
-			t.Skip("this ffmpeg cannot measure captions")
+			ffmpegtest.Unusable(t, "this ffmpeg cannot measure captions")
 		}
 		ink := float64(boxes[0].right - boxes[0].left)
 		pen, _ := TextWidth(font.Name, text, s.Size)

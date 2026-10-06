@@ -3,6 +3,9 @@
 What runs where, and how to see the interface do what a person does with
 it, without a screen. The engine's own tests, the fuzz targets and the
 path tests are in [BUILD.md](BUILD.md). This page is about the interface.
+The bridge and the path tests need ffmpeg: without one they skip on a
+machine of one's own and fail in CI, through `internal/ffmpegtest`, see
+[BUILD.md](BUILD.md#ci).
 
 ## Two ways to open it in a browser
 

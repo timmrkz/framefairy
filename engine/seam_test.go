@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // A search parts a clip at every camera switch, so two pieces of a short
@@ -52,7 +54,7 @@ func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
 func TestTwoShotsThatMeetRenderWithoutASeam(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	seamless(t, e, "25")
 }

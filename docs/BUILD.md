@@ -163,7 +163,8 @@ are written as plain functions with tests beside them. It all needs no
 model, no network and no API key. Speech comes from a fake recogniser and
 planning from a fake llama-server, both in `engine/project_test.go`. The
 tests that really render skip themselves when ffmpeg is missing, so the
-suite still passes on a machine without it.
+suite still passes on a machine without it, and fail in CI instead, see
+[CI](#ci).
 
 The parts that read what a model, a plan file or a caption file contains
 also have fuzz targets, named `Fuzz...` next to the ordinary tests. `make
@@ -266,12 +267,23 @@ A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never
 cancelled: every commit's result there is worth having on its own.
 
-**A test that needs ffmpeg skips itself where there is none, and in CI
-that would read as a pass.** The macOS job once ran without ffmpeg, so
-nothing that renders, frames or listens was tested on the system that ships
-first, and the only sign was that its tests took five seconds where Linux
-took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
-ffmpeg on the path.
+**A test that needs ffmpeg and finds none it can use fails in CI, and
+skips everywhere else.** CI does not list skipped tests, so a skip there
+reads as a pass. The macOS job once ran without ffmpeg, so nothing that
+renders, frames or listens was tested on the system that ships first, and
+the only sign was that its tests took five seconds where Linux took three
+minutes. So every such test ends through one package,
+`internal/ffmpegtest`: `ffmpegtest.Need` when it wants ffmpeg and ffprobe
+on the path, `ffmpegtest.Unusable` with the reason when the ffmpeg there
+cannot do what it needs, like `Preflight` failing or no captions burned in.
+Either skips with the reason, and when `CI` is set, which GitHub Actions
+sets and which the Makefile reads to install nothing, it fails with the
+reason instead. That covers an ffmpeg that is there but broken as well as
+one that is missing, which the one test that looked for ffmpeg on the
+path before did not. `TestNoTestSkipsForFFmpegByItself` reads every test
+file and fails on a skip whose reason or condition is about ffmpeg,
+ffprobe, `Preflight`, `SubtitleFilter` or `VideoEncoder` that does not go
+through the package, so a new test cannot skip silently again.
 
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a

@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // A frame is 10 ms of 16 kHz samples, measured the way the transcription
@@ -51,9 +53,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 // forgotten when the file changes. Readers that come while it is written
 // never see frames the json does not vouch for.
 func TestMeasureLevelsOfAnEpisode(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode.m4a")
 	// A second of tone, at the eighth of full scale ffmpeg plays it, about
@@ -127,9 +127,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 // Stopped part way, the measuring says so and leaves nothing that claims
 // to be done.
 func TestMeasureLevelsStops(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode.m4a")
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
@@ -152,9 +150,7 @@ func TestMeasureLevelsStops(t *testing.T) {
 // How far the loudness reaches is read from the json alone, and agrees with
 // the frames.
 func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	source := filepath.Join(t.TempDir(), "episode.m4a")
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", source).CombinedOutput()
@@ -182,9 +178,7 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 // so a frame measured in the wrong place shows.
 func sweep(t *testing.T, seconds string) string {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	source := filepath.Join(t.TempDir(), "episode.m4a")
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
 		"aevalsrc=sin(2*PI*440*t)*(0.5+0.45*sin(2*PI*0.37*t)):s=16000:d="+seconds,

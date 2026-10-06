@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // The captions are written in faces that travel with the program, so a
@@ -92,7 +94,7 @@ func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 func TestABundledFaceReachesLibass(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	width, size := 1080, 96
 	measure := func(name string) *inkBox {
@@ -100,7 +102,7 @@ func TestABundledFaceReachesLibass(t *testing.T) {
 		boxes, ok := e.measureMany(context.Background(),
 			[]string{`{\alpha&H00&}Hamburgefonstiv`}, s, width, size)
 		if !ok || len(boxes) != 1 || boxes[0] == nil {
-			t.Skipf("this ffmpeg cannot measure captions")
+			ffmpegtest.Unusable(t, "this ffmpeg cannot measure captions")
 		}
 		return boxes[0]
 	}
