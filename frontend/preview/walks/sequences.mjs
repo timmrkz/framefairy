@@ -50,6 +50,19 @@
 //   ["head"]           presses the clip list's head button, New, Cancel or
 //                      Continue
 //   ["restart"]        closes the app and opens it again on the episode
+//   ["speech", ms]     the speech model takes so many milliseconds over
+//                      each piece of audio, so a video added is heard
+//                      slowly enough to do something while it is
+//   ["settings"]       opens the settings from the sidebar, and remembers
+//                      the models they name
+//   ["episode"]        opens the episode on screen before again
+//   ["pick model"]     opens the list of what finds clips and, if it
+//                      opens, picks the last model here it does not have
+//                      picked
+//   ["remove model", which]
+//                      presses the bin of the "language" model on this
+//                      machine, under Downloaded models, or of the
+//                      "speech" model
 //
 // and what has to come of them:
 //
@@ -90,6 +103,16 @@
 //                      the same, for an episode whose picture starts after
 //                      its sound: the clip's first piece starts before
 //                      this moment, inside the time before the picture
+//   ["refused", card]  the gesture before it shook the "finding" or the
+//                      "speech" card and opened no list and no box, the
+//                      settings name the models they named at "settings",
+//                      and with "finding" the line under Find clips with
+//                      says a search is finding clips with it
+//   ["asks"]           the gesture before it opened the box asking whether
+//                      to remove, which Escape closes again
+//   ["changed"]        the settings name another model than at "settings"
+//   ["hearing"]        a search still hears, so what came before was
+//                      about a search that had not come to the model yet
 //   ["rendered"]       the clip says its short is in the folder the
 //                      settings name for shorts, the file is there and the
 //                      app serves it, Render says Render again and Show in
@@ -372,6 +395,48 @@ export const sequences = [
     steps: [["render"], ["rendered"], ["restart"], ["rendered"]],
   },
   {
+    // Tim chose another model in the settings while a search ran, and
+    // nothing stopped him. What a search uses stays as it is until it is
+    // done, and once it is, it can be changed again.
+    name: "a model a search finds clips with is not changed or removed under it",
+    steps: [
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["settings"],
+      ["pick model"],
+      ["refused", "finding"],
+      ["remove model", "language"],
+      ["refused", "finding"],
+      ["remove model", "speech"],
+      ["refused", "speech"],
+      ["episode"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["settings"],
+      ["remove model", "language"],
+      ["asks"],
+      ["pick model"],
+      ["changed"],
+    ],
+  },
+  {
+    // The same from the first moment of a search, while it still hears a
+    // video just added and has not come to the model yet.
+    name: "a model is not changed or removed while a search still hears",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["wait for", "Cancel"],
+      ["settings"],
+      ["pick model"],
+      ["refused", "finding"],
+      ["remove model", "speech"],
+      ["refused", "speech"],
+      ["hearing"],
+    ],
+  },
+  {
     name: "removing a word in the middle of a caption leaves the caption whole",
     steps: [
       ["mark", "start"],
@@ -382,6 +447,13 @@ export const sequences = [
     ],
   },
 ];
+
+// The models the settings name: what finds clips, here or in the cloud,
+// and what hears.
+async function modelsNamed(page) {
+  const s = await ask(page, "GetSettings");
+  return { planner: s.planner, llmModel: s.llmModel, apiModel: s.apiModel, asrModel: s.asrModel };
+}
 
 // Where the clip's shots meet: every place one piece runs straight into
 // the next, with nothing cut out between them.
@@ -623,6 +695,10 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   await watch.start();
   const marks = {};
   const looks = {};
+  // The models the settings name, at "settings", and the episode that was
+  // on screen before them.
+  let named = null;
+  let episodeBefore = "";
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -841,6 +917,91 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await pressHead(page);
         await watch.step("head", s);
         break;
+      case "speech":
+        await control(url, `/speech?ms=${arg}`);
+        break;
+      case "settings": {
+        episodeBefore = (await chosen(page))?.path ?? episodeBefore;
+        await fromSidebar(page, () => page.locator("aside").getByText("Settings", { exact: true }).first().click());
+        await page.locator(".card.finding").waitFor();
+        await settle(page);
+        named = await modelsNamed(page);
+        // Every card that shakes from here on, by its classes.
+        await page.evaluate(() => {
+          window.__shook = [];
+          new MutationObserver((changes) => {
+            for (const c of changes) if (c.target.classList?.contains("shaking")) window.__shook.push(c.target.className);
+          }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
+        });
+        break;
+      }
+      case "episode":
+        await fromSidebar(page, () => page.locator("aside li", { hasText: episodeBefore.split("/").pop() }).first().click());
+        await page.locator(".listhead button.new").first().waitFor();
+        await settle(page);
+        break;
+      case "pick model": {
+        await page.evaluate(() => (window.__shook = []));
+        await page.locator(".card.finding button.pick").first().click();
+        await page.waitForTimeout(400);
+        const other = page.locator('[role="option"]:not([data-selected])');
+        if (await other.count()) {
+          await other.last().click();
+          await page.waitForTimeout(400);
+        }
+        await settle(page);
+        break;
+      }
+      case "remove model": {
+        await page.evaluate(() => (window.__shook = []));
+        if (arg === "language") {
+          const fold = page.locator(".card.finding button.disclose-row");
+          if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+          await page.locator('.card.finding button.bin[aria-label^="Remove "]').first().click();
+        } else {
+          await page.locator('.speech button.bin[aria-label^="Remove "]').first().click();
+        }
+        await page.waitForTimeout(400);
+        break;
+      }
+      case "refused": {
+        await page.waitForTimeout(200);
+        const seen = await page.evaluate(() => ({
+          shook: window.__shook ?? [],
+          box: !!document.querySelector("dialog[open]"),
+          list: !!document.querySelector('[role="listbox"]'),
+          line: document.querySelector(".card.finding .words .line")?.textContent.trim() ?? "",
+        }));
+        const now = await modelsNamed(page);
+        if (!seen.shook.some((c) => c.split(" ").includes(arg))) wrong = `the ${arg} card did not shake, shaken: ${JSON.stringify(seen.shook)}`;
+        else if (seen.box) wrong = "a box opened";
+        else if (seen.list) wrong = "the list opened";
+        else if (JSON.stringify(now) !== JSON.stringify(named)) wrong = `the settings name ${JSON.stringify(now)}, not ${JSON.stringify(named)}`;
+        else if (arg === "finding" && seen.line !== "A search is finding clips with it now.") wrong = `the line under Find clips with says "${seen.line}"`;
+        break;
+      }
+      case "asks": {
+        const box = page.locator("dialog[open]");
+        if (!(await box.count())) {
+          wrong = "no box asked whether to remove";
+          break;
+        }
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(300);
+        break;
+      }
+      case "hearing": {
+        const jobs = await ask(page, "Jobs");
+        if (!jobs.some((j) => j.kind === "search" && j.state === "running" && j.step === "hearing")) {
+          wrong = `no search hears now: ${JSON.stringify(jobs.map((j) => [j.kind, j.state, j.step]))}`;
+        }
+        break;
+      }
+      case "changed": {
+        const now = await modelsNamed(page);
+        if (JSON.stringify(now) === JSON.stringify(named)) wrong = `the settings still name ${JSON.stringify(now)}`;
+        break;
+      }
       case "restart": {
         const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0]);
         await control(url, "/reopen");

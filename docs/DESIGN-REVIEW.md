@@ -528,6 +528,10 @@ In #130:
   episode. `nosniff`, `sandbox` and the CSP are still open, after #120.
 - Security: the app as it ships takes no program and no model from the
   `FRAMEFAIRY_*` variables.
+- From Tim's test of bug 2: the guard was only half of it. The models a
+  search uses are now locked from its first moment, hearing included, in
+  the interface and on the Go side, and choosing another model is
+  refused too, not only removing one. A walk sequence holds it.
 
 | # | Change | Size | What it ends or gains |
 | -: | --- | --- | --- |

@@ -1782,10 +1782,23 @@ lists them with their size on disk and a trash can each, quiet until the
 pointer reaches it. Removing one asks first in the box over the app,
 because fetching it again is gigabytes: **Cancel**, where the keyboard
 starts, and **Remove**. While a model is being installed the trash cans
-wait, dimmed. A model is not removed while it is being installed or while
-the work that reads it runs, and the refusal says which. Removing the model
-in use lets go of it in the settings too, and the page reads the settings
-again rather than saving over that.
+wait, dimmed. A model is not removed while it is being installed. Removing
+the model in use lets go of it in the settings too, and the page reads the
+settings again rather than saving over that.
+
+**What a search uses stays as it is until it is done**, from the moment it
+starts, while it still hears the episode too. Choosing another model in
+**Find clips with**, removing a model, or saving or removing the key is
+refused while a search runs, and a speech model is not removed while a
+search or a clip made by hand hears with it. The list does not open and no
+box asks: the card the choice belongs to shakes, the way it does when the
+settings may not be left, and the control's title says why. The line under
+**Find clips with** says a search is finding clips with it, and its dot
+pulses, the way work running somewhere else shows. The settings are read
+again when the finding begins, so a model chosen in between would have been
+the one the search found with, and a model removed was a file gone from
+under it. The Go side refuses the same changes, whatever asks for them,
+see `languageLocked` in `setup.go`.
 
 Two other ways of choosing a model were tried before this one and left: a
 card of rows with a round mark each, which took a row per model and grew

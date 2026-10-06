@@ -32,6 +32,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -177,8 +178,12 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error)) htt
 			return
 		}
 		var answer any
-		if name == "Setup" {
-			answer = standInsSetup(out[0].Interface().(SetupState))
+		if name == "Setup" || name == "CheckSetup" {
+			if name == "Setup" {
+				answer = standInsSetup(out[0].Interface().(SetupState))
+			} else {
+				answer = standInsChecks(out[0].Interface().([]Check))
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(answer)
 			return
@@ -220,10 +225,32 @@ func standInsSetup(s SetupState) SetupState {
 	if len(s.Speech) > 0 {
 		s.Speech[0].Installed = true
 	}
+	// The stand-in finds the clips, so a model is chosen, the way a
+	// machine that has searched has one: the one the settings name, or
+	// the one the app offers. Without it the settings ask for a choice,
+	// and hold the app until one is made.
+	chosen := slices.IndexFunc(s.Language, func(m LanguageModelView) bool { return m.InUse })
+	if chosen < 0 {
+		chosen = slices.IndexFunc(s.Language, func(m LanguageModelView) bool { return m.Recommended })
+	}
 	for i := range s.Language {
-		s.Language[i].Installed = s.Language[i].InUse
+		s.Language[i].InUse = i == chosen
+		s.Language[i].Installed = i == chosen
 	}
 	return s
+}
+
+// standInsChecks is the setup check as the bridge's machine has it: the
+// two models are there, and what runs the language model, since the
+// stand-ins hear and find the clips.
+func standInsChecks(checks []Check) []Check {
+	for i := range checks {
+		switch checks[i].Name {
+		case "Speech model", "Language model", "llama-server":
+			checks[i].OK, checks[i].Detail = true, ""
+		}
+	}
+	return checks
 }
 
 // callSafely calls a method and turns a panic into the reason the call
