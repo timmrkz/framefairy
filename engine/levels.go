@@ -411,8 +411,9 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 }
 
 // levelsLead is how many frames before where it starts a reading decodes
-// and throws away, a fifth of a second.
-const levelsLead = 20
+// and throws away, soundLead in frames. The conversion only compiles while
+// soundLead is a whole number of frames.
+const levelsLead = int(soundLead / (FrameSeconds * 1_000_000))
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
 // from frame start on, for the loudness and for the transcription alike.
@@ -422,11 +423,11 @@ const levelsLead = 20
 // 8.1 kept the part of the first packet after the seek point, 9.0 drops
 // that packet whole, up to 64 ms of 16 kHz AAC, and the samples carry no
 // time of their own on the way out. Their timestamps stay right in both,
-// so the seek goes a fifth of a second early and atrim cuts at the
-// timestamp of start, to the sample. That early part is also where the
-// decoder is wrong, up to 4 dB off at the join, because a packet of
-// compressed audio is decoded together with the one before it. A frame is
-// 10 ms, so two decimals are exact.
+// so the seek goes levelsLead early and atrim cuts at the timestamp of
+// start, to the sample. That early part is also where the decoder is
+// wrong, up to 4 dB off at the join, because a packet of compressed audio
+// is decoded together with the one before it. A frame is 10 ms, so two
+// decimals are exact.
 func audioFrom(source string, start int) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
 	lead := min(start, levelsLead)
