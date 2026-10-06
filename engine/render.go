@@ -141,8 +141,15 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		// limits how much is read. Both are input options on purpose. The
 		// sound is read again from a little earlier, see soundLead.
 		cut := source.cutOf(seg)
-		cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs,
-			"-ss", cut.soundSeek, "-t", cut.soundRead, "-vn", "-i", abs)
+		if cut.fromKey {
+			cmd = append(cmd, "-noaccurate_seek", "-ss", cut.seek, "-an", "-i", abs)
+		} else {
+			cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs)
+		}
+		if cut.soundSeek != "" {
+			cmd = append(cmd, "-ss", cut.soundSeek)
+		}
+		cmd = append(cmd, "-t", cut.soundRead, "-vn", "-i", abs)
 	}
 	video, err := e.VideoArgs(ctx, rs)
 	if err != nil {
@@ -170,11 +177,15 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 // pieceCut is how one piece of a clip is read from the episode: where the
 // read starts and how long it runs, as ffmpeg takes them, once for the
 // picture and once for the sound, and the filters that keep what belongs
-// to the piece out of what was read.
+// to the piece out of what was read. A read with no length runs until its
+// filters have what they keep.
 type pieceCut struct {
 	seek, read           string
 	soundSeek, soundRead string
 	picture, sound       string
+	// Whether the picture is read from the key frame at or before seek,
+	// every frame of it, rather than from seek.
+	fromKey bool
 }
 
 // cutOf works out a piece on the frames of the episode, by their number
@@ -194,6 +205,12 @@ type pieceCut struct {
 // frame starts and where the frame after the last one starts, to the
 // sample. Both are worked out from the frame numbers, so no piece is a
 // sample longer than its frames, however many there are.
+//
+// Frame k begins k over the rate after the picture's first frame, which
+// is where the file starts for most files and later for one whose picture
+// starts after its sound. Where the frames are not on that grid, see
+// SourceInfo.Variable, or the piece starts before the picture does, the
+// frames are counted by their own timestamps instead, see byTimes.
 func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		seek := int64(math.Round(seg.Start * 1_000_000))
@@ -206,22 +223,83 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 		}
 	}
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
-	first := int64(math.Round(seg.Start * float64(num) / float64(den)))
-	end := max(int64(math.Round(seg.End*float64(num)/float64(den))), first+1)
-	// When frame k starts, in microseconds: k·den/num seconds.
-	start := func(k int64) int64 { return (2*k*den*1_000_000 + num) / (2 * num) }
-	seek := max(0, (2*first-1)*den*1_000_000/(2*num))
+	rate := float64(num) / float64(den)
+	first := int64(math.Round((seg.Start - s.VideoStart) * rate))
+	end := max(int64(math.Round((seg.End-s.VideoStart)*rate)), first+1)
+	v0 := int64(math.Round(s.VideoStart * 1_000_000))
+	// When frame k starts, in microseconds: k·den/num seconds after the
+	// picture's first frame.
+	start := func(k int64) int64 { return v0 + (2*k*den*1_000_000+num)/(2*num) }
+	if s.Variable || first < 0 {
+		return s.byTimes(start(first), start(end), end-first)
+	}
+	seek := max(0, v0+(2*first-1)*den*1_000_000/(2*num))
 	read := ((end-first+1)*den*1_000_000 + num - 1) / num
-	lead := min(seek, soundLead)
+	lead := s.leadOf(seek)
 	return pieceCut{
 		seek:      micros(seek),
 		read:      micros(read),
-		soundSeek: micros(seek - lead),
+		soundSeek: s.soundSeekOf(seek - lead),
 		soundRead: micros(read + lead),
 		picture:   fmt.Sprintf("trim=end_frame=%d,", end-first),
 		sound: fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
 			micros(start(first)-seek+lead), micros(start(end)-seek+lead)),
 	}
+}
+
+// byTimes is a piece of n frames of the rate from one moment to another,
+// in microseconds, each frame of it the frame of the episode that holds
+// its moment by the frames' own timestamps: the last one to begin at or
+// before it, give or take frameHair, and the picture's first frame before
+// it starts. That is the frame the video preview shows there.
+//
+// ffmpeg's fps filter, rounding up, puts each frame on the first moment of
+// the grid at or after it begins, and a later frame there takes its place,
+// so every moment gets the frame that holds it. The read starts at the key
+// frame before, so the frame that holds the first moment is read however
+// long ago it began, and a frame held to the end is held on by tpad. The
+// sound is cut at the two moments, as for a piece counted by frames. The
+// times are moved in microseconds, since moved in the ticks of the stream,
+// 1/600 s from a phone, the hair is lost in the rounding.
+func (s SourceInfo) byTimes(from, to, n int64) pieceCut {
+	frame := int64(s.FPSDen) * 1_000_000 / int64(s.FPSNum)
+	seek := max(0, from-frame/2)
+	lead := s.leadOf(seek)
+	hair := int64(frameHair * 1_000_000)
+	return pieceCut{
+		seek:      micros(seek),
+		soundSeek: s.soundSeekOf(seek - lead),
+		soundRead: micros(to - seek + frame + lead),
+		fromKey:   true,
+		picture: fmt.Sprintf("settb=1/1000000,setpts=PTS-%s/TB,fps=fps=%s:start_time=0:round=up,"+
+			"tpad=stop_mode=clone:stop_duration=%s,trim=end_frame=%d,",
+			micros(from-seek+hair), s.FPSString(), micros(to-from), n),
+		sound: fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
+			micros(from-seek+lead), micros(to-seek+lead)),
+	}
+}
+
+// leadOf is how much earlier than its picture, read from seek, a piece's
+// sound is read, see soundLead. ffmpeg seeks every stream of a file to the
+// key frame of its picture, so sound from before the picture's first frame
+// is not found by a seek at all. Sound that reaches back there is read
+// from the start of the file instead, which is never far.
+func (s SourceInfo) leadOf(seek int64) int64 {
+	lead := min(seek, soundLead)
+	if seek-lead < int64(math.Round(s.VideoStart*1_000_000)) {
+		return seek
+	}
+	return lead
+}
+
+// soundSeekOf is where the sound of a piece is read from, as ffmpeg takes
+// it, and nothing for the start of a file whose picture starts after its
+// sound, see leadOf.
+func (s SourceInfo) soundSeekOf(at int64) string {
+	if at == 0 && s.VideoStart > 0 {
+		return ""
+	}
+	return micros(at)
 }
 
 // micros is a number of microseconds as seconds, written out exactly.
@@ -244,11 +322,16 @@ func (s SourceInfo) OnFrames(clip Clip) Clip {
 		return clip
 	}
 	fps := s.FPS()
-	frame := func(t float64) float64 { return math.Round(t*fps) / fps }
+	frame := func(t float64) float64 { return s.VideoStart + math.Round((t-s.VideoStart)*fps)/fps }
 	out := clip
 	out.Segments = make([]Segment, len(clip.Segments))
 	for i, seg := range clip.Segments {
 		seg.Start = frame(seg.Start)
+		// A grid that begins after the file does reaches before it too,
+		// where there is nothing to read.
+		if seg.Start < 0 {
+			seg.Start += 1 / fps
+		}
 		seg.End = math.Max(frame(seg.End), seg.Start+1/fps)
 		out.Segments[i] = seg
 	}

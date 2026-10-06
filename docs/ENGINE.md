@@ -637,6 +637,64 @@ at least 90% of the tone from its first moment, after the fade of a cut.
 Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
 silent in MP3.
 
+### Frames at their own times
+
+`cutOf` counts frame k at k over the rate after the picture's first
+frame. Two kinds of episode do not keep to that, and `Probe` finds both.
+
+- **A picture that starts after its sound**, by an edit list in MP4 or
+  MOV or by its first timestamp in Matroska. `SourceInfo.VideoStart` is
+  where its first frame begins, against the start of the file, and the
+  grid of frames begins there, in `cutOf` and in `OnFrames` alike. A file
+  whose picture starts with it has a `VideoStart` of 0 and is cut exactly
+  as before. Inside the picture the old grid happened to land on the
+  right frames, but a piece that started before the picture did took the
+  picture's frames from its first on, so its picture ran ahead of its
+  sound by as long as the piece started before the picture, and its sound
+  was off too: ffmpeg seeks every stream of a file to the key frame of its
+  picture, so sound from before the picture's first frame is not found by
+  a seek. The piece's sound was 13 to 34 ms off with the picture a quarter
+  of a second late, and 300 ms off with it half a second late.
+  That sound is now read from the start of the file, `leadOf`, and a
+  piece that starts before the picture holds its first frame there, the
+  way the video preview does.
+- **Frames at uneven times.** A phone records each frame a little early
+  or late, and a screen recorder leaves frames out where nothing moved.
+  `Probe` reads the timestamps in four stretches of two seconds across the
+  file, `uneven`, and marks it `Variable` when a frame begins off the grid
+  of the rate or two frames are not one frame apart, give or take
+  `frameHair`, a millisecond. Counted by number, a piece of such a file
+  took as many frames as it should last, whatever time they cover: with
+  frames left out, a short of four pieces came out 88 frames long for 86,
+  its sound 74 ms longer than its picture and a piece heard 35 ms away
+  from what it showed. With a phone's frames it came out 150 frames long
+  for 142, and its pieces were heard up to 95 ms away. A piece of a
+  variable file is cut by the frames' own times instead, `byTimes`: the
+  picture is read from the key frame before it, and ffmpeg's `fps`
+  filter, rounding up, gives every frame of the short the frame of the
+  episode that holds its moment, the last one to begin at or before it.
+  The times are moved in microseconds for that, since in a phone's ticks
+  of 1/600 s the hair is lost in the rounding. That is the rule of the
+  video preview, `rankAt` in `frontend/src/lib/frames/mp4.ts`, which reads
+  the times of the frames from the file's own index, edit list included,
+  and was right for both kinds already: on files ffmpeg made of both
+  kinds, every time it read agreed with ffprobe to a microsecond. The
+  sound is cut at the same moments as before.
+
+`TestARenderShowsTheFrameThatHoldsEachMoment` in
+`engine/frametimes_test.go` renders a clip of four pieces from four such
+episodes: a phone's frames 0, 8 or 16 ms late in ticks of 1/600 s,
+frames left out, and a picture a quarter of a second late in MOV and in
+Matroska, with the clip's first piece starting before it. Each frame of
+the episode carries its number in eight bars, and the tone grows through
+every second, so each frame of the short is checked to be the frame that
+holds its moment, and each piece to be heard, on the mean of its frames,
+within 4 ms of the moments it shows. Before the fix all four failed: 97
+frames of 142 wrong from the phone, 39 of 86 with frames left out, and the
+20 frames before the picture started in both late files. The frame
+queue's tests hold the same rule on frames at uneven times and after an
+empty edit, in `mp4.test.ts` and `plan.test.ts`.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and
