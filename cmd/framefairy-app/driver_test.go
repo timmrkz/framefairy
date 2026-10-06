@@ -304,12 +304,14 @@ func (d *desk) heard(path string) (float64, bool) {
 	return engine.Coverage(path, d.svc.store.Settings().ASRModel)
 }
 
-// shorts are the finished shorts of the library.
+// shorts are the finished shorts of the library, each where its path
+// really leads, the way the engine names a short. On macOS the temp folder
+// is under /var, which is a link to /private/var.
 func (d *desk) shorts() []string {
 	var found []string
 	_ = filepath.WalkDir(d.svc.store.Settings().OutputDir, func(p string, e os.DirEntry, err error) error {
 		if err == nil && !e.IsDir() && strings.HasSuffix(p, ".mp4") {
-			found = append(found, p)
+			found = append(found, engine.ResolvePath(p))
 		}
 		return nil
 	})

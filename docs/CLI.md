@@ -57,6 +57,11 @@ episode.framefairy/
 └── out/               the finished clips and their thumbnails
 ```
 
+The plan notes, under `shorts`, the folder each clip's short was rendered
+into, `out/` or `--out`, so the app knows a clip is rendered wherever it
+went, see [ENGINE.md](ENGINE.md#where-a-short-went). A plan given with
+`--clips` from outside `logs/` is left as it is.
+
 A clip whose plan lists `thumbnails`, moments of the episode in seconds,
 gets a picture of the short at each of them, `<name>-1.jpg`, `<name>-2.jpg`
 and on, beside `<name>.mp4`. Each is a frame of the finished short, captions
