@@ -28,9 +28,11 @@ type RenderSettings struct {
 // BuildFilterGraph makes one filter chain per segment, each reading its own
 // seeked input.
 //
-// Every segment is a separate -i with its own -ss, so ffmpeg seeks to a
-// keyframe near the segment and decodes only what the clip needs, instead of
-// decoding the episode from frame zero.
+// Every segment is read with its own -ss, so ffmpeg seeks to a keyframe
+// near the segment and decodes only what the clip needs, instead of
+// decoding the episode from frame zero. Its sound and its picture are two
+// inputs, the sound of every piece first and then the pictures, because
+// the sound is read from a little earlier, see cutOf.
 func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceInfo,
 	rs RenderSettings, assName string) (graph, videoLabel, audioLabel string, err error) {
 	cropW, cropH := CropWindow(source, rs.OutW, rs.OutH)
@@ -38,6 +40,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 	if flags == "" {
 		flags = "lanczos"
 	}
+	n := len(clip.Segments)
 	var parts []string
 	for i, seg := range clip.Segments {
 		cut := source.cutOf(seg)
@@ -53,7 +56,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
 		}
 		chain = append(chain, "fps="+source.FPSString(), "format=yuv420p", "setsar=1")
-		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", i, strings.Join(chain, ","), i))
+		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", n+i, strings.Join(chain, ","), i))
 
 		// A piece that runs straight on from the one before, the way a
 		// search parts a clip at a camera switch, is heard straight on.
@@ -73,7 +76,6 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", i, strings.Join(achain, ","), i))
 	}
 
-	n := len(clip.Segments)
 	if n == 1 {
 		videoLabel, audioLabel = "[v0]", "[a0]"
 	} else {
@@ -119,9 +121,15 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		abs = sourcePath
 	}
 	cmd := []string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"}
+	// -ss before -i seeks rather than decoding up to the point, and -t
+	// limits how much is read. Both are input options on purpose. The
+	// sound of every piece comes first, then the pictures, as the filter
+	// graph reads them.
 	for _, seg := range clip.Segments {
-		// -ss before -i seeks rather than decoding up to the point, and -t
-		// limits how much is read. Both are input options on purpose.
+		cut := source.cutOf(seg)
+		cmd = append(cmd, "-ss", cut.soundSeek, "-t", cut.soundRead, "-i", abs)
+	}
+	for _, seg := range clip.Segments {
 		cut := source.cutOf(seg)
 		cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-i", abs)
 	}
@@ -149,12 +157,34 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 }
 
 // pieceCut is how one piece of a clip is read from the episode: where the
-// read starts and how long it runs, as ffmpeg takes them, and the filters
-// that keep what belongs to the piece out of what was read.
+// read of its picture starts and how long it runs, the same for its sound,
+// as ffmpeg takes them, and the filters that keep what belongs to the
+// piece out of what was read.
 type pieceCut struct {
-	seek, read     string
-	picture, sound string
+	seek, read           string
+	soundSeek, soundRead string
+	picture, sound       string
 }
+
+// seekLead is how much sound before a point a reading decodes and then
+// leaves out, in seconds, so the decoder is settled where the point is.
+// The render takes it before every piece and the loudness before every
+// part it measures, see audioFrom.
+//
+// ffmpeg seeks to the keyframe of the picture at or before the point and
+// decodes the sound from there, and leaves nothing out ahead of it,
+// though its demuxers know how much Opus needs, seek_preroll. A decoder
+// that starts cold is not settled. Opus needs 80 ms of what came before,
+// RFC 7845 section 4.6, and gave about 70% of a steady tone at the start
+// of a piece. MP3 keeps part of a frame in the frames before it, and gave
+// silence for 40 ms. Where the keyframe was a frame or less before the
+// piece, as in footage where every frame is one, or at a camera switch,
+// where an encoder puts one and where a search parts a clip, the piece
+// started quiet. AAC and Vorbis come out right without it and lose
+// nothing by it, so every sound gets it and no codec needs a case of its
+// own. A fifth of a second is more than twice what Opus needs and costs a
+// render nothing it would notice.
+const seekLead = 0.2
 
 // cutOf works out a piece on the frames of the episode, by their number
 // and not by a time rounded to a millisecond, which is how a render cuts.
@@ -173,9 +203,21 @@ type pieceCut struct {
 // frame starts and where the frame after the last one starts, to the
 // sample. Both are worked out from the frame numbers, so no piece is a
 // sample longer than its frames, however many there are.
+//
+// The sound is read from seekLead before the first frame, or from the
+// start of the episode, up to where the picture's read ends, from an input
+// of its own. Where it is cut does not move.
 func (s SourceInfo) cutOf(seg Segment) pieceCut {
+	lead := int64(math.Round(seekLead * 1_000_000))
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return pieceCut{seek: fixed(seg.Start, 6), read: fixed(seg.Duration(), 6)}
+		from, to := int64(math.Round(seg.Start*1_000_000)), int64(math.Round(seg.End*1_000_000))
+		soundSeek := max(0, from-lead)
+		return pieceCut{
+			seek: fixed(seg.Start, 6), read: fixed(seg.Duration(), 6),
+			soundSeek: micros(soundSeek), soundRead: micros(to - soundSeek),
+			sound: fmt.Sprintf(",atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
+				micros(from-soundSeek), micros(to-soundSeek)),
+		}
 	}
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
 	first := int64(math.Round(seg.Start * float64(num) / float64(den)))
@@ -184,12 +226,15 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	start := func(k int64) int64 { return (2*k*den*1_000_000 + num) / (2 * num) }
 	seek := max(0, (2*first-1)*den*1_000_000/(2*num))
 	read := ((end-first+1)*den*1_000_000 + num - 1) / num
+	soundSeek := max(0, start(first)-lead)
 	return pieceCut{
-		seek:    micros(seek),
-		read:    micros(read),
-		picture: fmt.Sprintf("trim=end_frame=%d,", end-first),
+		seek:      micros(seek),
+		read:      micros(read),
+		soundSeek: micros(soundSeek),
+		soundRead: micros(seek + read - soundSeek),
+		picture:   fmt.Sprintf("trim=end_frame=%d,", end-first),
 		sound: fmt.Sprintf(",atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
-			micros(start(first)-seek), micros(start(end)-seek)),
+			micros(start(first)-soundSeek), micros(start(end)-soundSeek)),
 	}
 }
 

@@ -81,9 +81,12 @@ picture at once, so the search finds it and parts its clip there, and
 frames each shot on its own subject, so the two pieces have crops far
 apart. A shot shown through the other's crop is a plain backdrop, which
 the video preview and a short both show at a glance. Its sound is a
-steady tone in plain samples rather than Opus: a render seeks into each
-piece, and the first 80 ms of Opus after a seek are decoded quiet, a dip
-of the file's own at every piece.
+steady tone in plain samples rather than Opus: a render seeked into each
+piece, and the first 80 ms of Opus after a seek were decoded quiet, a dip
+of the file's own at every piece. A render now reads the sound of each
+piece from a fifth of a second before it, see 2.128 in
+[GUI-PLAN.md](GUI-PLAN.md) and [ENGINE.md](ENGINE.md), so Opus would do
+here too. The walk has not been changed back.
 
 In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes

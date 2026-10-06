@@ -609,6 +609,30 @@ two shots that meet from a steady tone and a picture a step brighter on
 every frame, and checks that no frame is lost or shown twice at the switch
 and that the tone neither dips nor jumps there.
 
+Each piece's sound is read from a fifth of a second before the piece,
+`seekLead`, and cut where it was cut before. It is the lead the loudness
+takes before a part it measures, `levelsLead`, one number for both. ffmpeg seeks to the keyframe
+of the picture at or before the point and decodes the sound from there,
+and leaves nothing out ahead of it, though the demuxers of 8.1 know how
+much Opus needs, `seek_preroll`. A decoder that starts cold is not
+settled: Opus needs 80 ms of what came before, RFC 7845 section 4.6, and
+gave about 70% of a steady tone at the start of a piece, and MP3, which
+keeps part of a frame in the frames before it, gave silence for 40 ms.
+Where the keyframe was a frame or less before a piece, as in footage
+where every frame is one, or a camera switch where an encoder put one,
+the piece started quiet. AAC and Vorbis came out right, so a lead for
+every sound costs them nothing, and no codec needs its own case. The
+picture is read as before, from its own input, so each piece is two
+inputs of the same file, and the sound of every piece comes first.
+Renders took as long as before, 8.6 s for a short of six pieces from a
+1080p episode on the cloud machine. `TestEveryPieceIsHeardFromItsFirstMoment`
+in `engine/preroll_test.go` renders two cuts and a camera switch from a
+29.97 fps episode where every frame is a keyframe, with a steady tone in
+Opus in MP4 and in Matroska, and in MP3 where the ffmpeg can make it,
+and checks that every piece is at least 90% of the tone from its first
+moment, after the fade of a cut. Before, the quietest piece was 66% in
+Matroska, 83% in MP4 and silent in MP3.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and
