@@ -111,7 +111,7 @@ each with a POST:
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
-| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, and the app is opened again on them |
+| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it |
 
 To open it by hand:
 
