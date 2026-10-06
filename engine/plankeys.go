@@ -33,6 +33,10 @@ const (
 	keyCaptionTimes = "caption_times"
 	keyThumbnails   = "thumbnails"
 	keyFound        = "found"
+	// keyFoundSegments is the pieces a clip was found with, each with the
+	// framing of its shot, so what a gesture puts back is framed by the
+	// shot it shows.
+	keyFoundSegments = "found_segments"
 
 	// A segment of a clip.
 	keyStart = "start"

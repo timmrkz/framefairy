@@ -441,6 +441,27 @@ its pieces change and never after, and read by `readFound` in
 `engine/clips.go`, which takes nothing but two numbers in order. A double-click
 on an edge of the clip on the clip timeline trims it back there.
 
+**What is put back keeps its camera switch.** A search parts a clip at
+every camera switch, and each piece carries the crop of its own shot. So a
+clip also keeps the pieces it was found with, `found_segments`, written by
+`editPieces` with `found` and read by `foundPieces` in `engine/edit.go`,
+which takes them only as pieces in order and otherwise uses the pieces the
+clip has. Whatever a gesture brings back, a cut put back or an edge moved
+out over what the clip leaves out, is framed by the shots it shows,
+`framedBack` in `engine/shape.go`: a shot runs from the start of its piece
+to the start of the next, and a shot a piece of the clip still shows takes
+that piece's crop, so a crop placed by hand comes back with it. Pieces of
+one shot that meet become one piece again, `meet`, and two shots stay two.
+A join used to stretch the piece before the cut over the one after it, so
+a cut made across the switch at 12.80 and put back left one piece from
+9.60 to 16.00, and the second shot was shown through the first shot's
+crop. An edge put back after it had trimmed a shot away did the same.
+Where a search had already left out the part with the switch in it,
+nobody knows where the switch is, and the part goes with the shot before.
+Two pieces that meet have no cut between them, so a join or a move there
+is refused. `engine/shots_test.go` holds the cases, and `FuzzPlanEdits`
+checks that no edit ever makes one piece of two shots.
+
 Thumbnails are kept per clip in `thumbnails`, the moments of the episode a
 picture of the short is taken at. `readThumbnails` in `engine/clips.go`
 keeps only numbers inside a kept piece, each once, in time order, at most
@@ -534,7 +555,8 @@ that each caption and each move of the pill lands on the first frame at
 or after the moment the subtitle file gives it, and that each word is
 heard within 15 ms of the moment it is shown. One clip has a cut that
 does not fall on a frame, the other six pieces none of which is a whole
-number of frames long. They found two things, both fixed:
+number of frames long. They found two things, both fixed, and a third
+was found later:
 
 - **A frame late, one boundary in three.** ffmpeg's subtitle filter hands
   libass the frame's time in whole milliseconds, worked out in floating
@@ -546,6 +568,30 @@ number of frames long. They found two things, both fixed:
   the clock in microseconds and moves it on half a millisecond while
   libass reads it, and back after, so every frame reads as the millisecond
   it is.
+- **A frame too many at every cut, at most frame rates.** A piece went to
+  ffmpeg as a start and a length rounded to the millisecond, `-ss` and
+  `-t`. A frame at 25 or 50 fps starts on a whole millisecond, but at
+  29.97, 23.976, 24, 30 or 60 fps most do not, and the rounded start fell
+  a little after its frame as often as before it. That frame was lost and
+  the next piece's first frame came in at the end, or the piece got a
+  frame more, and its sound ran about 30 ms over its picture, which the
+  join filled with silence. After two cuts the sound of a 24 fps episode
+  was 42 ms behind its picture. Now a render cuts by frame number, `cutOf` in
+  `engine/render.go`: a piece is the frames from the one its start is on
+  up to the one before its end, the frame that holds each moment as the
+  video preview shows it. The read starts half a frame before the first
+  frame, where no rounding to the microsecond can move it past a frame,
+  and runs a frame longer than the piece. The picture keeps the piece's
+  number of frames, `trim=end_frame`, and the sound is cut to the sample
+  where the first frame starts and where the frame after the last one
+  starts, `atrim`, both worked out from the frame numbers.
+  `TestARenderCutsOnWholeFrames` in `engine/framecuts_test.go` renders a
+  clip of three pieces from episodes at 29.97, 23.976, 24, 30, 60 and 25
+  fps, and one at 29.97 in Matroska, which keeps time in milliseconds. The
+  picture is a step brighter on every frame and the sound a steady tone,
+  and it checks that the short has exactly the frames of its pieces, in
+  order and each once, and that the sound is quiet at a cut only for its
+  fade and exactly where the picture cuts.
 - **Drift at every cut.** A piece becomes a whole number of frames in the
   short, so a piece that was not one came out longer, and its sound with
   it, while the captions added the pieces up as they are. By the sixth
@@ -553,6 +599,15 @@ number of frames long. They found two things, both fixed:
   clip with every edge on the nearest frame of the source,
   `SourceInfo.OnFrames`, and makes its captions from that same clip, so
   the two add up to the same. An edge moves by half a frame at most.
+
+The sound fades for 15 ms at the clip's two ends and at every cut, which
+keeps a hard cut from clicking, and nowhere else. Two pieces that meet at
+a camera switch are heard straight on: each piece used to fade out and in
+as if something were cut, a dip of 30 ms in the middle of a word.
+`TestTwoShotsThatMeetRenderWithoutASeam` in `engine/seam_test.go` renders
+two shots that meet from a steady tone and a picture a step brighter on
+every frame, and checks that no frame is lost or shown twice at the switch
+and that the tone neither dips nor jumps there.
 
 ## The bouncing word
 

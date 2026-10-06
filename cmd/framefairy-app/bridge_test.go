@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -271,7 +273,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, nil, b.reset())
 	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
-		path, err := b.pick(r.URL.Query().Get("seconds"))
+		q := r.URL.Query()
+		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"))
 		answer(w, path, err)
 	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
@@ -416,7 +419,7 @@ func openBridge(t *testing.T) *bridge {
 	d.bus = newBus()
 	d.start(d.svc.store)
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir()}
-	if err := makeEpisode(b.first, 120); err != nil {
+	if err := makeEpisode(b.first, 120, 0); err != nil {
 		t.Fatal(err)
 	}
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
@@ -451,37 +454,131 @@ func workOf(video string) string {
 // bars did every 16 frames, and the search then split its clip into
 // pieces at every one. The bars are worked out on a picture one pixel a
 // bit and made large without smoothing.
-func makeEpisode(path string, seconds int) error {
+//
+// With a switch, at a moment on a frame, the episode is two cameras
+// instead, see twoCameras.
+func makeEpisode(path string, seconds int, switchAt float64) error {
 	d := strconv.Itoa(seconds)
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d="+d,
-		"-f", "lavfi", "-i", "color=c=black:s=2x2:r=5:d="+d,
-		"-f", "lavfi", "-i", "sine=f=220:sample_rate=48000:d="+d,
+	below, sound := "[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g]", "220"
+	size, rate, heard := "2x2", "100k", []string{"libopus", "-b:a", "24k"}
+	if switchAt > 0 {
+		// A chequerboard takes more to keep sharp than a grey. The sound
+		// is plain samples, which a render seeks into exactly: Opus needs
+		// 80 ms decoded ahead of a seek, which ffmpeg does not do there,
+		// so every piece would start a little quiet whatever was done at
+		// the join, and a walk listening for a dip would hear that.
+		below, sound, size, rate = twoCameras(int(math.Round(switchAt*5))), "440", "320x168", "300k"
+		heard = []string{"pcm_s16le"}
+	}
+	args := []string{"-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "color=c=black:s=10x2:r=5:d=" + d,
+		"-f", "lavfi", "-i", "color=c=black:s=" + size + ":r=5:d=" + d,
+		"-f", "lavfi", "-i", "sine=f=" + sound + ":sample_rate=48000:d=" + d,
 		"-filter_complex",
-		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];"+
-			"[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g];"+
-			"[b][g]vstack,format=yuv420p[v]",
+		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];" +
+			below + ";[b][g]vstack,format=yuv420p[v]",
 		"-map", "[v]", "-map", "2",
-		"-shortest", "-c:v", "libvpx-vp9", "-b:v", "100k", "-deadline", "realtime", "-cpu-used", "8",
-		"-g", "10", "-c:a", "libopus", "-b:a", "24k", path).CombinedOutput()
+		"-shortest", "-c:v", "libvpx-vp9", "-b:v", rate, "-deadline", "realtime", "-cpu-used", "8",
+		"-g", "10", "-c:a"}
+	out, err := exec.Command("ffmpeg", append(append(args, heard...), path)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
 	}
 	return nil
 }
 
+// twoCameras is the picture below the strip of an episode filmed by two
+// cameras, the first up to the frame it switches on and the second from
+// it. Each looks at a subject, a chequerboard, on its own side of the
+// picture, the first on the left and the second on the right, so the
+// search frames each shot on its own subject and the two crops differ.
+// Around the subject is a plain backdrop, dark grey for the first camera
+// and a light red for the second, so a short tells the shots apart by
+// their colour, and a shot framed by the other's crop shows only its
+// backdrop. The switch changes the whole picture at once, which is what
+// the search reads as a camera switch.
+func twoCameras(frame int) string {
+	n := strconv.Itoa(frame)
+	checks := "if(mod(floor(X/4)+floor(Y/4)\\,2)\\,235\\,20)"
+	return "[1]geq=lum='if(lt(N\\," + n + ")\\," +
+		"if(between(X\\,20\\,99)\\," + checks + "\\,60)\\," +
+		"if(between(X\\,220\\,299)\\," + checks + "\\,170))'" +
+		":cb=128:cr='if(lt(N\\," + n + ")\\,128\\,180)'[g]"
+}
+
+// filmedBits is how many bits the frame number of a filmed episode has, so
+// it says the number of every frame up to 2048, more than a minute at
+// 29.97 fps. Its bands are bandHeight pixels high each, of a picture 180
+// high. The walks read them back with the same numbers, see shortFrames in
+// walks/bridge.mjs.
+const filmedBits, bandHeight = 11, 4
+
+// makeFilmedEpisode makes a video of this many seconds at the frame rate a
+// camera records at, rate as ffmpeg takes it, 30000/1001 for 29.97 fps, so
+// a walk can render a clip of it and read the short back. Its picture says
+// which frame it is in a way the render keeps: a short is a narrow part of
+// the picture made larger, so bars side by side would be cut away. The
+// frame number is bands one above the other across the whole width, the
+// highest bit at the top, each bandHeight pixels high, light for one and
+// dark for nought, and whatever part of the width the crop keeps holds
+// every band. They take 44 of the picture's 180 pixels, a quarter, and
+// light and dark are only 100 apart, so no two frames differ by a camera
+// switch, see makeEpisode: bands of 220 and 30 made six of them in 45
+// seconds. They are worked out two pixels a bit, since a picture is an even
+// number of pixels high. Below them is the grey that grows lighter. The
+// sound is a steady tone, so padded silence at a cut can be heard.
+func makeFilmedEpisode(path string, seconds int, rate string) error {
+	d := strconv.Itoa(seconds)
+	bands := filmedBits * bandHeight
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x%d:r=%s:d=%s", 2*filmedBits, rate, d),
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x2:r=%s:d=%s", rate, d),
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d="+d,
+		"-filter_complex",
+		fmt.Sprintf("[0]geq=lum='if(bitand(N\\,pow(2\\,%d-floor(Y/2)))\\,160\\,60)':cb=128:cr=128,scale=320:%d:flags=neighbor[b];", filmedBits-1, bands)+
+			fmt.Sprintf("[1]geq=lum='30+180*T/%s':cb=128:cr=128,scale=320:%d:flags=neighbor[g];", d, 180-bands)+
+			"[b][g]vstack,format=yuv420p[v]",
+		"-map", "[v]", "-map", "2",
+		"-shortest", "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "realtime", "-cpu-used", "8",
+		"-g", "15", "-c:a", "libopus", "-b:a", "64k", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
+	}
+	return nil
+}
+
+// frameRate is a frame rate as ffmpeg takes it, a whole number or one
+// whole number over another, and nothing else, since it goes into a
+// filter.
+var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
+
 // pick makes a new video, not in the library, and has the Add button's box
-// hand it over next.
-func (b *bridge) pick(seconds string) (string, error) {
+// hand it over next. Without a rate it is the bridge's own kind of
+// episode, at five frames a second, and with one it is filmed at that
+// rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
+// own kind is filmed by two cameras that switch then, see twoCameras.
+func (b *bridge) pick(seconds, rate, switchAt string) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
+	}
+	if rate != "" && !frameRate.MatchString(rate) {
+		return "", fmt.Errorf("%q is no frame rate", rate)
+	}
+	at, err := strconv.ParseFloat(switchAt, 64)
+	if err != nil || at <= 0 || at >= float64(n) {
+		at = 0
 	}
 	b.mu.Lock()
 	b.made++
 	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
 	b.mu.Unlock()
-	if err := makeEpisode(path, n); err != nil {
+	if rate != "" {
+		err = makeFilmedEpisode(path, n, rate)
+	} else {
+		err = makeEpisode(path, n, at)
+	}
+	if err != nil {
 		return "", err
 	}
 	b.mu.Lock()

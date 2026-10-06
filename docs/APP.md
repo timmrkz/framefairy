@@ -1003,7 +1003,10 @@ bubble scrolled by those eight pixels.
       the frame nearest: a search finds a clip on the episode's clock, so
       its edges are seldom on a frame, and the end went back to 24.80 where
       the clip had ended at 24.72. A trim within half a frame of where the
-      clip was found lands there, see `onFound` in `engine/shape.go`.
+      clip was found lands there, see `onFound` in `engine/shape.go`. A
+      shot the trim had taken away comes back with its own crop, from the
+      camera switch, the same as a cut put back, see
+      [ENGINE.md](ENGINE.md).
     - **The playhead goes with the edge.** While either edge of a clip is
       dragged, the playhead stands on it and the video preview shows that
       frame, the clip as it is being dragged, with its captions. On frames

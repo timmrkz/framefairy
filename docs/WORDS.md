@@ -56,6 +56,10 @@ a `words` list, and one that does is not read.
   stands and which pieces the clip is left with, and `ShapeClipView` adds
   the captions. `Reshape` saves the same gesture through the same
   functions, so what is drawn is what is saved.
+- What a gesture puts back, a cut or an edge, comes back framed by the
+  shots it shows, from the pieces the clip was found with, so a camera
+  switch in it stays where it was and each shot keeps its crop, see
+  [ENGINE.md](ENGINE.md).
 - A gesture is held inside what the clip can be rather than refused on the
   way: a cut is never narrower than the least a cut may be, a moved cut
   stops short of swallowing the piece beside it, a clip never gets shorter
