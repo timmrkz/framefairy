@@ -699,6 +699,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		}
 	}
 
+	own := filepath.Dir(ResolvePath(r.planPath)) == ResolvePath(logsDir)
 	cueMap := map[string][]LaidCaption{}
 	for _, clip := range clips {
 		// Rendered on the source's frames, and captioned on them too, see
@@ -730,6 +731,16 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			}
 			if n := len(clip.Thumbnails); n > 0 {
 				log.Info("%s: %d thumbnail(s)", clip.Basename(), n)
+			}
+			// The plan says where the short went, so the clip knows it is
+			// rendered wherever that was, see shortOf. Only a plan of the
+			// episode's own: a plan file handed to the command line from
+			// elsewhere is the person's, and is read, not written.
+			if own {
+				if err := recordShort(r.planPath, clip.ID, path); err != nil {
+					failed(fmt.Errorf("%s: could not note where the short went: %w", clip.Basename(), err))
+					continue
+				}
 			}
 		}
 		if !opts.DryRun {

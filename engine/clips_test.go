@@ -227,7 +227,9 @@ var safeName = regexp.MustCompile(`^[A-Za-z0-9_-]*$`)
 
 // FuzzLoadClips throws whole plan files at the loader. Nothing it accepts may
 // carry a name that could leave the output folder, a time that is not a time,
-// or two clips that would overwrite each other's files.
+// or two clips that would overwrite each other's files, and the short a
+// plan says a clip has is always a file of the clip's own name, see
+// shortOf.
 func FuzzLoadClips(f *testing.F) {
 	f.Add(`{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 0, "end": 1}]}]}`)
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
@@ -238,13 +240,15 @@ func FuzzLoadClips(f *testing.F) {
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
 		` "thumbnails": [0.5, "0.2", 7, -1, 1e308, 0.5, null, [1]]}]}`)
 	f.Add(`{"clips": [{"segments": [{"start": 1, "end": 0}]}]}`)
+	f.Add(`{"shorts": {"01": "/", "02": "..", "03": 7}, "clips": [{"id": "01", "slug": "a",` +
+		` "segments": [{"start": 0, "end": 1}]}]}`)
 	f.Add(`{"clips": []}`)
 	f.Fuzz(func(t *testing.T, body string) {
 		path := filepath.Join(t.TempDir(), "clips.json")
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Skip()
 		}
-		_, clips, err := LoadClips(path)
+		plan, clips, err := LoadClips(path)
 		if err != nil {
 			return
 		}
@@ -260,6 +264,10 @@ func FuzzLoadClips(f *testing.F) {
 				t.Fatalf("two clips called %q", clip.Basename())
 			}
 			seen[clip.Basename()] = true
+			if short := shortOf(filepath.Dir(path), plan, clip); short != "" &&
+				filepath.Base(ResolvePath(short)) != clip.Basename()+".mp4" {
+				t.Fatalf("%s is taken for the short of %s", short, clip.Basename())
+			}
 			for _, seg := range clip.Segments {
 				if !isFinite(seg.Start) || !isFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {
 					t.Fatalf("segment %v-%v", seg.Start, seg.End)

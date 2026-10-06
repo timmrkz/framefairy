@@ -296,7 +296,10 @@ how many `cards` the list holds. For a render: `add` a video filmed at a
 frame rate, press `render` and wait for the short, and `short`, the short
 read back from disk holding exactly the frames of the clip's pieces, each
 the right frame of the episode by its bands, with its sound as long as
-its picture and quiet at each cut for no longer than the render's fade.
+its picture and quiet at each cut for no longer than the render's fade,
+and `rendered`, the clip saying its short is in the folder the settings
+name for shorts, which the bridge sets, with the file there, the app
+serving it, Render saying Render again and Show in folder there.
 For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
@@ -336,6 +339,12 @@ was put back as one piece in the first shot's crop. Without the first
 put-back it fails the same way at the second. With only main's render it
 fails at the short: by the switch the sound is down to 19% of the tone,
 the fade out and in of a cut where nothing is cut.
+
+`a short rendered into the folder for shorts is known as rendered`
+presses Render, asks `rendered`, closes and opens the app, and asks it
+again. Against main's engine it fails at the first `rendered`: the clip
+says it has no short, because only the episode's own `out/` was looked
+in. Until then `short` and `shots` found the short in that folder by hand.
 
 ### Where they run
 
