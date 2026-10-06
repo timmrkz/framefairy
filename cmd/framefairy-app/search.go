@@ -21,7 +21,9 @@ import (
 // the one that runs.
 func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	if !s.store.Known(path) {
-		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary)
+		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary, func(j *Job) {
+			j.From, j.To, j.Count = req.From, req.To, req.Count
+		})
 	}
 	// A search called off a moment ago may still be on its way out, and it
 	// writes the same record as it goes, so this one waits for it.
@@ -78,7 +80,9 @@ func (s *FrameFairy) Continue(id string) Job {
 	path := stopped.Episode
 	if stopped.Kind == engine.JobSearch {
 		req := engine.PlanRequest{From: stopped.From, To: stopped.To}
-		if rec := engine.ReadSearch(path); rec != nil {
+		// A search that was refused wrote no record, and the one on disk
+		// is an older search's, about another window.
+		if rec := engine.ReadSearch(path); rec != nil && stopped.Record != "" {
 			req = rec.Request()
 		}
 		if req.Count == 0 {

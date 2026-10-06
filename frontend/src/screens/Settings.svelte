@@ -29,6 +29,7 @@
     speechRow,
     type Check,
     type CloudModel,
+    type Job,
     type Provider,
     type LanguageModel,
     type Settings,
@@ -165,6 +166,7 @@
   // The Go side asks the company whether it takes the key before keeping
   // it, so a key it refuses is found here, where it was typed.
   async function saveKey() {
+    if (refuseFinding()) return;
     savingKey = true;
     keyRefused = "";
     try {
@@ -332,6 +334,10 @@
   let choosing = $state("");
   const notHere = $derived(!!inUse && !inUse.installed);
   let fetchFailed = $state("");
+  // What a search or a clip made by hand is using, see refuseFinding.
+  const running = (j: Job) => j.state === "running" || j.state === "queued";
+  const searching = $derived(jobs.list.some((j) => j.kind === "search" && running(j)));
+  const hearing = $derived(searching || jobs.list.some((j) => j.kind === "clip" && running(j)));
   const llmJob = $derived(jobs.list.filter((j) => j.kind === "llm").at(-1));
   const llmRunning = $derived(
     llmJob && (llmJob.state === "running" || llmJob.state === "queued") ? llmJob : undefined,
@@ -426,6 +432,7 @@
       failed: fetchFailed,
       modelProblem: broken("Language model")?.detail,
       serverMissing: !!broken("llama-server"),
+      searching,
     }),
   );
   const finderLine = $derived(finding);
@@ -461,6 +468,7 @@
   // arrived. Only a page still reading what it has to show does not.
   let findingCard = $state<HTMLElement>();
   let shaking = $state(false);
+  let speechShaking = $state(false);
   let loaded = $state(false);
   const held = $derived(holdsTheApp(finderState, loaded));
   function hold(): boolean {
@@ -471,6 +479,29 @@
     shaking = false;
     requestAnimationFrame(() => (shaking = true));
     return true;
+  }
+
+  // A search hears the episode with the speech model and then finds clips
+  // with the language model, the one chosen when it began, and a clip made
+  // by hand hears with the speech model too. What they use stays as it is
+  // until they are done: choosing another model, removing one or the key
+  // it reads is refused, at once, from the hearing on, and the card it
+  // belongs to shakes, the way it does when the settings may not be left.
+  // The Go side refuses the same, see lockedBy in setup.go.
+  const findingLocked = "A search is using it. It can be changed once the search is done";
+  const speechLocked = "An episode is being transcribed with it. It can be removed once that is done";
+  function shakeFinding() {
+    shaking = false;
+    requestAnimationFrame(() => (shaking = true));
+  }
+  function shakeSpeech() {
+    speechShaking = false;
+    requestAnimationFrame(() => (speechShaking = true));
+  }
+  // For the list of what finds clips, which asks before it opens.
+  function refuseFinding(): boolean {
+    if (searching) shakeFinding();
+    return searching;
   }
 
   onMount(() => {
@@ -544,7 +575,7 @@
                changes the rows beneath it. -->
           <div class="item">
             <span class="mark {finderState}" aria-hidden="true">
-              {#if finderState === "busy"}
+              {#if finderState === "busy" || finderLine.using}
                 <span class="dot busy"></span>
               {:else if finderState === "ok"}
                 <Icon name="check" />
@@ -595,7 +626,8 @@
               align="right"
               tone={finderState === "warn" || finderState === "err" ? finderState : undefined}
               disabled={!!llmRunning || starting}
-              title="What reads the transcript and picks the moments"
+              refuse={refuseFinding}
+              title={searching ? findingLocked : "What reads the transcript and picks the moments"}
             />
           </div>
 
@@ -668,7 +700,7 @@
                   aria-label="Remove the {provider.title} API key"
                   aria-haspopup="dialog"
                   disabled={savingKey}
-                  onclick={() => (removingKey = true)}
+                  onclick={() => refuseFinding() || (removingKey = true)}
                 >
                   <Icon name="trash" />
                 </button>
@@ -713,6 +745,8 @@
                   oninstall={api.installLanguageModel}
                   onchange={modelsChanged}
                   onremove={api.removeLanguageModel}
+                  locked={searching ? findingLocked : ""}
+                  onlocked={shakeFinding}
                 />
               {/if}
             {/if}
@@ -734,14 +768,18 @@
             </Info>
           </span>
         </div>
-        <ModelList
-          models={speechRows}
-          kind="model"
-          oninstall={api.installSpeechModel}
-          onchange={modelsChanged}
-          onremove={api.removeSpeechModel}
-          removeSays="Every episode is transcribed with it, so the app asks for one again the next time it starts."
-        />
+        <div class="speech" class:shaking={speechShaking} onanimationend={() => (speechShaking = false)}>
+          <ModelList
+            models={speechRows}
+            kind="model"
+            oninstall={api.installSpeechModel}
+            onchange={modelsChanged}
+            onremove={api.removeSpeechModel}
+            removeSays="Every episode is transcribed with it, so the app asks for one again the next time it starts."
+            locked={hearing ? speechLocked : ""}
+            onlocked={shakeSpeech}
+          />
+        </div>
       </div>
 
       <div class="group">
@@ -1107,6 +1145,7 @@
      settles, the way the Mac's password field does, a few times and less
      each time. Without motion it is lit for a moment instead. */
   .finding.shaking,
+  .speech.shaking,
   .key.shaking {
     animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
   }
@@ -1128,6 +1167,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .finding.shaking,
+    .speech.shaking,
     .key.shaking {
       animation: lit 0.6s ease;
     }

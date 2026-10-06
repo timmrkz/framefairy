@@ -147,7 +147,9 @@ tall, which left the lamp adrift in a box half again its size.
 
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
-keep the episode's files or delete them. The box names the folder they are
+keep the episode's files or delete them. While it asks, it has the
+keyboard: the space bar presses the button that has it, and Undo, the
+arrows and I and O leave the episode behind it alone. The box names the folder they are
 in, `<episode>.framefairy` beside the video. Keeping it means adding the episode
 again picks up the transcript, the clip sets and the rendered clips where
 this left off, which is why it is the highlighted answer. Deleting it takes
@@ -915,7 +917,10 @@ bubble scrolled by those eight pixels.
       about under it, or with how far the transcript came when it still
       waited for the transcript, which is the first half of every search on
       an episode read only part way. *Failed. Click Continue* has its
-      reason under it. The whole of it is in the row's title. **Continue**
+      reason under it. A search the app would not start, while it closes
+      or while the episode is being removed, is a search that failed
+      too, with the window it was asked for. The whole of it is in the
+      row's title. **Continue**
       takes the window back to the one the search was about and asks for
       it again: a search cut off while it heard hears on from where it
       stopped and then finds. Nothing starts by itself. It stays until it
@@ -1694,6 +1699,14 @@ The interface only ever names files it was given, so this is the last line
 rather than the first, but it is the line that holds when something else
 asks.
 
+A video that is a link, or a work folder beside it that is a link or no
+folder, is no episode. It is refused when it is added, with the reason,
+and an episode whose folder becomes one later drops out of the library
+until it is put right. A link inside a work folder was always judged by
+where it leads, but the folder itself was taken as found, and a zip with
+`episode.mp4` and an `episode.framefairy` leading to the home folder made
+every file there the episode's.
+
 A plan is checked against its episode too, not only against the library.
 It has to be in that episode's own logs folder, so a plan of one episode
 given with the path of another is refused, rather than edited against the
@@ -1869,10 +1882,23 @@ lists them with their size on disk and a trash can each, quiet until the
 pointer reaches it. Removing one asks first in the box over the app,
 because fetching it again is gigabytes: **Cancel**, where the keyboard
 starts, and **Remove**. While a model is being installed the trash cans
-wait, dimmed. A model is not removed while it is being installed or while
-the work that reads it runs, and the refusal says which. Removing the model
-in use lets go of it in the settings too, and the page reads the settings
-again rather than saving over that.
+wait, dimmed. A model is not removed while it is being installed. Removing
+the model in use lets go of it in the settings too, and the page reads the
+settings again rather than saving over that.
+
+**What a search uses stays as it is until it is done**, from the moment it
+starts, while it still hears the episode too. Choosing another model in
+**Find clips with**, removing a model, or saving or removing the key is
+refused while a search runs, and a speech model is not removed while a
+search or a clip made by hand hears with it. The list does not open and no
+box asks: the card the choice belongs to shakes, the way it does when the
+settings may not be left, and the control's title says why. The line under
+**Find clips with** says a search is finding clips with it, and its dot
+pulses, the way work running somewhere else shows. The settings are read
+again when the finding begins, so a model chosen in between would have been
+the one the search found with, and a model removed was a file gone from
+under it. The Go side refuses the same changes, whatever asks for them,
+see `languageLocked` in `setup.go`.
 
 Two other ways of choosing a model were tried before this one and left: a
 card of rows with a round mark each, which took a row per model and grew
@@ -1935,10 +1961,13 @@ llama.cpp: a clone of one commit had every server saying it was build 1.
 the ones its build was made with, and there is nothing of them to update
 on their own: a version raised in a build script is a new app, and the
 next update is the new tools. A customer never runs older tools than the
-app they have. The
-environment can still name one, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`
-and `FRAMEFAIRY_LLAMA_SERVER`, which is how the tests take theirs. See
-`FindTool` in `engine/tools.go`.
+app they have. The tests and the command line can name others in the
+environment, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`,
+`FRAMEFAIRY_LLAMA_SERVER` and `FRAMEFAIRY_ASR_MODEL` for the speech model,
+and the app as it ships takes none of them, see `named` in
+`engine/tools.go`. On a Mac any program of the same user can set a
+variable the next launch of the app reads, and what it named would run
+unchecked with the app's access to the person's folders.
 
 **Training data** says how many records there are and has the one trash
 can that throws them away, which asks first.
