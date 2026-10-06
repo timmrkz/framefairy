@@ -54,6 +54,11 @@
 //                      frame, after saying it takes the file, the way
 //                      WebKit's does with HEVC in 10-bit colour, and opens
 //                      the episode again
+//   ["keep", label]    remembers the clip on screen and its short on disk
+//   ["words again"]    the speech stand-in says its sentences again from
+//                      the first word, so a video added next is heard as
+//                      the bridge's episode was and its clip has the same
+//                      name
 //
 // and what has to come of them:
 //
@@ -86,6 +91,10 @@
 //                      right frame of the episode, with its sound as long
 //                      as its picture and quiet at a cut for no longer
 //                      than the render's fade
+//   ["apart", label]   the clip on screen, of another episode with a clip
+//                      of the same name as the one kept, has a short of its
+//                      own, the short kept is still the same file, and the
+//                      clip kept still says it is its short
 //   ["as previewed", rate]
 //                      the short Render wrote, read back from disk, has
 //                      this frame rate and as many frames as the clip's
@@ -107,7 +116,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
@@ -380,6 +389,15 @@ export const sequences = [
     steps: [["render"], ["rendered"], ["restart"], ["rendered"]],
   },
   {
+    // Plan row 2.133, found while 2.127 was fixed: a short is named after
+    // its clip, and two episodes render into the one folder for shorts the
+    // bridge names, so the clip of a second episode with the same name
+    // wrote over the first episode's short, and the first episode's clip
+    // went on saying it was rendered, over the other episode's short.
+    name: "two episodes never overwrite each other's shorts",
+    steps: [["render"], ["keep", "first"], ["words again"], ["add", 120], ["wait for", "New"], ["cards", 1], ["render"], ["apart", "first"]],
+  },
+  {
     name: "removing a word in the middle of a caption leaves the caption whole",
     steps: [
       ["mark", "start"],
@@ -637,6 +655,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   await watch.start();
   const marks = {};
   const looks = {};
+  const kept = {};
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -974,6 +993,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
+        break;
+      }
+      case "keep": {
+        const on = await chosen(page);
+        const short = await shortOf(page, on);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        kept[arg] = { ...on, name: entry?.basename, short, file: short && existsSync(short) ? statSync(short) : null };
+        if (!kept[arg].file) wrong = `the clip has no short to keep${short ? `, nothing is at ${short}` : ""}`;
+        break;
+      }
+      case "words again":
+        await control(url, "/speech?ms=0&from=0");
+        break;
+      case "apart": {
+        const was = kept[arg];
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const short = await shortOf(page, on);
+        const now = existsSync(was.short) ? statSync(was.short) : null;
+        const theirs = await shortOf(page, was);
+        if (on.path === was.path) wrong = `the clip on screen is of the episode kept at "${arg}"`;
+        else if (entry?.basename !== was.name) wrong = `the clips are named ${was.name} and ${entry?.basename}, which never meet in one folder`;
+        else if (!short) wrong = "the clip on screen says it has no short";
+        else if (short === was.short) wrong = `both episodes' shorts are ${short}`;
+        else if (!now || now.ino !== was.file.ino || now.mtimeMs !== was.file.mtimeMs) {
+          wrong = `the second render wrote over the first episode's short at ${was.short}`;
+        } else if (theirs !== was.short) wrong = `the first episode's clip says its short is ${theirs || "nowhere"}, not ${was.short}`;
         break;
       }
       case "as previewed": {

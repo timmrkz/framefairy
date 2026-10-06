@@ -284,8 +284,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
-		ms, _ := strconv.Atoi(r.URL.Query().Get("ms"))
+		q := r.URL.Query()
+		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
+		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
+			b.words.from(from)
+		}
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {

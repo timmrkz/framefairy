@@ -170,6 +170,76 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	}
 }
 
+// Two episodes that render into one folder for shorts keep a short each,
+// even when a clip of one has the same id and slug as a clip of the
+// other. The second render leaves the first episode's short as it was,
+// and neither clip takes the other's short for its own.
+func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
+	t.Parallel()
+	shorts := t.TempDir()
+	type episode struct {
+		p    *Project
+		plan string
+	}
+	var both [2]episode
+	for i := range both {
+		p, _ := searchProject(t, nil)
+		plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+		if err != nil {
+			t.Fatalf("%v %s", err, p.LastError())
+		}
+		p.Base.Out = shorts
+		both[i] = episode{p, plan}
+	}
+	clip := func(ep episode) ClipView {
+		t.Helper()
+		view, err := ReadPlan(ep.plan)
+		if err != nil || len(view.Clips) == 0 {
+			t.Fatalf("the plan: %v", err)
+		}
+		return view.Clips[0]
+	}
+	render := func(ep episode) string {
+		t.Helper()
+		if err := ep.p.Render(context.Background(), RenderRequest{Plan: ep.plan}); err != nil {
+			t.Fatalf("%v %s", err, ep.p.LastError())
+		}
+		short := clip(ep).Rendered
+		if short == "" {
+			t.Fatal("a clip just rendered says it has no short")
+		}
+		return short
+	}
+	first, second := both[0], both[1]
+	if a, b := clip(first).Basename, clip(second).Basename; a != b {
+		t.Fatalf("the clips are %s and %s, which never meet in one folder", a, b)
+	}
+
+	firstShort := render(first)
+	before, err := os.Stat(firstShort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondShort := render(second)
+
+	if secondShort == firstShort {
+		t.Errorf("both episodes' shorts are %s", firstShort)
+	}
+	after, err := os.Stat(firstShort)
+	if err != nil || !os.SameFile(before, after) {
+		t.Errorf("the second render wrote over the first episode's short at %s", firstShort)
+	}
+	if got := clip(first).Rendered; got != firstShort {
+		t.Errorf("the first episode's clip says its short is %q, not %q", got, firstShort)
+	}
+	if IsShort(first.p.Source, secondShort) {
+		t.Error("the first episode takes the second's short for its own")
+	}
+	if IsShort(second.p.Source, firstShort) {
+		t.Error("the second episode takes the first's short for its own")
+	}
+}
+
 // What a render makes is no edit, so an edit made before a render is
 // undone after it as it would have been without it, and the clip is still
 // rendered afterwards.
