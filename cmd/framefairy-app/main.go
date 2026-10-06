@@ -220,6 +220,10 @@ func mediaMiddleware(st *store) application.Middleware {
 				_, _ = w.Write(data)
 				return
 			}
+			if strings.HasPrefix(r.URL.Path, "/frames/") {
+				openPreviews.serve(st, w, r)
+				return
+			}
 			if !strings.HasPrefix(r.URL.Path, "/media/") {
 				next.ServeHTTP(w, r)
 				return

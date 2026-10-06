@@ -4,8 +4,11 @@
 //
 //   SEED=12 STEPS=80 BRIDGE_URL=http://127.0.0.1:8123/ node <walk>.mjs
 //
-// VERBOSE=1 prints what the walk saw after every step.
-import { random, open, chosen, shown } from "./bridge.mjs";
+// VERBOSE=1 prints what the walk saw after every step. HEVC=1 walks an
+// episode whose picture is HEVC with 10-bit colour instead of the bridge's
+// own, added and searched first: the Chromium a walk drives cannot decode
+// it, so every frame of it comes from the Go side, see lib/frames/app.ts.
+import { random, open, chosen, shown, control, fromSidebar, settle } from "./bridge.mjs";
 import { Watch } from "./rules.mjs";
 
 // The page on the bridge, the seed's random numbers, and the watch. A walk
@@ -16,8 +19,37 @@ export async function begin({ steps: usual = 60 } = {}) {
   const seed = Number(process.env.SEED ?? Math.floor(Math.random() * 1e6));
   const steps = Number(process.env.STEPS || usual);
   const { browser, page, errors } = await open(url);
+  if (process.env.HEVC) await addHEVC(url, page);
   const watch = new Watch(page, await chosen(page), errors);
   return { url, seed, steps, rng: random(seed), browser, page, watch };
+}
+
+// Adds an HEVC 10-bit episode with Add and chooses the clip its first
+// search finds.
+async function addHEVC(url, page) {
+  await control(url, "/pick?seconds=40&codec=hevc");
+  await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+  await page.waitForFunction(
+    () => {
+      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+      return (
+        on.startsWith("folge-") &&
+        pane?.querySelector(".listhead button.new")?.textContent.includes("New") &&
+        pane.querySelectorAll("ol li[data-key]").length > 0
+      );
+    },
+    null,
+    { timeout: 120000, polling: 250 },
+  );
+  await page.locator("aside ol li[data-key] button.pick").first().click();
+  await settle(page);
+  // The frames on screen came through the Go side's streams, or this walk
+  // proves nothing about them.
+  const streams = await page.evaluate(() => window.__appFrames?.stats.streams ?? 0);
+  if (!streams) throw new Error("the picture of the HEVC episode did not come from the Go side");
+  if (process.env.VERBOSE) console.log("frames read in the", await page.evaluate(() => window.__appFrames.puller.where));
+  await page.evaluate(() => document.body.focus());
 }
 
 // Walks: look is what a gesture's when and run are handed, the caption box

@@ -27,6 +27,8 @@
 //   decoder holds at most a few, so memory stays flat over any length.
 // - Nothing polls. Work is started by the decoders' own events, by a read
 //   arriving, and by the animation frame that draws while playing.
+import { AppFrames, AppPictures } from "./app";
+import { NativePictures, openNative } from "./native";
 import { findMoov, MP4Error, parseMoov, pcmPlanes, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
@@ -333,6 +335,57 @@ class PlainSound implements SoundDecoder {
   }
 }
 
+// A picture decoder: the browser's, or AppPictures, whose frames the Go
+// side decodes for a file the browser cannot. A chunk is fed with its rank
+// and whether it will be drawn, which only the Go side's needs.
+interface Pictures {
+  readonly state: string;
+  readonly decodeQueueSize: number;
+  // first is the rank of the first frame the run draws.
+  decode(timestamp: number, key: boolean, data: Uint8Array, rank: number, wanted: boolean, first: number): void;
+  flush(): Promise<void>;
+  // Drops everything, ready for a key frame.
+  reset(): void;
+  close(): void;
+}
+
+class WebPictures implements Pictures {
+  private d: VideoDecoder;
+  constructor(
+    private config: VideoDecoderConfig,
+    output: (f: VideoFrame) => void,
+    error: (e: DOMException) => void,
+    dequeue: () => void,
+  ) {
+    this.d = new VideoDecoder({ output, error });
+    this.d.configure(config);
+    this.d.addEventListener("dequeue", dequeue);
+  }
+  get state() {
+    return this.d.state;
+  }
+  get decodeQueueSize() {
+    return this.d.decodeQueueSize;
+  }
+  decode(timestamp: number, key: boolean, data: Uint8Array) {
+    this.d.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data }));
+  }
+  flush() {
+    return this.d.flush();
+  }
+  reset() {
+    if (this.d.state !== "configured") return;
+    this.d.reset();
+    this.d.configure(this.config);
+  }
+  close() {
+    if (this.d.state !== "closed") this.d.close();
+  }
+}
+
+// Nothing, for a chunk whose bytes the Go side reads for itself.
+const NO_DATA = new Uint8Array(0);
+
 // A stretch of sound on its way to the sound card: where on the program it
 // goes, in samples, and its samples, one array a channel.
 type Chunk = { out: number; length: number; data: Float32Array<ArrayBuffer>[] };
@@ -341,7 +394,7 @@ type Held = { frame: VideoFrame; rank: number };
 
 // One picture decoder and the run it is on.
 type Slot = {
-  decoder: VideoDecoder;
+  decoder: Pictures;
   run: Run | null;
   keeper: Keeper | null;
   next: number;
@@ -401,6 +454,13 @@ export class FrameQueue {
   private slots: Slot[] = [];
   private soundDecoder: SoundDecoder | null = null;
   private videoConfig: VideoDecoderConfig | null = null;
+  // The Go side's frames, for a file the browser says it cannot decode or
+  // fails on, or null while the browser decodes: from the system's own
+  // decoder, one open for each of the two picture decoders, or else from
+  // ffmpeg's streams.
+  private app: AppFrames | null = null;
+  private native: { ids: string[]; width: number; height: number } | null = null;
+  private changing = false;
   private closed = false;
   private trouble = "";
 
@@ -486,7 +546,8 @@ export class FrameQueue {
     };
     const support = await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
     if (this.closed) throw new Error("closed");
-    if (!support.supported) throw new MP4Error(`the app cannot decode the picture of this episode, ${v.codec}`);
+    this.videoConfig = config;
+    if (!support.supported) await this.fromGoSide();
     // A sound card at the episode's own rate, so the sound is resampled
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.
@@ -536,9 +597,8 @@ export class FrameQueue {
   }
 
   private makeSlot(config: VideoDecoderConfig): Slot {
-    this.videoConfig = config;
     const slot: Slot = {
-      decoder: null as unknown as VideoDecoder,
+      decoder: null as unknown as Pictures,
       run: null,
       keeper: null,
       next: 0,
@@ -548,13 +608,102 @@ export class FrameQueue {
       flushing: false,
       firstRank: 0,
     };
-    slot.decoder = new VideoDecoder({
-      output: (f) => this.frameOut(slot, f),
-      error: (e) => this.fault(`The picture stopped decoding: ${e.message}.`),
-    });
-    slot.decoder.configure(config);
-    slot.decoder.addEventListener("dequeue", () => this.pump());
+    slot.decoder = this.pictures(slot, config);
     return slot;
+  }
+
+  private pictures(slot: Slot, config: VideoDecoderConfig): Pictures {
+    const output = (f: VideoFrame) => this.frameOut(slot, f);
+    const dequeue = () => this.pump();
+    if (this.native) {
+      const n = this.native;
+      const id = n.ids[this.slots.includes(slot) ? this.slots.indexOf(slot) : this.slots.length] ?? n.ids[0];
+      return new NativePictures(id, n.width, n.height, output, dequeue, (why) => void this.nativeFailed(why));
+    }
+    if (this.app) return new AppPictures(this.app, output, dequeue);
+    return new WebPictures(config, output, (e) => this.pictureFailed(e), dequeue);
+  }
+
+  // The Go side's frames for this episode, decoded at the size of the
+  // canvas and no larger than the file's own.
+  private fromApp(): AppFrames {
+    const path = new URL(this.reader.url, location.href).searchParams.get("path") ?? "";
+    const v = this.video!;
+    const app = new AppFrames(path, v, () => this.previewSize(), (why) =>
+      this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
+    );
+    // For the walks, which read how the frames came.
+    (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
+    return app;
+  }
+
+  // The size a frame is decoded at: the canvas's, no larger than the
+  // file's own.
+  private previewSize(): { width: number; height: number } {
+    const v = this.video!;
+    let w = this.canvas.width;
+    let h = this.canvas.height;
+    // Not laid out yet: a size that is sharp in most windows.
+    if (w < 64 || h < 64) [w, h] = [1280, 720];
+    const scale = Math.min(1, w / v.width, h / v.height);
+    const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+    return { width: even(v.width * scale), height: even(v.height * scale) };
+  }
+
+  // The Go side decodes the picture from now on: the system's own decoder
+  // where it takes the file, ffmpeg's streams where it does not.
+  private async fromGoSide() {
+    const v = this.video!;
+    const size = this.previewSize();
+    const coded = { width: v.width, height: v.height };
+    const ids = await Promise.all([0, 1].map(() => openNative(v.codec, v.description, coded, size)));
+    if (ids.every((id) => id)) this.native = { ids: ids as string[], ...size };
+    else {
+      for (const id of ids) if (id) void fetch(`/frames/close?id=${id}`).catch(() => {});
+      this.app = this.fromApp();
+    }
+  }
+
+  // The system's own decoder failed on a frame, or would not scale it:
+  // ffmpeg's streams take over.
+  private async nativeFailed(why: string) {
+    if (this.closed || !this.native) return;
+    console.warn("frame queue: the system's decoder failed, ffmpeg decodes the picture:", why);
+    this.native = null;
+    this.app = this.fromApp();
+    this.replaceDecoders();
+  }
+
+  // The browser's decoder failed on a frame, which WebKit does with HEVC
+  // in 10-bit colour after saying it would take it. The Go side decodes the
+  // picture from then on, and whatever was under way starts again on it.
+  private pictureFailed(e: DOMException) {
+    // Both decoders fail on the same file, and the second one's error
+    // comes after the change is made.
+    if (this.closed || this.app || this.native || this.changing) return;
+    console.warn("frame queue: the browser's decoder failed, the app decodes the picture:", e.message);
+    this.changing = true;
+    this.stopPlay();
+    void this.fromGoSide().then(() => {
+      this.changing = false;
+      if (!this.closed) this.replaceDecoders();
+    });
+  }
+
+  // Every picture decoder made again for the way the picture is decoded
+  // now, and whatever was under way started again on them.
+  private replaceDecoders() {
+    const was = this.state;
+    this.stopPlay();
+    for (const slot of this.slots) {
+      slot.decoder.close();
+      slot.decoder = this.pictures(slot, this.videoConfig!);
+    }
+    if (was === "playing" || was === "starting") this.start(this.at);
+    else {
+      this.state = "paused";
+      this.settle(this.at);
+    }
   }
 
   // The sound card's rate is the episode's, where the browser allows it.
@@ -716,8 +865,9 @@ export class FrameQueue {
     this.stopPlay();
     for (const s of this.slots) {
       this.release(s);
-      if (s.decoder.state !== "closed") s.decoder.close();
+      s.decoder.close();
     }
+    this.app?.close();
     if (this.shown) this.closeFrame(this.shown.frame);
     this.shown = null;
     this.soundDecoder?.close();
@@ -830,11 +980,11 @@ export class FrameQueue {
     }
     const want: { from: number; to: number }[] = [];
     for (let i = feed.key; i <= feed.last; i++) want.push({ from: s.offset[i], to: s.offset[i] + s.size[i] });
-    this.reader.want(want);
+    if (!this.app) this.reader.want(want);
     slot.run = { id: -1 - ticket, key: feed.key, last: feed.last, kFirst: 0, kLast: 0, lastRank: feed.rank };
     slot.firstRank = feed.rank;
     for (let i = feed.key; i <= feed.last; i++) {
-      let data = this.reader.get(s.offset[i], s.size[i]);
+      let data = this.app ? NO_DATA : this.reader.get(s.offset[i], s.size[i]);
       while (!(data instanceof Uint8Array)) {
         await data;
         if (ticket !== this.ticket) return;
@@ -843,7 +993,7 @@ export class FrameQueue {
       if (ticket !== this.ticket || slot.decoder.state !== "configured") return;
       const ts = stamp(0, s.pts[i] / s.timescale);
       slot.fed.set(ts, s.rank[i]);
-      slot.decoder.decode(new EncodedVideoChunk({ type: s.key[i] ? "key" : "delta", timestamp: ts, data }));
+      slot.decoder.decode(ts, s.key[i] === 1, data, s.rank[i], s.rank[i] === feed.rank, feed.rank);
     }
     try {
       await slot.decoder.flush();
@@ -900,10 +1050,7 @@ export class FrameQueue {
     const idle = slot.flushing && slot.fed.size === 0;
     slot.fed.clear();
     slot.flushing = false;
-    if (slot.decoder.state === "configured" && !idle) {
-      slot.decoder.reset();
-      slot.decoder.configure(this.videoConfig!);
-    }
+    if (slot.decoder.state === "configured" && !idle) slot.decoder.reset();
   }
 
   // A play from a moment of the episode, or with cue, the same play
@@ -1129,7 +1276,7 @@ export class FrameQueue {
     const want: { from: number; to: number }[] = [];
     const v = this.video!.samples;
     const ahead = this.state === "cued" ? CUE_AHEAD : READ_AHEAD;
-    if (this.vplan) {
+    if (this.vplan && !this.app) {
       const frames = Math.ceil(ahead / this.video!.frame);
       let budget = frames * 2;
       for (const run of this.vplan.runs) {
@@ -1190,7 +1337,7 @@ export class FrameQueue {
       const hungry = busy === 0 && slot.ready.length === 0;
       if (busy >= 3 || (slot.ready.length + slot.coming >= DEPTH && !hungry)) return;
       const i = slot.next;
-      const data = this.reader.get(s.offset[i], s.size[i]);
+      const data = this.app ? NO_DATA : this.reader.get(s.offset[i], s.size[i]);
       if (!(data instanceof Uint8Array)) {
         const ticket = this.ticket;
         void data.then(() => {
@@ -1201,8 +1348,9 @@ export class FrameQueue {
       const ts = stamp(run.id, s.pts[i] / s.timescale);
       const rank = s.rank[i];
       slot.fed.set(ts, rank);
-      if (rank >= slot.firstRank && rank <= run.lastRank) slot.coming++;
-      slot.decoder.decode(new EncodedVideoChunk({ type: s.key[i] ? "key" : "delta", timestamp: ts, data }));
+      const wanted = rank >= slot.firstRank && rank <= run.lastRank;
+      if (wanted) slot.coming++;
+      slot.decoder.decode(ts, s.key[i] === 1, data, rank, wanted, slot.firstRank);
       slot.next++;
     }
     // Everything fed. Once no later piece can carry the run on, the decoder
@@ -1348,7 +1496,7 @@ export class FrameQueue {
       return;
     }
     const plan = this.aplan;
-    const parts = plan.slices(fed.run, fed.j, d.numberOfFrames);
+    const parts = plan.decoded(fed.run, fed.j, d.numberOfFrames);
     if (parts.length) {
       const channels = d.numberOfChannels;
       const rate = this.sampleRate;
