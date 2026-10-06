@@ -47,7 +47,7 @@ export class Watch {
   }
 
   async start() {
-    this.before = await engineState(this.page, this.at);
+    this.before = this.at ? await engineState(this.page, this.at) : null;
     this.callsSeen = await this.page.evaluate(() => window.__calls.length);
   }
 
@@ -64,16 +64,29 @@ export class Watch {
     await settle(page);
     // The clip on screen, which a step that opens another episode or
     // another clip changes. Then what was before is another clip's, and
-    // nothing is compared across the change.
-    const at = await chosen(page);
-    const moved = at && JSON.stringify(at) !== JSON.stringify(this.at);
+    // nothing is compared across the change. It is read before and after
+    // what the screen shows of it, and read again if it changed in
+    // between: a search lands its clip without a call on its way, so the
+    // screen can change after the app has settled, and the clip timeline
+    // was then held to the clip of the episode open before. With no clip
+    // of the engine's on screen, a clip still on its way among them, there
+    // is nothing of the engine's to hold the screen to, and the clip on
+    // screen before is not it.
+    let at, now, drawn, after;
+    for (let tries = 0; ; tries++) {
+      at = await chosen(page);
+      now = await shown(page);
+      drawn = await timeline(page);
+      after = at ? await engineState(page, at) : null;
+      if (JSON.stringify(await chosen(page)) === JSON.stringify(at) || tries === 20) break;
+      await settle(page);
+    }
+    const moved = JSON.stringify(at) !== JSON.stringify(this.at);
     if (moved) {
       this.at = at;
       this.undone = [];
       this.redone = [];
     }
-    const now = await shown(page);
-    const after = await engineState(page, this.at);
     const before = moved ? after : this.before;
 
     // No call failed and the page threw nothing.
@@ -97,8 +110,7 @@ export class Watch {
 
     // The clip timeline shows the clip the engine has: where it starts and
     // ends and every cut, to a millisecond.
-    const drawn = await timeline(page);
-    const want = expectedTimeline(after.segments);
+    const want = after && expectedTimeline(after.segments);
     if (drawn && want) {
       const near = (a, b) => Math.abs(a - b) < 1e-3;
       const fine =
@@ -118,7 +130,7 @@ export class Watch {
 
     // The caption box shows a caption of the engine's, exactly: the same
     // words, in the same order, at the same moments, nothing more.
-    if (!editing(now) && now.length) {
+    if (after && !editing(now) && now.length) {
       const caption = after.captions.find((c) =>
         c.lines.some((l) => l.words.some((w) => Math.abs(w.start - now[0].at) < 1e-6)),
       );
@@ -133,7 +145,9 @@ export class Watch {
 
     // Undo puts back what was there before the step it takes back, and
     // Redo what was there after it.
-    if (kind === "undo" || kind === "redo") {
+    if (!after) {
+      // No clip of the engine's on screen, so nothing to take back.
+    } else if (kind === "undo" || kind === "redo") {
       const [from, to] = kind === "undo" ? [this.undone, this.redone] : [this.redone, this.undone];
       if (from.length) {
         const want = from.pop();
