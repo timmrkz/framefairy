@@ -152,7 +152,20 @@ func (m *made) make(name, seconds string) (string, error) {
 	return path, nil
 }
 
+// updaterHelper is what Wails' updater sets in the copy of the app's own
+// program it starts on a restart, see updating.Restart.
+const updaterHelper = "WAILS_UPDATER_HELPER"
+
 func TestMain(m *testing.M) {
+	// A restart hands over to a copy of the app's own program started as
+	// the updater's helper. The app answers that in application.New, but
+	// in a test the program is the test binary, which ran every test
+	// again, renders included, and could start copies of its own: a
+	// binary kept after the run started them without end. A copy started
+	// as the helper leaves at once, before any test.
+	if os.Getenv(updaterHelper) == "1" {
+		os.Exit(0)
+	}
 	toolsFromThePath()
 	// The face detector finds no face in a grey test video and framing
 	// falls back to what is in focus, after some 50 milliseconds a frame of
