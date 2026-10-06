@@ -326,7 +326,7 @@ describe("AudioPlan", () => {
     expect(missed).toBeGreaterThan(100);
   });
 
-  test("a packet more than half a packet off goes where its stamp says", () => {
+  test("a packet after one that came out as nothing goes where its stamp says", () => {
     const run = { ...plan.runs[0], stretches: plan.runs[0].stretches, end: undefined };
     let j = 0;
     while (plan.packet(j).at < 58 * 48000) j++;

@@ -246,16 +246,18 @@ meets at the sample, faded over 15 ms either side the way the render
 fades it. So a clip plays in the video preview the way it plays in the
 short.
 
-Between cuts the sound is one stream, as the decoder puts it out: each
-packet goes straight after the one before. A file need not say where a
-packet starts to the sample. Every AAC packet decodes to 1024 samples,
-but Tim's `start.mp4` says its packets last 1008, 1056 and 1008 in turn,
-and a clock of 600 ticks a second, QuickTime's, says where a packet starts
-only to the nearest 80 samples at 48 kHz. A packet placed by its stamp
-missed the one before by 16 to 40 samples at most packets, and every miss
-was a click, about 30 a second, heard as a crackle over the whole play. A
-packet more than half a packet off is a real jump and goes where its
-stamp says.
+Between cuts the sound is one stream, as the decoder puts it out, and its
+samples are counted the way any player counts them: the stamps in the
+file only say where the stream starts. They need not say more to the
+sample. Every AAC packet decodes to 1024 samples, but Tim's `start.mp4`
+says its packets last 1008, 1056 and 1008 in turn, and a clock of 600
+ticks a second, QuickTime's, says where a packet starts only to the
+nearest 80 samples at 48 kHz. Placed by its stamp, a packet missed the
+one before by 16 to 40 samples at most packets, and every miss was a
+click, about 30 a second, heard as a crackle over the whole play. So
+only the first packet out of a run goes where its stamp says, and one
+after a packet that came out as nothing, where the stream itself has a
+gap.
 
 Paused, the picture is the frame that holds the playhead, exactly, wherever
 the playhead was put: a click, a drag, a step of an arrow key or a word.

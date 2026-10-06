@@ -378,8 +378,9 @@ export type AudioRun = {
   last: number;
   stretches: Stretch[];
   // Where the sound the decoder last put out for this run ended, in the
-  // track's samples, see decoded.
+  // track's samples, and the packet it came from, see decoded.
   end?: number;
+  endPacket?: number;
 };
 
 // What the sound decoder is fed. Sound has no key frames, but a decoder
@@ -510,20 +511,22 @@ export class AudioPlan {
   }
 
   // The slices of packet j as it came out of the decoder, straight after
-  // what came out of it before in the same run. A decoder puts its sound
-  // out as one stream, every AAC packet 1024 samples, but a file need not
-  // say so to the sample. Tim's start.mp4 says its packets last 1008,
-  // 1056 and 1008 samples in turn, 1024 on average, and a clock of 600
-  // ticks a second, QuickTime's, says where a packet starts only to the
-  // nearest 80 samples at 48 kHz. A packet placed by its stamp missed the
-  // one before by 16 to 40 samples at most packets, a gap or an overlap
-  // heard as a click, a crackle over the whole play. A packet more than
-  // half a packet off is a real jump, and goes where its stamp says.
+  // what came out of the packet before it. A decoder puts its sound out as
+  // one stream, and a player counts its samples: the stamps only say where
+  // the stream starts. They need not say more to the sample. Every AAC
+  // packet decodes to 1024 samples, but Tim's start.mp4 says its packets
+  // last 1008, 1056 and 1008 in turn, and a clock of 600 ticks a second,
+  // QuickTime's, says where a packet starts only to the nearest 80 samples
+  // at 48 kHz. Placed by its stamp, a packet missed the one before at most
+  // packets, a gap or an overlap heard as a click, a crackle over the whole
+  // play. So only the first packet that comes out of a run goes where its
+  // stamp says, and one after a packet that came out as nothing, since
+  // then the stream itself has a gap.
   decoded(run: AudioRun, j: number, got: number): Slice[] {
     const p = this.packet(j);
-    let at = p.at + Math.max(0, p.n - got);
-    if (run.end !== undefined && Math.abs(at - run.end) < got / 2) at = run.end;
+    const at = run.end !== undefined && run.endPacket === j - 1 ? run.end : p.at + Math.max(0, p.n - got);
     run.end = at + got;
+    run.endPacket = j;
     return this.slices(run, j, got, at);
   }
 
