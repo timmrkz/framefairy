@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // A render once read each piece's sound from where the piece starts, and
@@ -30,7 +32,7 @@ import (
 func TestEveryPieceIsHeardFromItsFirstMoment(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	listed, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
 	has := func(name string) bool { return strings.Contains(string(listed), " "+name+" ") }
