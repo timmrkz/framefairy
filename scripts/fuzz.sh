@@ -1,6 +1,5 @@
 #!/bin/sh
-# Fuzzes every target, as many targets at a time as the machine has cores,
-# or only the targets FUZZTARGETS names, by name and separated by spaces.
+# Fuzzes every target, as many targets at a time as the machine has cores.
 #
 # The work is a number of executions, not a number of seconds, so a run here
 # and a run in CI do the same thing on a fast machine and a slow one. Each
@@ -37,24 +36,8 @@ if [ "${1:-}" = "--one" ]; then
 	exit 1
 fi
 
-# Named targets are found in the source, which takes no time. Listing
-# every target asks every package's tests, which compiles all of them.
-ONLY=${FUZZTARGETS:-}
-targets=$(if [ -n "$ONLY" ]; then
-	for name in $ONLY; do
-		file=$(grep -rl --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git "^func $name(f \*testing.F)" . | head -n 1)
-		# A name that is no target would fuzz nothing and read as a pass.
-		if [ -z "$file" ]; then
-			echo "fuzz.sh: there is no fuzz target called $name" >&2
-			exit 1
-		fi
-		echo "./$(dirname "${file#./}") $name"
+for pkg in $($GO list ./...); do
+	for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
+		echo "$pkg $target"
 	done
-else
-	for pkg in $($GO list ./...); do
-		for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
-			echo "$pkg $target"
-		done
-	done
-fi) || exit 1
-printf '%s\n' "$targets" | xargs -P "$JOBS" -n 2 sh "$0" --one
+done | xargs -P "$JOBS" -n 2 sh "$0" --one

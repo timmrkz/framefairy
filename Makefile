@@ -58,8 +58,6 @@ NPM ?= npm
 # same thing on a fast machine and a slow one. A duration like 30s also
 # works, for a deep run by hand.
 FUZZTIME ?= 10000x
-# Only these fuzz targets, by name and separated by spaces, or all of them.
-FUZZTARGETS ?=
 BIN := bin
 STAMPS := .build
 # The tests take ffmpeg and llama-server from the PATH, and on a Mac make
@@ -363,7 +361,7 @@ unit: toolchain modules
 # targets at a time as the machine has cores. A new crasher is written to
 # testdata/fuzz/ next to the code, where it stays as a seed.
 fuzz: toolchain modules
-	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' sh scripts/fuzz.sh
+	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' sh scripts/fuzz.sh
 
 # The interface in Chromium against the real Go side, see docs/TESTING.md:
 # the sequences, and every walk for seeds 1 to WALKS, as many at once as the

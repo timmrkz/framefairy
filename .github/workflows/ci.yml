@@ -311,14 +311,10 @@ jobs:
         if: steps.needsgo.outputs.run == 'true'
         run: make unit
 
-  # Fuzzing on macOS as well, for the two targets that are about paths: the
-  # Mac's disk takes names in either case and some Unicode written in two
-  # ways as one name, and /var is a link to /private/var, which no Linux
-  # disk has to explore. The other targets read text and numbers, which Go
-  # reads the same on both, so they are fuzzed on Linux only: macOS machines
-  # are the few GitHub has, and the build of the app waited behind this job
-  # for one. The known inputs of every target still run here, in make unit
-  # in the job above.
+  # Fuzzing on macOS as well, because two of the targets are about paths and
+  # a case-insensitive filesystem is a different thing to explore. It is its
+  # own machine, so keeping it costs waiting time rather than nothing, and
+  # nothing is what it costs: the job above is the slower of the two.
   macos-fuzz:
     runs-on: macos-latest
     steps:
@@ -332,6 +328,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Fuzz the targets about paths
+      - name: Fuzz
         if: steps.needs.outputs.run == 'true'
-        run: make fuzz FUZZTARGETS='FuzzSafeChild FuzzKnownStaysInTheLibrary'
+        run: make fuzz
