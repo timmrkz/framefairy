@@ -190,8 +190,13 @@ func (e *Engine) readSpan(ctx context.Context, path string, start, end float64, 
 		args = append(args, "-ss", fixed(from, 3), "-to", fixed(end+0.5, 3), "-i", path, "-an")
 		var out io.Writer
 		if frames {
+			// The switches go out with the first frame read as well,
+			// which lies before the span and is never taken for one. An
+			// output that gets nothing fails the whole run from ffmpeg 9
+			// on, and a span with no switch gave this one nothing.
+			cuts := fmt.Sprintf("scale=256:-2,select='gt(scene,%s)+eq(n,0)',showinfo", pyFloatRepr(threshold))
 			args = append(args,
-				"-filter_complex", "[0:v]split=2[s][f];[s]"+scene+"[cuts];[f]"+grey+"[frames]",
+				"-filter_complex", "[0:v]split=2[s][f];[s]"+cuts+"[cuts];[f]"+grey+"[frames]",
 				"-map", "[cuts]", "-fps_mode", "passthrough", "-f", "null", "-",
 				"-map", "[frames]", "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
 			out = &raw
