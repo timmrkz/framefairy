@@ -10,15 +10,15 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // A stream the page opens, pulls from and closes: each frame comes once,
 // in the order shown, from the moment it was opened at, a pull with skip
 // drops what comes before it, and a closed stream is gone.
 func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	svc, mine, _ := library(t)
 	// Ten seconds at five frames a second, a picture any ffmpeg writes.
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
@@ -84,9 +84,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 
 // A stream that has run to the end of the episode says so.
 func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	svc, mine, _ := library(t)
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
 		"-i", "testsrc2=s=160x90:r=5:d=1", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {

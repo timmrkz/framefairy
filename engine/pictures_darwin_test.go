@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os/exec"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // Decodes an H.264 picture with VideoToolbox, scaled to half its size:
@@ -14,9 +16,7 @@ import (
 // moves. Skips where VideoToolbox has no encoder or decoder to offer, as
 // on a machine without one.
 func TestPicturesDecodeWithVideoToolbox(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	stream, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=2",
 		"-c:v", "h264_videotoolbox", "-bf", "0", "-g", "10", "-f", "h264", "-").Output()
 	if err != nil || len(stream) == 0 {
