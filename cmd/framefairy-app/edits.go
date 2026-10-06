@@ -164,7 +164,7 @@ func hold(n, low, high float64) float64 {
 // followTheHeight takes the hand-placed caption line off the clips of an
 // episode, so every one of them sits where the setting says.
 func (s *FrameFairy) followTheHeight(path string) error {
-	for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
+	for _, plan := range plansOf(path) {
 		if !s.store.PlanOf(path, plan.Path) {
 			continue
 		}
