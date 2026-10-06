@@ -615,6 +615,27 @@ two shots that meet from a steady tone and a picture a step brighter on
 every frame, and checks that no frame is lost or shown twice at the switch
 and that the tone neither dips nor jumps there.
 
+The lead of a fifth of a second that each piece's sound is read with,
+`soundLead`, also settles the decoder. ffmpeg seeks to the keyframe of the
+picture at or before the point and decodes the sound from there, and
+leaves nothing out ahead of it, though its demuxers know how much Opus
+needs, `seek_preroll`, in 8.1 and in 9.0 alike. A decoder that starts
+cold is not settled: Opus needs 80 ms of what came before, RFC 7845
+section 4.6, and gave about 70% of a steady tone at the start of a piece,
+and MP3, which keeps part of a frame in the frames before it, gave
+silence for 40 ms. Where the keyframe was a frame or less before a piece,
+as in footage where every frame is one, or at a camera switch where an
+encoder put one, the piece started quiet. Read from a fifth of a second
+earlier, more than twice what Opus needs, every codec is settled where
+the piece starts, and none needs a case of its own.
+`TestEveryPieceIsHeardFromItsFirstMoment` in `engine/preroll_test.go`
+renders two cuts and a camera switch from a 29.97 fps episode where every
+frame is a keyframe, with a steady tone in Opus in MP4 and in Matroska,
+and in MP3 where the ffmpeg can make it, and checks that every piece is
+at least 90% of the tone from its first moment, after the fade of a cut.
+Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
+silent in MP3.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and
