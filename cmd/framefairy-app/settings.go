@@ -262,9 +262,10 @@ func (s *store) RemoveEpisode(path string) error {
 	return s.save("library.json", s.episodes)
 }
 
-// Known reports whether a file belongs to an episode in the library, either
-// the episode itself or something in its work folder. Only those files are
-// served to the interface.
+// Known reports whether a file belongs to an episode in the library: the
+// episode itself, something in its work folder, or the short of one of its
+// clips wherever it was rendered into, see engine.IsShort. Only those files
+// are served to the interface and shown in a folder.
 //
 // A path is judged by where it really leads. A link inside a work folder
 // can point anywhere, and a name is not a promise, so both the path and the
@@ -272,12 +273,24 @@ func (s *store) RemoveEpisode(path string) error {
 func (s *store) Known(path string) bool {
 	clean := filepath.Clean(path)
 	real := engine.ResolvePath(clean)
-	for _, ep := range s.Episodes() {
+	episodes := s.Episodes()
+	for _, ep := range episodes {
 		if clean == ep || real == engine.ResolvePath(ep) {
 			return true
 		}
 		work := engine.ResolvePath(engine.WorkDir(ep)) + string(filepath.Separator)
 		if len(real) > len(work) && real[:len(work)] == work {
+			return true
+		}
+	}
+	// A short outside every work folder, in the folder the settings name
+	// for shorts, is the one file outside them that belongs to an episode.
+	// The plans are only read for a file that could be one.
+	if !strings.EqualFold(filepath.Ext(real), ".mp4") {
+		return false
+	}
+	for _, ep := range episodes {
+		if engine.IsShort(ep, real) {
 			return true
 		}
 	}
