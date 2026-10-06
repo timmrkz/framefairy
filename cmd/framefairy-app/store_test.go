@@ -32,10 +32,10 @@ func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 		t.Errorf("a fresh store starts at %+v", st.Settings())
 	}
 
-	settings := st.Settings()
-	settings.Target = 7
-	settings.HighlightColour = "#123456"
-	if err := st.SetSettings(settings); err != nil {
+	if err := st.UpdateSettings(func(set *Settings) {
+		set.Target = 7
+		set.HighlightColour = "#123456"
+	}); err != nil {
 		t.Fatal(err)
 	}
 	first := filepath.Join(home, "b.mp4")
@@ -310,9 +310,7 @@ func TestATargetIsForItsWindow(t *testing.T) {
 		t.Errorf("a cleared target still asks for %d", n)
 	}
 	// A target from before windows were kept with it is for none.
-	old := s.store.Settings()
-	old.Target, old.TargetWindow = 5, 0
-	if err := s.store.SetSettings(old); err != nil {
+	if err := s.store.UpdateSettings(func(set *Settings) { set.Target, set.TargetWindow = 5, 0 }); err != nil {
 		t.Fatal(err)
 	}
 	if n := s.store.Settings().targetFor(1800); n != 0 {

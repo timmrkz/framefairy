@@ -94,6 +94,9 @@ export interface FinderFacts {
   // What the check said about the model file and about llama-server.
   modelProblem?: string;
   serverMissing?: boolean;
+  // A search is running, so the choice is what it finds with and stays
+  // as it is until the search is done.
+  searching?: boolean;
 }
 
 export type Tone = "" | "warn" | "err";
@@ -102,7 +105,19 @@ export type Standing = "ok" | "busy" | "warn" | "err";
 // The one line under Find clips with, and how the choice stands, which the
 // mark before it and the frame round the list both show. The line is one
 // line in every state, short enough to fit beside the list and a button.
-export function finderStanding(f: FinderFacts): { text: string; tone: Tone; state: Standing } {
+export function finderStanding(f: FinderFacts): { text: string; tone: Tone; state: Standing; using?: boolean } {
+  const standing = finderAtRest(f);
+  // A choice that works is the one a running search finds with. The dot
+  // pulses, work running somewhere else, and the line says so rather than
+  // what the model is, which is not what matters while it is in use. It
+  // stays ok, so the settings are not held for it.
+  if (f.searching && standing.state === "ok") {
+    return { text: "A search is finding clips with it now.", tone: "", state: "ok", using: true };
+  }
+  return standing;
+}
+
+function finderAtRest(f: FinderFacts): { text: string; tone: Tone; state: Standing } {
   if (f.planner === "api") {
     return {
       text: `By ${f.provider.title}. A few cents an episode.`,

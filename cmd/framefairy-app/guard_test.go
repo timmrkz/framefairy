@@ -140,6 +140,62 @@ func TestTheMediaRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	t.Error("Known says a link out of the work folder belongs to the episode")
 }
 
+// A work folder that is itself a link takes nothing it leads to into the
+// library, and neither does a video that is a link. A zip from an editor
+// can carry episode.mp4 with an episode.framefairy that leads to the
+// home folder, and every file there was the episode's: Known said yes to
+// a key in ~/.ssh and the media route served it.
+func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
+	svc, mine, home := library(t)
+	secret := filepath.Join(home, "secret.txt")
+	if err := os.WriteFile(secret, []byte("not for the interface"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Made a link after it was added, the way a folder can change under
+	// the app.
+	if err := os.Symlink(home, engine.WorkDir(mine)); err != nil {
+		t.Skipf("no symlinks here: %s", err)
+	}
+	if svc.store.Known(secret) {
+		t.Error("a file the linked work folder leads to belongs to the episode")
+	}
+	if svc.store.Known(mine) {
+		t.Error("an episode whose work folder is a link is still in the library")
+	}
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+
+		url.QueryEscape(filepath.Join(engine.WorkDir(mine), "secret.txt")), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a file through the linked work folder was served with %d", rec.Code)
+	}
+
+	// Refused when added, with the reason, the same as a video that is a
+	// link itself, and a good one beside them is still added.
+	zipped := filepath.Join(home, "zipped.mp4")
+	if err := os.WriteFile(zipped, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(home, engine.WorkDir(zipped)); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(home, "linked.mp4")
+	if err := os.Symlink(secret, linked); err != nil {
+		t.Fatal(err)
+	}
+	good := filepath.Join(home, "good.mp4")
+	if err := os.WriteFile(good, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	added, err := svc.store.AddEpisodes([]string{zipped, linked, good})
+	if len(added) != 1 || added[0] != good {
+		t.Errorf("added %v, want only the one that is no link", added)
+	}
+	if err == nil || !strings.Contains(err.Error(), "zipped.framefairy") || !strings.Contains(err.Error(), "linked.mp4") {
+		t.Errorf("the reason was %v", err)
+	}
+}
+
 // Removing a part takes the clips in it out of the plans. Anything else
 // in the work folder, a render or a transcript, stays where it is.
 func TestRemoveSearchOnlyTouchesPlans(t *testing.T) {

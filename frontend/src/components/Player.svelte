@@ -31,6 +31,7 @@
     type SourceView,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
+  import { keysElsewhere } from "../lib/keys";
 
   let {
     path,
@@ -949,13 +950,16 @@
       if (!walking && event.key !== "Enter") forget();
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // The box asking something takes the space bar for the button that
+    // has the keyboard, and the arrows and Enter for its answer. The space
+    // bar played the episode behind it and pressed nothing.
+    if (keysElsewhere()) return;
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       // The clip timeline moves the playhead. A slider holding the
       // keyboard, an edge of the clip, takes the arrows for itself.
-      if (on?.getAttribute("role") === "slider" || document.querySelector("dialog[open]")) return;
+      if (on?.getAttribute("role") === "slider") return;
       // Shift walks by words, and the word it lands on becomes the
       // keyboard's.
       if (event.shiftKey) walked = Date.now();
@@ -963,10 +967,8 @@
     }
     if (event.key === "Enter") {
       if (event.defaultPrevented || event.shiftKey || event.repeat) return;
-      // A button or a link holding the keyboard is pressed by Enter, and a
-      // box asking something takes it for its answer.
+      // A button or a link holding the keyboard is pressed by Enter.
       if (tag === "BUTTON" || tag === "A" || on?.getAttribute("role") === "option") return;
-      if (document.querySelector("dialog[open]")) return;
       if (openSpoken()) event.preventDefault();
       return;
     }
@@ -981,10 +983,7 @@
     if (event.key !== "Backspace" && event.key !== "Delete") return false;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return false;
     if (!keyed || fixing) return false;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return false;
-    if (document.querySelector("dialog[open]")) return false;
+    if (keysElsewhere()) return false;
     const at = keyed.start;
     const found = rows.flat().find(({ word, said }) => !!said && word.start === at);
     if (!found?.said || gone.has(goneKey(found.said))) return false;
