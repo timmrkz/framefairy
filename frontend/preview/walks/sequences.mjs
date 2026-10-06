@@ -35,6 +35,10 @@
 //                      adds one filmed at a frame rate, "30000/1001" for
 //                      29.97 fps, whose frames keep their numbers in a
 //                      short
+//   ["add", seconds, rate, timing]
+//                      the same with its frames at a phone's uneven times,
+//                      "uneven", or its picture starting after its sound,
+//                      "late"
 //   ["render"]         presses Render and waits until the short is written
 //   ["add cameras", seconds, switch]
 //                      adds one filmed by two cameras that switch so many
@@ -82,6 +86,18 @@
 //                      right frame of the episode, with its sound as long
 //                      as its picture and quiet at a cut for no longer
 //                      than the render's fade
+//   ["as previewed", rate]
+//                      the short Render wrote, read back from disk, has
+//                      this frame rate and as many frames as the clip's
+//                      pieces last, and at every cut, at the clip's two
+//                      ends and on every tenth frame between, its frame is
+//                      the frame the video preview shows at the moment that
+//                      frame stands for, read off the canvas with the
+//                      playhead put there by a click on the clip timeline
+//   ["as previewed", rate, before]
+//                      the same, for an episode whose picture starts after
+//                      its sound: the clip's first piece starts before
+//                      this moment, inside the time before the picture
 //   ["rendered"]       the clip says its short is in the folder the
 //                      settings name for shorts, the file is there and the
 //                      app serves it, Render says Render again and Show in
@@ -90,11 +106,12 @@
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
+import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
-import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness } from "./bridge.mjs";
+import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen } from "./bridge.mjs";
 import { Watch, same, describe } from "./rules.mjs";
 
 export const sequences = [
@@ -316,6 +333,44 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 2.130: a phone records its frames at uneven times, which
+    // the render counted as if they came every 1/29.97 s, and made the
+    // short at the 50 frames a second ffmpeg reports for them. Now every
+    // frame of the short is the frame the video preview shows for its
+    // moment, at the frames' average rate rounded, 30.
+    // TestARenderShowsTheFrameThatHoldsEachMoment holds the engine to it,
+    // this the app.
+    name: "a short of a phone's uneven frames shows what the video preview shows",
+    steps: [
+      ["add", 40, "30000/1001", "uneven"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.3],
+      ["cut at", 0.7],
+      ["cuts", 2],
+      ["render"],
+      ["as previewed", "30/1"],
+    ],
+  },
+  {
+    // Plan row 2.130: a picture that starts after its sound, by an edit
+    // list. The clip's start is dragged to before the picture starts,
+    // where the render took the picture's frames from its first on and the
+    // sound from where the picture starts.
+    name: "a short of a picture that starts after its sound shows what the video preview shows",
+    steps: [
+      ["add", 40, "30000/1001", "late"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["trim", "start", -60],
+      ["cut at", 0.3],
+      ["cut at", 0.7],
+      ["cuts", 2],
+      ["render"],
+      ["as previewed", "30000/1001", 0.5],
+    ],
+  },
+  {
     // Found while 2.125 was proven: with a folder for shorts named in the
     // settings, which the bridge does, a clip never learnt it was
     // rendered, because only the episode's own out folder was looked in.
@@ -351,6 +406,127 @@ const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 
 // Frames a second of the episode on screen.
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
+
+// What is wrong with the short Render wrote, against the video preview, or
+// null. The frame of the short that stands for a moment is the frame of
+// the episode the video preview shows there: the last one to begin at or
+// before it. A short is made at one rate, and the episode's frames, on a
+// phone, at uneven times, so a frame of the short stands for the moment
+// it starts at, on the grid of the rate from where the picture starts, see
+// OnFrames and cutOf in engine/render.go, and the playhead is put where
+// the preview shows the frame that holds that moment: after it, and
+// before the episode's next frame begins. Which frame begins where is read
+// from the episode with ffprobe. The clip timeline is pinched in for it,
+// and a frame whose time is still too short to click on is passed over,
+// but every piece is looked at where it starts and where it ends.
+// The render takes a frame that begins up to a millisecond after a moment
+// for that moment, frameHair, so the playhead goes after that too.
+async function asPreviewed(page, rate, before) {
+  const on = await chosen(page);
+  const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+  const { fps } = await ask(page, "Source", on.path);
+  const short = await shortOf(page, on);
+  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
+  const probe = (args) => execFileSync("ffprobe", ["-v", "error", ...args, "-of", "csv=p=0"]).toString().trim();
+  const got = probe(["-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", short]);
+  if (got !== rate) return `the short has ${got} frames a second, not ${rate}`;
+  const begins = probe(["-select_streams", "v:0", "-show_entries", "packet=pts_time", on.path])
+    .split(/\s+/).map(Number).filter((t) => Number.isFinite(t)).sort((a, b) => a - b);
+  const fileStart = Number(probe(["-show_entries", "format=start_time", on.path])) || 0;
+  const v0 = Math.max(0, begins[0] - fileStart);
+  const pieces = entry.segments;
+  if (before !== undefined && !(pieces[0].start < before && pieces[0].start < v0)) {
+    return `the clip starts at ${pieces[0].start.toFixed(3)}, not before the picture at ${v0.toFixed(3)} and ${before}`;
+  }
+  // The pieces as the render takes them, see OnFrames.
+  const grid = (t) => v0 + Math.round((t - v0) * fps) / fps;
+  const slots = [];
+  pieces.forEach((p, i) => {
+    let start = grid(p.start);
+    if (start < 0) start += 1 / fps;
+    const end = Math.max(grid(p.end), start + 1 / fps);
+    const n = Math.round((end - start) * fps);
+    for (let q = 0; q < n; q++) slots.push({ piece: i, q, n, at: start + q / fps });
+  });
+  const { frames } = shortFrames(short);
+  if (frames.length !== slots.length) return `the short has ${frames.length} frames, its pieces last ${slots.length}`;
+  const after = (t) => begins.find((b) => b > t + 0.001) ?? Infinity;
+  // Up close, pinched in to a tenth, so a frame is some pixels wide and
+  // the edges of the pieces, which a click takes hold of, cover less than
+  // one.
+  const track = (await handles(page)).track;
+  await page.mouse.move(track.x + track.w / 2, high(track));
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -230);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(300);
+  const problems = [];
+  let looked = 0;
+  let missed = 0;
+  const seenAt = new Set();
+  for (let j = 0; j < slots.length; j++) {
+    const { q, n, at } = slots[j];
+    if (!(q < 3 || q >= n - 3 || q % 5 === 0)) continue;
+    // Where the frame that holds the moment is the one on screen: from the
+    // moment until the episode's next frame begins.
+    const from = at + 0.0015;
+    const to = after(at) - 0.0005;
+    if (to - from < 0.002) continue;
+    // Moved along with two fingers until the moment is well inside.
+    for (let tries = 0; tries < 6; tries++) {
+      const track = (await handles(page)).track;
+      const off = (await xOf(page, (from + to) / 2)) - (track.x + track.w / 2);
+      if (Math.abs(off) < track.w / 4) break;
+      await page.mouse.move(track.x + track.w / 2, high(track));
+      await page.mouse.wheel(off, 0);
+      await page.waitForTimeout(150);
+    }
+    const g = await handles(page);
+    const x0 = await xOf(page, from);
+    const x1 = await xOf(page, to);
+    // Clear of the clip's edges and of the edges of its cuts, which a
+    // click takes hold of instead.
+    const grips = [g.start, g.end, ...g.cuts, ...g.cutEdges].map((r) => [r.x - 3, r.x + r.w + 3]);
+    if (x1 - x0 < 0.2) continue;
+    // A click lands where the clip timeline's own track says, which can be
+    // a pixel or two from where xOf reckons, so it is put right from where
+    // the playhead went, as a hand would.
+    const target = (from + to) / 2;
+    let x = (x0 + x1) / 2;
+    let placed = NaN;
+    for (let tries = 0; tries < 4; tries++) {
+      if (grips.some(([a, b]) => x > a && x < b)) break;
+      await page.mouse.click(x, high(g.track));
+      await settle(page);
+      placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+      if (placed >= from && placed <= to) break;
+      x += ((target - placed) * (x1 - x0)) / Math.max(to - from, 1e-6);
+    }
+    if (!(placed >= from && placed <= to)) {
+      if (!Number.isNaN(placed)) missed++;
+      continue;
+    }
+    looked++;
+    seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : q >= n - 3 ? "last" : "inside"}`);
+    await filmedOnScreen(page);
+    // The frame the preview shows, once it has settled on it: the short's
+    // frame as soon as it comes, else what it stays on.
+    const came = await page
+      .waitForFunction((want) => window.__filmed?.() === want, frames[j], { polling: 50, timeout: 3000 })
+      .then(() => true, () => false);
+    const seen = came ? frames[j] : await filmedOnScreen(page);
+    if (!came || (await filmedOnScreen(page)) !== frames[j]) {
+      problems.push(`frame ${j} of the short, for ${at.toFixed(4)} s, is frame ${frames[j]} of the episode, the video preview shows ${seen} at ${placed.toFixed(4)}`);
+    }
+  }
+  // Every piece looked at where it starts and where it ends, so at both
+  // ends of the clip and on both sides of every cut, and inside.
+  const unseen = pieces.flatMap((_, i) => ["first", "last"].filter((w) => !seenAt.has(`${i} ${w}`)).map((w) => `the ${w} frames of piece ${i + 1}`));
+  if (unseen.length) problems.push(`the playhead could not be put on ${unseen.join(", ")}`);
+  if (looked < 20) problems.push(`only ${looked} frames could be looked at, the playhead missed ${missed}`);
+  console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
+  return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
+}
 
 // Where the clip's short is, as the clip says, or empty when it has none.
 async function shortOf(page, at) {
@@ -640,8 +816,8 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "add": {
-        const [seconds, rate] = [arg].flat();
-        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}`);
+        const [seconds, rate, timing] = [arg].flat();
+        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
         break;
@@ -798,6 +974,11 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
+        break;
+      }
+      case "as previewed": {
+        const [rate, before] = [arg].flat();
+        wrong = await asPreviewed(page, rate, before);
         break;
       }
       case "short": {

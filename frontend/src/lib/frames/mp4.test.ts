@@ -302,6 +302,44 @@ describe("rankAt", () => {
     expect(rankAt(s, -5)).toBe(0);
     expect(rankAt(s, 1000)).toBe(99);
   });
+
+  // The frames of a phone come a little early or late, in ticks of 1/600
+  // s, those of a screen recorder are left out where nothing moved, and a
+  // picture can start after the sound by an empty edit. The frame that
+  // holds a moment is found by the frames' own times all the same, never
+  // by frame k at k over a rate. Plan row 2.130, and the render's own
+  // rule, cutOf in engine/render.go.
+  test("is the frame that holds the moment by its own time, at uneven times and after a late start", () => {
+    const uneven = parseMoov(
+      movie(
+        trak(
+          [...tkhd(), ...elst([
+            [250, -1],
+            [1000, 0],
+          ])],
+          "vide",
+          600,
+          avc1(10, 10),
+          // 20, 25, 15 and 20 ticks, then one frame held for 200.
+          [stts([[1, 20], [1, 25], [1, 15], [1, 20], [1, 200], [1, 20]]), stsz(new Array(6).fill(1)), stsc([[1, 6]]), stco([0])],
+        ),
+      ),
+    ).video!.samples;
+    const begins = Array.from(uneven.pts, (t) => t / 600);
+    // A quarter of a second of nothing, then frames at 0, 20, 45, 60, 80
+    // and 280 ticks after it.
+    expect(begins.map((t) => t.toFixed(4))).toEqual(["0.2500", "0.2833", "0.3250", "0.3500", "0.3833", "0.7167"]);
+    // Before the picture starts, its first frame.
+    expect(rankAt(uneven, 0)).toBe(0);
+    expect(rankAt(uneven, 0.2833)).toBe(0);
+    expect(rankAt(uneven, 0.2834)).toBe(1);
+    // 0.33 is past where the third frame begins, though frame 2 at the
+    // rate of 30 would begin at 0.3167 and frame 3 at 0.35.
+    expect(rankAt(uneven, 0.33)).toBe(2);
+    // The held frame holds every moment until the next begins.
+    expect(rankAt(uneven, 0.7)).toBe(4);
+    expect(rankAt(uneven, 0.7167)).toBe(5);
+  });
 });
 
 describe("pcmPlanes", () => {
