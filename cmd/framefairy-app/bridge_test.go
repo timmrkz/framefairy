@@ -303,7 +303,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 // in the wrong place, can be told from the words around it. Each sentence
 // ends in a pause long enough to end a caption.
 type prose struct {
-	mu   sync.Mutex
+	mu sync.Mutex
+	// next is the word it says next, counted on through proseText.
 	next int
 	// pace is how long it takes over each piece of audio it hears, in
 	// milliseconds, so a walk can see a transcript grow, and cancel it.
@@ -342,6 +343,20 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 }
 
 func (*prose) Close() {}
+
+// at is the word it says next.
+func (p *prose) at() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.next
+}
+
+// from makes word n the one it says next.
+func (p *prose) from(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.next = n
+}
 
 // TestBridge serves the interface against the real Go side until it is
 // stopped, for a person or a probe to look at. It only runs when asked:
@@ -396,7 +411,9 @@ type bridge struct {
 	first string
 	// kept is the episode's work folder and the app's settings as they
 	// were once the episode was first searched.
-	kept  string
+	kept string
+	// said is the word the speech stand-in was to say next then.
+	said  int
 	mu    sync.Mutex
 	picks []string
 	made  int
@@ -435,6 +452,7 @@ func openBridge(t *testing.T) *bridge {
 			t.Fatal(err)
 		}
 	}
+	b.said = words.at()
 	return b
 }
 
@@ -464,10 +482,13 @@ func makeEpisode(path string, seconds int, switchAt float64) error {
 	size, rate, heard := "2x2", "100k", []string{"libopus", "-b:a", "24k"}
 	if switchAt > 0 {
 		// A chequerboard takes more to keep sharp than a grey. The sound
-		// is plain samples, which a render seeks into exactly: Opus needs
-		// 80 ms decoded ahead of a seek, which ffmpeg does not do there,
-		// so every piece would start a little quiet whatever was done at
-		// the join, and a walk listening for a dip would hear that.
+		// is plain samples, chosen when a render read each piece's sound
+		// from where the piece starts: Opus needs 80 ms decoded ahead of
+		// a seek, so every piece started a little quiet, and a walk
+		// listening for a dip heard that. A render now reads the sound a
+		// fifth of a second early, soundLead, which
+		// TestEveryPieceIsHeardFromItsFirstMoment in engine/preroll_test.go
+		// holds, so Opus would do here too. It has not been changed back.
 		below, sound, size, rate = twoCameras(int(math.Round(switchAt*5))), "440", "320x168", "300k"
 		heard = []string{"pcm_s16le"}
 	}
@@ -607,10 +628,12 @@ func (b *bridge) reopen() ([]Job, error) {
 
 // reset puts the app back the way it was once the first episode was
 // searched: the model answers again, every episode a walk added is gone,
-// the episode's work folder and the app's settings are what they were, and
-// the app is opened again on them, so nothing a walk did is kept in memory
-// either. Every walk starts from the same place, and a seed walks the same
-// way every time.
+// the episode's work folder and the app's settings are what they were, the
+// speech stand-in says next the word it said next then, and the app is
+// opened again on them, so nothing a walk did is kept in memory either.
+// Every walk starts from the same place, and a seed walks the same way
+// every time: a video it adds is heard with the same words, however many
+// words the walks before it had heard.
 func (b *bridge) reset() error {
 	b.words.pace.Store(0)
 	b.d.model.hangs(false)
@@ -639,6 +662,8 @@ func (b *bridge) reset() error {
 			return err
 		}
 	}
+	// After the work has stopped, so nothing hears on past it.
+	b.words.from(b.said)
 	b.d.reopen()
 	return nil
 }
