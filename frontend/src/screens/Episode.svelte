@@ -1215,6 +1215,21 @@
     void makeClip(out);
   }
 
+  // L switches loop on and off, the loop button's key, the way T is the
+  // thumbnail's and I and O make a clip.
+  function loopKey(event: KeyboardEvent) {
+    if (event.key !== "l" && event.key !== "L") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    if (!current) return;
+    event.preventDefault();
+    looping = !looping;
+  }
+
   function thumbnailKey(event: KeyboardEvent) {
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -2091,10 +2106,12 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", loopKey);
       window.removeEventListener("keydown", inOutKey);
     };
   });
@@ -2609,6 +2626,8 @@
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}
+        {looping}
+        playing={!paused}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
         {marks}
@@ -2659,7 +2678,7 @@
             aria-pressed={looping}
             aria-label="Loop the clip"
             onclick={() => (looping = !looping)}
-            title="Play the clip again at its end"
+            title="Play the clip again at its end. L does the same"
           >
             <Icon name="loop" />
           </button>

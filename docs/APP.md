@@ -1033,7 +1033,8 @@ bubble scrolled by those eight pixels.
   and nothing floats at the end of a row of its own.
 - **One row under the clip up close**, so the range picker and the waveform
   stand together with nothing between them: play, loop and the crosshair
-  that goes to the playhead, as the three marks anyone knows, then the
+  that goes to the playhead, with **L** for loop the way **T** is the
+  thumbnail's, as the three marks anyone knows, then the
   title of the selected clip, why it was chosen and its numbers, and on the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
@@ -1081,7 +1082,10 @@ bubble scrolled by those eight pixels.
         it**, the left arrow from the first word of a clip landing on the
         last word of the one before it and the right arrow the other way
         round. A clip's words arrive with its captions, so the clip is
-        chosen first and the landing waits for them.
+        chosen first and the landing waits for them. **With loop on, the
+        clip comes round instead**, the way a play of it does: past its
+        last word is its first word, and before its first its last, and the
+        clip stays chosen.
       - Outside a clip there is no caption, so the words that were heard
         are the only ones there are. Where nothing has been heard yet
         shift takes a second.
@@ -1294,7 +1298,13 @@ bubble scrolled by those eight pixels.
       to the whole episode. **Both ends are walls.** A pinch that can go no
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
-      wherever the playhead goes. The crosshair in the row under the track
+      wherever the paused playhead goes. **While it plays, the view keeps
+      the playhead in sight**, the way Premiere and Resolve do by default:
+      when the playhead runs off the view, the view turns a page and the
+      playhead stands a quarter in again. It turns rather than slides, so
+      the waveform holds still to be read between turns, and the view
+      turned is held, like a move by hand, until the crosshair or the clip
+      takes it back. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant
