@@ -464,10 +464,13 @@ func makeEpisode(path string, seconds int, switchAt float64) error {
 	size, rate, heard := "2x2", "100k", []string{"libopus", "-b:a", "24k"}
 	if switchAt > 0 {
 		// A chequerboard takes more to keep sharp than a grey. The sound
-		// is plain samples, which a render seeks into exactly: Opus needs
-		// 80 ms decoded ahead of a seek, which ffmpeg does not do there,
-		// so every piece would start a little quiet whatever was done at
-		// the join, and a walk listening for a dip would hear that.
+		// is plain samples, chosen when a render read each piece's sound
+		// from where the piece starts: Opus needs 80 ms decoded ahead of
+		// a seek, so every piece started a little quiet, and a walk
+		// listening for a dip heard that. A render now reads the sound a
+		// fifth of a second early, soundLead, which
+		// TestEveryPieceIsHeardFromItsFirstMoment in engine/preroll_test.go
+		// holds, so Opus would do here too. It has not been changed back.
 		below, sound, size, rate = twoCameras(int(math.Round(switchAt*5))), "440", "320x168", "300k"
 		heard = []string{"pcm_s16le"}
 	}
