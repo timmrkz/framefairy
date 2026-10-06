@@ -190,6 +190,7 @@ make test                       # 10000 executions per target
 make test FUZZTIME=2000x        # quicker, while working on something else
 make fuzz FUZZTIME=2m           # two minutes per target, on its own
 FUZZJOBS=2 make fuzz            # leave some cores alone
+make fuzz FUZZTARGETS='FuzzSafeChild FuzzPlanEdits'   # only these
 ```
 
 Every run keeps the inputs it found interesting, in Go's build cache, and
@@ -221,7 +222,7 @@ needs any of the rest:
 | `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
 | `fuzz` | Linux | `make fuzz` |
 | `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
-| `macos-fuzz` | macOS | `make fuzz` |
+| `macos-fuzz` | macOS | `make fuzz` for the two targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`, since the Mac's disk takes names in either case and `/var` is a link there. The rest read text and numbers, the same on both systems, and are fuzzed on Linux only |
 
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
 whatever changed, because a mistake in them is silent: CI would go green
@@ -233,8 +234,12 @@ comes when the slowest one does, which is the macOS build and tests.
 
 Nothing is left out to make it quick. Every test that ran before still runs,
 on the same platforms, under the race detector, with the same `FUZZTIME`.
-The fuzzing is on both platforms because two of the targets are about paths
-and a case-insensitive filesystem is a different thing to explore.
+The two fuzz targets about paths are fuzzed on both platforms, because a
+case-insensitive filesystem is a different thing to explore. The others
+are fuzzed on Linux only: they read text and numbers, which Go reads the
+same on both, and macOS machines are the few GitHub has, so the build of
+the app waited behind fuzzing that could find nothing new there. Their
+known inputs still run on macOS, in `make unit`.
 
 ### What runs for a change
 
