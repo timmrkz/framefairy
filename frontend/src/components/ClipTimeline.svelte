@@ -879,21 +879,28 @@
 
   // While it plays, the view keeps the playhead in sight, the way an
   // editor's timeline does by default, Premiere's and Resolve's alike: when
-  // the playhead runs off the view, the view turns a page and the playhead
-  // stands a quarter in again, with the room ahead of it. It turns rather
+  // the playhead reaches the last twentieth of the view, the view turns a
+  // page and the playhead stands a twentieth in, the same distance from the
+  // other side, so nearly the whole view is still ahead of it. A quarter in
+  // was tried first and left too little to look ahead to. It turns rather
   // than slides, so the waveform holds still to be read between turns. A
   // view moved by hand, or one about the clip, is left where it was put
   // only while nothing plays: a playhead nobody can see is worse than a
   // view that moved, and after a turn the view is held, the way a move by
   // hand holds it, until the crosshair or the clip takes it back.
+  const PAGE_EDGE = 0.05;
   $effect(() => {
     if (!playing || !loaded) return;
     const t = time;
-    if (t >= view.from && t <= view.to) return;
+    const shown = view.to - view.from;
+    if (t >= view.from && t < view.to - shown * PAGE_EDGE) return;
     untrack(() => {
       held = !!clip;
       viewFor = clip?.key ?? "";
-      bring(t);
+      const whole = Math.max(duration, shown);
+      const from = Math.max(0, Math.min(t - shown * PAGE_EDGE, whole - shown));
+      if (Math.abs(from - view.from) < 0.001) return;
+      load(from, from + shown);
     });
   });
 

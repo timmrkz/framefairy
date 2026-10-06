@@ -1317,8 +1317,10 @@ bubble scrolled by those eight pixels.
       view sideways. A view moved by hand stays where it was put,
       wherever the paused playhead goes. **While it plays, the view keeps
       the playhead in sight**, the way Premiere and Resolve do by default:
-      when the playhead runs off the view, the view turns a page and the
-      playhead stands a quarter in again. It turns rather than slides, so
+      when the playhead reaches the last twentieth of the view, the view
+      turns a page and the playhead stands a twentieth in, the same
+      distance from the other side, so nearly the whole view is ahead of
+      it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
       the waveform holds still to be read between turns, and the view
       turned is held, like a move by hand, until the crosshair or the clip
       takes it back. The crosshair in the row under the track
