@@ -246,6 +246,19 @@ meets at the sample, faded over 15 ms either side the way the render
 fades it. So a clip plays in the video preview the way it plays in the
 short.
 
+Between cuts the sound is one stream, as the decoder puts it out, and its
+samples are counted the way any player counts them: the stamps in the
+file only say where the stream starts. They need not say more to the
+sample. Every AAC packet decodes to 1024 samples, but Tim's `start.mp4`
+says its packets last 1008, 1056 and 1008 in turn, and a clock of 600
+ticks a second, QuickTime's, says where a packet starts only to the
+nearest 80 samples at 48 kHz. Placed by its stamp, a packet missed the
+one before by 16 to 40 samples at most packets, and every miss was a
+click, about 30 a second, heard as a crackle over the whole play. So
+only the first packet out of a run goes where its stamp says, and one
+after a packet that came out as nothing, where the stream itself has a
+gap.
+
 Paused, the picture is the frame that holds the playhead, exactly, wherever
 the playhead was put: a click, a drag, a step of an arrow key or a word.
 The play from there is already prepared, its first frames and its first
@@ -284,6 +297,93 @@ sentence where the picture would be, with the reason, and nothing else in
 the workspace changes. A sound it cannot decode plays the picture without
 it and says so at the foot of the picture. The playback copy of the
 episode for such files is plan row 1.5b.
+
+A system can also say it decodes a file and then fail on it: WebKit says
+yes to HEVC with 10-bit colour and its decoder then fails on the first
+frame, "Decoder failure". For such a file, and for one the system says no
+to, the Go side decodes the picture instead, plan row 2.141. The queue
+asks its picture decoder the same things either way: `AppPictures` in
+`lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
+`PlainSound` stands in for the sound decoder, so drawing, the clock, cuts
+and the walks are the same. Only the frames the queue will draw are asked
+for, the file's picture is not read by the page at all, and like a
+decoder it puts them out in the order they are shown, not the order they
+were fed: fed in the order they decode, a run's B-frames came too early
+and its first frames too late, and 72 frames of a play of three seconds
+were dropped as late until it did.
+
+Where the system has a decoder of its own for the picture, VideoToolbox on
+the Mac for H.264 and HEVC, the queue uses it, `NativePictures` in
+`lib/frames/native.ts` and `engine.Pictures`: the page reads the file as
+it does for its own decoder and sends the samples, a batch for whatever it
+fed in a moment, to `POST /frames/decode`, and the decoder, one for each
+of the queue's two, stays open in the app's own process for as long as
+the episode does. So a jump starts no program, reads no index again and
+makes no session again: it costs only decoding from the key frame before.
+VideoToolbox makes the frame the size of the canvas and 8-bit itself, on
+the graphics chip, and the page gets it in NV12 as it comes out. A
+decoder that will not open, or fails on a frame, or puts out a frame at
+another size than asked for, hands over to ffmpeg's streams below.
+
+    POST /frames/native?codec=&cw=&ch=&w=&h=   the avcC or hvcC box   {"id": ...}
+    POST /frames/decode?id=                    samples, the frames kept come back
+
+Elsewhere, or where it will not take the file, the frames come from
+ffmpeg in streams the page opens and pulls from:
+
+    /frames/open?path=&from=&w=&h=   {"id": ...}
+    /frames/read?id=&n=&skip=        up to n frames
+    /frames/close?id=
+
+A stream runs the ffmpeg the app ships, on the system's own decoder where
+there is one, from the key frame before `from`, and hands over every
+frame from `from` on, scaled to `w` by `h` in 8-bit I420, each after the
+moment it starts at as a float64 in 8 bytes. ffmpeg decodes a frame ahead
+of what was pulled and waits: WebKit takes whatever a response writes
+without pushing back, so one long response would have let it decode the
+whole episode into memory while the page stood paused. A stream nobody
+pulls from for 20 seconds is closed, and at most six are open. Like
+`/media/`, it only reads a file of an episode in the library.
+
+What makes it quick, since a new stream costs ffmpeg starting, reading the
+file's index and decoding from the key frame before:
+
+- A stream that will reach a frame within a second and a half is waited
+  for rather than a new one started, and the frames it passes on the way
+  are dropped on the Go side, `skip`, not sent. So the arrow keys stepping
+  on, and a paused play going on, cost a frame each.
+- The frames shown last are kept, 96 MB of them, so stepping back or a
+  still close by costs nothing.
+- A frame is decoded at the size of the canvas and no larger than the
+  file's own.
+- The queue's second decoder asks for the piece after a cut while the
+  first plays, so its stream is open before it is needed.
+- On the Mac, ffmpeg makes the frame smaller and 8-bit on the graphics
+  chip, `scale_vt`, before it is copied out of VideoToolbox, a fraction of
+  the 6 MB a 1080p frame of 10-bit colour is. A chain that fails before
+  its first frame is made again on the processor, and every one after it.
+- A pull is read in a Worker, `lib/frames/pull.worker.ts`, each frame
+  straight into a buffer of its own as it arrives and handed to its
+  `VideoFrame` without another copy, so nothing on the page waits for it.
+  Where a Worker cannot reach the Go side or hand a frame back, the same
+  code runs on the page.
+
+Measured on the cloud machine, four cores and no system decoder, with the
+bridge's HEVC 10-bit episode at 320 by 180 in Chromium: a click on the
+clip timeline shows its frame 65 to 115 ms later, a frame from a stream
+already open comes 1 to 5 ms after it is asked for, a play of three
+seconds draws every frame with none late, and the arrow keys show the next
+frame and the one before within a few milliseconds. The prototype,
+measured before the queue used it, with an HEVC 10-bit episode at 1920 by
+1080 read as fast as it came and drawn on a canvas:
+
+| Size | First frame after a jump | Frames a second after it | MB a second |
+| ---: | ---: | ---: | ---: |
+|  640 by 360 | 266 to 277 ms | 122 to 141 |  27 to 35 |
+| 1280 by 720 | 145 to 337 ms |  48 to 105 |  63 to 109 |
+| 1920 by 1080 | 174 to 288 ms |  66 to 89 | 187 to 223 |
+
+A podcast needs 25 or 30 a second.
 
 It used to be a `<video>` element, and everything about it was a
 workaround. The element answers a seek before its frame is on screen,

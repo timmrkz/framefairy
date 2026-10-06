@@ -149,12 +149,13 @@ Start with [README.md](README.md). In short:
   on your pull request means main has landed something. Merge main into
   the branch and push, without being asked. A merge that went through
   without conflicts is pushed at once, with no test run first: what it
-  brings in was tested on main, the branch's own change was tested before
+  brings in was tested on main, the branch's own change was tested around
   its last push, and CI tests the two together on the push anyway. Running
   them in the session as well only keeps Tim waiting, ten minutes when the
   change reaches the engine. A merge with conflicts is different: the
-  resolution is new code, so run `make changed` on it before the push. See
-  [docs/WORKFLOW.md](docs/WORKFLOW.md).
+  resolution is new code, so it is pushed the way a change of your own is,
+  its own tests first and `make changed` after, see the tests rule below.
+  See [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Writing rules
 
@@ -417,9 +418,17 @@ messages, pull request text, code comments and chat replies.
   by then it is their bug.
 - **Tests** need no model and no network. Use the fake recogniser and the
   fake llama-server in `engine/project_test.go`. Tests that render skip
-  without ffmpeg. **Run `make changed` before every push of a change of
-  your own.** A clean merge of main is not one, see the rule on main
-  moving above. It checks what
+  without ffmpeg. **A change of your own is pushed as soon as the tests
+  of what it fixes pass, and `make changed` runs after the push.** Before
+  the push, run the test written for the change and the tests of the file
+  or package it is in, with the type check for `frontend/`: seconds, and
+  what was worked on is then known to work when Tim tries it. Then push,
+  so he is not waiting, and run `make changed` for the rest. When it
+  fails, the fix is the next push, and the reply says which update to
+  take. Every reply says whether `make changed` has passed yet. Only a
+  commit known to be broken, a change half made, is held back, and the
+  reply says it is not ready to try. A clean merge of main runs neither,
+  see the rule on main moving above. `make changed` checks what
   the branch changed against main and only that: the Go tests of the
   packages that changed and every package that imports them, the fuzz
   targets that go through a changed file, `make interface` for `frontend/`,
@@ -485,10 +494,10 @@ the skills listed last show their name without what they are for.
 
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
-- Run `make changed` before every push, and it must pass, see the tests
-  rule above. The one exception is a merge of main without conflicts,
-  which is pushed as it is. Waiting minutes on tests that nothing in the
-  change can move is Tim waiting. When it is not sure what a file reaches, it builds.
+- Push a change once its own tests pass, then run `make changed`, and it
+  must pass, see the tests rule above. A merge of main without conflicts
+  is pushed as it is. Waiting minutes on tests before a push is Tim
+  waiting. `make changed` builds when it is not sure what a file reaches.
 - The app cannot be started there, so there is no way to look at the
   window. Interface work goes through the skill in
   `.claude/skills/interface/`, which has the preview harness in

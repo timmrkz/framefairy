@@ -372,7 +372,16 @@ export type Stretch = {
   pieceEnd: number;
 };
 
-export type AudioRun = { id: number; first: number; last: number; stretches: Stretch[] };
+export type AudioRun = {
+  id: number;
+  first: number;
+  last: number;
+  stretches: Stretch[];
+  // Where the sound the decoder last put out for this run ended, in the
+  // track's samples, and the packet it came from, see decoded.
+  end?: number;
+  endPacket?: number;
+};
 
 // What the sound decoder is fed. Sound has no key frames, but a decoder
 // needs a little before the first sample it is to put out right, so a run
@@ -487,9 +496,9 @@ export class AudioPlan {
   // the decoder as `got` samples. A decoder that leaves out the start of a
   // packet, the way one may with the first packet after it starts, leaves
   // out its front, so what came out is the end of it.
-  slices(run: AudioRun, j: number, got: number): Slice[] {
+  slices(run: AudioRun, j: number, got: number, at?: number): Slice[] {
     const p = this.packet(j);
-    const at = p.at + Math.max(0, p.n - got);
+    at ??= p.at + Math.max(0, p.n - got);
     const end = at + got;
     const out: Slice[] = [];
     for (const st of run.stretches) {
@@ -499,6 +508,26 @@ export class AudioPlan {
       out.push({ from: a - at, to: b - at, out: st.out + (a - st.from), pieceOut: st.pieceOut, pieceEnd: st.pieceEnd });
     }
     return out;
+  }
+
+  // The slices of packet j as it came out of the decoder, straight after
+  // what came out of the packet before it. A decoder puts its sound out as
+  // one stream, and a player counts its samples: the stamps only say where
+  // the stream starts. They need not say more to the sample. Every AAC
+  // packet decodes to 1024 samples, but Tim's start.mp4 says its packets
+  // last 1008, 1056 and 1008 in turn, and a clock of 600 ticks a second,
+  // QuickTime's, says where a packet starts only to the nearest 80 samples
+  // at 48 kHz. Placed by its stamp, a packet missed the one before at most
+  // packets, a gap or an overlap heard as a click, a crackle over the whole
+  // play. So only the first packet that comes out of a run goes where its
+  // stamp says, and one after a packet that came out as nothing, since
+  // then the stream itself has a gap.
+  decoded(run: AudioRun, j: number, got: number): Slice[] {
+    const p = this.packet(j);
+    const at = run.end !== undefined && run.endPacket === j - 1 ? run.end : p.at + Math.max(0, p.n - got);
+    run.end = at + got;
+    run.endPacket = j;
+    return this.slices(run, j, got, at);
   }
 
   forget(m: number) {

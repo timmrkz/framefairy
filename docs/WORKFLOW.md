@@ -8,7 +8,7 @@ Code locally, and no zip files change hands.
 
 ```
 you describe a task at claude.ai/code
-  → Claude works on a branch in the cloud, runs make changed, pushes
+  → Claude works on a branch in the cloud, tests the change, pushes, runs make changed
   → a pull request opens, CI builds and tests it on Linux and macOS
   → you review and merge
   → in the app: Updates, following main
@@ -87,8 +87,10 @@ whatever version the machine came with.
    screenshots included. Batch numbers from [GUI-PLAN.md](GUI-PLAN.md) work
    as shorthand.
 2. **Claude works** on a new branch. It reads `CLAUDE.md` first, which holds
-   the project's rules and your preferences. It runs `make changed`, which
-   checks what the branch changed and only that, pushes, and opens a pull request. You can watch and steer the session at
+   the project's rules and your preferences. It runs the tests of what it
+   changed, pushes, and opens a pull request, so you can try the change at
+   once. Then it runs `make changed`, which checks everything the branch
+   reaches, and pushes a fix if that finds anything. You can watch and steer the session at
    any time, also from the Claude app on your phone.
 3. **CI checks the pull request**, see below. With auto-fix switched on for
    the pull request, Claude fixes failed checks by itself.
@@ -158,10 +160,12 @@ each one `main` is not already in:
 The comment is what wakes the session. It merges `main` in, reads
 `CLAUDE.md` again and pushes. A merge without conflicts is pushed at once,
 with no tests in the session: what `main` brings was tested on `main`, the
-branch's own change was tested before its last push, and CI tests the two
+branch's own change was tested around its last push, and CI tests the two
 together on the push. Waiting for the same tests in the session held a
-reply up by as much as ten minutes. A merge with conflicts runs
-`make changed` before the push, because resolving them writes new code.
+reply up by as much as ten minutes. A merge with conflicts is
+tested like a change of the session's own, because resolving them writes
+new code: the tests of what the resolution touches before the push, and
+`make changed` after it.
 Reading `CLAUDE.md` again is in the comment on purpose: a session reads it
 once when it starts, so a rule that lands on `main` while the session runs
 would otherwise reach it only in its next session. Every move of `main`
