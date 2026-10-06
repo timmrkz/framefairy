@@ -362,8 +362,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	rec Recognizer, silenceDB *float64, save checkpoint, share hearingShare) (*Transcript, error) {
 	first := int(math.Round(window.Start / FrameSeconds))
 	window.Start = float64(first) * FrameSeconds
-	args, lead := audioFrom(path, first)
-	skip := lead * frameSamples
+	args := audioFrom(path, first)
 	e.Log.Detail("ffmpeg %s", strings.Join(args, " "))
 	// Its own context, so stopping at the end of the window can end ffmpeg
 	// without the job being stopped.
@@ -515,10 +514,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 		data := append(carry, buf[:n]...)
 		whole := len(data) / 4 * 4
 		for i := 0; i < whole; i += 4 {
-			if skip > 0 {
-				skip--
-				continue
-			}
 			if read == endAt {
 				reachedEnd = true
 				break

@@ -55,17 +55,16 @@ SYSTEM=$(uname -s 2>/dev/null)
 # fixes. A major release is no reason to wait. 7.1 was kept long after 8
 # came out without anybody choosing to, and nothing in the app needed it.
 #
-# Except where a release changes what the app relies on. ffmpeg is the
-# newest 8.1 and not 9.0, which was out in October 2026: 9.0.2 decodes AAC
-# after a seek 16 ms later than before, 256 samples at 16 kHz, so the
-# loudness the app measures from a jump no longer lines up with the same
-# loudness measured from the start, and a render, which starts with a
-# seek too, may move its sound against its picture. 8.1 lands on the
-# sample. Moving to 9 waits until the app is made to agree with it and a
-# render on a Mac is shown to keep its sound in place. What found it is
-# TestMeasureLevelsGoesWhereTheClipTimelineLooks in engine/levels_test.go.
-FFMPEG_VERSION=8.1.3
-FFMPEG_COMMIT=1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7
+# A release can still change what the app relies on, and the tests are
+# what find it. 9.0 drops the first packet of AAC after a seek whole,
+# where 8.1 kept the part of it after the seek point, so the sound came
+# up to one packet late in the waveform and the transcription and early
+# against the picture in a render. The engine now seeks early and cuts by
+# timestamp, see audioFrom and soundLead, which lands on the sample with
+# both. TestMeasureLevelsGoesWhereTheClipTimelineLooks found it, and
+# TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts holds a render to it.
+FFMPEG_VERSION=9.0.2
+FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
 FREETYPE_VERSION=2.14.3
 FREETYPE_SHA256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f
 FRIBIDI_VERSION=1.0.17
