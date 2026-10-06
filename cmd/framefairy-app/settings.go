@@ -230,6 +230,10 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		if err != nil || seen[abs] {
 			continue
 		}
+		if why := linkedEpisode(abs); why != "" {
+			clash = append(clash, why)
+			continue
+		}
 		if other, used := taken[engine.WorkDir(abs)]; used {
 			clash = append(clash, fmt.Sprintf("%s and %s would share the folder %s",
 				filepath.Base(abs), filepath.Base(other), filepath.Base(engine.WorkDir(abs))))
@@ -247,6 +251,24 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		return added, errors.New(strings.Join(clash, ", ") + ", so it was left out")
 	}
 	return added, nil
+}
+
+// linkedEpisode says why a video cannot be an episode because it, or the
+// work folder beside it, is a link, or "" when neither is. A link inside
+// a work folder is judged by where it leads, see Known, but the folder
+// itself was taken as it was found: a zip with episode.mp4 and an
+// episode.framefairy that led to the home folder made every file there
+// the episode's, to read, to serve and to write into.
+func linkedEpisode(video string) string {
+	if info, err := os.Lstat(video); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return filepath.Base(video) + " is a link, which the app does not follow"
+	}
+	work := engine.WorkDir(video)
+	if info, err := os.Lstat(work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
+		return filepath.Base(work) + " beside " + filepath.Base(video) +
+			" is a link or not a folder, which the app does not follow"
+	}
+	return ""
 }
 
 func (s *store) RemoveEpisode(path string) error {
@@ -275,6 +297,12 @@ func (s *store) Known(path string) bool {
 	real := engine.ResolvePath(clean)
 	episodes := s.Episodes()
 	for _, ep := range episodes {
+		// An episode whose video or work folder has become a link since
+		// it was added is no longer one: everything under the folder it
+		// leads to would count as the episode's.
+		if linkedEpisode(ep) != "" {
+			continue
+		}
 		if clean == ep || real == engine.ResolvePath(ep) {
 			return true
 		}
@@ -290,7 +318,7 @@ func (s *store) Known(path string) bool {
 		return false
 	}
 	for _, ep := range episodes {
-		if engine.IsShort(ep, real) {
+		if linkedEpisode(ep) == "" && engine.IsShort(ep, real) {
 			return true
 		}
 	}

@@ -1594,6 +1594,14 @@ The interface only ever names files it was given, so this is the last line
 rather than the first, but it is the line that holds when something else
 asks.
 
+A video that is a link, or a work folder beside it that is a link or no
+folder, is no episode. It is refused when it is added, with the reason,
+and an episode whose folder becomes one later drops out of the library
+until it is put right. A link inside a work folder was always judged by
+where it leads, but the folder itself was taken as found, and a zip with
+`episode.mp4` and an `episode.framefairy` leading to the home folder made
+every file there the episode's.
+
 A plan is checked against its episode too, not only against the library.
 It has to be in that episode's own logs folder, so a plan of one episode
 given with the path of another is refused, rather than edited against the
