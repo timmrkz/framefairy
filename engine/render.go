@@ -15,6 +15,19 @@ import (
 // seconds. It kills the click a hard audio cut makes.
 const Fade = 0.015
 
+// soundLead is how much earlier than its picture a piece's sound is read,
+// in microseconds, which atrim then cuts off by its timestamps.
+//
+// After a seek, ffmpeg 8.1 kept the part of the first audio packet after
+// the seek point, and 9.0 drops that packet whole, up to 21 ms of 48 kHz
+// AAC. The timestamps stay right, but a sound made to start at its first
+// sample, asetpts=PTS-STARTPTS, then came early against the picture, by
+// a different amount at every cut. Read from earlier and cut by its
+// timestamps before anything else, it lands on the sample in both. A
+// fifth of a second is longer than any packet of sound and the decoder's
+// start after a seek.
+const soundLead = 200_000
+
 // RenderSettings are the encoder choices for one run.
 type RenderSettings struct {
 	OutW, OutH   int
@@ -30,7 +43,8 @@ type RenderSettings struct {
 //
 // Every segment is a separate -i with its own -ss, so ffmpeg seeks to a
 // keyframe near the segment and decodes only what the clip needs, instead of
-// decoding the episode from frame zero.
+// decoding the episode from frame zero. A segment has two inputs, its
+// picture from input 2i and its sound from input 2i+1, see soundLead.
 func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceInfo,
 	rs RenderSettings, assName string) (graph, videoLabel, audioLabel string, err error) {
 	cropW, cropH := CropWindow(source, rs.OutW, rs.OutH)
@@ -53,7 +67,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
 		}
 		chain = append(chain, "fps="+source.FPSString(), "format=yuv420p", "setsar=1")
-		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", i, strings.Join(chain, ","), i))
+		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", 2*i, strings.Join(chain, ","), i))
 
 		// A piece that runs straight on from the one before, the way a
 		// search parts a clip at a camera switch, is heard straight on.
@@ -61,7 +75,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		// the sound of 30 ms.
 		fadeOutAt := math.Max(0, seg.Duration()-Fade)
 		achain := []string{
-			"asetpts=PTS-STARTPTS" + cut.sound,
+			cut.sound,
 			"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
 		}
 		if i == 0 || seg.Start-clip.Segments[i-1].End > 0.0005 {
@@ -70,7 +84,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		if i+1 == len(clip.Segments) || clip.Segments[i+1].Start-seg.End > 0.0005 {
 			achain = append(achain, fmt.Sprintf("afade=t=out:st=%s:d=%s", fixed(fadeOutAt, 4), pyFloatRepr(Fade)))
 		}
-		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", i, strings.Join(achain, ","), i))
+		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", 2*i+1, strings.Join(achain, ","), i))
 	}
 
 	n := len(clip.Segments)
@@ -121,9 +135,11 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 	cmd := []string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"}
 	for _, seg := range clip.Segments {
 		// -ss before -i seeks rather than decoding up to the point, and -t
-		// limits how much is read. Both are input options on purpose.
+		// limits how much is read. Both are input options on purpose. The
+		// sound is read again from a little earlier, see soundLead.
 		cut := source.cutOf(seg)
-		cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-i", abs)
+		cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs,
+			"-ss", cut.soundSeek, "-t", cut.soundRead, "-vn", "-i", abs)
 	}
 	video, err := e.VideoArgs(ctx, rs)
 	if err != nil {
@@ -149,11 +165,13 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 }
 
 // pieceCut is how one piece of a clip is read from the episode: where the
-// read starts and how long it runs, as ffmpeg takes them, and the filters
-// that keep what belongs to the piece out of what was read.
+// read starts and how long it runs, as ffmpeg takes them, once for the
+// picture and once for the sound, and the filters that keep what belongs
+// to the piece out of what was read.
 type pieceCut struct {
-	seek, read     string
-	picture, sound string
+	seek, read           string
+	soundSeek, soundRead string
+	picture, sound       string
 }
 
 // cutOf works out a piece on the frames of the episode, by their number
@@ -175,7 +193,14 @@ type pieceCut struct {
 // sample longer than its frames, however many there are.
 func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return pieceCut{seek: fixed(seg.Start, 6), read: fixed(seg.Duration(), 6)}
+		seek := int64(math.Round(seg.Start * 1_000_000))
+		read := int64(math.Round(seg.Duration() * 1_000_000))
+		lead := min(seek, soundLead)
+		return pieceCut{
+			seek: micros(seek), read: micros(read),
+			soundSeek: micros(seek - lead), soundRead: micros(read + lead),
+			sound: fmt.Sprintf("atrim=start=%s,asetpts=PTS-STARTPTS", micros(lead)),
+		}
 	}
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
 	first := int64(math.Round(seg.Start * float64(num) / float64(den)))
@@ -184,12 +209,15 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	start := func(k int64) int64 { return (2*k*den*1_000_000 + num) / (2 * num) }
 	seek := max(0, (2*first-1)*den*1_000_000/(2*num))
 	read := ((end-first+1)*den*1_000_000 + num - 1) / num
+	lead := min(seek, soundLead)
 	return pieceCut{
-		seek:    micros(seek),
-		read:    micros(read),
-		picture: fmt.Sprintf("trim=end_frame=%d,", end-first),
-		sound: fmt.Sprintf(",atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
-			micros(start(first)-seek), micros(start(end)-seek)),
+		seek:      micros(seek),
+		read:      micros(read),
+		soundSeek: micros(seek - lead),
+		soundRead: micros(read + lead),
+		picture:   fmt.Sprintf("trim=end_frame=%d,", end-first),
+		sound: fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
+			micros(start(first)-seek+lead), micros(start(end)-seek+lead)),
 	}
 }
 
