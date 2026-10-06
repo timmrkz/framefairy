@@ -283,6 +283,9 @@ func (s *FrameFairy) SaveAPIKey(provider, key string) error {
 	if !ok {
 		return fmt.Errorf("there is no provider called %s", provider)
 	}
+	if err := s.languageLocked(); err != nil {
+		return err
+	}
 	if err := engine.VerifyAPIKey(context.Background(), p, key); err != nil {
 		return err
 	}
@@ -298,7 +301,19 @@ func (s *FrameFairy) ChooseCloudModel(model string) error {
 	if model == "" || len(model) > 100 || strings.ContainsAny(model, " \t\r\n/\\\"") {
 		return fmt.Errorf("%q is not the name of a model", model)
 	}
-	return s.store.UpdateSettings(func(set *Settings) { set.APIModel = model })
+	locked := s.languageLocked()
+	var refused error
+	err := s.store.UpdateSettings(func(set *Settings) {
+		if set.APIModel != model && locked != nil {
+			refused = locked
+			return
+		}
+		set.APIModel = model
+	})
+	if refused != nil {
+		return refused
+	}
+	return err
 }
 
 // ChoosePlanner records the answer to the one question, so the app knows
@@ -307,10 +322,20 @@ func (s *FrameFairy) ChoosePlanner(planner string) error {
 	if planner != "api" && planner != "local" {
 		return os.ErrInvalid
 	}
-	return s.store.UpdateSettings(func(set *Settings) {
+	locked := s.languageLocked()
+	var refused error
+	err := s.store.UpdateSettings(func(set *Settings) {
+		if set.Planner != planner && locked != nil {
+			refused = locked
+			return
+		}
 		set.Planner = planner
 		set.Chosen = true
 	})
+	if refused != nil {
+		return refused
+	}
+	return err
 }
 
 // modelInUse is the file name of the model a search runs on: the one named
@@ -348,7 +373,48 @@ func (s *FrameFairy) UseLanguageModel(name string) (string, error) {
 		return "", fmt.Errorf("there is no language model called %s", name)
 	}
 	path := filepath.Join(engine.ModelsDir(), model.Name)
-	return path, s.store.UpdateSettings(func(set *Settings) { set.LLMModel = path })
+	locked := s.languageLocked()
+	var refused error
+	err := s.store.UpdateSettings(func(set *Settings) {
+		if set.LLMModel != path && locked != nil {
+			refused = locked
+			return
+		}
+		set.LLMModel = path
+	})
+	if refused != nil {
+		return "", refused
+	}
+	return path, err
+}
+
+// A search hears the episode with the speech model and then finds clips
+// with the language model, and a clip made by hand hears too. What they
+// use stays as it is until they are done, from the hearing on: the
+// settings are read again when the finding begins, so a model chosen in
+// between would be the one the search found with, and a model removed is
+// a file gone from under it. So while one runs, choosing another model,
+// another way of finding clips or another key, and removing a model, is
+// refused. The settings show the same before they ask, see Settings.svelte.
+var (
+	errSearching = errors.New("a search is using it. It can be changed once the search is done")
+	errHearing   = errors.New("an episode is being transcribed with it. It can be removed once that is done")
+)
+
+// languageLocked says why what finds clips may not change now, or nil.
+func (s *FrameFairy) languageLocked() error {
+	if s.busyWith(engine.JobSearch) {
+		return errSearching
+	}
+	return nil
+}
+
+// speechLocked says why the speech model may not change now, or nil.
+func (s *FrameFairy) speechLocked() error {
+	if s.busyWith(engine.JobSearch, engine.JobClip) {
+		return errHearing
+	}
+	return nil
 }
 
 // busyWith says whether a job of one of these kinds is waiting or running.
@@ -379,12 +445,11 @@ func (s *FrameFairy) RemoveLanguageModel(name string) error {
 	if s.busyWith("llm") {
 		return fmt.Errorf("a model is being installed. Remove %s once that is done", model.Title)
 	}
-	// A search asks the model while it finds clips. The guard asked for
-	// jobs of a kind called plan, which no job has been since the jobs
-	// became steps, so a model in use was taken off the machine under a
-	// running search.
-	if s.busyWith(engine.JobSearch) {
-		return fmt.Errorf("clips are being found. Remove %s once that is done", model.Title)
+	// The guard asked for jobs of a kind called plan, which no job has
+	// been since the jobs became steps, so a model in use was taken off
+	// the machine under a running search.
+	if err := s.languageLocked(); err != nil {
+		return err
 	}
 	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
 		return err
@@ -408,10 +473,10 @@ func (s *FrameFairy) RemoveSpeechModel(name string) error {
 	if s.busyWith("model") {
 		return fmt.Errorf("a model is being installed. Remove %s once that is done", model.Title)
 	}
-	// A search and a clip made by hand both hear the episode. The guard
-	// asked for a kind called transcribe, which no job has any more.
-	if s.busyWith(engine.JobSearch, engine.JobClip) {
-		return fmt.Errorf("an episode is being transcribed. Remove %s once that is done", model.Title)
+	// The guard asked for a kind called transcribe, which no job has any
+	// more.
+	if err := s.speechLocked(); err != nil {
+		return err
 	}
 	return engine.RemoveSpeechModel(model, engine.ModelsDir())
 }

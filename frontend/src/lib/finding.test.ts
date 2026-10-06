@@ -138,6 +138,20 @@ describe("how the choice stands", () => {
     expect(finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, serverMissing: true }).state).toBe("err");
   });
 
+  test("while a search runs, a choice that works says it is in use and holds nothing", () => {
+    const s = finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, searching: true });
+    expect(s).toEqual({ text: "A search is finding clips with it now.", tone: "", state: "ok", using: true });
+    expect(holdsTheApp(s.state, true)).toBe(false);
+    const cloud = finderStanding({ planner: "api", provider: openai, hasKey: true, searching: true });
+    expect(cloud.using).toBe(true);
+  });
+
+  test("while a search runs, a choice that cannot work still says why", () => {
+    const s = finderStanding({ planner: "api", provider: openai, hasKey: false, searching: true });
+    expect(s.state).toBe("warn");
+    expect(s.using).toBeUndefined();
+  });
+
   test("every line is one short line", () => {
     const lines = [
       finderStanding({ planner: "api", provider: openai, hasKey: false }).text,
@@ -148,6 +162,7 @@ describe("how the choice stands", () => {
         hasKey: true,
         inUse: model("far", { installed: false, inUse: true }),
       }).text,
+      finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, searching: true }).text,
     ];
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(60);
   });

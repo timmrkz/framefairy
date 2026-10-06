@@ -362,17 +362,34 @@ func (s *FrameFairy) SaveSettings(changed map[string]json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	var bad error
+	// Asked before the settings are, so the queue's lock is never taken
+	// under the store's. See languageLocked.
+	language, speech := s.languageLocked(), s.speechLocked()
+	var bad, refused error
 	err = s.store.UpdateSettings(func(set *Settings) {
 		next := *set
 		dec := json.NewDecoder(bytes.NewReader(patch))
 		dec.DisallowUnknownFields()
-		if bad = dec.Decode(&next); bad == nil {
-			*set = next
+		if bad = dec.Decode(&next); bad != nil {
+			return
 		}
+		if next.LLMModel != set.LLMModel || next.Planner != set.Planner || next.APIModel != set.APIModel {
+			if refused = language; refused != nil {
+				return
+			}
+		}
+		if next.ASRModel != set.ASRModel {
+			if refused = speech; refused != nil {
+				return
+			}
+		}
+		*set = next
 	})
 	if bad != nil {
 		return fmt.Errorf("the settings were not saved: %w", bad)
+	}
+	if refused != nil {
+		return refused
 	}
 	return err
 }
