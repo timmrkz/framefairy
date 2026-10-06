@@ -34,6 +34,11 @@ import (
 // a quarter of a second after the sound, by an edit list in MOV and by its
 // first timestamp in Matroska. The clip's first piece starts before the
 // picture does.
+//
+// A short of an episode whose frames keep to their rate has that rate. One
+// whose frames do not has the episode's average rate rounded to the
+// nearest of 24, 25, 30, 50 and 60, which is Tim's choice: the rate ffmpeg
+// reports for the phone's frames is 50, and a short came out at 50.
 func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
@@ -45,23 +50,25 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 		video []string
 		out   []string
 		file  string
+		// The frame rate the short has.
+		rate string
 	}{
 		// A phone: a frame every 1/29.97 s, each 0, 8 or 16 ms late, in
 		// ticks of 1/600 s.
-		{name: "uneven", file: "uneven.mov",
+		{name: "uneven", file: "uneven.mov", rate: "30/1",
 			video: []string{"settb=1/600", "setpts='(N*1001/30000+0.008*mod(N\\,3))/TB'"},
 			out:   []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}},
 		// A screen recorder: frames 40 to 49 and 100 to 104 left out, so
 		// the frames before them are held.
-		{name: "held", file: "held.mov",
+		{name: "held", file: "held.mov", rate: "30/1",
 			video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
 			out:   []string{"-fps_mode", "passthrough"}},
 		// The picture a quarter of a second after the sound, which is
 		// 7.4925 frames, so its frames are half a frame off the grid of
 		// the file's start.
-		{name: "late_mov", file: "late.mov", input: []string{"-itsoffset", "0.25"},
+		{name: "late_mov", file: "late.mov", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
 			out: []string{"-fps_mode", "passthrough"}},
-		{name: "late_mkv", file: "late.mkv", input: []string{"-itsoffset", "0.25"},
+		{name: "late_mkv", file: "late.mkv", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
 			out: []string{"-fps_mode", "passthrough"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -82,12 +89,12 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 			if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 				t.Fatalf("making the test episode: %s %s", err, out)
 			}
-			showsWhatItSays(t, e, source)
+			showsWhatItSays(t, e, source, c.rate)
 		})
 	}
 }
 
-func showsWhatItSays(t *testing.T, e *Engine, source string) {
+func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	ctx := context.Background()
 	info, err := e.Probe(ctx, source)
 	if err != nil {
@@ -130,6 +137,14 @@ func showsWhatItSays(t *testing.T, e *Engine, source string) {
 		filepath.Join(work, "captions"), false)
 	if err != nil {
 		t.Fatal(err)
+	}
+	out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", short).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != rate {
+		t.Errorf("the short has %s frames a second, not %s", got, rate)
 	}
 	got := barNumbers(t, short, w, h)
 	sound := monoSamples(t, short)
