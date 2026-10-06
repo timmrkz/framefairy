@@ -147,7 +147,9 @@ tall, which left the lamp adrift in a box half again its size.
 
 The marks on an episode's row, on the right of it, show it in the file
 manager and remove it. **Remove** asks in a box over the workspace whether to
-keep the episode's files or delete them. The box names the folder they are
+keep the episode's files or delete them. While it asks, it has the
+keyboard: the space bar presses the button that has it, and Undo, the
+arrows and I and O leave the episode behind it alone. The box names the folder they are
 in, `<episode>.framefairy` beside the video. Keeping it means adding the episode
 again picks up the transcript, the clip sets and the rendered clips where
 this left off, which is why it is the highlighted answer. Deleting it takes
@@ -815,7 +817,10 @@ bubble scrolled by those eight pixels.
       about under it, or with how far the transcript came when it still
       waited for the transcript, which is the first half of every search on
       an episode read only part way. *Failed. Click Continue* has its
-      reason under it. The whole of it is in the row's title. **Continue**
+      reason under it. A search the app would not start, while it closes
+      or while the episode is being removed, is a search that failed
+      too, with the window it was asked for. The whole of it is in the
+      row's title. **Continue**
       takes the window back to the one the search was about and asks for
       it again: a search cut off while it heard hears on from where it
       stopped and then finds. Nothing starts by itself. It stays until it

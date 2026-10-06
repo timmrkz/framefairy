@@ -514,6 +514,21 @@ pull request.
   in three pieces from a 1080p video went from 18.1 s to 9.9 s, with the
   same crops.
 
+In #130:
+
+- Change 1, bugs 2, 4, 8 and 10. The model guards ask for the job kinds
+  that run, `engine.JobSearch` and `engine.JobClip`. Every settings writer
+  goes through `UpdateSettings`. New and Continue read the job they get
+  back, so a refused search ends the start and its row says why, and the
+  refused search keeps its window. Who a key belongs to is asked in one
+  place, `lib/keys.ts`, which also stopped the space bar from playing the
+  episode behind the box rather than pressing the button that had the
+  keyboard. A `startJob` helper for every control is still open.
+- Change 2, the links half: a video or a work folder that is a link is no
+  episode. `nosniff`, `sandbox` and the CSP are still open, after #120.
+- Security: the app as it ships takes no program and no model from the
+  `FRAMEFAIRY_*` variables.
+
 | # | Change | Size | What it ends or gains |
 | -: | --- | --- | --- |
 | 1 | Bugs 2, 4, 8 and 10: typed job kinds with the model guards fixed, a `startJob` helper for every control, `UpdateSettings` everywhere, one "is someone typing" check | small | four live bugs |
