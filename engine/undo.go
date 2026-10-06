@@ -319,15 +319,16 @@ func changedClips(from, to fileState) []string {
 	return ids
 }
 
-// fieldsOf is a plan's own fields, less the clips and the count of edits,
-// which every edit moves on.
+// fieldsOf is a plan's own fields, less the clips, the count of edits,
+// which every edit moves on, and where the shorts went, which a render
+// writes and no edit does, so an undo never takes it back or stops at it.
 func fieldsOf(p *planParts) map[string]any {
 	out := map[string]any{}
 	if p == nil {
 		return out
 	}
 	for _, k := range p.top.keys {
-		if k != keyClips && k != keyRevision {
+		if k != keyClips && k != keyRevision && k != keyShorts {
 			out[k] = p.top.values[k]
 		}
 	}

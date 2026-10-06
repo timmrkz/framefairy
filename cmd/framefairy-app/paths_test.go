@@ -8,6 +8,9 @@ package main
 // on purpose: a search called off says so, the way one cut off does.
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -206,7 +209,25 @@ func TestPathRenderedToTheEnd(t *testing.T) {
 		t.Fatalf("the render failed: %s", reason)
 	}
 	if len(d.shorts()) == 0 {
-		t.Error("no short was rendered")
+		t.Fatal("no short was rendered")
+	}
+	// The short went to the folder the settings name for shorts, and the
+	// clip knows it is there: Render says Render again, and Show in folder
+	// shows it, which only a file of the library may be. A file beside it
+	// is not one.
+	short := d.clips(ep)[0].Rendered
+	if !slices.Contains(d.shorts(), short) {
+		t.Fatalf("the clip says its short is at %q, the shorts are %v", short, d.shorts())
+	}
+	if !d.svc.store.Known(short) {
+		t.Errorf("the short at %s is refused as no file of the library", short)
+	}
+	beside := filepath.Join(filepath.Dir(short), "beside.mp4")
+	if err := os.WriteFile(beside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if d.svc.store.Known(beside) {
+		t.Errorf("%s, which no clip rendered, is taken for a file of the library", beside)
 	}
 }
 
@@ -250,6 +271,13 @@ func TestPathTwoEpisodesAndARender(t *testing.T) {
 	}
 	if reason := d.failedRender(a); reason != "" || len(d.shorts()) == 0 {
 		t.Errorf("the render: %q, %d shorts", reason, len(d.shorts()))
+	}
+	// Both episodes' clips are named alike, so the first one's short is
+	// where the second one's would go, and it is still not the second's.
+	for _, c := range d.clips(b) {
+		if c.Rendered != "" {
+			t.Errorf("%s of the second episode, never rendered, says it is, at %s", c.ID, c.Rendered)
+		}
 	}
 }
 

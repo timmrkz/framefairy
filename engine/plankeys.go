@@ -20,6 +20,12 @@ const (
 	keyRemoved = "removed"
 	keyFrom    = "from"
 	keyTo      = "to"
+	// keyShorts is the folder each clip's short was rendered into, by the
+	// clip's id, see shortOf. It is the plan's and not the clip's, because
+	// a render is no edit: an undo compares and puts back clips, and a
+	// short written in between would make every edit before it one that
+	// cannot be undone.
+	keyShorts = "shorts"
 
 	// A clip.
 	keyID           = "id"
