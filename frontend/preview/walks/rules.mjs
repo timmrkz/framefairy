@@ -48,7 +48,10 @@ export class Watch {
 
   async start() {
     this.before = this.at ? await engineState(this.page, this.at) : null;
-    this.callsSeen = await this.page.evaluate(() => window.__calls.length);
+    this.callsSeen = await this.page.evaluate(() => {
+      window.__watched = true;
+      return window.__calls.length;
+    });
   }
 
   broke(rule, detail) {
@@ -89,9 +92,17 @@ export class Watch {
     }
     const before = moved ? after : this.before;
 
-    // No call failed and the page threw nothing.
-    const calls = await page.evaluate((from) => window.__calls.slice(from), this.callsSeen);
-    this.callsSeen += calls.length;
+    // No call failed and the page threw nothing. A page loaded again, as
+    // after a restart, starts its list of calls from nought and has lost
+    // the mark the watch left on it, so its calls are read from the first.
+    // Read on from the old count, the calls it made up to that count went
+    // unchecked.
+    const { from, calls } = await page.evaluate((seen) => {
+      const from = window.__watched ? seen : 0;
+      window.__watched = true;
+      return { from, calls: window.__calls.slice(from) };
+    }, this.callsSeen);
+    this.callsSeen = from + calls.length;
     for (const c of calls) if (c.failed) this.broke("a call failed", `${c.name}: ${c.failed}`);
     for (const e of this.errors.splice(0)) this.broke("the page threw", e);
 
