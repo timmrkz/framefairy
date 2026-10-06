@@ -164,7 +164,8 @@ first, then on from there, then from the start. Every half second it asks
 again, and when the view has moved to a part not measured yet, it stops
 ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
 seeks rather than decodes its way there. It starts a fifth of a second
-early and `atrim` cuts that off by timestamp, `levelsLead`: the first
+early and `atrim` cuts that off by timestamp, `levelsLead`, which is
+`soundLead` counted in frames, one number for both: the first
 40 ms after a seek came out up to 4 dB off, because a packet of
 compressed audio is decoded together with the one before it, and ffmpeg
 9 drops the first packet after the seek point whole. A part that ends

@@ -95,7 +95,11 @@ In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes
 as server-sent events on `/events`. `window.__calls` lists every call and
 how it ended, and `window.__menu("undo")` and `window.__menu("redo")` are
-the menu bar, which a browser does not have.
+the menu bar, which a browser does not have. A page loaded again, as after
+a restart, starts its list from nought, and the watch in
+`walks/rules.mjs` knows it by a mark it left on the page that is gone, so
+it reads the new list from its first call. It once read on from the old
+count, and a call that failed just after a restart went unchecked.
 
 Calls that reach beyond the work folder are answered by the bridge with
 nothing: the network, the keychain, a box from the system, another app.
@@ -114,7 +118,7 @@ each with a POST:
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
-| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, and the app is opened again on them |
+| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it |
 
 To open it by hand:
 
@@ -165,7 +169,7 @@ quarter of a second:
 
 | Rule | What it would have caught |
 | --- | --- |
-| No call failed and the page threw nothing | |
+| No call failed and the page threw nothing, after a restart too | a call that failed just after a restart, which went unchecked while the count of calls carried on from the page before |
 | The caption box shows one of the engine's captions exactly, the same words in the same order at the same moments, whenever no word is open | a word typed in beside another shown twice, "weil ein \| ein" |
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |

@@ -771,8 +771,6 @@ func SetCrop(planPath, clipID string, at float64, left int) error {
 	})
 }
 
-// ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, for every piece with that camera angle.
 // SetCaptionStyle changes how the captions of a whole clip set look. Only
 // the settings the workspace offers can be changed here, and a value the
 // render would quietly replace with its default is refused rather than
@@ -1027,6 +1025,8 @@ func ClearCaptionY(planPath string) (int, error) {
 	return changed, nil
 }
 
+// ResetCrop brings back the automatic crop for the shot at a moment of a
+// clip, for every piece with that camera angle.
 func ResetCrop(planPath, clipID string, at float64) error {
 	return editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
