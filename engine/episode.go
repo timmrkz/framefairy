@@ -114,7 +114,7 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	st.Plans = PlanSummaries(logs)
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
-			if shortOf(work, plan.plan, c) != "" {
+			if shortOf(plan.plan, c) != "" {
 				st.Rendered++
 			}
 		}
@@ -488,7 +488,7 @@ func (s PlanSummary) View() *PlanView {
 		for _, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved})
 		}
-		v.Rendered = shortOf(work, plan, c)
+		v.Rendered = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {
 			v.Preview = prev
 		}
@@ -505,24 +505,22 @@ func (s PlanSummary) View() *PlanView {
 // because the folder the settings name for shorts can change after a
 // render, and two episodes can have clips of the same name, so the folder
 // the settings name now says nothing about this clip. A clip the plan
-// says nothing of, rendered before plans said so, is looked for in the
-// episode's own out folder, where a render puts it unless told otherwise.
-// A plan is untrusted, so the file is always the clip's own name or that
+// says nothing of has no short. A plan is untrusted, so the file is always the clip's own name or that
 // with a number, and a link in the folder is the short only when it leads
 // to a file of that name inside it. A short written over since, by
 // another episode's render or by hand, is not the one the clip wrote, and
 // is not its short.
-func shortOf(work string, plan Plan, c Clip) string {
+func shortOf(plan Plan, c Clip) string {
 	rec, ok := recordOf(plan, c)
 	if !ok {
-		rec = shortRecord{folder: filepath.Join(work, "out"), name: c.Basename() + ".mp4"}
+		return ""
 	}
 	short, err := SafeChild(rec.folder, rec.name)
 	if err != nil || filepath.Base(short) != rec.name {
 		return ""
 	}
 	info, err := os.Stat(short)
-	if err != nil || !info.Mode().IsRegular() || (ok && !rec.still(info)) {
+	if err != nil || !info.Mode().IsRegular() || !rec.still(info) {
 		return ""
 	}
 	return short
@@ -586,10 +584,9 @@ func ownName(c Clip, name string) bool {
 // does, not even a file of the same name another episode wrote.
 func IsShort(source, path string) bool {
 	real := ResolvePath(path)
-	work := WorkDir(source)
 	for _, plan := range PlanSummaries(LogsDir(source)) {
 		for _, c := range plan.clips {
-			if short := shortOf(work, plan.plan, c); short != "" && short == real {
+			if short := shortOf(plan.plan, c); short != "" && short == real {
 				return true
 			}
 		}

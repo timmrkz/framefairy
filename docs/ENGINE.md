@@ -1223,10 +1223,10 @@ A render writes in the clip set where each clip's short went, under
 the folder and the name its path really leads to, and its size and its
 modification time in nanoseconds, `recordShort`. `shortOf` in
 `episode.go` is the one answer to where a clip's short is: the file the
-clip set names, if it is still the size and the time it was written with,
-or the clip's own name in the episode's own `out/` for a clip it names
-nothing for. The clip list
-asks `shortOf` for `ClipView.Rendered`, `Status` counts the shorts with
+clip set names, if it is still the size and the time it was written with.
+A clip it names nothing for has no short, wherever a file of its name
+lies: every render of a clip set in `logs/`, the app's and the command
+line's, notes its shorts. The clip list asks `shortOf` for `ClipView.Rendered`, `Status` counts the shorts with
 it, and `IsShort` asks it for the app, which shows or opens no file
 outside an episode's work folder but a short of one of its clips.
 

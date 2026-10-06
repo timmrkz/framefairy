@@ -70,8 +70,9 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	}
 }
 
-// A short still being written is not a short, and neither is a file in
-// the out folder no clip is named for.
+// A short is a file a render wrote and noted in the plan. One still being
+// written is not a short, and neither is a file in the out folder no clip
+// is named for, nor one of a clip's name that the plan says nothing of.
 func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
@@ -84,17 +85,22 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := os.MkdirAll(LogsDir(source), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plan := `{"clips": [
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := os.WriteFile(plan, []byte(`{"clips": [
   {"id": "01", "slug": "done", "segments": [{"start": 1, "end": 21}]},
   {"id": "02", "slug": "half", "segments": [{"start": 30, "end": 50}]},
-  {"id": "03", "slug": "upper", "segments": [{"start": 60, "end": 80}]}]}`
-	if err := os.WriteFile(filepath.Join(LogsDir(source), "clips.json"), []byte(plan), 0o644); err != nil {
+  {"id": "03", "slug": "upper", "segments": [{"start": 60, "end": 80}]},
+  {"id": "05", "slug": "unnoted", "segments": [{"start": 90, "end": 110}]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4", "04_gone.mp4"} {
+	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4", "04_gone.mp4", "05_unnoted.mp4"} {
 		if err := os.WriteFile(filepath.Join(out, name), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Noted the way a render notes its short once it is written.
+	if err := recordShort(plan, "01", filepath.Join(out, "01_done.mp4")); err != nil {
+		t.Fatal(err)
 	}
 	if got := Status(source, "").Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
@@ -381,7 +387,7 @@ func TestAPlanNamesNoFileButAShort(t *testing.T) {
 		if name == "01_erste.mp4" || name == "01_erste 2.mp4" || name == "01_erste 10.mp4" {
 			want = path
 		}
-		if got := shortOf(t.TempDir(), plan, c); got != want {
+		if got := shortOf(plan, c); got != want {
 			t.Errorf("a plan naming %q gives %q, not %q", name, got, want)
 		}
 	}
