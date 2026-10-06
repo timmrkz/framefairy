@@ -93,7 +93,6 @@
   let screen: HTMLDivElement;
   // How tall the picture came out, which the captions are drawn against.
   // Reading it changes nothing, so it never sets the layout going again.
-  let screenHeight = $state(0);
   let shell: HTMLDivElement;
 
   let dragLeft = $state<number | null>(null);
@@ -788,8 +787,13 @@
   // is none to place them in.
   const box = $derived(crop ?? { left: 0, width: 100 });
 
-  function px(share: number): number {
-    return share * screenHeight;
+  // A share of the height of the video preview, as the stylesheet works it
+  // out: .screen is a container, and 100cqh is its height in the same pass
+  // as the layout. It was the height a ResizeObserver read, which comes a
+  // frame after the layout, so while the app was resized the captions were
+  // a frame behind the picture under them, and shook.
+  function px(share: number): string {
+    return `calc(${share} * 100cqh)`;
   }
 
   // The caption line, as the distance from the bottom of a 1080x1920 frame,
@@ -811,7 +815,7 @@
     target.setPointerCapture(event.pointerId);
     const from = event.clientY;
     const start = captions.style.marginV * 1920;
-    const scale = 1920 / Math.max(screenHeight, 1);
+    const scale = 1920 / Math.max(screen.clientHeight, 1);
     let moved = false;
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientY - from) > 2) moved = true;
@@ -1023,7 +1027,7 @@
   <!-- data-playhead says where the playhead is. Nothing on screen reads
        it: it is there so a probe can follow the playhead across a cut on
        every frame, the way the caption words say their moments. -->
-  <div class="screen asks" bind:this={screen} bind:clientHeight={screenHeight} data-playhead={time}>
+  <div class="screen asks" bind:this={screen} data-playhead={time}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">
@@ -1063,7 +1067,7 @@
     {#if dragCaptions !== null}
       <div
         class="grid"
-        style="left: {box.left}%; width: {box.width}%; --step: {px(captionYStep / 1920)}px"
+        style="left: {box.left}%; width: {box.width}%; --step: {px(captionYStep / 1920)}"
       ></div>
     {/if}
     <!-- Captions switched off in the captions column are not drawn, so the
@@ -1072,11 +1076,11 @@
       <div
         class="captions"
         style="left: {box.left}%; width: {box.width}%;
-               bottom: {Math.max(px(captionY / 1920 - captions.style.padY), 0)}px;
-               padding: 0 {px(captions.style.marginH)}px;
+               bottom: max({px(captionY / 1920 - captions.style.padY)}, 0px);
+               padding: 0 {px(captions.style.marginH)};
                font-family: '{captions.style.font}', system-ui, sans-serif;
                font-weight: {captions.style.bold ? 800 : 500};
-               font-size: {px(captions.style.size)}px;
+               font-size: {px(captions.style.size)};
                line-height: {captions.style.lineHeight};
                color: {captions.style.primary}"
       >
@@ -1087,8 +1091,8 @@
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
           style="background: {captions.style.boxOn === false ? 'transparent' : captions.style.box};
-                 border-radius: {px(captions.style.radius)}px;
-                 padding: {px(captions.style.padY)}px {px(captions.style.padX)}px"
+                 border-radius: {px(captions.style.radius)};
+                 padding: {px(captions.style.padY)} {px(captions.style.padX)}"
           title="Drag the handle up or down to place the captions"
           onpointerdown={grabCaptions}
         >
@@ -1203,8 +1207,11 @@
 
   /* As tall and as wide as the workspace worked out, which it did from the
      size of the app itself. Nothing here measures anything. */
+  /* A container for its size, so what is drawn over the picture is sized
+     in shares of it by the stylesheet, see px. */
   .screen {
     position: relative;
+    container-type: size;
     height: var(--pic-h);
     width: var(--pic-w);
     background: #000;

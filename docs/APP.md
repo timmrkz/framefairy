@@ -1275,6 +1275,19 @@ bubble scrolled by those eight pixels.
       all. The time is not written inside its line, because an element with
       a z-index makes a stacking context and would hold its own time down
       there with it.
+    - Both rulers put a time at every step there is room for, from how
+      wide the widest time really is: a time stands 4 pixels right of its
+      line and 4 pixels clear of the next, and one that would run into the
+      end of the range picker is left out, see `lib/ruler.ts`. It was a
+      guess, 72 pixels a time, and a range picker 370 pixels wide drew one
+      time every five minutes on a six minute episode, where a time every
+      minute fits.
+    - Everything on the range picker, the marks, the window, the playhead
+      and the lines, and the captions over the video preview are placed
+      by the stylesheet, in shares of the track's width and the picture's
+      height, `round(share * 100cqw, 1px)` and `calc(share * 100cqh)`, so
+      they move in the same layout pass as what they stand on while the
+      app is resized. They were placed from a width a ResizeObserver read.
     - **Two fingers move along the episode**, the way an editing timeline
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
