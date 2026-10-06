@@ -176,10 +176,6 @@ func (s Settings) apply() {
 	engine.SetTrainingDir(s.TrainingDir)
 }
 
-func (s *store) SetSettings(v Settings) error {
-	return s.UpdateSettings(func(set *Settings) { *set = v })
-}
-
 // UpdateSettings changes the settings in one step: read, change, write,
 // all under the store's lock. Reading, changing and writing back as three
 // calls lost a change whenever two were made at once, the number of clips

@@ -246,12 +246,14 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 // settings name none, so the install does not leave two models and no
 // choice between them.
 func (s *FrameFairy) keepInUse(before string) error {
-	settings := s.store.Settings()
-	if settings.LLMModel != "" || before == "" {
+	if before == "" {
 		return nil
 	}
-	settings.LLMModel = filepath.Join(engine.ModelsDir(), before)
-	return s.store.SetSettings(settings)
+	return s.store.UpdateSettings(func(set *Settings) {
+		if set.LLMModel == "" {
+			set.LLMModel = filepath.Join(engine.ModelsDir(), before)
+		}
+	})
 }
 
 // OpenKeysPage opens the page where a company makes keys, in the browser.
@@ -346,9 +348,7 @@ func (s *FrameFairy) UseLanguageModel(name string) (string, error) {
 		return "", fmt.Errorf("there is no language model called %s", name)
 	}
 	path := filepath.Join(engine.ModelsDir(), model.Name)
-	settings := s.store.Settings()
-	settings.LLMModel = path
-	return path, s.store.SetSettings(settings)
+	return path, s.store.UpdateSettings(func(set *Settings) { set.LLMModel = path })
 }
 
 // busyWith says whether a job of one of these kinds is waiting or running.
@@ -379,18 +379,21 @@ func (s *FrameFairy) RemoveLanguageModel(name string) error {
 	if s.busyWith("llm") {
 		return fmt.Errorf("a model is being installed. Remove %s once that is done", model.Title)
 	}
-	if s.busyWith("plan") {
+	// A search asks the model while it finds clips. The guard asked for
+	// jobs of a kind called plan, which no job has been since the jobs
+	// became steps, so a model in use was taken off the machine under a
+	// running search.
+	if s.busyWith(engine.JobSearch) {
 		return fmt.Errorf("clips are being found. Remove %s once that is done", model.Title)
 	}
 	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
 		return err
 	}
-	settings := s.store.Settings()
-	if settings.LLMModel != "" && filepath.Base(settings.LLMModel) == model.Name {
-		settings.LLMModel = ""
-		return s.store.SetSettings(settings)
-	}
-	return nil
+	return s.store.UpdateSettings(func(set *Settings) {
+		if set.LLMModel != "" && filepath.Base(set.LLMModel) == model.Name {
+			set.LLMModel = ""
+		}
+	})
 }
 
 // RemoveSpeechModel takes a speech model off the machine. Not while one is
@@ -405,7 +408,9 @@ func (s *FrameFairy) RemoveSpeechModel(name string) error {
 	if s.busyWith("model") {
 		return fmt.Errorf("a model is being installed. Remove %s once that is done", model.Title)
 	}
-	if s.busyWith("transcribe") {
+	// A search and a clip made by hand both hear the episode. The guard
+	// asked for a kind called transcribe, which no job has any more.
+	if s.busyWith(engine.JobSearch, engine.JobClip) {
 		return fmt.Errorf("an episode is being transcribed. Remove %s once that is done", model.Title)
 	}
 	return engine.RemoveSpeechModel(model, engine.ModelsDir())

@@ -81,7 +81,7 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 
 	// Not while clips are being found: the search may be reading it.
 	release := make(chan struct{})
-	svc.jobs.add("", "plan", "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {
+	svc.jobs.add("", engine.JobSearch, "Find clips", func(ctx context.Context, p *engine.Project) (string, error) {
 		<-release
 		return "", nil
 	})
@@ -89,7 +89,7 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 		t.Error("removed while clips were being found")
 	}
 	close(release)
-	for svc.busyWith("plan") {
+	for svc.busyWith(engine.JobSearch) {
 		time.Sleep(time.Millisecond)
 	}
 
@@ -119,7 +119,7 @@ func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 		t.Fatal(err)
 	}
 	release := make(chan struct{})
-	svc.jobs.add("", "transcribe", "Transcribe", func(ctx context.Context, p *engine.Project) (string, error) {
+	svc.jobs.add("", engine.JobClip, "Make a clip", func(ctx context.Context, p *engine.Project) (string, error) {
 		<-release
 		return "", nil
 	})
@@ -127,7 +127,7 @@ func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 		t.Error("removed while an episode was being transcribed")
 	}
 	close(release)
-	for svc.busyWith("transcribe") {
+	for svc.busyWith(engine.JobClip) {
 		time.Sleep(time.Millisecond)
 	}
 	if err := svc.RemoveSpeechModel(model.Name); err != nil {
