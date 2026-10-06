@@ -48,6 +48,7 @@ async function addHEVC(url, page) {
   // proves nothing about them.
   const streams = await page.evaluate(() => window.__appFrames?.stats.streams ?? 0);
   if (!streams) throw new Error("the picture of the HEVC episode did not come from the Go side");
+  if (process.env.VERBOSE) console.log("frames read in the", await page.evaluate(() => window.__appFrames.puller.where));
   await page.evaluate(() => document.body.focus());
 }
 

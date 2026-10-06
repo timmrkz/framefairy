@@ -28,6 +28,7 @@
 // - Nothing polls. Work is started by the decoders' own events, by a read
 //   arriving, and by the animation frame that draws while playing.
 import { AppFrames, AppPictures } from "./app";
+import { NativePictures, openNative } from "./native";
 import { findMoov, MP4Error, parseMoov, pcmPlanes, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
@@ -454,8 +455,12 @@ export class FrameQueue {
   private soundDecoder: SoundDecoder | null = null;
   private videoConfig: VideoDecoderConfig | null = null;
   // The Go side's frames, for a file the browser says it cannot decode or
-  // fails on, or null while the browser decodes.
+  // fails on, or null while the browser decodes: from the system's own
+  // decoder, one open for each of the two picture decoders, or else from
+  // ffmpeg's streams.
   private app: AppFrames | null = null;
+  private native: { ids: string[]; width: number; height: number } | null = null;
+  private changing = false;
   private closed = false;
   private trouble = "";
 
@@ -542,7 +547,7 @@ export class FrameQueue {
     const support = await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
     if (this.closed) throw new Error("closed");
     this.videoConfig = config;
-    if (!support.supported) this.app = this.fromApp();
+    if (!support.supported) await this.fromGoSide();
     // A sound card at the episode's own rate, so the sound is resampled
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.
@@ -610,6 +615,11 @@ export class FrameQueue {
   private pictures(slot: Slot, config: VideoDecoderConfig): Pictures {
     const output = (f: VideoFrame) => this.frameOut(slot, f);
     const dequeue = () => this.pump();
+    if (this.native) {
+      const n = this.native;
+      const id = n.ids[this.slots.includes(slot) ? this.slots.indexOf(slot) : this.slots.length] ?? n.ids[0];
+      return new NativePictures(id, n.width, n.height, output, dequeue, (why) => void this.nativeFailed(why));
+    }
     if (this.app) return new AppPictures(this.app, output, dequeue);
     return new WebPictures(config, output, (e) => this.pictureFailed(e), dequeue);
   }
@@ -619,23 +629,49 @@ export class FrameQueue {
   private fromApp(): AppFrames {
     const path = new URL(this.reader.url, location.href).searchParams.get("path") ?? "";
     const v = this.video!;
-    const app = new AppFrames(
-      path,
-      v,
-      () => {
-        let w = this.canvas.width;
-        let h = this.canvas.height;
-        // Not laid out yet: a size that is sharp in most windows.
-        if (w < 64 || h < 64) [w, h] = [1280, 720];
-        const scale = Math.min(1, w / v.width, h / v.height);
-        const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
-        return { width: even(v.width * scale), height: even(v.height * scale) };
-      },
-      (why) => this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
+    const app = new AppFrames(path, v, () => this.previewSize(), (why) =>
+      this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
     );
     // For the walks, which read how the frames came.
     (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
     return app;
+  }
+
+  // The size a frame is decoded at: the canvas's, no larger than the
+  // file's own.
+  private previewSize(): { width: number; height: number } {
+    const v = this.video!;
+    let w = this.canvas.width;
+    let h = this.canvas.height;
+    // Not laid out yet: a size that is sharp in most windows.
+    if (w < 64 || h < 64) [w, h] = [1280, 720];
+    const scale = Math.min(1, w / v.width, h / v.height);
+    const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+    return { width: even(v.width * scale), height: even(v.height * scale) };
+  }
+
+  // The Go side decodes the picture from now on: the system's own decoder
+  // where it takes the file, ffmpeg's streams where it does not.
+  private async fromGoSide() {
+    const v = this.video!;
+    const size = this.previewSize();
+    const coded = { width: v.width, height: v.height };
+    const ids = await Promise.all([0, 1].map(() => openNative(v.codec, v.description, coded, size)));
+    if (ids.every((id) => id)) this.native = { ids: ids as string[], ...size };
+    else {
+      for (const id of ids) if (id) void fetch(`/frames/close?id=${id}`).catch(() => {});
+      this.app = this.fromApp();
+    }
+  }
+
+  // The system's own decoder failed on a frame, or would not scale it:
+  // ffmpeg's streams take over.
+  private async nativeFailed(why: string) {
+    if (this.closed || !this.native) return;
+    console.warn("frame queue: the system's decoder failed, ffmpeg decodes the picture:", why);
+    this.native = null;
+    this.app = this.fromApp();
+    this.replaceDecoders();
   }
 
   // The browser's decoder failed on a frame, which WebKit does with HEVC
@@ -644,9 +680,19 @@ export class FrameQueue {
   private pictureFailed(e: DOMException) {
     // Both decoders fail on the same file, and the second one's error
     // comes after the change is made.
-    if (this.closed || this.app) return;
+    if (this.closed || this.app || this.native || this.changing) return;
     console.warn("frame queue: the browser's decoder failed, the app decodes the picture:", e.message);
-    this.app = this.fromApp();
+    this.changing = true;
+    this.stopPlay();
+    void this.fromGoSide().then(() => {
+      this.changing = false;
+      if (!this.closed) this.replaceDecoders();
+    });
+  }
+
+  // Every picture decoder made again for the way the picture is decoded
+  // now, and whatever was under way started again on them.
+  private replaceDecoders() {
     const was = this.state;
     this.stopPlay();
     for (const slot of this.slots) {

@@ -18,6 +18,7 @@
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
 import { rankAt, type VideoTrack } from "./mp4";
+import { pull, type Pulled } from "./pull";
 
 // How much of the frames shown last is kept, and how far ahead a stream may
 // be from a frame wanted of it and still be waited for, in seconds. Further
@@ -89,8 +90,8 @@ class Stream {
         const n = Math.min(16, Math.max(1, highest - Math.max(this.position, lowest - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
-        const res = await fetch(`/frames/read?${q}`).catch(() => null);
-        if (!res || res.status === 404) {
+        const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
+        if (got.status === 0 || got.status === 404) {
           // Closed on the Go side after standing unused: what was waited
           // for goes to a new stream. A stream that never gave a frame is
           // no stream at all, and asking again would only ask again.
@@ -104,29 +105,20 @@ class Stream {
           for (const w of again) this.owner.route(w);
           return;
         }
-        const body = new Uint8Array(await res.arrayBuffer());
-        if (res.headers.get("X-Frames-End") && body.length === 0) {
-          this.end(res.headers.get("X-Frames-Error") ?? "");
+        if (got.end && got.frames.length === 0) {
+          this.end(got.error);
           return;
         }
-        this.take(body);
+        this.take(got);
       }
     } finally {
       this.pulling = false;
     }
   }
 
-  private take(body: Uint8Array) {
-    const size = (this.width * this.height * 3) / 2;
-    for (let off = 0; off + 8 + size <= body.length; off += 8 + size) {
-      const at = new DataView(body.buffer, body.byteOffset + off, 8).getFloat64(0, true);
+  private take(got: Pulled) {
+    for (const { at, frame } of got.frames) {
       const rank = rankAt(this.owner.track.samples, at + this.owner.track.frame / 2);
-      const frame = new VideoFrame(body.subarray(off + 8, off + 8 + size), {
-        format: "I420",
-        codedWidth: this.width,
-        codedHeight: this.height,
-        timestamp: Math.round(at * 1e6),
-      });
       this.position = Math.max(this.position, rank);
       this.gave = true;
       this.owner.keep(rank, frame);
@@ -169,6 +161,7 @@ export class AppFrames {
   // Why the Go side could not decode a frame, for the queue to say.
   trouble = "";
   readonly stats = { streams: 0, continued: 0, kept: 0 };
+  readonly puller = new Puller();
 
   constructor(
     readonly path: string,
@@ -252,11 +245,91 @@ export class AppFrames {
   }
 
   close() {
+    this.puller.close();
     for (const s of this.streams) s.close();
     this.streams = [];
     for (const f of this.kept.values()) f.close();
     this.kept.clear();
     this.keptBytes = 0;
+  }
+}
+
+// Pulls go through a Worker, pull.worker.ts, once it has shown that it can
+// reach the Go side and hand a frame back, and are read on the page where
+// it cannot: a WebKit that will not run a Worker for the app's own scheme
+// still plays.
+class Puller {
+  private worker: Worker | null = null;
+  private ready: Promise<void>;
+  private count = 0;
+  private waiting = new Map<number, (p: Pulled) => void>();
+  // Where the pulls are read, for the walks.
+  where: "worker" | "page" | "starting" = "starting";
+
+  constructor() {
+    this.ready = this.start();
+  }
+
+  private async start() {
+    let w: Worker;
+    try {
+      w = new Worker(new URL("./pull.worker.ts", import.meta.url), { type: "module" });
+    } catch {
+      this.where = "page";
+      return;
+    }
+    const ok = await new Promise<boolean>((done) => {
+      const late = setTimeout(() => done(false), 2000);
+      w.onmessage = (e: MessageEvent<{ n: number; frame: VideoFrame | null }>) => {
+        if (e.data.n !== -1) return;
+        clearTimeout(late);
+        const f = e.data.frame;
+        const good = typeof VideoFrame !== "undefined" && f instanceof VideoFrame;
+        f?.close();
+        done(good);
+      };
+      w.onerror = () => {
+        clearTimeout(late);
+        done(false);
+      };
+      w.postMessage({ n: -1 });
+    });
+    if (!ok) {
+      w.terminate();
+      this.where = "page";
+      return;
+    }
+    w.onmessage = (e: MessageEvent<{ n: number; got: Pulled }>) => {
+      const done = this.waiting.get(e.data.n);
+      this.waiting.delete(e.data.n);
+      done?.(e.data.got);
+    };
+    // A Worker that stops answers what it owed as unreachable, and the
+    // pulls after it are read on the page.
+    w.onerror = () => {
+      this.worker = null;
+      this.where = "page";
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", frames: [] });
+      this.waiting.clear();
+    };
+    this.worker = w;
+    this.where = "worker";
+  }
+
+  async pull(url: string, width: number, height: number): Promise<Pulled> {
+    await this.ready;
+    const w = this.worker;
+    if (!w) return pull(url, width, height);
+    const n = this.count++;
+    return new Promise((done) => {
+      this.waiting.set(n, done);
+      w.postMessage({ n, url: new URL(url, location.href).href, width, height });
+    });
+  }
+
+  close() {
+    this.worker?.terminate();
+    this.worker = null;
   }
 }
 

@@ -8,8 +8,10 @@ import (
 	"io"
 	"math"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // PreviewFrames decodes the picture of an episode for the video preview,
@@ -26,6 +28,31 @@ import (
 // piling frames up.
 func (e *Engine) PreviewFrames(ctx context.Context, path string, from float64, width, height int,
 	got func(at float64, frame []byte) error) error {
+	// On the Mac the frame is made smaller and 8-bit on the graphics chip,
+	// scale_vt, before it is copied out of VideoToolbox: a frame of 10-bit
+	// colour at 1080p is 6 MB, the frame at the size of the canvas a
+	// fraction of it. A chain that fails before its first frame is made
+	// again on the processor, and every one after it goes there straight
+	// away.
+	if runtime.GOOS == "darwin" && !e.softDecode.Load() && !gpuScaleFails.Load() {
+		came := false
+		err := e.previewFrames(ctx, path, from, width, height, true, func(at float64, frame []byte) error {
+			came = true
+			return got(at, frame)
+		})
+		if err == nil || came || ctx.Err() != nil {
+			return err
+		}
+		gpuScaleFails.Store(true)
+	}
+	return e.previewFrames(ctx, path, from, width, height, false, got)
+}
+
+// gpuScaleFails is set once scaling on the graphics chip has failed.
+var gpuScaleFails atomic.Bool
+
+func (e *Engine) previewFrames(ctx context.Context, path string, from float64, width, height int, gpu bool,
+	got func(at float64, frame []byte) error) error {
 	if e.FFmpeg == "" {
 		return errors.New("there is no ffmpeg to decode the picture with")
 	}
@@ -37,14 +64,21 @@ func (e *Engine) PreviewFrames(ctx context.Context, path string, from float64, w
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	args := append([]string{"-hide_banner", "-nostdin", "-loglevel", "info"}, e.decodeFlags()...)
+	args := []string{"-hide_banner", "-nostdin", "-loglevel", "info"}
+	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear,format=yuv420p", width, height)
+	if gpu {
+		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
+		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,format=yuv420p", width, height)
+	} else {
+		args = append(args, e.decodeFlags()...)
+	}
 	// Seeking on the input decodes from the key frame before from and
 	// drops what comes before it. With the timestamps kept, each frame
 	// says where in the episode it starts, the way showinfo prints it.
 	args = append(args,
 		"-ss", strconv.FormatFloat(from, 'f', 6, 64), "-copyts", "-i", path,
 		"-map", "0:v:0", "-an", "-sn", "-dn",
-		"-vf", fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear,format=yuv420p", width, height),
+		"-vf", scale,
 		"-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
 	cmd := exec.CommandContext(ctx, e.FFmpeg, args...)
 	out, err := cmd.StdoutPipe()

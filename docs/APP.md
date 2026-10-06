@@ -299,7 +299,24 @@ were fed: fed in the order they decode, a run's B-frames came too early
 and its first frames too late, and 72 frames of a play of three seconds
 were dropped as late until it did.
 
-The frames come from ffmpeg in streams the page opens and pulls from:
+Where the system has a decoder of its own for the picture, VideoToolbox on
+the Mac for H.264 and HEVC, the queue uses it, `NativePictures` in
+`lib/frames/native.ts` and `engine.Pictures`: the page reads the file as
+it does for its own decoder and sends the samples, a batch for whatever it
+fed in a moment, to `POST /frames/decode`, and the decoder, one for each
+of the queue's two, stays open in the app's own process for as long as
+the episode does. So a jump starts no program, reads no index again and
+makes no session again: it costs only decoding from the key frame before.
+VideoToolbox makes the frame the size of the canvas and 8-bit itself, on
+the graphics chip, and the page gets it in NV12 as it comes out. A
+decoder that will not open, or fails on a frame, or puts out a frame at
+another size than asked for, hands over to ffmpeg's streams below.
+
+    POST /frames/native?codec=&cw=&ch=&w=&h=   the avcC or hvcC box   {"id": ...}
+    POST /frames/decode?id=                    samples, the frames kept come back
+
+Elsewhere, or where it will not take the file, the frames come from
+ffmpeg in streams the page opens and pulls from:
 
     /frames/open?path=&from=&w=&h=   {"id": ...}
     /frames/read?id=&n=&skip=        up to n frames
@@ -328,6 +345,15 @@ file's index and decoding from the key frame before:
   file's own.
 - The queue's second decoder asks for the piece after a cut while the
   first plays, so its stream is open before it is needed.
+- On the Mac, ffmpeg makes the frame smaller and 8-bit on the graphics
+  chip, `scale_vt`, before it is copied out of VideoToolbox, a fraction of
+  the 6 MB a 1080p frame of 10-bit colour is. A chain that fails before
+  its first frame is made again on the processor, and every one after it.
+- A pull is read in a Worker, `lib/frames/pull.worker.ts`, each frame
+  straight into a buffer of its own as it arrives and handed to its
+  `VideoFrame` without another copy, so nothing on the page waits for it.
+  Where a Worker cannot reach the Go side or hand a frame back, the same
+  code runs on the page.
 
 Measured on the cloud machine, four cores and no system decoder, with the
 bridge's HEVC 10-bit episode at 320 by 180 in Chromium: a click on the
