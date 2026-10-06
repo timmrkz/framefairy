@@ -274,7 +274,7 @@ filters ask only for libass itself: `ass_filter_deps="libass"` and
 Every filter the engine uses is outside the GPL set as well. Checked one by
 one against `<name>_filter_deps` in configure: `crop`, `scale`, `pad`,
 `afade`, `concat`, `subtitles`, `select`, `fps`, `format`, `setpts`,
-`asetpts`, `aformat`, `setsar` and `showinfo`. A near miss worth knowing
+`asetpts`, `atrim`, `aformat`, `setsar` and `showinfo`. A near miss worth knowing
 about: `cropdetect` **is** GPL and `crop` is not, so a future filter picked
 by name without checking is how this comes back. The GPL filters are things
 like `delogo`, `eq`, `hqdn3d` and `nnedi`, none of which this engine wants.
@@ -292,13 +292,13 @@ reads the finished binary back and stops if anything else got in. And it
 is kept at the newest release, unless a release changes what the app
 relies on: 7.1 had been kept long after 8 and 9 came out without anybody
 choosing to, and `scripts/upstream.sh` now says every week when it falls
-behind. In October 2026 that is the newest 8.1, 8.1.3, and not 9.0.2,
-which decodes AAC after a seek 16 ms later than before. The loudness the
-app measures from a jump then no longer lines up with the same loudness
-from the start, which the macOS tests caught, and a render, which starts
-with a seek too, may move its sound against its picture. Moving to 9
-waits until the app agrees with it and a render on a Mac keeps its sound
-in place.
+behind. In October 2026 that is 9.0.2. It was held at 8.1.3 for a while,
+because 9.0 drops the first packet of AAC after a seek whole, which the
+macOS tests caught: the loudness measured from a jump no longer lined up
+with the same loudness from the start, and a render's sound came up to
+21 ms early against its picture after every cut. The engine now seeks a
+fifth of a second early and cuts the sound by its timestamps, which lands
+on the sample with 8.1 and 9.0 alike.
 
 So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than

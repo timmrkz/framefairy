@@ -16,7 +16,9 @@ the folder, copy the new files in and run `make` again.
    Go, Node.js and the few tools that build ffmpeg and llama.cpp. Elsewhere
    it says what to install, because those need administrator rights.
 2. Builds the two programs framefairy ships beside itself, if they are not
-   there yet: ffmpeg and llama-server. Several minutes, once. Every build
+   there yet or their build script has changed since, which is what
+   raising a pin is: ffmpeg and llama-server. Several minutes, once for
+   each version. Every build
    after this one copies them beside the programs, and from then on the app
    renders through the exact ffmpeg a customer gets and runs a local model
    through the exact llama-server a customer gets. They are the only ones
@@ -73,7 +75,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make update-key` | makes the key the builds to update to are signed with, once, on Tim's Mac: the public half into `cmd/framefairy-app/update-key.txt`, the private half to the clipboard. See [UPDATES.md](UPDATES.md#the-keys) |
 | `make dispenser` | the licence dispenser on this machine, with a pretend Paddle, mail service and signer, and a dev page at `http://127.0.0.1:8090/dev` to try every sale and every failure by hand. See [LICENCE.md](LICENCE.md#on-this-machine) |
 | `make icon` | builds the `.icns` from `build/icon.png`. `make app` does it for you, so this is for looking at an icon you just changed |
-| `make ffmpeg` | builds the ffmpeg framefairy ships again, from scratch, throwing away the one that is there. `make` builds it once by itself, so this is for when `scripts/build-ffmpeg.sh` changed or the last one went wrong |
+| `make ffmpeg` | builds the ffmpeg framefairy ships again, from scratch, throwing away the one that is there. `make` builds it by itself when it is missing or `scripts/build-ffmpeg.sh` changed, so this is for when the last one went wrong |
 | `make llama` | the same for the llama-server framefairy ships, which is what runs a local model |
 | `make tools-archive` | packs both of them into one archive with a manifest, for a release. See [PACKAGING.md](PACKAGING.md#the-tools-we-ship) |
 | `make notices` | writes the licence notices in `notices/` again, from the Go modules, the interface's packages and the source trees ffmpeg and llama-server are built from. Run it when a test or the interface build says a notice is missing or out of date. See [THIRD_PARTY.md](THIRD_PARTY.md) |
@@ -271,16 +273,16 @@ first, and the only sign was that its tests took five seconds where Linux
 took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
 ffmpeg on the path.
 
-**The tests use the ffmpeg the programs ship with.** `make unit`, `make
-fuzz` and `make changed` put `bin/` first on the `PATH`, so a test finds
-the ffmpeg and llama-server `make` built before any other. A Mac with
-Homebrew's ffmpeg 9 tested that one before, and
-`TestMeasureLevelsGoesWhereTheClipTimelineLooks` failed there: ffmpeg 9
-starts AAC up to one audio frame late after a seek, which is why the
-ffmpeg we ship stays on 8.1 for now, see `scripts/build-ffmpeg.sh`. `make
-walks` is the exception. It makes its episode in VP9, the one video
-Chromium plays without the proprietary codecs, and our ffmpeg has no VP9
-encoder, so the walks use the system's.
+**On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
+`make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a
+test finds the ffmpeg and llama-server `make` built before any other. Not
+on Linux, where ours has no H.264 encoder yet and every test that renders
+would fail, so a Linux machine keeps the system's. A Mac with
+Homebrew's ffmpeg tested that one before, which is not the version the
+app ships and not built the same way, and a test that failed there said
+nothing about the app. `make walks` is the exception. It makes its
+episode in VP9, the one video Chromium plays without the proprietary
+codecs, and our ffmpeg has no VP9 encoder, so the walks use the system's.
 
 **The tests that render share their episodes and skip the face detector.**
 A test episode is made once for each length and every test gets a copy,

@@ -60,16 +60,15 @@ NPM ?= npm
 FUZZTIME ?= 10000x
 BIN := bin
 STAMPS := .build
-# The tests take ffmpeg and llama-server from the PATH, and make puts the
-# ones it built first, the ones the programs ship with and take no other.
-# Without it a Mac with Homebrew's ffmpeg 9 tested that one, which starts
-# AAC up to one audio frame late after a seek where ours, 8.1, is exact,
-# see scripts/build-ffmpeg.sh, and a levels test failed there that passes
-# with ours. Where make built none, on a Linux runner, the PATH has the
-# system's. The walks are the one exception: they make their episode in
-# VP9, which Chromium plays and ours cannot write, so they take the
-# system's ffmpeg.
-TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
+# The tests take ffmpeg and llama-server from the PATH, and on a Mac make
+# puts the ones it built first, the ones the programs ship with and take no
+# other. Without it a Mac tested Homebrew's ffmpeg, which is not the
+# version the app ships and not built the same way. Only on a Mac, because
+# that is the one system ours has an H.264 encoder on: on Linux it has
+# none yet, and every test that renders failed with ours first. There the
+# PATH keeps the system's. The walks keep it everywhere: they make their
+# episode in VP9, which Chromium plays and ours cannot write.
+TOOLS_FIRST := $(PATH)
 EXE :=
 ifeq ($(OS),Windows_NT)
 EXE := .exe
@@ -84,6 +83,7 @@ UNAME := $(shell uname -s 2>/dev/null)
 MACOS_MIN := 13.0
 LDFLAGS :=
 ifeq ($(UNAME),Darwin)
+TOOLS_FIRST := $(CURDIR)/$(BIN):$(PATH)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
@@ -287,19 +287,22 @@ else
 endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
-# LGPL. make builds it once, when it is not there. This builds it again
-# whatever is there, for when scripts/build-ffmpeg.sh has changed or the
-# last one went wrong.
+# LGPL. make builds it when it is not there or scripts/build-ffmpeg.sh has
+# changed since, see scripts/tools.sh. This builds it again whatever is
+# there, for when the last one went wrong.
 ffmpeg:
 	@rm -rf $(STAMPS)/ffmpeg
 	@sh scripts/build-ffmpeg.sh $(STAMPS)/ffmpeg
+	@cksum scripts/build-ffmpeg.sh | cut -d' ' -f1 >$(STAMPS)/ffmpeg/built
 
 # The llama-server we ship, so choosing a local model is not an instruction
 # to go and install something. Same rules as ffmpeg above: make builds it
-# once when it is not there, this builds it again whatever is there.
+# when it is not there or its script changed, this builds it again
+# whatever is there.
 llama:
 	@rm -rf $(STAMPS)/llama
 	@sh scripts/build-llama.sh $(STAMPS)/llama
+	@cksum scripts/build-llama.sh | cut -d' ' -f1 >$(STAMPS)/llama/built
 
 # Both of them in one archive, with a manifest that says what each one is
 # and the sha256 to check a copy against. This is what a release picks up
