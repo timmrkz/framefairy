@@ -1835,10 +1835,13 @@ llama.cpp: a clone of one commit had every server saying it was build 1.
 the ones its build was made with, and there is nothing of them to update
 on their own: a version raised in a build script is a new app, and the
 next update is the new tools. A customer never runs older tools than the
-app they have. The
-environment can still name one, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`
-and `FRAMEFAIRY_LLAMA_SERVER`, which is how the tests take theirs. See
-`FindTool` in `engine/tools.go`.
+app they have. The tests and the command line can name others in the
+environment, `FRAMEFAIRY_FFMPEG`, `FRAMEFAIRY_FFPROBE`,
+`FRAMEFAIRY_LLAMA_SERVER` and `FRAMEFAIRY_ASR_MODEL` for the speech model,
+and the app as it ships takes none of them, see `named` in
+`engine/tools.go`. On a Mac any program of the same user can set a
+variable the next launch of the app reads, and what it named would run
+unchecked with the app's access to the person's folders.
 
 **Training data** says how many records there are and has the one trash
 can that throws them away, which asks first.

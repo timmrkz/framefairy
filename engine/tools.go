@@ -100,8 +100,27 @@ func toolIn(goos, dir, name string) string {
 	return ""
 }
 
+// named is the program or model an environment variable names in place
+// of the one the program carries, FRAMEFAIRY_FFMPEG and the like, which is
+// how the tests and the command line take their own. The app as it ships
+// takes none. On a Mac any program of the same user can set a variable the
+// next launch of the app reads, with launchctl setenv, and what it named
+// would run unchecked, with the app's access to the person's folders.
+func named(envVar string) string {
+	return namedWhen(shipped, envVar)
+}
+
+// namedWhen is named for an app that ships or does not, for the test.
+func namedWhen(ships bool, envVar string) string {
+	if ships {
+		return ""
+	}
+	return os.Getenv(envVar)
+}
+
 // FindTool decides which copy of a tool to run: the one named in the
-// environment, or else the one beside the program once it is checked. When
+// environment, see named, or else the one beside the program once it is
+// checked. When
 // there is none that may run, it says why, in words for whoever reads it.
 func FindTool(envVar, name string) (string, error) {
 	return findToolIn(exeDir(), envVar, name)
@@ -110,8 +129,8 @@ func FindTool(envVar, name string) (string, error) {
 // findToolIn is FindTool for a program in dir, split out so a test can say
 // where the program is.
 func findToolIn(dir, envVar, name string) (string, error) {
-	if named := os.Getenv(envVar); named != "" {
-		return named, nil
+	if given := named(envVar); given != "" {
+		return given, nil
 	}
 	own := toolIn(runtime.GOOS, dir, name)
 	if own == "" {
@@ -220,8 +239,8 @@ func InspectTool(ctx context.Context, envVar, name string) ToolState {
 
 func inspectToolIn(ctx context.Context, dir, envVar, name string) ToolState {
 	var s ToolState
-	if named := os.Getenv(envVar); named != "" {
-		s.Path, s.Named = named, true
+	if given := named(envVar); given != "" {
+		s.Path, s.Named = given, true
 	} else if s.Path = toolIn(runtime.GOOS, dir, name); s.Path == "" {
 		_, s.Err = findToolIn(dir, envVar, name)
 		return s

@@ -394,7 +394,7 @@ func fromStored(words []Cue, frames []float32, start, mean float64, silenceDB *f
 // DefaultModelDir is where the speech model is looked for unless told
 // otherwise.
 func DefaultModelDir() string {
-	if dir := os.Getenv("FRAMEFAIRY_ASR_MODEL"); dir != "" {
+	if dir := named("FRAMEFAIRY_ASR_MODEL"); dir != "" {
 		return dir
 	}
 	home, err := os.UserHomeDir()
