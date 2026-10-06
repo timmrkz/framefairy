@@ -301,7 +301,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"))
+		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc")
 		answer(w, path, err)
 	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
@@ -464,7 +464,7 @@ func openBridge(t *testing.T) *bridge {
 	d.bus = newBus()
 	d.start(d.svc.store)
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir()}
-	if err := makeEpisode(b.first, 120, 0); err != nil {
+	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	if added, err := d.svc.addEpisodes([]string{b.first}); err != nil || len(added) != 1 {
@@ -502,8 +502,11 @@ func workOf(video string) string {
 // bit and made large without smoothing.
 //
 // With a switch, at a moment on a frame, the episode is two cameras
-// instead, see twoCameras.
-func makeEpisode(path string, seconds int, switchAt float64) error {
+// instead, see twoCameras. With hevc its picture is HEVC with 10-bit
+// colour, which WebKit says it decodes and then fails on, and which the
+// Chromium a walk drives cannot decode at all: the Go side decodes it, see
+// frames.go.
+func makeEpisode(path string, seconds int, switchAt float64, hevc bool) error {
 	d := strconv.Itoa(seconds)
 	below, sound := "[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g]", "220"
 	size, rate, heard := "2x2", "100k", []string{"libopus", "-b:a", "24k"}
@@ -527,8 +530,14 @@ func makeEpisode(path string, seconds int, switchAt float64) error {
 		"[0]geq=lum='if(bitand(N\\,pow(2\\,9-X))\\,220\\,30)':cb=128:cr=128,scale=320:12:flags=neighbor[b];" +
 			below + ";[b][g]vstack,format=yuv420p[v]",
 		"-map", "[v]", "-map", "2",
-		"-shortest", "-c:v", "libvpx-vp9", "-b:v", rate, "-deadline", "realtime", "-cpu-used", "8",
-		"-g", "10", "-c:a"}
+		"-shortest"}
+	if hevc {
+		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
+			"-x265-params", "bframes=3:keyint=10:log-level=error")
+	} else {
+		args = append(args, "-c:v", "libvpx-vp9", "-b:v", rate, "-deadline", "realtime", "-cpu-used", "8", "-g", "10")
+	}
+	args = append(args, "-c:a")
 	out, err := exec.Command("ffmpeg", append(append(args, heard...), path)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
@@ -621,8 +630,9 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // hand it over next. Without a rate it is the bridge's own kind of
 // episode, at five frames a second, and with one it is filmed at that
 // rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
-// own kind is filmed by two cameras that switch then, see twoCameras.
-func (b *bridge) pick(seconds, rate, switchAt, timing string) (string, error) {
+// own kind is filmed by two cameras that switch then, see twoCameras, and
+// with hevc it is HEVC with 10-bit colour.
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -644,7 +654,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string) (string, error) {
 	if rate != "" {
 		err = makeFilmedEpisode(path, n, rate, timing)
 	} else {
-		err = makeEpisode(path, n, at)
+		err = makeEpisode(path, n, at, hevc)
 	}
 	if err != nil {
 		return "", err
@@ -784,6 +794,9 @@ func TestWalks(t *testing.T) {
 		for _, script := range walkScripts(t, walks) {
 			runs = append(runs, walkRun{script, append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
+		// Playback again on an episode whose picture the Go side decodes,
+		// HEVC in 10-bit colour, which Chromium cannot.
+		runs = append(runs, walkRun{"playback.mjs", append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
 	}
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()), len(runs))

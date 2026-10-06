@@ -255,6 +255,37 @@ func TestTheMediaRouteServesFilesOnly(t *testing.T) {
 	}
 }
 
+// The frames route decodes only a file of an episode in the library, and
+// only to a size it can make.
+func TestTheFramesRouteServesKnownEpisodesOnly(t *testing.T) {
+	svc, mine, _ := library(t)
+	work := engine.WorkDir(mine)
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stranger := filepath.Join(t.TempDir(), "stranger.mp4")
+	if err := os.WriteFile(stranger, []byte("not an episode"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	for _, c := range []struct {
+		path, size string
+		want       int
+	}{
+		{stranger, "&w=64&h=36", http.StatusNotFound},
+		{work, "&w=64&h=36", http.StatusNotFound},
+		{"relative.mp4", "&w=64&h=36", http.StatusNotFound},
+		{mine, "", http.StatusBadRequest},
+		{mine, "&w=64&h=99999", http.StatusBadRequest},
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?path="+url.QueryEscape(c.path)+c.size, nil))
+		if rec.Code != c.want {
+			t.Errorf("%s%s was answered with %d, want %d: %q", c.path, c.size, rec.Code, c.want, rec.Body.String())
+		}
+	}
+}
+
 // A job that goes wrong in a way nobody planned for must not take the app
 // with it. The interface, the other lane and whatever is being transcribed
 // all hang on this process staying alive.
