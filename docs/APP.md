@@ -287,16 +287,56 @@ episode for such files is plan row 1.5b.
 
 A system can also say it decodes a file and then fail on it: WebKit says
 yes to HEVC with 10-bit colour and its decoder then fails on the first
-frame, "Decoder failure". For such a file the Go side decodes the
-picture instead, plan row 2.126. `/frames/?path=&from=&w=&h=` beside
-`/media/` runs the ffmpeg the app ships, on the system's own decoder where
-there is one, from the key frame before `from`, and streams every frame
-from `from` on, scaled to `w` by `h` in 8-bit I420, each after the moment
-it starts at as a float64 in 8 bytes. Like `/media/`, it only reads a file
-of an episode in the library. When the page stops reading, the request
-ends and ffmpeg with it. Measured on the cloud machine, four cores and no
-system decoder, with an HEVC 10-bit episode at 1920 by 1080 decoded in
-Chromium's page and drawn on a canvas:
+frame, "Decoder failure". For such a file, and for one the system says no
+to, the Go side decodes the picture instead, plan row 2.126. The queue
+asks its picture decoder the same things either way: `AppPictures` in
+`lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
+`PlainSound` stands in for the sound decoder, so drawing, the clock, cuts
+and the walks are the same. Only the frames the queue will draw are asked
+for, the file's picture is not read by the page at all, and like a
+decoder it puts them out in the order they are shown, not the order they
+were fed: fed in the order they decode, a run's B-frames came too early
+and its first frames too late, and 72 frames of a play of three seconds
+were dropped as late until it did.
+
+The frames come from ffmpeg in streams the page opens and pulls from:
+
+    /frames/open?path=&from=&w=&h=   {"id": ...}
+    /frames/read?id=&n=&skip=        up to n frames
+    /frames/close?id=
+
+A stream runs the ffmpeg the app ships, on the system's own decoder where
+there is one, from the key frame before `from`, and hands over every
+frame from `from` on, scaled to `w` by `h` in 8-bit I420, each after the
+moment it starts at as a float64 in 8 bytes. ffmpeg decodes a frame ahead
+of what was pulled and waits: WebKit takes whatever a response writes
+without pushing back, so one long response would have let it decode the
+whole episode into memory while the page stood paused. A stream nobody
+pulls from for 20 seconds is closed, and at most six are open. Like
+`/media/`, it only reads a file of an episode in the library.
+
+What makes it quick, since a new stream costs ffmpeg starting, reading the
+file's index and decoding from the key frame before:
+
+- A stream that will reach a frame within a second and a half is waited
+  for rather than a new one started, and the frames it passes on the way
+  are dropped on the Go side, `skip`, not sent. So the arrow keys stepping
+  on, and a paused play going on, cost a frame each.
+- The frames shown last are kept, 96 MB of them, so stepping back or a
+  still close by costs nothing.
+- A frame is decoded at the size of the canvas and no larger than the
+  file's own.
+- The queue's second decoder asks for the piece after a cut while the
+  first plays, so its stream is open before it is needed.
+
+Measured on the cloud machine, four cores and no system decoder, with the
+bridge's HEVC 10-bit episode at 320 by 180 in Chromium: a click on the
+clip timeline shows its frame 65 to 115 ms later, a frame from a stream
+already open comes 1 to 5 ms after it is asked for, a play of three
+seconds draws every frame with none late, and the arrow keys show the next
+frame and the one before within a few milliseconds. The prototype,
+measured before the queue used it, with an HEVC 10-bit episode at 1920 by
+1080 read as fast as it came and drawn on a canvas:
 
 | Size | First frame after a jump | Frames a second after it | MB a second |
 | ---: | ---: | ---: | ---: |
@@ -304,9 +344,7 @@ Chromium's page and drawn on a canvas:
 | 1280 by 720 | 145 to 337 ms |  48 to 105 |  63 to 109 |
 | 1920 by 1080 | 174 to 288 ms |  66 to 89 | 187 to 223 |
 
-A podcast needs 25 or 30 a second. The Go side alone, without the page,
-makes 145 to 174 frames a second at every size, with the first frame 107
-to 281 ms after the jump, most of it decoding from the key frame before.
+A podcast needs 25 or 30 a second.
 
 It used to be a `<video>` element, and everything about it was a
 workaround. The element answers a seek before its frame is on screen,

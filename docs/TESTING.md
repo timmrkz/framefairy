@@ -212,6 +212,15 @@ every walk's:
 | Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
 | A clip played to its end stops at its end | |
 
+`make walks` also walks it on an episode whose picture is HEVC in 10-bit
+colour, `HEVC=1`, added with Add and searched first. The Chromium a walk
+drives cannot decode HEVC at all, so every frame of it comes from the Go
+side, see `lib/frames/app.ts`, and the walk fails at its start when the
+picture did not come that way. The sequence "a picture the browser's
+decoder fails on comes from the Go side" makes Chromium's decoder say yes
+and then fail on the first frame, the way WebKit's does with Tim's
+`start.mp4`.
+
 The bridge's episode runs at five frames a second, so a frame of give is
 a fifth of a second. Whether a press plays the clip or the episode is
 read off the app, the chosen clip dimmed on the clip timeline while the

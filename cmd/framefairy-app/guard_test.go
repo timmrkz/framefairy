@@ -223,7 +223,7 @@ func TestTheFramesRouteServesKnownEpisodesOnly(t *testing.T) {
 		{mine, "&w=64&h=99999", http.StatusBadRequest},
 	} {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/?path="+url.QueryEscape(c.path)+c.size, nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?path="+url.QueryEscape(c.path)+c.size, nil))
 		if rec.Code != c.want {
 			t.Errorf("%s%s was answered with %d, want %d: %q", c.path, c.size, rec.Code, c.want, rec.Body.String())
 		}
