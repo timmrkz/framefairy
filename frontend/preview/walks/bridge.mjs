@@ -326,16 +326,22 @@ export async function control(url, path) {
 }
 
 // Presses the clip list's head button, and reads what the list says in
-// the very next frame.
+// the very next frame. Also what the button said as it was pressed, which
+// is not always what it said when the walk looked: a search the model
+// fails ends in a moment, and Cancel is Continue by the time the hand
+// lands.
 export async function pressHead(page) {
   return page.evaluate(
     () =>
       new Promise((done) => {
         const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-        pane.querySelector(".listhead button.new").click();
+        const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+        const button = pane.querySelector(".listhead button.new");
+        const pressed = text(button);
+        button.click();
         requestAnimationFrame(() => {
-          const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
           done({
+            pressed,
             head: text(pane.querySelector(".listhead button.new")),
             rows: [...pane.querySelectorAll("ol li.ghost .title")].map(text),
           });

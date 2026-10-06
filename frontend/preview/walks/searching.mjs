@@ -41,12 +41,15 @@ function expected(job) {
 // search that stopped, no word of a failure that did not happen, and at
 // rest as many cards as the engine has clips. The rows are held a moment
 // so they can be read, so this is asked again for a few seconds before it
-// is a broken rule.
+// is a broken rule. The episode on screen is asked again each time too: a
+// video just added opens when the Go side has added it, which can be after
+// the walk first looked, and the walk then held the new episode's list to
+// the search of the one before.
 async function agree() {
-  const path = await episodeOn();
-  if (!path) return null;
   let problem = null;
   for (let tries = 0; tries < 24; tries++) {
+    const path = await episodeOn();
+    if (!path) return null;
     const [list, job] = [await clipList(page), await searchOf(path)];
     const want = expected(job);
     problem = null;
@@ -66,8 +69,15 @@ async function agree() {
   return problem;
 }
 
-const head = async () => (await clipList(page))?.head;
 const pressHead = () => pressHeadOn(page);
+
+// Presses the head button the walk saw saying word. What it says when the
+// hand lands can be something else by then, a search the model fails ends
+// in a moment, and the step then says what was pressed.
+async function press(word) {
+  const seen = await pressHead();
+  return { seen, said: seen.pressed === word ? word : `${word}, which said ${seen.pressed} as it was pressed` };
+}
 const sidebar = (click) => fromSidebar(page, click);
 
 const gestures = [
@@ -105,8 +115,7 @@ const gestures = [
     weight: 2,
     when: (s) => s.head === "New",
     async run() {
-      await pressHead();
-      return "New";
+      return (await press("New")).said;
     },
   },
   {
@@ -114,14 +123,17 @@ const gestures = [
     weight: 3,
     when: (s) => s.head === "Cancel",
     async run() {
-      const seen = await pressHead();
+      const { seen, said } = await press("Cancel");
       // A click shows at once: in the frame after the click the button no
       // longer says Cancel, or a row says Stopping. A search that stops
-      // within that frame already says Continue, which shows it too.
-      if (seen.head === "Cancel" && !seen.rows.includes("Stopping")) {
+      // within that frame already says Continue, which shows it too. Only
+      // a press of Cancel is held to it: a search that ended between the
+      // look and the press had its button say Continue or New under the
+      // hand, and that press was of Continue or New.
+      if (seen.pressed === "Cancel" && seen.head === "Cancel" && !seen.rows.includes("Stopping")) {
         watch.broke("Cancel shows at once", `the frame after the click: ${JSON.stringify(seen)}`);
       }
-      return "Cancel";
+      return said;
     },
   },
   {
@@ -129,8 +141,7 @@ const gestures = [
     weight: 2,
     when: (s) => s.head === "Continue",
     async run() {
-      await pressHead();
-      return "Continue";
+      return (await press("Continue")).said;
     },
   },
   {
@@ -188,23 +199,32 @@ const gestures = [
     name: "restart",
     weight: 1,
     when: () => true,
-    async run(s) {
+    async run() {
       const path = await episodeOn();
-      const before = s.head;
-      await control(url, "/reopen");
-      await page.reload();
-      await page.waitForTimeout(1200);
       const name = path.split("/").pop();
+      // How the episode's last search ended, on the engine's word once the
+      // app has stopped all its work: what the head said when the walk
+      // looked is a moment older, and a search the model answers at once
+      // can end in that moment, done before the app closes.
+      const closed = await control(url, "/reopen");
+      const was = closed.findLast((j) => j.episode === path && j.kind === "search");
+      await page.reload();
+      await page.locator("aside li", { hasText: name }).first().waitFor({ state: "attached" });
       await sidebar(() => page.locator("aside li", { hasText: name }).first().click());
       await settle(page);
       // How the work ended is still there after the app was closed: a
-      // search that was running was cut off, one that stopped stopped.
-      const after = await head();
-      const fine =
-        (before === "New" && after === "New") ||
-        (before !== "New" && after === "Continue") ||
-        (before === "Continue" && after === "Continue");
-      if (!fine) watch.broke("how work ended stays after a restart", `before ${before}, after ${after}`);
+      // search the closing cut off is interrupted, one that stopped or
+      // failed stays as it was, and one that was done leaves nothing.
+      const how = (j) => (!j || j.state === "done" || j.state === "cancelled" ? "none" : `${j.state} ${j.step === "stopped" ? "stopped" : ""}`.trim());
+      const want =
+        !was || was.state === "done" ? "none" : was.state === "cancelled" ? "interrupted" : how(was);
+      const job = await searchOf(path);
+      if (how(job) !== want) {
+        watch.broke(
+          "how work ended stays after a restart",
+          `the search ${was ? `${was.state}${was.step ? ` (${was.step})` : ""}` : "none"} as the app closed, ${job ? `${job.state}${job.step ? ` (${job.step})` : ""}` : "none"} after`,
+        );
+      }
       return `close the app and open it again on ${name}`;
     },
   },
