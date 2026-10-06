@@ -502,6 +502,18 @@ Team ID just before the swap.
 Small first, then the three changes that end families. Each is its own
 pull request.
 
+**Done so far**, in #123 with this review, measured on the cloud machine:
+
+- Change 3: the plans are listed with `PlanSummaries`, a plan's view is
+  made from what its summary read, and an edit reads back only its own
+  plan. On four hours, the clip list went from 73 ms to 0.1 ms and removing
+  a clip from 90 ms to 2.4 ms. A clip's captions read the words near the
+  clip: a pointer move on an edge went from 12.7 ms to 3.6 ms, and from
+  2.6 MB to 0.8 MB.
+- Change 5: framing reads each kept span once, `readSpan`. A clip of 24 s
+  in three pieces from a 1080p video went from 18.1 s to 9.9 s, with the
+  same crops.
+
 | # | Change | Size | What it ends or gains |
 | -: | --- | --- | --- |
 | 1 | Bugs 2, 4, 8 and 10: typed job kinds with the model guards fixed, a `startJob` helper for every control, `UpdateSettings` everywhere, one "is someone typing" check | small | four live bugs |
