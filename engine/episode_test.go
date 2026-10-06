@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -66,7 +67,8 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	}
 }
 
-// A short still being written is not a short.
+// A short still being written is not a short, and neither is a file in
+// the out folder no clip is named for.
 func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
@@ -76,12 +78,128 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4"} {
+	if err := os.MkdirAll(LogsDir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan := `{"clips": [
+  {"id": "01", "slug": "done", "segments": [{"start": 1, "end": 21}]},
+  {"id": "02", "slug": "half", "segments": [{"start": 30, "end": 50}]},
+  {"id": "03", "slug": "upper", "segments": [{"start": 60, "end": 80}]}]}`
+	if err := os.WriteFile(filepath.Join(LogsDir(source), "clips.json"), []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4", "04_gone.mp4"} {
 		if err := os.WriteFile(filepath.Join(out, name), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if got := Status(source, "").Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
+	}
+}
+
+// A short rendered into the folder the settings name for shorts is the
+// clip's short: the clip says it is rendered and where, the episode counts
+// it, and the app may show it, see IsShort. It stays the clip's short when
+// the folder in the settings changes afterwards, and it is gone when the
+// file is. A file of the same name that another episode put in that
+// folder is not this clip's short, and neither is anything beside it.
+func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
+	t.Parallel()
+	p, _ := searchProject(t, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	clip := func() ClipView {
+		t.Helper()
+		view, err := ReadPlan(plan)
+		if err != nil || len(view.Clips) == 0 {
+			t.Fatalf("the plan: %v", err)
+		}
+		return view.Clips[0]
+	}
+	rendered := func() int { return Status(p.Source, p.Base.ASRModel).Rendered }
+	shorts := t.TempDir()
+	short := filepath.Join(ResolvePath(shorts), clip().Basename+".mp4")
+
+	if err := os.WriteFile(short, []byte("another episode's short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := clip().Rendered; got != "" {
+		t.Errorf("a clip never rendered says it is, at %s", got)
+	}
+	if IsShort(p.Source, short) {
+		t.Error("another episode's short is taken for this clip's")
+	}
+
+	p.Base.Out = shorts
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if got := clip().Rendered; got != short {
+		t.Errorf("rendered into the folder for shorts, the clip says %q, not %q", got, short)
+	}
+	if !IsShort(p.Source, short) {
+		t.Error("the short in the folder for shorts is not the clip's")
+	}
+	if n := rendered(); n != 1 {
+		t.Errorf("the episode counts %d shorts, not 1", n)
+	}
+
+	p.Base.Out = t.TempDir()
+	if got := clip().Rendered; got != short {
+		t.Errorf("after the folder in the settings changed the clip says %q, not %q", got, short)
+	}
+	beside := filepath.Join(shorts, "notes.mp4")
+	if err := os.WriteFile(beside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if IsShort(p.Source, beside) || IsShort(p.Source, shorts) {
+		t.Error("what is beside the short is taken for one")
+	}
+
+	if err := os.Remove(short); err != nil {
+		t.Fatal(err)
+	}
+	if got := clip().Rendered; got != "" {
+		t.Errorf("a short removed by hand is still the clip's, at %s", got)
+	}
+	if IsShort(p.Source, short) || rendered() != 0 {
+		t.Error("a short removed by hand is still counted")
+	}
+}
+
+// What a render makes is no edit, so an edit made before a render is
+// undone after it as it would have been without it, and the clip is still
+// rendered afterwards.
+func TestAnEditIsUndoneAfterARender(t *testing.T) {
+	t.Parallel()
+	p, _ := searchProject(t, nil)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	view, err := ReadPlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := view.Clips[0].ID
+	change := edited(t, filepath.Dir(plan), func() error { return SetCaptionY(plan, id, 400) })
+	p.Base.Out = t.TempDir()
+	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if _, err := change.Undo(); err != nil {
+		t.Fatalf("the edit before the render cannot be undone: %v", err)
+	}
+	view, err = ReadPlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := view.Clips[0]; c.CaptionYMoved {
+		t.Error("the undo left the caption where the edit put it")
+	} else if c.Rendered == "" {
+		t.Error("the undo took the short away from the clip")
 	}
 }

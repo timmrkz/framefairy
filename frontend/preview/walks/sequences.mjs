@@ -82,11 +82,16 @@
 //                      right frame of the episode, with its sound as long
 //                      as its picture and quiet at a cut for no longer
 //                      than the render's fade
+//   ["rendered"]       the clip says its short is in the folder the
+//                      settings name for shorts, the file is there and the
+//                      app serves it, Render says Render again and Show in
+//                      folder is there
 //
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness } from "./bridge.mjs";
@@ -311,6 +316,15 @@ export const sequences = [
     ],
   },
   {
+    // Found while 2.125 was proven: with a folder for shorts named in the
+    // settings, which the bridge does, a clip never learnt it was
+    // rendered, because only the episode's own out folder was looked in.
+    // Render went on saying Render and Show in folder never came. After
+    // a restart too, because where the short went is kept on disk.
+    name: "a short rendered into the folder for shorts is known as rendered",
+    steps: [["render"], ["rendered"], ["restart"], ["rendered"]],
+  },
+  {
     name: "removing a word in the middle of a caption leaves the caption whole",
     steps: [
       ["mark", "start"],
@@ -338,14 +352,10 @@ const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 // Frames a second of the episode on screen.
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
 
-// Where the clip's short is written: beside the episode, or in the folder
-// the settings name for shorts, which the clip does not know of. Empty
-// when there is no such clip, or no folder is named and the clip has none.
+// Where the clip's short is, as the clip says, or empty when it has none.
 async function shortOf(page, at) {
   const clip = (await ask(page, "Clips", at.path)).find((c) => c.plan === at.plan && c.id === at.clip);
-  if (clip?.rendered) return clip.rendered;
-  const { outputDir } = await ask(page, "GetSettings");
-  return outputDir && clip ? `${outputDir}/${clip.basename}.mp4` : "";
+  return clip?.rendered ?? "";
 }
 
 // What is wrong with the short Render wrote for a clip, read back from
@@ -766,6 +776,28 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (spans(now) !== spans(marks[arg])) {
           wrong = `the captions do not appear and go when they did at "${arg}"\nthen ${spans(marks[arg])}\nnow  ${spans(now)}\n${describe(marks[arg], now)}`;
         }
+        break;
+      }
+      case "rendered": {
+        const on = await chosen(page);
+        const short = await shortOf(page, on);
+        const folder = realpathSync((await ask(page, "GetSettings")).outputDir);
+        const render = page.locator("button.primary.render");
+        const again = await page
+          .waitForFunction((r) => document.querySelector(r)?.textContent.trim() === "Render again", "button.primary.render", {
+            timeout: 10000,
+            polling: 200,
+          })
+          .then(() => true, () => false);
+        const served = short
+          ? await page.evaluate(async (p) => (await fetch(`/media/short?path=${encodeURIComponent(p)}`)).status, short)
+          : 0;
+        if (!short) wrong = "the clip says it has no short";
+        else if (dirname(short) !== folder) wrong = `the short is at ${short}, not in the folder for shorts, ${folder}`;
+        else if (!existsSync(short)) wrong = `the clip says its short is at ${short}, and nothing is there`;
+        else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
+        else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
+        else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
         break;
       }
       case "short": {

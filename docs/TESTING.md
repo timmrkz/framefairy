@@ -3,6 +3,9 @@
 What runs where, and how to see the interface do what a person does with
 it, without a screen. The engine's own tests, the fuzz targets and the
 path tests are in [BUILD.md](BUILD.md). This page is about the interface.
+The bridge and the path tests need ffmpeg: without one they skip on a
+machine of one's own and fail in CI, through `internal/ffmpegtest`, see
+[BUILD.md](BUILD.md#ci).
 
 ## Two ways to open it in a browser
 
@@ -81,15 +84,22 @@ picture at once, so the search finds it and parts its clip there, and
 frames each shot on its own subject, so the two pieces have crops far
 apart. A shot shown through the other's crop is a plain backdrop, which
 the video preview and a short both show at a glance. Its sound is a
-steady tone in plain samples rather than Opus: a render seeks into each
-piece, and the first 80 ms of Opus after a seek are decoded quiet, a dip
-of the file's own at every piece.
+steady tone in plain samples rather than Opus: a render seeked into each
+piece, and the first 80 ms of Opus after a seek were decoded quiet, a dip
+of the file's own at every piece. A render now reads the sound of each
+piece from a fifth of a second before it, `soundLead`, see 2.128 in
+[GUI-PLAN.md](GUI-PLAN.md) and [ENGINE.md](ENGINE.md), so Opus would do
+here too. The walk has not been changed back.
 
 In the browser, `wails-bridge.ts` takes the place of the Wails runtime: a
 call is a POST to `/call`, and what the Go side tells the interface comes
 as server-sent events on `/events`. `window.__calls` lists every call and
 how it ended, and `window.__menu("undo")` and `window.__menu("redo")` are
-the menu bar, which a browser does not have.
+the menu bar, which a browser does not have. A page loaded again, as after
+a restart, starts its list from nought, and the watch in
+`walks/rules.mjs` knows it by a mark it left on the page that is gone, so
+it reads the new list from its first call. It once read on from the old
+count, and a call that failed just after a restart went unchecked.
 
 Calls that reach beyond the work folder are answered by the bridge with
 nothing: the network, the keychain, a box from the system, another app.
@@ -108,7 +118,7 @@ each with a POST:
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
-| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, and the app is opened again on them |
+| `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it |
 
 To open it by hand:
 
@@ -159,7 +169,7 @@ quarter of a second:
 
 | Rule | What it would have caught |
 | --- | --- |
-| No call failed and the page threw nothing | |
+| No call failed and the page threw nothing, after a restart too | a call that failed just after a restart, which went unchecked while the count of calls carried on from the page before |
 | The caption box shows one of the engine's captions exactly, the same words in the same order at the same moments, whenever no word is open | a word typed in beside another shown twice, "weil ein \| ein" |
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
@@ -305,7 +315,10 @@ how many `cards` the list holds. For a render: `add` a video filmed at a
 frame rate, press `render` and wait for the short, and `short`, the short
 read back from disk holding exactly the frames of the clip's pieces, each
 the right frame of the episode by its bands, with its sound as long as
-its picture and quiet at each cut for no longer than the render's fade.
+its picture and quiet at each cut for no longer than the render's fade,
+and `rendered`, the clip saying its short is in the folder the settings
+name for shorts, which the bridge sets, with the file there, the app
+serving it, Render saying Render again and Show in folder there.
 For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
@@ -345,6 +358,12 @@ was put back as one piece in the first shot's crop. Without the first
 put-back it fails the same way at the second. With only main's render it
 fails at the short: by the switch the sound is down to 19% of the tone,
 the fade out and in of a cut where nothing is cut.
+
+`a short rendered into the folder for shorts is known as rendered`
+presses Render, asks `rendered`, closes and opens the app, and asks it
+again. Against main's engine it fails at the first `rendered`: the clip
+says it has no short, because only the episode's own `out/` was looked
+in. Until then `short` and `shots` found the short in that folder by hand.
 
 ### Where they run
 

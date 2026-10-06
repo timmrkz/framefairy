@@ -163,7 +163,8 @@ are written as plain functions with tests beside them. It all needs no
 model, no network and no API key. Speech comes from a fake recogniser and
 planning from a fake llama-server, both in `engine/project_test.go`. The
 tests that really render skip themselves when ffmpeg is missing, so the
-suite still passes on a machine without it.
+suite still passes on a machine without it, and fail in CI instead, see
+[CI](#ci).
 
 The parts that read what a model, a plan file or a caption file contains
 also have fuzz targets, named `Fuzz...` next to the ordinary tests. `make
@@ -189,6 +190,7 @@ make test                       # 10000 executions per target
 make test FUZZTIME=2000x        # quicker, while working on something else
 make fuzz FUZZTIME=2m           # two minutes per target, on its own
 FUZZJOBS=2 make fuzz            # leave some cores alone
+make fuzz FUZZTARGETS='FuzzSafeChild FuzzPlanEdits'   # only these
 ```
 
 Every run keeps the inputs it found interesting, in Go's build cache, and
@@ -220,7 +222,7 @@ needs any of the rest:
 | `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
 | `fuzz` | Linux | `make fuzz` |
 | `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
-| `macos-fuzz` | macOS | `make fuzz` |
+| `macos-fuzz` | macOS | `make fuzz` for the two targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`, since the Mac's disk takes names in either case and `/var` is a link there. The rest read text and numbers, the same on both systems, and are fuzzed on Linux only |
 
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
 whatever changed, because a mistake in them is silent: CI would go green
@@ -232,8 +234,12 @@ comes when the slowest one does, which is the macOS build and tests.
 
 Nothing is left out to make it quick. Every test that ran before still runs,
 on the same platforms, under the race detector, with the same `FUZZTIME`.
-The fuzzing is on both platforms because two of the targets are about paths
-and a case-insensitive filesystem is a different thing to explore.
+The two fuzz targets about paths are fuzzed on both platforms, because a
+case-insensitive filesystem is a different thing to explore. The others
+are fuzzed on Linux only: they read text and numbers, which Go reads the
+same on both, and macOS machines are the few GitHub has, so the build of
+the app waited behind fuzzing that could find nothing new there. Their
+known inputs still run on macOS, in `make unit`.
 
 ### What runs for a change
 
@@ -266,12 +272,23 @@ A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never
 cancelled: every commit's result there is worth having on its own.
 
-**A test that needs ffmpeg skips itself where there is none, and in CI
-that would read as a pass.** The macOS job once ran without ffmpeg, so
-nothing that renders, frames or listens was tested on the system that ships
-first, and the only sign was that its tests took five seconds where Linux
-took three minutes. `TestCIHasFFmpeg` fails when `CI` is set and there is no
-ffmpeg on the path.
+**A test that needs ffmpeg and finds none it can use fails in CI, and
+skips everywhere else.** CI does not list skipped tests, so a skip there
+reads as a pass. The macOS job once ran without ffmpeg, so nothing that
+renders, frames or listens was tested on the system that ships first, and
+the only sign was that its tests took five seconds where Linux took three
+minutes. So every such test ends through one package,
+`internal/ffmpegtest`: `ffmpegtest.Need` when it wants ffmpeg and ffprobe
+on the path, `ffmpegtest.Unusable` with the reason when the ffmpeg there
+cannot do what it needs, like `Preflight` failing or no captions burned in.
+Either skips with the reason, and when `CI` is set, which GitHub Actions
+sets and which the Makefile reads to install nothing, it fails with the
+reason instead. That covers an ffmpeg that is there but broken as well as
+one that is missing, which the one test that looked for ffmpeg on the
+path before did not. `TestNoTestSkipsForFFmpegByItself` reads every test
+file and fails on a skip whose reason or condition is about ffmpeg,
+ffprobe, `Preflight`, `SubtitleFilter` or `VideoEncoder` that does not go
+through the package, so a new test cannot skip silently again.
 
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a

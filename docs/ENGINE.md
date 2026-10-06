@@ -164,7 +164,8 @@ first, then on from there, then from the start. Every half second it asks
 again, and when the view has moved to a part not measured yet, it stops
 ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
 seeks rather than decodes its way there. It starts a fifth of a second
-early and `atrim` cuts that off by timestamp, `levelsLead`: the first
+early and `atrim` cuts that off by timestamp, `levelsLead`, which is
+`soundLead` counted in frames, one number for both: the first
 40 ms after a seek came out up to 4 dB off, because a packet of
 compressed audio is decoded together with the one before it, and ffmpeg
 9 drops the first packet after the seek point whole. A part that ends
@@ -615,6 +616,27 @@ two shots that meet from a steady tone and a picture a step brighter on
 every frame, and checks that no frame is lost or shown twice at the switch
 and that the tone neither dips nor jumps there.
 
+The lead of a fifth of a second that each piece's sound is read with,
+`soundLead`, also settles the decoder. ffmpeg seeks to the keyframe of the
+picture at or before the point and decodes the sound from there, and
+leaves nothing out ahead of it, though its demuxers know how much Opus
+needs, `seek_preroll`, in 8.1 and in 9.0 alike. A decoder that starts
+cold is not settled: Opus needs 80 ms of what came before, RFC 7845
+section 4.6, and gave about 70% of a steady tone at the start of a piece,
+and MP3, which keeps part of a frame in the frames before it, gave
+silence for 40 ms. Where the keyframe was a frame or less before a piece,
+as in footage where every frame is one, or at a camera switch where an
+encoder put one, the piece started quiet. Read from a fifth of a second
+earlier, more than twice what Opus needs, every codec is settled where
+the piece starts, and none needs a case of its own.
+`TestEveryPieceIsHeardFromItsFirstMoment` in `engine/preroll_test.go`
+renders two cuts and a camera switch from a 29.97 fps episode where every
+frame is a keyframe, with a steady tone in Opus in MP4 and in Matroska,
+and in MP3 where the ffmpeg can make it, and checks that every piece is
+at least 90% of the tone from its first moment, after the fade of a cut.
+Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
+silent in MP3.
+
 ## The bouncing word
 
 The word being spoken sits on a reddish purple pill and bounces: word and
@@ -765,11 +787,17 @@ shortest longer than the longest or no clips at all.
 
 Each camera angle in a clip gets one crop, measured across the whole shot and
 held still, so removing a pause never makes the picture jump. Framing
-decodes only what a clip keeps. Each kept span is searched for camera
-switches on its own, and where the clip leaves the episode and comes back,
-the frame it leaves on is compared with the frame it comes back to, which
-answers whether it comes back to the same camera without decoding what was
-cut out. The decoding is asked of the system's own video decoder,
+decodes only what a clip keeps, and each kept span once. One ffmpeg run per
+span finds its camera switches and hands back small grey frames, one every
+0.4 s from its start and the one a tenth of a second before its end, each
+with its moment, `readSpan`. The faces are looked for on those frames, and
+where the clip leaves the episode and comes back, the frame it leaves on is
+compared with the frame it comes back to, which answers whether it comes
+back to the same camera without decoding what was cut out. These were three
+reads of the same seconds, eleven ffmpeg runs for a clip in three pieces:
+a clip of 24 s from a 1080p video was framed in 18.1 s on the cloud
+machine, and is now in 9.9 s, with the same crops. A part of a shot too
+short to hold one of the frames is read on its own. The decoding is asked of the system's own video decoder,
 VideoToolbox on macOS, and falls back to the processor by itself where
 there is none, which today is every Windows and Linux build. If the system
 decoder refuses a file, the same work is done again on the processor and
@@ -1098,6 +1126,32 @@ was cut off. What each step made stays however the job ends: the
 transcript as far as it was heard, the clips as they landed, the shorts
 that were finished. The command line does not keep records. The design is
 in [JOBS.md](JOBS.md).
+
+### Where a short went
+
+A render writes in the clip set which folder each clip's short went to,
+`shorts`, the folder by the clip's id, as each short is finished, through
+`editPlan`. `shortOf` in `episode.go` is the one answer to where a clip's
+short is: the folder the clip set names, or the episode's own `out/` for a
+clip it names none for, and the clip's own name, `<id>_<slug>.mp4`. The
+clip list asks it for `ClipView.Rendered`, `Status` counts the shorts with
+it, and `IsShort` asks it for the app, which shows or opens no file outside
+an episode's work folder but a short of one of its clips.
+
+It is written down rather than worked out from the settings because the
+settings say where the next short goes, not where the last one went: the
+folder can change after a render, and two episodes can have clips of the
+same name in one folder, where working it out took the first episode's
+short for the second's. A short moved or removed by hand is not there, so
+the clip is not rendered. The clip set is untrusted, so it names a folder
+and never a file, and a link in that folder counts only when it leads to a
+file of the short's own name inside it. It is a field of the clip set and
+not of the clip, and the undo compares neither it nor the count of edits,
+`fieldsOf` in `undo.go`, because a render is no edit, and a short written
+into a clip between an edit and its undo would have made the edit one that
+cannot be taken back. Only a clip set in the episode's own `logs/` is
+written to: a plan file handed to the command line from elsewhere is
+read, not changed.
 
 A clip made by hand is `Project.MakeClip` in `handclip.go`, a job of its
 own kind that shares everything but what makes it one. It hears through

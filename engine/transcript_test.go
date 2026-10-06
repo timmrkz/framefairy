@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // transcript.go keeps what the recogniser heard, so the same audio is never
@@ -331,9 +333,7 @@ func FuzzReadTranscriptFile(f *testing.F) {
 // that is a few milliseconds out would hide in it.
 func beatEpisode(t *testing.T, seconds string) string {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "beats.mp4")
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc=s=320x180:r=25:d="+seconds,

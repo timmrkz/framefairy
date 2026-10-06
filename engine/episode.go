@@ -28,6 +28,10 @@ type PlanSummary struct {
 	// By is who proposed the clips, see PlanOptions.By.
 	By       string    `json:"by,omitempty"`
 	Modified time.Time `json:"modified"`
+	// plan and clips are the plan as it was read for the summary, so what
+	// asks where its clips' shorts are does not read it a second time.
+	plan  Plan
+	clips []Clip
 }
 
 // Over is the part of the episode the clip set was made over, see
@@ -107,7 +111,13 @@ func Status(source, asrModelDir string) EpisodeStatus {
 		st.Measured += p[1] - p[0]
 	}
 	st.Plans = PlanSummaries(logs)
-	st.Rendered = countFiles(filepath.Join(work, "out"), ".mp4")
+	for _, plan := range st.Plans {
+		for _, c := range plan.clips {
+			if shortOf(work, plan.plan, c) != "" {
+				st.Rendered++
+			}
+		}
+	}
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
 	st.Work = exists(work)
 	st.EverSearched = EverSearched(source)
@@ -143,34 +153,46 @@ func PlanSummaries(logs string) []PlanSummary {
 	matches, _ := filepath.Glob(filepath.Join(logs, "clips*.json"))
 	var out []PlanSummary
 	for _, m := range matches {
-		info, err := os.Stat(m)
-		if err != nil || !info.Mode().IsRegular() {
-			continue
+		if s, err := summaryOf(m); err == nil {
+			out = append(out, s)
 		}
-		plan, clips, err := LoadClips(m)
-		if err != nil {
-			continue
-		}
-		s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-			Modified: info.ModTime()}
-		made := plan.PlannedWith()
-		if v, ok := toFloat(made[keyFrom]); ok {
-			s.From = v
-		}
-		if v, ok := toFloat(made[keyTo]); ok {
-			s.To = v
-		}
-		if v, ok := made["model"].(string); ok {
-			s.Model = v
-		}
-		if v, ok := made["by"].(string); ok {
-			s.By = v
-		}
-		s.Removed = readWindows(made[keyRemoved])
-		out = append(out, s)
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].Modified.After(out[b].Modified) })
 	return out
+}
+
+// summaryOf reads one plan file into its summary, with the plan and its
+// clips kept, so whoever lists the plans can show them without reading
+// any of them again.
+func summaryOf(m string) (PlanSummary, error) {
+	info, err := os.Stat(m)
+	if err != nil {
+		return PlanSummary{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return PlanSummary{}, fmt.Errorf("%s is not a file", filepath.Base(m))
+	}
+	plan, clips, err := LoadClips(m)
+	if err != nil {
+		return PlanSummary{}, err
+	}
+	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
+		Modified: info.ModTime(), plan: plan, clips: clips}
+	made := plan.PlannedWith()
+	if v, ok := toFloat(made[keyFrom]); ok {
+		s.From = v
+	}
+	if v, ok := toFloat(made[keyTo]); ok {
+		s.To = v
+	}
+	if v, ok := made["model"].(string); ok {
+		s.Model = v
+	}
+	if v, ok := made["by"].(string); ok {
+		s.By = v
+	}
+	s.Removed = readWindows(made[keyRemoved])
+	return s, nil
 }
 
 func countFiles(dir, ext string) int {
@@ -406,17 +428,25 @@ type PlanView struct {
 
 // ReadPlan loads a plan for display.
 func ReadPlan(path string) (*PlanView, error) {
-	plan, clips, err := LoadClips(path)
+	s, err := summaryOf(path)
 	if err != nil {
 		return nil, err
 	}
-	view := &PlanView{}
-	for _, s := range PlanSummaries(filepath.Dir(path)) {
-		if s.Path == path {
-			view.Summary = s
-		}
+	return s.View(), nil
+}
+
+// View is the plan of a summary as the interface shows it, made from what
+// the summary has read already. Listing an episode's clips read every plan
+// once to list them and then every plan again, for each of them, to show
+// it: 156 ms on an episode of four hours with 24 plans, for every edit,
+// where reading each plan once takes 2.5.
+func (s PlanSummary) View() *PlanView {
+	plan, clips := s.plan, s.clips
+	path := s.Path
+	view := &PlanView{Summary: s}
+	if ok, _ := filepath.Match("clips*.json", s.Name); !ok {
+		view.Summary = PlanSummary{Path: path, Name: s.Name}
 	}
-	view.Summary.Path, view.Summary.Name = path, filepath.Base(path)
 
 	extras := map[string]map[string]any{}
 	if list, ok := plan.Raw[keyClips].([]any); ok {
@@ -457,15 +487,75 @@ func ReadPlan(path string) (*PlanView, error) {
 		for _, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved})
 		}
-		if out := filepath.Join(work, "out", v.Basename+".mp4"); isFile(out) {
-			v.Rendered = out
-		}
+		v.Rendered = shortOf(work, plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {
 			v.Preview = prev
 		}
 		view.Clips = append(view.Clips, v)
 	}
-	return view, nil
+	return view
+}
+
+// shortOf is where a clip's short is, or "" when it has none. It is the one
+// answer to that: the clip list, the count of an episode's shorts and what
+// the app may show or open all ask it.
+//
+// The plan says which folder each clip was last rendered into, see
+// recordShort, because the folder the settings name for shorts can change
+// after a render, and two episodes can have clips of the same name in it,
+// so the folder the settings name now says nothing about this clip. A
+// clip the plan says nothing of, rendered before plans said so, is looked
+// for in the episode's own out folder, where a render puts it unless told
+// otherwise. The name is always the clip's own. A plan is untrusted, so it
+// can name a folder but never a file, and a link in that folder is the
+// short only when it leads to a file of that name inside it.
+func shortOf(work string, plan Plan, c Clip) string {
+	dir := filepath.Join(work, "out")
+	if folders, ok := plan.Raw[keyShorts].(map[string]any); ok {
+		if folder, ok := folders[c.ID].(string); ok && filepath.IsAbs(folder) {
+			dir = folder
+		}
+	}
+	name := c.Basename() + ".mp4"
+	short, err := SafeChild(dir, name)
+	if err != nil || filepath.Base(short) != name || !isFile(short) {
+		return ""
+	}
+	return short
+}
+
+// IsShort says whether a file is the short of a clip of an episode,
+// wherever it was rendered into, judged by where the path really leads. A
+// short in the folder the settings name for shorts belongs to its episode
+// as much as one in the work folder does, and nothing else in that folder
+// does.
+func IsShort(source, path string) bool {
+	real := ResolvePath(path)
+	work := WorkDir(source)
+	for _, plan := range PlanSummaries(LogsDir(source)) {
+		for _, c := range plan.clips {
+			if short := shortOf(work, plan.plan, c); short != "" && short == real {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// recordShort writes in a plan which folder a clip's short was rendered
+// into, see shortOf. The folder is the short's own, where its path really
+// leads.
+func recordShort(planPath, clipID, short string) error {
+	dir := filepath.Dir(ResolvePath(short))
+	return editPlan(planPath, func(top *object, _ []*object) error {
+		shorts, ok := top.values[keyShorts].(*object)
+		if !ok {
+			shorts = newObject()
+		}
+		shorts.set(clipID, dir)
+		top.set(keyShorts, shorts)
+		return nil
+	})
 }
 
 // CaptionLineView is one line of a caption, with the words it is made of.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -171,6 +172,13 @@ func parseProgress(path string) float64 {
 // episode produces more output than a pipe buffer holds.
 func (e *Engine) RunFFmpeg(ctx context.Context, args []string, label string,
 	total float64, cwd string) (int, string) {
+	return e.runFFmpegTo(ctx, args, label, total, cwd, nil)
+}
+
+// runFFmpegTo is RunFFmpeg with what ffmpeg writes to its standard output
+// kept in stdout, for a run that pipes frames out while it reports.
+func (e *Engine) runFFmpegTo(ctx context.Context, args []string, label string,
+	total float64, cwd string, stdout io.Writer) (int, string) {
 	var kept []string
 	for _, a := range args {
 		if a != "-stats" {
@@ -199,6 +207,7 @@ func (e *Engine) RunFFmpeg(ctx context.Context, args []string, label string,
 	cmd := exec.CommandContext(ctx, e.FFmpeg, full...)
 	cmd.Dir = cwd
 	cmd.Stderr = handle
+	cmd.Stdout = stdout
 	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		handle.Close()

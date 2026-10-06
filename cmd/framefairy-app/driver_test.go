@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/ffmpegtest"
 )
 
 // desk is the app as a person uses it, over one library.
@@ -50,9 +51,7 @@ type desk struct {
 // open starts the app over a new, empty library.
 func open(t *testing.T) *desk {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
@@ -304,12 +303,14 @@ func (d *desk) heard(path string) (float64, bool) {
 	return engine.Coverage(path, d.svc.store.Settings().ASRModel)
 }
 
-// shorts are the finished shorts of the library.
+// shorts are the finished shorts of the library, each where its path
+// really leads, the way the engine names a short. On macOS the temp folder
+// is under /var, which is a link to /private/var.
 func (d *desk) shorts() []string {
 	var found []string
 	_ = filepath.WalkDir(d.svc.store.Settings().OutputDir, func(p string, e os.DirEntry, err error) error {
 		if err == nil && !e.IsDir() && strings.HasSuffix(p, ".mp4") {
-			found = append(found, p)
+			found = append(found, engine.ResolvePath(p))
 		}
 		return nil
 	})
