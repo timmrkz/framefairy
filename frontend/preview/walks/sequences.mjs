@@ -50,6 +50,10 @@
 //   ["head"]           presses the clip list's head button, New, Cancel or
 //                      Continue
 //   ["restart"]        closes the app and opens it again on the episode
+//   ["decoder fails"]  makes the browser's picture decoder fail on its first
+//                      frame, after saying it takes the file, the way
+//                      WebKit's does with HEVC in 10-bit colour, and opens
+//                      the episode again
 //
 // and what has to come of them:
 //
@@ -71,6 +75,10 @@
 //                      what the crop frame showed on its shot at the look,
 //                      and at every camera switch the sound runs straight
 //                      on, no 10 ms of it quieter than 80% of the tone
+//   ["from the app", n]
+//                      the picture comes from the Go side, and n clicks
+//                      along the clip timeline each show the frame that
+//                      holds the playhead
 //   ["short", cuts]    the clip has at least so many cuts, none of them on
 //                      a frame that starts on a whole millisecond, and the
 //                      short Render wrote, read back from disk, holds
@@ -380,6 +388,12 @@ export const sequences = [
       ["box", "als mich dem Schulhof irgendein"],
       ["spans", "start"],
     ],
+  },
+  {
+    // Tim's start.mp4, HEVC in 10-bit colour: WebKit said it would decode
+    // it and then failed on the first frame, "Decoder failure".
+    name: "a picture the browser's decoder fails on comes from the Go side",
+    steps: [["decoder fails"], ["from the app", 4]],
   },
 ];
 
@@ -841,6 +855,43 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await pressHead(page);
         await watch.step("head", s);
         break;
+      case "decoder fails": {
+        await page.addInitScript(() => {
+          const Real = window.VideoDecoder;
+          window.VideoDecoder = class extends Real {
+            constructor(init) {
+              super(init);
+              this.failWith = init.error;
+            }
+            decode() {
+              setTimeout(() => this.failWith(new DOMException("Decoder failure", "EncodingError")), 0);
+            }
+          };
+          window.VideoDecoder.isConfigSupported = async (config) => ({ supported: true, config });
+        });
+        const name = (await episodeOn(page)).split("/").pop();
+        await page.reload();
+        await page.waitForTimeout(1200);
+        await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
+        await page.locator("aside ol li[data-key] button.pick").first().click();
+        await settle(page);
+        break;
+      }
+      case "from the app": {
+        const fps = await rate(page);
+        const { segments } = await engineState(page, watch.at);
+        const first = segments[0].start;
+        const last = segments[segments.length - 1].end;
+        for (let i = 1; i <= arg && !wrong; i++) {
+          const at = first + ((last - first) * i) / (arg + 1);
+          if (!(await seekTo(page, at, fps))) wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+        }
+        const streams = await page.evaluate(() => window.__appFrames?.stats.streams ?? 0);
+        if (!wrong && !streams) wrong = "the picture did not come from the Go side";
+        const trouble = await page.evaluate(() => document.querySelector(".screen")?.textContent.trim() ?? "");
+        if (!wrong && /decod/i.test(trouble)) wrong = `the video preview says "${trouble}"`;
+        break;
+      }
       case "restart": {
         const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0]);
         await control(url, "/reopen");

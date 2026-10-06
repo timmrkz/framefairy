@@ -333,6 +333,54 @@ describe("AudioPlan", () => {
     expect(short.out).toBe(full.out + 312);
   });
 
+  // AAC at 48 kHz decodes 1024 samples a packet, whatever the file says.
+  // Tim's start.mp4 says its packets last 1008, 1056 and 1008 in turn, on
+  // a clock of the sample rate. A track that counts 600 ticks a second,
+  // the way QuickTime writes a movie, starts each packet on the nearest
+  // tick, 12.8 ticks a packet. Placed by its stamp, a packet missed the
+  // one before at most packets, by 16 samples in the first file.
+  const aac = (timescale: number, at: (i: number) => number) => {
+    const n = 6000;
+    const t = track(n, timescale, 1, 1);
+    for (let i = 0; i < n; i++) {
+      t.pts[i] = at(i);
+      t.duration[i] = at(i + 1) - at(i);
+    }
+    return t;
+  };
+  test.each([
+    ["in turns of 1008, 1056 and 1008", aac(48000, (i) => i * 1024 + [0, -16, 16][i % 3])],
+    ["on a clock of 600 ticks a second", aac(600, (i) => Math.round((i * 1024 * 600) / 48000))],
+  ])("what the decoder puts out follows on to the sample, with packets %s", (_, t) => {
+    const p = new AudioPlan(t, 48000, new Program([{ start: 10, end: 20 }], false), 0);
+    p.extend(Infinity);
+    const [run] = p.runs;
+    let missed = 0;
+    let end = -1;
+    for (let j = run.first; j <= run.last; j++) {
+      const byStamp = p.slices(run, j, 1024).at(-1);
+      for (const s of p.decoded(run, j, 1024)) {
+        if (end >= 0) expect(s.out).toBe(end);
+        end = s.out + (s.to - s.from);
+      }
+      if (byStamp && byStamp.out + (byStamp.to - byStamp.from) !== end) missed++;
+    }
+    // The ten seconds are heard whole, to the sample, and placed by their
+    // stamps they would have missed.
+    expect(end - run.stretches[0].out).toBe(10 * 48000);
+    expect(missed).toBeGreaterThan(100);
+  });
+
+  test("a packet after one that came out as nothing goes where its stamp says", () => {
+    const run = { ...plan.runs[0], stretches: plan.runs[0].stretches, end: undefined };
+    let j = 0;
+    while (plan.packet(j).at < 58 * 48000) j++;
+    const [first] = plan.decoded(run, j, 960);
+    // The next one came out as nothing: the one after is a packet on.
+    const [after] = plan.decoded(run, j + 2, 960);
+    expect(after.out).toBe(first.out + 2 * 960);
+  });
+
   test("two pieces closer than the decoder's lead share a run", () => {
     const close = new AudioPlan(opus, 48000, new Program([{ start: 10, end: 11 }, { start: 11.05, end: 12 }], false), 0);
     close.extend(Infinity);
