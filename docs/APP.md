@@ -471,8 +471,23 @@ clip list share everything left over. A wider app makes those two wider
 rather than leaving a strip of nothing beside the picture, and a taller
 app makes the picture bigger. Once the picture is as wide as it may be,
 the height left over goes to the two tracks: the clip timeline grows and the
-range picker stays exactly half of it, so nothing is left empty at the foot
-of the app.
+range picker stays half of it, to within a pixel, so nothing is left empty
+at the foot of the app.
+
+**Every size moves only the way the edge of the app moves.** Each height is
+a whole number of pixels, rounded down once, and what rounding leaves goes
+to the size worked out after it, never back to one before: the picture
+first, from the app alone, then the range picker a third of what is left
+and the clip timeline the rest. The clip timeline used to be rounded to an
+even number first, so the range picker could be exactly half, and the
+picture took the rest. That rest changes in steps of three pixels, so as
+the app was dragged smaller the picture shrank a pixel, another, and grew
+three, and the range picker under it and the clip list beside it went with
+it: the shaking Tim recorded. In the harness, shrinking the app a pixel at
+a time, the picture, the range picker, the clip timeline and the clip list
+moved back on 48 steps of 150, and now on none. The picture growing into
+that rest also pushed the clip list 1 to 4 pixels past the edge of the
+app.
 
 The two tracks are one episode seen from two distances, so they lie on one
 floor, `--well`, a step darker than the workspace around them and never
@@ -1279,13 +1294,15 @@ bubble scrolled by those eight pixels.
       all. The time is not written inside its line, because an element with
       a z-index makes a stacking context and would hold its own time down
       there with it.
-    - Both rulers put a time at every step there is room for, from how
-      wide the widest time really is: a time stands 4 pixels right of its
-      line and 4 pixels clear of the next, and one that would run into the
-      end of the range picker is left out, see `lib/ruler.ts`. It was a
+    - The range picker puts a time at every step there is room for, from
+      how wide the widest time really is: a time stands 4 pixels right of
+      its line and 4 pixels clear of the next, and one that would run into
+      the end of the range picker is left out, see `lib/ruler.ts`. It was a
       guess, 72 pixels a time, and a range picker 370 pixels wide drew one
       time every five minutes on a six minute episode, where a time every
-      minute fits.
+      minute fits. The clip timeline keeps its sparser ruler, a time for
+      every 96 pixels: the same rule there drew a line over the waveform
+      every second, and Tim preferred it as it was.
     - Everything on the range picker, the marks, the window, the playhead
       and the lines, and the captions over the video preview are placed
       by the stylesheet, in shares of the track's width and the picture's

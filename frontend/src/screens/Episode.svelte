@@ -2826,12 +2826,14 @@
     --down: calc(4 * var(--gap) + 1px + var(--row-h));
     /* How tall the picture would be if it were as wide as it may be. */
     --widest: calc((var(--stage-w) - var(--sides)) / var(--ar));
-    /* The picture takes the height first, until it is that wide. What it
-       cannot use goes to the two tracks, the range picker always half the
-       clip timeline, so nothing is left over at the foot of the app. */
-    --wave-h: max(var(--wave-min), calc((var(--space) - var(--down) - var(--widest)) / 1.5));
-    --picker-h: calc(var(--wave-h) / 2);
-    --pic-h: max(200px, calc(var(--space) - var(--down) - 1.5 * var(--wave-h)));
+    /* The picture takes the height first, until it is that wide, leaving
+       the tracks at least their smallest. What it cannot use goes to the
+       two tracks, the range picker a third of it and the clip timeline
+       the rest, so nothing is left over at the foot of the app. */
+    --pic-h: max(200px, min(var(--widest), calc(var(--space) - var(--down) - 1.5 * var(--wave-min))));
+    --tracks: calc(var(--space) - var(--down) - var(--pic-h));
+    --picker-h: calc(var(--tracks) / 3);
+    --wave-h: calc(var(--tracks) - var(--picker-h));
     --pic-w: calc(var(--pic-h) * var(--ar));
 
     padding: var(--gap) var(--edge) var(--edge) var(--gap);
@@ -2847,14 +2849,27 @@
      rounding. A track half a pixel tall puts everything below it half a
      pixel out, and a line, a label or a mark drawn between two pixels is
      soft, and is painted in a different place once a fade puts it on a
-     surface of its own. The clip timeline goes down to an even number so
-     the range picker, which is half of it, is whole as well. */
+     surface of its own.
+
+     And every size rounded so it only ever moves the way the edge of the
+     app does. Each is rounded down once, and what is left of it goes to
+     the one size worked out after it, never back to one before. The clip
+     timeline was rounded down to an even number, so the range picker,
+     half of it, was whole too, and the picture took what was left. That
+     could only change in steps of three pixels, so as the app shrank the
+     picture shrank a pixel, another, and then grew three, and the range
+     picker under it and the clip list beside it went with it: the shaking
+     Tim recorded, a sawtooth of two, two and six on his screen. Now the
+     picture is rounded first, from the app alone, and the range picker
+     and the clip timeline share what it leaves, a third and the rest,
+     within a pixel of one half the other. */
   @supports (height: round(down, 3px, 2px)) {
     section {
-      --wave-h: max(
-        var(--wave-min),
-        round(down, calc((var(--space) - var(--down) - var(--widest)) / 1.5), 2px)
+      --pic-h: max(
+        200px,
+        round(down, min(var(--widest), calc(var(--space) - var(--down) - 1.5 * var(--wave-min))), 1px)
       );
+      --picker-h: round(down, calc(var(--tracks) / 3), 1px);
       --pic-w: round(down, calc(var(--pic-h) * var(--ar)), 1px);
     }
   }

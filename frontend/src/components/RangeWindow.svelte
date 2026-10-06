@@ -464,8 +464,8 @@
   .track {
     position: relative;
     container-type: inline-size;
-    /* Half the clip timeline, set by the workspace so the two grow
-       together and fill the height of the app. */
+    /* Half the clip timeline, to within a pixel, set by the workspace so
+       the two grow together and fill the height of the app. */
     height: var(--picker-h, 56px);
     flex: none;
     background: var(--well);

@@ -83,8 +83,8 @@
      this either way, so it is a number both sides read rather than one
      each. */
   --bar-h: 44px;
-  /* The clip timeline at its smallest, with the range picker always half
-     of it. The range picker is the same episode seen from much further
+  /* The clip timeline at its smallest, with the range picker half of it,
+     to within a pixel. The range picker is the same episode seen from much further
      away, so half the height is enough to read it, and the two together
      read as one thing at two distances. */
   --wave-min: 112px;

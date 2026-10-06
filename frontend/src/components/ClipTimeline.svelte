@@ -38,7 +38,6 @@
     type Parts,
   } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
-  import { rulerStep, timeWidth } from "../lib/ruler";
   import { hoverClip } from "../lib/hover";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
@@ -1285,12 +1284,11 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // A time every so often, the smallest step that leaves room for the
-  // times, the same rule as the range picker's, see lib/ruler.ts.
   const ticks = $derived.by(() => {
     if (!width || span <= 0) return [];
     const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-    const step = rulerStep(span, width, timeWidth(clock(view.to)), steps);
+    const room = Math.max(1, Math.floor(width / 96));
+    const step = steps.find((s) => span / s <= room) ?? 3600;
     const out: number[] = [];
     for (let t = Math.ceil(view.from / step) * step; t <= view.to; t += step) {
       out.push(Math.round(t));

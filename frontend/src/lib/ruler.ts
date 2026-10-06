@@ -1,17 +1,19 @@
-// The ruler of a track, the range picker's and the clip timeline's alike:
-// a line every so often with its time written beside it.
+// The ruler of the range picker: a line every so often with its time
+// written beside it.
 //
 // A time is written GAP to the right of its line, so two times stand clear
 // of each other when the next line is at least GAP past the end of the
 // time before it. The step is the smallest that leaves that room, worked
 // out from how wide the widest time really is. It was a guess, 72 pixels a
-// time on the range picker and 96 on the clip timeline, where a time like
-// 5:00 is about 25: a range picker 370 pixels wide was given room for five
-// times and drew one every five minutes on a six minute episode, where a
-// time every minute fits with room to spare.
+// time, where a time like 5:00 is about 25: a range picker 370 pixels wide
+// was given room for five times and drew one every five minutes on a six
+// minute episode, where a time every minute fits with room to spare.
+//
+// The clip timeline keeps its own, sparser ruler. This rule put a line
+// over its waveform every second, and Tim preferred it as it was.
 
 // The space between a line and its time, the margin of .time in the
-// stylesheets of both tracks.
+// range picker's stylesheet.
 export const GAP = 4;
 
 // The smallest step in steps, in seconds, whose times stand clear of each
