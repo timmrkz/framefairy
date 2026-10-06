@@ -24,6 +24,7 @@
     type CaptionSwitch,
     type ClipEntry,
     type Gesture,
+    type Job,
     type CoverageView,
     type KeptWindow,
     type EpisodeStatus,
@@ -598,13 +599,9 @@
     if (!stopped || !search) return;
     from = stopped.from;
     to = stopped.to;
+    const id = search.id;
     begin();
-    try {
-      await api.continueJob(search.id);
-    } catch (err) {
-      problem = errorText(err);
-      starting = false;
-    }
+    await asked(() => api.continueJob(id));
   }
   // The clips on their way, from every job of the episode alike: the
   // search's, from the moment the model names each, and the ones made with
@@ -1748,15 +1745,29 @@
   // heard that far, all of it on the Go side, see docs/JOBS.md.
   async function findClips(replan: boolean) {
     begin();
-    try {
-      await api.search(path, {
+    await asked(() =>
+      api.search(path, {
         From: whole ? 0 : from,
         To: whole ? 0 : to,
         Count: count,
         Min: min,
         Max: max,
         Replan: replan,
-      });
+      }),
+    );
+  }
+
+  // New and Continue alike. The Go side answers with the search, and one
+  // it would not start, while the app closes or the episode is being
+  // removed, comes back failed already. It never runs, so nothing would
+  // ever end the start the click showed: the head stood on Cancel, greyed
+  // out, over Finding clips. Its row says why instead, with Continue, the
+  // way any search that failed does.
+  async function asked(ask: () => Promise<Job>) {
+    try {
+      const job = await ask();
+      jobs.apply(job);
+      if (job.state !== "running" && job.state !== "queued") starting = false;
     } catch (err) {
       problem = errorText(err);
       starting = false;
