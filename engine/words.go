@@ -64,24 +64,59 @@ func (t *Transcript) Correct(corrections map[string]string) {
 // took the room of the long one it had been, and words moved. A walk
 // found it.
 func (t *Transcript) captionWords() []Cue {
-	out := t.Words
+	return t.captionWordsIn(math.Inf(-1), math.Inf(1))
+}
+
+// captionWordsIn is captionWords for the words that touch from to to alone,
+// which is all a clip's captions read, see nearClip. A clip's captions were
+// made from every word of the episode, copied whenever a word had been
+// removed: 1 MB for every pointer move on an edge of a clip of an episode
+// of four hours.
+func (t *Transcript) captionWordsIn(from, to float64) []Cue {
+	out := between(t.Words, from, to)
+	n := len(out)
 	for i, w := range t.HeardWords {
-		if strings.TrimSpace(w.Text) == "" {
-			if len(out) == len(t.Words) {
-				out = append([]Cue(nil), t.Words...)
-			}
-			if was, ok := t.removedAs[i]; ok {
-				w.Text = removedMark + was
-			} else if i < len(t.snapped) {
-				w.Text = removedMark + strings.Join(strings.Fields(t.snapped[i].Text), " ")
-			}
-			out = append(out, w)
+		if w.End <= from || w.Start >= to || strings.TrimSpace(w.Text) != "" {
+			continue
 		}
+		if len(out) == n {
+			out = append([]Cue(nil), out...)
+		}
+		if was, ok := t.removedAs[i]; ok {
+			w.Text = removedMark + was
+		} else if i < len(t.snapped) {
+			w.Text = removedMark + strings.Join(strings.Fields(t.snapped[i].Text), " ")
+		}
+		out = append(out, w)
 	}
-	if len(out) != len(t.Words) {
+	if len(out) != n {
 		sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
 	}
 	return out
+}
+
+// between is the words, in the order they were said, that touch from to
+// to: the first that ends after from up to the first that starts at to.
+func between(words []Cue, from, to float64) []Cue {
+	i := sort.Search(len(words), func(i int) bool { return words[i].End > from })
+	j := i + sort.Search(len(words)-i, func(k int) bool { return words[i+k].Start >= to })
+	return words[i:j]
+}
+
+// captionReach is how far either side of a clip its captions look at the
+// words. They need only the words the clip holds and a word found within
+// 20 ms of a caption's, see SaidWord, so a second is plenty.
+const captionReach = 1.0
+
+// nearClip is the part of the words, in the order they were said, that a
+// clip's captions can need. Captions read every word of the episode, and
+// looked each caption's words up among all of them, twice a caption.
+func nearClip(clip Clip, words []Cue) []Cue {
+	if len(clip.Segments) == 0 {
+		return words
+	}
+	return between(words, clip.Segments[0].Start-captionReach,
+		clip.Segments[len(clip.Segments)-1].End+captionReach)
 }
 
 // splitWord turns a word that reads as several words into one word each. The
@@ -251,6 +286,11 @@ func HoldsWord(start, end float64, w Cue) bool {
 // app alike: from the words the clip says, in the clip's style, hyphenated
 // for the episode's language.
 func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
-	captions := Captions(clip, t.captionWords(), max(8, int(s.MaxChars)), TooWide(s))
+	said := t.captionWords()
+	if len(clip.Segments) > 0 {
+		said = t.captionWordsIn(clip.Segments[0].Start-captionReach,
+			clip.Segments[len(clip.Segments)-1].End+captionReach)
+	}
+	captions := Captions(clip, said, max(8, int(s.MaxChars)), TooWide(s))
 	return LayOutCaptions(captions, s, t.Language)
 }
