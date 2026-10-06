@@ -565,3 +565,34 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 		t.Fatalf("the search answered %s, and wrote %v", filepath.Base(plan), made)
 	}
 }
+
+// A search the app closes on is interrupted, from the moment it is asked
+// for. Its record is what says so after a restart, so it is written
+// before anything the search does can be cut off: the pass of a window to
+// the episode's end asks ffmpeg for its length, and a search the closing
+// cancelled there left no record, and nothing to say it had been asked
+// for. The walk searching.mjs found it, New pressed and the app closed.
+func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
+	t.Parallel()
+	for _, req := range []PlanRequest{
+		{From: 5, To: 25, Count: 1, Min: 5},
+		{From: 5, Count: 2, Min: 5},
+		{Count: 1, Min: 5, Pass: 0},
+	} {
+		p, _ := searchProject(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := p.Search(ctx, req, nil)
+		if !errors.Is(err, ErrCancelled) {
+			t.Errorf("%+v: a search cut off says %v", req, err)
+		}
+		rec := ReadSearch(p.Source)
+		if rec == nil {
+			t.Errorf("%+v: a search cut off before it began left no record", req)
+			continue
+		}
+		if !rec.Interrupted() || rec.From != req.From || rec.To != req.To || rec.Count != req.Count {
+			t.Errorf("%+v: the record says %+v", req, rec)
+		}
+	}
+}

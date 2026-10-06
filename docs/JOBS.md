@@ -134,7 +134,12 @@ Every job keeps one record in its episode's work folder, in `jobs/`,
 written atomically on every change of step. The search is
 `jobs/search.json`, because an episode has one at a time, a clip made by
 hand is `jobs/clip-<id>.json` and a render is `jobs/render-<id>.json`. The
-code is `engine/jobs.go`.
+code is `engine/jobs.go`. A search writes its record before it does
+anything that can be cut off, so one the app closes on the moment it is
+asked for still says Interrupted after the restart. It once worked out
+which pass of its window it was first, which asks ffmpeg for the
+episode's length, and a search the closing cancelled there left no record
+and nothing to say.
 
 ```json
 {
