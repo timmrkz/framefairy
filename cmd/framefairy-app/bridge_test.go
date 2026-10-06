@@ -289,7 +289,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
-		answer(w, nil, b.reopen())
+		closed, err := b.reopen()
+		answer(w, closed, err)
 	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaMiddleware(b.d.svc.store)(http.FileServer(http.Dir(dist))).ServeHTTP(w, r)
@@ -599,13 +600,19 @@ func (b *bridge) pick(seconds, rate, switchAt string, hevc bool) (string, error)
 
 // reopen closes the app and opens it again, the way quitting and starting
 // it does: the work stops, and what it did and how it ended is read back.
-func (b *bridge) reopen() error {
+// It gives back the jobs as the app left them, once nothing ran any more,
+// so a walk knows how each ended on the engine's word: a search the
+// closing cut off says cancelled, one that finished as the app closed says
+// done. What a walk read off the screen before it asked is a moment older,
+// and a search the model answers at once can end in that moment.
+func (b *bridge) reopen() ([]Job, error) {
 	if !b.d.svc.jobs.shutDown() {
-		return fmt.Errorf("the app did not stop its work in time")
+		return nil, fmt.Errorf("the app did not stop its work in time")
 	}
+	closed := b.d.svc.jobs.list()
 	b.d.svc.levels.shutDown()
 	b.d.reopen()
-	return nil
+	return closed, nil
 }
 
 // reset puts the app back the way it was once the first episode was

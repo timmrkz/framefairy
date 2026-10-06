@@ -107,7 +107,7 @@ each with a POST:
 | `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, and with `&switch=S` by two cameras that switch S seconds in, see below |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
-| `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back |
+| `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, and the app is opened again on them |
 
 To open it by hand:
@@ -241,15 +241,48 @@ rules, besides every walk's:
 | Rule | |
 | --- | --- |
 | A new video gets its first clips with no click | while the models answer and the speech is quick |
-| Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | |
+| Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
 | The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, New otherwise | asked again for a few seconds, since a row is held a moment to be read |
 | No row speaks of a failure the engine did not have | |
 | At rest, as many cards and the count beside Clips as the engine has clips | |
-| How work ended stays after a restart: a search running is interrupted, one that stopped stays stopped | |
+| How work ended stays after a restart: a search the closing cut off is interrupted, one that stopped or failed stays as it was, one that was done leaves nothing | by how the engine left the search, which `/reopen` answers with |
 
 The clip on screen is the card the clip list marks as the current one,
 not the captions the interface last asked for: an episode just opened
 shows its clip before that, and a walk then held it to another episode's.
+
+#### A walk waits on what a rule is about
+
+A search goes on while the walk looks. The model the walk set to fail
+fails a search the moment it comes to finding, and one that answers ends
+it in well under a second, with no call of the interface's on its way. So
+the app can change after it has settled, between the walk looking and
+the walk pressing, and between one thing the walk reads and the next.
+Nothing a rule judges is read before that moment and held to what is
+read after it:
+
+- The head button is read as it is pressed, in the same frame as the
+  click, and Cancel shows at once is held to a press of Cancel. The walk
+  that saw Cancel and pressed a button that said Continue by then broke
+  that rule two runs in eighty.
+- How a search ended before a restart is the engine's word, the jobs as
+  the app left them once no work ran, which `/reopen` answers with. The
+  head the walk saw before it closed the app said Cancel for a search
+  that was done by the time the app closed.
+- The episode on screen is read again each time the clip list is asked,
+  so a video that opens a moment after Add is not held to the search of
+  the episode before it.
+- The clip on screen is read before and after what the clip timeline and
+  the caption box show, and again if it changed in between. With no clip
+  of the engine's chosen, a clip still on its way among them, the clip
+  rules have nothing to hold the screen to. The clip of the episode open
+  before was kept instead, and the clip timeline of a clip just found was
+  held to it.
+
+None of the four was wrong in the app, and no rule is looser for it. Each
+was measured: `searching.mjs` for seeds 1 to 10 against the bridge, side
+by side as `make walks` runs them, with every rule's broken state written
+down and the engine's jobs beside it.
 
 ### `sequences.mjs`: the cases found by hand
 
@@ -355,6 +388,15 @@ app. What they found was in the walks: a rule that wanted Stopping in the
 frame after Cancel, where a search that stops within that frame already
 says Continue, and the clip on screen read off the last captions asked
 for. Both were the walk's, and both are put right.
+
+Then `searching.mjs` broke about one `make walks` in three, on main as
+well, at random. Against the bridge it broke 6 runs in 116, seeds 1 to
+10: Cancel shows at once twice, how work ended stays after a restart
+once, the clip list against the engine once and the clip timeline twice.
+All four causes were the walk reading the app before or after what the
+rule was about, see A walk waits on what a rule is about above, and none
+was the app. Put right, the five seeds that broke ran 16 times each, 80
+runs, without a rule broken.
 
 Against the video preview from before the fixes in #106, five walks of
 ten broke a rule within sixty steps, all of them showing a word typed in

@@ -288,7 +288,7 @@ episode for such files is plan row 1.5b.
 A system can also say it decodes a file and then fail on it: WebKit says
 yes to HEVC with 10-bit colour and its decoder then fails on the first
 frame, "Decoder failure". For such a file, and for one the system says no
-to, the Go side decodes the picture instead, plan row 2.126. The queue
+to, the Go side decodes the picture instead, plan row 2.133. The queue
 asks its picture decoder the same things either way: `AppPictures` in
 `lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
 `PlainSound` stands in for the sound decoder, so drawing, the clock, cuts
