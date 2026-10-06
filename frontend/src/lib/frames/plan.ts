@@ -511,17 +511,18 @@ export class AudioPlan {
 
   // The slices of packet j as it came out of the decoder, straight after
   // what came out of it before in the same run. A decoder puts its sound
-  // out as one stream, but a file whose clock ticks coarser than its
-  // samples, 600 times a second the way QuickTime's movies do, says where
-  // a packet starts only to the nearest tick, and a packet placed by that
-  // missed the one before by a sample or more, a gap or an overlap heard
-  // as a click, at most packets. A packet further off than a tick is a
-  // real jump, and goes where its stamp says.
+  // out as one stream, every AAC packet 1024 samples, but a file need not
+  // say so to the sample. Tim's start.mp4 says its packets last 1008,
+  // 1056 and 1008 samples in turn, 1024 on average, and a clock of 600
+  // ticks a second, QuickTime's, says where a packet starts only to the
+  // nearest 80 samples at 48 kHz. A packet placed by its stamp missed the
+  // one before by 16 to 40 samples at most packets, a gap or an overlap
+  // heard as a click, a crackle over the whole play. A packet more than
+  // half a packet off is a real jump, and goes where its stamp says.
   decoded(run: AudioRun, j: number, got: number): Slice[] {
     const p = this.packet(j);
     let at = p.at + Math.max(0, p.n - got);
-    const tick = Math.ceil(this.rate / this.samples.timescale) + 1;
-    if (run.end !== undefined && Math.abs(at - run.end) <= tick) at = run.end;
+    if (run.end !== undefined && Math.abs(at - run.end) < got / 2) at = run.end;
     run.end = at + got;
     return this.slices(run, j, got, at);
   }

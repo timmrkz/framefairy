@@ -288,39 +288,45 @@ describe("AudioPlan", () => {
     expect(short.out).toBe(full.out + 312);
   });
 
-  test("what the decoder puts out follows on to the sample on a coarse clock", () => {
-    // AAC at 48 kHz, 1024 samples a packet, in a track that counts 600
-    // ticks a second, the way QuickTime writes a movie: each packet starts
-    // on the nearest tick, 1024 samples are 12.8 ticks, and a packet
-    // placed by its tick missed the one before at most packets.
+  // AAC at 48 kHz decodes 1024 samples a packet, whatever the file says.
+  // Tim's start.mp4 says its packets last 1008, 1056 and 1008 in turn, on
+  // a clock of the sample rate. A track that counts 600 ticks a second,
+  // the way QuickTime writes a movie, starts each packet on the nearest
+  // tick, 12.8 ticks a packet. Placed by its stamp, a packet missed the
+  // one before at most packets, by 16 samples in the first file.
+  const aac = (timescale: number, at: (i: number) => number) => {
     const n = 6000;
-    const coarse = track(n, 600, 13, 1);
+    const t = track(n, timescale, 1, 1);
     for (let i = 0; i < n; i++) {
-      coarse.pts[i] = Math.round((i * 1024 * 600) / 48000);
-      coarse.duration[i] = Math.round(((i + 1) * 1024 * 600) / 48000) - coarse.pts[i];
+      t.pts[i] = at(i);
+      t.duration[i] = at(i + 1) - at(i);
     }
-    const p = new AudioPlan(coarse, 48000, new Program([{ start: 10, end: 20 }], false), 0);
+    return t;
+  };
+  test.each([
+    ["in turns of 1008, 1056 and 1008", aac(48000, (i) => i * 1024 + [0, -16, 16][i % 3])],
+    ["on a clock of 600 ticks a second", aac(600, (i) => Math.round((i * 1024 * 600) / 48000))],
+  ])("what the decoder puts out follows on to the sample, with packets %s", (_, t) => {
+    const p = new AudioPlan(t, 48000, new Program([{ start: 10, end: 20 }], false), 0);
     p.extend(Infinity);
     const [run] = p.runs;
-    let placed = 0;
     let missed = 0;
     let end = -1;
     for (let j = run.first; j <= run.last; j++) {
-      const byClock = p.slices(run, j, 1024).at(-1);
+      const byStamp = p.slices(run, j, 1024).at(-1);
       for (const s of p.decoded(run, j, 1024)) {
         if (end >= 0) expect(s.out).toBe(end);
         end = s.out + (s.to - s.from);
-        placed++;
       }
-      if (byClock && byClock.out + (byClock.to - byClock.from) !== end) missed++;
+      if (byStamp && byStamp.out + (byStamp.to - byStamp.from) !== end) missed++;
     }
-    // The stretch is heard whole, and the clock alone would have missed.
-    expect(end - run.stretches[0].out).toBeGreaterThan(10 * 48000 - 1024);
-    expect(placed).toBeGreaterThan(400);
+    // The ten seconds are heard whole, to the sample, and placed by their
+    // stamps they would have missed.
+    expect(end - run.stretches[0].out).toBe(10 * 48000);
     expect(missed).toBeGreaterThan(100);
   });
 
-  test("a packet further off than a tick goes where its stamp says", () => {
+  test("a packet more than half a packet off goes where its stamp says", () => {
     const run = { ...plan.runs[0], stretches: plan.runs[0].stretches, end: undefined };
     let j = 0;
     while (plan.packet(j).at < 58 * 48000) j++;

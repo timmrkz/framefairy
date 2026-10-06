@@ -247,12 +247,15 @@ fades it. So a clip plays in the video preview the way it plays in the
 short.
 
 Between cuts the sound is one stream, as the decoder puts it out: each
-packet goes straight after the one before. A file says where a packet
-starts only as finely as its clock ticks, and a clock of 600 ticks a
-second, QuickTime's, is 80 samples to a tick at 48 kHz. A packet placed
-by its stamp missed the one before by up to half a tick at most packets,
-and every miss was a click, a crackle over the whole play. A packet more
-than a tick off is a real jump and goes where its stamp says.
+packet goes straight after the one before. A file need not say where a
+packet starts to the sample. Every AAC packet decodes to 1024 samples,
+but Tim's `start.mp4` says its packets last 1008, 1056 and 1008 in turn,
+and a clock of 600 ticks a second, QuickTime's, says where a packet starts
+only to the nearest 80 samples at 48 kHz. A packet placed by its stamp
+missed the one before by 16 to 40 samples at most packets, and every miss
+was a click, about 30 a second, heard as a crackle over the whole play. A
+packet more than half a packet off is a real jump and goes where its
+stamp says.
 
 Paused, the picture is the frame that holds the playhead, exactly, wherever
 the playhead was put: a click, a drag, a step of an arrow key or a word.
