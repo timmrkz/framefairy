@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // A render shows, at every moment of a short, the frame of the episode
@@ -35,7 +37,7 @@ import (
 func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(context.Background()); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	for _, c := range []struct {
 		name  string

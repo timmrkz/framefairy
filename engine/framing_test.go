@@ -10,15 +10,15 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // twoCameras is an episode shot on two cameras: the first for ten seconds,
 // the second for ten, then the first again.
 func twoCameras(t *testing.T) (string, SourceInfo) {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "two.mp4")
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d=10",
@@ -106,7 +106,7 @@ func fmtCrop(x *int) string {
 func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in ffmpeg is a shell script")
+		t.Skip("the stand-in is a shell script")
 	}
 	path, source := twoCameras(t)
 	real, _ := exec.LookPath("ffmpeg")
@@ -163,7 +163,7 @@ func TestHwaccelsIn(t *testing.T) {
 func stuckFFmpeg(t *testing.T, always bool) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("a shell script stands in for ffmpeg")
+		t.Skip("the stand-in is a shell script")
 	}
 	hang := `case " $* " in *" -hwaccel "*) exec sleep 600 ;; esac`
 	if always {
