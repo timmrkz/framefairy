@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // The pictures of a short are frames of the short, taken on the short's
@@ -13,9 +15,7 @@ import (
 // episode. Pictures no longer asked for are removed, and nothing that
 // belongs to another clip is touched.
 func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	dir := t.TempDir()
 	short := filepath.Join(dir, "01_eins.mp4")
 	// Two seconds of red, then two of blue: the two pieces of the clip.

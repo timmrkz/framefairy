@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // The captions burned into a short appear on the frames the subtitle file
@@ -160,10 +162,10 @@ func checkRenderTiming(t *testing.T, clip Clip) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	if err := e.Preflight(ctx); err != nil {
-		t.Skip("no usable ffmpeg here")
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	if _, err := e.SubtitleFilter(ctx); err != nil {
-		t.Skip("this ffmpeg cannot burn captions in")
+		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
 	}
 	source := renderTimingEpisode(t)
 	info, err := e.Probe(ctx, source)
