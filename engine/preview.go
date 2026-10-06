@@ -34,16 +34,28 @@ func (e *Engine) PreviewFrames(ctx context.Context, path string, from float64, w
 	// fraction of it. A chain that fails before its first frame is made
 	// again on the processor, and every one after it goes there straight
 	// away.
+	//
+	// A chain that gives no frame is tried again on the processor too:
+	// on a Mac with no graphics chip of its own, a virtual one, scale_vt
+	// finds nothing to scale on and ffmpeg ends cleanly with no frame.
 	if runtime.GOOS == "darwin" && !e.softDecode.Load() && !gpuScaleFails.Load() {
 		came := false
 		err := e.previewFrames(ctx, path, from, width, height, true, func(at float64, frame []byte) error {
 			came = true
 			return got(at, frame)
 		})
-		if err == nil || came || ctx.Err() != nil {
+		if came || ctx.Err() != nil {
 			return err
 		}
-		gpuScaleFails.Store(true)
+		came = false
+		err = e.previewFrames(ctx, path, from, width, height, false, func(at float64, frame []byte) error {
+			came = true
+			return got(at, frame)
+		})
+		if came {
+			gpuScaleFails.Store(true)
+		}
+		return err
 	}
 	return e.previewFrames(ctx, path, from, width, height, false, got)
 }

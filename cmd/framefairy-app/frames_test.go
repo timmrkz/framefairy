@@ -46,6 +46,9 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 			t.Fatalf("read answered %d", rec.Code)
 		}
 		body := rec.Body.Bytes()
+		if len(body) == 0 && rec.Header().Get("X-Frames-End") != "" {
+			t.Fatalf("the stream ended with no frame: %s", rec.Header().Get("X-Frames-Error"))
+		}
 		if len(body)%size != 0 {
 			t.Fatalf("%d bytes is no whole number of frames of %d", len(body), size)
 		}
