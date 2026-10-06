@@ -274,11 +274,11 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	q.mu.Lock()
 	if q.closed[episode] > 0 {
 		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the episode is being removed")
+		return q.refuse(episode, kind, label, "the episode is being removed", prepare)
 	}
 	if q.shut {
 		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the app is closing")
+		return q.refuse(episode, kind, label, "the app is closing", prepare)
 	}
 	if once {
 		for _, j := range q.jobs {
@@ -377,14 +377,23 @@ func (q *queue) restore(episodes []string) {
 }
 
 // refuse records a job that was never started, so the interface hears why
-// in the same place it hears everything else about its jobs.
-func (q *queue) refuse(episode, kind, label, reason string) Job {
+// in the same place it hears everything else about its jobs. with fills in
+// what the job was asked to do, as addSteps does for one that starts.
+func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) Job {
 	lane := laneFor(kind)
 	q.mu.Lock()
 	q.next++
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
 		State: JobFailed, Error: reason, Queued: time.Now(), Lane: lane,
 		cancel: func() {}, ctx: context.Background()}
+	for _, fill := range with {
+		if fill != nil {
+			fill(job)
+		}
+	}
+	// It wrote nothing, so there is no record to carry on from, whatever
+	// the record would have been.
+	job.Record = ""
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
 	snapshot := *job

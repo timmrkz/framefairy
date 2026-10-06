@@ -39,6 +39,7 @@
   } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { hoverClip } from "../lib/hover";
+  import { keysElsewhere } from "../lib/keys";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
 
@@ -738,13 +739,10 @@
   function onKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (keysElsewhere()) return;
     // The edges of a clip and the window on the range picker take the
     // arrows for themselves while they hold the keyboard.
-    if (on?.getAttribute("role") === "slider") return;
-    if (document.querySelector("dialog[open]")) return;
+    if (document.activeElement?.getAttribute("role") === "slider") return;
     const back = event.key === "ArrowLeft";
     event.preventDefault();
     const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)));

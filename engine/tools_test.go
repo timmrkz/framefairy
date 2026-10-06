@@ -130,6 +130,21 @@ func TestTheEnvironmentAlwaysWins(t *testing.T) {
 	})
 }
 
+// The app as it ships takes no program and no model from the
+// environment, see named: the tests and the command line do.
+func TestTheShippedAppTakesNothingFromTheEnvironment(t *testing.T) {
+	t.Setenv("FRAMEFAIRY_FFMPEG", "/somewhere/else/ffmpeg")
+	if got := namedWhen(true, "FRAMEFAIRY_FFMPEG"); got != "" {
+		t.Errorf("the shipped app took %q from the environment", got)
+	}
+	if got := namedWhen(false, "FRAMEFAIRY_FFMPEG"); got != "/somewhere/else/ffmpeg" {
+		t.Errorf("the tests and the command line got %q", got)
+	}
+	if shipped {
+		t.Error("the tests are built as the shipped app")
+	}
+}
+
 // NewEngine has to go through all of that rather than reaching for the
 // environment itself, which is what it used to do.
 func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {

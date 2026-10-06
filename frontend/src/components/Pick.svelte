@@ -55,6 +55,10 @@
     // outside whatever the trigger stands in, so a sidebar that closes when
     // the pointer leaves it has to be told the pointer is still its own.
     onopenchange = undefined,
+    // Asked as the list is about to open. A choice that may not be changed
+    // now says yes, and the list stays shut: the caller shows why, the way
+    // the settings shake the card a running search is using.
+    refuse = undefined,
   }: {
     // What is picked. It goes one way only, and nothing here ever writes
     // it back: what the trigger says is what the caller says is true, and
@@ -83,6 +87,7 @@
     face?: "text" | "icon";
     icon?: string;
     onopenchange?: (open: boolean) => void;
+    refuse?: () => boolean;
   } = $props();
 
   const picked = $derived(options.find((o) => o.value === value));
@@ -122,6 +127,14 @@
   $effect(() => {
     ticked = value;
   });
+
+  // Whether the list is open. bits-ui sets it and then says it changed, so
+  // a list refused here is still shut when it says so.
+  let open = $state(false);
+  function opens(next: boolean) {
+    if (next && refuse?.()) return;
+    open = next;
+  }
 </script>
 
 <Select.Root
@@ -129,9 +142,11 @@
   bind:value={ticked}
   items={options}
   {disabled}
-  onOpenChange={(open) => {
-    if (open) ticked = value;
-    onopenchange?.(open);
+  bind:open={() => open, opens}
+  onOpenChange={(next) => {
+    if (next !== open) return;
+    if (next) ticked = value;
+    onopenchange?.(next);
   }}
   onValueChange={(v) => onpick?.(v)}
 >

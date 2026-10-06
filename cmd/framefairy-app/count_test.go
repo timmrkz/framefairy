@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"framefairy/engine"
 )
@@ -24,5 +25,33 @@ func TestASearchSaysHowManyItWasAskedFor(t *testing.T) {
 		if j.ID == job.ID && j.Count != 4 {
 			t.Fatalf("the search, %s, says it was asked for %d", j.State, j.Count)
 		}
+	}
+}
+
+// A search the queue will not start says which window it was asked for,
+// so its row and its Continue are about that window. It wrote no record,
+// so Continue does not take up the one on disk, which is an older
+// search's, about another window.
+func TestARefusedSearchKeepsItsWindow(t *testing.T) {
+	d := open(t)
+	ep := d.add("a", minutes5)
+	d.idle(ep)
+	// An older search of another window, stopped, left on disk.
+	older := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, From: 0, To: 60, Count: 1,
+		Min: 5, Step: engine.StepStopped, Asked: time.Now()}
+	if err := engine.WriteJob(ep, older); err != nil {
+		t.Fatal(err)
+	}
+	d.svc.jobs.shutDown()
+	refused := d.svc.Search(ep, engine.PlanRequest{From: 120, To: 180, Count: 2, Min: 5})
+	if refused.State != JobFailed || refused.Record != "" {
+		t.Fatalf("the search was %s with record %q, not refused", refused.State, refused.Record)
+	}
+	if refused.From != 120 || refused.To != 180 || refused.Count != 2 {
+		t.Fatalf("the refused search says %.0f to %.0f for %d", refused.From, refused.To, refused.Count)
+	}
+	again := d.svc.Continue(refused.ID)
+	if again.From != 120 || again.To != 180 {
+		t.Fatalf("Continue asked for %.0f to %.0f, not the window that was refused", again.From, again.To)
 	}
 }
