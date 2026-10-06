@@ -122,15 +122,19 @@ only what of it is not heard yet, wherever that is. A playhead near the end
 of a four hour episode no longer waits for the hours before it.
 
 A part is read the way the loudness is, `audioFrom`: ffmpeg seeks before
-the input to the frame, decodes a fifth of a second early and throws that
-away. It lands on the sample: read from 4 s on, a tone gated five times a
+the input to a fifth of a second before the frame, and `atrim` cuts at the
+timestamp of the frame. It lands on the sample: read from 4 s on, a tone gated five times a
 second reads the same as the whole episode at the same moment, frame for
 frame, but for a frame or two a dB apart on an edge of the tone, where a
 shift of 10 ms differs on every edge, `TestAPartOfAudioLinesUpWithTheWholeEpisode`.
 Before the parts, carrying on counted samples from the start instead, and
 the reason given was that a seek lands on the packet and differs by up to
-23 ms between builds. With the seek before the input, ffmpeg trims what it
-decoded before the point, and the measurement says it lands.
+23 ms between builds. With the seek before the input, ffmpeg 8.1 trimmed
+what it decoded before the point and landed. ffmpeg 9.0 drops the first
+packet after the seek point whole instead, up to 64 ms of 16 kHz AAC,
+while its timestamps stay right. The samples in the pipe carry no time,
+so the part started late by that much. Cut by timestamp, it lands with
+both, and a render's sound does the same, see `soundLead`.
 
 Each part is read with 3 s of audio on either side, `hearingPad`, so every
 word in it is heard whole: audio cut inside a word is heard as another
@@ -160,9 +164,11 @@ first, then on from there, then from the start. Every half second it asks
 again, and when the view has moved to a part not measured yet, it stops
 ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
 seeks rather than decodes its way there. It starts a fifth of a second
-early and throws that away, `levelsLead`: the first 40 ms after a seek
-came out up to 4 dB off, because a packet of compressed audio is decoded
-together with the one before it. A run ends where it meets a part
+early and `atrim` cuts that off by timestamp, `levelsLead`: the first
+40 ms after a seek came out up to 4 dB off, because a packet of
+compressed audio is decoded together with the one before it, and ffmpeg
+9 drops the first packet after the seek point whole. A part that ends
+between two of those half seconds is written when it ends. A run ends where it meets a part
 measured already, so nothing is measured twice.
 
 What it has is written every half second, frames first and the json
@@ -609,29 +615,26 @@ two shots that meet from a steady tone and a picture a step brighter on
 every frame, and checks that no frame is lost or shown twice at the switch
 and that the tone neither dips nor jumps there.
 
-Each piece's sound is read from a fifth of a second before the piece,
-`seekLead`, and cut where it was cut before. It is the lead the loudness
-takes before a part it measures, `levelsLead`, one number for both. ffmpeg seeks to the keyframe
-of the picture at or before the point and decodes the sound from there,
-and leaves nothing out ahead of it, though the demuxers of 8.1 know how
-much Opus needs, `seek_preroll`. A decoder that starts cold is not
-settled: Opus needs 80 ms of what came before, RFC 7845 section 4.6, and
-gave about 70% of a steady tone at the start of a piece, and MP3, which
-keeps part of a frame in the frames before it, gave silence for 40 ms.
-Where the keyframe was a frame or less before a piece, as in footage
-where every frame is one, or a camera switch where an encoder put one,
-the piece started quiet. AAC and Vorbis came out right, so a lead for
-every sound costs them nothing, and no codec needs its own case. The
-picture is read as before, from its own input, so each piece is two
-inputs of the same file, and the sound of every piece comes first.
-Renders took as long as before, 8.6 s for a short of six pieces from a
-1080p episode on the cloud machine. `TestEveryPieceIsHeardFromItsFirstMoment`
-in `engine/preroll_test.go` renders two cuts and a camera switch from a
-29.97 fps episode where every frame is a keyframe, with a steady tone in
-Opus in MP4 and in Matroska, and in MP3 where the ffmpeg can make it,
-and checks that every piece is at least 90% of the tone from its first
-moment, after the fade of a cut. Before, the quietest piece was 66% in
-Matroska, 83% in MP4 and silent in MP3.
+The lead of a fifth of a second that each piece's sound is read with,
+`soundLead`, also settles the decoder. ffmpeg seeks to the keyframe of the
+picture at or before the point and decodes the sound from there, and
+leaves nothing out ahead of it, though its demuxers know how much Opus
+needs, `seek_preroll`, in 8.1 and in 9.0 alike. A decoder that starts
+cold is not settled: Opus needs 80 ms of what came before, RFC 7845
+section 4.6, and gave about 70% of a steady tone at the start of a piece,
+and MP3, which keeps part of a frame in the frames before it, gave
+silence for 40 ms. Where the keyframe was a frame or less before a piece,
+as in footage where every frame is one, or at a camera switch where an
+encoder put one, the piece started quiet. Read from a fifth of a second
+earlier, more than twice what Opus needs, every codec is settled where
+the piece starts, and none needs a case of its own.
+`TestEveryPieceIsHeardFromItsFirstMoment` in `engine/preroll_test.go`
+renders two cuts and a camera switch from a 29.97 fps episode where every
+frame is a keyframe, with a steady tone in Opus in MP4 and in Matroska,
+and in MP3 where the ffmpeg can make it, and checks that every piece is
+at least 90% of the tone from its first moment, after the fade of a cut.
+Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
+silent in MP3.
 
 ## The bouncing word
 

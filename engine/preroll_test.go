@@ -12,12 +12,13 @@ import (
 	"testing"
 )
 
-// A render reads each piece of a clip from where the piece starts, and a
-// decoder that starts there is not settled yet. Opus needs 80 ms of the
+// A render once read each piece's sound from where the piece starts, and
+// a decoder that starts there is not settled yet. Opus needs 80 ms of the
 // sound before, RFC 7845 section 4.6, and an episode whose sound was Opus
 // was heard a little quiet at the start of every piece, about 70% of its
 // level for the first 80 ms. MP3 keeps part of a frame in the frames
-// before it, and was silent for the first 40 ms.
+// before it, and was silent for the first 40 ms. The sound is now read a
+// fifth of a second early, soundLead, which this holds.
 
 // TestEveryPieceIsHeardFromItsFirstMoment renders a clip with two cuts and
 // a camera switch from an episode with a steady tone in Opus, in each

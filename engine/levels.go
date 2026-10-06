@@ -333,6 +333,11 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		if err := e.measureFrom(ctx, source, st, start, focus, tell); err != nil {
 			return err
 		}
+		// A part that ended between two ticks is shown when it ends, not
+		// at the first tick of the next one. A short part is read in less
+		// than a tick, and then where the clip timeline looked went unseen
+		// until the measuring had moved on.
+		tell()
 	}
 	if err := writeLevels(logs, stamp, st); err != nil {
 		return err
@@ -350,8 +355,7 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	focus func() (float64, float64), tell func()) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
-	args, lead := audioFrom(source, start)
-	cmd := exec.CommandContext(run, e.FFmpeg, args...)
+	cmd := exec.CommandContext(run, e.FFmpeg, audioFrom(source, start)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -361,13 +365,9 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	if err := cmd.Start(); err != nil {
 		return renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
-	n := start - lead
+	n := start
 	moved := false
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(stdout, 1<<20), func(f float32) bool {
-		if n < start {
-			n++
-			return true
-		}
 		if st.has(n) {
 			return false
 		}
@@ -376,11 +376,7 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 		return true
 	}, func() bool {
 		tell()
-		// Where it is measuring, which is where it starts until the part
-		// thrown away is behind it. Judged by where it still was in that
-		// part, a slow start moved it to where it already was, again and
-		// again.
-		if st.leave(max(n, start), focus) {
+		if st.leave(n, focus) {
 			moved = true
 			return false
 		}
@@ -415,28 +411,33 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 }
 
 // levelsLead is how many frames before where it starts a reading decodes
-// and throws away, seekLead in frames.
-const levelsLead = int(seekLead / FrameSeconds)
+// and throws away, a fifth of a second.
+const levelsLead = 20
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
-// from frame start on, for the loudness and for the transcription alike,
-// and how many frames before start come first, to be thrown away.
+// from frame start on, for the loudness and for the transcription alike.
 //
-// The first few hundredths of a second after a seek come out of the
-// decoder wrong, up to 4 dB off at the join, because a packet of compressed
-// audio is decoded together with the one before it. So it starts a little
-// early and throws that away. The seek goes before the input, so ffmpeg
-// seeks rather than decodes its way there, and it lands on the sample,
-// since ffmpeg trims what it decoded before it. A frame is 10 ms, so two
-// decimals are exact.
-func audioFrom(source string, start int) ([]string, int) {
+// The seek goes before the input, so ffmpeg seeks rather than decodes its
+// way there. Where the first sample lands is not left to the seek: ffmpeg
+// 8.1 kept the part of the first packet after the seek point, 9.0 drops
+// that packet whole, up to 64 ms of 16 kHz AAC, and the samples carry no
+// time of their own on the way out. Their timestamps stay right in both,
+// so the seek goes a fifth of a second early and atrim cuts at the
+// timestamp of start, to the sample. That early part is also where the
+// decoder is wrong, up to 4 dB off at the join, because a packet of
+// compressed audio is decoded together with the one before it. A frame is
+// 10 ms, so two decimals are exact.
+func audioFrom(source string, start int) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
 	lead := min(start, levelsLead)
 	if start > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(float64(start-lead)*FrameSeconds, 'f', 2, 64))
 	}
-	return append(args, "-i", source,
-		"-map", "0:a:0", "-ac", "1", "-ar", itoa(SampleRate), "-f", "f32le", "-"), lead
+	args = append(args, "-i", source, "-map", "0:a:0")
+	if lead > 0 {
+		args = append(args, "-af", "atrim=start="+strconv.FormatFloat(float64(lead)*FrameSeconds, 'f', 2, 64))
+	}
+	return append(args, "-ac", "1", "-ar", itoa(SampleRate), "-f", "f32le", "-")
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
