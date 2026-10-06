@@ -28,24 +28,39 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	if err != nil {
 		return nil, err
 	}
-	o := s.store.Settings().options()
-	cw, _ := engine.CropWindow(info, o.Width, o.Height)
+	cw := s.cropWidth(info)
 	out := []ClipEntry{}
-	for _, summary := range engine.Status(path, s.store.Settings().ASRModel).Plans {
-		view, err := engine.ReadPlan(summary.Path)
-		if err != nil {
-			continue
-		}
-		for _, c := range view.Clips {
-			entry := ClipEntry{ClipView: c, Key: summary.Name + "/" + c.ID, Plan: summary.Path}
-			for _, seg := range c.Segments {
-				entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, info.Width))
-			}
-			out = append(out, entry)
+	for _, summary := range plansOf(path) {
+		for _, c := range summary.View().Clips {
+			out = append(out, entryOf(summary.Path, c, cw, info.Width))
 		}
 	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Start < out[b].Start })
 	return out, nil
+}
+
+// plansOf lists the plans of an episode, each read once. It is what the
+// clip list, the coverage and the edits over every plan need, and all
+// they need: they used to ask engine.Status, which also parses the whole
+// transcript, 71 ms on an episode of four hours, for every click.
+func plansOf(path string) []engine.PlanSummary {
+	return engine.PlanSummaries(engine.LogsDir(path))
+}
+
+// cropWidth is how wide the crop of a short is in the episode's pixels.
+func (s *FrameFairy) cropWidth(info engine.SourceInfo) int {
+	o := s.store.Settings().options()
+	cw, _ := engine.CropWindow(info, o.Width, o.Height)
+	return cw
+}
+
+// entryOf is a clip of the plan at plan as the clip list holds it.
+func entryOf(plan string, c engine.ClipView, cw, width int) ClipEntry {
+	entry := ClipEntry{ClipView: c, Key: filepath.Base(plan) + "/" + c.ID, Plan: plan}
+	for _, seg := range c.Segments {
+		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, width))
+	}
+	return entry
 }
 
 // WindowView is a part of an episode, in seconds. A searched part
@@ -87,7 +102,7 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (
 	if err != nil {
 		return CoverageView{}, err
 	}
-	plans := engine.Status(path, s.store.Settings().ASRModel).Plans
+	plans := plansOf(path)
 	looked := engine.SearchedPlans(plans, info.Duration)
 	searched := make([]engine.Window, 0, len(looked))
 	out := CoverageView{Searched: []WindowView{}, Free: []WindowView{}, Passes: []PassView{}}
@@ -129,7 +144,7 @@ func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to flo
 	}
 	gone := 0
 	err := s.edit(path, func() error {
-		for _, plan := range engine.Status(path, s.store.Settings().ASRModel).Plans {
+		for _, plan := range plansOf(path) {
 			// A plan of this episode, named the way plans are named.
 			// Nothing else is touched, whatever the interface asks for.
 			if !s.store.PlanOf(path, plan.Path) {
@@ -221,14 +236,24 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 // program, so every one of them renders on any machine.
 func (s *FrameFairy) Fonts() []engine.CaptionFont { return engine.CaptionFonts() }
 
+// clipEntry is one clip as it is now, read from its own plan alone. An
+// edit answers with it, and it used to be found in the whole clip list,
+// which read every plan of the episode and its transcript for one clip.
 func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (ClipEntry, error) {
-	clips, err := s.Clips(ctx, path)
+	if !s.store.PlanOf(path, plan) {
+		return ClipEntry{}, errNotInLibrary
+	}
+	info, err := s.probe(ctx, path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	for _, c := range clips {
-		if c.Plan == plan && c.ID == clipID {
-			return c, nil
+	view, err := engine.ReadPlan(plan)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	for _, c := range view.Clips {
+		if c.ID == clipID {
+			return entryOf(plan, c, s.cropWidth(info), info.Width), nil
 		}
 	}
 	return ClipEntry{}, fmt.Errorf("the clip %s is not in this episode's clips any more: %w", clipID, os.ErrNotExist)

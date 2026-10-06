@@ -787,11 +787,17 @@ shortest longer than the longest or no clips at all.
 
 Each camera angle in a clip gets one crop, measured across the whole shot and
 held still, so removing a pause never makes the picture jump. Framing
-decodes only what a clip keeps. Each kept span is searched for camera
-switches on its own, and where the clip leaves the episode and comes back,
-the frame it leaves on is compared with the frame it comes back to, which
-answers whether it comes back to the same camera without decoding what was
-cut out. The decoding is asked of the system's own video decoder,
+decodes only what a clip keeps, and each kept span once. One ffmpeg run per
+span finds its camera switches and hands back small grey frames, one every
+0.4 s from its start and the one a tenth of a second before its end, each
+with its moment, `readSpan`. The faces are looked for on those frames, and
+where the clip leaves the episode and comes back, the frame it leaves on is
+compared with the frame it comes back to, which answers whether it comes
+back to the same camera without decoding what was cut out. These were three
+reads of the same seconds, eleven ffmpeg runs for a clip in three pieces:
+a clip of 24 s from a 1080p video was framed in 18.1 s on the cloud
+machine, and is now in 9.9 s, with the same crops. A part of a shot too
+short to hold one of the frames is read on its own. The decoding is asked of the system's own video decoder,
 VideoToolbox on macOS, and falls back to the processor by itself where
 there is none, which today is every Windows and Linux build. If the system
 decoder refuses a file, the same work is done again on the processor and
