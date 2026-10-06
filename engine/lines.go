@@ -382,6 +382,7 @@ const (
 // before it and the rest moved on to the next one, and once the gap was
 // closed, the room it left pulled the first word of the next caption up.
 func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Caption {
+	said = nearClip(clip, said)
 	all, allWas := clipWords(clip, said)
 	// The words shown, the same words on the episode's clock, and for each
 	// where the words removed straight after it end, on either clock, or
