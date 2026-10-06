@@ -703,7 +703,9 @@ within 4 ms of the moments it shows. Before the fix all four failed: 97
 frames of 142 wrong from the phone, 39 of 86 with frames left out, and the
 20 frames before the picture started in both late files. The frame
 queue's tests hold the same rule on frames at uneven times and after an
-empty edit, in `mp4.test.ts` and `plan.test.ts`.
+empty edit, in `mp4.test.ts` and `plan.test.ts`, and two sequences of
+the walks hold the app to it, a short against the video preview frame by
+frame, see docs/TESTING.md.
 
 ## The bouncing word
 
