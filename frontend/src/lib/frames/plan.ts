@@ -372,7 +372,15 @@ export type Stretch = {
   pieceEnd: number;
 };
 
-export type AudioRun = { id: number; first: number; last: number; stretches: Stretch[] };
+export type AudioRun = {
+  id: number;
+  first: number;
+  last: number;
+  stretches: Stretch[];
+  // Where the sound the decoder last put out for this run ended, in the
+  // track's samples, see decoded.
+  end?: number;
+};
 
 // What the sound decoder is fed. Sound has no key frames, but a decoder
 // needs a little before the first sample it is to put out right, so a run
@@ -487,9 +495,9 @@ export class AudioPlan {
   // the decoder as `got` samples. A decoder that leaves out the start of a
   // packet, the way one may with the first packet after it starts, leaves
   // out its front, so what came out is the end of it.
-  slices(run: AudioRun, j: number, got: number): Slice[] {
+  slices(run: AudioRun, j: number, got: number, at?: number): Slice[] {
     const p = this.packet(j);
-    const at = p.at + Math.max(0, p.n - got);
+    at ??= p.at + Math.max(0, p.n - got);
     const end = at + got;
     const out: Slice[] = [];
     for (const st of run.stretches) {
@@ -499,6 +507,23 @@ export class AudioPlan {
       out.push({ from: a - at, to: b - at, out: st.out + (a - st.from), pieceOut: st.pieceOut, pieceEnd: st.pieceEnd });
     }
     return out;
+  }
+
+  // The slices of packet j as it came out of the decoder, straight after
+  // what came out of it before in the same run. A decoder puts its sound
+  // out as one stream, but a file whose clock ticks coarser than its
+  // samples, 600 times a second the way QuickTime's movies do, says where
+  // a packet starts only to the nearest tick, and a packet placed by that
+  // missed the one before by a sample or more, a gap or an overlap heard
+  // as a click, at most packets. A packet further off than a tick is a
+  // real jump, and goes where its stamp says.
+  decoded(run: AudioRun, j: number, got: number): Slice[] {
+    const p = this.packet(j);
+    let at = p.at + Math.max(0, p.n - got);
+    const tick = Math.ceil(this.rate / this.samples.timescale) + 1;
+    if (run.end !== undefined && Math.abs(at - run.end) <= tick) at = run.end;
+    run.end = at + got;
+    return this.slices(run, j, got, at);
   }
 
   forget(m: number) {

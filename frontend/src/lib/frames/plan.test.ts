@@ -288,6 +288,48 @@ describe("AudioPlan", () => {
     expect(short.out).toBe(full.out + 312);
   });
 
+  test("what the decoder puts out follows on to the sample on a coarse clock", () => {
+    // AAC at 48 kHz, 1024 samples a packet, in a track that counts 600
+    // ticks a second, the way QuickTime writes a movie: each packet starts
+    // on the nearest tick, 1024 samples are 12.8 ticks, and a packet
+    // placed by its tick missed the one before at most packets.
+    const n = 6000;
+    const coarse = track(n, 600, 13, 1);
+    for (let i = 0; i < n; i++) {
+      coarse.pts[i] = Math.round((i * 1024 * 600) / 48000);
+      coarse.duration[i] = Math.round(((i + 1) * 1024 * 600) / 48000) - coarse.pts[i];
+    }
+    const p = new AudioPlan(coarse, 48000, new Program([{ start: 10, end: 20 }], false), 0);
+    p.extend(Infinity);
+    const [run] = p.runs;
+    let placed = 0;
+    let missed = 0;
+    let end = -1;
+    for (let j = run.first; j <= run.last; j++) {
+      const byClock = p.slices(run, j, 1024).at(-1);
+      for (const s of p.decoded(run, j, 1024)) {
+        if (end >= 0) expect(s.out).toBe(end);
+        end = s.out + (s.to - s.from);
+        placed++;
+      }
+      if (byClock && byClock.out + (byClock.to - byClock.from) !== end) missed++;
+    }
+    // The stretch is heard whole, and the clock alone would have missed.
+    expect(end - run.stretches[0].out).toBeGreaterThan(10 * 48000 - 1024);
+    expect(placed).toBeGreaterThan(400);
+    expect(missed).toBeGreaterThan(100);
+  });
+
+  test("a packet further off than a tick goes where its stamp says", () => {
+    const run = { ...plan.runs[0], stretches: plan.runs[0].stretches, end: undefined };
+    let j = 0;
+    while (plan.packet(j).at < 58 * 48000) j++;
+    const [first] = plan.decoded(run, j, 960);
+    // The next one came out as nothing: the one after is a packet on.
+    const [after] = plan.decoded(run, j + 2, 960);
+    expect(after.out).toBe(first.out + 2 * 960);
+  });
+
   test("two pieces closer than the decoder's lead share a run", () => {
     const close = new AudioPlan(opus, 48000, new Program([{ start: 10, end: 11 }, { start: 11.05, end: 12 }], false), 0);
     close.extend(Infinity);

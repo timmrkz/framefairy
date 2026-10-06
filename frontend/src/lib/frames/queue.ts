@@ -1496,7 +1496,7 @@ export class FrameQueue {
       return;
     }
     const plan = this.aplan;
-    const parts = plan.slices(fed.run, fed.j, d.numberOfFrames);
+    const parts = plan.decoded(fed.run, fed.j, d.numberOfFrames);
     if (parts.length) {
       const channels = d.numberOfChannels;
       const rate = this.sampleRate;
