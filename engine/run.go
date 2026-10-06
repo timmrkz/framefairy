@@ -72,8 +72,8 @@ type Options struct {
 	FFmpeg  string
 	FFprobe string
 
-	NoCaptions      bool
-	Clip            []string
+	NoCaptions bool
+	Clip       []string
 	// Out is the folder the shorts go into, as named, `--out` on the
 	// command line. Empty is the episode's own out folder.
 	Out string
@@ -184,8 +184,8 @@ type runner struct {
 	// shared says outDir is the episode's folder inside Options.Shorts,
 	// where a short never takes a name another file has, see shortStem.
 	shared bool
-	source                      SourceInfo
-	rs                          RenderSettings
+	source SourceInfo
+	rs     RenderSettings
 	// window is the part of the episode asked for, nil for all of it, and
 	// span is that part or the whole episode.
 	window *Window
