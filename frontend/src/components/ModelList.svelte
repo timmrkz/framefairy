@@ -58,6 +58,11 @@
     // Rows only, for a card that already holds the list: the models on
     // this machine, opened under the choice of which one finds clips.
     bare = false,
+    // Why no model of the list may be removed now, or empty when one may:
+    // a search is hearing or finding with it. The bin then asks nothing
+    // and onlocked shows the no, where the list stands.
+    locked = "",
+    onlocked = undefined,
   }: {
     models: ModelRow[];
     kind: "model" | "llm";
@@ -67,6 +72,8 @@
     onremove?: (name: string) => Promise<void>;
     removeSays?: string;
     bare?: boolean;
+    locked?: string;
+    onlocked?: () => void;
   } = $props();
 
 
@@ -199,11 +206,11 @@
              the way the trash can on a clip is. -->
         <button
           class="quiet danger bin"
-          title="Remove it from this machine, to give its room back"
+          title={locked || "Remove it from this machine, to give its room back"}
           aria-label="Remove {model.title}"
           aria-haspopup="dialog"
           disabled={!!running}
-          onclick={() => (removing = model)}
+          onclick={() => (locked ? onlocked?.() : (removing = model))}
         >
           <Icon name="trash" />
         </button>

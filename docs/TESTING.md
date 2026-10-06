@@ -330,7 +330,14 @@ first word so the next video's clip has the same name, `add namesake`, a
 video of the bridge's episode's file name from another folder. Then
 `apart`, the clip on screen with a short of its own, the kept short the
 same file and still its clip's.
-For a clip of two shots: `add cameras`, a video filmed by two cameras,
+For the settings: `settings` opens them from the sidebar and `episode`
+the episode again, `pick model` opens the list of what finds clips and
+picks another model if it opens, `remove model` presses the bin of the
+language model or of the speech model, and `speech` slows the speech
+model down. Then `refused`, the card shook and no list and no box opened
+and the settings name the models they named, `asks`, the box asking
+whether to remove opened, `changed`, the settings name another model,
+and `hearing`, a search still hears. For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
 which puts the playhead in its middle with a click on the clip timeline
@@ -345,6 +352,21 @@ nothing.
 
 Each sequence starts from the bridge's episode as it was first searched,
 in a page of its own.
+
+`a model a search finds clips with is not changed or removed under it`
+is Tim's test of the settings while a search runs, done the way he did
+it. It starts a search the model holds, opens the settings, picks another
+model, and presses the bins of the language model and of the speech
+model. Each time the card has to shake, no list or box may open and the
+settings have to name what they named. Then it cancels the search and
+asks the same again, where the box now asks and the pick now takes. `a
+model is not changed or removed while a search still hears` does it while
+the first search of a video just added is still hearing. Against the
+interface before the change both fail at the first pick: the list opens
+and nothing shakes. For the settings to stand as they do on a machine
+that has searched, the bridge counts a language model as chosen and
+installed, and the setup check counts both models and llama-server as
+there, since the stand-ins hear and find the clips.
 
 `a cut or an edge put back keeps the camera switch` is Tim's test of
 #116 done the way he would do it. It adds a video of 30 seconds whose

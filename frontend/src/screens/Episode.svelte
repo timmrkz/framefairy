@@ -24,6 +24,7 @@
     type CaptionSwitch,
     type ClipEntry,
     type Gesture,
+    type Job,
     type CoverageView,
     type KeptWindow,
     type EpisodeStatus,
@@ -62,6 +63,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { asking, keysElsewhere, typing } from "../lib/keys";
   import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import RangeWindow from "../components/RangeWindow.svelte";
@@ -598,13 +600,9 @@
     if (!stopped || !search) return;
     from = stopped.from;
     to = stopped.to;
+    const id = search.id;
     begin();
-    try {
-      await api.continueJob(search.id);
-    } catch (err) {
-      problem = errorText(err);
-      starting = false;
-    }
+    await asked(() => api.continueJob(id));
   }
   // The clips on their way, from every job of the episode alike: the
   // search's, from the moment the model names each, and the ones made with
@@ -1207,10 +1205,7 @@
     if (!out && event.key !== "i" && event.key !== "I") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-    if (document.querySelector("dialog[open]")) return;
+    if (keysElsewhere()) return;
     event.preventDefault();
     void makeClip(out);
   }
@@ -1219,10 +1214,7 @@
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-    if (document.querySelector("dialog[open]")) return;
+    if (keysElsewhere()) return;
     if (!current) return;
     event.preventDefault();
     toggleThumbnail();
@@ -1748,15 +1740,29 @@
   // heard that far, all of it on the Go side, see docs/JOBS.md.
   async function findClips(replan: boolean) {
     begin();
-    try {
-      await api.search(path, {
+    await asked(() =>
+      api.search(path, {
         From: whole ? 0 : from,
         To: whole ? 0 : to,
         Count: count,
         Min: min,
         Max: max,
         Replan: replan,
-      });
+      }),
+    );
+  }
+
+  // New and Continue alike. The Go side answers with the search, and one
+  // it would not start, while the app closes or the episode is being
+  // removed, comes back failed already. It never runs, so nothing would
+  // ever end the start the click showed: the head stood on Cancel, greyed
+  // out, over Finding clips. Its row says why instead, with Continue, the
+  // way any search that failed does.
+  async function asked(ask: () => Promise<Job>) {
+    try {
+      const job = await ask();
+      jobs.apply(job);
+      if (job.state !== "running" && job.state !== "queued") starting = false;
     } catch (err) {
       problem = errorText(err);
       starting = false;
@@ -1782,11 +1788,12 @@
   // and nothing changes where nobody is looking.
   let undoing = false;
   async function undo(what: "undo" | "redo") {
-    const on = document.activeElement as HTMLElement | null;
-    if (on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA" || on.isContentEditable)) {
+    if (typing()) {
       document.execCommand(what);
       return;
     }
+    // Nothing changes behind the box asking something.
+    if (asking()) return;
     // One at a time. A key held down would otherwise ask for the same step
     // twice before the first answer is back.
     if (undoing) return;
@@ -2029,13 +2036,10 @@
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (!event.shiftKey) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-    const on = document.activeElement as HTMLElement | null;
-    const tag = on?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
     // A box asking something, and an edge being nudged, take the arrows
     // for themselves.
-    if (on?.getAttribute("role") === "slider") return;
-    if (document.querySelector("dialog[open]")) return;
+    if (keysElsewhere()) return;
+    if (document.activeElement?.getAttribute("role") === "slider") return;
     const list = shown.filter((c) => !(c.key in removed));
     if (!list.length) return;
     event.preventDefault();

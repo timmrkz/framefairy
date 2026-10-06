@@ -1072,6 +1072,15 @@ export const Call = {
       // New. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number; Count?: number };
+        // The Go side refuses a search it cannot start, while the app
+        // closes or the episode is being removed: the job comes back
+        // failed, and its event goes out like any other.
+        if (location.search.includes("closing")) {
+          const list = ((window as any).__refused ??= []) as any[];
+          const job = { id: `refused-${list.length + 1}`, episode: "/eps/ep.mp4", kind: "search", label: "Find clips", state: "failed", error: "the app is closing", from: req.From, to: req.To, count: req.Count, queued: "", lane: "finding" };
+          list.push(job);
+          return Promise.resolve(job);
+        }
         const made = askSearch(req.From, req.To, req.Count);
         return Promise.resolve(searchJob(made));
       }
@@ -1751,7 +1760,7 @@ export const Events = {
     // called off stays in the interface's hands.
     const told = new Map<string, string>();
     const searchTimer = setInterval(() => {
-      for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob)] as any[]) {
+      for (const job of [...fakeSearches().map(searchJob), ...hands().map(handJob), ...((window as any).__refused ?? [])] as any[]) {
         const s = { id: job.id };
         const key = `${job.state}`;
         if (job.state !== "running" && told.get(s.id) === key) continue;
