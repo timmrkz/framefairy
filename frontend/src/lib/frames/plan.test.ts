@@ -224,6 +224,51 @@ describe("VideoPlan", () => {
   });
 });
 
+// Frames at times of their own, in ticks: a phone's, a little early or
+// late, or a screen recorder's, left out where nothing moved, or a picture
+// that starts after the sound. Every frame is a key frame.
+function framesAt(timescale: number, begins: number[]): Samples {
+  const n = begins.length;
+  const ticks = Float64Array.from(begins);
+  return {
+    count: n,
+    timescale,
+    offset: Float64Array.from({ length: n }, (_, i) => i * 1000),
+    size: new Uint32Array(n).fill(1000),
+    pts: ticks,
+    duration: Float64Array.from(ticks, (t, i) => (i + 1 < n ? ticks[i + 1] - t : 20)),
+    key: new Uint8Array(n).fill(1),
+    order: Uint32Array.from({ length: n }, (_, i) => i),
+    rank: Uint32Array.from({ length: n }, (_, i) => i),
+  };
+}
+
+describe("VideoPlan on frames at uneven times", () => {
+  // In ticks of 1/600 s: the picture starts at 0.25 s, then frames of 20,
+  // 25, 15 and 20 ticks, one held for 200 and two more.
+  const uneven = framesAt(600, [150, 170, 195, 210, 230, 430, 450, 470]);
+  const begins = (r: number) => uneven.pts[r] / 600;
+
+  test("draws the frame that holds each moment, each where it begins, and the first before the picture starts", () => {
+    const p = new VideoPlan(uneven, 1 / 30, new Program([{ start: 0.1, end: 0.34 }, { start: 0.5, end: 0.76 }], false), 0);
+    p.extend(Infinity);
+    const drawn: number[] = [];
+    for (let k = 0; k <= p.lastK; k++) drawn.push(p.need(k)!.rank);
+    // The first piece: the picture's first frame from the start of the
+    // piece, before the picture has begun, then the frames that begin in
+    // it. The second piece starts inside the held frame.
+    expect(drawn).toEqual([0, 1, 2, 4, 5, 6]);
+    expect(p.at(0)).toBeCloseTo(0);
+    expect(p.at(1)).toBeCloseTo(begins(1) - 0.1);
+    expect(p.at(2)).toBeCloseTo(begins(2) - 0.1);
+    // The second piece starts at 0.24 on the program with the held frame,
+    // and its next frame is drawn where it begins, 0.2167 s later.
+    expect(p.at(3)).toBeCloseTo(0.24);
+    expect(p.at(4)).toBeCloseTo(0.24 + begins(5) - 0.5);
+    expect(p.at(5)).toBeCloseTo(0.24 + begins(6) - 0.5);
+  });
+});
+
 describe("stillFeed", () => {
   test("decodes from the key frame before to the frame that holds the moment", () => {
     expect(stillFeed(video, 63.05)).toEqual({ key: 1500, last: 1576, rank: 1576 });

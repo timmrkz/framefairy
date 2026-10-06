@@ -507,6 +507,33 @@ export function shortFrames(path) {
   return { frames, modulo: 2 ** FILMED_BITS };
 }
 
+// The number of the filmed episode's frame on the video preview's canvas,
+// read from its bands the way shortFrames reads them from a short, or -1
+// while there is no picture. It is put on the page as window.__filmed, so
+// a walk can wait for a frame to come.
+export async function filmedOnScreen(page) {
+  await page.evaluate(([bits, band]) => {
+    if (window.__filmed) return;
+    window.__filmed = () => {
+      const c = document.querySelector(".screen canvas");
+      if (!c || !c.width || !c.height) return -1;
+      const g = c.getContext("2d");
+      const x = Math.floor(c.width / 4);
+      const w = Math.max(1, Math.floor(c.width / 2));
+      let n = 0;
+      for (let b = 0; b < bits; b++) {
+        const y = Math.floor((((b + 0.5) * band) / 180) * c.height);
+        const row = g.getImageData(x, y, w, 1).data;
+        let sum = 0;
+        for (let i = 0; i < row.length; i += 4) sum += row[i];
+        n = n * 2 + (sum / (row.length / 4) > 110 ? 1 : 0);
+      }
+      return n;
+    };
+  }, [FILMED_BITS, BAND]);
+  return page.evaluate(() => window.__filmed());
+}
+
 // The sound of a rendered short, one channel at 48 kHz, sample by sample.
 export function shortSound(path) {
   const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-ac", "1", "-ar", "48000",
