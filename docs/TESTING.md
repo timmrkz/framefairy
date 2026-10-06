@@ -75,6 +75,10 @@ light for one and dark for nought, with the grey below them. Light and
 dark are only 100 apart, so the bands change no more of the picture than
 a camera switch would. Its sound is a steady tone. `shortFrames` and
 `shortSound` in `walks/bridge.mjs` read a short of it back from disk.
+With a timing its frames keep their numbers but not their times: `uneven`
+is a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
+`late` a picture that starts after its sound, by an edit list, which
+ffprobe reads as 0.233 s after it.
 
 A video filmed by two cameras, which `/pick` makes with a switch, has the
 same strip, and below it each camera looks at a chequerboard on its own
@@ -114,7 +118,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, and with `&switch=S` by two cameras that switch S seconds in, see below |
+| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times and with `&timing=late` its picture starts a quarter of a second after its sound, and with `&switch=S` by two cameras that switch S seconds in, see below |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
@@ -448,6 +452,26 @@ with 567 frames where the pieces hold 565, the first piece running a
 frame into the part cut out, 169 frames more the wrong frame, the sound
 71 ms longer than the picture, and 30 to 40 ms of quiet at each cut
 where the fade is 15. With 2.125 it passes, in about 8 seconds.
+
+Two sequences hold the render to the video preview where the frames do
+not keep to their rate, plan row 2.130: "a short of a phone's uneven
+frames shows what the video preview shows" and "a short of a picture
+that starts after its sound shows what the video preview shows". Each
+adds a video of 40 seconds made that way with Add, cuts its clip twice
+with a double-click, the second with its start dragged to before the
+picture begins, renders it with Render and reads the short back. Its
+rate has to be 30 for the phone's frames, their average of 29.75
+rounded, and 29.97 for the late picture, its own. Then, with the clip
+timeline pinched in to a tenth, the playhead is put with a click on the
+moments the short's frames stand for, the first and last three of every
+piece and every fifth between, and the frame on the video preview's
+canvas, read from its bands, has to be the short's frame. The playhead
+goes after the moment and before the episode's next frame begins, by the
+times ffprobe reads from the file, so the preview shows the frame that
+holds the moment. 114 and 121 frames are looked at, all of them the
+same, in three runs out of three. Against the render before 2.130 the
+phone's short is made at 50 frames a second and the late picture's
+holds 565 frames where its pieces last 564.
 
 Ported to the frame queue, 2.123, the playback walk found within two
 steps that a clip played from a playhead inside a frame stopped at its
