@@ -87,8 +87,16 @@ export async function episodeOn(page) {
     () => document.querySelector("aside button.episode.current .name")?.textContent ?? null,
   );
   if (!name) return null;
-  const library = await ask(page, "Library");
-  return library.find((e) => e.name === name)?.source ?? null;
+  const named = (await ask(page, "Library")).filter((e) => e.name === name).map((e) => e.source);
+  if (named.length < 2) return named[0] ?? null;
+  // Two episodes of one file name, from two folders, look the same in the
+  // sidebar, so they are told apart by the one whose clips the app asked
+  // for last: the one on screen, once its clip list has come, which a
+  // walk waits for before it asks.
+  return page.evaluate(
+    (paths) => [...window.__calls].reverse().find((c) => c.name === "Clips" && paths.includes(c.args[0]))?.args[0] ?? null,
+    named,
+  );
 }
 
 // Which clip is on screen: the card the clip list marks as the current

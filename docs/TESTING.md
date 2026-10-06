@@ -118,7 +118,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times and with `&timing=late` its picture starts a quarter of a second after its sound, and with `&switch=S` by two cameras that switch S seconds in, see below |
+| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times and with `&timing=late` its picture starts a quarter of a second after its sound, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
@@ -320,9 +320,16 @@ frame rate, press `render` and wait for the short, and `short`, the short
 read back from disk holding exactly the frames of the clip's pieces, each
 the right frame of the episode by its bands, with its sound as long as
 its picture and quiet at each cut for no longer than the render's fade,
-and `rendered`, the clip saying its short is in the folder the settings
-name for shorts, which the bridge sets, with the file there, the app
+and `rendered`, the clip saying its short is in its episode's folder
+inside the folder the settings name for shorts, which the bridge sets,
+with the file there, the app
 serving it, Render saying Render again and Show in folder there.
+For shorts of two episodes: `keep` the clip on screen and its short,
+`words again`, which makes the speech stand-in say its sentences from the
+first word so the next video's clip has the same name, `add namesake`, a
+video of the bridge's episode's file name from another folder. Then
+`apart`, the clip on screen with a short of its own, the kept short the
+same file and still its clip's.
 For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
@@ -368,6 +375,16 @@ presses Render, asks `rendered`, closes and opens the app, and asks it
 again. Against main's engine it fails at the first `rendered`: the clip
 says it has no short, because only the episode's own `out/` was looked
 in. Until then `short` and `shots` found the short in that folder by hand.
+
+`two episodes never overwrite each other's shorts` renders the bridge's
+episode, adds a video heard with the same words, so its clip has the same
+name, and renders that. Against main's engine it fails at `apart`: both
+episodes' shorts are the same file in the folder for shorts, so the
+second wrote over the first. `two episodes of one file name number their
+shorts` does the same with a video of the same file name, whose short
+has to be called as the first with ` 2` after it, in the same folder.
+See 2.133 in
+[GUI-PLAN.md](GUI-PLAN.md).
 
 ### Where they run
 

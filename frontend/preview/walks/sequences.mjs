@@ -54,6 +54,9 @@
 //                      frame, after saying it takes the file, the way
 //                      WebKit's does with HEVC in 10-bit colour, and opens
 //                      the episode again
+//   ["add namesake", seconds]
+//                      adds a new video of so many seconds with the file
+//                      name of the bridge's episode, from another folder
 //   ["keep", label]    remembers the clip on screen and its short on disk
 //   ["words again"]    the speech stand-in says its sentences again from
 //                      the first word, so a video added next is heard as
@@ -95,6 +98,9 @@
 //                      of the same name as the one kept, has a short of its
 //                      own, the short kept is still the same file, and the
 //                      clip kept still says it is its short
+//   ["apart", label, number]
+//                      the same, with the short on screen called as the
+//                      one kept with this after it, " 2"
 //   ["as previewed", rate]
 //                      the short Render wrote, read back from disk, has
 //                      this frame rate and as many frames as the clip's
@@ -107,17 +113,17 @@
 //                      the same, for an episode whose picture starts after
 //                      its sound: the clip's first piece starts before
 //                      this moment, inside the time before the picture
-//   ["rendered"]       the clip says its short is in the folder the
-//                      settings name for shorts, the file is there and the
-//                      app serves it, Render says Render again and Show in
-//                      folder is there
+//   ["rendered"]       the clip says its short is in its episode's folder
+//                      inside the folder the settings name for shorts, the
+//                      file is there and the app serves it, Render says
+//                      Render again and Show in folder is there
 //
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen } from "./bridge.mjs";
@@ -395,7 +401,24 @@ export const sequences = [
     // wrote over the first episode's short, and the first episode's clip
     // went on saying it was rendered, over the other episode's short.
     name: "two episodes never overwrite each other's shorts",
-    steps: [["render"], ["keep", "first"], ["words again"], ["add", 120], ["wait for", "New"], ["cards", 1], ["render"], ["apart", "first"]],
+    steps: [["render"], ["keep", "first"], ["words again"], ["add", 120], ["wait for", "New"], ["cards", 1], ["render"], ["apart", "first"], ["rendered"]],
+  },
+  {
+    // Plan row 2.133: two episodes of the same file name share their
+    // folder in the folder for shorts, so the second short of the same
+    // name gets a number, the way Finder gives one.
+    name: "two episodes of one file name number their shorts",
+    steps: [
+      ["render"],
+      ["keep", "first"],
+      ["words again"],
+      ["add namesake", 120],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["render"],
+      ["apart", "first", " 2"],
+      ["rendered"],
+    ],
   },
   {
     name: "removing a word in the middle of a caption leaves the caption whole",
@@ -976,7 +999,10 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "rendered": {
         const on = await chosen(page);
         const short = await shortOf(page, on);
-        const folder = realpathSync((await ask(page, "GetSettings")).outputDir);
+        // The episode's own folder in the folder for shorts, named after
+        // its file, see EpisodeName in engine/run.go.
+        const shorts = realpathSync((await ask(page, "GetSettings")).outputDir);
+        const folder = join(shorts, basename(on.path, extname(on.path)));
         const render = page.locator("button.primary.render");
         const again = await page
           .waitForFunction((r) => document.querySelector(r)?.textContent.trim() === "Render again", "button.primary.render", {
@@ -1003,23 +1029,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!kept[arg].file) wrong = `the clip has no short to keep${short ? `, nothing is at ${short}` : ""}`;
         break;
       }
+      case "add namesake":
+        await control(url, `/pick?seconds=${arg}&namesake=1`);
+        await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+        await watch.step("add", s);
+        break;
       case "words again":
         await control(url, "/speech?ms=0&from=0");
         break;
       case "apart": {
-        const was = kept[arg];
+        const [label, number] = [arg].flat();
+        const was = kept[label];
         const on = await chosen(page);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
         const short = await shortOf(page, on);
         const now = existsSync(was.short) ? statSync(was.short) : null;
         const theirs = await shortOf(page, was);
-        if (on.path === was.path) wrong = `the clip on screen is of the episode kept at "${arg}"`;
+        if (on.path === was.path) wrong = `the clip on screen is of the episode kept at "${label}"`;
         else if (entry?.basename !== was.name) wrong = `the clips are named ${was.name} and ${entry?.basename}, which never meet in one folder`;
         else if (!short) wrong = "the clip on screen says it has no short";
         else if (short === was.short) wrong = `both episodes' shorts are ${short}`;
         else if (!now || now.ino !== was.file.ino || now.mtimeMs !== was.file.mtimeMs) {
           wrong = `the second render wrote over the first episode's short at ${was.short}`;
-        } else if (theirs !== was.short) wrong = `the first episode's clip says its short is ${theirs || "nowhere"}, not ${was.short}`;
+        } else if (theirs !== was.short) {
+          wrong = `the first episode's clip says its short is ${theirs || "nowhere"}, not ${was.short}`;
+        } else if (number && basename(short) !== `${was.name}${number}.mp4`) {
+          wrong = `the second short is called ${basename(short)}, not ${was.name}${number}.mp4`;
+        }
         break;
       }
       case "as previewed": {
