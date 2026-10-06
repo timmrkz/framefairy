@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // fakeRecognizer hears a word every 0.6 seconds, so tests need no speech
@@ -59,9 +61,7 @@ func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 
 func testEpisode(t *testing.T, seconds string) string {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	made, err := episodes.make(seconds)
 	if err != nil {
 		t.Fatal(err)

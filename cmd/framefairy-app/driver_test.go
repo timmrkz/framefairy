@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/ffmpegtest"
 )
 
 // desk is the app as a person uses it, over one library.
@@ -50,9 +51,7 @@ type desk struct {
 // open starts the app over a new, empty library.
 func open(t *testing.T) *desk {
 	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg is not installed")
-	}
+	ffmpegtest.Need(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
