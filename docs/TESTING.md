@@ -525,9 +525,9 @@ What it needs, and nothing else needs:
   which app opens `framefairy://`. It is built with the build tag
   `outside`, which adds a probe, see below. Every other build leaves the
   probe out, so the app a customer gets has none of it.
-- The local dispenser, `framefairy-dispenser dev`, running beside it. The
-  test buys at its checkout and reads the keys out of the letter on its
-  dev page, the letter a buyer gets.
+- The local dispenser, `framefairy-dispenser dev`, running beside it. A
+  sequence buys at its checkout and reads the keys out of the letter on
+  its dev page, the letter a buyer gets.
 - A keychain of its own, unlocked and made the default, because Unlock
   writes the key to the keychain, and a locked one puts a box on screen
   that nobody answers. The job makes it, and the test refuses to run
@@ -536,38 +536,64 @@ What it needs, and nothing else needs:
 The probe listens on 127.0.0.1:47290, for the test only. It says what the
 app has: the links it was handed, whether its window is in front, and what
 the settings show, read out of the page itself. It presses a button the
-way a click does, and it quits the app. Which app is in front comes from
-`lsappinfo`, which needs no permission a runner does not have. The app's
-log goes to `~/Library/Logs/FrameFairy-outside.log` as well, and the test
-shows it when a check fails.
+way a click does, found by its words, and it quits the app. Which app is
+in front comes from `lsappinfo`, which needs no permission a runner does
+not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
+as well, and the test shows it when a check fails.
 
-The runner is made a Mac that has been set up, a speech model's
-`tokens.txt` in place and `chosen` in the settings, because a new copy of
-the app holds a link until its setup is done. The job stops after 30
-minutes, so an app that hangs does not hold a Mac for GitHub's six hours.
+The job stops after 30 minutes, so an app that hangs does not hold a Mac
+for GitHub's six hours.
 
 `make outside` builds the app as `make` does, then once more with the
 probe into `.build/outside`, so `bin/` never has it, and builds the
 dispenser beside it. It refuses to run anywhere but on a Mac with `CI`
 set.
 
+### The sequences
+
+What is checked is written in one place, `internal/outside/sequences.go`,
+the same way the walks' cases are in `sequences.mjs`: named sequences of
+steps, each a verb and its words, the actions and what has to come of
+them alike. The verbs are explained at the top of that file. The first
+sequence reads:
+
+```go
+{"set up"},
+{"buy", "2"},
+{"quit"},
+{"open link", "1"},
+{"front", "Frame Fairy"},
+{"field", "1"},
+{"line", "From the link. Unlock takes it."},
+{"click", "Unlock"},
+{"saved", "yes"},
+...
+```
+
 A link is handed to macOS with `open`, which is what a browser or a mail
-app does once a link is clicked, and once the browser's own question,
-whether to open Frame Fairy, is answered. The steps:
+app does once a link is clicked and its own question, whether to open
+Frame Fairy, is answered. A check waits until it holds, 20 seconds at
+most, so a step says what has to be true and never how long to wait.
 
-1. Buy two seats at the checkout and wait for the letter.
-2. With the app closed, hand it the first key's link. The app starts, is
-   in front, shows the settings with the key in the Licence field and
-   says Unlock takes it.
-3. Press Unlock. The row says the key is licensed to the buyer, a test
-   key, with a check mark.
-4. Put Calculator in front and hand over the second key's link. The app
-   comes back to the front with the second key in the field.
-5. Hand over a link with more in it than one key. Nothing changes.
+Three files, each with one job:
 
-Each step that passes leaves a notice on the check, with what the
-settings said, so the pull request shows what was checked without
-anybody opening the job's log.
+- `sequences.go`, the sequences and the verbs. It builds everywhere, and
+  `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
+  misspelt, a word too few or a key nobody bought fails on Linux in
+  seconds, not on the Mac at the end of a CI run.
+- `run_test.go`, how each verb is done on the Mac, the same for every
+  sequence, and `TestEveryVerbIsDone`. Only `make outside` builds it.
+- `cmd/framefairy-app/probe_outside.go`, what the app can be asked.
+
+A new case is a new sequence. A new verb is a line in the list at the
+top of `sequences.go`, its words in `verbs`, and how it is done in `done`
+in `run_test.go`. `go test -tags outside -run 'TestSequences/<part of a
+name>'` runs one.
+
+A sequence that passes leaves one notice on the check with every step it
+took, and one that fails leaves an error naming the step, as written, and
+what the app said last. Either is on the pull request, so nobody has to
+open the job's log.
 
 What it cannot check: the browser's own question before it hands a link
 on, which belongs to the browser, the mail app, and how any of it looks.

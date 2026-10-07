@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -53,7 +52,6 @@ const probePage = "/__outside/page"
 
 // PageView is what the settings show, read out of the page itself.
 type PageView struct {
-	Seq int `json:"seq"`
 	// Settings is whether the settings are on screen: the Licence field is.
 	Settings bool `json:"settings"`
 	// Key is what the Licence field holds.
@@ -85,10 +83,10 @@ type probe struct {
 	mu      sync.Mutex
 	links   int
 	seq     int
-	waiting map[int]chan PageView
+	waiting map[int]chan json.RawMessage
 }
 
-var theProbe = &probe{waiting: map[int]chan PageView{}}
+var theProbe = &probe{waiting: map[int]chan json.RawMessage{}}
 
 // probeLink counts a link the app was handed.
 func probeLink() {
@@ -97,8 +95,8 @@ func probeLink() {
 	theProbe.mu.Unlock()
 }
 
-// probeMiddleware takes what the page sends about itself and passes
-// everything else on.
+// probeMiddleware takes the page's answers to what the probe asked it,
+// and passes everything else on.
 func probeMiddleware(next application.Middleware) application.Middleware {
 	return func(h http.Handler) http.Handler {
 		inner := next(h)
@@ -107,17 +105,20 @@ func probeMiddleware(next application.Middleware) application.Middleware {
 				inner.ServeHTTP(w, r)
 				return
 			}
-			var view PageView
-			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&view); err != nil {
+			var got struct {
+				Seq    int             `json:"seq"`
+				Answer json.RawMessage `json:"answer"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&got); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			theProbe.mu.Lock()
-			ch := theProbe.waiting[view.Seq]
-			delete(theProbe.waiting, view.Seq)
+			ch := theProbe.waiting[got.Seq]
+			delete(theProbe.waiting, got.Seq)
 			theProbe.mu.Unlock()
 			if ch != nil {
-				ch <- view
+				ch <- got.Answer
 			}
 			w.WriteHeader(http.StatusNoContent)
 		})
@@ -150,50 +151,57 @@ func (p *probe) state(w http.ResponseWriter, _ *http.Request) {
 	if p.svc.window != nil {
 		s.Focused = p.svc.window.IsFocused()
 	}
-	view, err := p.readPage()
+	answer, err := p.ask(pageScript)
+	if err == nil {
+		err = json.Unmarshal(answer, &s.Page)
+	}
 	if err != nil {
 		s.Problem = err.Error()
 	}
-	s.Page = view
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s)
 }
 
-// readPage asks the page what it shows, and waits a moment for the
-// answer, which comes back through probeMiddleware.
-func (p *probe) readPage() (PageView, error) {
+// ask runs a script in the page and waits a moment for its answer, which
+// comes back through probeMiddleware. The script is a function of the
+// page that gives back what it found. It is passed the answer's number
+// and the route to send it to.
+func (p *probe) ask(script string) (json.RawMessage, error) {
 	if p.svc.window == nil {
-		return PageView{}, errors.New("no window yet")
+		return nil, errors.New("no window yet")
 	}
-	ch := make(chan PageView, 1)
+	ch := make(chan json.RawMessage, 1)
 	p.mu.Lock()
 	p.seq++
 	seq := p.seq
 	p.waiting[seq] = ch
 	p.mu.Unlock()
-	p.svc.window.ExecJS(fmt.Sprintf(pageScript, seq, probePage))
+	p.svc.window.ExecJS(fmt.Sprintf(`((seq, route) => {
+  let answer = null;
+  try { answer = (%s)(); } catch (e) { answer = { problem: String(e) }; }
+  fetch(route, { method: "POST", body: JSON.stringify({ seq, answer }) });
+})(%d, %q);`, script, seq, probePage))
 	select {
-	case v := <-ch:
-		return v, nil
+	case a := <-ch:
+		return a, nil
 	case <-time.After(2 * time.Second):
 		p.mu.Lock()
 		delete(p.waiting, seq)
 		p.mu.Unlock()
-		return PageView{}, errors.New("the page did not answer")
+		return nil, errors.New("the page did not answer")
 	}
 }
 
 // pageScript reads the Licence row, found by its field's label: the
 // settings have another field of the same kind, for the API keys.
-const pageScript = `(() => {
+const pageScript = `() => {
   const field = document.querySelector('input[aria-label="Licence key"]');
   const card = field ? field.closest(".card") : null;
   const pick = (s) => (card ? card.querySelector(s) : null);
   const line = pick(".words .line");
   const mark = pick(".mark");
   const button = pick("button.unlock");
-  const view = {
-    seq: %d,
+  return {
     settings: !!field,
     key: field ? field.value : "",
     line: line ? line.textContent.trim() : "",
@@ -201,18 +209,40 @@ const pageScript = `(() => {
     unlock: button ? button.textContent.trim() : "",
     unlockOff: button ? button.disabled : true,
   };
-  fetch(%q, { method: "POST", body: JSON.stringify(view) });
-})();`
+}`
 
-// click presses the button a selector names, the way a click does.
+// clickScript presses the button on screen whose words are the ones
+// given, the way a click does, and says whether there was one to press.
+const clickScript = `() => {
+  const words = %s;
+  const button = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent.trim() === words && b.offsetParent !== null && !b.disabled,
+  );
+  if (button) button.click();
+  return { clicked: !!button };
+}`
+
+// click presses a button, named by its words: POST /click?button=Unlock.
+// It answers 404 when no button on screen says that and can be pressed.
 func (p *probe) click(w http.ResponseWriter, r *http.Request) {
-	sel := r.URL.Query().Get("selector")
-	if sel == "" || strings.ContainsAny(sel, "\n\r") || p.svc.window == nil {
-		http.Error(w, "a selector, and a window to press it in", http.StatusBadRequest)
+	words := r.URL.Query().Get("button")
+	if words == "" {
+		http.Error(w, "say which button, by its words", http.StatusBadRequest)
 		return
 	}
-	quoted, _ := json.Marshal(sel)
-	p.svc.window.ExecJS(fmt.Sprintf(`document.querySelector(%s)?.click();`, quoted))
+	quoted, _ := json.Marshal(words)
+	answer, err := p.ask(fmt.Sprintf(clickScript, quoted))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	var got struct {
+		Clicked bool `json:"clicked"`
+	}
+	if json.Unmarshal(answer, &got) != nil || !got.Clicked {
+		http.Error(w, "no button on screen says "+words, http.StatusNotFound)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
