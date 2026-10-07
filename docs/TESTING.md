@@ -324,12 +324,18 @@ and `rendered`, the clip saying its short is in its episode's folder
 inside the folder the settings name for shorts, which the bridge sets,
 with the file there, the app
 serving it, Render saying Render again and Show in folder there.
-For shorts of two episodes: `keep` the clip on screen and its short,
-`words again`, which makes the speech stand-in say its sentences from the
-first word so the next video's clip has the same name, `add namesake`, a
-video of the bridge's episode's file name from another folder. Then
-`apart`, the clip on screen with a short of its own, the kept short the
-same file and still its clip's.
+For shorts: `thumbnail`, which presses T and waits for the clip to have
+one more thumbnail, `keep` the clip on screen with its short, its
+pictures and the shorts in its folder, `words again`, which makes the
+speech stand-in say its sentences from the first word so the next
+video's clip has the same name, and `add namesake`, a video of the
+bridge's episode's file name from another folder. Then `apart`, the
+clip on screen with a short of its own, the kept short the same file and
+still its clip's, and its pictures all there and untouched, `in place`,
+the clip's short rendered again at the path kept with no number, written
+again, and no other short in its folder, and `pictured`, the short's
+pictures beside it in its episode's folder, one for each thumbnail of
+the clip and no more.
 For the settings: `settings` opens them from the sidebar and `episode`
 the episode again, `pick model` opens the list of what finds clips and
 picks another model if it opens, `remove model` presses the bin of the
@@ -405,8 +411,14 @@ episodes' shorts are the same file in the folder for shorts, so the
 second wrote over the first. `two episodes of one file name number their
 shorts` does the same with a video of the same file name, whose short
 has to be called as the first with ` 2` after it, in the same folder.
-See 2.133 in
-[GUI-PLAN.md](GUI-PLAN.md).
+Its first clip has two thumbnails and the second none, so a render of
+the second that took the pictures by the clip's name would take the
+first's away. `render again writes the short over in place, with its
+pictures beside it` gives the clip two thumbnails, renders, renders
+again and asks `in place` and `pictured`. With a render again that picks
+a new number it fails at `in place`, and with pictures named and cleared
+by the clip's name rather than the short's it fails the namesake
+sequence at `apart`. See 2.133 in [GUI-PLAN.md](GUI-PLAN.md).
 
 ### Where they run
 

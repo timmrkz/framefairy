@@ -70,7 +70,11 @@
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
-//   ["keep", label]    remembers the clip on screen and its short on disk
+//   ["thumbnail"]      presses T, which makes the frame under the playhead
+//                      a thumbnail of the clip, and waits for the clip to
+//                      have one more
+//   ["keep", label]    remembers the clip on screen, its short and its
+//                      pictures on disk, and the shorts in its folder
 //   ["words again"]    the speech stand-in says its sentences again from
 //                      the first word, so a video added next is heard as
 //                      the bridge's episode was and its clip has the same
@@ -113,7 +117,15 @@
 //                      clip kept still says it is its short
 //   ["apart", label, number]
 //                      the same, with the short on screen called as the
-//                      one kept with this after it, " 2"
+//                      one kept with this after it, " 2". With both, the
+//                      pictures kept are all still there, untouched
+//   ["in place", label]
+//                      the clip's short is the one kept, under the same
+//                      name with no number, written again since, and no
+//                      other short appeared in its folder
+//   ["pictured"]       the short's pictures, one for each thumbnail of the
+//                      clip, lie beside it in its episode's folder, and no
+//                      picture more
 //   ["as previewed", rate]
 //                      the short Render wrote, read back from disk, has
 //                      this frame rate and as many frames as the clip's
@@ -145,7 +157,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
@@ -424,15 +436,35 @@ export const sequences = [
     // wrote over the first episode's short, and the first episode's clip
     // went on saying it was rendered, over the other episode's short.
     name: "two episodes never overwrite each other's shorts",
-    steps: [["render"], ["keep", "first"], ["words again"], ["add", 120], ["wait for", "New"], ["cards", 1], ["render"], ["apart", "first"], ["rendered"]],
+    steps: [
+      ["thumbnail"],
+      ["render"],
+      ["pictured"],
+      ["keep", "first"],
+      ["words again"],
+      ["add", 120],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["render"],
+      ["apart", "first"],
+      ["rendered"],
+    ],
   },
   {
     // Plan row 2.133: two episodes of the same file name share their
     // folder in the folder for shorts, so the second short of the same
     // name gets a number, the way Finder gives one.
+    // The first clip has two pictures and the second none, so a render of
+    // the second that went by the clip's name would take them away.
     name: "two episodes of one file name number their shorts",
     steps: [
+      ["thumbnail"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Shift+ArrowRight"],
+      ["thumbnail"],
       ["render"],
+      ["pictured"],
       ["keep", "first"],
       ["words again"],
       ["add namesake", 120],
@@ -441,6 +473,27 @@ export const sequences = [
       ["render"],
       ["apart", "first", " 2"],
       ["rendered"],
+    ],
+  },
+  {
+    // Plan row 2.133: Render again writes over the clip's own short, in
+    // its place and under its name, with its pictures beside it, and
+    // nothing else in the folder.
+    name: "render again writes the short over in place, with its pictures beside it",
+    steps: [
+      ["thumbnail"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Shift+ArrowRight"],
+      ["thumbnail"],
+      ["render"],
+      ["rendered"],
+      ["pictured"],
+      ["keep", "first"],
+      ["render"],
+      ["in place", "first"],
+      ["rendered"],
+      ["pictured"],
     ],
   },
   {
@@ -639,6 +692,20 @@ async function asPreviewed(page, rate, before) {
   if (looked < 20) problems.push(`only ${looked} frames could be looked at, the playhead missed ${missed}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
+}
+
+// The shorts in a folder, by name, finished ones only.
+const shortsIn = (dir) => readdirSync(dir).filter((n) => n.endsWith(".mp4") && !n.endsWith(".part.mp4")).sort();
+
+// The pictures beside a short, <name>-1.jpg and on, in their order.
+function picturesOf(short) {
+  const stem = basename(short, ".mp4");
+  const mine = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)\\.jpg$`);
+  return readdirSync(dirname(short))
+    .map((n) => [n, mine.exec(n)])
+    .filter(([, m]) => m)
+    .sort((a, b) => Number(a[1][1]) - Number(b[1][1]))
+    .map(([n]) => join(dirname(short), n));
 }
 
 // Where the clip's short is, as the clip says, or empty when it has none.
@@ -1182,12 +1249,57 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
         break;
       }
+      case "thumbnail": {
+        const on = await chosen(page);
+        const count = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.thumbnails.length ?? 0;
+        const before = await count();
+        await page.keyboard.press("t");
+        let now = before;
+        for (let i = 0; i < 50 && now === before; i++) {
+          await page.waitForTimeout(100);
+          now = await count();
+        }
+        if (now !== before + 1) wrong = `T left the clip with ${now} thumbnails, not ${before + 1}`;
+        await watch.step("press", s);
+        break;
+      }
       case "keep": {
         const on = await chosen(page);
         const short = await shortOf(page, on);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-        kept[arg] = { ...on, name: entry?.basename, short, file: short && existsSync(short) ? statSync(short) : null };
-        if (!kept[arg].file) wrong = `the clip has no short to keep${short ? `, nothing is at ${short}` : ""}`;
+        const file = short && existsSync(short) ? statSync(short) : null;
+        kept[arg] = { ...on, name: entry?.basename, short, file };
+        if (!file) {
+          wrong = `the clip has no short to keep${short ? `, nothing is at ${short}` : ""}`;
+          break;
+        }
+        kept[arg].shorts = shortsIn(dirname(short));
+        kept[arg].pictures = picturesOf(short).map((p) => ({ path: p, file: statSync(p) }));
+        break;
+      }
+      case "pictured": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const short = await shortOf(page, on);
+        const want = entry?.thumbnails.length ?? 0;
+        const got = short ? picturesOf(short) : [];
+        const named = got.map((p) => basename(p)).join(", ");
+        if (!short) wrong = "the clip says it has no short";
+        else if (want === 0) wrong = "the clip has no thumbnails, so there is nothing to look for";
+        else if (got.length !== want || got.some((p, i) => basename(p) !== `${basename(short, ".mp4")}-${i + 1}.jpg`)) {
+          wrong = `beside ${short} lie ${named || "no pictures"}, not the clip's ${want}`;
+        }
+        break;
+      }
+      case "in place": {
+        const was = kept[arg];
+        const on = await chosen(page);
+        const short = await shortOf(page, on);
+        const now = short && existsSync(short) ? statSync(short) : null;
+        const added = short ? shortsIn(dirname(short)).filter((n) => !was.shorts.includes(n)) : [];
+        if (short !== was.short) wrong = `rendered again, the short is at ${short || "nowhere"}, not ${was.short}`;
+        else if (!now || now.mtimeMs === was.file.mtimeMs) wrong = `rendered again, ${short} was not written again`;
+        else if (added.length) wrong = `rendered again, ${added.join(", ")} appeared beside ${basename(short)}`;
         break;
       }
       case "add namesake":
@@ -1216,6 +1328,12 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           wrong = `the first episode's clip says its short is ${theirs || "nowhere"}, not ${was.short}`;
         } else if (number && basename(short) !== `${was.name}${number}.mp4`) {
           wrong = `the second short is called ${basename(short)}, not ${was.name}${number}.mp4`;
+        } else {
+          const gone = was.pictures.filter((p) => {
+            const now = existsSync(p.path) ? statSync(p.path) : null;
+            return !now || now.ino !== p.file.ino || now.mtimeMs !== p.file.mtimeMs;
+          });
+          if (gone.length) wrong = `the second render took or wrote over the first episode's pictures ${gone.map((p) => basename(p.path)).join(", ")}`;
         }
         break;
       }
