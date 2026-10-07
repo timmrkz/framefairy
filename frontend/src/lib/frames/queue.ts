@@ -909,9 +909,33 @@ export class FrameQueue {
   // playhead is, on the new pieces, and a cue made for the old one is made
   // again.
   setProgram(pieces: Piece[] | null, loop: boolean) {
+    if (this.relooped(pieces, loop)) return;
     if (!this.want(pieces, loop)) return;
     if (this.state === "playing" || this.state === "starting") this.start(this.at);
     else if (this.state === "cued" || this.vplan) this.seek(this.at);
+  }
+
+  // Only the loop switched, with the same pieces, while a play starts or
+  // plays: the play goes on as it is, because the loop says nothing until
+  // the end of the clip. Started again for it, the play threw away what
+  // was decoded and the picture and the sound stopped for a moment. Only
+  // in the last moments of a time through, once what comes after its end
+  // is worked out already, is it started again.
+  private relooped(pieces: Piece[] | null, loop: boolean): boolean {
+    if (this.state !== "playing" && this.state !== "starting") return false;
+    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
+    if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
+    if (this.vplan && this.built) {
+      if (loop) this.built.loopOn();
+      else this.built.loopOff(this.reached);
+      if (!this.vplan.relooped() || (this.aplan && !this.aplan.relooped())) return false;
+    } else {
+      // Not worked out yet: the play starting builds it from what is wanted.
+      this.built = null;
+    }
+    this.wanted = { pieces: copy, loop };
+    this.wantedKey = JSON.stringify([copy, loop]);
+    return true;
   }
 
   // Takes a program as the one play plays, and says whether it is another

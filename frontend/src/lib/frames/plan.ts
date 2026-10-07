@@ -51,11 +51,13 @@ export class Program {
   // The length of one time through.
   readonly length: number;
   private offsets: number[] = [];
+  // How many times through it plays, Infinity while it loops. A loop
+  // switched while it plays changes this and nothing else, see loopOn and
+  // loopOff.
+  private times: number;
 
-  constructor(
-    pieces: Piece[],
-    readonly loop: boolean,
-  ) {
+  constructor(pieces: Piece[], loop: boolean) {
+    this.times = loop ? Infinity : 1;
     // Pieces in order, and none that is nothing.
     this.pieces = pieces.filter((p) => p.end > p.start).sort((a, b) => a.start - b.start);
     let at = 0;
@@ -66,11 +68,26 @@ export class Program {
     this.length = at;
   }
 
+  get loop(): boolean {
+    return this.times === Infinity;
+  }
+
+  // The loop switched on while it plays: it goes on and on from here.
+  loopOn() {
+    this.times = Infinity;
+  }
+
+  // The loop switched off while it plays, at a position on the program: it
+  // ends at the end of the time through that position is in.
+  loopOff(pos: number) {
+    this.times = this.length > 0 ? Math.floor(Math.max(pos, 0) / this.length) + 1 : 1;
+  }
+
   // The v-th piece played, or null past the end of a program that does not
   // loop.
   visit(v: number): Visit | null {
     const n = this.pieces.length;
-    if (!n || v < 0 || (!this.loop && v >= n)) return null;
+    if (!n || v < 0 || v >= this.times * n) return null;
     const cycle = Math.floor(v / n);
     const piece = v % n;
     const p = this.pieces[piece];
@@ -82,8 +99,8 @@ export class Program {
   locate(pos: number): { v: number; at: number } | null {
     const n = this.pieces.length;
     if (!n || this.length <= 0) return null;
-    if (!this.loop && pos >= this.length) return null;
-    const cycle = this.loop ? Math.floor(Math.max(pos, 0) / this.length) : 0;
+    if (pos >= this.times * this.length) return null;
+    const cycle = Math.floor(Math.max(pos, 0) / this.length);
     const within = Math.max(pos - cycle * this.length, 0);
     let piece = 0;
     while (piece + 1 < n && this.offsets[piece + 1] <= within) piece++;
@@ -228,6 +245,16 @@ export class VideoPlan {
 
   // Works out the visits that start before a position on the program.
   // Returns false once there are no more.
+  // The program's loop was switched while this plays. Says whether what
+  // was worked out so far still holds: switched on, a plan that had come
+  // to the end goes on, and switched off, it holds as long as no visit
+  // past the new end was worked out yet.
+  relooped(): boolean {
+    if (this.nextVisit > 0 && !this.program.visit(this.nextVisit - 1)) return false;
+    this.done = false;
+    return true;
+  }
+
   extend(until: number): boolean {
     while (!this.done) {
       const visit = this.program.visit(this.nextVisit);
@@ -450,6 +477,16 @@ export class AudioPlan {
       else hi = mid - 1;
     }
     return lo;
+  }
+
+  // The program's loop was switched while this plays. Says whether what
+  // was worked out so far still holds: switched on, a plan that had come
+  // to the end goes on, and switched off, it holds as long as no visit
+  // past the new end was worked out yet.
+  relooped(): boolean {
+    if (this.nextVisit > 0 && !this.program.visit(this.nextVisit - 1)) return false;
+    this.done = false;
+    return true;
   }
 
   extend(until: number): boolean {

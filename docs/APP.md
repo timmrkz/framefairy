@@ -295,7 +295,7 @@ The queue reads MP4 and MOV, H.264, HEVC and VP9 for the picture, as far
 as the system decodes them, and AAC, HE-AAC, Opus and plain sound for the
 sound.
 
-The sound is decoded on the Go side, by ffmpeg, plan row 2.148: the same
+The sound is decoded on the Go side, by ffmpeg, plan row 2.152: the same
 sound the render and the transcript are made of, whatever decoder the
 webview has. Tim heard picture and sound out of step in a file from
 DaVinci Resolve, which keeps the encoder's 44 ms of silence at the front
@@ -1116,7 +1116,11 @@ bubble scrolled by those eight pixels.
 - **One row under the clip up close**, so the range picker and the waveform
   stand together with nothing between them: play, loop and the crosshair
   that goes to the playhead, with **L** for loop the way **T** is the
-  thumbnail's, as the three marks anyone knows, then the
+  thumbnail's, as the three marks anyone knows. Loop switched on or off
+  while the clip plays changes nothing that plays until the clip's end:
+  the play goes on as it was. It was started again from the playhead,
+  and the picture and the sound stopped for a tenth of a second at every
+  press. Then the
   title of the selected clip, why it was chosen and its numbers, and on the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
