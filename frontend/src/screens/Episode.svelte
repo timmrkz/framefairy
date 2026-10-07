@@ -2815,14 +2815,9 @@
     /* The height left in the app: everything but the bar at the top, the
        space above the workspace and the edge at the foot. */
     --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge) - var(--above));
-    /* And the width: everything but the rail, the space after it and the
-       edge on the right. The rail is part of the app, so what parts it
-       from the settings is the space between two things, --gap, and only
-       the side that meets the app's own border is an edge. */
-    --stage-w: calc(100dvw - var(--rail) - var(--gap) - var(--edge));
-    /* The middle column, the rest of the width once the two columns
-       beside it, --sides from app.css, have theirs. */
-    --mid-w: calc(var(--stage-w) - var(--sides) - 2 * var(--gap));
+    /* The middle column, the rest of the app's width once the two sides,
+       --spans from app.css, have theirs, with a space either side of it. */
+    --mid-w: calc(100dvw - var(--spans) - 2 * var(--gap));
     /* Everything down the height that is neither the picture nor a track:
        four spaces, one under the picture, two around the line that parts
        the workspace from the clip up close, one over the row at the foot,
@@ -2875,11 +2870,15 @@
          rounded down took a pixel from the picture on one step in a few
          hundred and gave it to the clip timeline. So it is rounded to the
          nearest pixel, and only the height the shape of the picture
-         gives, which is a fraction, is rounded down. */
+         gives, which is a fraction, is rounded down. A size worked out by
+         multiplying or dividing comes out a hair under a whole pixel just
+         as often, 539.99999 for a middle column of 960, so a hundredth of
+         a pixel is added before it is rounded down: far more than the
+         arithmetic is ever off by, and far less than anything seen. */
       --pic-h: max(
         200px,
         min(
-          round(down, var(--widest), 1px),
+          round(down, calc(var(--widest) + 0.01px), 1px),
           round(calc(var(--space) - var(--down) - 1.5 * var(--wave-min)), 1px)
         )
       );
@@ -2899,12 +2898,12 @@
       --pic-w: min(
         var(--mid-w),
         max(
-          round(down, calc(var(--pic-h) * var(--ar)), 1px),
+          round(down, calc(var(--pic-h) * var(--ar) + 0.01px), 1px),
           calc(
             var(--mid-w) -
               max(
-                round(down, var(--widest), 1px) - var(--pic-h),
-                var(--pic-h) - round(down, var(--widest), 1px)
+                round(down, calc(var(--widest) + 0.01px), 1px) - var(--pic-h),
+                var(--pic-h) - round(down, calc(var(--widest) + 0.01px), 1px)
               ) *
               100000
           )
@@ -2958,7 +2957,7 @@
      none of them. */
   .stage {
     display: grid;
-    grid-template-columns: var(--side-w) 1fr calc(var(--sides) - var(--side-w));
+    grid-template-columns: var(--side-w) 1fr var(--clips-w);
     gap: var(--gap);
     align-items: stretch;
     /* Exactly the picture, the space under it and the range picker. The

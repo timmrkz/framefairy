@@ -98,28 +98,33 @@
   /* The sidebar when it is closed, which is the column the workspace keeps
      clear for it. */
   --rail: 44px;
-  /* The two columns beside the picture in the workspace, the settings and
-     the clips: together two fifths of the width the workspace has beside
-     the rail and never under 560, from the app's width alone, and each
-     half of that, the settings column the half rounded down and the clips
-     the rest, so the two are equal or a pixel apart. The open sidebar is
-     the rail and the settings column, so it covers that column and
-     nothing else.
+  /* The settings column at its smallest, where its names and its fields
+     still fit whole. */
+  --settings-w: 204px;
+  /* The two columns beside the picture, the settings and the clips, are
+     measured from the app's own edges, so the picture stands in the middle
+     of the app: the settings with the rail in front of them on the left,
+     the clips with the edge after them on the right. Each side is a fifth
+     of the app's width, so both grow as the app grows and give the picture
+     the room as it shrinks, and never so little that the settings are
+     under their smallest. The open sidebar is the left side, the rail and
+     the settings column, so it covers that column and nothing else.
 
-     The pair is rounded once and then split, rather than each side
-     rounded on its own: two sides of a fifth each, rounded down, lost a
-     pixel each every fifth step of a drag and gave the middle column two,
-     so the picture shrank a pixel four times and grew two.
-
-     They were what the picture left, so an app made shorter, with a
-     narrower picture, made them wider, and the clip list, at least 280
-     where the settings were at least 204, was wider than the settings by
-     up to 68 pixels. And splitting what was left in two put them on a
-     half pixel every other step, so the settings column went 212, 213,
-     212 as the app was dragged and every field in it shook. Rounded down
-     to a whole pixel where the browser can. */
-  --sides: max(560px, calc((100dvw - var(--rail) - 3 * var(--gap) - var(--edge)) * 2 / 5));
-  --side-w: calc(var(--sides) / 2);
+     The two sides are rounded once, together, and then split, the left the
+     half rounded down and the right the rest, so they are equal or a
+     pixel apart. Each side rounded on its own lost a pixel every fifth
+     step of a drag and gave the middle column two, so the picture shrank
+     a pixel four times and grew two. And the columns were once what the
+     picture left: a shorter app, with a narrower picture, made them wider,
+     and split in two they stood on a half pixel every other step, so the
+     settings column went 212, 213, 212 as the app was dragged and every
+     field in it shook. Then they were the same width as each other, 280
+     at least, which made no room for the rail and squeezed the picture on
+     a small app. */
+  --spans: max(calc(2 * (var(--rail) + var(--gap) + var(--settings-w))), calc(100dvw * 2 / 5));
+  --span-l: calc(var(--spans) / 2);
+  --side-w: calc(var(--span-l) - var(--rail) - var(--gap));
+  --clips-w: calc(var(--spans) - var(--span-l) - var(--edge));
   /* One space between two things, everywhere: the columns of the
      workspace, the video preview and the range picker under it, a row and
      the next. A different number needs a reason, and inside a control is
@@ -158,11 +163,14 @@
   }
 }
 
-/* The columns beside the picture on a whole pixel, see --side-w. */
+/* The columns beside the picture on a whole pixel, see --spans. */
 @supports (width: round(down, 3px, 2px)) {
   :root {
-    --sides: max(560px, round(down, calc((100dvw - var(--rail) - 3 * var(--gap) - var(--edge)) * 2 / 5), 1px));
-    --side-w: round(down, calc(var(--sides) / 2), 1px);
+    --spans: max(
+      calc(2 * (var(--rail) + var(--gap) + var(--settings-w))),
+      round(down, calc(100dvw * 2 / 5 + 0.01px), 1px)
+    );
+    --span-l: round(down, calc(var(--spans) / 2), 1px);
   }
 }
 

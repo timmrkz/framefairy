@@ -105,12 +105,12 @@
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
 //   ["resize"]         drags the app's height and then its width a pixel at
-//                      a time, and on every step every part of the
+//                      a time, down to the app's smallest, and on every step every part of the
 //                      workspace moves only one way the whole drag, stands
 //                      on a whole pixel, and meets the app's edges, and the
-//                      two columns beside the picture are the same width,
-//                      or a pixel apart, and stand still while only the
-//                      height changes
+//                      two sides beside the picture, measured from the
+//                      app's edges, are the same width, or a pixel apart,
+//                      and stand still while only the height changes
 //   ["short", cuts]    the clip has at least so many cuts, none of them on
 //                      a frame that starts on a whole millisecond, and the
 //                      short Render wrote, read back from disk, holds
@@ -566,7 +566,7 @@ export const sequences = [
     // the app's edge, then the settings fields shaking: a height rounded
     // in steps of three left the picture the rest, and the columns beside
     // it took what the picture left, on a half pixel every other step.
-    name: "the app dragged a pixel at a time moves every part one way, the side columns equal and set by the width",
+    name: "the app dragged a pixel at a time moves every part one way, the sides equal and set by the width",
     steps: [["resize"]],
   },
 ];
@@ -597,8 +597,9 @@ const workspaceParts = (page) =>
 // a time, by its height and then by its width, or null.
 async function resizeProblem(page) {
   const sweeps = [
-    { by: "height", sizes: Array.from({ length: 301 }, (_, i) => [1500, 1000 - i]) },
-    { by: "width", sizes: Array.from({ length: 401 }, (_, i) => [1700 - i, 1000]) },
+    // Down to the app's smallest, 960 by 640, see main.go.
+    { by: "height", sizes: Array.from({ length: 361 }, (_, i) => [1500, 1000 - i]) },
+    { by: "width", sizes: Array.from({ length: 741 }, (_, i) => [1700 - i, 1000]) },
   ];
   const sideColumns = await page.evaluate(() => {
     const s = document.querySelector(".stage");
@@ -610,9 +611,15 @@ async function resizeProblem(page) {
     for (const [width, height] of sizes) {
       await page.setViewportSize({ width, height });
       const parts = await workspaceParts(page);
-      const columns = await page.evaluate(() => getComputedStyle(document.querySelector(".stage")).gridTemplateColumns);
-      const [left, , right] = columns.split(" ").map(parseFloat);
-      if (Math.abs(left - right) > 1) return `at ${width} by ${height} the columns beside the picture are ${left} and ${right} wide`;
+      // The two sides measured from the app's own edges, the rail and a
+      // space in front of the settings and the edge after the clips, so
+      // the picture stands in the middle of the app.
+      const [left, right] = await page.evaluate(() => {
+        const [l, , r] = getComputedStyle(document.querySelector(".stage")).gridTemplateColumns.split(" ").map(parseFloat);
+        const token = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
+        return [token("--rail") + token("--gap") + l, r + token("--edge")];
+      });
+      if (Math.abs(left - right) > 1) return `at ${width} by ${height} the sides beside the picture are ${left} and ${right} wide from the app's edges`;
       for (const [k, b] of Object.entries(parts)) {
         if (k === "app") continue;
         for (const [m, v] of Object.entries(b)) {
@@ -627,7 +634,7 @@ async function resizeProblem(page) {
     for (const step of seen) {
       if (step.edge !== first.edge) return `at ${step.width} by ${step.height} the clips end ${step.edge} pixels from the app's right, not ${first.edge}`;
       if (step.foot !== first.foot) return `at ${step.width} by ${step.height} the workspace ends ${step.foot} pixels from the app's foot, not ${first.foot}`;
-      if (by === "height" && step.left !== first.left) return `the columns beside the picture went from ${first.left} to ${step.left} wide while only the height changed`;
+      if (by === "height" && step.left !== first.left) return `the sides beside the picture went from ${first.left} to ${step.left} wide while only the height changed`;
     }
     for (const k of Object.keys(first.parts)) {
       if (k === "app") continue;

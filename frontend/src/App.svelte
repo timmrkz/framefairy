@@ -784,7 +784,7 @@
   /* The rail and the settings column of the workspace, so the open
      sidebar covers that column and nothing else. */
   aside.open {
-    width: calc(var(--rail) + var(--side-w) + 2 * var(--gap));
+    width: calc(var(--span-l) + var(--gap));
     box-shadow:
       inset -1px 0 var(--line),
       8px 0 24px rgba(0, 0, 0, 0.45);

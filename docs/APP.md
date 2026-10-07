@@ -466,15 +466,24 @@ the list does, the one already chosen included, so the crosshair does not do it
 as well: a control that went to the clip with one chosen and to the playhead
 without could not be relied on for either.
 
-The settings and the clip list beside the picture are the same width,
-two fifths of the width beside the rail between them and never under 280
-each, from the app's width alone: a taller or shorter app moves neither,
-and a wider one widens both alike. They were what the picture left, so
-a shorter app, with a narrower picture, made them wider, and the clip
-list, at least 280 where the settings were at least 204, was up to 68
-pixels wider than the settings. The middle column takes the rest of the
-width. The open sidebar is the rail and the settings column, so it
-covers that column and nothing else.
+The two sides beside the picture are measured from the app's own edges,
+so the picture stands in the middle of the app: on the left the rail, a
+space and the settings, on the right the clips and the edge. Each side is
+a fifth of the app's width, from the width alone, so a taller or shorter
+app moves neither, a wider one widens both and a narrower one gives the
+picture the room, and the settings never go under 204, where their names
+and fields still fit whole. So the clip list is 32 pixels wider than the
+settings, the rail and a space less the edge, and on an app of 960 the
+settings are 204, the picture 416 and the clips 236. The two sides are
+rounded once together and then split, so they are equal or a pixel apart
+and the middle column only ever moves one way. The open sidebar is the
+left side, so it covers the settings column and nothing else.
+
+On the way here the sides were once what the picture left, so a shorter
+app, with a narrower picture, made them wider, unequal, and on a half
+pixel every other step, so the settings fields shook. Then they were the
+same width as each other and 280 at least, which made no room for the
+rail and squeezed the picture on a small app to 296.
 
 The video preview fills the middle column: a black viewer as wide as the
 column, with the picture in it as big as the room allows in the shape of
