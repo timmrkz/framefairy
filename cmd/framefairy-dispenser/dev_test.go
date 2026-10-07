@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
@@ -14,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"framefairy/licence/dispenser"
 	"framefairy/licence/paddle"
 )
 
@@ -24,6 +28,29 @@ type world struct {
 	d      *dev
 	base   string
 	client *http.Client
+
+	mu     sync.Mutex
+	nonces map[string]string // the nonce each sale's checkout page made
+}
+
+// nonce is one as the checkout page makes it.
+func nonce() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// checkout is the checkout page paying, with the nonce it passes as
+// custom data. It gives the answer, the sale's reference and the nonce.
+func checkout(client *http.Client, base, email string, seats int) (*http.Response, string, string, error) {
+	n := nonce()
+	resp, err := client.PostForm(base+"/shop/buy", url.Values{"email": {email}, "seats": {itoa(seats)}, "thanks": {n}})
+	if err != nil {
+		return nil, "", "", err
+	}
+	resp.Body.Close()
+	ref, _ := strings.CutPrefix(resp.Header.Get("Location"), "/thanks?txn=")
+	return resp, ref, n, nil
 }
 
 func newWorld(t *testing.T, batch int) *world {
@@ -72,16 +99,14 @@ func (w *world) press(action string, form url.Values) answer {
 
 func (w *world) buy(email string, seats int) string {
 	w.t.Helper()
-	resp, err := w.client.PostForm(w.base+"/shop/buy", url.Values{"email": {email}, "seats": {itoa(seats)}})
+	resp, ref, n, err := checkout(w.client, w.base, email, seats)
 	if err != nil {
 		w.t.Fatal(err)
 	}
-	resp.Body.Close()
-	loc := resp.Header.Get("Location")
-	ref, ok := strings.CutPrefix(loc, "/thanks?txn=")
-	if resp.StatusCode != http.StatusSeeOther || !ok {
-		w.t.Fatalf("checkout answered %d to %q", resp.StatusCode, loc)
+	if resp.StatusCode != http.StatusSeeOther || ref == "" {
+		w.t.Fatalf("checkout answered %d to %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
+	w.remember(ref, n)
 	w.d.shop.Deliver(context.Background())
 	return ref
 }
@@ -117,8 +142,36 @@ func (w *world) get(path string) (int, map[string]any) {
 	return resp.StatusCode, body
 }
 
+func (w *world) remember(ref, nonce string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.nonces == nil {
+		w.nonces = map[string]string{}
+	}
+	w.nonces[ref] = nonce
+}
+
+// thanks is the thank-you page in the tab that paid for ref.
 func (w *world) thanks(ref string) (int, []string) {
-	code, body := w.get("/v1/thanks/" + ref)
+	w.mu.Lock()
+	n := w.nonces[ref]
+	w.mu.Unlock()
+	return w.thanksWith(ref, n)
+}
+
+// thanksWith asks for the keys of ref with any nonce.
+func (w *world) thanksWith(ref, nonce string) (int, []string) {
+	w.t.Helper()
+	b, _ := json.Marshal(map[string]string{"nonce": nonce})
+	resp, err := w.client.Post(w.base+"/v1/thanks/"+ref, "application/json", bytes.NewReader(b))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	raw, _ := io.ReadAll(resp.Body)
+	_ = json.Unmarshal(raw, &body)
+	code := resp.StatusCode
 	var keys []string
 	for _, k := range asList(body["keys"]) {
 		keys = append(keys, k.(string))
@@ -391,9 +444,20 @@ func TestWhenThingsFail(t *testing.T) {
 func TestThanksWindowAndLostKeys(t *testing.T) {
 	w := newWorld(t, 10)
 	ref := w.buy("jo@example.com", 1)
-	w.press("clock", url.Values{"by": {"25h"}})
+	if code, keys := w.thanks(ref); code != http.StatusOK || len(keys) != 1 {
+		t.Fatalf("the tab that paid: %d %v", code, keys)
+	}
+	// The thank-you link opened anywhere else: the dev page's own link, a
+	// receipt, a support mail.
+	if code, keys := w.thanksWith(ref, nonce()); code != http.StatusAccepted || keys != nil {
+		t.Fatalf("another browser with the reference: %d %v", code, keys)
+	}
+	if code, _ := w.get("/v1/thanks/" + ref); code == http.StatusOK {
+		t.Fatalf("the reference alone: %d", code)
+	}
+	w.press("clock", url.Values{"by": {"1h"}})
 	if code, _ := w.thanks(ref); code != http.StatusGone {
-		t.Fatalf("thank-you page after a day: %d", code)
+		t.Fatalf("thank-you page after an hour: %d", code)
 	}
 	lost := func(email string) int {
 		req, _ := http.NewRequest(http.MethodPost, w.base+"/v1/lost", strings.NewReader(`{"email":"`+email+`"}`))
@@ -504,6 +568,29 @@ func TestEveryButton(t *testing.T) {
 	w.audit()
 }
 
+// The checkout page and the thank-you page agree with the dispenser on
+// the nonce: made at random in the browser, kept in the tab, passed under
+// the name the dispenser reads, and sent in a body, never in the address.
+func TestPagesCarryTheNonce(t *testing.T) {
+	w := newWorld(t, 10)
+	shop, thanks := w.page("/shop"), w.page("/thanks?txn=txn_1")
+	for _, want := range []string{
+		`name="` + dispenser.ThanksField + `"`,
+		"crypto.getRandomValues(b)",
+		"new Uint8Array(" + itoa(dispenser.NonceLen/2) + ")",
+		`sessionStorage.setItem("thanks", n)`,
+	} {
+		if !strings.Contains(shop, want) {
+			t.Errorf("the checkout page has no %s", want)
+		}
+	}
+	for _, want := range []string{`sessionStorage.getItem("thanks")`, `method: "POST"`, "body: JSON.stringify({nonce: nonce})"} {
+		if !strings.Contains(thanks, want) {
+			t.Errorf("the thank-you page has no %s", want)
+		}
+	}
+}
+
 // Buyers, Paddle, the signer, the scheduled runs and someone at the
 // dev page, all at once.
 func TestAllAtOnce(t *testing.T) {
@@ -513,13 +600,12 @@ func TestAllAtOnce(t *testing.T) {
 	for i := range 4 {
 		wg.Go(func() {
 			for j := range 6 {
-				resp, err := w.client.PostForm(w.base+"/shop/buy", url.Values{"email": {"p" + itoa(i) + "@example.com"}, "seats": {itoa(1 + j%3)}})
+				_, ref, n, err := checkout(w.client, w.base, "p"+itoa(i)+"@example.com", 1+j%3)
 				if err != nil {
 					t.Error(err)
 					return
 				}
-				resp.Body.Close()
-				ref, _ := strings.CutPrefix(resp.Header.Get("Location"), "/thanks?txn=")
+				w.remember(ref, n)
 				refs <- ref
 				_, _ = w.thanks(ref)
 			}
@@ -581,15 +667,13 @@ func TestTheFirstBuyerFindsKeys(t *testing.T) {
 	<-printed
 	base := "http://" + ln.Addr().String()
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.PostForm(base+"/shop/buy", url.Values{"email": {"first@example.com"}, "seats": {"3"}})
+	_, ref, n, err := checkout(client, base, "first@example.com", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	ref, _ := strings.CutPrefix(resp.Header.Get("Location"), "/thanks?txn=")
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		resp, err := client.Get(base + "/v1/thanks/" + ref)
+		resp, err := client.Post(base+"/v1/thanks/"+ref, "application/json", strings.NewReader(`{"nonce":"`+n+`"}`))
 		if err != nil {
 			t.Fatal(err)
 		}
