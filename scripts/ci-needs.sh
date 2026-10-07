@@ -5,6 +5,8 @@
 #   sh scripts/ci-needs.sh go         # the Go tests and the fuzzing
 #   sh scripts/ci-needs.sh interface  # the type check and the interface tests
 #   sh scripts/ci-needs.sh build      # building the programs and the interface
+#   sh scripts/ci-needs.sh walks      # the interface against the Go side
+#   sh scripts/ci-needs.sh outside    # the app on a Mac, opened from outside
 #
 # It writes "run=true" or "run=false" on standard output, in the shape a
 # GitHub Actions step output takes, and says on standard error why.
@@ -15,7 +17,7 @@
 # losing the waiting.
 set -eu
 
-kind=${1:?say what to decide about: go, interface, build or walks}
+kind=${1:?say what to decide about: go, interface, build, walks or outside}
 
 say() { echo "$*" >&2; }
 
@@ -114,6 +116,14 @@ build)
 walks)
 	# The interface driven against the Go side, see docs/TESTING.md, so
 	# either side changing moves them.
+	if [ "$go" -gt 0 ] || [ "$frontend" -gt 0 ]; then
+		answer true "the interface or the Go side changed"
+	fi
+	answer false "only docs changed"
+	;;
+outside)
+	# The app as a whole, opened by macOS, see From outside the app in
+	# docs/TESTING.md: what it does when a link arrives is on both sides.
 	if [ "$go" -gt 0 ] || [ "$frontend" -gt 0 ]; then
 		answer true "the interface or the Go side changed"
 	fi

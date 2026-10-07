@@ -116,7 +116,7 @@ func main() {
 		Services:    []application.Service{application.NewService(svc)},
 		Assets: application.AssetOptions{
 			Handler:    interfaceHandler(),
-			Middleware: mediaMiddleware(st),
+			Middleware: probeMiddleware(mediaMiddleware(st)),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
@@ -129,6 +129,7 @@ func main() {
 	// A framefairy:// link, from a browser, a mail or any other app, when
 	// the app is started by it and when it is already running.
 	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
+		probeLink()
 		svc.openedWith(e.Context().URL())
 	})
 	svc.updates = newUpdating(app.Updater, st, svc.jobs.busy, func(u UpdateState) {
@@ -189,6 +190,9 @@ func main() {
 		},
 	})
 	svc.chrome = watchChrome(app, svc.window)
+	// Only in the build the checks from outside the app use, see
+	// probe_outside.go.
+	startProbe(svc)
 	svc.window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
 		leave.closing()
 	})
