@@ -185,7 +185,7 @@ func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) 
 
 func cleanStaged(t *testing.T, c *updating) {
 	t.Cleanup(func() {
-		if p := c.u.DownloadedPath(); p != "" {
+		if p := c.staged(); p != "" {
 			_ = os.RemoveAll(filepath.Dir(p))
 		}
 	})
@@ -238,7 +238,7 @@ func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 	if strings.Join(phases, " ") != "checking downloading ready" {
 		t.Errorf("went through %v", phases)
 	}
-	if got, _ := os.ReadFile(filepath.Join(c.u.DownloadedPath(), "Contents/MacOS/framefairy-app")); string(got) != "twenty" {
+	if got, _ := os.ReadFile(filepath.Join(c.staged(), "Contents/MacOS/framefairy-app")); string(got) != "twenty" {
 		t.Errorf("staged %q", got)
 	}
 }
@@ -254,8 +254,8 @@ func TestAMergedPullRequestDownloadsNothing(t *testing.T) {
 	cleanStaged(t, c)
 	_ = c.Follow("pr-18")
 	s := waitFor(t, c, "gone", func(s UpdateState) bool { return s.Phase == "gone" })
-	if s.Gone != "pr-18" || s.Follows != "" || s.Next != "" || c.u.DownloadedPath() != "" {
-		t.Errorf("%+v, staged %q", s, c.u.DownloadedPath())
+	if s.Gone != "pr-18" || s.Follows != "" || s.Next != "" || c.staged() != "" {
+		t.Errorf("%+v, staged %q", s, c.staged())
 	}
 	// Picking main is how it goes on.
 	_ = c.Follow("main")
@@ -482,7 +482,7 @@ func TestABuildDownloadedIsKeptAcrossPicks(t *testing.T) {
 	if n := cs.fetches("/main-0.3.0-main.5.zip"); n != 1 {
 		t.Errorf("main downloaded %d times", n)
 	}
-	if got, _ := os.ReadFile(filepath.Join(c.u.DownloadedPath(), "Contents/MacOS/framefairy-app")); string(got) != "main" {
+	if got, _ := os.ReadFile(filepath.Join(c.staged(), "Contents/MacOS/framefairy-app")); string(got) != "main" {
 		t.Errorf("staged %q", got)
 	}
 }
@@ -531,7 +531,7 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	if n := cs.fetches("/main-0.3.0-main.5.zip"); n != 1 {
 		t.Errorf("main downloaded %d times", n)
 	}
-	if got, _ := os.ReadFile(filepath.Join(c.u.DownloadedPath(), "Contents/MacOS/framefairy-app")); string(got) != "main" {
+	if got, _ := os.ReadFile(filepath.Join(c.staged(), "Contents/MacOS/framefairy-app")); string(got) != "main" {
 		t.Errorf("staged %q", got)
 	}
 }
@@ -561,4 +561,147 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 	if strings.Join(ids, " ") != "main pr-21" {
 		t.Errorf("the list after Check: %v", ids)
 	}
+}
+
+// The app holds the newest build of the channel it follows. A build that
+// is ready and not yet installed is replaced by a newer one once the newer
+// one has fully arrived and passed its checks, and the one it replaces is
+// removed. Until then, quitting installs the one that is ready: a newer
+// build that fails, or is still on its way, never leaves the app with
+// nothing to install. The second download used to throw the ready build
+// away before it began.
+func TestANewerBuildReplacesTheOneReady(t *testing.T) {
+	was := runningApp
+	runningApp = func() string { return "/Applications/Frame Fairy.app" }
+	t.Cleanup(func() { runningApp = was })
+
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	var mu sync.Mutex
+	var from string
+	c.install = func(_, staged string) error {
+		mu.Lock()
+		from = staged
+		mu.Unlock()
+		return nil
+	}
+	// What quitting now would put in place, and what that build says.
+	quit := func() (string, string) {
+		t.Helper()
+		mu.Lock()
+		from = ""
+		mu.Unlock()
+		c.installOnQuit()
+		// The app did not really quit, so it goes on as before.
+		c.mu.Lock()
+		c.leaving = false
+		c.mu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
+		if from == "" {
+			return "", ""
+		}
+		got, _ := os.ReadFile(filepath.Join(from, "Contents/MacOS/framefairy-app"))
+		return from, string(got)
+	}
+	_ = c.Follow("main")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	first, says := quit()
+	if says != "five" {
+		t.Fatalf("ready with main.5, quitting installs %q saying %q", first, says)
+	}
+
+	// A newer build that does not arrive whole leaves the one that is
+	// ready as it was.
+	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	cs.mu.Lock()
+	broken := append([]byte(nil), cs.zips["/main-0.3.0-main.6.zip"]...)
+	broken[len(broken)/2] ^= 0xff
+	cs.zips["/main-0.3.0-main.6.zip"] = broken
+	cs.mu.Unlock()
+	c.check()
+	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
+		t.Errorf("after a newer build failed: %+v", s)
+	}
+	if at, says := quit(); at != first || says != "five" {
+		t.Errorf("after a newer build failed, quitting installs %q saying %q", at, says)
+	}
+
+	// While the next one is on its way, the page still says the one that
+	// is ready, and quitting installs it.
+	release := make(chan struct{})
+	let := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(let)
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = release, "/main-0.3.0-main.7"
+	cs.mu.Unlock()
+	cs.publish(t, [3]string{"main", "0.3.0-main.7", "seven"})
+	go c.check()
+	deadline := time.Now().Add(10 * time.Second)
+	for cs.fetches("/main-0.3.0-main.7.zip") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("main.7 was never asked for")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
+		t.Errorf("while main.7 downloads: %+v", s)
+	}
+	if at, says := quit(); at != first || says != "five" {
+		t.Errorf("while main.7 downloads, quitting installs %q saying %q", at, says)
+	}
+
+	// Once it is here, it is the one, and the one before is gone.
+	let()
+	waitFor(t, c, "ready with main.7", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.7" })
+	if at, says := quit(); at == "" || says != "seven" {
+		t.Errorf("with main.7 ready, quitting installs %q saying %q", at, says)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) {
+		t.Errorf("the build main.7 replaced is still there: %v", err)
+	}
+}
+
+// A build made on the Mac looks regularly from the moment a channel is
+// picked in it, as a build from a channel does from the start, and goes on
+// looking while a build is ready. It only looked when a channel was picked
+// or Check clicked, so once a build was ready it never heard of a newer
+// one.
+func TestAPickedChannelIsLookedAtRegularly(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	c.every = func(UpdateState) time.Duration { return 20 * time.Millisecond }
+	_ = c.Follow("main")
+	waitFor(t, c, "ready with main.5", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	waitFor(t, c, "ready with main.6", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.6" })
+}
+
+// A newer build that arrives while quitting is putting the build ready in
+// place does not remove it: the step that puts it in place reads it once
+// the app is gone.
+func TestABuildBeingPutInPlaceStays(t *testing.T) {
+	was := runningApp
+	runningApp = func() string { return "/Applications/Frame Fairy.app" }
+	t.Cleanup(func() { runningApp = was })
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	c.install = func(string, string) error { return nil }
+	_ = c.Follow("main")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	first := c.staged()
+	c.installOnQuit()
+	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	c.check()
+	waitFor(t, c, "ready with main.6", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.6" })
+	if _, err := os.Stat(first); err != nil {
+		t.Errorf("the build going in place was removed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(first)) })
 }

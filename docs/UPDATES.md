@@ -516,6 +516,23 @@ with its newest build, so one fetch is the whole check:
    used to follow main by itself, and Tim, meaning to pick another pull
    request, watched main download without having asked for it.
 
+**A build that is ready is replaced by a newer one.** The app always
+holds the newest build of the channel it follows. While a build waits for
+a relaunch, the looks go on, and a newer commit's build downloads quietly
+beside it. The page keeps saying **A newer build is ready**, with
+Relaunch, and quitting puts the waiting build in place, for as long as
+the newer one is on its way. Once the newer one has fully arrived and
+passed every check the first one passed, checksum, signature and
+unpacking, it takes the waiting one's place in one step, the page names
+its commit, and the waiting one is removed. A newer build that fails, or
+is cut off, changes nothing, and the next look tries again. This works
+because every build is downloaded by an updater of its own, see
+`download` in `cmd/framefairy-app/updates.go`: Wails' updater throws away
+the build it holds before it downloads another, so the waiting build used
+to be gone the moment a newer one began, and for good if that one failed.
+A build that Relaunch or quitting has begun to put in place is never
+removed, whatever arrives after it.
+
 **Quitting with a build ready puts it in place**, the way Chrome does:
 the next start is the new build, and nothing opens by itself in between.
 Relaunch does the same at once, through Wails' updater, whose own step
@@ -538,8 +555,11 @@ Wails names those the same for every app made with it, so only the ones
 about Frame Fairy go.
 
 A build made by `make`, and `make run` is one, follows nothing until a
-channel is picked, and looks only when it is picked or Check is clicked.
-Otherwise every `make run` would fetch a build to replace itself with.
+channel is picked, and does not look when it starts. Otherwise every
+`make run` would fetch a build to replace itself with. From the moment a
+channel is picked in it, it looks every ten minutes like a build from a
+channel. It used to look only when a channel was picked or Check was
+clicked, so a build that was ready never heard of a newer commit.
 
 ## What is built
 
@@ -547,7 +567,7 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | --- | --- | --- |
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the user's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
-| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, and for a build made by make from the moment a channel is picked in it, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so it gets no secret and no token that can write. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
