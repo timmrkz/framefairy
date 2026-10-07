@@ -277,6 +277,14 @@ across the clip's edge as well. A clip's pieces changing while it plays, a cut
 made, moved or put back, or loop switched on or off, goes on from the
 playhead on what the clip is now.
 
+The sound goes on while the app is behind another window. macOS stops the
+page's animation frames there, and the frames are what fed the sound, a
+second ahead, so it ran out a second after the app was covered and came
+back with the first frame the app got. Now the sound is fed 3 s ahead the
+moment the page says it is hidden, and while no frame comes a timer goes on
+feeding it, since a timer behind another window may run only once a second.
+The picture catches up with the first frame.
+
 A clip played from a playhead that stands in one of its cuts plays from
 where that cut ends, see `playFrom` in `lib/playhead.ts`: the queue is
 given the clip's pieces and a seek to the end of the cut before it plays,
