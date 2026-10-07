@@ -20,6 +20,10 @@ type SourceView struct {
 	// FPS is the episode's frame rate, which is what one step of the arrow
 	// keys on the clip timeline is worth.
 	FPS float64 `json:"fps"`
+	// VideoStart is where the picture's first frame begins in the file,
+	// and with it the grid its frames are on, so the app counts frames from
+	// where the render does. Nought for most files.
+	VideoStart float64 `json:"videoStart"`
 }
 
 func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
@@ -58,7 +62,18 @@ func (s *FrameFairy) Source(ctx context.Context, path string) (SourceView, error
 	o := s.store.Settings().options()
 	cw, ch := engine.CropWindow(info, o.Width, o.Height)
 	return SourceView{Duration: info.Duration, Width: info.Width, Height: info.Height,
-		CropWidth: cw, CropHeight: ch, FPS: info.FPS()}, nil
+		CropWidth: cw, CropHeight: ch, FPS: info.FPS(), VideoStart: info.VideoStart}, nil
+}
+
+// frameStart is where the picture's frames begin in an episode, the origin
+// a gesture rounds its edges to frames from. Nought when the episode
+// cannot be probed, which is where it was counted from before.
+func (s *FrameFairy) frameStart(ctx context.Context, path string) float64 {
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return 0
+	}
+	return info.VideoStart
 }
 
 // Waveform returns the loudest level in each of buckets pieces of a part

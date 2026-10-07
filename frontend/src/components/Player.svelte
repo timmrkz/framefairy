@@ -261,7 +261,7 @@
   export function seek(t: number, about?: "clip") {
     const at = Math.max(0, Math.min(t, source.duration));
     time = at;
-    placed = placeOf(pieces, clip?.key ?? "", at, 1 / frameOf, about);
+    placed = placeOf(pieces, clip?.key ?? "", at, 1 / frameOf, about, source.videoStart ?? 0);
     if (!queue) return;
     if (!paused) playedClip = placed.place !== "video";
     queue.seek(at, programOf(placeFor(placed, clip?.key)));

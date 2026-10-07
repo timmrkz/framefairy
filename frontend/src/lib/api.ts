@@ -262,6 +262,9 @@ export interface SourceView {
   // The episode's frame rate. One step of the arrow keys on the clip
   // timeline is one frame of it.
   fps: number;
+  // Where the picture's first frame begins, in seconds into the file, and
+  // with it the grid its frames are on. Nought for most files.
+  videoStart?: number;
 }
 
 export interface ClipEntry extends ClipView {

@@ -49,6 +49,8 @@
     timesIn,
     followingWindow,
     onGrid,
+    frameAt,
+    frameMiddle,
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
@@ -1053,13 +1055,15 @@
 
   // One frame of the episode, which is what a thumbnail stands on.
   const frameLen = $derived(source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+  // Where the picture's frames begin, see frameAt in lib/flow.ts.
+  const frameStart = $derived(source?.videoStart ?? 0);
   // The thumbnail under the playhead, told by the frame the playhead is in
   // and never by how far it is from one, because the playhead is never
   // quite where it was put.
   const thumbHere = $derived.by(() => {
     if (!current) return null;
-    const f = Math.floor(time / frameLen);
-    return current.thumbnails?.find((t) => Math.floor(t / frameLen) === f) ?? null;
+    const f = frameAt(time, frameLen, frameStart);
+    return current.thumbnails?.find((t) => frameAt(t, frameLen, frameStart) === f) ?? null;
   });
   // Whether the short shows the frame under the playhead, which is where a
   // thumbnail can be.
@@ -1095,7 +1099,7 @@
     } else if (inShort) {
       // The middle of the frame, so the picture and the playhead agree on
       // which frame it is whichever way either rounds.
-      void setThumbnail(current, -1, (Math.floor(time / frameLen) + 0.5) * frameLen);
+      void setThumbnail(current, -1, frameMiddle(frameAt(time, frameLen, frameStart), frameLen, frameStart));
     }
   }
 
@@ -2624,6 +2628,7 @@
         locked={renderingCurrent || (!current && !!making)}
         arriving={!current && !!making}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
+        frameStart={source.videoStart ?? 0}
         {lit}
         bind:numbers
         onseek={(t, about) => player?.seek(t, about)}

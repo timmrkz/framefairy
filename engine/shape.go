@@ -37,6 +37,13 @@ type Gesture struct {
 	// Frame is one frame of the episode in seconds. Nought leaves edges put
 	// on frames where they were put, to the millisecond.
 	Frame float64 `json:"frame"`
+	// FrameStart is where the picture's first frame begins in the file,
+	// SourceInfo.VideoStart, and with it the grid the frames are on. An
+	// edge rounded on frames counted from the file's start sat up to half
+	// a frame from the frame the render takes, for a picture that starts
+	// after its sound. The app sets it from its own probe of the episode,
+	// whatever the interface sent.
+	FrameStart float64 `json:"frameStart"`
 }
 
 // PieceView is one kept part of a clip as a gesture leaves it.
@@ -122,7 +129,8 @@ func Reshape(planPath, clipID string, g Gesture, t *Transcript, keepPause float6
 // they land, and where the playhead goes while it is made.
 func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) (
 	pieceChange, float64, error) {
-	if !isFinite(g.From) || !isFinite(g.To) || !isFinite(g.Frame) || g.Frame < 0 {
+	if !isFinite(g.From) || !isFinite(g.To) || !isFinite(g.Frame) || g.Frame < 0 ||
+		!isFinite(g.FrameStart) || g.FrameStart < 0 {
 		return nil, -1, renderErr("a gesture has to say where, in numbers")
 	}
 	if len(clip.Segments) == 0 {
@@ -286,7 +294,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 // cut. Without a frame it is left where it is, to the millisecond.
 func (g Gesture) onFrame(at float64) float64 {
 	if g.Frame > 0 {
-		at = math.Round(at/g.Frame) * g.Frame
+		at = g.FrameStart + math.Round((at-g.FrameStart)/g.Frame)*g.Frame
 	}
 	return roundTo(at, 3)
 }

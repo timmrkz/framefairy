@@ -32,6 +32,8 @@
     inClip,
     inEpisode,
     endInEpisode,
+    frameAt,
+    frameMiddle,
     insideClip,
     litWord,
     type CaptionDraft,
@@ -53,6 +55,7 @@
     time,
     locked = false,
     frame = 1 / 30,
+    frameStart = 0,
     lit = [],
     onseek,
     dimmed = false,
@@ -93,6 +96,9 @@
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
     frame?: number;
+    // Where the picture's first frame begins in the file, which is where
+    // its frames are counted from, see frameAt in lib/flow.ts.
+    frameStart?: number;
     // The words the caption lights up, on the episode's clock. Shift and
     // an arrow key step through these, because these are the words anyone
     // can see. They are not the words of the transcript: a correction that
@@ -1222,13 +1228,13 @@
   );
   // The frame the playhead is in, which is how a mark knows it is the one
   // on screen. A state, never a distance.
-  const playFrame = $derived(Math.floor(time / frame));
+  const playFrame = $derived(frameAt(time, frame, frameStart));
 
   // The middle of the frame a moment falls in, inside a piece the clip
   // keeps: a moment that was cut out is not in the short, so a mark held
   // over a cut stays at the edge of the piece nearest the hand.
   function thumbFrame(t: number): number {
-    const mid = (u: number) => (Math.floor(u / frame) + 0.5) * frame;
+    const mid = (u: number) => frameMiddle(frameAt(u, frame, frameStart), frame, frameStart);
     let best = mid(t);
     let gap = Infinity;
     for (const p of segments) {
@@ -1274,7 +1280,7 @@
       cancelAnimationFrame(queued);
       queued = 0;
       onseek(d.to);
-      if (Math.floor(d.to / frame) === Math.floor(d.from / frame)) {
+      if (frameAt(d.to, frame, frameStart) === frameAt(d.from, frame, frameStart)) {
         thumbDrag = null;
         return;
       }
@@ -1541,7 +1547,7 @@
         {#each thumbMarks as m, i (m.at)}
           <div
             class="thumb"
-            class:here={Math.floor(m.shown / frame) === playFrame}
+            class:here={frameAt(m.shown, frame, frameStart) === playFrame}
             class:active={thumbDrag?.from === m.at}
             style="left: {x(m.shown)}%"
             role="slider"

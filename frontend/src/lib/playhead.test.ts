@@ -201,3 +201,16 @@ describe("a play of the clip that reaches its end", () => {
     expect(playFrom("video", pieces, start - 2)).toEqual({ clip: false, at: start - 2 });
   });
 });
+
+// Plan row 2.137: with the picture starting 0.02 s into the file, half a
+// frame at 25 a second, a clip starting at 10.01 begins in the picture's
+// frame from 9.98, and a step onto 9.99 is in that frame, on the clip.
+// Counted from the file's start, 9.99 was in the frame from 9.96, before
+// the clip, and the clip dimmed while its own first frame was on screen.
+describe("the frame a gesture lands in is the picture's own", () => {
+  const late = [{ start: 10.01, end: 15 }];
+  test("a moment in the picture's first frame of the clip is on the clip", () => {
+    expect(placeOf(late, key, 9.99, fps, undefined, 0.02).place).toBe("clip");
+    expect(placeOf(late, key, 9.99, fps).place).toBe("video");
+  });
+});

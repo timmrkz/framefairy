@@ -594,7 +594,8 @@ const filmedBits, bandHeight = 11, 4
 // The frames come at the rate, unless timing says otherwise: "uneven" is
 // a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
 // "late" is a picture that starts a quarter of a second after the sound,
-// by an edit list. Either way each frame keeps its number.
+// between two of its frames, by an edit list. Either way each frame keeps
+// its number.
 func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
 	d := strconv.Itoa(seconds)
 	bands := filmedBits * bandHeight
@@ -604,8 +605,14 @@ func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
 		shift = fmt.Sprintf(",settb=1/600,setpts='(N/(%s)+0.008*mod(N\\,3))/TB'", rate)
 		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}
 	case "late":
-		shift = ",setpts=PTS+0.25/TB"
-		keep = []string{"-fps_mode", "passthrough"}
+		// On a clock of 1/90000 s, so the picture starts a true quarter
+		// second in, 7.49 frames at 29.97 a second. On the rate's own
+		// clock the quarter second came out a whole 7 frames, 0.233 s,
+		// on the grid of the file's start, where frames counted from the
+		// file and from the picture are the same frames and a mistake
+		// between the two could not be seen.
+		shift = ",settb=1/90000,setpts=PTS+0.25/TB"
+		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/90000", "-video_track_timescale", "90000"}
 	}
 	args := []string{"-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=2x%d:r=%s:d=%s", 2*filmedBits, rate, d),
