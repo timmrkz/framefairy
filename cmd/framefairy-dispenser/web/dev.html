@@ -88,7 +88,7 @@
     {{range .Letters}}
     <details class="letter" data-keep="letter-{{.Ref}}-{{.Kind}}-{{clock .At}}"><summary><span>{{if eq .Kind "keys"}}Your keys{{else if eq .Kind "replaced"}}Your new key{{else}}Your keys again{{end}} <span class="dim">to {{.To}}</span></span><span class="dim small">{{hm .At}}</span></summary>
       {{if .Failed}}<p class="warn small">Sent, and the mail service said it failed.</p>{{end}}
-      {{range .Keys}}<div class="mono small">{{.}}</div>{{end}}
+      {{range .Keys}}<div class="key-line"><span class="mono small">{{.}}</span><a class="unlock small" href="framefairy://unlock?key={{.}}" title="Opens Frame Fairy with this key in its settings, as the button in the real letter will">Unlock</a></div>{{end}}
     </details>
     {{end}}
     {{if .Notes}}<h3>To us</h3>{{range .Notes}}

@@ -42,7 +42,9 @@ type keyStore interface {
 	hint(item string) string
 	// get reads the secret.
 	get(ctx context.Context, item string) (string, bool)
-	set(item, secret string) error
+	// set keeps the secret with hint beside it, where hint can read it
+	// back without the secret.
+	set(item, secret, hint string) error
 	remove(item string)
 }
 
@@ -55,7 +57,7 @@ type noKeys struct{}
 func (noKeys) has(string) bool                            { return false }
 func (noKeys) hint(string) string                         { return "" }
 func (noKeys) get(context.Context, string) (string, bool) { return "", false }
-func (noKeys) set(string, string) error                   { return errNoKeychain }
+func (noKeys) set(string, string, string) error           { return errNoKeychain }
 func (noKeys) remove(string)                              {}
 
 // keys is where keys are kept now, and oldKeys where the first ones were.
@@ -169,7 +171,7 @@ func readAPIKey(ctx context.Context, p Provider) (key, source string, err error)
 			key, source = strings.TrimSpace(found), "the keychain"
 			// Only once the key is safe in the new item does the old one
 			// go, so a keychain that refuses the new one loses nothing.
-			if keyIsSane(key) && keys.set(p.Item, key) == nil {
+			if keyIsSane(key) && keys.set(p.Item, key, abbreviate(key)) == nil {
 				oldKeys.remove(p.Keychain)
 			}
 		}
@@ -293,7 +295,7 @@ func StoreAPIKey(p Provider, key string) error {
 	if !keyIsSane(key) {
 		return renderErr("that key has characters in it that cannot go in an HTTP header.")
 	}
-	if err := keys.set(p.Item, key); err != nil {
+	if err := keys.set(p.Item, key, abbreviate(key)); err != nil {
 		if errors.Is(err, errNoKeychain) {
 			return renderErr("this machine has no keychain to put a key in. Set %s instead.", p.Env)
 		}

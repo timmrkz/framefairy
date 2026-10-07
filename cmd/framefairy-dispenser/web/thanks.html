@@ -9,6 +9,12 @@
 <p class="dim"><a href="/lost">Lost your key?</a> · <a href="/dev">Dev page</a></p>
 </main>
 <script>
+// The link that opens Frame Fairy on this Mac with the key in its
+// settings. Nothing is unlocked until Unlock is pressed there.
+function unlockLink(k) {
+  return "framefairy://unlock?key=" + encodeURIComponent(k);
+}
+
 // The thank-you page asks the dispenser for the keys of the sale Paddle's
 // checkout named, every two seconds until they are there.
 const ref = new URLSearchParams(location.search).get("txn") || "";
@@ -27,8 +33,9 @@ async function ask() {
   if (res.status === 200) {
     const keys = body.keys || [];
     say('<p>' + (keys.length === 1 ? "Your licence key:" : "Your licence keys, one per seat:") + '</p>' +
-      keys.map(k => '<div class="key mono">' + esc(k) + '</div>').join("") +
-      '<p class="dim">They also come by email. Paste one into Frame Fairy\'s settings to unlock it.</p>');
+      keys.map(k => '<div class="key mono">' + esc(k) + '</div>' +
+        '<p><a class="unlock" href="' + esc(unlockLink(k)) + '">Unlock Frame Fairy</a></p>').join("") +
+      '<p class="dim">They also come by email. Unlock opens Frame Fairy with the key filled in, or paste it into its settings.</p>');
     return;
   }
   if (res.status === 202) {
