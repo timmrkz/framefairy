@@ -1988,10 +1988,10 @@ folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to episode** goes back to the
 default. In a folder chosen here, each episode's shorts go into a folder
 of their own, named after the episode's file, so `Folge 12.mp4` renders
-into `Shorts/Folge 12/`, and the clip 01 of one episode never writes over
-the clip 01 of another. Two episodes of the same file name share that
-folder, and there a short whose name is taken gets a number, the way
-Finder gives one, `01_slug 2.mp4`. A short already rendered stays where it
+into `Shorts/Folge 12/`. A short is named after its clip's words, without
+the clip's id, `ich-merke-dass-das-immer-schwer-ist.mp4`. Wherever a short
+goes, a name taken by a file the clip did not write gets a number, the way
+Finder gives one, `ich-merke-dass-das-immer-schwer-ist 2.mp4`. A short already rendered stays where it
 went when the folder changes, and its clip still knows it is rendered and
 where, see **Where a short went** in
 [ENGINE.md](ENGINE.md#where-a-short-went).

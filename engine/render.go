@@ -348,13 +348,13 @@ const partial = ".part"
 func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	source SourceInfo, outDir string, cues []LaidCaption, rs RenderSettings,
 	style map[string]any, captionDir string, dryRun bool) (string, error) {
-	return e.renderShort(ctx, clip, sourcePath, source, outDir, clip.Basename(), cues, rs,
+	return e.renderShort(ctx, clip, sourcePath, source, outDir, clip.ShortName(), cues, rs,
 		style, captionDir, dryRun)
 }
 
 // renderShort writes one finished short as <stem>.mp4 in outDir. The stem
-// is the clip's name, or that with a number in a folder for shorts where
-// the name was taken, see shortStem.
+// is the clip's words, or those with a number where the name was taken,
+// see shortStem.
 func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	source SourceInfo, outDir, stem string, cues []LaidCaption, rs RenderSettings,
 	style map[string]any, captionDir string, dryRun bool) (string, error) {

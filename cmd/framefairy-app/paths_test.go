@@ -72,6 +72,27 @@ func TestPathClosedWhileHearing(t *testing.T) {
 	}
 }
 
+// New pressed and the app closed at once, before the search had begun:
+// it was cancelled and said nothing after the restart, where it should say
+// Interrupted with Continue. The walk searching.mjs found it in CI. A few
+// times over, because how far a search gets before the closing reaches it
+// is a matter of timing.
+func TestPathClosedTheMomentASearchIsAsked(t *testing.T) {
+	d := open(t)
+	ep := d.add("ep", minutes5)
+	d.idle(ep)
+	for i := range 5 {
+		from := float64(20 * (i + 1))
+		d.svc.Search(ep, engine.PlanRequest{From: from, To: from + 60, Count: 1, Min: 5})
+		d.close()
+		d.reopen()
+		o := d.outcome(ep)
+		if !o.interrupted || o.window != (window{from, from + 60}) {
+			t.Fatalf("try %d: after the app was closed the moment a search was asked: %+v", i+1, o)
+		}
+	}
+}
+
 func TestPathClosedWhileFinding(t *testing.T) {
 	d := open(t)
 	d.model.hangs(true)
