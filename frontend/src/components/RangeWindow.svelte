@@ -22,6 +22,7 @@
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
   import { scrub as scrubPlayhead } from "../lib/scrub";
+  import { fitsAt, rulerStep, timeWidth } from "../lib/ruler";
 
   let {
     duration,
@@ -95,14 +96,25 @@
   let track: HTMLDivElement;
   let width = $state(0);
 
-  // Everything on the track is placed in whole pixels. In shares of the
-  // width the window and its edges land on halves of a pixel,
-  // which is what made one border of the window look thicker than the
-  // others.
+  // Everything on the track is placed by the stylesheet, in whole pixels.
+  // In shares of the width the window and its edges land on halves of a
+  // pixel, which is what made one border of the window look thicker than
+  // the others, so a place is its share of the track's width rounded,
+  // round(share * 100cqw, 1px), see .track and .over. It was worked out
+  // here from the width a ResizeObserver read, which comes a frame after
+  // the layout, so while the app was resized every mark, the window, the
+  // playhead and the minutes moved a frame behind the track they stand
+  // on. The stylesheet places them in the same pass as the track.
+  // share is where a moment is, as a share of the episode. inner is the
+  // track's own width from inside .over, which is its border wider.
+  function share(t: number): number {
+    return Math.min(Math.max(t, 0), duration) / Math.max(duration, 0.001);
+  }
+  const inner = "(100cqw - 2px)";
+  // Pixels a second, for a drag, which reads it as the hand moves.
   const scale = $derived(width / Math.max(duration, 0.001));
-
-  function at(t: number): number {
-    return Math.round(Math.min(Math.max(t, 0), duration) * scale);
+  function on(t: number, of = "100cqw"): string {
+    return `round(${share(t)} * ${of}, 1px)`;
   }
 
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
@@ -119,9 +131,9 @@
   const frame = $derived.by(() => {
     const first = from <= 0.5;
     const last = to >= duration - 0.5;
-    const left = first ? 0 : at(from) + 1;
-    const right = last ? width + 2 : at(to) + 2;
-    return { left, width: Math.max(right - left, 0), first, last };
+    const left = first ? "0px" : `(${on(from, inner)} + 1px)`;
+    const right = last ? "100cqw" : `(${on(to, inner)} + 2px)`;
+    return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
   });
   onMount(() => {
     const observer = new ResizeObserver(() => {
@@ -277,16 +289,17 @@
     return share * duration;
   }
 
-  // A time label every so often, the smallest step that leaves room for
-  // the labels.
+  // A time every so often, the smallest step that leaves room for the
+  // times, and each written where it ends clear of the track's edge, see
+  // lib/ruler.ts. Which there are is decided from the width, a frame after
+  // a resize, and where they stand by the stylesheet, at once.
   const ticks = $derived.by(() => {
     if (!duration || !width) return [];
-    const steps = [60, 300, 600, 900, 1800, 3600, 7200];
-    const room = Math.max(1, Math.floor(width / 72));
-    const step = steps.find((s) => duration / s <= room) ?? 7200;
+    const label = timeWidth(clock(duration));
+    const step = rulerStep(duration, width, label, [60, 300, 600, 900, 1800, 3600, 7200]);
     const out: { t: number; label: boolean }[] = [];
     for (let t = step; t < duration; t += step) {
-      out.push({ t, label: (t / duration) * width < width - 56 });
+      out.push({ t, label: fitsAt(share(t) * width, timeWidth(clock(t)), width) });
     }
     return out;
   });
@@ -318,7 +331,7 @@
       class:dim={dimmed && (m.pick ?? m.key) === selected}
       class:lit={m.key === hovered}
       class:waiting={m.arriving}
-      style="left: {at(m.start)}px; width: {Math.max(at(m.end) - at(m.start), 4)}px"
+      style="left: {on(m.start)}; width: max(calc({on(m.end)} - {on(m.start)}), 4px)"
       aria-label="Clip at {clock(m.start)}"
       {@attach hoverClip(m.key, onhover)}
       onpointerdown={(e) => e.stopPropagation()}
@@ -337,11 +350,11 @@
        line's level however high its own is, and a window drawn over a
        part already searched would swallow it. -->
   {#each ticks as tick (tick.t)}
-    <div class="tick" style="left: {at(tick.t)}px"></div>
+    <div class="tick" style="left: {on(tick.t)}"></div>
   {/each}
   {#each ticks as tick (tick.t)}
     {#if tick.label}
-      <span class="num time" style="left: {at(tick.t)}px">{clock(tick.t)}</span>
+      <span class="num time" style="left: {on(tick.t)}">{clock(tick.t)}</span>
     {/if}
   {/each}
   <span class="num time start">0:00</span>
@@ -371,7 +384,7 @@
     class:whole
     class:first={frame.first}
     class:last={frame.last}
-    style="left: {frame.left}px; width: {frame.width}px"
+    style={frame.style}
   >
     <!-- The motes of work in hand rise through it while its clips are
          found, the ones every control of the app sheds, with no rim and no
@@ -393,7 +406,7 @@
     class="aim"
     class:moving={moving !== ""}
     class:flashing
-    style="left: {frame.left}px; width: {frame.width}px"
+    style={frame.style}
   >
     {#each ["top", "bottom"] as side (side)}
       <div
@@ -432,7 +445,7 @@
   <div
     class="playhead"
     class:scrubbing
-    style="left: {at(playhead)}px"
+    style="left: {on(playhead, inner)}"
     onpointerdown={scrub}
     title="Drag to move the playhead"
   >
@@ -446,10 +459,13 @@
 </div>
 
 <style>
+  /* A container for its width, so whatever stands on the track is placed
+     in shares of it by the stylesheet, see share above. */
   .track {
     position: relative;
-    /* Half the clip timeline, set by the workspace so the two grow
-       together and fill the height of the app. */
+    container-type: inline-size;
+    /* Half the clip timeline, to within a pixel, set by the workspace so
+       the two grow together and fill the height of the app. */
     height: var(--picker-h, 56px);
     flex: none;
     background: var(--well);
@@ -681,6 +697,7 @@
      more, so a position worked out for the track is right here too. */
   .over {
     position: relative;
+    container-type: inline-size;
   }
 
   /* The same line and the same head as on the clip timeline: one playhead

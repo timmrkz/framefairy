@@ -83,8 +83,8 @@
      this either way, so it is a number both sides read rather than one
      each. */
   --bar-h: 44px;
-  /* The clip timeline at its smallest, with the range picker always half
-     of it. The range picker is the same episode seen from much further
+  /* The clip timeline at its smallest, with the range picker half of it,
+     to within a pixel. The range picker is the same episode seen from much further
      away, so half the height is enough to read it, and the two together
      read as one thing at two distances. */
   --wave-min: 112px;
@@ -98,10 +98,33 @@
   /* The sidebar when it is closed, which is the column the workspace keeps
      clear for it. */
   --rail: 44px;
-  /* The settings column of the workspace, which together with the rail is
-     exactly as wide as the open sidebar, so the sidebar covers it and
-     nothing else. */
+  /* The settings column at its smallest, where its names and its fields
+     still fit whole. */
   --settings-w: 204px;
+  /* The two columns beside the picture, the settings and the clips, are
+     measured from the app's own edges, so the picture stands in the middle
+     of the app: the settings with the rail in front of them on the left,
+     the clips with the edge after them on the right. Each side is a fifth
+     of the app's width, so both grow as the app grows and give the picture
+     the room as it shrinks, and never so little that the settings are
+     under their smallest. The open sidebar is the left side, the rail and
+     the settings column, so it covers that column and nothing else.
+
+     The two sides are rounded once, together, and then split, the left the
+     half rounded down and the right the rest, so they are equal or a
+     pixel apart. Each side rounded on its own lost a pixel every fifth
+     step of a drag and gave the middle column two, so the picture shrank
+     a pixel four times and grew two. And the columns were once what the
+     picture left: a shorter app, with a narrower picture, made them wider,
+     and split in two they stood on a half pixel every other step, so the
+     settings column went 212, 213, 212 as the app was dragged and every
+     field in it shook. Then they were the same width as each other, 280
+     at least, which made no room for the rail and squeezed the picture on
+     a small app. */
+  --spans: max(calc(2 * (var(--rail) + var(--gap) + var(--settings-w))), calc(100dvw * 2 / 5));
+  --span-l: calc(var(--spans) / 2);
+  --side-w: calc(var(--span-l) - var(--rail) - var(--gap));
+  --clips-w: calc(var(--spans) - var(--span-l) - var(--edge));
   /* One space between two things, everywhere: the columns of the
      workspace, the video preview and the range picker under it, a row and
      the next. A different number needs a reason, and inside a control is
@@ -137,6 +160,17 @@
     --accent-faint: color-mix(in srgb, var(--accent) 7%, transparent);
     --accent-fill: color-mix(in srgb, var(--accent) 30%, transparent);
     --accent-fill-hi: color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+}
+
+/* The columns beside the picture on a whole pixel, see --spans. */
+@supports (width: round(down, 3px, 2px)) {
+  :root {
+    --spans: max(
+      calc(2 * (var(--rail) + var(--gap) + var(--settings-w))),
+      round(down, calc(100dvw * 2 / 5 + 0.01px), 1px)
+    );
+    --span-l: round(down, calc(var(--spans) / 2), 1px);
   }
 }
 

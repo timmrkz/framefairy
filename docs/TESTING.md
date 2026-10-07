@@ -235,6 +235,26 @@ decoder fails on comes from the Go side" makes Chromium's decoder say yes
 and then fail on the first frame, the way WebKit's does with Tim's
 `start.mp4`.
 
+**The layout under a dragged edge.** The sequence "the app dragged a pixel
+at a time moves every part one way, the sides equal and set by the width"
+drags the app's height from 1000 to 640 and its width from 1700 to 960,
+the app's smallest, a pixel a step, and reads every part of the workspace on every
+step: the viewer, the picture, the range picker, the clip timeline, the
+two columns beside the picture, a settings field and a clip card. Each
+must move only one way for the whole drag, stand on a whole pixel and
+meet the app's edges, and the two sides beside the picture, measured from
+the app's edges, must be the same width, or a pixel apart, and stand
+still while only the height changes. A part that
+went back and forth is what a person sees shake. It found three that the
+eye found first, the range picker sawing two, two and six pixels, the
+settings column going 212, 213, 212, and the clip list ending past the
+app's edge, and three more on the way: the clip timeline a pixel taller
+for one step in three hundred, the middle column growing two pixels every
+fifth step, the picture standing 0, 1, 0, 1 pixels into its column, and
+its height 539.99999 one step and 540 the next.
+Chromium paints a resize in one pass where WebKit on the Mac may not, so
+this proves the layout the stylesheet asks for, not how the Mac paints it.
+
 The bridge's episode runs at five frames a second, so a frame of give is
 a fifth of a second. Whether a press plays the clip or the episode is
 read off the app, the chosen clip dimmed on the clip timeline while the

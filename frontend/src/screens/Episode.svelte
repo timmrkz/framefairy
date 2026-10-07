@@ -1210,6 +1210,21 @@
     void makeClip(out);
   }
 
+  // L switches loop on and off, the loop button's key, the way T is the
+  // thumbnail's and I and O make a clip.
+  function loopKey(event: KeyboardEvent) {
+    if (event.key !== "l" && event.key !== "L") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    const on = document.activeElement as HTMLElement | null;
+    const tag = on?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    if (!current) return;
+    event.preventDefault();
+    looping = !looping;
+  }
+
   function thumbnailKey(event: KeyboardEvent) {
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -2095,10 +2110,12 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", loopKey);
       window.removeEventListener("keydown", inOutKey);
     };
   });
@@ -2613,6 +2630,8 @@
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}
+        {looping}
+        playing={!paused}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
         {marks}
@@ -2663,7 +2682,7 @@
             aria-pressed={looping}
             aria-label="Loop the clip"
             onclick={() => (looping = !looping)}
-            title="Play the clip again at its end"
+            title="Play the clip again at its end. L does the same"
           >
             <Icon name="loop" />
           </button>
@@ -2796,27 +2815,25 @@
     /* The height left in the app: everything but the bar at the top, the
        space above the workspace and the edge at the foot. */
     --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge) - var(--above));
-    /* And the width: everything but the rail, the space after it and the
-       edge on the right. The rail is part of the app, so what parts it
-       from the settings is the space between two things, --gap, and only
-       the side that meets the app's own border is an edge. */
-    --stage-w: calc(100dvw - var(--rail) - var(--gap) - var(--edge));
-    /* The columns beside the picture at their smallest, with a space on
-       either side of it. */
-    --sides: calc(var(--settings-w) + 280px + 2 * var(--gap));
+    /* The middle column, the rest of the app's width once the two sides,
+       --spans from app.css, have theirs, with a space either side of it. */
+    --mid-w: calc(100dvw - var(--spans) - 2 * var(--gap));
     /* Everything down the height that is neither the picture nor a track:
        four spaces, one under the picture, two around the line that parts
        the workspace from the clip up close, one over the row at the foot,
        the line itself, and the row. */
     --down: calc(4 * var(--gap) + 1px + var(--row-h));
-    /* How tall the picture would be if it were as wide as it may be. */
-    --widest: calc((var(--stage-w) - var(--sides)) / var(--ar));
-    /* The picture takes the height first, until it is that wide. What it
-       cannot use goes to the two tracks, the range picker always half the
-       clip timeline, so nothing is left over at the foot of the app. */
-    --wave-h: max(var(--wave-min), calc((var(--space) - var(--down) - var(--widest)) / 1.5));
-    --picker-h: calc(var(--wave-h) / 2);
-    --pic-h: max(200px, calc(var(--space) - var(--down) - 1.5 * var(--wave-h)));
+    /* How tall the picture would be if it were as wide as the middle
+       column. */
+    --widest: calc(var(--mid-w) / var(--ar));
+    /* The picture takes the height first, until it is that wide, leaving
+       the tracks at least their smallest. What it cannot use goes to the
+       two tracks, the range picker a third of it and the clip timeline
+       the rest, so nothing is left over at the foot of the app. */
+    --pic-h: max(200px, min(var(--widest), calc(var(--space) - var(--down) - 1.5 * var(--wave-min))));
+    --tracks: calc(var(--space) - var(--down) - var(--pic-h));
+    --picker-h: calc(var(--tracks) / 3);
+    --wave-h: calc(var(--tracks) - var(--picker-h));
     --pic-w: calc(var(--pic-h) * var(--ar));
 
     padding: var(--gap) var(--edge) var(--edge) var(--gap);
@@ -2832,15 +2849,66 @@
      rounding. A track half a pixel tall puts everything below it half a
      pixel out, and a line, a label or a mark drawn between two pixels is
      soft, and is painted in a different place once a fade puts it on a
-     surface of its own. The clip timeline goes down to an even number so
-     the range picker, which is half of it, is whole as well. */
+     surface of its own.
+
+     And every size rounded so it only ever moves the way the edge of the
+     app does. Each is rounded down once, and what is left of it goes to
+     the one size worked out after it, never back to one before. The clip
+     timeline was rounded down to an even number, so the range picker,
+     half of it, was whole too, and the picture took what was left. That
+     could only change in steps of three pixels, so as the app shrank the
+     picture shrank a pixel, another, and then grew three, and the range
+     picker under it and the clip list beside it went with it: the shaking
+     Tim recorded, a sawtooth of two, two and six on his screen. Now the
+     picture is rounded first, from the app alone, and the range picker
+     and the clip timeline share what it leaves, a third and the rest,
+     within a pixel of one half the other. */
   @supports (height: round(down, 3px, 2px)) {
     section {
-      --wave-h: max(
-        var(--wave-min),
-        round(down, calc((var(--space) - var(--down) - var(--widest)) / 1.5), 2px)
+      /* The height the tracks leave at their smallest is whole by its
+         sum, and only the browser's arithmetic makes it 462.99999, which
+         rounded down took a pixel from the picture on one step in a few
+         hundred and gave it to the clip timeline. So it is rounded to the
+         nearest pixel, and only the height the shape of the picture
+         gives, which is a fraction, is rounded down. A size worked out by
+         multiplying or dividing comes out a hair under a whole pixel just
+         as often, 539.99999 for a middle column of 960, so a hundredth of
+         a pixel is added before it is rounded down: far more than the
+         arithmetic is ever off by, and far less than anything seen. */
+      --pic-h: max(
+        200px,
+        min(
+          round(down, calc(var(--widest) + 0.01px), 1px),
+          round(calc(var(--space) - var(--down) - 1.5 * var(--wave-min)), 1px)
+        )
       );
-      --pic-w: round(down, calc(var(--pic-h) * var(--ar)), 1px);
+      --tracks: round(calc(var(--space) - var(--down) - var(--pic-h)), 1px);
+      --picker-h: round(down, calc(var(--tracks) / 3), 1px);
+      /* The picture's width is its height times its shape, rounded down,
+         except where the width is what holds it in: there it is the
+         middle column's width exactly. A width worked out from a height
+         that was itself rounded down came a pixel or two short of the
+         column, and the picture, centred in what was left, stood 0, 1, 0,
+         1 pixels in as the app was dragged. The second term is the
+         column's width while the picture's height is the one the column
+         allows, and far below anything else otherwise, so the larger of
+         the two is the column where the width holds the picture and its
+         shape everywhere else. And never wider than the column, which a
+         picture held at its smallest height on a narrow app would be. */
+      --pic-w: min(
+        var(--mid-w),
+        max(
+          round(down, calc(var(--pic-h) * var(--ar) + 0.01px), 1px),
+          calc(
+            var(--mid-w) -
+              max(
+                round(down, calc(var(--widest) + 0.01px), 1px) - var(--pic-h),
+                var(--pic-h) - round(down, calc(var(--widest) + 0.01px), 1px)
+              ) *
+              100000
+          )
+        )
+      );
     }
   }
 
@@ -2883,16 +2951,13 @@
   }
 
   /* Three columns: the settings the sidebar lies over when it opens, the
-     video preview, and the clips. The middle one is exactly as wide as the
-     picture may be, which the workspace works out, and the two beside it
-     share whatever is left. That way a wider app makes the settings and
-     the clip list wider instead of leaving a strip of nothing. */
+     video preview, and the clips. The two beside the picture are the same
+     width, from the app's width alone, and the middle one takes the rest,
+     so a wider app makes all three wider and a taller or shorter one moves
+     none of them. */
   .stage {
     display: grid;
-    /* The middle column is exactly as wide as the picture may be, and the
-       two beside it share whatever is left, so a wider app makes them
-       wider instead of leaving a strip of nothing beside the picture. */
-    grid-template-columns: minmax(var(--settings-w), 1fr) var(--pic-w) minmax(280px, 1fr);
+    grid-template-columns: var(--side-w) 1fr var(--clips-w);
     gap: var(--gap);
     align-items: stretch;
     /* Exactly the picture, the space under it and the range picker. The
