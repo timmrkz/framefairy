@@ -322,7 +322,8 @@ func (a *api) health(w http.ResponseWriter, r *http.Request) {
 }
 
 // thanks shows a sale's keys on the thank-you page, from the moment they
-// are assigned and for a day.
+// are assigned and for a day, with the key ID of each, in the same order,
+// which is how the page and the app name a key.
 func (a *api) thanks(w http.ResponseWriter, r *http.Request) {
 	ref := r.PathValue("ref")
 	keys, at, err := a.e.keysAt(r.Context(), "paddle", ref)
@@ -334,7 +335,16 @@ func (a *api) thanks(w http.ResponseWriter, r *http.Request) {
 	case a.e.now().Sub(at) > ThanksWindow:
 		fail(w, http.StatusGone, "expired")
 	default:
-		reply(w, http.StatusOK, map[string]any{"keys": keys})
+		ids := make([]string, len(keys))
+		for i, k := range keys {
+			id, err := k.ID()
+			if err != nil {
+				a.answer(w, r, err)
+				return
+			}
+			ids[i] = id.String()
+		}
+		reply(w, http.StatusOK, map[string]any{"keys": keys, "ids": ids})
 	}
 }
 

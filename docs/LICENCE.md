@@ -499,7 +499,7 @@ Built, in `licence/dispenser`, in front of the engine.
 | Endpoint | Caller | Does |
 | --- | --- | --- |
 | `POST /paddle` | Paddle, signed | `Settle` the sale the webhook names |
-| `GET /v1/thanks/{ref}` | our thank-you page | the sale's keys, for a day |
+| `GET /v1/thanks/{ref}` | our thank-you page | the sale's keys and the key ID of each, for a day |
 | `POST /v1/lost` | our lost-key page | `Resend` |
 | `POST /v1/orders`, `GET /v1/orders/{ref}`, `POST /v1/orders/{ref}/revoke` | a partner, with its token | `Assign`, `Keys`, `Revoke` |
 | `GET /v1/pool`, `POST /v1/pool` | the signer, with its token | `PoolLevel`, `Stock` |

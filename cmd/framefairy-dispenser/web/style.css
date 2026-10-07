@@ -134,3 +134,10 @@ th { color: var(--dim); font-weight: 500; border-top: 0; }
 .buyer label { display: block; color: var(--dim); }
 .buyer form { display: block; }
 .key { background: var(--ink-2); border-radius: 6px; padding: 8px 10px; margin: 6px 0; }
+.seat { margin: 16px 0; }
+.seat > p.small { margin: 0 0 6px; }
+a.unlock.big { height: 44px; padding: 0 28px; font-size: 16px; border-radius: 8px; }
+.key-id { font-size: 17px; font-weight: 600; letter-spacing: 0.02em; margin: 10px 0 0; }
+.key-id .dim { font-weight: 400; margin-right: 6px; }
+.buyer details { margin-top: 16px; }
+.buyer details > p { margin: 8px 0 4px; }
