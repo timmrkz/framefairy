@@ -16,7 +16,7 @@ func TestASearchSaysHowManyItWasAskedFor(t *testing.T) {
 	d := open(t)
 	ep := d.add("a", minutes5)
 	d.idle(ep)
-	job := d.svc.Search(ep, engine.PlanRequest{From: 0, To: 60, Count: 4, Min: 5, Replan: true})
+	job := d.svc.Search(ep, engine.PlanRequest{From: 0, To: 60, Count: 4, Min: 5, Replan: true}, "")
 	if job.Count != 4 {
 		t.Fatalf("the search was asked for 4 and says %d", job.Count)
 	}
@@ -43,14 +43,14 @@ func TestARefusedSearchKeepsItsWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.svc.jobs.shutDown()
-	refused := d.svc.Search(ep, engine.PlanRequest{From: 120, To: 180, Count: 2, Min: 5})
+	refused := d.svc.Search(ep, engine.PlanRequest{From: 120, To: 180, Count: 2, Min: 5}, "")
 	if refused.State != JobFailed || refused.Record != "" {
 		t.Fatalf("the search was %s with record %q, not refused", refused.State, refused.Record)
 	}
 	if refused.From != 120 || refused.To != 180 || refused.Count != 2 {
 		t.Fatalf("the refused search says %.0f to %.0f for %d", refused.From, refused.To, refused.Count)
 	}
-	again := d.svc.Continue(refused.ID)
+	again := d.svc.Continue(refused.ID, "")
 	if again.From != 120 || again.To != 180 {
 		t.Fatalf("Continue asked for %.0f to %.0f, not the window that was refused", again.From, again.To)
 	}

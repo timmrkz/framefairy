@@ -109,8 +109,11 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // the error, when there is one, as a call that failed with its message.
 //
 // svc is the service now: a restart of the app is a new one. own are the
-// calls the bridge answers itself, a box from the system among them.
-func callHandler(svc func() *FrameFairy, own map[string]func() (any, error)) http.Handler {
+// calls the bridge answers itself, a box from the system among them. held
+// says how long a call of a name waits before it reaches the service, see
+// /hold.
+func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
+	held func(name string) time.Duration) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +126,9 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error)) htt
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
+		if wait := held(name); wait > 0 {
+			time.Sleep(wait)
+		}
 		if answerOwn, ok := own[name]; ok {
 			answer, err := answerOwn()
 			if err != nil {
@@ -286,7 +292,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return b.d.svc.addEpisodes(picked)
 		},
 	}
-	mux.Handle("/call", callHandler(svc, own))
+	mux.Handle("/call", callHandler(svc, own, b.held))
 	mux.Handle("/events", b.d.bus)
 	answer := func(w http.ResponseWriter, v any, err error) {
 		if err != nil {
@@ -318,6 +324,14 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
 			b.words.from(from)
 		}
+		answer(w, nil, nil)
+	})
+	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		ms, _ := strconv.Atoi(q.Get("ms"))
+		b.mu.Lock()
+		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
+		b.mu.Unlock()
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
@@ -449,6 +463,19 @@ type bridge struct {
 	mu    sync.Mutex
 	picks []string
 	made  int
+	// holds is how long the next call of a name waits before it reaches
+	// the service, the way a busy machine delivers it late, see /hold.
+	holds map[string]time.Duration
+}
+
+// held is how long a call of this name waits before it reaches the
+// service. A hold is for the next call of the name only.
+func (b *bridge) held(name string) time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	wait := b.holds[name]
+	delete(b.holds, name)
+	return wait
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
@@ -468,7 +495,8 @@ func openBridge(t *testing.T) *bridge {
 	d.svc.jobs.shutDown()
 	d.bus = newBus()
 	d.start(d.svc.store)
-	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir()}
+	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
+		holds: map[string]time.Duration{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
@@ -715,6 +743,7 @@ func (b *bridge) reset() error {
 	b.d.model.fails(false)
 	b.mu.Lock()
 	b.picks = nil
+	clear(b.holds)
 	b.mu.Unlock()
 	if !b.d.svc.jobs.shutDown() {
 		return fmt.Errorf("the app did not stop its work in time")

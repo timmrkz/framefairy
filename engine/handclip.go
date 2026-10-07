@@ -98,6 +98,11 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, turn
 		return stepCtx, release, err
 	}
 	log.Underway([]Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting}}, 0, true)
+	// Called off before it was asked for, it keeps its record and does
+	// nothing else, the way a search does.
+	if ctx.Err() != nil {
+		return "", ErrCancelled
+	}
 
 	source, err := p.engine.Probe(ctx, p.Source)
 	if err != nil {

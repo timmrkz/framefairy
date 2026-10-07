@@ -49,6 +49,13 @@
 //                      clip timeline: where it stands and what it shows
 //   ["head"]           presses the clip list's head button, New, Cancel or
 //                      Continue
+//   ["hold", call, ms] the next call of this name waits so many
+//                      milliseconds before it reaches the Go side, the way
+//                      a busy machine delivers it late
+//   ["new and cancel"] presses New, and Cancel in the first frame the head
+//                      says it, and every frame from New to that press the
+//                      head says Cancel and takes the click, never greyed
+//                      out
 //   ["restart"]        closes the app and opens it again on the episode
 //   ["speech", ms]     the speech model takes so many milliseconds over
 //                      each piece of audio, so a video added is heard
@@ -328,6 +335,22 @@ export const sequences = [
       ["head"],
       ["wait for", "New"],
       ["cards", 1],
+    ],
+  },
+  {
+    // Plan row 2.131. Cancel is pressed before the Go side has heard of
+    // the search New asked for, which is held on its way there, so the
+    // Cancel reaches the Go side first. The search never starts, and says
+    // Stopped with Continue where its clips would have been.
+    name: "Cancel pressed at once after New stops the search before it starts",
+    steps: [
+      ["hold", "Search", 1500],
+      ["new and cancel"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["restart"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
     ],
   },
   {
@@ -1150,6 +1173,42 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "speech":
         await control(url, `/speech?ms=${arg}`);
         break;
+      case "hold":
+        await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
+        break;
+      case "new and cancel": {
+        const seen = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+              const head = () => pane.querySelector(".listhead button.new");
+              const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+              const frames = [];
+              const pressed = text(head());
+              head().click();
+              const tick = () => {
+                const b = head();
+                frames.push({ says: text(b), off: !!b?.disabled });
+                if (text(b) === "Cancel" && !b.disabled) {
+                  b.click();
+                  requestAnimationFrame(() => done({ pressed, frames, after: text(head()) }));
+                } else if (frames.length < 300) requestAnimationFrame(tick);
+                else done({ pressed, frames, after: text(head()) });
+              };
+              requestAnimationFrame(tick);
+            }),
+        );
+        const greyed = seen.frames.filter((f) => f.off).length;
+        if (seen.pressed !== "New") wrong = `the head said ${seen.pressed}, not New`;
+        else if (seen.frames.some((f) => f.says !== "Cancel"))
+          wrong = `after New the head said ${[...new Set(seen.frames.map((f) => f.says))].join(", ")}, not Cancel at once`;
+        else if (greyed)
+          wrong = `the head said Cancel greyed out for ${greyed} of ${seen.frames.length} frames after New, so a press there did nothing`;
+        else if (seen.after !== "Cancelling") wrong = `Cancel pressed, the head said ${seen.after}, not Cancelling`;
+        console.log(`      Cancel pressed ${seen.frames.length} frames after New, ${greyed} of them greyed out`);
+        await watch.step("head", s);
+        break;
+      }
       case "settings": {
         episodeBefore = (await chosen(page))?.path ?? episodeBefore;
         await fromSidebar(page, () => page.locator("aside").getByText("Settings", { exact: true }).first().click());

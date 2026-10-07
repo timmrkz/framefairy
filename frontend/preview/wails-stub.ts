@@ -1605,6 +1605,26 @@ export const Call = {
       case "RemoveEpisode":
         (window as any).__removals = ((window as any).__removals ?? 0) + 1;
         return new Promise((r) => setTimeout(() => r(null), 1500));
+      case "StopClipWork": {
+        // Cancel at the head of the clip list, on every search and every
+        // clip made by hand of the episode that runs, the way CancelJob
+        // does it on one.
+        (window as any).__stopped = true;
+        const now = Date.now();
+        for (const s of fakeSearches()) {
+          if (!s.stopped && s.cancelledAt === undefined && searchAt(s, now).state === "running") {
+            ((window as any).__cancels ??= []).push(s.id);
+            s.cancelledAt = now;
+          }
+        }
+        for (const h of hands()) {
+          if (h.cancelledAt === undefined && handAt(h, now).state === "running") {
+            ((window as any).__cancels ??= []).push(h.id);
+            h.cancelledAt = now;
+          }
+        }
+        return Promise.resolve(null);
+      }
       case "CancelJob": {
         (window as any).__stopped = true;
         ((window as any).__cancels ??= []).push(args[0]);
