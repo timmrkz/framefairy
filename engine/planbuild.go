@@ -892,7 +892,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 					"The rest are left out.")
 				return nil
 			case errors.Is(err, errNotAdded):
-				b.e.Log.Detail("%s left out: its part was removed while it was on its way", clip.ID)
+				b.e.Log.Detail("%s left out: it is in the plan already", clip.ID)
 				return nil
 			}
 			return err

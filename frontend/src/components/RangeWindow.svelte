@@ -12,9 +12,9 @@
   // next, which the app decides, see nextWindow in lib/flow.ts. A triangle
   // drags its edge, a bar drags the whole window, and a double-click puts
   // it back where the app would have it. While clips are found the mark
-  // turns into the window, and back into the mark when they are.
-  // What has been searched or read so far is the engine's to know, not
-  // anything a person has to look after.
+  // turns into the window, and back into the mark when they are. Nothing
+  // on the range picker says what has been searched: any part can be
+  // searched, as often as anyone likes.
   import { onMount } from "svelte";
   import { clock } from "../lib/api";
   import { gridStep } from "../lib/flow";
@@ -347,8 +347,8 @@
 
        A time written inside its own line cannot have both: an element with
        a z-index makes a stacking context, so the time would be held at the
-       line's level however high its own is, and a window drawn over a
-       part already searched would swallow it. -->
+       line's level however high its own is, and the window drawn over it
+       would swallow it. -->
   {#each ticks as tick (tick.t)}
     <div class="tick" style="left: {on(tick.t)}"></div>
   {/each}
@@ -372,8 +372,8 @@
   </span>
 </div>
 {#if shown}
-  <!-- Only looked at, never taken hold of: which part is searched is the
-       app's to say, and a press on it is a press on the track. Drawn beside
+  <!-- Only looked at, never taken hold of: the window of a search in hand
+       is the search's, and a press on it is a press on the track. Drawn beside
        the track rather than in it, over its border, because the track
        clips what is inside it to its round corners and cut into the
        window and its breath. -->
@@ -496,8 +496,7 @@
   /* The same place and the same colour as the times on the clip
      timeline, and quiet enough to stay behind what the track is about,
      but never behind anything laid over the track. Over the window, which
-     is 3, so a window drawn across a part that was searched already
-     does not swallow the minutes it covers. A layer of its own rather
+     is 3, so the window does not swallow the minutes it covers. A layer of its own rather
      than a child of the line, which sits under the window. */
   .time {
     position: absolute;
@@ -520,10 +519,6 @@
      the window starts and ends is as plain as how tall it is. Nothing else
      is drawn on its edges: a second bar beside the border is what made one
      side look thicker than the others and the corners look broken. */
-  /* Over the searched parts, always. A searched part is a fact
-     about the episode and the window is what you are doing to it, so the
-     window is never partly under one, not even where the two touch
-     exactly. */
   .window {
     position: absolute;
     top: 0;

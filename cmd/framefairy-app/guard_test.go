@@ -65,7 +65,7 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Waveform(other, 0, 10, 100); err == nil {
 		t.Error("Waveform answered for a file that is not in the library")
 	}
-	if _, err := svc.Coverage(ctx, other, 20); err == nil {
+	if _, err := svc.Coverage(ctx, other); err == nil {
 		t.Error("Coverage answered for a file that is not in the library")
 	}
 	if _, err := svc.Room(other); err == nil {
@@ -99,9 +99,6 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	}
 	if _, err := svc.Captions(other, elsewhere, "01"); err == nil {
 		t.Error("Captions answered for a file that is not in the library")
-	}
-	if _, err := svc.RemoveSearch(ctx, other, 0, 10); err == nil {
-		t.Error("RemoveSearch answered for a file that is not in the library")
 	}
 	if !fileExists(elsewhere) {
 		t.Error("a file outside the library was deleted")
@@ -193,47 +190,6 @@ func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "zipped.framefairy") || !strings.Contains(err.Error(), "linked.mp4") {
 		t.Errorf("the reason was %v", err)
-	}
-}
-
-// Removing a part takes the clips in it out of the plans. Anything else
-// in the work folder, a render or a transcript, stays where it is.
-func TestRemoveSearchOnlyTouchesPlans(t *testing.T) {
-	svc, mine, _ := library(t)
-	ctx := context.Background()
-	work := engine.WorkDir(mine)
-	logs := filepath.Join(work, "logs")
-	if err := os.MkdirAll(logs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	words := filepath.Join(logs, "words.json")
-	if err := os.WriteFile(words, []byte(`{"version": 3, "words": []}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	rendered := filepath.Join(work, "01_clip.mp4")
-	if err := os.WriteFile(rendered, []byte("finished"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	plan := filepath.Join(logs, "clips-0-600.json")
-	if err := os.WriteFile(plan, []byte(`{"planned_with": {"from": 0, "to": 600},
-		"clips": [{"id": "01", "slug": "one", "title": "One",
-		"segments": [{"start": 10, "end": 40}]}]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gone, err := svc.RemoveSearch(ctx, mine, 0, 600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gone != 1 {
-		t.Errorf("%d clips went, not 1", gone)
-	}
-	if fileExists(plan) {
-		t.Error("the plan with nothing left of its window stayed")
-	}
-	for _, path := range []string{words, rendered} {
-		if !fileExists(path) {
-			t.Errorf("%s was deleted", filepath.Base(path))
-		}
 	}
 }
 

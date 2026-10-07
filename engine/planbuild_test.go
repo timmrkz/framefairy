@@ -186,31 +186,6 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	}
 }
 
-func TestAClipDoesNotLandInAPartRemovedWhileItWasOnItsWay(t *testing.T) {
-	t.Parallel()
-	letGo := make(chan struct{})
-	p, path := searching(t, letGo)
-	finished := make(chan error, 1)
-	go func() {
-		_, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1})
-		finished <- err
-	}()
-	clips := landed(t, path, 1)
-	_, end := ClipSpan(clips[0])
-	// Everything after the first clip is given back while the second is
-	// still being written.
-	if _, err := RemoveRange(path, end, 30, 40); err != nil {
-		t.Fatal(err)
-	}
-	close(letGo)
-	if err := <-finished; err != nil {
-		t.Fatalf("plan: %v", err)
-	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].ID != "t10-01" {
-		t.Errorf("after the removal: %v, %+v", err, clips)
-	}
-}
-
 // A clip that panics while it is framed is left out, and the search goes on
 // with the rest. A framer is a goroutine of its own, out of reach of the
 // recover that guards a job, so a panic in one ended the whole app.

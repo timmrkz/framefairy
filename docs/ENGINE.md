@@ -552,11 +552,11 @@ moment given twice. A pass that brings nothing new writes a plan with no
 clips, so it still counts as a pass. `SearchPasses` cuts the episode into
 parts by how many searches have read them, and the app's New goes where the
 fewest have been, earliest first. A plan
-carries the window it was made over in `planned_with`, and the parts of
-it that were given back again in `planned_with.removed`, so a search is a
-window with holes in it. `RemoveRange` makes a hole: the clips inside the
-part go, and a plan with nothing
-left of its window goes altogether.
+carries the window it was made over in `planned_with`. No part of an
+episode is ever taken or given back: any window can be searched, as often
+as anyone likes, and a clip goes the way every clip goes, removed from its
+row. A plan written before this may still hold `planned_with.removed`, the
+parts once given back, which nothing reads any more.
 
 ## Captions on the frames they belong to
 
@@ -1283,8 +1283,7 @@ model's scanner uses too. The builder shapes, frames and writes it into
 `clips-hand.json`, a set that grows, `PlanOptions.Grows`, whose clips each
 take the next number under the set's lock as they are written. The set
 says it was made by hand, `planned_with.by`, and `madeOver` reads that as
-made over no part of the episode, so it marks nothing searched and giving
-a part back leaves it alone.
+made over no part of the episode, so it counts as no search of any part.
 
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
@@ -1310,8 +1309,7 @@ Everything else is in `engine/`:
                 into lines. recipe_stories.go is the stories recipe
   recipe_stories2.go the lines brief with the transcript written as stories
   compare.go    one window searched with several recipes, and the report
-  windows.go    where the model has already looked, and the passes over
-                a window searched again
+  windows.go    how many searches have read each part of an episode
   fit.go        clips well off the length asked for again, measured
   heart.go      the heart recipe, and fitting a clip around its heart
   prompts.go    prompts kept as text in prompts/, the lean transcripts, and

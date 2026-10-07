@@ -14,12 +14,9 @@ const (
 	keyCaptionStyle = "caption_style"
 	keyRevision     = "revision"
 	keyPlanID       = "plan_id"
-	// keyRemoved, under planned_with, is the parts of the window a person
-	// took out of the search. keyFrom and keyTo are the edges of the window
-	// under planned_with, and of each part removed.
-	keyRemoved = "removed"
-	keyFrom    = "from"
-	keyTo      = "to"
+	// keyFrom and keyTo are the edges of the window under planned_with.
+	keyFrom = "from"
+	keyTo   = "to"
 	// keyShorts is where each clip's short was rendered, by the clip's id,
 	// see shortOf. It is the plan's and not the clip's, because
 	// a render is no edit: an undo compares and puts back clips, and a

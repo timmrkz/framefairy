@@ -586,51 +586,6 @@ func FuzzPlanEdits(f *testing.F) {
 	})
 }
 
-// Letting go of a search has to leave nothing of it behind that a later
-// search could pick up by accident, and has to leave finished work alone.
-func TestRemovingAPlanKeepsTheWorkItLeavesBehind(t *testing.T) {
-	plan := editablePlanPath(t)
-	work := filepath.Dir(filepath.Dir(plan))
-	rendered := filepath.Join(work, "01_eins.mp4")
-	if err := os.WriteFile(rendered, []byte("finished"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := RemovePlan(plan); err != nil {
-		t.Fatal(err)
-	}
-	if isFile(plan) {
-		t.Error("the plan file is still there")
-	}
-	if !isFile(rendered) {
-		t.Error("a rendered clip was taken away")
-	}
-	// Doing it twice is not an error, because the part is gone either way.
-	if err := RemovePlan(plan); err != nil {
-		t.Errorf("second removal: %s", err)
-	}
-}
-
-// The parts carry the plans behind them, so letting go of one knows
-// exactly what to take with it.
-func TestSearchedPartsCarryTheirPlans(t *testing.T) {
-	looked := SearchedPlans([]PlanSummary{
-		{Path: "/a/clips-0-600.json", From: 0, To: 600, Clips: 4},
-		{Path: "/a/clips-600-900.json", From: 600, To: 900, Clips: 2},
-		{Path: "/a/clips-1800-2400.json", From: 1800, To: 2400, Clips: 3},
-	}, 3600)
-	if len(looked) != 2 {
-		t.Fatalf("parts %v", looked)
-	}
-	if looked[0].Start != 0 || looked[0].End != 900 || looked[0].Clips != 6 ||
-		len(looked[0].Plans) != 2 {
-		t.Errorf("the two that meet did not become one: %v", looked[0])
-	}
-	if looked[1].Clips != 3 || len(looked[1].Plans) != 1 {
-		t.Errorf("the one on its own: %v", looked[1])
-	}
-}
-
 // The app makes one edit per click, and a click can land while the last one
 // is still being written. Every edit has to survive that, because there is
 // no save button to put a lost one back.
@@ -676,61 +631,6 @@ func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
 		if c.CaptionY == nil {
 			t.Errorf("clip %s lost its caption line", c.ID)
 		}
-	}
-}
-
-// A part of a search can be given back on its own. The clips inside it
-// go, the clips outside it stay, and the plan says the part may be read
-// again, which is what leaves a hole in what was searched.
-func TestAPartOfASearchCanBeGivenBack(t *testing.T) {
-	path := editablePlanPath(t)
-	// The plan was made over the first minute.
-	if err := editPlan(path, func(top *object, _ []*object) error {
-		made := newObject()
-		made.set("from", 0.0)
-		made.set("to", 60.0)
-		top.set("planned_with", made)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	gone, err := RemoveRange(path, 9, 15, 3600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gone != 1 {
-		t.Fatalf("%d clips went, not 1", gone)
-	}
-	if !isFile(path) {
-		t.Fatal("the plan went, though most of its window is still searched")
-	}
-	plan, clips, err := LoadClips(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(clips) != 1 || clips[0].ID != "02" {
-		t.Fatalf("what is left: %v", clips)
-	}
-	if kept, _ := plan.Raw["custom"].(map[string]any); kept["kept"] != "yes" {
-		t.Error("an edit threw away what it did not understand")
-	}
-
-	// What is left of the window: everything but the part given back.
-	summary := PlanSummaries(filepath.Dir(path))
-	if len(summary) != 1 {
-		t.Fatalf("plans: %v", summary)
-	}
-	looked := SearchedWindows(summary, 3600)
-	if fmt.Sprint(looked) != "[{0 9} {15 60}]" {
-		t.Fatalf("searched %v", looked)
-	}
-	// Giving back the rest takes the plan itself.
-	if _, err := RemoveRange(path, 0, 60, 3600); err != nil {
-		t.Fatal(err)
-	}
-	if isFile(path) {
-		t.Error("a plan with nothing left of its window stayed")
 	}
 }
 

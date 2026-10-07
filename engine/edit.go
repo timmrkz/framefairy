@@ -234,10 +234,9 @@ func writePlanFile(path string, body []byte) error {
 //
 // Writing over the file itself would be wrong twice. The app reads the
 // clips and the coverage about once a second while a search runs, and it
-// would read a plan that is half there: the clip list empties itself, and
-// the range picker reports a part it has already searched as free and
-// offers it to the model a second time. And a write that goes wrong part
-// of the way through would have taken the plan that was there with it.
+// would read a plan that is half there, and the clip list empties itself.
+// And a write that goes wrong part of the way through would have taken the
+// plan that was there with it.
 //
 // So it is written beside the file and moved onto it, which is one step as
 // far as any reader is concerned, and only after it has been read back as
@@ -251,19 +250,14 @@ func replacePlan(path string, body []byte) error {
 	})
 }
 
-// errNotAdded is a clip that was not added because the plan no longer has
-// room for it: the part it lies in was given back while it was on its
-// way.
-var errNotAdded = errors.New("the part this clip lies in was removed")
+// errNotAdded is a clip that was not added because the plan has it
+// already.
+var errNotAdded = errors.New("the clip is in the plan already")
 
 // appendClip adds a clip to a plan that a search is still writing. It goes
 // through editPlan, so an edit the app makes at the same moment is kept,
-// and so is the plan's shape.
-//
-// Removing part of a search while it runs leaves a hole in the plan, and a
-// clip that arrives afterwards inside that hole is not added, because it
-// would bring back what was just taken away. A plan that is gone
-// altogether is reported as the missing file it is.
+// and so is the plan's shape. A plan that is gone is reported as the
+// missing file it is.
 func appendClip(path string, clip PlanClip) error {
 	defer lockFile(path)()
 	return appendClipLocked(path, clip)
@@ -283,20 +277,8 @@ func appendClipLocked(path string, clip PlanClip) error {
 	if !ok {
 		return renderErr("a clip must be a JSON object")
 	}
-	start, end := 0.0, 0.0
-	if len(clip.Segments) > 0 {
-		start, end = float64(clip.Segments[0].Start), float64(clip.Segments[len(clip.Segments)-1].End)
-	}
 	refused := false
 	err = editPlanLocked(path, func(top *object, clips []*object) error {
-		if made, ok := top.values[keyPlannedWith].(*object); ok {
-			for _, hole := range orderedWindows(made.values[keyRemoved]) {
-				if end > hole.Start && start < hole.End {
-					refused = true
-					return errNotAdded
-				}
-			}
-		}
 		for i, c := range clips {
 			fallback := twoDigits(i + 1)
 			text := fallback
@@ -1051,9 +1033,9 @@ func ResetCrop(planPath, clipID string, at float64) error {
 	})
 }
 
-// IsPlanFile reports whether a path is named the way plan files are named.
-// Removing a search deletes a file, so what it is handed has to be a plan
-// and not, say, the transcript beside it.
+// IsPlanFile reports whether a path is named the way plan files are named,
+// so a record that names a plan names one and not, say, the transcript
+// beside it.
 func IsPlanFile(path string) bool {
 	return planNameRe.MatchString(filepath.Base(path))
 }
@@ -1064,143 +1046,11 @@ func IsPlanFile(path string) bool {
 // and HandPlanName for the clips made by hand.
 var planNameRe = regexp.MustCompile(`^clips(-\d+-\d+(-\d+)?|-hand)?\.json$`)
 
-// RemovePlan takes a whole search out of an episode: the plan file goes, and
-// with it the clips it held. The part it covered is free to be searched
-// again afterwards. Rendered files are finished work and are left alone.
-func RemovePlan(planPath string) error {
-	if !IsPlanFile(planPath) {
-		return renderErr("%s is not a plan", filepath.Base(planPath))
-	}
-	// An edit of this plan may be halfway through writing it.
-	defer lockFile(planPath)()
-	if err := os.Remove(planPath); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-// ClipSpan is the part of the episode a clip was cut from, from the
-// start of its first piece to the end of its last.
-func ClipSpan(c Clip) (float64, float64) {
-	if len(c.Segments) == 0 {
-		return 0, 0
-	}
-	return c.Segments[0].Start, c.Segments[len(c.Segments)-1].End
-}
-
-// RemoveRange gives a part of a plan's window back. The clips that lie
-// in the part go with it, and the plan notes the part as one the
-// model may read again, so the range picker shows it as free. A plan whose
-// whole window is given back goes altogether.
-//
-// It answers with how many clips went.
-func RemoveRange(planPath string, from, to, duration float64) (int, error) {
-	if !IsPlanFile(planPath) {
-		return 0, renderErr("%s is not a plan", filepath.Base(planPath))
-	}
-	if to <= from {
-		return 0, nil
-	}
-	plan, clips, err := LoadClips(planPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	window := planWindow(plan, duration)
-	start, end := math.Max(from, window.Start), math.Min(to, window.End)
-	if end <= start {
-		return 0, nil
-	}
-	var going []Clip
-	for _, clip := range clips {
-		a, b := ClipSpan(clip)
-		if b > start && a < end {
-			going = append(going, clip)
-		}
-	}
-	// Nothing of the window is left, so the plan itself goes.
-	if len(Without(window, append(readWindows(plan.PlannedWith()[keyRemoved]), Window{start, end}))) == 0 {
-		return len(going), RemovePlan(planPath)
-	}
-	gone := map[string]bool{}
-	for _, clip := range going {
-		gone[clip.ID] = true
-	}
-	err = editPlan(planPath, func(top *object, clips []*object) error {
-		kept := make([]any, 0, len(clips))
-		for i, c := range clips {
-			// The same name the loader gives a clip, because an id in a
-			// plan file is untrusted and may not be there at all.
-			fallback := twoDigits(i + 1)
-			text := fallback
-			if raw, ok := c.get(keyID); ok {
-				text = pyStr(raw)
-			}
-			if gone[SanitiseName(text, fallback)] {
-				continue
-			}
-			kept = append(kept, c)
-		}
-		top.set(keyClips, kept)
-		made, ok := top.values[keyPlannedWith].(*object)
-		if !ok {
-			made = newObject()
-			top.set(keyPlannedWith, made)
-		}
-		holes := append(orderedWindows(made.values[keyRemoved]), Window{start, end})
-		list := make([]any, 0, len(holes))
-		for _, h := range MergeWindows(holes) {
-			list = append(list, map[string]any{"from": h.Start, "to": h.End})
-		}
-		made.set(keyRemoved, list)
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return len(going), nil
-}
-
-// orderedWindows reads windows out of a plan being edited, where objects
-// keep their key order. It is readWindows for that tree.
-func orderedWindows(raw any) []Window {
-	list, ok := raw.([]any)
-	if !ok {
-		return nil
-	}
-	var out []Window
-	for _, item := range list {
-		o, ok := item.(*object)
-		if !ok {
-			continue
-		}
-		start, okS := toFloat(o.values[keyFrom])
-		end, okE := toFloat(o.values[keyTo])
-		if !okS || !okE || end <= start {
-			continue
-		}
-		out = append(out, Window{start, end})
-	}
-	return MergeWindows(out)
-}
-
-// planWindow is the window a plan was made over, see madeOver.
-func planWindow(plan Plan, duration float64) Window {
-	made := plan.PlannedWith()
-	from, _ := toFloat(made[keyFrom])
-	to, okTo := toFloat(made[keyTo])
-	by, _ := made["by"].(string)
-	return madeOver(from, to, okTo && to > from, by, duration)
-}
-
-// madeOver is the part of the episode a clip set was made over, which a
-// search marks as searched and giving a part back takes clips out of. A
-// search of a window was made over that window, and one without a window
-// over the whole episode. The clips made by hand were made over no part of
-// it, since no model read anything for them: they mark nothing searched,
-// and giving a searched part back leaves them where they are.
+// madeOver is the part of the episode a clip set was made over, which
+// counts as one more search of that part, see SearchPasses. A search of a
+// window was made over that window, and one without a window over the
+// whole episode. The clips made by hand were made over no part of it,
+// since no model read anything for them.
 func madeOver(from, to float64, windowed bool, by string, duration float64) Window {
 	switch {
 	case by == ByHand:

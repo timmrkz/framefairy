@@ -30,7 +30,6 @@
     type EpisodeStatus,
     type SourceView,
     type Word,
-    type WindowView,
     onUndo,
     onLevels,
   } from "../lib/api";
@@ -99,7 +98,7 @@
   let starting = $state(false);
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
-  let coverage = $state<CoverageView>({ searched: [], free: [], passes: [] });
+  let coverage = $state<CoverageView>({ passes: [] });
   // How much one search can read, from the engine, and what that makes of
   // the window and the clip settings. The window is no longer than the
   // model reads in one request and no shorter than the clips asked for
@@ -736,10 +735,10 @@
   async function refreshCoverage() {
     const ticket = coverageRead.send();
     try {
-      const now = await api.coverage(path, min);
+      const now = await api.coverage(path);
       if (coverageRead.keep(ticket)) coverage = now;
     } catch {
-      if (coverageRead.keep(ticket)) coverage = { searched: [], free: [], passes: [] };
+      if (coverageRead.keep(ticket)) coverage = { passes: [] };
     }
   }
 
