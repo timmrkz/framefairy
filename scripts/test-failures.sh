@@ -17,9 +17,17 @@ log=${1:?say which log of go test to read}
 awk '
 function esc(s) { gsub(/%/, "%25", s); gsub(/\r/, "%0D", s); return s }
 function title(s) { s = esc(s); gsub(/:/, "%3A", s); gsub(/,/, "%2C", s); return s }
-function flush() {
+# The first twenty lines a test printed and the last sixty, with an
+# ellipsis between when there were more: a walk that broke a rule prints
+# its steps first and the rule it broke last.
+function flush(   i, text) {
 	if (name != "" && shown < 10) {
-		printf "::error title=%s::%s\n", title(name), body
+		text = body
+		for (i = 1; i <= lines; i++) {
+			if (lines > 80 && i == 21) text = text "%0A        …"
+			if (lines <= 80 || i <= 20 || i > lines - 60) text = text "%0A" line[i]
+		}
+		printf "::error title=%s::%s\n", title(name), text
 		shown++
 	}
 	name = ""; body = ""; lines = 0
@@ -37,9 +45,9 @@ function flush() {
 	name = "panic"; body = esc($0)
 	next
 }
-# What the failed test printed, indented under it, up to twenty lines.
+# What the failed test printed, indented under it.
 name != "" && /^[ \t]/ {
-	if (lines < 20) { body = body "%0A" esc($0); lines++ }
+	line[++lines] = esc($0)
 	next
 }
 { flush() }
