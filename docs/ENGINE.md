@@ -1203,20 +1203,22 @@ A short goes into the folder `--out` names, as it is, or into the
 episode's own `out/`. The app names a folder for the shorts of every
 episode instead, `Options.Shorts`, and there each episode's shorts go into
 a folder of their own, named after the episode's file without its
-extension, `EpisodeName` in `run.go`: `<Shorts>/<episode>/<id>_<slug>.mp4`.
-Ids start again in every episode, so without it the clip 01 of one episode
-and the clip 01 of another of the same slug wrote the same file.
+extension, `EpisodeName` in `run.go`: `<Shorts>/<episode>/<slug>.mp4`.
+A short is named after its clip's words alone, `ShortName` in `clips.go`,
+without the clip's id, which stays in the clip set, the log and the
+caption files. A clip with no words is called `clip`.
 
 Two episodes of the same file name, from two folders, still share that
 folder. There a name taken by a file the clip did not write gets a
-number, the way Finder gives one, `<id>_<slug> 2.mp4`, `shortStem` in
+number, the way Finder gives one, `<slug> 2.mp4`, `shortStem` in
 `episode.go`. A short the clip wrote there, still as it was written,
 keeps its name, so a render again writes over it and nothing else. The
 first picture of a short takes its name too, so no short takes the
 pictures of another, which are named after the short and not the clip,
-`<name>-1.jpg`. `--out` and `out/` never number: `--out` names the folder,
-and a second episode writes over a short of the same name there, as it
-always did.
+`<name>-1.jpg`. `--out` and `out/` number the same way, because two clips
+of one episode, or two episodes in one `--out`, can have the same words.
+A clip set from outside `logs/` cannot note its short, so each render of
+it takes a name that is free. A preview keeps the id, `<id>_<slug>.mp4`.
 
 A render writes in the clip set where each clip's short went, under
 `shorts` by the clip's id, as each short is finished, through `editPlan`:

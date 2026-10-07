@@ -77,12 +77,22 @@ func (c Clip) Duration() float64 {
 	return pysum(lengths)
 }
 
-// Basename is the file name shared by the clip's outputs.
+// Basename is the name of the clip's files in the episode's work folder,
+// its captions and its preview.
 func (c Clip) Basename() string {
 	if c.Slug != "" {
 		return c.ID + "_" + c.Slug
 	}
 	return c.ID
+}
+
+// ShortName is the name of the clip's short, without .mp4: the clip's
+// words alone, without its id, or clip for a clip with no words.
+func (c Clip) ShortName() string {
+	if c.Slug != "" {
+		return c.Slug
+	}
+	return "clip"
 }
 
 // Clip ids and slugs become both filenames and ffmpeg filter-graph tokens, so

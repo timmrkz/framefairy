@@ -564,16 +564,16 @@ func wholeNumber(v any) (int64, bool) {
 }
 
 // ownName says whether a file name is one a clip's short can have: the
-// clip's name, or that with a number as shortStem gives it, 01_slug 2.mp4.
+// clip's words, or those with a number as shortStem gives it, slug 2.mp4.
 func ownName(c Clip, name string) bool {
 	stem, ok := strings.CutSuffix(name, ".mp4")
 	if !ok {
 		return false
 	}
-	if stem == c.Basename() {
+	if stem == c.ShortName() {
 		return true
 	}
-	n, ok := strings.CutPrefix(stem, c.Basename()+" ")
+	n, ok := strings.CutPrefix(stem, c.ShortName()+" ")
 	return ok && n != "" && n[0] != '0' && len(n) <= 4 && strings.Trim(n, "0123456789") == ""
 }
 
@@ -594,11 +594,10 @@ func IsShort(source, path string) bool {
 	return false
 }
 
-// shortStem is the name, without .mp4, a clip's short takes in its
-// episode's folder inside the folder for shorts, see Options.Shorts. Two
-// episodes of the same file name share that folder, so a name there can
-// be taken by a short this clip did not write. Then the short gets a
-// number the way Finder gives one, 01_slug 2, 01_slug 3, and never writes
+// shortStem is the name, without .mp4, a clip's short takes in the folder
+// it is rendered into. Two clips of the same words can meet there, so a
+// name can be taken by a short this clip did not write. Then the short
+// gets a number the way Finder gives one, slug 2, slug 3, and never writes
 // over the other. A short the clip wrote there, still as it was written,
 // keeps its name, so a render again writes over it and nothing else. A
 // name is taken by a short or by the first picture of one, so no short
@@ -613,9 +612,9 @@ func shortStem(dir string, plan Plan, c Clip) string {
 		_, err := os.Lstat(filepath.Join(dir, name))
 		return err == nil
 	}
-	stem := c.Basename()
+	stem := c.ShortName()
 	for n := 2; n <= 9999 && (taken(stem+".mp4") || taken(thumbnailName(stem, 1))); n++ {
-		stem = fmt.Sprintf("%s %d", c.Basename(), n)
+		stem = fmt.Sprintf("%s %d", c.ShortName(), n)
 	}
 	return stem
 }
