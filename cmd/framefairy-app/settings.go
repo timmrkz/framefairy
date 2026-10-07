@@ -44,6 +44,8 @@ type Settings struct {
 	// app, not to the short, so the two are set apart from each other and
 	// neither follows the other.
 	AppColour string `json:"appColour"`
+	// The folder for shorts, empty for next to each episode. Each episode
+	// renders into a folder of its own in it, see engine.Options.Shorts.
 	OutputDir string `json:"outputDir"`
 	// The one folder the training records of every episode go in. Empty
 	// means the default, ~/.framefairy/training. It is not kept with an
@@ -113,7 +115,7 @@ func (s Settings) options() engine.Options {
 		y := int(engine.SnapCaptionY(s.CaptionY))
 		o.MarginV = &y
 	}
-	o.Out = s.OutputDir
+	o.Shorts = s.OutputDir
 	o.TrainingDir = s.TrainingDir
 	return o
 }

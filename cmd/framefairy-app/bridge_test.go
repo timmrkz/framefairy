@@ -301,7 +301,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc")
+		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
+			q.Get("namesake") == "1")
 		answer(w, path, err)
 	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
@@ -311,8 +312,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
-		ms, _ := strconv.Atoi(r.URL.Query().Get("ms"))
+		q := r.URL.Query()
+		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
+		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
+			b.words.from(from)
+		}
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
@@ -632,7 +637,7 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
 // own kind is filmed by two cameras that switch then, see twoCameras, and
 // with hevc it is HEVC with 10-bit colour.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc bool) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -650,7 +655,14 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc bool) (string
 	b.mu.Lock()
 	b.made++
 	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
+	if namesake {
+		// The name of the bridge's episode, in a folder of its own.
+		path = filepath.Join(b.d.home, fmt.Sprintf("folge-%d", b.made), filepath.Base(b.first))
+	}
 	b.mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
 	if rate != "" {
 		err = makeFilmedEpisode(path, n, rate, timing)
 	} else {
