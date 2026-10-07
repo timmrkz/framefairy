@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -72,11 +73,12 @@ type shop struct {
 }
 
 type sale struct {
-	Ref   string
-	Email string
-	Seats int
-	At    time.Time
-	Adjs  []paddle.Adjustment
+	Ref    string
+	Email  string
+	Seats  int
+	At     time.Time
+	Adjs   []paddle.Adjustment
+	Custom map[string]string // the checkout's custom data, as Paddle keeps it
 }
 
 // TakenBack is what licence/paddle reads from the sale's adjustments.
@@ -119,8 +121,10 @@ func paddleID(prefix string) string {
 	return prefix + "_" + string(b)
 }
 
-// Buy is a checkout that completed.
-func (s *shop) Buy(email string, seats int) (string, error) {
+// Buy is a checkout that completed. thanks is the nonce the checkout page
+// passed as custom data, kept and sent on as Paddle does, unchecked: what
+// to make of it is the dispenser's business.
+func (s *shop) Buy(email string, seats int, thanks string) (string, error) {
 	if seats < 1 || seats > dispenser.MaxSeats {
 		return "", fmt.Errorf("1 to %d seats", dispenser.MaxSeats)
 	}
@@ -131,12 +135,17 @@ func (s *shop) Buy(email string, seats int) (string, error) {
 	defer s.mu.Unlock()
 	now := s.clock.Now()
 	ref := paddleID("txn")
-	s.sales[ref] = &sale{Ref: ref, Email: email, Seats: seats, At: now}
+	sl := &sale{Ref: ref, Email: email, Seats: seats, At: now}
+	if thanks != "" {
+		sl.Custom = map[string]string{dispenser.ThanksField: thanks}
+	}
+	s.sales[ref] = sl
 	s.order = append(s.order, ref)
 	s.queueLocked("transaction.completed", ref, map[string]any{
 		"id": ref, "status": "completed", "origin": "web",
 		"created_at": now, "updated_at": now, "billed_at": now,
-		"items": []map[string]any{{"quantity": seats}},
+		"items":       []map[string]any{{"quantity": seats}},
+		"custom_data": sl.Custom,
 	})
 	return ref, nil
 }
@@ -354,7 +363,7 @@ func (s *shop) Sale(ctx context.Context, ref string) (dispenser.Sale, error) {
 	if !ok || (s.lag && s.clock.Now().Sub(sl.At) < apiLag) {
 		return dispenser.Sale{}, dispenser.ErrNotFound
 	}
-	return dispenser.Sale{Ref: sl.Ref, Seats: sl.Seats, Email: sl.Email, At: sl.At, TakenBack: sl.TakenBack()}, nil
+	return dispenser.Sale{Ref: sl.Ref, Seats: sl.Seats, Email: sl.Email, At: sl.At, TakenBack: sl.TakenBack(), Thanks: sl.Custom[dispenser.ThanksField]}, nil
 }
 
 func (s *shop) Since(ctx context.Context, t time.Time) ([]string, error) {
@@ -407,6 +416,7 @@ func (s *shop) view() shopView {
 	for i := len(s.order) - 1; i >= 0; i-- {
 		sl := *s.sales[s.order[i]]
 		sl.Adjs = slices.Clone(sl.Adjs)
+		sl.Custom = maps.Clone(sl.Custom)
 		v.Sales = append(v.Sales, sl)
 	}
 	for i := len(s.events) - 1; i >= 0; i-- {

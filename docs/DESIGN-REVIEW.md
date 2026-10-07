@@ -72,7 +72,7 @@ These are live today, independent of any redesign, and small to fix.
 | 6 | Put captions back is up to six Go calls and six undo steps. Cmd+Z then undoes only the colours, and "as they were" can bring back stale values. | `Episode.svelte:1609-1631`, `:1784` | read |
 | 7 | The caption overrides for the caption box are a copy of the render's, and they have drifted: the render sets the margin only when a height is set and checks the colour, the copy does neither. | `cmd/framefairy-app/views.go:165`, `engine/run.go:627` | read |
 | 8 | Three settings writers still read, change and write back outside the lock, the lost update ROBUSTNESS #10 removed elsewhere. | `cmd/framefairy-app/setup.go:254`, `:351`, `:391` | read |
-| 9 | The licence server's thank-you page gives the keys to anyone who has the Paddle transaction id, for 24 hours. The id travels in the thank-you link, receipts and support mail. | `licence/dispenser/api.go:287`, `:326` | proved |
+| 9 | The licence server's thank-you page gives the keys to anyone who has the Paddle transaction id, for 24 hours. The id travels in the thank-you link, receipts and support mail. | `licence/dispenser/api.go:287`, `:326` | proved. Fixed in #146: a nonce from the checkout page, kept hashed with the sale and required, and an hour |
 | 10 | Cmd+Z from the menu edits the episode behind the Remove box. Six copies of "is someone typing or is a box open" disagree. | `Episode.svelte:1212`, `:1224`, `:2034`, `ClipTimeline.svelte:743`, `Player.svelte:950`, `:982` | read |
 
 ## The families, from the history
@@ -474,7 +474,8 @@ to Documents and Desktop. Compile them out of production builds.
 
 - Bug 9, the thank-you page: a nonce made on the checkout page, passed to
   Paddle as custom data, stored hashed with the sale and required on
-  `/v1/thanks`, and a shorter window.
+  `/v1/thanks`, and a shorter window. Done in #146, with an hour, see
+  [LICENCE.md](LICENCE.md#every-endpoint).
 - Every sold key is kept as plain text, in the database and in the backup
   locked for a year (`licence/dispenser/store.go:29`). LICENCE.md says the
   worst leak is unsold keys, but a leak of the database or a backup is

@@ -45,10 +45,12 @@ type APIConfig struct {
 	Log *slog.Logger
 }
 
-// How long the thank-you page shows a sale's keys after the sale. After
-// that, the lost-key page sends them to the buyer's address instead, so a
-// reference that got out shows nothing.
-const ThanksWindow = 24 * time.Hour
+// How long the thank-you page shows a sale's keys after they were
+// assigned. The page is for the minutes after paying, in the tab that
+// paid. After that, the letter and the lost-key page bring the keys to
+// the buyer's address instead, so a nonce left behind in a browser is
+// worth nothing for long.
+const ThanksWindow = time.Hour
 
 // Limits on what one request may carry.
 const (
@@ -97,7 +99,7 @@ func (e *Engine) Handler(c APIConfig) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /paddle", a.paddle)
-	mux.HandleFunc("GET /v1/thanks/{ref}", a.public(a.thanks))
+	mux.HandleFunc("POST /v1/thanks/{ref}", a.public(a.thanks))
 	mux.HandleFunc("POST /v1/lost", a.public(a.lost))
 	mux.HandleFunc("OPTIONS /v1/thanks/{ref}", a.public(nil))
 	mux.HandleFunc("OPTIONS /v1/lost", a.public(nil))
@@ -322,11 +324,23 @@ func (a *api) health(w http.ResponseWriter, r *http.Request) {
 }
 
 // thanks shows a sale's keys on the thank-you page, from the moment they
-// are assigned and for a day, with the key ID of each, in the same order,
-// which is how the page and the app name a key.
+// are assigned and for ThanksWindow, with the key ID of each, in the same
+// order, which is how the page and the app name a key. The page must send
+// the nonce its checkout page made, in the body, so it travels in no link
+// and no log. The reference alone, a wrong nonce and a sale whose checkout
+// passed none get the same answer as a sale that is not there yet.
 func (a *api) thanks(w http.ResponseWriter, r *http.Request) {
-	ref := r.PathValue("ref")
-	keys, at, err := a.e.keysAt(r.Context(), "paddle", ref)
+	var req struct {
+		Nonce string `json:"nonce"`
+	}
+	if !read(w, r, maxBody, &req) {
+		return
+	}
+	if !checkNonce(req.Nonce) {
+		fail(w, http.StatusBadRequest, "invalid")
+		return
+	}
+	keys, at, err := a.e.thanksKeys(r.Context(), r.PathValue("ref"), req.Nonce)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		reply(w, http.StatusAccepted, map[string]bool{"waiting": true})

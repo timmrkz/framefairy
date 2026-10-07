@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -235,17 +236,62 @@ func TestPaddleWebhookAnswers(t *testing.T) {
 	}
 }
 
-// Use case 2: the page waits, then shows the keys, for a day.
+// The nonces two checkout pages made.
+const (
+	nonceA = "0123456789abcdef0123456789abcdef"
+	nonceB = "fedcba9876543210fedcba9876543210"
+)
+
+// thanks is the thank-you page asking for the keys of ref with nonce.
+func (w *web) thanks(ref, nonce string, header ...string) (int, map[string]any) {
+	w.t.Helper()
+	return w.call("POST", "/v1/thanks/"+ref, "", map[string]string{"nonce": nonce}, header...)
+}
+
+// sell is a Paddle sale whose checkout page passed nonce as custom data,
+// settled through its webhook. It gives the sale's keys.
+func (w *web) sell(ref string, seats int, nonce string) []licence.Key {
+	w.t.Helper()
+	w.shop.put(Sale{Ref: ref, Seats: seats, Email: "anna@example.com", At: w.clock.now(), Thanks: nonce}, w.clock.now())
+	if code, out := w.webhook("transaction.completed", ref, w.clock.now()); code != 200 {
+		w.t.Fatalf("selling %s: %d %v", ref, code, out)
+	}
+	keys, err := w.engine.Keys(w.ctx, "paddle", ref)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return keys
+}
+
+// Use case 2: the page waits, then shows the keys, for an hour, and only
+// to the browser that paid: the one that holds the nonce its checkout
+// page made. Bug 9 of DESIGN-REVIEW.md.
 func TestThankYouPage(t *testing.T) {
 	w := newWeb(t, false)
-	w.stock(5)
-	if code, out := w.call("GET", "/v1/thanks/txn_01", "", nil); code != http.StatusAccepted || out["waiting"] != true {
-		t.Fatalf("before the sale: %d %v", code, out)
+	w.stock(10)
+	code, waiting := w.thanks("txn_01", nonceA)
+	if code != http.StatusAccepted || waiting["waiting"] != true {
+		t.Fatalf("before the sale: %d %v", code, waiting)
 	}
-	keys := w.assign("txn_01", 2)
-	code, out := w.call("GET", "/v1/thanks/txn_01", "", nil, "Origin", website)
+	keys := w.sell("txn_01", 2, nonceA)
+
+	// The reference alone, from a link, a receipt or a support mail.
+	if code, out := w.call("GET", "/v1/thanks/txn_01", "", nil, "Origin", website); out["keys"] != nil || code == http.StatusOK {
+		t.Fatalf("the reference alone: %d %v", code, out)
+	}
+	for _, body := range []any{nil, `{}`, map[string]string{"nonce": ""}, map[string]string{"nonce": strings.ToUpper(nonceA)}, map[string]string{"nonce": nonceA + "0"}} {
+		if code, out := w.call("POST", "/v1/thanks/txn_01", "", body); code != http.StatusBadRequest || out["keys"] != nil {
+			t.Fatalf("no nonce, %v: %d %v", body, code, out)
+		}
+	}
+	// A wrong nonce reads like a sale that is not there.
+	if code, out := w.thanks("txn_01", nonceB); code != http.StatusAccepted || !maps.Equal(out, waiting) {
+		t.Fatalf("a wrong nonce: %d %v", code, out)
+	}
+
+	code, out := w.thanks("txn_01", nonceA, "Origin", website)
 	if code != 200 || !slices.Equal(keysIn(t, out), keys) {
-		t.Fatalf("after the sale: %d %v", code, out)
+		t.Fatalf("the right nonce: %d %v", code, out)
 	}
 	ids, _ := out["ids"].([]any)
 	if len(ids) != len(keys) {
@@ -256,14 +302,51 @@ func TestThankYouPage(t *testing.T) {
 			t.Fatalf("key %d has the key ID %v, not %s", i+1, ids[i], id)
 		}
 	}
-	w.clock.add(ThanksWindow + time.Second)
-	if code, out := w.call("GET", "/v1/thanks/txn_01", "", nil); code != http.StatusGone || out["keys"] != nil {
-		t.Fatalf("after a day: %d %v", code, out)
+
+	// The sale keeps the nonce's hash and never the nonce.
+	w.store.View(w.ctx, func(tx Tx) error {
+		seats, _ := tx.Seats("paddle", "txn_01")
+		for _, s := range seats {
+			if s.Thanks != TokenHash(nonceA) {
+				t.Fatalf("seat %d keeps %q", s.Seat, s.Thanks)
+			}
+		}
+		return nil
+	})
+
+	// A checkout that passed no nonce, or something that is not one: the
+	// sale goes through, and its keys come by email only.
+	for ref, custom := range map[string]string{"txn_02": "", "txn_03": strings.ToUpper(nonceB), "txn_04": "<script>" + nonceB, "txn_05": strings.Repeat("a", 1<<12)} {
+		if len(w.sell(ref, 1, custom)) != 1 {
+			t.Fatalf("%s has no key", ref)
+		}
+		for _, n := range []string{nonceA, nonceB, strings.ToLower(custom)} {
+			if !checkNonce(n) {
+				continue
+			}
+			if code, out := w.thanks(ref, n); code != http.StatusAccepted || !maps.Equal(out, waiting) {
+				t.Fatalf("%s with custom data %q: %d %v", ref, custom, code, out)
+			}
+		}
 	}
-	if code, _ := w.call("GET", "/v1/thanks/txn%20bad", "", nil); code != http.StatusBadRequest {
+
+	// An hour, then nothing, and a wrong nonce still reads like no sale.
+	w.clock.add(59 * time.Minute)
+	if code, _ := w.thanks("txn_01", nonceA); code != 200 {
+		t.Fatalf("after 59 minutes: %d", code)
+	}
+	w.clock.add(time.Minute + time.Second)
+	if code, out := w.thanks("txn_01", nonceA); code != http.StatusGone || out["keys"] != nil {
+		t.Fatalf("after an hour: %d %v", code, out)
+	}
+	if code, out := w.thanks("txn_01", nonceB); code != http.StatusAccepted || !maps.Equal(out, waiting) {
+		t.Fatalf("a wrong nonce after an hour: %d %v", code, out)
+	}
+
+	if code, _ := w.thanks("txn%20bad", nonceA); code != http.StatusBadRequest {
 		t.Fatalf("a bad reference: %d", code)
 	}
-	if code, _ := w.call("GET", "/v1/thanks/txn_01", "", nil, "Origin", "https://evil.example"); code != http.StatusForbidden {
+	if code, _ := w.thanks("txn_01", nonceA, "Origin", "https://evil.example"); code != http.StatusForbidden {
 		t.Fatalf("another site: %d", code)
 	}
 }
@@ -277,7 +360,7 @@ func TestCORS(t *testing.T) {
 	if rec.Code != http.StatusNoContent || rec.Header().Get("Access-Control-Allow-Origin") != website {
 		t.Fatalf("preflight: %d %v", rec.Code, rec.Header())
 	}
-	req = httptest.NewRequest("GET", "/v1/thanks/txn_01", nil)
+	req = httptest.NewRequest("POST", "/v1/thanks/txn_01", strings.NewReader(`{"nonce":"`+nonceA+`"}`))
 	req.Header.Set("Origin", website)
 	rec = httptest.NewRecorder()
 	w.h.ServeHTTP(rec, req)
@@ -586,7 +669,7 @@ func TestEndpointsAtOnce(t *testing.T) {
 	w.stock(300)
 	for i := range 40 {
 		ref := "txn_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
-		w.shop.put(Sale{Ref: ref, Seats: 1 + i%3, Email: "b@example.com", At: now}, now)
+		w.shop.put(Sale{Ref: ref, Seats: 1 + i%3, Email: "b@example.com", At: now, Thanks: nonceA}, now)
 	}
 	var wg sync.WaitGroup
 	for g := range 10 {
@@ -598,7 +681,7 @@ func TestEndpointsAtOnce(t *testing.T) {
 				case 0, 1:
 					w.webhook("transaction.completed", ref, now)
 				case 2:
-					w.call("GET", "/v1/thanks/"+ref, "", nil)
+					w.thanks(ref, nonceA)
 				case 3:
 					w.call("POST", "/v1/orders", bundleToken, map[string]any{"ref": ref, "seats": 1})
 				case 4:

@@ -213,7 +213,7 @@ it.
 | # | Use case | Starts with | Done by | Accepted when |
 | --- | --- | --- | --- | --- |
 | 1 | Bought through Paddle | Paddle `transaction.completed` | dispenser `Assign` | One pool key per seat is assigned, recorded and emailed. The same webhook twice gives the same keys and no second email. A price ID that is not ours is refused |
-| 2 | Key on the thank-you page | Our page, with the transaction | dispenser `Keys` | The page shows the keys as soon as the sale is assigned, and says it is waiting until then |
+| 2 | Key on the thank-you page | Our page, with the transaction and the nonce its checkout page made | dispenser `Keys` | The page shows the keys as soon as the sale is assigned, and says it is waiting until then. Only the tab that paid sees them, for an hour: the transaction alone or a wrong nonce shows nothing, and cannot tell whether the sale exists |
 | 3 | Several seats | A purchase with quantity n | dispenser `Assign` | n keys, all sent to the buyer |
 | 4 | Sold by a partner, live | Partner API `POST /v1/orders` | dispenser `Assign` | Keys come back in the response. The same partner order twice gives the same keys. Another partner's token cannot reach them |
 | 5 | Sold by a partner, in advance | Command line on the signer | signer `Partner` | A file of n keys, recorded with the partner and its index |
@@ -368,7 +368,8 @@ or rejected, and a chargeback warning, do not count. A reversal is an
 adjustment of its own, `chargeback_reverse`, and a refund being approved
 is the first adjustment updated, see
 [Paddle's adjustment events](https://developer.paddle.com/webhooks/adjustments/adjustment-created).
-Reading this from Paddle's API is the `Orders` implementation's job, and
+Reading this from Paddle's API is the `Orders` implementation's job, as
+is putting the transaction's `custom_data.thanks` into `Sale.Thanks`, and
 the sandbox run checks it.
 
 **Mail.** A Paddle sale's letter is queued in the same transaction that
@@ -418,7 +419,7 @@ What reaches it, and who may call what:
 | Adapter | Receives | Calls |
 | --- | --- | --- |
 | Paddle | `transaction.completed`, `adjustment.created`, `adjustment.updated`, signed by Paddle | `Assign` for a sale, `Settle` for an adjustment |
-| Thank-you page | A transaction, from our website | `Keys` |
+| Thank-you page | A transaction and its nonce, from our website | `Keys` |
 | Lost key | An email address, from our website | `Resend` |
 | Partner API | An order, with the partner's own token | `Assign`, `Keys`, `Revoke` |
 | Signer | The pool level and batches, with the signer's token | `PoolLevel`, `Stock` |
@@ -499,7 +500,7 @@ Built, in `licence/dispenser`, in front of the engine.
 | Endpoint | Caller | Does |
 | --- | --- | --- |
 | `POST /paddle` | Paddle, signed | `Settle` the sale the webhook names |
-| `GET /v1/thanks/{ref}` | our thank-you page | the sale's keys and the key ID of each, for a day |
+| `POST /v1/thanks/{ref}` | our thank-you page, with the nonce | the sale's keys and the key ID of each, for an hour |
 | `POST /v1/lost` | our lost-key page | `Resend` |
 | `POST /v1/orders`, `GET /v1/orders/{ref}`, `POST /v1/orders/{ref}/revoke` | a partner, with its token | `Assign`, `Keys`, `Revoke` |
 | `GET /v1/pool`, `POST /v1/pool` | the signer, with its token | `PoolLevel`, `Stock` |
@@ -533,9 +534,33 @@ The rules they keep:
   sale. That means each retry is signed when it is sent, which the
   sandbox run checks. Paddle also publishes the addresses its webhooks
   come from. The dispenser trusts the signature and does not check them.
-- **The thank-you page shows a sale's keys for a day after the sale**, then
-  answers that they went by email. A reference that got out later shows
-  nothing.
+- **The thank-you page shows a sale's keys only to the tab that paid.**
+  The sale's reference is no secret: it is in the thank-you link, in
+  Paddle's receipt and in every mail to support. So the checkout page
+  makes a nonce, 16 random bytes from `crypto.getRandomValues` in
+  lowercase hexadecimal, keeps it in the tab in `sessionStorage` and
+  passes it to Paddle as custom data, `customData: {thanks: nonce}` in
+  `Paddle.Checkout.open`. Paddle keeps it on the transaction as
+  `custom_data.thanks`, and `Settle` reads it from Paddle's answer about
+  the sale, like everything else of it, as `Sale.Thanks`. The buyer's
+  browser wrote it, so it is taken only when it is exactly 32 lowercase
+  hexadecimal characters, and the sale keeps only its SHA-256 on every
+  seat, `ThanksHash`, never the nonce. A nonce that is missing or not one
+  the page makes never holds up a sale: its keys go by email, and only
+  the thank-you page never shows them.
+- **The thank-you page asks with the nonce in the body**, `{"nonce": …}`,
+  so it is in no link, no history and no log. The hashes are compared in
+  constant time, before any key is read. The reference alone, a wrong
+  nonce and a sale without a nonce all get the answer of a sale that is
+  not there yet, so nobody learns whether a sale exists. Opened anywhere
+  but the tab that paid, the page says the key comes by email.
+- **The thank-you page shows a sale's keys for an hour**, then answers
+  that they went by email. The page is for the minutes after paying, in
+  the tab that paid, and the keys are there within seconds, or once
+  Paddle's webhook comes back. An hour is room for a buyer who leaves the
+  tab and comes back to it. After that the letter and the lost-key page
+  bring the keys to the buyer's address, so a nonce left behind in a
+  browser, on a shared Mac, is worth nothing for long.
 - **The lost-key page answers the same whatever the address**, and takes
   three asks per address and twenty per caller an hour. The counts live in
   one container's memory: they stop a page being used to flood an inbox,
@@ -560,9 +585,13 @@ The rules they keep:
 `http://127.0.0.1:8090`, with a pretend world around it, to try every
 sale and every failure by hand before any of it meets Paddle:
 
-- **A pretend Paddle.** Its checkout at `/shop` sells, sends a signed
+- **A pretend Paddle.** Its checkout at `/shop` makes the nonce and
+  passes it as custom data, sells, sends a signed
   `transaction.completed` webhook and sends the buyer to the thank-you
-  page with the sale's reference, as Paddle's checkout does. From the
+  page with the sale's reference, as Paddle's checkout does. Buy on the
+  dev page goes through it, in a new tab. The dev page's own link to a
+  sale's thank-you page opens another tab, which has no nonce, so it
+  shows what a receipt's link shows: that the key comes by email. From the
   dev page it refunds, with Paddle's approval or rejection, charges back,
   reverses a chargeback and warns of one, each as the adjustment
   webhooks Paddle sends, and it answers the dispenser's questions about
@@ -582,7 +611,7 @@ sale and every failure by hand before any of it meets Paddle:
   the thank-you page and in every letter on the dev page opens the app
   with the key in its settings, as the real letter will.
 - **A clock that can be moved forward**, by minutes, an hour, a day or
-  three, so a retry, the thank-you page's day, the mail run every 5
+  three, so a retry, the thank-you page's hour, the mail run every 5
   minutes and the daily run come in a click.
 - **Switches for what goes wrong**: Paddle's API down, Paddle's API not
   knowing a sale for 2 minutes after its webhook, Paddle's next webhooks
@@ -756,8 +785,8 @@ with, offline, before every render.
 bought it, and on its way it passes through these hands:
 
 1. The dispenser, which holds every key it sold, and its database.
-2. The thank-you page, in the buyer's browser, for a day after the sale,
-   and the browser's history and cache from then on.
+2. The thank-you page, in the tab that paid, for an hour after the sale,
+   and in that page while the tab stays open. The answer is never cached.
 3. The mail service that sends the letter, every mail server between it
    and the buyer, and the buyer's mail provider, which keeps it.
 4. Anybody who can read the buyer's mailbox, on any device it is open on.
@@ -859,7 +888,7 @@ anybody's data.
   its dev page with the database working and down, and that walk a sale
   from the checkout to a chargeback and back, webhooks held and sent in
   the other order, twice or lost, the mail service, the database and
-  Paddle's API failing, the pool running dry, the thank-you page's day
+  Paddle's API failing, the pool running dry, the thank-you page's hour
   and the lost-key page's limits. Buyers, Paddle, the signer, the runs
   and the dev page all at once, under the race detector, end with the
   audit.
