@@ -29,8 +29,13 @@ import (
 // next frame is there when the arrow key steps to it.
 //
 //	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>  {"id": "..."}
+//	/frames/sound?path=<episode>&from=<seconds>&rate=<hz>&ch=<channels>  {"id": "..."}
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
+//
+// The sound of every episode comes the same way, decoded by ffmpeg, see
+// engine.PreviewSound: a stream of it is read like a stream of frames,
+// each frame engine.SoundChunk moments of it.
 //
 // Where the system has its own decoder for the picture, VideoToolbox on
 // the Mac, the page uses that instead, see engine.Pictures: it reads the
@@ -97,7 +102,7 @@ func (a *atomicTime) get() time.Time {
 func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	switch r.URL.Path {
-	case "/frames/open":
+	case "/frames/open", "/frames/sound":
 		p.serveOpen(st, w, r)
 	case "/frames/read":
 		s := p.get(q.Get("id"))
@@ -138,20 +143,37 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	if err != nil || math.IsNaN(from) || math.IsInf(from, 0) || from < 0 {
 		from = 0
 	}
-	width, _ := strconv.Atoi(q.Get("w"))
-	height, _ := strconv.Atoi(q.Get("h"))
-	if width < 2 || height < 2 || width > 7680 || height > 4320 {
-		http.Error(w, "a preview needs a width and a height", http.StatusBadRequest)
-		return
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	var run func(ctx context.Context, got func(at float64, data []byte) error) error
+	if r.URL.Path == "/frames/sound" {
+		rate, _ := strconv.Atoi(q.Get("rate"))
+		channels, _ := strconv.Atoi(q.Get("ch"))
+		if rate < 8000 || rate > 192000 || channels < 1 || channels > 8 {
+			http.Error(w, "a sound stream needs a rate and a number of channels", http.StatusBadRequest)
+			return
+		}
+		run = func(ctx context.Context, got func(float64, []byte) error) error {
+			return e.PreviewSound(ctx, path, from, rate, channels, got)
+		}
+	} else {
+		width, _ := strconv.Atoi(q.Get("w"))
+		height, _ := strconv.Atoi(q.Get("h"))
+		if width < 2 || height < 2 || width > 7680 || height > 4320 {
+			http.Error(w, "a preview needs a width and a height", http.StatusBadRequest)
+			return
+		}
+		run = func(ctx context.Context, got func(float64, []byte) error) error {
+			return e.PreviewFrames(ctx, path, from, width&^1, height&^1, got)
+		}
 	}
-	id := p.start(path, from, width&^1, height&^1)
+	id := p.start(run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
 
 // start runs ffmpeg for a stream. It decodes a frame and waits until the
 // page has pulled it before it decodes the next, so the channel holds one.
-func (p *previews) start(path string, from float64, width, height int) string {
+func (p *previews) start(run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
@@ -180,8 +202,7 @@ func (p *previews) start(path string, from float64, width, height int) string {
 	p.mu.Unlock()
 	go func() {
 		defer close(s.done)
-		e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-		s.err = e.PreviewFrames(ctx, path, from, width, height, func(at float64, frame []byte) error {
+		s.err = run(ctx, func(at float64, frame []byte) error {
 			f := previewFrame{at: at, data: append([]byte(nil), frame...)}
 			select {
 			case s.frames <- f:
@@ -242,8 +263,9 @@ func (p *previews) reap() {
 // writeFrames answers a pull: the next frame once ffmpeg has it, and up to
 // n in all, as many as are there by then without waiting for more. Each is
 // the moment of the episode it starts at, 8 bytes, a float64 in little
-// endian, then the frame in 8-bit I420, from the first that starts at
-// skip or later. A stream that has ended answers
+// endian, then the frame in 8-bit I420, or the moments of sound, from the
+// first that starts at skip or later. Every frame of a stream is as long
+// as every other, but the last of a sound stream, which may be shorter. A stream that has ended answers
 // with no frame and X-Frames-End, and with the reason when it failed.
 func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip float64) {
 	w.Header().Set("Content-Type", "application/octet-stream")

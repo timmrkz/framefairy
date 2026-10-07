@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -132,5 +133,74 @@ func TestTheFramesRouteSaysWhenThereIsNoSystemDecoder(t *testing.T) {
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("a decoder opened with GET was answered with %d", rec.Code)
+	}
+}
+
+// A sound stream is read the way a stream of frames is, and what it holds,
+// put together, is the episode's sound from where it was opened, as ffmpeg
+// decodes it, to its end.
+func TestTheFramesRouteStreamsSound(t *testing.T) {
+	ffmpegtest.Need(t)
+	svc, mine, _ := library(t)
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc2=s=160x90:r=5:d=4",
+		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t))|0.5*sin(2*PI*900*t):s=48000:d=4",
+		"-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4", mine).CombinedOutput(); err != nil {
+		t.Fatalf("making the episode: %s %s", err, out)
+	}
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	get := func(path string, q url.Values) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
+		return rec
+	}
+	if rec := get("/frames/sound", url.Values{"path": {mine}, "from": {"1"}, "rate": {"48000"}, "ch": {"9"}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("nine channels were opened: %d", rec.Code)
+	}
+	rec := get("/frames/sound", url.Values{"path": {mine}, "from": {"1.5"}, "rate": {"48000"}, "ch": {"2"}})
+	var opened struct{ ID string }
+	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
+		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
+	}
+	defer get("/frames/close", url.Values{"id": {opened.ID}})
+	whole := 8 + engine.SoundChunk*2*4
+	var heard []byte
+	var ats []float64
+	for {
+		rec := get("/frames/read", url.Values{"id": {opened.ID}, "n": {"16"}})
+		body := rec.Body.Bytes()
+		for off := 0; off < len(body); off += whole {
+			ats = append(ats, math.Float64frombits(binary.LittleEndian.Uint64(body[off:])))
+			heard = append(heard, body[off+8:min(off+whole, len(body))]...)
+		}
+		if rec.Header().Get("X-Frames-End") != "" {
+			if e := rec.Header().Get("X-Frames-Error"); e != "" {
+				t.Fatal(e)
+			}
+			break
+		}
+	}
+	want, err := exec.Command("ffmpeg", "-v", "error", "-i", mine, "-map", "0:a:0", "-ac", "2", "-ar", "48000",
+		"-f", "f32le", "-").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = want[int(1.5*48000)*8:]
+	if len(heard) != len(want) {
+		t.Fatalf("the stream held %d moments, the sound from 1.5 s has %d", len(heard)/8, len(want)/8)
+	}
+	worst := 0.0
+	for i := 0; i+4 <= len(want)-48000/10*8; i += 4 {
+		a := math.Float32frombits(binary.LittleEndian.Uint32(heard[i:]))
+		b := math.Float32frombits(binary.LittleEndian.Uint32(want[i:]))
+		worst = math.Max(worst, math.Abs(float64(a-b)))
+	}
+	if worst > 1e-4 {
+		t.Errorf("the stream's sound is off by %.5f", worst)
+	}
+	for k, at := range ats {
+		if w := 1.5 + float64(k*engine.SoundChunk)/48000; math.Abs(at-w) > 1e-9 {
+			t.Fatalf("chunk %d says %.6f, it is at %.6f", k, at, w)
+		}
 	}
 }
