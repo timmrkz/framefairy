@@ -564,7 +564,7 @@ last frame of what played.
 
 The walks drive the interface from inside its page. Some of what the app
 does starts outside it: a link in a mail that opens the app, with the app
-closed or already open. `make outside` checks those on a real Mac, the
+closed or already open, and the app quitting and being started again. `make outside` checks those on a real Mac, the
 way Tim did by hand, and CI runs it in the job `outside`, the only one
 that needs any of what it sets up.
 
@@ -585,7 +585,10 @@ What it needs, and nothing else needs:
 The probe listens on 127.0.0.1:47290, for the test only. It says what the
 app has: the links it was handed, whether its window is in front, and what
 the settings show, read out of the page itself. It presses a button the
-way a click does, found by its words, and it quits the app. Which app is
+way a click does, found by its words, and it quits the app. It adds a
+video the way Add does once a file is picked, and asks for a search the
+way New does, and with that it can quit in the same moment, stopping
+everything first the way the second Cmd+Q does. Which app is
 in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
@@ -618,6 +621,15 @@ sequence reads:
 {"saved", "yes"},
 ...
 ```
+
+The second sequence is the walk `searching.mjs` that pressed New and
+closed the app at once: it adds a video of 90 seconds, made with the
+ffmpeg the app carries, waits for its first search to end, asks for a
+search of 30 to 60 seconds and quits in the same moment, starts the app
+again and asks the probe how that search ended. It has to be interrupted,
+about the window it was asked for, which the clip list shows as
+Interrupted with Continue. A search cut off there once left no record,
+and nothing said it had been asked for.
 
 A link is handed to macOS with `open`, which is what a browser or a mail
 app does once a link is clicked and its own question, whether to open
