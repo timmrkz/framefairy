@@ -19,7 +19,7 @@ func TestEveryStepIsOneTheRunnerKnows(t *testing.T) {
 		if len(seq.steps) == 0 {
 			t.Errorf("%s has no steps", seq.name)
 		}
-		bought := 0
+		bought, videos := 0, 0
 		for i, s := range seq.steps {
 			at := func(format string, a ...any) {
 				t.Errorf("%s, step %d, %v: "+format, append([]any{seq.name, i + 1, s}, a...)...)
@@ -61,6 +61,29 @@ func TestEveryStepIsOneTheRunnerKnows(t *testing.T) {
 			case "saved", "waiting":
 				if s[1] != "yes" && s[1] != "no" {
 					at("yes or no")
+				}
+			case "add video":
+				if n, err := strconv.Atoi(s[1]); err != nil || n < 1 {
+					at("a video is a number of seconds long")
+				}
+				videos++
+			case "search ends", "search and quit", "search":
+				if videos == 0 {
+					at("no video was added before it")
+				}
+				window := s[1:]
+				if s[0] == "search" {
+					if !slices.Contains([]string{"interrupted", "failed"}, s[1]) {
+						at("a search ended interrupted or failed")
+					}
+					window = s[2:]
+				}
+				if len(window) == 2 {
+					from, err1 := strconv.ParseFloat(window[0], 64)
+					to, err2 := strconv.ParseFloat(window[1], 64)
+					if err1 != nil || err2 != nil || from < 0 || to <= from {
+						at("a window is two numbers of seconds, the first the smaller")
+					}
 				}
 			}
 		}
