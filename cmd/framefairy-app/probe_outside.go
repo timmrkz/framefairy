@@ -276,8 +276,20 @@ func (p *probe) quit(w http.ResponseWriter, _ *http.Request) {
 	}
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		p.svc.app.Quit()
+		p.quitNow()
 	}()
+}
+
+// quitNow quits the app the way the second Cmd+Q does: everything stops,
+// and then the app goes. app.Quit alone asks ShouldQuit, which takes it for
+// a first Cmd+Q and only asks, so the app stayed open.
+func (p *probe) quitNow() {
+	l := p.svc.leave
+	l.stop()
+	l.mu.Lock()
+	l.going, l.gone = true, true
+	l.mu.Unlock()
+	p.svc.app.Quit()
 }
 
 // add adds a video to the library, the way Add does once the system's box
@@ -308,6 +320,8 @@ func (p *probe) search(w http.ResponseWriter, r *http.Request) {
 	set := p.svc.store.Settings()
 	job := p.svc.Search(q.Get("video"), engine.PlanRequest{From: from, To: to, Count: 1, Min: set.Min, Max: set.Max})
 	if q.Get("quit") == "1" {
+		// Stopped before the answer goes, so the search is cut off where
+		// it stands, in the moment it was asked for.
 		p.svc.leave.stop()
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -316,6 +330,6 @@ func (p *probe) search(w http.ResponseWriter, r *http.Request) {
 		f.Flush()
 	}
 	if q.Get("quit") == "1" {
-		go p.svc.app.Quit()
+		go p.quitNow()
 	}
 }
