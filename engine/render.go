@@ -209,8 +209,9 @@ type pieceCut struct {
 // Frame k begins k over the rate after the picture's first frame, which
 // is where the file starts for most files and later for one whose picture
 // starts after its sound. Where the frames are not on that grid, see
-// SourceInfo.Variable, or the piece starts before the picture does, the
-// frames are counted by their own timestamps instead, see byTimes.
+// SourceInfo.Variable or a piece unevenPieces marked, or the piece starts
+// before the picture does, the frames are counted by their own timestamps
+// instead, see byTimes.
 func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		seek := int64(math.Round(seg.Start * 1_000_000))
@@ -230,7 +231,7 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	// When frame k starts, in microseconds: k·den/num seconds after the
 	// picture's first frame.
 	start := func(k int64) int64 { return v0 + (2*k*den*1_000_000+num)/(2*num) }
-	if s.Variable || first < 0 {
+	if s.Variable || first < 0 || s.unevenOver(seg) {
 		return s.byTimes(start(first), start(end), end-first)
 	}
 	seek := max(0, v0+(2*first-1)*den*1_000_000/(2*num))
@@ -398,6 +399,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	if err != nil {
 		return "", err
 	}
+	source = e.unevenPieces(ctx, sourcePath, source, clip.Segments)
 	cmd, err := e.BuildCommand(ctx, clip, sourcePath, source, tmp, rs, assName)
 	if err != nil {
 		return "", err

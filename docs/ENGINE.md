@@ -670,7 +670,12 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   `Probe` reads the timestamps in four stretches of two seconds across the
   file, `uneven`, and marks it `Variable` when a frame begins off the grid
   of the rate or two frames are not one frame apart, give or take
-  `frameHair`, a millisecond. Counted by number, a piece of such a file
+  `frameHair`, a millisecond. Reading every timestamp would read the
+  whole file, gigabytes for an episode of a few hours, at every probe, so
+  a render also reads the timestamps of each piece it cuts, from the
+  frame before it to the frame after, `unevenPieces`, and cuts a piece
+  whose own frames are uneven by their times. The short keeps the file's
+  rate then. Counted by number, a piece of such a file
   took as many frames as it should last, whatever time they cover: with
   frames left out, a short of four pieces came out 88 frames long for 86,
   its sound 74 ms longer than its picture and a piece heard 35 ms away
