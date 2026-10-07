@@ -1649,11 +1649,11 @@ export const Call = {
 
 // Updates, the way updates.go reports them. The build running is pull
 // request 18's, or with ?makebuild one made by make, which follows nothing
-// until a channel is picked, and with ?updatesoff one with no update key.
+// until a channel is picked, whatever a build before it picked, and with
+// ?updatesoff one with no update key.
 // ?prgone is pull request 18's build after the pull request was merged:
 // it is not on the list any more, and nothing downloads until another
-// channel is picked. With ?makebuild it is a build made by make that
-// picked pull request 18 in a run before, as it reads after a restart.
+// channel is picked.
 // ?listfails is pull request 18's build, picked by hand, when the channel
 // list could not be read since the app started: no channels at all, and a
 // check that failed. The pull request is still open, so it must not read
@@ -1673,7 +1673,7 @@ let updTimers: ReturnType<typeof setTimeout>[] = [];
 const updNow = () => {
   if (upd) return upd;
   const local = location.search.includes("makebuild");
-  const gone = location.search.includes("prgone");
+  const gone = !local && location.search.includes("prgone");
   const fails = location.search.includes("listfails");
   upd = {
     version: local ? "0.3.0-local" : "0.3.0-pr29.db33a28",
@@ -1683,7 +1683,7 @@ const updNow = () => {
       ? "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
       : "",
     channels: fails ? [] : gone ? updChannels.filter((c) => c.id !== "pr-18") : updChannels,
-    picked: fails || (local && gone) ? "pr-18" : "",
+    picked: fails ? "pr-18" : "",
     follows: local || gone || fails ? "" : "pr-18",
     gone: gone ? "pr-18" : "",
     // ?unbuilt: a push to the channel whose build has not come yet.
@@ -1717,16 +1717,8 @@ const updFetch = (channel: string) => {
     return;
   }
   // Following nothing, a build made by make before a channel is picked,
-  // reads the list and still follows nothing, the way checkOnce does.
-  if (!channel) {
-    upd.phase = "checking";
-    updSend();
-    updTimers.push(setTimeout(() => {
-      Object.assign(upd, { phase: "", checked: new Date().toISOString() });
-      updSend();
-    }, 80));
-    return;
-  }
+  // has nothing to look for, the way check in updates.go does.
+  if (!channel) return;
   const ch = upd.channels.find((c: any) => c.id === channel);
   if (!ch) {
     Object.assign(upd, { phase: "gone", gone: channel, follows: "", next: "", written: 0, total: 0 });

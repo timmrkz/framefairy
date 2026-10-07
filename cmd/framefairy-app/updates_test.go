@@ -133,13 +133,23 @@ func (cs *channelServer) publicKey() string {
 
 // An updating as the app makes it, reading from the server above, and
 // what it has sent so far. The states are sent from the updating's own
-// goroutines, so they are read through sent, under the same lock.
+// goroutines, so they are read through sent, under the same lock. It is a
+// build made on the Mac, with nothing in updates.json.
 func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func() []UpdateState) {
+	t.Helper()
+	return testUpdating(t, cs, busy, "", "")
+}
+
+// testUpdating is newTestUpdating for a build from the channel own, or
+// made on the Mac when own is empty, with stored in updates.json, picked
+// by a run before.
+func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string) (*updating, func() []UpdateState) {
 	t.Helper()
 	var mu sync.Mutex
 	var sent []UpdateState
-	picked := ""
+	picked := stored
 	c := &updating{
+		own:  own,
 		busy: func() bool { return busy },
 		emit: func(s UpdateState) {
 			mu.Lock()
@@ -323,6 +333,9 @@ func TestTheRunningBuildIsCurrent(t *testing.T) {
 func TestAFailedCheckSaysWhy(t *testing.T) {
 	cs := newChannelServer(t)
 	c, _ := newTestUpdating(t, cs, false)
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
 	c.check()
 	s := c.State()
 	if s.Phase != "failed" || !strings.HasPrefix(s.Problem, "The channel list is not readable") || s.Checked.IsZero() {
@@ -574,14 +587,11 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
-	c, _ := newTestUpdating(t, cs, false)
-	cleanStaged(t, c)
 	// Pull request 138 picked in a run before, as updates.json gives it
-	// back after a restart. A build made on the Mac does not look by
-	// itself, so the only read is the page asking for the channels.
-	c.mu.Lock()
-	c.state.Picked = "pr-138"
-	c.mu.Unlock()
+	// back to a build from a channel after a restart. Nothing has started
+	// it looking, so the only read is the page asking for the channels.
+	c, _ := testUpdating(t, cs, false, "main", "pr-138")
+	cleanStaged(t, c)
 	c.refreshList()
 	if s := c.State(); s.Gone != "pr-138" || s.Phase != "gone" {
 		t.Errorf("after a restart the list says %q is gone and the phase is %q", s.Gone, s.Phase)
@@ -611,15 +621,74 @@ func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
 	}
 }
 
-// A build made on the Mac that follows nothing, asked to look, reads the
-// list and still follows nothing. It said it was the newest build of
-// main.
+// A build made on the Mac that follows nothing, asked to look from the app
+// menu, reads the list and still follows nothing. It said it was the
+// newest build of main.
 func TestFollowingNothingIsNeverUpToDate(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
 	c, _ := newTestUpdating(t, cs, false)
 	c.checkNow()
 	if s := c.State(); s.Phase != "" || s.Follows != "" || s.Gone != "" || len(s.Channels) != 1 {
+		t.Errorf("%+v", s)
+	}
+}
+
+// A build made on the Mac starts out following nothing, whatever an
+// earlier build picked: Tim made one with make install and found it
+// following pull request 143, picked by a build before it, and offering
+// a Check that would never look by itself. It does not look when it
+// starts, and Check from the app menu has nothing to look for. Picking a
+// channel follows it fully: it looks at once, the newest build downloads,
+// and it goes on looking after that.
+func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-143", "0.3.0-pr143.2", "pr"})
+	c, _ := testUpdating(t, cs, false, "", "pr-143")
+	cleanStaged(t, c)
+	c.next = func(UpdateState) time.Duration { return 20 * time.Millisecond }
+	c.start()
+	c.check()
+	time.Sleep(200 * time.Millisecond)
+	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Phase != "" || cs.hits.Load() != 0 {
+		t.Errorf("started as %+v, the list read %d times", s, cs.hits.Load())
+	}
+	// The page lists the channels, and still nothing is followed.
+	c.refreshList()
+	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Gone != "" || s.Phase != "" || len(s.Channels) != 2 {
+		t.Errorf("with the list read: %+v", s)
+	}
+
+	if err := c.Follow("main"); err != nil {
+		t.Fatal(err)
+	}
+	s := waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	if s.Picked != "main" || s.Follows != "main" {
+		t.Errorf("ready as %+v", s)
+	}
+	read := cs.hits.Load()
+	deadline := time.Now().Add(10 * time.Second)
+	for cs.hits.Load() < read+3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("after the pick it looked %d times more, and stopped", cs.hits.Load()-read)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A build from a channel goes on following what was picked in a run
+// before, and looks for it as it starts.
+func TestABuildFromAChannelFollowsWhatWasPicked(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := testUpdating(t, cs, false, "main", "pr-20")
+	cleanStaged(t, c)
+	if s := c.State(); s.Picked != "pr-20" || s.Channel != "main" {
+		t.Errorf("started as %+v", s)
+	}
+	c.start()
+	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Next != "0.3.0-pr20.9" || s.Follows != "pr-20" {
 		t.Errorf("%+v", s)
 	}
 }

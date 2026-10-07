@@ -309,7 +309,7 @@ func (s *FrameFairy) Updates() UpdateState {
 }
 
 // FollowChannel picks the channel to update from, main or a pull request,
-// and looks at once. Empty goes back to the channel the build came from.
+// and looks at once.
 func (s *FrameFairy) FollowChannel(channel string) error { return s.updates.Follow(channel) }
 
 // CheckForUpdates reads the channel list again and looks for a newer build
