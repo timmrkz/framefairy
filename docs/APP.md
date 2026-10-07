@@ -1075,9 +1075,9 @@ bubble scrolled by those eight pixels.
   **Render** and, once rendered, **Show in folder**. Rendered means the
   clip's short is where the clip says it went, in the folder **Shorts**
   named at the time, so Render says Render again and Show in folder shows
-  it there. A short removed by hand is no longer rendered, and a file of
-  the same name that another episode put in that folder is not this
-  clip's. A short there is the one file outside the episode's work folder
+  it there. A short removed or written over by hand is no longer
+  rendered, and a file of the same name that another episode put there
+  is not this clip's. A short there is the one file outside the episode's work folder
   the app shows or opens, because a clip of the episode made it. The time
   is not written anywhere else: the playhead says it on both timelines.
   Above that row, the clip up close:
@@ -1977,9 +1977,15 @@ starts, because nothing can be transcribed without it.
 **Shorts** says where rendered shorts go, next to each episode unless a
 folder is chosen with **Choose…**, which
 opens the system's own folder dialog. **Next to episode** goes back to the
-default. A short already rendered stays where it went when the folder
-changes, and its clip still knows it is rendered and where, see
-**Where a short went** in [ENGINE.md](ENGINE.md#where-a-short-went).
+default. In a folder chosen here, each episode's shorts go into a folder
+of their own, named after the episode's file, so `Folge 12.mp4` renders
+into `Shorts/Folge 12/`, and the clip 01 of one episode never writes over
+the clip 01 of another. Two episodes of the same file name share that
+folder, and there a short whose name is taken gets a number, the way
+Finder gives one, `01_slug 2.mp4`. A short already rendered stays where it
+went when the folder changes, and its clip still knows it is rendered and
+where, see **Where a short went** in
+[ENGINE.md](ENGINE.md#where-a-short-went).
 
 **Appearance** holds the **accent colour**, what the app picks things out
 in: the chosen clip, the window on the range picker, a button that matters.

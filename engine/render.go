@@ -343,9 +343,19 @@ func (s SourceInfo) OnFrames(clip Clip) Clip {
 // takes one for the finished file.
 const partial = ".part"
 
-// RenderClip writes one finished short.
+// RenderClip writes one finished short, named after its clip.
 func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	source SourceInfo, outDir string, cues []LaidCaption, rs RenderSettings,
+	style map[string]any, captionDir string, dryRun bool) (string, error) {
+	return e.renderShort(ctx, clip, sourcePath, source, outDir, clip.Basename(), cues, rs,
+		style, captionDir, dryRun)
+}
+
+// renderShort writes one finished short as <stem>.mp4 in outDir. The stem
+// is the clip's name, or that with a number in a folder for shorts where
+// the name was taken, see shortStem.
+func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
+	source SourceInfo, outDir, stem string, cues []LaidCaption, rs RenderSettings,
 	style map[string]any, captionDir string, dryRun bool) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
@@ -375,7 +385,7 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 		assName = clip.Basename() + ".ass"
 	}
 
-	outPath, err := SafeChild(outDir, clip.Basename()+".mp4")
+	outPath, err := SafeChild(outDir, stem+".mp4")
 	if err != nil {
 		return "", err
 	}
@@ -384,7 +394,7 @@ func (e *Engine) RenderClip(ctx context.Context, clip Clip, sourcePath string,
 	// finished short, so one being written, or cut off by a crash, or a
 	// render that failed its check, would count as one too, and a failed
 	// render again would take the good one before it away.
-	tmp, err := SafeChild(outDir, clip.Basename()+partial+".mp4")
+	tmp, err := SafeChild(outDir, stem+partial+".mp4")
 	if err != nil {
 		return "", err
 	}
@@ -454,7 +464,11 @@ func thumbnailName(basename string, n int) string {
 // the plan asks for and nothing else.
 func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) error {
 	dir := filepath.Dir(short)
-	pattern := regexp.MustCompile("^" + regexp.QuoteMeta(clip.Basename()) + `-(\d+)\.jpg$`)
+	// Named after the short, not the clip, so a short with a number in a
+	// folder for shorts never touches the pictures of the short it was
+	// numbered apart from.
+	stem := strings.TrimSuffix(filepath.Base(short), ".mp4")
+	pattern := regexp.MustCompile("^" + regexp.QuoteMeta(stem) + `-(\d+)\.jpg$`)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -467,7 +481,7 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		}
 	}
 	for i, at := range clip.Thumbnails {
-		path, err := SafeChild(dir, thumbnailName(clip.Basename(), i+1))
+		path, err := SafeChild(dir, thumbnailName(stem, i+1))
 		if err != nil {
 			return err
 		}
