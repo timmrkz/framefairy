@@ -96,6 +96,11 @@
   let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
   let starting = $state(false);
+  // The press of New or Continue the work in hand was asked for by. Cancel
+  // names it, so it stops that search whether or not the Go side has heard
+  // of it yet, see stopWork.
+  let click = "";
+  let clicks = 0;
   let time = $state(0);
   // Where the model has already looked. A window is only drawn outside it.
   let coverage = $state<CoverageView>({ passes: [] });
@@ -247,7 +252,7 @@
         label: stopping ? "Cancelling" : "Cancel",
         icon: "close",
         run: stopWork,
-        off: stopping || (starting && !working && !handRunning.length),
+        off: stopping,
         primary: false,
         title: "Stop the work on the clips. What was heard and made is kept",
       };
@@ -288,8 +293,10 @@
     lane.job?.progress && lane.job.progress.fraction >= 0 ? lane.job.progress.fraction : -1,
   );
 
+  // Stopping lasts until the work has stopped. A search asked for and not
+  // answered yet is work too, which the Go side will say has stopped.
   $effect(() => {
-    if (!working && !handRunning.length) stopping = false;
+    if (!starting && !working && !handRunning.length) stopping = false;
   });
 
   // Cancel: the search stops, and what it heard of the episode stays, so
@@ -297,12 +304,16 @@
   // where it is, on the click: the speech model is part way through a
   // chunk and keeps reporting until it hears the stop, and without this
   // the edge carries on for a second or two and the click looks missed.
+  // It names the episode's work and the press it came after, not a job,
+  // so it takes effect the moment it is pressed: it called off the jobs it
+  // knew, and between New and the Go side's answer it knew none, so it
+  // stood greyed out and a press there did nothing. The Go side stops the
+  // search the press asked for even if Cancel reaches it first.
   function stopWork() {
-    if (!working && !handRunning.length) return;
+    if (!busy || stopping) return;
     stopping = true;
     if (isTranscribing) stoppedAt = heard;
-    if (working) api.cancelJob(working.id);
-    for (const job of handRunning) api.cancelJob(job.id);
+    void api.stopClipWork(path, click);
   }
 
   // The Render button's Cancel stops the render and nothing else. It
@@ -318,10 +329,18 @@
     if (!renderingJob) renderStopping = false;
   });
 
-  // Continue, on everything of the clip list that stopped.
+  // Continue, on everything of the clip list that stopped: the search
+  // carries on from what it left, on the window it was about, which the
+  // range picker shows again, and every clip made by hand that stopped
+  // with it. One press, so a Cancel after it stops all of them.
   function carryOn() {
-    for (const job of handStopped) void api.continueJob(job.id).then((j) => jobs.apply(j));
-    if (stopped) void carryOnSearch();
+    if (!stopped || !search) return;
+    from = stopped.from;
+    to = stopped.to;
+    const id = search.id;
+    const press = begin();
+    for (const job of handStopped) void api.continueJob(job.id, press).then((j) => jobs.apply(j));
+    void asked(() => api.continueJob(id, press));
   }
   // What the transcript on disk has heard.
   const saved = $derived<Parts>(status?.transcribed ? [[0, duration]] : (status?.heard ?? []));
@@ -434,9 +453,11 @@
     // the search is about to take, so Continue goes from Stopped straight
     // to Transcribing, with no empty card and no word in between.
     if (!working) {
-      return heardWindow
-        ? { what: "Finding clips", left: windowText, fraction: -1, now: true }
-        : { what: "Transcribing", left: windowText, fraction: heardShare, now: true };
+      const fraction = heardWindow ? -1 : heardShare;
+      // Cancel pressed before the Go side answered: the row says so at
+      // once, the same as for a search that runs.
+      if (stopping) return { what: "Stopping", left: windowText, fraction, still: true, now: true };
+      return { what: heardWindow ? "Finding clips" : "Transcribing", left: windowText, fraction, now: true };
     }
     const line = stepLine(working, heardShare);
     // Cancel pressed: the row says so in the same frame, and stands still
@@ -595,16 +616,6 @@
     };
   });
 
-  // Continue: the search carries on from what it left, on the window it
-  // was about, which the range picker shows again.
-  async function carryOnSearch() {
-    if (!stopped || !search) return;
-    from = stopped.from;
-    to = stopped.to;
-    const id = search.id;
-    begin();
-    await asked(() => api.continueJob(id));
-  }
   // The clips on their way, from every job of the episode alike: the
   // search's, from the moment the model names each, and the ones made with
   // I and O, from the moment the key is pressed. See lib/arriving.ts.
@@ -612,7 +623,7 @@
     arriving(
       jobs.forEpisode(path),
       () => stopping,
-      (job) => void api.continueJob(job.id).then((j) => jobs.apply(j)),
+      (job) => void api.continueJob(job.id, "").then((j) => jobs.apply(j)),
     ),
   );
   // Everything that puts the clip list on screen takes a ticket: a read of
@@ -1743,30 +1754,36 @@
   }
 
   // A click shows at once: the list opens its rows and the head says
-  // Cancel before the job has reported in.
-  function begin() {
+  // Cancel before the job has reported in. It gives the press its name.
+  function begin(): string {
     problem = "";
     starting = true;
+    click = `${Date.now()}-${++clicks}`;
     stoppedAt = null;
     listedBefore = new Set(clips.map((c) => c.key));
     pickedBefore = selected;
     shownFirst = false;
     chosenByFind = "";
+    return click;
   }
 
   // New. The search hears the window first if the episode has not been
   // heard that far, all of it on the Go side, see docs/JOBS.md.
   async function findClips(replan: boolean) {
-    begin();
+    const press = begin();
     await asked(() =>
-      api.search(path, {
-        From: whole ? 0 : from,
-        To: whole ? 0 : to,
-        Count: count,
-        Min: min,
-        Max: max,
-        Replan: replan,
-      }),
+      api.search(
+        path,
+        {
+          From: whole ? 0 : from,
+          To: whole ? 0 : to,
+          Count: count,
+          Min: min,
+          Max: max,
+          Replan: replan,
+        },
+        press,
+      ),
     );
   }
 

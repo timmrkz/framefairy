@@ -326,7 +326,7 @@ func (p *probe) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := p.svc.store.Settings()
-	job := p.svc.Search(q.Get("video"), engine.PlanRequest{From: from, To: to, Count: 1, Min: set.Min, Max: set.Max})
+	job := p.svc.Search(q.Get("video"), engine.PlanRequest{From: from, To: to, Count: 1, Min: set.Min, Max: set.Max}, "")
 	if q.Get("quit") == "1" {
 		// Stopped before the answer goes, so the search is cut off where
 		// it stands, in the moment it was asked for.

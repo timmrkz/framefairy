@@ -119,7 +119,7 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 		len(stopped.Underway) != 1 || stopped.Underway[0].Start != 250 {
 		t.Fatalf("after the app closed on %s: %+v", j.ID, stopped)
 	}
-	again := d.svc.Continue(stopped.ID)
+	again := d.svc.Continue(stopped.ID, "")
 	done := d.waitFor(again.ID)
 	if done.State != JobDone {
 		t.Fatalf("Continue ended %+v", done)

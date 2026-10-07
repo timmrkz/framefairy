@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -32,12 +33,12 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 			for n := 0; time.Now().Before(stop); n++ {
 				switch i % 5 {
 				case 0:
-					d.svc.Search(ep, engine.PlanRequest{From: 0, To: 60, Count: 1, Min: 5, Replan: true})
+					d.svc.Search(ep, engine.PlanRequest{From: 0, To: 60, Count: 1, Min: 5, Replan: true}, "")
 				case 1:
 					for _, j := range d.svc.Jobs() {
 						if j.Episode == ep && (j.Kind == engine.JobSearch || j.Kind == engine.JobClip) {
 							if j.State == JobInterrupted || j.State == JobFailed {
-								d.svc.Continue(j.ID)
+								d.svc.Continue(j.ID, "")
 							} else {
 								d.svc.CancelJob(j.ID)
 							}
@@ -83,6 +84,43 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 				t.Errorf("%s twice in the list", c.Key)
 			}
 			seen[c.Key] = true
+		}
+	}
+}
+
+// New and Cancel pressed one after the other reach the Go side in either
+// order, each call on a goroutine of its own, the way Wails hands them
+// over. Whichever comes first, the search ends Stopped with Continue, and
+// none runs on. The model holds its answers, so a search that slipped
+// through would still be running at the end rather than done.
+func TestNewAndCancelInEitherOrder(t *testing.T) {
+	d := open(t)
+	ep := d.add("ep", minutes5)
+	d.idle(ep)
+	d.model.hangs(true)
+	for i := range 40 {
+		click := fmt.Sprintf("press-%d", i)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			d.press(ep, window{0, 120}, click)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			if i%2 == 1 {
+				time.Sleep(time.Millisecond)
+			}
+			d.stop(ep, click)
+		}()
+		close(start)
+		wg.Wait()
+		d.idle(ep)
+		if o := d.outcome(ep); !o.stopped {
+			t.Fatalf("press %d: New and Cancel at once leave the search saying %+v", i, o)
 		}
 	}
 }
