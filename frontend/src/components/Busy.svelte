@@ -42,8 +42,9 @@
   //
   // Given seldom, the beam is not work at all but a mark on something
   // special, the key ID that was bought: the comet alone comes round once,
-  // with a bounce at the end, and the rim is dark for the rest of a round
-  // of nine seconds. The same beam, coming by now and then.
+  // springing away and easing in, only ever forward, and the rim is dark
+  // for the rest of a round of nine seconds. The same beam, coming by now
+  // and then.
   let {
     fraction = -1,
     rim = true,
@@ -327,9 +328,12 @@
   }
 
   /* The beam that comes by now and then: the comet alone, once round in
-     the first sixth of a round of nine seconds, fading in as it sets off
-     and out as it arrives. It runs a little past where it started and
-     comes back, which is the bounce, and then the rim rests. */
+     the first fifth of a round of nine seconds, and the rim rests. It
+     fades in as it sets off, springs away and eases into its arrival,
+     and fades out still going, a little past where it started. It never
+     goes back, the same rule as the beam that runs with work: a bounce
+     that backed up read as the light reversing. The curve only rises,
+     so the light only ever moves forward. */
   .ring.seldom::after {
     display: none;
   }
@@ -344,17 +348,17 @@
     0% {
       transform: translate(-50%, -50%) rotate(0turn);
       opacity: 0;
-      animation-timing-function: cubic-bezier(0.34, 1.45, 0.64, 1);
+      animation-timing-function: cubic-bezier(0.3, 0.75, 0.35, 1);
     }
     3% {
       opacity: 1;
     }
-    14% {
+    13% {
       opacity: 1;
     }
-    18%,
+    20%,
     100% {
-      transform: translate(-50%, -50%) rotate(1turn);
+      transform: translate(-50%, -50%) rotate(1.15turn);
       opacity: 0;
     }
   }
