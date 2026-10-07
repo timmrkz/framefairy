@@ -182,7 +182,7 @@ skips into failures. Run the Linux tests and the walks against the ffmpeg
 The update channel list (#36, #55, #69, #93) ended with the two copies in
 #93. Layout worked out in JavaScript is mostly contained since 2.43, with
 `--above` (`Episode.svelte:2186`) and `centre()` (`:2619`) left,
-ASSESSMENT 28 and 30.
+ASSESSMENT 28. ASSESSMENT 30 was fixed in #132.
 
 ## The engine
 
