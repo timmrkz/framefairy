@@ -8,7 +8,6 @@ package signer
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -40,14 +39,6 @@ const (
 // A random source that keeps repeating itself is broken, and the signer
 // stops rather than drawing for ever.
 const maxDraws = 64
-
-// TestSeed is the seed of the test signer, number 0, made from a sentence
-// so anyone can make it again: its keys are for trying things out, and no
-// shipped build trusts it. See docs/LICENCE.md.
-func TestSeed() []byte {
-	sum := sha256.Sum256([]byte("framefairy test signer, never shipped"))
-	return sum[:]
-}
 
 // Signer signs keys with one signing key and records every one of them.
 type Signer struct {
