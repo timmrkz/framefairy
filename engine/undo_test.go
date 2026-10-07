@@ -168,27 +168,6 @@ func TestUndoRefusesWhatChangedSince(t *testing.T) {
 	}
 }
 
-func TestARemovedSearchComesBack(t *testing.T) {
-	path := editablePlanPath(t)
-	logs := filepath.Dir(path)
-	change := edited(t, logs, func() error { return RemovePlan(path) })
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("the plan is still there")
-	}
-	if _, err := change.Undo(); err != nil {
-		t.Fatal(err)
-	}
-	if len(clipsOf(t, path)) != 2 {
-		t.Error("the search did not come back with its clips")
-	}
-	if _, err := change.Redo(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("removing it again left it there")
-	}
-}
-
 func TestACorrectedWordIsUndone(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)

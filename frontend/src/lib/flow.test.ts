@@ -20,6 +20,8 @@ import {
   inClip,
   draftCaptions,
   litWord,
+  frameAt,
+  frameMiddle,
 } from "./flow";
 
 describe("the window moves on when it chooses for itself", () => {
@@ -570,5 +572,27 @@ describe("the word lit in a caption", () => {
   // leaves the caption without its highlight.
   test("stays lit between words, the way the render draws it", () => {
     expect(litWord(lines, 1.95)).toBe(1);
+  });
+});
+
+// Plan row 2.137: a picture that starts a quarter of a second after its
+// sound has its frames from 0.25 on, and frames counted from the start of
+// the file stood half a frame from them.
+describe("frames are counted from where the picture starts", () => {
+  const frame = 0.04;
+  test("a moment falls in the picture's own frame", () => {
+    expect(frameAt(0.25, frame, 0.25)).toBe(0);
+    expect(frameAt(0.289, frame, 0.25)).toBe(0);
+    expect(frameAt(0.29, frame, 0.25)).toBe(1);
+    expect(frameAt(1.0, frame, 0.25)).toBe(18);
+    // Counted from the file, 1.0 is frame 25, a frame the picture has not.
+    expect(frameAt(1.0, frame)).toBe(25);
+  });
+  test("before the picture starts is its first frame", () => {
+    expect(frameAt(0.1, frame, 0.25)).toBe(0);
+  });
+  test("the middle of a frame is in that frame", () => {
+    expect(frameMiddle(18, frame, 0.25)).toBeCloseTo(0.99, 9);
+    expect(frameAt(frameMiddle(18, frame, 0.25), frame, 0.25)).toBe(18);
   });
 });

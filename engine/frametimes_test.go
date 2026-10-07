@@ -52,6 +52,8 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 		file  string
 		// The frame rate the short has.
 		rate string
+		// How long the episode is, seven seconds when nought.
+		seconds int
 	}{
 		// A phone: a frame every 1/29.97 s, each 0, 8 or 16 ms late, in
 		// ticks of 1/600 s.
@@ -62,6 +64,12 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 		// the frames before them are held.
 		{name: "held", file: "held.mov", rate: "30/1",
 			video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
+			out:   []string{"-fps_mode", "passthrough"}},
+		// Frames 95 to 104 left out, 3.17 to 3.47 s into an episode of 20,
+		// so they lie between the four stretches Probe looks at and the
+		// file reads as even. Only the piece over them is cut by times.
+		{name: "held_between", file: "between.mov", rate: "30000/1001", seconds: 20,
+			video: []string{"select='not(between(n\\,95\\,104))'"},
 			out:   []string{"-fps_mode", "passthrough"}},
 		// The picture a quarter of a second after the sound, which is
 		// 7.4925 frames, so its frames are half a frame off the grid of
@@ -75,7 +83,8 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			source := filepath.Join(dir, c.file)
-			picture := "color=c=black:s=2x8:r=30000/1001:d=7," +
+			seconds := strconv.Itoa(max(c.seconds, 7))
+			picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
 				"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=640:360:flags=neighbor"
 			if len(c.video) > 0 {
 				picture += "," + strings.Join(c.video, ",")
@@ -83,9 +92,9 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 			args := []string{"-loglevel", "error", "-y"}
 			args = append(args, c.input...)
 			args = append(args, "-f", "lavfi", "-i", picture,
-				"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d=7")
+				"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
 			args = append(args, c.out...)
-			args = append(args, "-c:v", "mpeg4", "-q:v", "2", "-g", "30", "-c:a", "pcm_s16le", "-t", "7", source)
+			args = append(args, "-c:v", "mpeg4", "-q:v", "2", "-g", "30", "-c:a", "pcm_s16le", "-t", seconds, source)
 			if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 				t.Fatalf("making the test episode: %s %s", err, out)
 			}

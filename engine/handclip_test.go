@@ -87,8 +87,8 @@ func TestAClipMadeByHand(t *testing.T) {
 	if len(summaries) != 1 || summaries[0].By != ByHand {
 		t.Fatalf("clip sets %+v", summaries)
 	}
-	if searched := SearchedWindows(summaries, 70); len(searched) != 0 {
-		t.Errorf("clips made by hand searched %v", searched)
+	if passes := fmt.Sprint(SearchPasses(summaries, 70)); passes != "[{{0 70} 0}]" {
+		t.Errorf("clips made by hand searched %s", passes)
 	}
 	if left := ReadJobs(source); len(left) != 0 {
 		t.Errorf("records left behind: %+v", left)

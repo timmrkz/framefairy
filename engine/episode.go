@@ -17,15 +17,12 @@ var VideoExtensions = []string{".mp4", ".mov", ".m4v", ".mkv"}
 
 // PlanSummary describes one plan file without its words.
 type PlanSummary struct {
-	Path string  `json:"path"`
-	Name string  `json:"name"`
-	From float64 `json:"from"`
-	To   float64 `json:"to"` // zero for a whole-episode plan
-	// Parts of the window that were given back, so the model may read
-	// them again. They are inside the window and never overlap.
-	Removed []Window `json:"removed,omitempty"`
-	Clips   int      `json:"clips"`
-	Model   string   `json:"model"`
+	Path  string  `json:"path"`
+	Name  string  `json:"name"`
+	From  float64 `json:"from"`
+	To    float64 `json:"to"` // zero for a whole-episode plan
+	Clips int     `json:"clips"`
+	Model string  `json:"model"`
 	// By is who proposed the clips, see PlanOptions.By.
 	By       string    `json:"by,omitempty"`
 	Modified time.Time `json:"modified"`
@@ -192,7 +189,6 @@ func summaryOf(m string) (PlanSummary, error) {
 	if v, ok := made["by"].(string); ok {
 		s.By = v
 	}
-	s.Removed = readWindows(made[keyRemoved])
 	return s, nil
 }
 

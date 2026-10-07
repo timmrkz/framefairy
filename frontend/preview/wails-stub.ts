@@ -1181,22 +1181,20 @@ export const Call = {
           .sort((x, y) => x.start - y.start));
       }
       case "Coverage": {
-        // The parts searched once and the parts free, and the episode in
-        // passes made of the two, the way the Go side counts them.
-        const view = (searched: { from: number; to: number; plans?: string[]; clips?: number }[], free: { from: number; to: number }[]) => ({
-          searched,
-          free,
-          passes: [...searched.map((w) => ({ from: w.from, to: w.to, times: 1 })), ...free.map((w) => ({ ...w, times: 0 }))].sort((a, b) => a.from - b.from),
-        });
+        // The episode in parts by how many searches have read them, the
+        // way the Go side counts them.
+        const view = (passes: { from: number; to: number; times: number }[]) => ({ passes });
         if (fresh) {
-          if (!found.length) return Promise.resolve(view([], [{ from: 0, to: 14423 }]));
-          return Promise.resolve(view([{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: found.length }], [{ from: 1800, to: 14423 }]));
+          if (!found.length) return Promise.resolve(view([{ from: 0, to: 14423, times: 0 }]));
+          return Promise.resolve(view([{ from: 0, to: 1800, times: 1 }, { from: 1800, to: 14423, times: 0 }]));
         }
         return Promise.resolve(
-          view(
-            [{ from: 0, to: 1800, plans: ["/eps/ep.framefairy/logs/clips.json"], clips: 4 }, { from: 5400, to: 7200, plans: ["/eps/ep.framefairy/logs/clips-5400-7200.json"], clips: 6 }],
-            [{ from: 1800, to: 5400 }, { from: 7200, to: 14423 }],
-          ),
+          view([
+            { from: 0, to: 1800, times: 1 },
+            { from: 1800, to: 5400, times: 0 },
+            { from: 5400, to: 7200, times: 1 },
+            { from: 7200, to: 14423, times: 0 },
+          ]),
         );
       }
       case "Room":
@@ -1347,8 +1345,6 @@ export const Call = {
         const made = clip(n, [57, 400, 902, 1400][n - 1] ?? 60, ["Mein Arm ist zersprungen", "Der Typ vor mir auf einmal", "Warum ich nie wieder", "Ein echtes Thema"][n - 1] ?? "Clip", n === 1);
         return Promise.resolve({ ...made, rejected: !!gone });
       }
-      case "RemoveSearch":
-        return Promise.resolve(null);
       // A caption moved by hand, kept the way the engine keeps it, against
       // the word and the edge. Below nought puts it back.
       case "SetThumbnail": {

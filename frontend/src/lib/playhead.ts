@@ -15,7 +15,7 @@
 // gesture knows what it is about, so it says, and nothing after it can
 // change that. See Playback in .claude/skills/interface/SKILL.md.
 
-import type { Piece } from "./flow";
+import { frameAt, type Piece } from "./flow";
 
 // On the clip, on the clip at its end, or on the video. The end is a place
 // of its own because the space bar starts the clip over from there, and
@@ -32,7 +32,7 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 
 // Where a gesture that puts the playhead at a moment leaves it, for the
 // clip chosen, by its key and its pieces, in an episode of fps frames a
-// second.
+// second whose picture starts videoStart seconds into the file.
 //
 // A gesture about the clip says so, about: picking it, a click on one of
 // its edges, a trim, a click on a caption. That decides an edge, which is
@@ -53,24 +53,25 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 // there. And a trim of the end on frames leaves the playhead a frame
 // before the end, in the clip's last frame, which is where a play of the
 // clip stops.
-export function placeOf(pieces: Piece[], key: string, at: number, fps: number, about?: "clip"): Playhead {
+export function placeOf(
+  pieces: Piece[],
+  key: string,
+  at: number,
+  fps: number,
+  about?: "clip",
+  videoStart = 0,
+): Playhead {
   if (!key || !pieces.length) return onVideo;
   const start = pieces[0].start;
   const end = pieces[pieces.length - 1].end;
   const rate = fps > 0 ? fps : 30;
-  const frame = frameIndex(at, rate);
-  const first = frameIndex(start, rate);
+  const frame = frameAt(at, 1 / rate, videoStart);
+  const first = frameAt(start, 1 / rate, videoStart);
   // The frame that holds the last moment before the end, which is the
   // frame before the end's own when the end falls on a frame's start.
-  const last = Math.max(Math.ceil(end * rate - 1e-6) - 1, first);
+  const last = Math.max(Math.ceil((end - videoStart) * rate - 1e-6) - 1, first);
   if (about !== "clip" && at !== end && (frame < first || frame > last)) return onVideo;
   return { place: at >= end || frame >= last ? "end" : "clip", clip: key };
-}
-
-// Which frame of the episode a moment falls in, counted from its start, in
-// an episode of a steady rate: the frame the video preview draws for it.
-function frameIndex(t: number, fps: number): number {
-  return Math.floor(Math.max(t, 0) * fps + 1e-6);
 }
 
 // The place for the clip chosen now.
