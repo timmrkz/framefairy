@@ -29,6 +29,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"framefairy/licence/dispenser"
 )
 
 func main() {
@@ -146,7 +148,8 @@ func (d *dev) handler() http.Handler {
 
 // buy is the pretend checkout completing: Paddle sends its webhook, and
 // the buyer lands on the thank-you page with the sale's reference, as
-// Paddle's checkout hands it over.
+// Paddle's checkout hands it over. The checkout page passes its nonce as
+// custom data, the way it goes to Paddle.js.
 func (d *dev) buy(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -157,7 +160,7 @@ func (d *dev) buy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "seats", http.StatusBadRequest)
 		return
 	}
-	ref, err := d.shop.Buy(strings.TrimSpace(r.Form.Get("email")), seats)
+	ref, err := d.shop.Buy(strings.TrimSpace(r.Form.Get("email")), seats, r.Form.Get(dispenser.ThanksField))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

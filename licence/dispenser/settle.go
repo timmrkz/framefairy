@@ -14,6 +14,43 @@ type Sale struct {
 	Email     string
 	At        time.Time
 	TakenBack bool // charged back or refunded, and not reversed since
+	// Thanks is the nonce the checkout page passed Paddle as custom data,
+	// under ThanksField, as Paddle has it. The buyer's browser wrote it,
+	// so it is read as untrusted: see ThanksHash.
+	Thanks string
+}
+
+// ThanksField is the name the checkout page gives its nonce in Paddle's
+// custom data: customData {"thanks": nonce} in Paddle.js, custom_data on
+// the transaction.
+const ThanksField = "thanks"
+
+// NonceLen is the length of a thank-you nonce: 16 random bytes in
+// lowercase hexadecimal, 128 bits.
+const NonceLen = 32
+
+// checkNonce says whether s is a nonce as the checkout page makes one.
+func checkNonce(s string) bool {
+	if len(s) != NonceLen {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// ThanksHash is what a sale keeps of its thank-you nonce: its SHA-256 in
+// hexadecimal, the size of a token hash whatever the buyer's browser
+// sent. "" for anything that is not a nonce as the checkout page makes
+// one, and then the thank-you page never shows the sale's keys.
+func ThanksHash(nonce string) string {
+	if !checkNonce(nonce) {
+		return ""
+	}
+	return TokenHash(nonce)
 }
 
 // Orders is what the dispenser asks the shop. It keeps none of it.
@@ -37,6 +74,10 @@ type Orders interface {
 //
 // Keys revoked because they were posted in public are not Paddle's
 // business and stay revoked.
+//
+// The sale keeps only the hash of its thank-you nonce. A nonce that is
+// missing or not one the checkout page makes never holds up a sale: its
+// keys go by email, and only the thank-you page never shows them.
 func (e *Engine) Settle(ctx context.Context, ref string) error {
 	if e.orders == nil {
 		return errors.New("no shop to ask what a sale is")
@@ -56,7 +97,7 @@ func (e *Engine) Settle(ctx context.Context, ref string) error {
 	if s.Ref != ref {
 		return fmt.Errorf("asked the shop about %s and it answered about %q", ref, s.Ref)
 	}
-	if _, err := e.Assign(ctx, Order{Source: "paddle", Ref: ref, Seats: s.Seats, Email: s.Email, At: s.At}); err != nil {
+	if _, err := e.Assign(ctx, Order{Source: "paddle", Ref: ref, Seats: s.Seats, Email: s.Email, At: s.At, Thanks: ThanksHash(s.Thanks)}); err != nil {
 		return err
 	}
 	if s.TakenBack {
