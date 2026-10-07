@@ -316,6 +316,11 @@ func (w *world) buy() {
 		Seats: 1 + w.r.IntN(3),
 		Email: fmt.Sprintf("buyer%d@example.com", w.r.IntN(12)),
 		At:    w.clock.now(),
+		// The checkout page's nonce, and now and then none at all.
+		Thanks: fmt.Sprintf("%016x%016x", w.r.Uint64(), w.r.Uint64()),
+	}
+	if w.r.IntN(8) == 0 {
+		sale.Thanks = ""
 	}
 	w.shop.put(sale, w.clock.now())
 	w.hooks = append(w.hooks, webhook{event: "transaction.completed", ref: sale.Ref, first: w.clock.now()})
@@ -350,9 +355,19 @@ func (w *world) deliver() {
 	if code == http.StatusOK && w.r.IntN(8) != 0 {
 		w.hooks = slices.Delete(w.hooks, i, i+1)
 	}
-	// What the buyer's thank-you page shows now.
-	_, thanks := w.call("GET", "/v1/thanks/"+h.ref, "", nil)
+	// What the buyer's thank-you page shows now, and what a stranger
+	// with the reference and a nonce of their own gets: nothing.
+	w.shop.mu.Lock()
+	nonce := w.shop.sales[h.ref].Thanks
+	w.shop.mu.Unlock()
+	_, thanks := w.post("/v1/thanks/"+h.ref, "", map[string]string{"nonce": nonce})
+	if nonce == "" && thanks["keys"] != nil {
+		w.t.Errorf("seed %d: %s passed no nonce and its keys show on the thank-you page", w.seed, h.ref)
+	}
 	w.given(h.ref, keysOfAnswer(thanks))
+	if _, other := w.post("/v1/thanks/"+h.ref, "", map[string]string{"nonce": nonceB}); other["keys"] != nil {
+		w.t.Errorf("seed %d: a stranger's nonce shows the keys of %s", w.seed, h.ref)
+	}
 }
 func (w *world) adjust() {
 	if w.sales == 0 {

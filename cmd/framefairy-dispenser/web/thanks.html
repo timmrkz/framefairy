@@ -16,15 +16,28 @@ function unlockLink(k) {
 }
 
 // The thank-you page asks the dispenser for the keys of the sale Paddle's
-// checkout named, every two seconds until they are there.
+// checkout named, every two seconds until they are there. It sends the
+// nonce the checkout page kept in this tab, in the body, so it is in no
+// link and no log. Without it, in another browser or another tab, the
+// keys come by email only.
 const ref = new URLSearchParams(location.search).get("txn") || "";
+let nonce = "";
+try { nonce = sessionStorage.getItem("thanks") || ""; } catch (e) {}
 const state = document.getElementById("state");
 function say(html) { state.innerHTML = html; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 async function ask() {
+  if (!nonce) {
+    say('<p>Your key comes by email. This page shows it only in the tab you paid in, and the <a href="/lost">lost-key page</a> sends it again.</p>');
+    return;
+  }
   let res;
   try {
-    res = await fetch("/v1/thanks/" + encodeURIComponent(ref));
+    res = await fetch("/v1/thanks/" + encodeURIComponent(ref), {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({nonce: nonce}),
+    });
   } catch (e) {
     say('<p class="bad">The dispenser does not answer. Your key also comes by email.</p>');
     return setTimeout(ask, 4000);
@@ -57,7 +70,7 @@ async function ask() {
     return setTimeout(ask, 2000);
   }
   if (res.status === 410) {
-    say('<p>This sale is more than a day old, so its keys are no longer shown here. They went to your email address, and the <a href="/lost">lost-key page</a> sends them again.</p>');
+    say('<p>This sale is more than an hour old, so its keys are no longer shown here. They went to your email address, and the <a href="/lost">lost-key page</a> sends them again.</p>');
     return;
   }
   if (res.status === 503) {

@@ -5,11 +5,41 @@
 <section>
 <h1>Buy Frame Fairy</h1>
 <p class="dim">This is the pretend Paddle checkout of the local dispenser. Nothing is charged. In the real shop, Paddle's own checkout stands here.</p>
-<form method="post" action="/shop/buy" style="display:block">
+<form id="pay" method="post" action="/shop/buy" style="display:block">
+<input type="hidden" name="thanks">
 <label>Email address<input name="email" type="email" required value="buyer@example.com"></label>
 <label>Seats<input name="seats" type="number" min="1" max="100" value="1"></label>
 <button type="submit" class="primary">Pay with a test card</button>
 </form>
 </section>
 <p class="dim"><a href="/lost">Lost your key?</a> · <a href="/dev">Dev page</a></p>
-</main></body></html>
+</main>
+<script>
+// The checkout page makes a nonce, keeps it in this tab for the thank-you
+// page and passes it to Paddle as custom data, as Paddle.Checkout.open
+// does with customData: {thanks: nonce}. The thank-you page shows the keys
+// only for it, so the sale's reference alone, in a link, a receipt or a
+// support mail, shows nothing.
+function nonce() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+}
+const form = document.getElementById("pay");
+form.addEventListener("submit", () => {
+  const n = nonce();
+  try { sessionStorage.setItem("thanks", n); } catch (e) {}
+  form.elements.thanks.value = n;
+});
+// The dev page's Buy comes here with the address and the seats and pays
+// at once, so its nonce is made where a buyer's is.
+const q = new URLSearchParams(location.search);
+for (const k of ["email", "seats"]) if (q.has(k)) form.elements[k].value = q.get(k);
+if (q.get("pay") === "1") {
+  // Back from the thank-you page lands on the plain checkout, not on a
+  // second payment.
+  history.replaceState(null, "", "/shop");
+  form.requestSubmit();
+}
+</script>
+</body></html>
