@@ -93,17 +93,16 @@ var sequences = []sequence{
 			{"line has", "already on this Mac"},
 
 			// Another app in front, and the second key's Unlock. The app
-			// comes back to the front with the second key in the field: a
-			// key kept is never replaced by a link alone, because any page
-			// can open one.
+			// comes back to the front with the second key kept in place of
+			// the first, and nothing to press: every key unlocks the same
+			// app.
 			{"bring forward", "Calculator"},
 			{"open link", "2"},
 			{"front", "Frame Fairy"},
-			{"field", "2"},
-			{"line has", "Unlock puts it in place"},
-			{"click", "Unlock"},
+			{"head", "Licensed"},
+			{"mark", "ok"},
+			{"line has", "from the link, in place of key ID"},
 			{"field", "empty"},
-			{"line has", "a test key"},
 
 			// A link with more in it than one key changes nothing.
 			{"open link", "1", "&more=1"},

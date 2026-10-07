@@ -695,31 +695,39 @@ does not answer.
 The app calls the same `licence.Check` the dispenser checks every batch
 with, offline, before every render.
 
-- **Entering it.** The Licence row in the settings takes a pasted key and
-  checks it when Unlock is pressed. The key shows as it is, not as dots:
-  it is read off a mail, and a person checks it is the one they meant. A
-  refused key shakes the field, keeps what was typed and says why, the
+- **Entering it.** Most buyers never type a key: Unlock in the letter or
+  on the thank-you page does it, see below. For a key that comes as text,
+  from a partner or read off a phone, the Licence row has a field while no
+  key is kept, and checks the key when Unlock is pressed. The key shows
+  as it is, not as dots, so a person can check it is the one they meant.
+  A refused key shakes the field, keeps what was typed and says why, the
   whole of it, like a refused API key. Once a key is kept the row says
-  Licensed, with the check mark, the key's ID and the name when it has
-  one, and nothing else: a field and a dimmed Unlock beside it read as a
-  step still to take. The trash can beside it removes the key, after
-  asking, and the field comes back.
-- **The Unlock link.** The thank-you page and the letter carry, beside
+  Licensed, with the check mark, the key ID and the name when it has
+  one, and nothing else: no field, no button, nothing that reads as a
+  step still to take. The key itself is never shown in the app. It is
+  long and means nothing to a person, and the key ID is what names it,
+  here, on the thank-you page and to support. The trash can beside it
+  removes the key, after asking, and the field comes back.
+- **The Unlock link.** The thank-you page and the letter carry, for
   each key, an Unlock Frame Fairy button, a link
   `framefairy://unlock?key=FF1-…`. The app claims the `framefairy`
   scheme in its `Info.plist`, so macOS opens it, or brings it to the
   front, and hands it the link, and the app checks the key at once,
-  `linkOutcome` in `cmd/framefairy-app/licence.go`. On a Mac with no key
-  kept the link unlocks the app by itself, and the settings say so,
-  "Unlocked from the link. Thank you.": the buyer clicked Unlock in the
-  mail, and there is nothing to lose. A key already kept is never
-  replaced by a link alone, because any web page and any app on the Mac
-  can open such a link, and one that replaced keys by itself would let a
-  page swap a buyer's licence for one of its own. The new key waits in
-  the field, with what it is beside it, and Unlock puts it in place. The
-  same key again changes nothing, and a key this build refuses is shown
-  with the reason. Tim's first try from main looked like a key that
-  would not unlock: an app from Updates refuses test keys, and the
+  `linkOutcome` in `cmd/framefairy-app/licence.go`. A key the app takes
+  is kept at once, with nothing to press, and the settings say so,
+  "Unlocked from the link. Thank you.". A key kept before is replaced,
+  and the row names both, "Key ID B from the link, in place of key ID A".
+  Every key unlocks the same app, so the Mac is licensed all the way
+  through and nothing is lost, and the key replaced is still in its own
+  letter. It used to wait in the field for Unlock instead, because any
+  web page can open such a link, but Tim found the field and the button
+  a step that did nothing a buyer needs: the most a page can do is put
+  in a key of its own, which still unlocks the app, and which the row
+  names. The same key again changes nothing. A key the app refuses
+  changes nothing either, and the row says why, in full, with the
+  warning mark: a Mac that was licensed stays licensed, and says that
+  its key still unlocks it. Tim's first try from main looked like a key
+  that would not unlock: an app from Updates refuses test keys, and the
   reason was cut off at "takes …". The link is read
   strictly, in `keyFromLink`: the `framefairy` scheme, the host
   `unlock`, no path, no user, no fragment, one `key` and nothing else,
@@ -738,7 +746,8 @@ with, offline, before every render.
 - **Test keys only where anyone could sign their own.** A build made from
   the code on this machine, which the build workflow has given neither a
   channel nor a commit, also trusts the test signer, so the keys of
-  `make dispenser` unlock it. Anyone who builds from the code could take
+  `make dispenser` unlock it. Once taken, a test key reads like any
+  other, because no other build would have taken it. Anyone who builds from the code could take
   the check out anyway, so this gives nothing away. Every build from the
   workflow, which is every build an update brings, refuses them, and says
   it is a test key. No switch in any build turns the check off.

@@ -1013,12 +1013,12 @@ export interface LicenceState {
 
 // What became of the key a link brought, LicenceLink in licence.go:
 // "unlocked" the app with it, no key being kept before, the "same" key as
-// the one kept, another key that "replaces" the kept one once Unlock is
-// pressed, or "refused", with the reason. Empty when no link waits.
+// the one kept, "replaced" the one kept, which before names, or "refused",
+// with the reason. Empty when no link waits.
 export interface LicenceLink {
-  what: "" | "unlocked" | "same" | "replaces" | "refused";
-  key: string;
+  what: "" | "unlocked" | "same" | "replaced" | "refused";
   about: string;
+  before?: string;
   reason: string;
 }
 

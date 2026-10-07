@@ -32,16 +32,14 @@ type LicenceState struct {
 // for the settings to show, handed over once.
 type LicenceLink struct {
 	// What is "unlocked" when the key was checked and kept, no key being
-	// kept before, "same" when it is the key already kept, "replaces" when
-	// another key is kept and Unlock puts this one in its place, and
-	// "refused" when this build does not take it, Reason saying why. It is
-	// empty when no link waits.
+	// kept before, "same" when it is the key already kept, "replaced" when
+	// it was kept in place of another, and "refused" when this build does
+	// not take it, Reason saying why. It is empty when no link waits.
 	What string `json:"what"`
-	// Key is the key itself, for the field, when it is not kept.
-	Key string `json:"key"`
-	// About is the key in a few words, its ID and whom it is for, when it
-	// is one this build takes.
+	// About is the key in a few words, its key ID and whom it is for, when
+	// it is one this build takes, and Before the key it replaced.
 	About  string `json:"about"`
+	Before string `json:"before,omitempty"`
 	Reason string `json:"reason"`
 }
 
@@ -105,27 +103,29 @@ func (s *FrameFairy) openedWith(raw string) {
 	}
 }
 
-// linkOutcome decides what a key from a link does. On a Mac with no key
-// it unlocks the app at once: the buyer clicked Unlock in the mail, and
-// there is nothing to lose. A key already kept is never replaced by a
-// link alone, because any page and any app on the Mac can open one: the
-// settings show the new key and Unlock puts it in place.
+// linkOutcome decides what a key from a link does. A key this build takes
+// is kept at once, so the app is unlocked with nothing to press: the buyer
+// clicked Unlock in the mail. It takes the place of a key kept before,
+// because every key unlocks the same app and nothing is lost by it, and
+// the settings say which key went. A key that does not check changes
+// nothing, so a Mac that was licensed stays licensed.
 func linkOutcome(k licence.Key, testKeys bool) LicenceLink {
 	_, l, err := engine.CheckLicence(string(k), testKeys)
 	if err != nil {
-		return LicenceLink{What: "refused", Key: string(k), Reason: err.Error()}
+		return LicenceLink{What: "refused", Reason: err.Error()}
 	}
-	about, saved := savedLicence()
-	switch {
-	case !saved:
-		if _, err := saveLicence(string(k), testKeys); err != nil {
-			return LicenceLink{What: "refused", Key: string(k), Reason: err.Error()}
-		}
-		return LicenceLink{What: "unlocked", About: engine.DescribeLicence(l)}
-	case about == engine.DescribeLicence(l):
+	about := engine.DescribeLicence(l)
+	before, saved := savedLicence()
+	if saved && before == about {
 		return LicenceLink{What: "same", About: about}
 	}
-	return LicenceLink{What: "replaces", Key: string(k), About: engine.DescribeLicence(l)}
+	if _, err := saveLicence(string(k), testKeys); err != nil {
+		return LicenceLink{What: "refused", Reason: err.Error()}
+	}
+	if !saved {
+		return LicenceLink{What: "unlocked", About: about}
+	}
+	return LicenceLink{What: "replaced", About: about, Before: before}
 }
 
 // The longest link taken. A key is at most a little over 200 characters.

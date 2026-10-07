@@ -214,9 +214,10 @@
   // back: the Go side only says whether there is one and how it was
   // described when it was kept. A link from the mail a key came in has
   // already been dealt with by the Go side when it arrives here, see
-  // linkOutcome in licence.go: it unlocked a Mac with no key, or it waits
-  // for Unlock to replace the key kept, because any page and any app can
-  // open such a link. The row says which.
+  // linkOutcome in licence.go: its key is kept, in place of any kept
+  // before, or it was refused. The row says which. The field is there only
+  // while no key is kept, for a key that comes as text rather than as a
+  // link, and the key itself is never shown: the key ID names it.
   let licence = $state<LicenceState>({ saved: false, about: "", waiting: false });
   let licenceKey = $state("");
   let fromLink = $state<LicenceLink | null>(null);
@@ -226,21 +227,14 @@
   let licenceCard = $state<HTMLElement>();
   let licenceShaking = $state(false);
   let removingLicence = $state(false);
-  // Whether a key is asked for: none is kept, or a link brought another
-  // or one that was refused. A Mac that is licensed shows that it is and
-  // nothing to do, because an empty field and a dimmed Unlock beside
-  // "Licensed" read as a step still to take. Held while the field is in
-  // use, so it never goes from under the hand.
-  let keyAsked = $state(false);
-  const askingKey = $derived(!licence.saved || keyAsked);
 
-  // The words under Licence key: a refusal, what a link did, the key kept,
+  // The words under the head: a refusal, what a link did, the key kept,
   // or that there is none.
   const licenceLine = $derived.by(() => {
-    if (licenceRefused) return licenceRefused + (licence.saved ? ". The key on this Mac still unlocks it." : ".");
+    if (licenceRefused) return licenceRefused + (licence.saved ? `. ${licence.about} on this Mac still unlocks it.` : ".");
     if (fromLink?.what === "unlocked") return `Unlocked from the link. Thank you. ${fromLink.about}.`;
     if (fromLink?.what === "same") return `This key is already on this Mac. ${fromLink.about}.`;
-    if (fromLink?.what === "replaces") return `From the link: ${fromLink.about}. Unlock puts it in place of the key on this Mac.`;
+    if (fromLink?.what === "replaced") return `${fromLink.about} from the link, in place of ${small(fromLink.before ?? "")}.`;
     if (licence.saved) return licence.about + ".";
     return "None yet.";
   });
@@ -257,9 +251,11 @@
     return said.charAt(0).toUpperCase() + said.slice(1);
   }
 
-  // What a link did, with the row in view. Only a key that replaces the
-  // one kept waits in the field, with the keyboard on Unlock. A refused one
-  // is in the field too, so it can be seen and corrected.
+  function small(said: string): string {
+    return said.charAt(0).toLowerCase() + said.slice(1);
+  }
+
+  // What a link did, with the row in view.
   async function takeLink() {
     let l: LicenceLink | null = null;
     try {
@@ -269,12 +265,10 @@
     }
     if (!l?.what) return;
     licenceRefused = l.what === "refused" ? sentence(l.reason) : "";
-    licenceKey = l.what === "replaces" || l.what === "refused" ? l.key : "";
-    keyAsked = l.what === "replaces" || l.what === "refused";
+    licenceKey = "";
     fromLink = l.what === "refused" ? null : l;
     await readLicence();
     licenceCard?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    if (l.what === "replaces") licenceCard?.querySelector<HTMLElement>("button.unlock")?.focus();
   }
 
   // Refused the way the API key is: the field shakes and keeps the key,
@@ -285,7 +279,6 @@
     try {
       licence = await api.saveLicence(licenceKey);
       licenceKey = "";
-      keyAsked = false;
       fromLink = null;
     } catch (err) {
       licenceRefused = sentence(errorText(err));
@@ -304,7 +297,6 @@
   async function removeLicence() {
     removingLicence = false;
     licenceRefused = "";
-    keyAsked = false;
     fromLink = null;
     try {
       licence = await api.saveLicence("");
@@ -973,15 +965,16 @@
 
       <!-- The licence, kept in the keychain like an API key. A key comes
            in the mail it was bought with, and the Unlock button in that
-           mail opens this row with the key in the field. -->
+           mail unlocks the app and opens this row to say so. -->
       <div class="group">
         <div class="headrow">
           <h2>Licence</h2>
           <span class="ask">
             <Info label="About the licence" side="left">
-              The key comes in the mail you bought Frame Fairy with. Unlock in that mail brings it
-              here, or paste it into the field. It is checked on this machine, without asking
-              anybody, and kept in the keychain.
+              The key comes in the mail you bought Frame Fairy with. Unlock in that mail unlocks
+              the app, or paste the key into the field here. It is checked on this machine, without
+              asking anybody, and kept in the keychain. The key ID names it, and it is what
+              support asks for.
             </Info>
           </span>
         </div>
@@ -1001,7 +994,7 @@
                 {licenceLine}
               </span>
             </div>
-            {#if askingKey}
+            {#if !licence.saved}
             <input
               class="key licence-key"
               class:shaking={licenceShaking}
@@ -1013,7 +1006,7 @@
                 licenceRefused = "";
                 fromLink = null;
               }}
-              placeholder={licence.saved ? "New key" : "FF1-..."}
+              placeholder="FF1-..."
               aria-label="Licence key"
               title="It goes in the keychain and nowhere else"
               autocomplete="off"

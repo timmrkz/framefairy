@@ -118,10 +118,10 @@ func TestALinkUnlocksAMacWithNoKey(t *testing.T) {
 	}
 }
 
-// Any page can open a link, so a key already kept is never replaced by a
-// link alone. The same key again changes nothing, and another waits for
-// Unlock in the settings.
-func TestALinkNeverReplacesAKeptKey(t *testing.T) {
+// Every key unlocks the same app, so a link with another key takes the
+// place of the one kept at once, and says which one went. The same key
+// again changes nothing.
+func TestALinkReplacesAKeptKeyAndSaysWhichWent(t *testing.T) {
 	kc := useFakeKeychain(t)
 	first, second := testKey(t, 1), testKey(t, 2)
 	if _, err := saveLicence(first, true); err != nil {
@@ -132,23 +132,42 @@ func TestALinkNeverReplacesAKeptKey(t *testing.T) {
 	if got := s.TakeLicenceLink(); got != (LicenceLink{What: "same", About: kc.about}) {
 		t.Fatalf("the same key: %+v", got)
 	}
+	before := kc.about
 	s.openedWith("framefairy://unlock?key=" + second)
-	if got := s.TakeLicenceLink(); got.What != "replaces" || got.Key != second || !strings.Contains(got.About, "0200-0000-0000-0000") {
+	if got := s.TakeLicenceLink(); got.What != "replaced" || got.About != kc.about || got.Before != before ||
+		!strings.Contains(got.About, "0200-0000-0000-0000") {
 		t.Fatalf("another key: %+v", got)
 	}
-	if kc.key != first {
-		t.Fatal("a link replaced the key kept")
+	if kc.key != second {
+		t.Fatal("the link did not keep its key")
 	}
 }
 
-// A key this build does not take is shown with the reason, and nothing is
-// kept. A test key in a build from the workflow is the one Tim met: the
+// A key that does not check leaves the key kept where it is.
+func TestARefusedLinkLeavesTheKeptKey(t *testing.T) {
+	kc := useFakeKeychain(t)
+	first := testKey(t, 1)
+	if _, err := saveLicence(first, true); err != nil {
+		t.Fatal(err)
+	}
+	s := &FrameFairy{}
+	s.openedWith("framefairy://unlock?key=" + aKey[:len(aKey)-2] + "AA")
+	if got := s.TakeLicenceLink(); got.What != "refused" || got.Reason == "" {
+		t.Fatalf("%+v", got)
+	}
+	if kc.key != first || !s.Licence().Saved {
+		t.Fatal("a key that does not check replaced the one kept")
+	}
+}
+
+// A key this build does not take is refused with the reason, and nothing
+// is kept. A test key in a build from the workflow is the one Tim met: the
 // reason has to be the whole of it.
 func TestALinkWithAKeyThisBuildRefuses(t *testing.T) {
 	kc := useFakeKeychain(t)
 	k := testKey(t, 1)
 	got := linkOutcome(licence.Key(k), false)
-	if got.What != "refused" || got.Key != k || !strings.Contains(got.Reason, "test key") {
+	if got.What != "refused" || !strings.Contains(got.Reason, "test key") {
 		t.Fatalf("%+v", got)
 	}
 	if kc.key != "" {

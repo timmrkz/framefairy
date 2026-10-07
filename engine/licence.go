@@ -64,14 +64,13 @@ func CheckLicence(text string, testKeys bool) (licence.Key, licence.Licence, err
 }
 
 // DescribeLicence is a licence in a few words, the way the settings show
-// it: its ID, whom it is for, and whether it is a test key.
+// it: its key ID, and whom it is for when the key names somebody. A test
+// key reads like any other, because only a build made on this Mac takes
+// one at all.
 func DescribeLicence(l licence.Licence) string {
-	s := "Key " + l.ID.String()
+	s := "Key ID " + l.ID.String()
 	if l.Name != "" {
 		s += ", licensed to " + l.Name
-	}
-	if l.Signer == 0 {
-		s += ", a test key"
 	}
 	return s
 }
