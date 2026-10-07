@@ -38,6 +38,7 @@ check "README.md docs/APP.md" go false
 check "README.md docs/APP.md" interface false
 check "README.md docs/APP.md" build false
 check "README.md docs/APP.md" walks false
+check "README.md docs/APP.md" outside false
 
 # No Go test builds the interface, so the interface changing on its own
 # cannot change what a Go test does. make does build it into the program,
@@ -46,6 +47,7 @@ check "frontend/src/App.svelte" go false
 check "frontend/src/App.svelte" interface true
 check "frontend/src/App.svelte" build true
 check "frontend/src/App.svelte" walks true
+check "frontend/src/App.svelte" outside true
 
 # Except the files of the interface a Go test reads: the bindings test
 # reads api.ts and the engine reads the cases it shares with suggest.ts.
@@ -59,6 +61,9 @@ check "engine/edit.go go.sum" go true
 check "engine/edit.go go.sum" interface false
 check "engine/edit.go go.sum" build true
 check "engine/edit.go" walks true
+check "cmd/framefairy-app/licence.go" outside true
+check "internal/outside/outside_test.go" outside true
+check "Makefile" outside true
 
 # Whatever decides how the project is built runs everything, including the
 # rules themselves.

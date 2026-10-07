@@ -559,3 +559,90 @@ end with the frame before its last on screen, 24.40 on a clip that ends
 at 24.72. The queue draws frames on a grid of frames from where the play
 began, so the last frame never came up. A play that ends now draws the
 last frame of what played.
+
+## From outside the app
+
+The walks drive the interface from inside its page. Some of what the app
+does starts outside it: a link in a mail that opens the app, with the app
+closed or already open. `make outside` checks those on a real Mac, the
+way Tim did by hand, and CI runs it in the job `outside`, the only one
+that needs any of what it sets up.
+
+What it needs, and nothing else needs:
+
+- The app as a bundle, registered with Launch Services, so macOS knows
+  which app opens `framefairy://`. It is built with the build tag
+  `outside`, which adds a probe, see below. Every other build leaves the
+  probe out, so the app a customer gets has none of it.
+- The local dispenser, `framefairy-dispenser dev`, running beside it. A
+  sequence buys at its checkout and reads the keys out of the letter on
+  its dev page, the letter a buyer gets.
+- A keychain of its own, unlocked and made the default, because Unlock
+  writes the key to the keychain, and a locked one puts a box on screen
+  that nobody answers. The job makes it, and the test refuses to run
+  outside CI: on a Mac of one's own it would replace the licence there.
+
+The probe listens on 127.0.0.1:47290, for the test only. It says what the
+app has: the links it was handed, whether its window is in front, and what
+the settings show, read out of the page itself. It presses a button the
+way a click does, found by its words, and it quits the app. Which app is
+in front comes from `lsappinfo`, which needs no permission a runner does
+not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
+as well, and the test shows it when a check fails.
+
+The job stops after 30 minutes, so an app that hangs does not hold a Mac
+for GitHub's six hours.
+
+`make outside` builds the app as `make` does, then once more with the
+probe into `.build/outside`, so `bin/` never has it, and builds the
+dispenser beside it. It refuses to run anywhere but on a Mac with `CI`
+set.
+
+### The sequences
+
+What is checked is written in one place, `internal/outside/sequences.go`,
+the same way the walks' cases are in `sequences.mjs`: named sequences of
+steps, each a verb and its words, the actions and what has to come of
+them alike. The verbs are explained at the top of that file. The first
+sequence reads:
+
+```go
+{"set up"},
+{"buy", "2"},
+{"quit"},
+{"open link", "1"},
+{"front", "Frame Fairy"},
+{"field", "1"},
+{"line", "From the link. Unlock takes it."},
+{"click", "Unlock"},
+{"saved", "yes"},
+...
+```
+
+A link is handed to macOS with `open`, which is what a browser or a mail
+app does once a link is clicked and its own question, whether to open
+Frame Fairy, is answered. A check waits until it holds, 20 seconds at
+most, so a step says what has to be true and never how long to wait.
+
+Three files, each with one job:
+
+- `sequences.go`, the sequences and the verbs. It builds everywhere, and
+  `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
+  misspelt, a word too few or a key nobody bought fails on Linux in
+  seconds, not on the Mac at the end of a CI run.
+- `run_test.go`, how each verb is done on the Mac, the same for every
+  sequence, and `TestEveryVerbIsDone`. Only `make outside` builds it.
+- `cmd/framefairy-app/probe_outside.go`, what the app can be asked.
+
+A new case is a new sequence. A new verb is a line in the list at the
+top of `sequences.go`, its words in `verbs`, and how it is done in `done`
+in `run_test.go`. `go test -tags outside -run 'TestSequences/<part of a
+name>'` runs one.
+
+A sequence that passes leaves one notice on the check with every step it
+took, and one that fails leaves an error naming the step, as written, and
+what the app said last. Either is on the pull request, so nobody has to
+open the job's log.
+
+What it cannot check: the browser's own question before it hands a link
+on, which belongs to the browser, the mail app, and how any of it looks.
