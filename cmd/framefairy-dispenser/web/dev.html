@@ -29,12 +29,13 @@
 <div>
   <section class="buy">
     <h2>Buy</h2>
-    <form method="post" action="/shop/buy" target="_blank" class="line">
+    <form method="get" action="/shop" target="_blank" class="line">
+      <input type="hidden" name="pay" value="1">
       <input name="email" type="email" required value="buyer@example.com" class="wide" title="The buyer's address. Every letter to it shows under Mail sent.">
       <input name="seats" type="number" min="1" max="100" value="1" class="narrow" title="Seats">
       <button class="primary">Buy</button>
     </form>
-    <p class="dim small">Opens the thank-you page in a new tab, as Paddle's checkout does. <a href="/shop" target="_blank">The checkout page</a> · <a href="/lost" target="_blank">Lost key page</a></p>
+    <p class="dim small">Pays on the checkout page in a new tab, which then shows the thank-you page, as Paddle's checkout does. <a href="/shop" target="_blank">The checkout page</a> · <a href="/lost" target="_blank">Lost key page</a></p>
   </section>
 
   <section>
@@ -69,7 +70,7 @@
         {{end}}
         <details class="more" data-keep="more-{{$ref}}"><summary>More</summary>
           <div class="line">
-            <a href="/thanks?txn={{$ref}}" target="_blank">Thank-you page</a>
+            <a href="/thanks?txn={{$ref}}" target="_blank" title="The thank-you link opened in another tab, as from a receipt. It shows no keys: only the tab that paid can">Thank-you page</a>
             <form method="post" action="/dev/adjust"><input type="hidden" name="ref" value="{{$ref}}"><input type="hidden" name="do" value="chargeback_warning"><button class="small" title="The bank warns of a dispute. Nothing changes until a chargeback comes.">Chargeback warning</button></form>
             <form method="post" action="/dev/replay"><input type="hidden" name="ref" value="{{$ref}}"><button class="small" title="Paddle sends the sale's webhook again. Nothing should change.">Send the sale again</button></form>
           </div>
