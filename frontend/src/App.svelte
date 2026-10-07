@@ -781,8 +781,10 @@
     transition: width 0.14s ease;
   }
 
+  /* The rail and the settings column of the workspace, so the open
+     sidebar covers that column and nothing else. */
   aside.open {
-    width: 272px;
+    width: calc(var(--span-l) + var(--gap));
     box-shadow:
       inset -1px 0 var(--line),
       8px 0 24px rgba(0, 0, 0, 0.45);

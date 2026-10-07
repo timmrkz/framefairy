@@ -104,6 +104,13 @@
 //                      the picture comes from the Go side, and n clicks
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
+//   ["resize"]         drags the app's height and then its width a pixel at
+//                      a time, down to the app's smallest, and on every step every part of the
+//                      workspace moves only one way the whole drag, stands
+//                      on a whole pixel, and meets the app's edges, and the
+//                      two sides beside the picture, measured from the
+//                      app's edges, are the same width, or a pixel apart,
+//                      and stand still while only the height changes
 //   ["short", cuts]    the clip has at least so many cuts, none of them on
 //                      a frame that starts on a whole millisecond, and the
 //                      short Render wrote, read back from disk, holds
@@ -556,7 +563,98 @@ export const sequences = [
     name: "a picture the browser's decoder fails on comes from the Go side",
     steps: [["decoder fails"], ["from the app", 4]],
   },
+  {
+    // Tim recorded the range picker sawing up and down while he dragged
+    // the app's edge, then the settings fields shaking: a height rounded
+    // in steps of three left the picture the rest, and the columns beside
+    // it took what the picture left, on a half pixel every other step.
+    name: "the app dragged a pixel at a time moves every part one way, the sides equal and set by the width",
+    steps: [["resize"]],
+  },
 ];
+
+// The workspace's parts, where they stand and how big they are, as the
+// stylesheet lays them out for the app's size.
+const workspaceParts = (page) =>
+  page.evaluate(() => {
+    const box = (s) => document.querySelector(s)?.getBoundingClientRect();
+    const parts = {
+      viewer: box(".viewer"),
+      picture: box(".screen"),
+      "range picker": box(".track[aria-label='The range picker']"),
+      "clip timeline": box(".track[aria-label='The clip timeline']"),
+      settings: box(".stage > :first-child"),
+      clips: box(".stage > :last-child"),
+      "a settings field": box(".settings input"),
+      "a clip card": box("aside ol li"),
+    };
+    const out = {};
+    for (const [k, b] of Object.entries(parts)) if (b) out[k] = { x: b.left, y: b.top, w: b.width, h: b.height };
+    const rows = [...document.querySelectorAll(".detail .row")].map((e) => e.getBoundingClientRect().bottom);
+    out.app = { w: innerWidth, h: innerHeight, foot: Math.max(...rows) };
+    return out;
+  });
+
+// What is wrong with the workspace as the app is dragged smaller a pixel at
+// a time, by its height and then by its width, or null.
+async function resizeProblem(page) {
+  const sweeps = [
+    // Down to the app's smallest, 960 by 640, see main.go.
+    { by: "height", sizes: Array.from({ length: 361 }, (_, i) => [1500, 1000 - i]) },
+    { by: "width", sizes: Array.from({ length: 741 }, (_, i) => [1700 - i, 1000]) },
+  ];
+  const sideColumns = await page.evaluate(() => {
+    const s = document.querySelector(".stage");
+    return s ? getComputedStyle(s).gridTemplateColumns : "";
+  });
+  if (!sideColumns) return "there is no workspace to resize";
+  for (const { by, sizes } of sweeps) {
+    const seen = [];
+    for (const [width, height] of sizes) {
+      await page.setViewportSize({ width, height });
+      const parts = await workspaceParts(page);
+      // The two sides measured from the app's own edges, the rail and a
+      // space in front of the settings and the edge after the clips, so
+      // the picture stands in the middle of the app.
+      const [left, right] = await page.evaluate(() => {
+        const [l, , r] = getComputedStyle(document.querySelector(".stage")).gridTemplateColumns.split(" ").map(parseFloat);
+        const token = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
+        return [token("--rail") + token("--gap") + l, r + token("--edge")];
+      });
+      if (Math.abs(left - right) > 1) return `at ${width} by ${height} the sides beside the picture are ${left} and ${right} wide from the app's edges`;
+      for (const [k, b] of Object.entries(parts)) {
+        if (k === "app") continue;
+        for (const [m, v] of Object.entries(b)) {
+          if (Math.abs(v - Math.round(v)) > 0.01) return `at ${width} by ${height} the ${k}'s ${m} is ${v}, between two pixels`;
+        }
+      }
+      const edge = parts.app.w - (parts.clips.x + parts.clips.w);
+      const foot = parts.app.h - parts.app.foot;
+      seen.push({ parts, left, edge, foot, width, height });
+    }
+    const first = seen[0];
+    for (const step of seen) {
+      if (step.edge !== first.edge) return `at ${step.width} by ${step.height} the clips end ${step.edge} pixels from the app's right, not ${first.edge}`;
+      if (step.foot !== first.foot) return `at ${step.width} by ${step.height} the workspace ends ${step.foot} pixels from the app's foot, not ${first.foot}`;
+      if (by === "height" && step.left !== first.left) return `the sides beside the picture went from ${first.left} to ${step.left} wide while only the height changed`;
+    }
+    for (const k of Object.keys(first.parts)) {
+      if (k === "app") continue;
+      for (const m of ["x", "y", "w", "h"]) {
+        let up = 0;
+        let down = 0;
+        for (let i = 1; i < seen.length; i++) {
+          const d = seen[i].parts[k][m] - seen[i - 1].parts[k][m];
+          if (d > 0.01) up++;
+          if (d < -0.01) down++;
+        }
+        if (up && down) return `dragging the app's ${by}, the ${k}'s ${m} moved ${down} times one way and ${up} times the other`;
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  return null;
+}
 
 // The models the settings name: what finds clips, here or in the cloud,
 // and what hears.
@@ -1149,6 +1247,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await settle(page);
         break;
       }
+      case "resize":
+        wrong = await resizeProblem(page);
+        break;
       case "from the app": {
         const fps = await rate(page);
         const { segments } = await engineState(page, watch.at);
