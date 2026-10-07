@@ -2,9 +2,12 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -67,8 +70,9 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	}
 }
 
-// A short still being written is not a short, and neither is a file in
-// the out folder no clip is named for.
+// A short is a file a render wrote and noted in the plan. One still being
+// written is not a short, and neither is a file in the out folder no clip
+// is named for, nor one of a clip's name that the plan says nothing of.
 func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
@@ -81,17 +85,22 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := os.MkdirAll(LogsDir(source), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plan := `{"clips": [
+	plan := filepath.Join(LogsDir(source), "clips.json")
+	if err := os.WriteFile(plan, []byte(`{"clips": [
   {"id": "01", "slug": "done", "segments": [{"start": 1, "end": 21}]},
   {"id": "02", "slug": "half", "segments": [{"start": 30, "end": 50}]},
-  {"id": "03", "slug": "upper", "segments": [{"start": 60, "end": 80}]}]}`
-	if err := os.WriteFile(filepath.Join(LogsDir(source), "clips.json"), []byte(plan), 0o644); err != nil {
+  {"id": "03", "slug": "upper", "segments": [{"start": 60, "end": 80}]},
+  {"id": "05", "slug": "unnoted", "segments": [{"start": 90, "end": 110}]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4", "04_gone.mp4"} {
+	for _, name := range []string{"01_done.mp4", "02_half.part.mp4", "03_upper.PART.MP4", "04_gone.mp4", "05_unnoted.mp4"} {
 		if err := os.WriteFile(filepath.Join(out, name), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Noted the way a render notes its short once it is written.
+	if err := recordShort(plan, "01", filepath.Join(out, "01_done.mp4")); err != nil {
+		t.Fatal(err)
 	}
 	if got := Status(source, "").Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
@@ -167,6 +176,220 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	}
 	if IsShort(p.Source, short) || rendered() != 0 {
 		t.Error("a short removed by hand is still counted")
+	}
+}
+
+// shortsEpisode is an episode searched for one clip, under a file name of
+// its own, with a thumbnail on the clip.
+type shortsEpisode struct {
+	p    *Project
+	plan string
+}
+
+func newShortsEpisode(t *testing.T, name string) shortsEpisode {
+	t.Helper()
+	p, _ := searchProject(t, nil)
+	named := filepath.Join(filepath.Dir(p.Source), name+".mp4")
+	if err := os.Rename(p.Source, named); err != nil {
+		t.Fatal(err)
+	}
+	p = NewProject(p.engine, named, p.Base)
+	plan, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil)
+	if err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	ep := shortsEpisode{p, plan}
+	c := ep.clip(t)
+	if err := SetThumbnail(plan, c.ID, -1, (c.Segments[0].Start+c.Segments[0].End)/2); err != nil {
+		t.Fatal(err)
+	}
+	return ep
+}
+
+func (ep shortsEpisode) clip(t *testing.T) ClipView {
+	t.Helper()
+	view, err := ReadPlan(ep.plan)
+	if err != nil || len(view.Clips) == 0 {
+		t.Fatalf("the plan: %v", err)
+	}
+	return view.Clips[0]
+}
+
+// render renders the clip and gives the short it says it has.
+func (ep shortsEpisode) render(t *testing.T) string {
+	t.Helper()
+	if err := ep.p.Render(context.Background(), RenderRequest{Plan: ep.plan}); err != nil {
+		t.Fatalf("%v %s", err, ep.p.LastError())
+	}
+	short := ep.clip(t).Rendered
+	if short == "" {
+		t.Fatal("a clip just rendered says it has no short")
+	}
+	return short
+}
+
+// files are the short and its first picture as they are on disk now.
+func files(t *testing.T, short string) [2]os.FileInfo {
+	t.Helper()
+	var out [2]os.FileInfo
+	for i, path := range []string{short, strings.TrimSuffix(short, ".mp4") + "-1.jpg"} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("%s is gone", path)
+		}
+		out[i] = info
+	}
+	return out
+}
+
+// untouched says whether the short and its picture are still the files
+// they were.
+func untouched(t *testing.T, short string, was [2]os.FileInfo) bool {
+	t.Helper()
+	now := files(t, short)
+	return os.SameFile(was[0], now[0]) && os.SameFile(was[1], now[1]) &&
+		was[0].ModTime().Equal(now[0].ModTime()) && was[1].ModTime().Equal(now[1].ModTime())
+}
+
+// neitherClaims says whether each episode leaves the other's short alone.
+func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
+	t.Helper()
+	if IsShort(a.p.Source, bShort) {
+		t.Errorf("%s takes %s for its own", filepath.Base(a.p.Source), bShort)
+	}
+	if IsShort(b.p.Source, aShort) {
+		t.Errorf("%s takes %s for its own", filepath.Base(b.p.Source), aShort)
+	}
+}
+
+// Two episodes that render into one folder for shorts keep a short each,
+// even when a clip of one has the same id and slug as a clip of the
+// other: each episode's shorts go into a folder of its own in it, under
+// the clip's own name. The second render leaves the first episode's short
+// and its picture as they were, and neither clip takes the other's short
+// for its own.
+func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
+	t.Parallel()
+	shorts := ResolvePath(t.TempDir())
+	first, second := newShortsEpisode(t, "erste"), newShortsEpisode(t, "zweite")
+	first.p.Base.Shorts, second.p.Base.Shorts = shorts, shorts
+	name := first.clip(t).Basename
+	if other := second.clip(t).Basename; other != name {
+		t.Fatalf("the clips are %s and %s, which never meet in one folder", name, other)
+	}
+
+	firstShort := first.render(t)
+	was := files(t, firstShort)
+	secondShort := second.render(t)
+
+	for short, want := range map[string]string{
+		firstShort:  filepath.Join(shorts, "erste", name+".mp4"),
+		secondShort: filepath.Join(shorts, "zweite", name+".mp4"),
+	} {
+		if short != want {
+			t.Errorf("a short is at %s, not %s", short, want)
+		}
+	}
+	if !untouched(t, firstShort, was) {
+		t.Errorf("the second render wrote over the first episode's short at %s", firstShort)
+	}
+	if got := first.clip(t).Rendered; got != firstShort {
+		t.Errorf("the first episode's clip says its short is %q, not %q", got, firstShort)
+	}
+	neitherClaims(t, first, second, firstShort, secondShort)
+}
+
+// Two episodes of the same file name share their folder in the folder for
+// shorts, so the second short of the same name gets a number the way
+// Finder gives one, and its pictures go with it. A render again writes
+// over the clip's own short, under the name it has, and nothing else.
+func TestTwoEpisodesOfOneNameNumberTheirShorts(t *testing.T) {
+	t.Parallel()
+	shorts := ResolvePath(t.TempDir())
+	first, second := newShortsEpisode(t, "episode"), newShortsEpisode(t, "episode")
+	first.p.Base.Shorts, second.p.Base.Shorts = shorts, shorts
+	name := first.clip(t).Basename
+
+	firstShort := first.render(t)
+	was := files(t, firstShort)
+	secondShort := second.render(t)
+	if want := filepath.Join(shorts, "episode", name+" 2.mp4"); secondShort != want {
+		t.Errorf("the second short is at %s, not %s", secondShort, want)
+	}
+	if !untouched(t, firstShort, was) {
+		t.Errorf("the second render wrote over the first episode's short at %s", firstShort)
+	}
+	neitherClaims(t, first, second, firstShort, secondShort)
+
+	wasSecond := files(t, secondShort)
+	if again := second.render(t); again != secondShort {
+		t.Errorf("rendered again, the second short went to %s, not %s", again, secondShort)
+	}
+	if untouched(t, secondShort, wasSecond) {
+		t.Error("rendered again, the second short was not written again")
+	}
+	wasSecond = files(t, secondShort)
+	if again := first.render(t); again != firstShort {
+		t.Errorf("rendered again, the first short went to %s, not %s", again, firstShort)
+	}
+	if !untouched(t, secondShort, wasSecond) {
+		t.Errorf("the first episode's render again wrote over %s", secondShort)
+	}
+	neitherClaims(t, first, second, firstShort, secondShort)
+}
+
+// On the command line, --out names the folder itself, and the shorts go
+// into it under their clip's name, as they always have, so a second
+// episode writes over a short of the same name there. The first episode's
+// clip then no longer takes it for its own, because it is not the file it
+// wrote.
+func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
+	t.Parallel()
+	out := ResolvePath(t.TempDir())
+	first, second := newShortsEpisode(t, "erste"), newShortsEpisode(t, "zweite")
+	first.p.Base.Out, second.p.Base.Out = out, out
+	name := first.clip(t).Basename
+
+	firstShort := first.render(t)
+	secondShort := second.render(t)
+	if want := filepath.Join(out, name+".mp4"); firstShort != want || secondShort != want {
+		t.Errorf("with --out the shorts are %s and %s, not %s", firstShort, secondShort, want)
+	}
+	if got := first.clip(t).Rendered; got != "" {
+		t.Errorf("the first episode's clip takes the second's short for its own, at %s", got)
+	}
+	if IsShort(first.p.Source, secondShort) || !IsShort(second.p.Source, secondShort) {
+		t.Error("the short written last is not the second episode's alone")
+	}
+}
+
+// A plan is untrusted, so what it says of a short names a file of the
+// clip's own name, or that with a number, and nothing else, whatever the
+// folder.
+func TestAPlanNamesNoFileButAShort(t *testing.T) {
+	t.Parallel()
+	dir := ResolvePath(t.TempDir())
+	c := Clip{ID: "01", Slug: "erste", Segments: []Segment{{Start: 1, End: 2}}}
+	for _, name := range []string{"01_erste.mp4", "01_erste 2.mp4", "01_erste 10.mp4",
+		"secret.mp4", "01_erste 02.mp4", "01_erste 2.mov", "01_erste .mp4", "01_erste 2 3.mp4"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan := Plan{Raw: map[string]any{keyShorts: map[string]any{c.ID: map[string]any{
+			keyFolder: dir, keyName: name, keySize: json.Number(strconv.FormatInt(info.Size(), 10)),
+			keyModified: json.Number(strconv.FormatInt(info.ModTime().UnixNano(), 10))}}}}
+		want := ""
+		if name == "01_erste.mp4" || name == "01_erste 2.mp4" || name == "01_erste 10.mp4" {
+			want = path
+		}
+		if got := shortOf(plan, c); got != want {
+			t.Errorf("a plan naming %q gives %q, not %q", name, got, want)
+		}
 	}
 }
 

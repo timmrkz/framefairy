@@ -57,10 +57,15 @@ episode.framefairy/
 └── out/               the finished clips and their thumbnails
 ```
 
-The plan notes, under `shorts`, the folder each clip's short was rendered
-into, `out/` or `--out`, so the app knows a clip is rendered wherever it
-went, see [ENGINE.md](ENGINE.md#where-a-short-went). A plan given with
-`--clips` from outside `logs/` is left as it is.
+The plan notes, under `shorts`, where each clip's short was rendered,
+in `out/` or `--out`, with its size and the time it was written, so the
+app knows a clip is rendered wherever it went, and knows a short of the
+same name that another episode wrote over it is not the clip's, see
+[ENGINE.md](ENGINE.md#where-a-short-went). `--out` is the folder itself:
+two episodes rendered into one `--out` write over each other's shorts of
+the same name, as they always did. The app gives every episode a folder
+of its own in its folder for shorts instead. A plan given with `--clips`
+from outside `logs/` is left as it is.
 
 A clip whose plan lists `thumbnails`, moments of the episode in seconds,
 gets a picture of the short at each of them, `<name>-1.jpg`, `<name>-2.jpg`
