@@ -202,7 +202,7 @@ func (d *desk) add(name, seconds string) string {
 
 // search presses New on a window.
 func (d *desk) search(path string, w window) {
-	d.svc.Search(path, w.request())
+	d.svc.Search(path, w.request(), "")
 }
 
 // carryOn presses Continue on the search the episode says was cut off or
@@ -214,7 +214,7 @@ func (d *desk) carryOn(path string) {
 		d.t.Fatalf("Continue on a search that did not stop: %+v", o)
 	}
 	j, _ := d.svc.jobs.find(path, "search")
-	d.svc.Continue(j.ID)
+	d.svc.Continue(j.ID, "")
 }
 
 // cancel presses Cancel on the episode's search.
@@ -225,6 +225,18 @@ func (d *desk) cancel(path string) {
 		d.t.Fatal("no search to call off")
 	}
 	d.svc.CancelJob(j.ID)
+}
+
+// press presses New on a window, as the press named click, and gives the
+// job the Go side answers with.
+func (d *desk) press(path string, w window, click string) Job {
+	return d.svc.Search(path, w.request(), click)
+}
+
+// stop presses Cancel at the head of the clip list, after the press named
+// click: all the work on the episode's clips stops.
+func (d *desk) stop(path, click string) {
+	d.svc.StopClipWork(path, click)
 }
 
 // in presses I with the playhead at a moment, and out presses O.

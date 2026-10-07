@@ -436,6 +436,11 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, From: req.From, To: req.To,
 		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass})
 	defer j.end(&err)
+	// Called off before it was asked for, by a Cancel that reached the app
+	// first, it keeps its record and does nothing else.
+	if ctx.Err() != nil {
+		return "", ErrCancelled
+	}
 
 	// A new search is the next pass over its window, with a plan of its
 	// own beside the ones before it, and keeps every clip they have.

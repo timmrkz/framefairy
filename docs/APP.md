@@ -844,10 +844,14 @@ bubble scrolled by those eight pixels.
       one, so it can be read, while the fill and the time left move at
       once. The time left moves in steps of five seconds. Only the search
       reports on that row: what ffmpeg says while it frames a clip goes to
-      the log. **New** becomes **Cancel** the moment a first search is on
-      its way, while it still waits for the transcript, and there it calls
-      the search off before it starts. While a search runs, Cancel stops
-      it. A render is not a search, so it leaves this head alone:
+      the log. **New** becomes **Cancel** the moment it is pressed, and
+      Cancel takes a press from that moment on, never greyed out while the
+      Go side has not answered yet. It names the episode's work and the
+      press of New it came after, not a job, so it needs nothing from the
+      Go side first: a search the Go side has not heard of yet is called
+      off as it arrives and never starts, and says Stopped with Continue
+      like any search Cancel stopped. A search that waits for the
+      transcript is called off before it starts, and one that runs stops. A render is not a search, so it leaves this head alone:
       **New** stays New and cannot be pressed until the render is done,
       because one lane does the work. The render shows in the **Render**
       button it was started from, which fills from the moment it is

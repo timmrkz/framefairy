@@ -212,10 +212,40 @@ is no logic about jobs in TypeScript.
 
 | click | call |
 | --- | --- |
-| New | `Search(path, request)` |
+| New | `Search(path, request, press)` |
 | Render | `Render(path, request)` |
-| Continue, on a search or a render that stopped | `Continue(job)` |
-| Cancel, on one that runs or one that stopped | `CancelJob(job)` |
+| Continue, on a search or a render that stopped | `Continue(job, press)` |
+| Cancel at the head of the clip list | `StopClipWork(path, press)` |
+| Cancel, on one that runs or one that stopped, in Activity and on a render | `CancelJob(job)` |
+
+**Cancel at the head of the clip list takes effect the moment it is
+pressed.** New and Cancel are a person's actions, and Cancel means: stop
+the work on the clips of this episode. It used to call off the jobs the
+window knew, and between New and the Go side's answer it knew none, so
+it stood greyed out and a press there did nothing. So it names the
+episode instead of a job, and needs no answer from New. The window gives
+every press of New and Continue a name of its own, `press`, and Cancel
+names the press it came after. Wails hands every call to a goroutine of
+its own, so the two can reach the Go side in either order:
+
+- Cancel first: the queue notes the press as called off, `calledOff`, and
+  stops whatever of the episode's clip work runs. The search that press
+  asked for arrives next, is called off as it is put in the queue, and
+  never takes a turn: `Project.Search` writes its record and returns. It
+  ends the way a search Cancel stopped while it ran does, Stopped with
+  Continue, after a restart too.
+- New first: the search is in the queue, and Cancel stops it like any
+  search that runs.
+
+The note and the queue are read and written under the queue's one lock,
+so there is no moment between the two where a search could slip through.
+A search the Go side starts by itself, the first one of an episode just
+added, has no press, and Cancel stops it as work of the episode.
+`TestPathCancelBeforeTheSearchIsAsked` and
+`TestNewAndCancelInEitherOrder` hold it, and the walk sequence "Cancel
+pressed at once after New stops the search before it starts" holds the
+search's call back on its way to the Go side and presses Cancel in the
+first frame the head says it.
 
 It gets the state of every job in one event, `job`, whenever it changes,
 and reads the list once as it starts. Everything it shows about work comes

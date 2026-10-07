@@ -18,8 +18,10 @@ import (
 // search that stopped. It hears the episode as far as the window reaches,
 // if it has not been heard that far, and the model reads the window. An
 // episode has one search at a time, so asking again while one runs gives
-// the one that runs.
-func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
+// the one that runs. click names the press that asked for it, so a Cancel
+// pressed after it stops it even if the Cancel reaches the Go side first,
+// see StopClipWork. The Go side's own searches have none.
+func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary, func(j *Job) {
 			j.From, j.To, j.Count = req.From, req.To, req.Count
@@ -36,7 +38,7 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
 	return s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
-		j.Record, j.From, j.To, j.Count = engine.SearchID, req.From, req.To, req.Count
+		j.Record, j.From, j.To, j.Count, j.click = engine.SearchID, req.From, req.To, req.Count, click
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.
@@ -44,10 +46,13 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 		// the transcript is finished.
 		model := s.store.Settings().ASRModel
 		unheard := false
-		if req.To <= 0 {
+		switch {
+		case ctx.Err() != nil:
+			// Called off before it started, it loads nothing.
+		case req.To <= 0:
 			_, done := engine.Coverage(p.Source, model)
 			unheard = !done
-		} else {
+		default:
 			unheard = len(engine.Unheard(p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
 		}
 		if unheard {
@@ -63,8 +68,8 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest) Job {
 }
 
 // Continue carries on a search or a render that was cut off or failed,
-// from what it left.
-func (s *FrameFairy) Continue(id string) Job {
+// from what it left. click names the press, the way it does for Search.
+func (s *FrameFairy) Continue(id, click string) Job {
 	var stopped *Job
 	for _, j := range s.jobs.list() {
 		// A search that failed before it had a record, refused as it was
@@ -96,7 +101,7 @@ func (s *FrameFairy) Continue(id string) Job {
 			}
 			req.Count = set.targetFor(window)
 		}
-		return s.Search(path, req)
+		return s.Search(path, req, click)
 	}
 	var carry *engine.JobRecord
 	for _, rec := range engine.ReadJobs(path) {
@@ -108,7 +113,7 @@ func (s *FrameFairy) Continue(id string) Job {
 		return s.jobs.refuse(path, stopped.Kind, stopped.Label, "there is nothing left to carry on")
 	}
 	if carry.Kind == engine.JobClip {
-		return s.makeClip(path, carry.Clip(), carry.ID)
+		return s.makeClip(path, carry.Clip(), carry.ID, click)
 	}
 	return s.render(path, carry.Render(), carry)
 }
@@ -161,12 +166,12 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 // result is the key of the clip it made. Its card is in the list from the
 // moment it is asked for, at the playhead.
 func (s *FrameFairy) MakeClip(path string, at float64, backward bool) Job {
-	return s.makeClip(path, engine.ClipRequest{At: at, Backward: backward}, "")
+	return s.makeClip(path, engine.ClipRequest{At: at, Backward: backward}, "", "")
 }
 
 // makeClip queues a clip made by hand, carrying on the one the record id
-// is of, if any.
-func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry string) Job {
+// is of, if any. click names the press of Continue, if it was one.
+func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click string) Job {
 	label := jobLabel(engine.JobClip, false)
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobClip, label, notInLibrary)
@@ -180,7 +185,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry string)
 		s.jobs.settle(path, engine.JobClip, id)
 	}
 	return s.jobs.addSteps(path, engine.JobClip, label, false, func(j *Job) {
-		j.Record, j.At, j.Backward = id, req.At, req.Backward
+		j.Record, j.At, j.Backward, j.click = id, req.At, req.Backward, click
 		j.Underway = engine.JobRecord{Kind: engine.JobClip, At: req.At, Step: engine.StepWaiting}.Underway()
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		return p.MakeClip(ctx, id, req, turn)
@@ -213,7 +218,7 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	if req.Count == 0 {
 		req.Count = engine.SuggestedCount(end, req.Min, req.Max)
 	}
-	s.Search(path, req)
+	s.Search(path, req, "")
 }
 
 // firstWindowEnd is where an episode's first window ends. It is what the
