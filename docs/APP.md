@@ -309,7 +309,11 @@ where its first packet lies, and each packet after it is the next of its
 samples, the way ffmpeg reads a piece of a render, so a flush ends a run
 and the packets after it start a stream of their own. The page does not
 read the sound in the file at all. Plain sound needs no decoder and is
-still turned into the sound card's numbers on the page, `PlainSound`. A file it cannot play, a codec the system cannot decode, a
+still turned into the sound card's numbers on the page, `PlainSound`.
+The Go side closes a stream nobody has read from for 20 seconds, and a
+pause holds the play with its stream, so a stream that answers 404 is
+opened again from the moment after the last that came: a play paused
+longer said the sound had stopped decoding, Tim found. A file it cannot play, a codec the system cannot decode, a
 fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
 sentence where the picture would be, with the reason, and nothing else in
 the workspace changes. A sound it cannot decode plays the picture without

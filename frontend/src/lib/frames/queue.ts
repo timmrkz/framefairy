@@ -339,26 +339,41 @@ class GoSound implements SoundDecoder {
 // One stream of sound from the Go side, from a place in the track on, in
 // samples. Sound before the track's start, the priming of AAC that the
 // edit list puts before zero, is silence, as it is to ffmpeg.
-class GoSoundStream {
+//
+// The Go side closes a stream nobody has read from for 20 seconds, and
+// the least read when too many are open, see previewIdle in
+// cmd/framefairy-app/frames.go, and then answers 404. A pause holds the
+// play and its stream, so a play paused for longer found it gone, and the
+// video preview said the sound had stopped decoding, Tim found. A stream
+// that is gone is opened again where it got to.
+export class GoSoundStream {
   private id: Promise<string>;
   private have = new Float32Array(0);
   private silence: number;
   private ended = false;
+  // Where the Go side's stream started, and how many moments of it came.
+  private from: number;
+  private came = 0;
   constructor(
-    path: string,
+    private path: string,
     at: number,
-    rate: number,
+    private rate: number,
     private channels: number,
   ) {
     this.silence = Math.max(0, -at) * channels;
-    const q = new URLSearchParams({ path, from: (Math.max(0, at) / rate).toFixed(9), rate: String(rate), ch: String(channels) });
-    this.id = fetch(`/frames/sound?${q}`).then(async (r) => {
+    this.from = Math.max(0, at);
+    this.id = this.open(this.from);
+  }
+  private open(at: number): Promise<string> {
+    const q = new URLSearchParams({ path: this.path, from: (at / this.rate).toFixed(9), rate: String(this.rate), ch: String(this.channels) });
+    const id = fetch(`/frames/sound?${q}`).then(async (r) => {
       if (!r.ok) throw new Error(`the sound could not be read, it answered ${r.status}`);
       const j = (await r.json()) as { id?: string };
       if (!j.id) throw new Error("the sound could not be read");
       return j.id;
     });
-    this.id.catch(() => {});
+    id.catch(() => {});
+    return id;
   }
   // The next n moments, all channels side by side, or fewer at the end.
   async take(n: number): Promise<Float32Array> {
@@ -384,10 +399,17 @@ class GoSoundStream {
     return out.subarray(0, filled);
   }
   private async pull() {
-    const id = await this.id;
-    const r = await fetch(`/frames/read?id=${id}&n=16`);
+    let r = await fetch(`/frames/read?id=${await this.id}&n=16`);
+    if (r.status === 404) {
+      // Closed on the Go side: on again from the moment after the last
+      // that came, once, and a stream that is gone straight away is
+      // a fault.
+      this.id = this.open(this.from + this.came);
+      r = await fetch(`/frames/read?id=${await this.id}&n=16`);
+    }
     if (!r.ok) throw new Error(`the sound stopped, it answered ${r.status}`);
     const got = soundChunks(new Uint8Array(await r.arrayBuffer()), this.channels);
+    this.came += got.length / this.channels;
     if (got.length) {
       const joined = new Float32Array(this.have.length + got.length);
       joined.set(this.have);
