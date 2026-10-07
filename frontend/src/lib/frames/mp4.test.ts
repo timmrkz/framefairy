@@ -69,6 +69,16 @@ const trak = (head: number[], kind: string, scale: number, entry: number[], tabl
 
 const movie = (...traks: number[][]) => new Uint8Array(box("moov", mvhd(1000), ...traks));
 
+// A little sound from zero on, beside a picture that starts late, which
+// is what makes it late: the episode starts where its earliest track does.
+const soundFromZero = (edits: [number, number][] = []) =>
+  trak([...tkhd(), ...(edits.length ? elst(edits) : [])], "soun", 44100, mp4aMov(), [
+    stts([[1, 1024]]),
+    stsz([1]),
+    stsc([[1, 1]]),
+    stco([0]),
+  ]);
+
 describe("parseMoov", () => {
   test("reads where every frame is and when it is shown, B-frames and edit list included", () => {
     // Four frames at 25 a second in a timescale of 12800, decoded I P B B
@@ -122,6 +132,7 @@ describe("parseMoov", () => {
           avc1(640, 360),
           [stts([[5, 40]]), stsz([10, 20, 30, 40, 50]), stsc([[1, 3], [2, 2]]), co64([2 ** 33, 2 ** 33 + 1000])],
         ),
+        soundFromZero(),
       ),
     );
     const s = m.video!.samples;
@@ -131,6 +142,37 @@ describe("parseMoov", () => {
     // No stss: every frame is a key frame.
     expect(Array.from(s.key)).toEqual([1, 1, 1, 1, 1]);
     expect(m.duration).toBeCloseTo(0.7);
+  });
+
+  test("counts from where the earliest track starts, the way ffmpeg and the engine do", () => {
+    const picture = (edits: [number, number][]) =>
+      trak([...tkhd(), ...elst(edits)], "vide", 1000, avc1(10, 10), [stts([[2, 40]]), stsz([1, 1]), stsc([[1, 2]]), stco([0])]);
+    // Both tracks held back, the picture by half a second and the sound,
+    // its priming not cut, by 0.476: the way ffmpeg writes a recording
+    // cut out of a longer one, which it says starts at 0.476. The engine
+    // cuts it counting from there, so the frame queue does too.
+    const late = parseMoov(
+      movie(
+        picture([
+          [500, -1],
+          [1000, 0],
+        ]),
+        soundFromZero([
+          [476, -1],
+          [1000, 0],
+        ]),
+      ),
+    );
+    expect(late.video!.samples.pts[0] / 1000).toBeCloseTo(0.024, 4);
+    expect(late.audio!.samples.pts[0]).toBe(0);
+    expect(late.duration).toBeCloseTo(0.104, 4);
+    // The priming cut off the front of AAC is before the start, not where
+    // the episode starts, so a plain file still starts at zero.
+    const plain = parseMoov(movie(picture([[1000, 0]]), soundFromZero([[1000, 1024]])));
+    expect(plain.video!.samples.pts[0]).toBe(0);
+    expect(plain.audio!.samples.pts[0]).toBe(-1024);
+    // A picture alone that starts late starts the episode.
+    expect(parseMoov(movie(picture([[250, -1], [1000, 0]]))).video!.samples.pts[0]).toBe(0);
   });
 
   test("reads AAC in a QuickTime sound description, with esds inside wave", () => {
@@ -323,6 +365,7 @@ describe("rankAt", () => {
           // 20, 25, 15 and 20 ticks, then one frame held for 200.
           [stts([[1, 20], [1, 25], [1, 15], [1, 20], [1, 200], [1, 20]]), stsz(new Array(6).fill(1)), stsc([[1, 6]]), stco([0])],
         ),
+        soundFromZero(),
       ),
     ).video!.samples;
     const begins = Array.from(uneven.pts, (t) => t / 600);

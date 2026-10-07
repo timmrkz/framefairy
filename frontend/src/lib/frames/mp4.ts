@@ -57,8 +57,9 @@ export type AudioTrack = {
 export type Pcm = { bytes: number; float: boolean; little: boolean; signed: boolean };
 
 // The samples of one track, in the order they are decoded. Times are in
-// the track's own ticks, already moved by its edit list, so a time of zero
-// is the start of the episode. time() gives seconds.
+// the track's own ticks, already moved by its edit list and counted from
+// where the earliest track starts, so a time of zero is the start of the
+// episode, as it is to the engine. time() gives seconds.
 export type Samples = {
   count: number;
   timescale: number;
@@ -230,21 +231,56 @@ export function parseMoov(bytes: Uint8Array): Movie {
   const movieScale = v.u8(mvhd.body) === 1 ? v.u32(mvhd.body + 20) : v.u32(mvhd.body + 12);
   if (!movieScale) fail("the movie has no time scale");
   const movie: Movie = { duration: 0 };
+  const tracks: (VideoTrack | AudioTrack)[] = [];
+  // Where the episode starts, the way ffmpeg counts it: where the earliest
+  // track starts. The engine counts every time from there, and so does
+  // the frame queue. A file whose tracks all start late, by an empty edit
+  // or by being cut from a longer recording, would otherwise be played
+  // that much away from where the engine cuts it. A track starts where its
+  // edit list puts it and never before, so the priming cut off the front
+  // of AAC does not count, and where its first frame is shown when that
+  // is later.
+  let origin = Infinity;
   for (const trak of boxesIn(v, moov.body, moov.end)) {
     if (trak.type !== "trak") continue;
     const track = parseTrak(v, trak, movieScale);
     if (!track) continue;
-    const end = track.samples.count
-      ? (track.samples.pts[track.samples.order[track.samples.count - 1]] +
-          track.samples.duration[track.samples.order[track.samples.count - 1]]) /
-        track.samples.timescale
-      : 0;
-    movie.duration = Math.max(movie.duration, end);
+    tracks.push(track);
+    const s = track.samples;
+    let first = Infinity;
+    for (let i = 0; i < s.count; i++) first = Math.min(first, s.pts[i]);
+    if (s.count) origin = Math.min(origin, Math.max(editDelay(v, trak, movieScale), first / s.timescale));
     if (track.kind === "video" && !movie.video) movie.video = track;
     if (track.kind === "audio" && !movie.audio) movie.audio = track;
   }
   if (!movie.video && !movie.audio) fail("the file has neither a picture nor sound it can read");
+  if (!Number.isFinite(origin)) origin = 0;
+  for (const track of tracks) {
+    const s = track.samples;
+    const by = origin * s.timescale;
+    if (by) for (let i = 0; i < s.count; i++) s.pts[i] -= by;
+    const end = s.count ? (s.pts[s.order[s.count - 1]] + s.duration[s.order[s.count - 1]]) / s.timescale : 0;
+    movie.duration = Math.max(movie.duration, end);
+  }
   return movie;
+}
+
+// How long the empty edits at the head of a track's edit list hold it
+// back, in seconds.
+function editDelay(v: View, trak: Box, movieScale: number): number {
+  const elst = path(v, trak, "edts", "elst");
+  if (!elst) return 0;
+  const version = v.u8(elst.body);
+  const count = v.u32(elst.body + 4);
+  const step = version === 1 ? 20 : 12;
+  let delay = 0;
+  for (let i = 0; i < count; i++) {
+    const at = elst.body + 8 + i * step;
+    const mediaTime = version === 1 ? v.i64(at + 8) : v.i32(at + 4);
+    if (mediaTime !== -1) break;
+    delay += (version === 1 ? v.u64(at) : v.u32(at)) / movieScale;
+  }
+  return delay;
 }
 
 function parseTrak(v: View, trak: Box, movieScale: number): VideoTrack | AudioTrack | undefined {

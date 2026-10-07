@@ -687,6 +687,17 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   and was right for both kinds already: on files ffmpeg made of both
   kinds, every time it read agreed with ffprobe to a microsecond. The
   sound is cut at the same moments as before.
+- **Every track starting late.** A recording cut out of a longer one, or
+  one written with its start held back, has no track that starts at zero.
+  ffmpeg counts from where the earliest track starts, `-ss` included, and
+  so does every time in the engine. The video preview counted from the
+  movie's own zero, so the two were apart by as long as the earliest
+  track was late: 0.476 s in a file ffmpeg wrote with its start held back
+  half a second. `parseMoov` in `frontend/src/lib/frames/mp4.ts` now
+  counts from where ffmpeg does. A track starts where its edit list puts
+  it and never before, so the priming cut off the front of AAC does not
+  move a plain file, and on files ffmpeg made, plain and held back, in
+  MP4 and in MOV, every time it reads agrees with ffprobe's.
 - **The rate of a short of uneven frames.** The rate ffmpeg reports for
   uneven frames is the finest step they keep to, not how many come a
   second: 50 for the phone's frames above, which average 29.75, so its
