@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -113,7 +114,7 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	st.Plans = PlanSummaries(logs)
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
-			if shortOf(work, plan.plan, c) != "" {
+			if shortOf(plan.plan, c) != "" {
 				st.Rendered++
 			}
 		}
@@ -487,7 +488,7 @@ func (s PlanSummary) View() *PlanView {
 		for _, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved})
 		}
-		v.Rendered = shortOf(work, plan, c)
+		v.Rendered = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {
 			v.Preview = prev
 		}
@@ -500,41 +501,92 @@ func (s PlanSummary) View() *PlanView {
 // answer to that: the clip list, the count of an episode's shorts and what
 // the app may show or open all ask it.
 //
-// The plan says which folder each clip was last rendered into, see
-// recordShort, because the folder the settings name for shorts can change
-// after a render, and two episodes can have clips of the same name in it,
-// so the folder the settings name now says nothing about this clip. A
-// clip the plan says nothing of, rendered before plans said so, is looked
-// for in the episode's own out folder, where a render puts it unless told
-// otherwise. The name is always the clip's own. A plan is untrusted, so it
-// can name a folder but never a file, and a link in that folder is the
-// short only when it leads to a file of that name inside it.
-func shortOf(work string, plan Plan, c Clip) string {
-	dir := filepath.Join(work, "out")
-	if folders, ok := plan.Raw[keyShorts].(map[string]any); ok {
-		if folder, ok := folders[c.ID].(string); ok && filepath.IsAbs(folder) {
-			dir = folder
-		}
+// The plan says where each clip was last rendered, see recordShort,
+// because the folder the settings name for shorts can change after a
+// render, and two episodes can have clips of the same name, so the folder
+// the settings name now says nothing about this clip. A clip the plan
+// says nothing of has no short. A plan is untrusted, so the file is always the clip's own name or that
+// with a number, and a link in the folder is the short only when it leads
+// to a file of that name inside it. A short written over since, by
+// another episode's render or by hand, is not the one the clip wrote, and
+// is not its short.
+func shortOf(plan Plan, c Clip) string {
+	rec, ok := recordOf(plan, c)
+	if !ok {
+		return ""
 	}
-	name := c.Basename() + ".mp4"
-	short, err := SafeChild(dir, name)
-	if err != nil || filepath.Base(short) != name || !isFile(short) {
+	short, err := SafeChild(rec.folder, rec.name)
+	if err != nil || filepath.Base(short) != rec.name {
+		return ""
+	}
+	info, err := os.Stat(short)
+	if err != nil || !info.Mode().IsRegular() || !rec.still(info) {
 		return ""
 	}
 	return short
+}
+
+// shortRecord is what a plan says of a clip's short, see recordShort.
+type shortRecord struct {
+	folder, name   string
+	size, modified int64
+}
+
+// still says whether a file is the one the record was written for.
+func (r shortRecord) still(info os.FileInfo) bool {
+	return info.Size() == r.size && info.ModTime().UnixNano() == r.modified
+}
+
+// recordOf reads what the plan says of a clip's short, if it says
+// anything that can be used. A plan is untrusted: the folder must be a
+// whole path and the name the clip's own, see ownName.
+func recordOf(plan Plan, c Clip) (shortRecord, bool) {
+	shorts, _ := plan.Raw[keyShorts].(map[string]any)
+	rec, _ := shorts[c.ID].(map[string]any)
+	folder, _ := rec[keyFolder].(string)
+	name, _ := rec[keyName].(string)
+	size, sized := wholeNumber(rec[keySize])
+	modified, timed := wholeNumber(rec[keyModified])
+	if filepath.IsAbs(folder) && ownName(c, name) && sized && timed {
+		return shortRecord{folder: folder, name: name, size: size, modified: modified}, true
+	}
+	return shortRecord{}, false
+}
+
+// wholeNumber is a whole number as a plan holds it, see decodeJSON.
+func wholeNumber(v any) (int64, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	i, err := n.Int64()
+	return i, err == nil
+}
+
+// ownName says whether a file name is one a clip's short can have: the
+// clip's name, or that with a number as shortStem gives it, 01_slug 2.mp4.
+func ownName(c Clip, name string) bool {
+	stem, ok := strings.CutSuffix(name, ".mp4")
+	if !ok {
+		return false
+	}
+	if stem == c.Basename() {
+		return true
+	}
+	n, ok := strings.CutPrefix(stem, c.Basename()+" ")
+	return ok && n != "" && n[0] != '0' && len(n) <= 4 && strings.Trim(n, "0123456789") == ""
 }
 
 // IsShort says whether a file is the short of a clip of an episode,
 // wherever it was rendered into, judged by where the path really leads. A
 // short in the folder the settings name for shorts belongs to its episode
 // as much as one in the work folder does, and nothing else in that folder
-// does.
+// does, not even a file of the same name another episode wrote.
 func IsShort(source, path string) bool {
 	real := ResolvePath(path)
-	work := WorkDir(source)
 	for _, plan := range PlanSummaries(LogsDir(source)) {
 		for _, c := range plan.clips {
-			if short := shortOf(work, plan.plan, c); short != "" && short == real {
+			if short := shortOf(plan.plan, c); short != "" && short == real {
 				return true
 			}
 		}
@@ -542,17 +594,52 @@ func IsShort(source, path string) bool {
 	return false
 }
 
-// recordShort writes in a plan which folder a clip's short was rendered
-// into, see shortOf. The folder is the short's own, where its path really
-// leads.
+// shortStem is the name, without .mp4, a clip's short takes in its
+// episode's folder inside the folder for shorts, see Options.Shorts. Two
+// episodes of the same file name share that folder, so a name there can
+// be taken by a short this clip did not write. Then the short gets a
+// number the way Finder gives one, 01_slug 2, 01_slug 3, and never writes
+// over the other. A short the clip wrote there, still as it was written,
+// keeps its name, so a render again writes over it and nothing else. A
+// name is taken by a short or by the first picture of one, so no short
+// takes the pictures of another either.
+func shortStem(dir string, plan Plan, c Clip) string {
+	if rec, ok := recordOf(plan, c); ok && ResolvePath(rec.folder) == ResolvePath(dir) {
+		if info, err := os.Stat(filepath.Join(rec.folder, rec.name)); err == nil && rec.still(info) {
+			return strings.TrimSuffix(rec.name, ".mp4")
+		}
+	}
+	taken := func(name string) bool {
+		_, err := os.Lstat(filepath.Join(dir, name))
+		return err == nil
+	}
+	stem := c.Basename()
+	for n := 2; n <= 9999 && (taken(stem+".mp4") || taken(thumbnailName(stem, 1))); n++ {
+		stem = fmt.Sprintf("%s %d", c.Basename(), n)
+	}
+	return stem
+}
+
+// recordShort writes in a plan where a clip's short was rendered, see
+// shortOf: the folder and the name its path really leads to, and the
+// size and the modification time it was written with.
 func recordShort(planPath, clipID, short string) error {
-	dir := filepath.Dir(ResolvePath(short))
+	real := ResolvePath(short)
+	info, err := os.Stat(real)
+	if err != nil {
+		return err
+	}
 	return editPlan(planPath, func(top *object, _ []*object) error {
 		shorts, ok := top.values[keyShorts].(*object)
 		if !ok {
 			shorts = newObject()
 		}
-		shorts.set(clipID, dir)
+		rec := newObject()
+		rec.set(keyFolder, filepath.Dir(real))
+		rec.set(keyName, filepath.Base(real))
+		rec.set(keySize, info.Size())
+		rec.set(keyModified, info.ModTime().UnixNano())
+		shorts.set(clipID, rec)
 		top.set(keyShorts, shorts)
 		return nil
 	})

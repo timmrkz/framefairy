@@ -1199,29 +1199,53 @@ in [JOBS.md](JOBS.md).
 
 ### Where a short went
 
-A render writes in the clip set which folder each clip's short went to,
-`shorts`, the folder by the clip's id, as each short is finished, through
-`editPlan`. `shortOf` in `episode.go` is the one answer to where a clip's
-short is: the folder the clip set names, or the episode's own `out/` for a
-clip it names none for, and the clip's own name, `<id>_<slug>.mp4`. The
-clip list asks it for `ClipView.Rendered`, `Status` counts the shorts with
-it, and `IsShort` asks it for the app, which shows or opens no file outside
-an episode's work folder but a short of one of its clips.
+A short goes into the folder `--out` names, as it is, or into the
+episode's own `out/`. The app names a folder for the shorts of every
+episode instead, `Options.Shorts`, and there each episode's shorts go into
+a folder of their own, named after the episode's file without its
+extension, `EpisodeName` in `run.go`: `<Shorts>/<episode>/<id>_<slug>.mp4`.
+Ids start again in every episode, so without it the clip 01 of one episode
+and the clip 01 of another of the same slug wrote the same file.
+
+Two episodes of the same file name, from two folders, still share that
+folder. There a name taken by a file the clip did not write gets a
+number, the way Finder gives one, `<id>_<slug> 2.mp4`, `shortStem` in
+`episode.go`. A short the clip wrote there, still as it was written,
+keeps its name, so a render again writes over it and nothing else. The
+first picture of a short takes its name too, so no short takes the
+pictures of another, which are named after the short and not the clip,
+`<name>-1.jpg`. `--out` and `out/` never number: `--out` names the folder,
+and a second episode writes over a short of the same name there, as it
+always did.
+
+A render writes in the clip set where each clip's short went, under
+`shorts` by the clip's id, as each short is finished, through `editPlan`:
+the folder and the name its path really leads to, and its size and its
+modification time in nanoseconds, `recordShort`. `shortOf` in
+`episode.go` is the one answer to where a clip's short is: the file the
+clip set names, if it is still the size and the time it was written with.
+A clip it names nothing for has no short, wherever a file of its name
+lies: every render of a clip set in `logs/`, the app's and the command
+line's, notes its shorts. The clip list asks `shortOf` for `ClipView.Rendered`, `Status` counts the shorts with
+it, and `IsShort` asks it for the app, which shows or opens no file
+outside an episode's work folder but a short of one of its clips.
 
 It is written down rather than worked out from the settings because the
 settings say where the next short goes, not where the last one went: the
-folder can change after a render, and two episodes can have clips of the
-same name in one folder, where working it out took the first episode's
-short for the second's. A short moved or removed by hand is not there, so
-the clip is not rendered. The clip set is untrusted, so it names a folder
-and never a file, and a link in that folder counts only when it leads to a
-file of the short's own name inside it. It is a field of the clip set and
-not of the clip, and the undo compares neither it nor the count of edits,
-`fieldsOf` in `undo.go`, because a render is no edit, and a short written
-into a clip between an edit and its undo would have made the edit one that
-cannot be taken back. Only a clip set in the episode's own `logs/` is
-written to: a plan file handed to the command line from elsewhere is
-read, not changed.
+folder can change after a render. The size and the time are written down
+because a file of the short's name is not proof that it is the short:
+another episode's render with `--out`, or a person, can write over it, and
+the clip then took a short it did not make for its own. A short moved,
+removed or written over is not the clip's, so the clip is not rendered.
+The clip set is untrusted, so it names a folder and a file name that must
+be the clip's own name or that with a number, `ownName`, and a link in
+that folder counts only when it leads to a file of that name inside it.
+It is a field of the clip set and not of the clip, and the undo compares
+neither it nor the count of edits, `fieldsOf` in `undo.go`, because a
+render is no edit, and a short written into a clip between an edit and
+its undo would have made the edit one that cannot be taken back. Only a
+clip set in the episode's own `logs/` is written to: a plan file handed to
+the command line from elsewhere is read, not changed.
 
 A clip made by hand is `Project.MakeClip` in `handclip.go`, a job of its
 own kind that shares everything but what makes it one. It hears through

@@ -72,9 +72,16 @@ type Options struct {
 	FFmpeg  string
 	FFprobe string
 
-	NoCaptions      bool
-	Clip            []string
-	Out             string
+	NoCaptions bool
+	Clip       []string
+	// Out is the folder the shorts go into, as named, `--out` on the
+	// command line. Empty is the episode's own out folder.
+	Out string
+	// Shorts is a folder for the shorts of many episodes, the one the app's
+	// settings name. Each episode's shorts go into a folder of their own in
+	// it, named after the episode's file, and a name taken there by a file
+	// the clip did not write gets a number, see shortStem. Out comes first.
+	Shorts          string
 	Width           int
 	Height          int
 	NoUpscale       bool
@@ -125,6 +132,17 @@ func WorkDir(source string) string {
 	return filepath.Join(filepath.Dir(source), stem+".framefairy")
 }
 
+// EpisodeName is the episode's file name without its extension, the name
+// of the folder its shorts go into inside the folder for shorts. A name
+// that would be no folder of its own keeps its extension.
+func EpisodeName(source string) string {
+	base := filepath.Base(source)
+	if stem := strings.TrimSuffix(base, filepath.Ext(base)); stem != "" && stem != "." && stem != ".." {
+		return stem
+	}
+	return base
+}
+
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -163,8 +181,11 @@ type runner struct {
 	// logsDir is where the episode's records go, and outDir and
 	// captionDir where its shorts and their captions go.
 	logsDir, outDir, captionDir string
-	source                      SourceInfo
-	rs                          RenderSettings
+	// shared says outDir is the episode's folder inside Options.Shorts,
+	// where a short never takes a name another file has, see shortStem.
+	shared bool
+	source SourceInfo
+	rs     RenderSettings
 	// window is the part of the episode asked for, nil for all of it, and
 	// span is that part or the whole episode.
 	window *Window
@@ -289,7 +310,14 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	}
 
 	work := WorkDir(opts.Source)
-	outDir := opts.Out
+	outDir, shared := opts.Out, false
+	if outDir == "" && opts.Shorts != "" {
+		dir, err := SafeChild(opts.Shorts, EpisodeName(opts.Source))
+		if err != nil {
+			return nil, err
+		}
+		outDir, shared = dir, true
+	}
 	if outDir == "" {
 		outDir = filepath.Join(work, "out")
 	}
@@ -320,7 +348,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		rs.OutW, rs.OutH = opts.Width/2, opts.Height/2
 		rs.CRF, rs.Preset = 30, "veryfast"
 		if opts.Out == "" {
-			outDir = filepath.Join(work, "preview")
+			outDir, shared = filepath.Join(work, "preview"), false
 		}
 	}
 
@@ -426,7 +454,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	}
 
 	return &runner{e: e, opts: opts, logsDir: logsDir, outDir: outDir, captionDir: captionDir,
-		source: source, rs: rs, window: window, span: span, planPath: planPath,
+		shared: shared, source: source, rs: rs, window: window, span: span, planPath: planPath,
 		experiment: experiment}, nil
 }
 
@@ -710,7 +738,11 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		started := time.Now()
 		log.Info("%s: %ss, %d segment(s), %d cues", clip.Basename(),
 			fixed(clip.Duration(), 1), len(clip.Segments), len(cues))
-		path, err := e.RenderClip(ctx, clip, opts.Source, source, outDir, cues, rs,
+		stem := clip.Basename()
+		if r.shared {
+			stem = shortStem(outDir, plan, clip)
+		}
+		path, err := e.renderShort(ctx, clip, opts.Source, source, outDir, stem, cues, rs,
 			clipStyle(style, clip), captionDir, opts.DryRun)
 		if err != nil {
 			if ctx.Err() != nil {
