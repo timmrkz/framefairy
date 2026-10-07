@@ -291,9 +291,25 @@ frame is drawn into it in its own shape, so a 4K episode is never kept at
 its full size. Opening another episode closes the queue of the one before,
 its decoders and its sound card with it.
 
-The queue reads MP4 and MOV, H.264, HEVC and VP9 for the picture, AAC,
-HE-AAC, Opus and plain sound for the sound, as far as the system decodes
-them. A file it cannot play, a codec the system cannot decode, a
+The queue reads MP4 and MOV, H.264, HEVC and VP9 for the picture, as far
+as the system decodes them, and AAC, HE-AAC, Opus and plain sound for the
+sound.
+
+The sound is decoded on the Go side, by ffmpeg, plan row 2.148: the same
+sound the render and the transcript are made of, whatever decoder the
+webview has. Tim heard picture and sound out of step in a file from
+DaVinci Resolve, which keeps the encoder's 44 ms of silence at the front
+of its sound and holds the picture back by an empty edit of the same 44
+ms. ffmpeg and the queue's own reading of the file agreed on all of it, so
+what was left was the Mac's own AAC decoder in the webview, and rather than
+measure what it does with those 44 ms, the queue no longer uses it.
+`GoSound` in `lib/frames/queue.ts` answers the calls of the browser's
+`AudioDecoder`: a run of packets is one stream of `/frames/sound`, opened
+where its first packet lies, and each packet after it is the next of its
+samples, the way ffmpeg reads a piece of a render, so a flush ends a run
+and the packets after it start a stream of their own. The page does not
+read the sound in the file at all. Plain sound needs no decoder and is
+still turned into the sound card's numbers on the page, `PlainSound`. A file it cannot play, a codec the system cannot decode, a
 fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
 sentence where the picture would be, with the reason, and nothing else in
 the workspace changes. A sound it cannot decode plays the picture without
@@ -306,7 +322,7 @@ frame, "Decoder failure". For such a file, and for one the system says no
 to, the Go side decodes the picture instead, plan row 2.141. The queue
 asks its picture decoder the same things either way: `AppPictures` in
 `lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
-`PlainSound` stands in for the sound decoder, so drawing, the clock, cuts
+`GoSound` and `PlainSound` stand in for the sound decoder, so drawing, the clock, cuts
 and the walks are the same. Only the frames the queue will draw are asked
 for, the file's picture is not read by the page at all, and like a
 decoder it puts them out in the order they are shown, not the order they

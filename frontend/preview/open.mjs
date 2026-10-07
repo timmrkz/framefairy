@@ -8,7 +8,7 @@
 // the point, for what to measure.
 import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 import { createServer } from "node:http";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readFile, rename, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
@@ -152,6 +152,80 @@ async function media(res, range, frames = false, broken = false) {
   res.end(part);
 }
 
+// The sound streams of the Go side, see /frames/sound in
+// cmd/framefairy-app/frames.go, which the video preview hears every
+// episode through. The harness has no Go side, so this stands in for it:
+// ffmpeg decodes the sound from a moment on, seeking a fifth of a second
+// early and cutting at the moment by its timestamps, and a pull hands over
+// chunks of 1024 moments, each after the moment it starts at, the last
+// maybe shorter.
+const sounds = new Map();
+let soundIds = 0;
+async function sound(res, url, frames) {
+  const q = url.searchParams;
+  if (url.pathname === "/frames/sound") {
+    const file = frames ? await framesEpisode() : await episode();
+    const rate = Number(q.get("rate"));
+    const ch = Number(q.get("ch"));
+    const from = Math.max(0, Number(q.get("from")) || 0);
+    if (!file || !(rate >= 8000 && rate <= 192000) || !(ch >= 1 && ch <= 8)) {
+      res.writeHead(400).end("no");
+      return;
+    }
+    const lead = Math.min(from, 0.2);
+    const args = ["-v", "error"];
+    if (from - lead > 0) args.push("-ss", (from - lead).toFixed(6));
+    args.push("-i", file, "-map", "0:a:0");
+    if (lead > 0) args.push("-af", `atrim=start=${lead.toFixed(6)}`);
+    args.push("-ac", String(ch), "-ar", String(rate), "-f", "f32le", "-");
+    const p = spawn("ffmpeg", args);
+    const s = { p, parts: [], size: 0, ended: false, waiting: [], from, rate, chunk: 1024 * ch * 4, sent: 0 };
+    p.stdout.on("data", (d) => {
+      s.parts.push(d);
+      s.size += d.length;
+      if (s.size > 1 << 20) p.stdout.pause();
+      for (const w of s.waiting.splice(0)) w();
+    });
+    p.stdout.on("end", () => {
+      s.ended = true;
+      for (const w of s.waiting.splice(0)) w();
+    });
+    const id = String(++soundIds);
+    sounds.set(id, s);
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id }));
+    return;
+  }
+  const s = sounds.get(q.get("id") ?? "");
+  if (url.pathname === "/frames/close") {
+    if (s) s.p.kill();
+    sounds.delete(q.get("id") ?? "");
+    res.writeHead(204).end();
+    return;
+  }
+  if (!s) {
+    res.writeHead(404).end("no");
+    return;
+  }
+  while (s.size < s.chunk && !s.ended) await new Promise((r) => s.waiting.push(r));
+  const all = Buffer.concat(s.parts);
+  const n = Math.min(Number(q.get("n")) || 1, 16);
+  const whole = Math.min(Math.floor(all.length / s.chunk), n);
+  const take = s.ended && whole < n ? all.length : whole * s.chunk;
+  const out = [];
+  for (let off = 0; off < take; off += s.chunk) {
+    const head = Buffer.alloc(8);
+    head.writeDoubleLE(s.from + (s.sent + off) / (s.chunk / 1024) / s.rate);
+    out.push(head, all.subarray(off, Math.min(off + s.chunk, take)));
+  }
+  s.sent += take;
+  s.parts = [all.subarray(take)];
+  s.size = all.length - take;
+  if (s.size <= 1 << 20) s.p.stdout.resume();
+  const headers = { "content-type": "application/octet-stream" };
+  if (s.ended && !s.size) headers["x-frames-end"] = "1";
+  res.writeHead(200, headers).end(Buffer.concat(out));
+}
+
 // A port of its own per run, so two probes never collide.
 let port = 4300 + Math.floor(Math.random() * 400);
 
@@ -183,6 +257,10 @@ export async function screen({
   const slowread = Number(/[?&]slowread=(\d+)/.exec(query)?.[1] ?? 0);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
+    if (["/frames/sound", "/frames/read", "/frames/close"].includes(url.pathname)) {
+      await sound(res, url, url.searchParams.get("path") === "/frames.mp4");
+      return;
+    }
     if (url.pathname.startsWith("/media/")) {
       if (slowread) await new Promise((r) => setTimeout(r, slowread));
       await media(res, req.headers.range, url.searchParams.get("path") === "/frames.mp4", /[?&]fragmented/.test(query));
