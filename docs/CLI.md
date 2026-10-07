@@ -126,7 +126,7 @@ nothing left to refresh.
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--clip 01` | all clips | render only this clip id, repeatable |
-| `--preview` | off | half size, fast preset, into `preview/` |
+| `--preview` | off | half size, fast preset, into `preview/`, or into the folder `--out` names. A preview keeps the clip's id in its name, `<id>_<words>.mp4`, so it never writes over a short |
 | `--crf 18` | 18 | quality, lower is better. Every encoder is asked in its own language, so this becomes `-q:v` on Apple's encoder, where higher is better: 18 is 85 there |
 | `--preset slow` | slow | x264 speed against compression. Only libx264 has presets, and any other encoder ignores it |
 | `--encoder` | the best this ffmpeg has | the video encoder to use. macOS reaches for `h264_videotoolbox` first and falls back to `libx264`, everywhere else it is `libx264` for now |
