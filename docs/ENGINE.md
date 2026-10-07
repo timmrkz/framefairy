@@ -592,8 +592,10 @@ was found later:
   join filled with silence. After two cuts the sound of a 24 fps episode
   was 42 ms behind its picture. Now a render cuts by frame number, `cutOf` in
   `engine/render.go`: a piece is the frames from the one its start is on
-  up to the one before its end, the frame that holds each moment as the
-  video preview shows it. The read starts half a frame before the first
+  up to the one before its end. Which frame an edge is on is `frameOf`,
+  the frame whose start is nearest it, the only place the engine decides
+  it, and the video preview asks the same rule, both held to
+  `frontend/src/lib/frame.cases.json`. The read starts half a frame before the first
   frame, where no rounding to the microsecond can move it past a frame,
   and runs a frame longer than the piece. The picture keeps the piece's
   number of frames, `trim=end_frame`, and the sound is cut to the sample

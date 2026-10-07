@@ -263,6 +263,13 @@ gap.
 
 Paused, the picture is the frame that holds the playhead, exactly, wherever
 the playhead was put: a click, a drag, a step of an arrow key or a word.
+A moment a millisecond or less before a frame's start is in that frame,
+because every moment the app keeps is kept to the millisecond. On a clip
+edge it is the frame the short has there: an edge means the frame whose
+start is nearest it, the one rule the render cuts by, `frameOf` in
+`lib/flow.ts` and `engine/render.go`, both held to
+`lib/frame.cases.json`. A clip picked shows the short's first frame, and
+the playhead on the clip's end shows its last.
 The play from there is already prepared, its first frames and its first
 sound decoded, so the space bar starts it at once rather than decoding the
 same frames again. The picture moves about 80 ms after the space bar in
@@ -402,10 +409,9 @@ The playhead is either on the chosen clip or on the video, and the gesture
 that put it there decides, never a clock. Picking a clip puts it
 on the clip, at its start. So does a click on the clip's start edge, a
 trim, a click on a caption, and a click, a drag or a step into any frame
-of the clip, cuts included, from the frame that holds its first moment.
-A click on the end edge, a landing in the frame that holds the clip's
-last moment, and the clip playing to its end, leave it on the clip at its
-end. Any frame before or after the clip is on the video, and so is having
+of the clip, cuts included, from the frame the short starts on.
+A click on the end edge, a landing in the frame the short ends on, and
+the clip playing to its end, leave it on the clip at its end. Any frame before or after the clip is on the video, and so is having
 no clip chosen. It goes by frames and not by seconds because what is on
 screen is a frame: a clip that starts inside a frame shows its own first
 frame from that frame's start, which by the second is before the clip.
