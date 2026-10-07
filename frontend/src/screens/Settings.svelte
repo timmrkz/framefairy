@@ -237,7 +237,7 @@
   // The words under Licence key: a refusal, what a link did, the key kept,
   // or that there is none.
   const licenceLine = $derived.by(() => {
-    if (licenceRefused) return licenceRefused + ".";
+    if (licenceRefused) return licenceRefused + (licence.saved ? ". The key on this Mac still unlocks it." : ".");
     if (fromLink?.what === "unlocked") return `Unlocked from the link. Thank you. ${fromLink.about}.`;
     if (fromLink?.what === "same") return `This key is already on this Mac. ${fromLink.about}.`;
     if (fromLink?.what === "replaces") return `From the link: ${fromLink.about}. Unlock puts it in place of the key on this Mac.`;

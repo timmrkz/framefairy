@@ -612,10 +612,9 @@ sequence reads:
 {"quit"},
 {"open link", "1"},
 {"front", "Frame Fairy"},
-{"field", "1"},
-{"line", "From the link. Unlock takes it."},
-{"click", "Unlock"},
 {"saved", "yes"},
+{"head", "Licensed"},
+{"line has", "Unlocked from the link"},
 ...
 ```
 

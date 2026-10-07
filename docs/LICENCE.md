@@ -696,19 +696,31 @@ The app calls the same `licence.Check` the dispenser checks every batch
 with, offline, before every render.
 
 - **Entering it.** The Licence row in the settings takes a pasted key and
-  checks it when Unlock is pressed. A refused key shakes the field, keeps
-  what was typed and says why, like a refused API key. A good key shows
-  its ID, and the name when it has one. The trash can beside it removes
-  the key, after asking.
+  checks it when Unlock is pressed. The key shows as it is, not as dots:
+  it is read off a mail, and a person checks it is the one they meant. A
+  refused key shakes the field, keeps what was typed and says why, the
+  whole of it, like a refused API key. Once a key is kept the row says
+  Licensed, with the check mark, the key's ID and the name when it has
+  one, and nothing else: a field and a dimmed Unlock beside it read as a
+  step still to take. The trash can beside it removes the key, after
+  asking, and the field comes back.
 - **The Unlock link.** The thank-you page and the letter carry, beside
   each key, an Unlock Frame Fairy button, a link
   `framefairy://unlock?key=FF1-…`. The app claims the `framefairy`
   scheme in its `Info.plist`, so macOS opens it, or brings it to the
-  front, and hands it the link. The app goes to the settings, puts the
-  key in the field and moves the keyboard to Unlock. Nothing is checked
-  or kept until Unlock is pressed, because any web page and any app on
-  the Mac can open such a link: a link that unlocked by itself would let
-  a page swap a stranger's licence for its own. The link is read
+  front, and hands it the link, and the app checks the key at once,
+  `linkOutcome` in `cmd/framefairy-app/licence.go`. On a Mac with no key
+  kept the link unlocks the app by itself, and the settings say so,
+  "Unlocked from the link. Thank you.": the buyer clicked Unlock in the
+  mail, and there is nothing to lose. A key already kept is never
+  replaced by a link alone, because any web page and any app on the Mac
+  can open such a link, and one that replaced keys by itself would let a
+  page swap a buyer's licence for one of its own. The new key waits in
+  the field, with what it is beside it, and Unlock puts it in place. The
+  same key again changes nothing, and a key this build refuses is shown
+  with the reason. Tim's first try from main looked like a key that
+  would not unlock: an app from Updates refuses test keys, and the
+  reason was cut off at "takes …". The link is read
   strictly, in `keyFromLink`: the `framefairy` scheme, the host
   `unlock`, no path, no user, no fragment, one `key` and nothing else,
   at most 1024 characters, and a key that looks like one before it is
@@ -741,8 +753,9 @@ bought it, and on its way it passes through these hands:
    and the buyer, and the buyer's mail provider, which keeps it.
 4. Anybody who can read the buyer's mailbox, on any device it is open on.
 5. The Unlock link: the browser or mail app that opens it, macOS, which
-   hands it to the app, and the app's own memory until Unlock is pressed
-   or the app quits. It is never written to a log or to a file.
+   hands it to the app, and the app's own memory until it is kept, or,
+   when it would replace a key, until Unlock is pressed or the app quits.
+   It is never written to a log or to a file.
 6. The keychain on every Mac it unlocks.
 
 None of these is a server of ours apart from the dispenser, and the app
