@@ -19,16 +19,15 @@ import (
 // Plan row 2.138.
 func TestSoundResumedBeforeALatePictureIsTheSoundThere(t *testing.T) {
 	ffmpegtest.Need(t)
-	path := filepath.Join(t.TempDir(), "late.mp4")
+	path := filepath.Join(t.TempDir(), "late.mov")
 	// A tone whose pitch climbs, so sound from another moment does not
-	// match, and a picture a second late.
+	// match, and a picture a second late, by an edit list. MPEG-4 Part 2
+	// and AAC, which the ffmpeg a Mac builds can write.
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "color=c=black:s=320x180:r=30000/1001:d=8",
+		"-itsoffset", "1", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30000/1001:d=7",
 		"-f", "lavfi", "-i", "aevalsrc=sin(2*PI*(200*t+300*t*t)):s=48000:d=8",
-		"-filter_complex", "[0]format=yuv420p,settb=1/90000,setpts=PTS+1/TB[v]",
-		"-map", "[v]", "-map", "1", "-fps_mode", "passthrough", "-enc_time_base", "1/90000",
-		"-video_track_timescale", "90000", "-g", "60", "-shortest",
-		"-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-c:a", "aac", path).CombinedOutput()
+		"-map", "0", "-map", "1", "-fps_mode", "passthrough", "-g", "60",
+		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
 	if err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make a late picture: %s %s", err, out)
 	}
