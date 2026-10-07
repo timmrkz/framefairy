@@ -204,9 +204,15 @@ jobs:
         run: |
           make frontend/node_modules/.package-lock.json
           cd frontend && npm exec -- playwright install --with-deps chromium
+      # A walk or a sequence that breaks a rule is named on the check, see
+      # scripts/test-failures.sh.
       - name: Sequences and walks
         if: steps.needs.outputs.run == 'true'
-        run: make walks
+        run: |
+          make walks 2>&1 | tee walks.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
+          exit "$status"
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
