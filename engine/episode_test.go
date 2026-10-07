@@ -478,3 +478,36 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 		})
 	}
 }
+
+// A preview rendered into the folder --out names never writes over the
+// short there: the preview keeps the clip's id in its name and the short
+// does not. The clip still says the short is its own afterwards.
+func TestAPreviewLeavesTheShortAlone(t *testing.T) {
+	t.Parallel()
+	ep := newShortsEpisode(t, "folge")
+	ep.p.Base.Out = ResolvePath(t.TempDir())
+	short := ep.render(t)
+	was := files(t, short)
+	if err := ep.p.Render(context.Background(), RenderRequest{Plan: ep.plan, Preview: true}); err != nil {
+		t.Fatalf("%v %s", err, ep.p.LastError())
+	}
+	if !untouched(t, short, was) {
+		t.Errorf("the preview wrote over the short at %s", short)
+	}
+	if got := ep.clip(t).Rendered; got != short {
+		t.Errorf("after the preview the clip says its short is %q, not %q", got, short)
+	}
+	entries, err := os.ReadDir(ep.p.Base.Out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shorts []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".mp4") {
+			shorts = append(shorts, e.Name())
+		}
+	}
+	if len(shorts) != 2 {
+		t.Errorf("the folder holds %q, not the short and the preview beside it", shorts)
+	}
+}
