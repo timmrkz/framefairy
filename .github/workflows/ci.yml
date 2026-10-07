@@ -148,9 +148,15 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh ffmpeg
+      # A test that fails is named on the check, see
+      # scripts/test-failures.sh, so finding it needs no log.
       - name: Go tests
         if: steps.needs.outputs.run == 'true'
-        run: make unit
+        run: |
+          make unit 2>&1 | tee unit.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
+          exit "$status"
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
@@ -309,7 +315,11 @@ jobs:
           fi
       - name: Go tests
         if: steps.needsgo.outputs.run == 'true'
-        run: make unit
+        run: |
+          make unit 2>&1 | tee unit.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
+          exit "$status"
 
   # The app on a Mac, opened from outside it: a link in the letter a buyer
   # gets, handed to macOS with the app closed and with it open, with the
