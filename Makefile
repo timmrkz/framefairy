@@ -124,7 +124,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -376,6 +376,34 @@ WALKERS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
 	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+
+# The checks from outside the app: a link that opens it, closed or open,
+# handed to macOS the way a browser does, with the local dispenser running
+# beside it. Only on a Mac, and only in CI, because it replaces the
+# licence in the keychain. The app is built again with the probe the test
+# drives it through, into a folder of its own, so bin/ never has it. See
+# From outside the app in docs/TESTING.md.
+OUTSIDE := $(STAMPS)/outside
+outside: outside-allowed all
+	@rm -rf $(OUTSIDE) && mkdir -p $(OUTSIDE)
+	@cp -R $(BIN)/. $(OUTSIDE)/ && rm -rf "$(OUTSIDE)/Frame Fairy.app"
+	@echo "Building $(OUTSIDE)/framefairy-app with the probe"
+	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
+		$(GO) build -trimpath -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
+	@sh scripts/carry-libs.sh $(OUTSIDE)/framefairy-app $(OUTSIDE)/lib
+	@sh scripts/bundle-macos.sh $(OUTSIDE) $(OUTSIDE)
+	@$(GO) build -o $(OUTSIDE)/framefairy-dispenser ./cmd/framefairy-dispenser
+	@FRAMEFAIRY_OUTSIDE_APP="$(CURDIR)/$(OUTSIDE)/Frame Fairy.app" FRAMEFAIRY_OUTSIDE_DISPENSER="$(CURDIR)/$(OUTSIDE)/framefairy-dispenser" \
+		$(GO) test -tags outside -count=1 -v -timeout 10m ./internal/outside
+
+# Said before anything is built, so the refusal is the first thing read.
+outside-allowed:
+ifneq ($(UNAME),Darwin)
+	@echo "make outside opens the app the way macOS does, and this is not a Mac."; exit 1
+endif
+ifeq ($(CI),)
+	@echo "make outside runs in CI only: on a Mac of your own it would replace the licence in the keychain."; exit 1
+endif
 
 # The interface needs Node and nothing else, no Go and no system libraries,
 # which is why it is worth having on its own: it answers in well under a

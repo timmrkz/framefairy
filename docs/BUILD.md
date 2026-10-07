@@ -211,7 +211,7 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main. It is seven jobs on seven machines, all at once, because none of them
+main. It is eight jobs on eight machines, all at once, because none of them
 needs any of the rest:
 
 | Job | Machine | What it runs |
@@ -222,7 +222,13 @@ needs any of the rest:
 | `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
 | `fuzz` | Linux | `make fuzz` |
 | `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
+| `outside` | macOS | `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 | `macos-fuzz` | macOS | `make fuzz` for the two targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`, since the Mac's disk takes names in either case and `/var` is a link there. The rest read text and numbers, the same on both systems, and are fuzzed on Linux only |
+
+When a Go test fails in `linux` or `macos`, or a walk in `walks`,
+`scripts/test-failures.sh` names it on the check, with what it printed,
+so the pull request says which test failed without anybody opening the
+log.
 
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
 whatever changed, because a mistake in them is silent: CI would go green
