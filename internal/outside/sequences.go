@@ -39,8 +39,11 @@ package outside
 // fails when it does not within 20 seconds:
 //
 //   {"front", app}         this app is the one in front
+//   {"head", text}         the Licence row is called this, "Licence key",
+//                          or "Licensed" once a key is kept
 //   {"field", n}           the Licence field holds key n, or nothing for
-//                          "empty"
+//                          "empty", which is also what a row with no field
+//                          reads as
 //   {"line", text}         the words under Licence key read this
 //   {"line has", text}     the words under Licence key have this in them
 //   {"mark", m}            the mark beside them is "ok", "err" or "none"
@@ -74,31 +77,36 @@ var sequences = []sequence{
 			{"buy", "2"},
 			{"quit"},
 
-			// The app is closed. The first key's Unlock opens it on the
-			// settings, with the key in the field, and nothing unlocked yet.
+			// The app is closed and no key is kept. The first key's Unlock
+			// in the mail opens the app and unlocks it, with nothing to
+			// press, and the settings say so.
 			{"open link", "1"},
 			{"front", "Frame Fairy"},
-			{"field", "1"},
-			{"line", "From the link. Unlock takes it."},
-			{"saved", "no"},
-
-			{"click", "Unlock"},
 			{"saved", "yes"},
+			{"head", "Licensed"},
 			{"mark", "ok"},
-			{"line has", "a test key"},
+			{"line has", "Unlocked from the link"},
 			{"field", "empty"},
 
+			// The same key again changes nothing.
+			{"open link", "1"},
+			{"line has", "already on this Mac"},
+
 			// Another app in front, and the second key's Unlock. The app
-			// comes back to the front with the second key in the field.
+			// comes back to the front with the second key kept in place of
+			// the first, and nothing to press: every key unlocks the same
+			// app.
 			{"bring forward", "Calculator"},
 			{"open link", "2"},
 			{"front", "Frame Fairy"},
-			{"field", "2"},
-			{"line", "From the link. Unlock takes it."},
+			{"head", "Licensed"},
+			{"mark", "ok"},
+			{"line has", "from the link, in place of key ID"},
+			{"field", "empty"},
 
 			// A link with more in it than one key changes nothing.
 			{"open link", "1", "&more=1"},
-			{"field", "2"},
+			{"field", "empty"},
 			{"waiting", "no"},
 		},
 	},
@@ -130,6 +138,7 @@ var verbs = map[string][2]int{
 	"bring forward":   {1, 1},
 	"click":           {1, 1},
 	"front":           {1, 1},
+	"head":            {1, 1},
 	"field":           {1, 1},
 	"line":            {1, 1},
 	"line has":        {1, 1},

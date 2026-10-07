@@ -9,8 +9,8 @@
 <p class="dim"><a href="/lost">Lost your key?</a> · <a href="/dev">Dev page</a></p>
 </main>
 <script>
-// The link that opens Frame Fairy on this Mac with the key in its
-// settings. Nothing is unlocked until Unlock is pressed there.
+// The link that opens Frame Fairy on this Mac and unlocks it with the key,
+// with nothing more to press.
 function unlockLink(k) {
   return "framefairy://unlock?key=" + encodeURIComponent(k);
 }
@@ -30,12 +30,26 @@ async function ask() {
     return setTimeout(ask, 4000);
   }
   const body = await res.json().catch(() => ({}));
+  // What a buyer needs is the button. The key ID names the key, the way
+  // the app's settings and support do. The key itself is long and means
+  // nothing to a person, so it waits behind a fold, for a password
+  // manager or for pasting by hand.
   if (res.status === 200) {
     const keys = body.keys || [];
-    say('<p>' + (keys.length === 1 ? "Your licence key:" : "Your licence keys, one per seat:") + '</p>' +
-      keys.map(k => '<div class="key mono">' + esc(k) + '</div>' +
-        '<p><a class="unlock" href="' + esc(unlockLink(k)) + '">Unlock Frame Fairy</a></p>').join("") +
-      '<p class="dim">They also come by email. Unlock opens Frame Fairy with the key filled in, or paste it into its settings.</p>');
+    const ids = body.ids || [];
+    const one = keys.length === 1;
+    const seat = (k, i) => '<div class="seat">' +
+      (one ? "" : '<p class="dim small">Seat ' + (i + 1) + '</p>') +
+      '<a class="unlock big" href="' + esc(unlockLink(k)) + '">Unlock Frame Fairy</a>' +
+      '<p class="key-id"><span class="dim">Key ID</span> ' + esc(ids[i] || "") + '</p></div>';
+    say('<p>' + (one ? "Frame Fairy is yours. Unlock opens it on this Mac and unlocks it, with nothing else to do."
+        : "Frame Fairy is yours, on " + keys.length + " Macs. On each Mac, Unlock opens it and unlocks it with that seat's key.") + '</p>' +
+      keys.map(seat).join("") +
+      '<p class="dim small">The settings in Frame Fairy show the same key ID. ' + (one ? "The key also comes" : "The keys also come") + ' by email.</p>' +
+      '<details class="small"><summary class="dim">' + (one ? "The licence key itself" : "The licence keys themselves") + '</summary>' +
+      '<p class="dim">For your password manager, or to paste into the settings by hand.</p>' +
+      keys.map((k, i) => (one ? "" : '<p class="dim">Key ID ' + esc(ids[i] || "") + '</p>') + '<div class="key mono">' + esc(k) + '</div>').join("") +
+      '</details>');
     return;
   }
   if (res.status === 202) {
