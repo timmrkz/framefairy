@@ -231,7 +231,6 @@
   // The words under the head: a refusal, what a link did, the key kept,
   // or that there is none.
   const licenceLine = $derived.by(() => {
-    if (copyRefused) return copyRefused + ".";
     if (licenceRefused) return licenceRefused + (licence.saved ? `. ${licence.about} on this Mac still unlocks it.` : ".");
     if (fromLink?.what === "unlocked") return `Unlocked from the link. Thank you. ${fromLink.about}.`;
     if (fromLink?.what === "same") return `This key is already on this Mac. ${fromLink.about}.`;
@@ -241,16 +240,20 @@
   });
 
   // The line in parts, with every key ID in it picked out. The kept key's
-  // is the one a person may copy and the one that shines: it is what was
-  // bought. One it replaced is set the same way, without either.
+  // is the one a person may copy and the one that wears the beam: it is
+  // what was bought. One it replaced is set the same way, without either.
+  // A key ID is a thing shown rather than a word in a sentence, so the
+  // full stop after one that ends the line goes.
   const keyIDs = /([0-9A-F]{4}(?:-[0-9A-F]{4}){3})/;
   const keptID = $derived(licence.saved ? (licence.about.match(keyIDs)?.[1] ?? "") : "");
-  const licenceParts = $derived(
-    licenceLine
+  const licenceParts = $derived.by(() => {
+    const parts = licenceLine
       .split(keyIDs)
       .filter((text) => text !== "")
-      .map((text) => ({ text, id: keyIDs.test(text), kept: text === keptID })),
-  );
+      .map((text) => ({ text, id: keyIDs.test(text), kept: text === keptID }));
+    if (parts.length > 1 && parts[parts.length - 1].text === "." && parts[parts.length - 2].id) parts.pop();
+    return parts;
+  });
 
   // Copy says it copied in the same frame as the click, and goes back to
   // what it was a moment later. The chip keeps its width throughout.
@@ -1018,8 +1021,8 @@
               <span class="head">{licence.saved ? "Licensed" : "Licence key"}</span>
               <span
                 class="small line whole licence-line"
-                class:muted={!licenceRefused && !copyRefused}
-                class:error={!!licenceRefused || !!copyRefused}
+                class:muted={!licenceRefused}
+                class:error={!!licenceRefused}
               >
                 {#each licenceParts as part, i (i)}
                   {#if part.kept}<button
@@ -1028,10 +1031,16 @@
                       title="Copy the licence key, for a password manager or another Mac"
                       aria-label={copied ? "Copied" : `Copy the licence key, key ID ${part.text}`}
                       onclick={copyLicence}
-                      ><span>{part.text}</span><Icon name={copied ? "check" : "copy"} size={12} /></button
+                      ><Busy motes={false} /><span>{part.text}</span><Icon
+                        name={copied ? "check" : "copy"}
+                        size={14}
+                      /></button
                     >{:else if part.id}<span class="key-id">{part.text}</span>{:else}{part.text}{/if}
                 {/each}
               </span>
+              <!-- Why the key could not be copied, under the key ID, which
+                   stays where it is to be clicked again. -->
+              {#if copyRefused}<span class="small line whole error">{copyRefused}.</span>{/if}
             </div>
             {#if !licence.saved}
             <input
@@ -1431,76 +1440,47 @@
   /* The licence row's line holds key IDs set like code in a README, so
      it is given a whole-pixel line of its own, with room for them. */
   .licence-line {
-    line-height: 22px;
+    line-height: 28px;
   }
 
   /* A key ID, in one width, on a block of its own, the way code is set in
-     a README. The kept key's is a button that copies the key itself, and a
-     light passes over it now and then: it is what was bought. That light
-     is not one of the five ways work in hand is shown, because nothing is
-     running. It passes once, rests for seconds and never pulses, so it is
-     not read as anything waiting. */
+     a README, in the quieter grey of a line under a name rather than in
+     white. The kept key's is a button that copies the key itself, and it
+     wears the beam from Busy, the same beam, turned well down: nothing is
+     running, it only says this is what was bought. */
   .key-id {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    height: 20px;
+    gap: 8px;
+    height: 26px;
     margin: 1px 1px 0;
-    padding: 0 6px;
+    padding: 0 9px;
     vertical-align: top;
     border: 1px solid var(--line);
-    border-radius: 5px;
+    border-radius: 6px;
     background: var(--ink-2);
-    color: var(--text);
+    color: var(--muted);
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: var(--size-s);
-    line-height: 18px;
+    font-size: var(--size-m);
+    line-height: 24px;
   }
 
   button.key-id {
-    position: relative;
-    overflow: hidden;
     cursor: pointer;
-    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   }
 
   button.key-id:hover {
     background: var(--ink-3);
+    color: var(--text);
   }
 
-  button.key-id :global(svg) {
-    color: var(--muted);
+  button.key-id > :global(.beam) {
+    opacity: 0.45;
   }
 
-  button.key-id.copied :global(svg) {
+  button.key-id.copied > :global(svg) {
     color: var(--ok);
-  }
-
-  button.key-id::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--accent-lit) 35%, transparent) 50%, transparent 70%);
-    transform: translateX(-100%);
-    animation: glint 7s ease-in-out 0.6s infinite;
-    pointer-events: none;
-  }
-
-  @keyframes glint {
-    0% {
-      transform: translateX(-100%);
-    }
-    20%,
-    100% {
-      transform: translateX(100%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    button.key-id::after {
-      animation: none;
-      display: none;
-    }
   }
 
   /* A licence key is shown as it is, not as dots: it is read off a mail,

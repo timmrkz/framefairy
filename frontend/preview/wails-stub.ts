@@ -1072,7 +1072,7 @@ export const Call = {
       }
       case "CopyLicence":
         (window as any).__copied = licence.key;
-        return licence.saved ? Promise.resolve() : Promise.reject(new Error("the key could not be read from the keychain"));
+        return licence.saved && !location.search.includes("denied") ? Promise.resolve() : Promise.reject(new Error("the Mac did not hand the key over. Click the key ID to try again, and choose Allow when it asks"));
       case "TakeLicenceLink": {
         const l = licence.link ?? { what: "", key: "", about: "", reason: "" };
         licence.link = null;

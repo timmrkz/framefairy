@@ -77,7 +77,7 @@ func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
 func (s *FrameFairy) CopyLicence() error {
 	key, ok := keptLicence(context.Background())
 	if !ok {
-		return errors.New("the key could not be read from the keychain")
+		return errors.New("the Mac did not hand the key over. Click the key ID to try again, and choose Allow when it asks")
 	}
 	if !s.copyText(key) {
 		return errors.New("the key could not be put on the clipboard")
