@@ -76,3 +76,25 @@ describe("a seek while playing", () => {
     expect(said.map((s) => s.at)).toEqual([58.4]);
   });
 });
+
+// L, or the loop button, while a clip plays. The loop says nothing until
+// the end of the clip, and the play started again for it: the picture and
+// the sound stopped for a moment every time it was switched.
+describe("the loop switched while playing", () => {
+  test("goes on as it was, either way", () => {
+    const { q, said } = playing(58.2);
+    q.seek(58.2, [clip, false]);
+    said.length = 0;
+    q.setProgram(clip, true);
+    q.setProgram(clip, false);
+    expect(said).toEqual([]);
+  });
+
+  test("with other pieces still starts the play again", () => {
+    const { q, said } = playing(58.2);
+    q.seek(58.2, [clip, false]);
+    said.length = 0;
+    q.setProgram([clip[0]], true);
+    expect(said.map((s) => s.at)).toEqual([58.2]);
+  });
+});
