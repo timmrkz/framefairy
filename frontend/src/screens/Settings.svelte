@@ -1031,7 +1031,7 @@
                       title="Copy the key ID, which is what support asks for"
                       aria-label={copied ? "Copied" : `Copy key ID ${part.text}`}
                       onclick={() => copyKeyID(part.text)}
-                      ><Busy motes={false} /><span>{part.text}</span><Icon
+                      ><Busy motes={false} seldom /><span>{part.text}</span><Icon
                         name={copied ? "check" : "copy"}
                         size={14}
                       /></button
@@ -1446,8 +1446,9 @@
   /* A key ID, in one width, on a block of its own, the way code is set in
      a README, in the quieter grey of a line under a name rather than in
      white. The kept key's is a button that copies the key ID, and it
-     wears the beam from Busy, the same beam, turned well down: nothing is
-     running, it only says this is what was bought. */
+     wears the beam from Busy, the same beam, coming by once in a while
+     and turned down: nothing is running, it only says this is what was
+     bought. */
   .key-id {
     display: inline-flex;
     align-items: center;
@@ -1456,18 +1457,22 @@
     margin: 1px 1px 0;
     padding: 0 9px;
     vertical-align: top;
-    border: 1px solid var(--line);
+    /* The edge is drawn inside, the way the clip cards draw theirs, so
+       the beam runs on the edge itself. A border lies outside what the
+       block clips its beam to, and the beam ran a pixel inside it. */
+    border: none;
+    box-shadow: inset 0 0 0 1px var(--line);
     border-radius: 6px;
     background: var(--ink-2);
     color: var(--muted);
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: var(--size-m);
-    line-height: 24px;
+    line-height: 26px;
   }
 
   button.key-id {
     cursor: pointer;
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--line));
   }
 
   button.key-id:hover {
@@ -1476,7 +1481,7 @@
   }
 
   button.key-id > :global(.beam) {
-    opacity: 0.45;
+    opacity: 0.6;
   }
 
   button.key-id.copied > :global(svg) {

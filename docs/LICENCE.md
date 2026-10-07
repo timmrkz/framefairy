@@ -716,8 +716,11 @@ with, offline, before every render.
   the same Unlock in the same letter, and the lost-key page sends the
   letter again. Reading it would also have the keychain ask for the
   Mac's password, from every build it does not know yet. That block wears
-  the beam from `Busy.svelte`, the same beam, turned well down, because
-  it is what was bought: a first try with a light of its own looked like
+  the beam from `Busy.svelte`, the same beam, turned down and given
+  `seldom`: the comet comes round once every nine seconds, with a
+  bounce as it arrives, and the rim rests between, because it is what
+  was bought and nothing is running. Running all the time it was too
+  busy. It is what was bought: a first try with a light of its own looked like
   nothing else in the app, and Tim saw it. The trash can beside it
   removes the key, after asking, and the field comes back.
 - **The Unlock link.** The thank-you page and the letter carry, for
