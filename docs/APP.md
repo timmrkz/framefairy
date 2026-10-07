@@ -466,21 +466,36 @@ the list does, the one already chosen included, so the crosshair does not do it
 as well: a control that went to the clip with one chosen and to the playhead
 without could not be relied on for either.
 
-The video preview is as big as the room allows and keeps the shape of the
-episode, so it grows until either the height or the width runs out. The
-middle column is exactly as wide as the picture, and the settings and the
-clip list share everything left over. A wider app makes those two wider
-rather than leaving a strip of nothing beside the picture, and a taller
-app makes the picture bigger. Once the picture is as wide as it may be,
-the height left over goes to the two tracks: the clip timeline grows and the
+The settings and the clip list beside the picture are the same width,
+two fifths of the width beside the rail between them and never under 280
+each, from the app's width alone: a taller or shorter app moves neither,
+and a wider one widens both alike. They were what the picture left, so
+a shorter app, with a narrower picture, made them wider, and the clip
+list, at least 280 where the settings were at least 204, was up to 68
+pixels wider than the settings. The middle column takes the rest of the
+width. The open sidebar is the rail and the settings column, so it
+covers that column and nothing else.
+
+The video preview fills the middle column: a black viewer as wide as the
+column, with the picture in it as big as the room allows in the shape of
+the episode. Where the width holds the picture in, it is the column's
+width exactly. Where the height does, on a short app, it stands in the
+middle of the viewer with black either side, the way a video player
+shows a picture of another shape. The crop and the captions stand on the
+picture, not the viewer. Once the picture is as wide as it may be, the
+height left over goes to the two tracks: the clip timeline grows and the
 range picker stays half of it, to within a pixel, so nothing is left empty
 at the foot of the app.
 
-**Every size moves only the way the edge of the app moves.** Each height is
+**Every size moves only the way the edge of the app moves.** Each size is
 a whole number of pixels, rounded down once, and what rounding leaves goes
-to the size worked out after it, never back to one before: the picture
-first, from the app alone, then the range picker a third of what is left
-and the clip timeline the rest. The clip timeline used to be rounded to an
+to the size worked out after it, never back to one before: across, the
+two side columns together first, then each half of them, then the middle
+column the rest. Down, the picture first, from the app alone, then the
+range picker a third of what is left and the clip timeline the rest. A
+part of a sum that is whole by its own arithmetic is rounded to the
+nearest pixel, because the browser's arithmetic can make 463 into
+462.99999. The clip timeline used to be rounded to an
 even number first, so the range picker could be exactly half, and the
 picture took the rest. That rest changes in steps of three pixels, so as
 the app was dragged smaller the picture shrank a pixel, another, and grew

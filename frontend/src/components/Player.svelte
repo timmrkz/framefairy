@@ -1026,6 +1026,15 @@
   <!-- data-playhead says where the playhead is. Nothing on screen reads
        it: it is there so a probe can follow the playhead across a cut on
        every frame, the way the caption words say their moments. -->
+  <!-- The viewer: as wide as the middle column and as tall as the picture
+       may be, black, with the picture in the middle of it. The columns
+       beside it take their width from the app's width alone, so on an app
+       too short for the picture to fill the column the rest is black at
+       its sides, the way a video player shows a picture of another shape.
+       Everything drawn over the picture stands in .screen, the picture's
+       own box, so the crop and the captions are in shares of the picture
+       and not of the viewer. -->
+  <div class="viewer">
   <div class="screen asks" bind:this={screen} data-playhead={time}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
@@ -1183,6 +1192,7 @@
       </div>
     {/if}
   </div>
+  </div>
   <div class="under">
     {@render strip?.()}
   </div>
@@ -1208,14 +1218,31 @@
      size of the app itself. Nothing here measures anything. */
   /* A container for its size, so what is drawn over the picture is sized
      in shares of it by the stylesheet, see px. */
-  .screen {
-    position: relative;
-    container-type: size;
+  .viewer {
+    display: flex;
     height: var(--pic-h);
-    width: var(--pic-w);
     background: #000;
     border-radius: var(--radius-m);
     overflow: hidden;
+  }
+
+  /* In the middle of the viewer, on a whole pixel: half of an odd
+     difference is a half, and a picture between two pixels is soft. */
+  .screen {
+    position: relative;
+    container-type: size;
+    flex: none;
+    margin-left: calc((var(--mid-w) - var(--pic-w)) / 2);
+    height: var(--pic-h);
+    width: var(--pic-w);
+    background: #000;
+    overflow: hidden;
+  }
+
+  @supports (width: round(down, 3px, 2px)) {
+    .screen {
+      margin-left: round(down, calc((var(--mid-w) - var(--pic-w)) / 2), 1px);
+    }
   }
 
   canvas {

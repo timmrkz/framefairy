@@ -2820,16 +2820,17 @@
        from the settings is the space between two things, --gap, and only
        the side that meets the app's own border is an edge. */
     --stage-w: calc(100dvw - var(--rail) - var(--gap) - var(--edge));
-    /* The columns beside the picture at their smallest, with a space on
-       either side of it. */
-    --sides: calc(var(--settings-w) + 280px + 2 * var(--gap));
+    /* The middle column, the rest of the width once the two columns
+       beside it, --sides from app.css, have theirs. */
+    --mid-w: calc(var(--stage-w) - var(--sides) - 2 * var(--gap));
     /* Everything down the height that is neither the picture nor a track:
        four spaces, one under the picture, two around the line that parts
        the workspace from the clip up close, one over the row at the foot,
        the line itself, and the row. */
     --down: calc(4 * var(--gap) + 1px + var(--row-h));
-    /* How tall the picture would be if it were as wide as it may be. */
-    --widest: calc((var(--stage-w) - var(--sides)) / var(--ar));
+    /* How tall the picture would be if it were as wide as the middle
+       column. */
+    --widest: calc(var(--mid-w) / var(--ar));
     /* The picture takes the height first, until it is that wide, leaving
        the tracks at least their smallest. What it cannot use goes to the
        two tracks, the range picker a third of it and the clip timeline
@@ -2869,12 +2870,46 @@
      within a pixel of one half the other. */
   @supports (height: round(down, 3px, 2px)) {
     section {
+      /* The height the tracks leave at their smallest is whole by its
+         sum, and only the browser's arithmetic makes it 462.99999, which
+         rounded down took a pixel from the picture on one step in a few
+         hundred and gave it to the clip timeline. So it is rounded to the
+         nearest pixel, and only the height the shape of the picture
+         gives, which is a fraction, is rounded down. */
       --pic-h: max(
         200px,
-        round(down, min(var(--widest), calc(var(--space) - var(--down) - 1.5 * var(--wave-min))), 1px)
+        min(
+          round(down, var(--widest), 1px),
+          round(calc(var(--space) - var(--down) - 1.5 * var(--wave-min)), 1px)
+        )
       );
+      --tracks: round(calc(var(--space) - var(--down) - var(--pic-h)), 1px);
       --picker-h: round(down, calc(var(--tracks) / 3), 1px);
-      --pic-w: round(down, calc(var(--pic-h) * var(--ar)), 1px);
+      /* The picture's width is its height times its shape, rounded down,
+         except where the width is what holds it in: there it is the
+         middle column's width exactly. A width worked out from a height
+         that was itself rounded down came a pixel or two short of the
+         column, and the picture, centred in what was left, stood 0, 1, 0,
+         1 pixels in as the app was dragged. The second term is the
+         column's width while the picture's height is the one the column
+         allows, and far below anything else otherwise, so the larger of
+         the two is the column where the width holds the picture and its
+         shape everywhere else. And never wider than the column, which a
+         picture held at its smallest height on a narrow app would be. */
+      --pic-w: min(
+        var(--mid-w),
+        max(
+          round(down, calc(var(--pic-h) * var(--ar)), 1px),
+          calc(
+            var(--mid-w) -
+              max(
+                round(down, var(--widest), 1px) - var(--pic-h),
+                var(--pic-h) - round(down, var(--widest), 1px)
+              ) *
+              100000
+          )
+        )
+      );
     }
   }
 
@@ -2917,16 +2952,13 @@
   }
 
   /* Three columns: the settings the sidebar lies over when it opens, the
-     video preview, and the clips. The middle one is exactly as wide as the
-     picture may be, which the workspace works out, and the two beside it
-     share whatever is left. That way a wider app makes the settings and
-     the clip list wider instead of leaving a strip of nothing. */
+     video preview, and the clips. The two beside the picture are the same
+     width, from the app's width alone, and the middle one takes the rest,
+     so a wider app makes all three wider and a taller or shorter one moves
+     none of them. */
   .stage {
     display: grid;
-    /* The middle column is exactly as wide as the picture may be, and the
-       two beside it share whatever is left, so a wider app makes them
-       wider instead of leaving a strip of nothing beside the picture. */
-    grid-template-columns: minmax(var(--settings-w), 1fr) var(--pic-w) minmax(280px, 1fr);
+    grid-template-columns: var(--side-w) 1fr calc(var(--sides) - var(--side-w));
     gap: var(--gap);
     align-items: stretch;
     /* Exactly the picture, the space under it and the range picker. The
