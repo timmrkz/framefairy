@@ -16,6 +16,7 @@ import (
 type memKeys struct {
 	mu     sync.Mutex
 	items  map[string]string
+	hints  map[string]string
 	reads  int
 	writes int
 	refuse bool
@@ -25,7 +26,11 @@ func newMemKeys(items map[string]string) *memKeys {
 	if items == nil {
 		items = map[string]string{}
 	}
-	return &memKeys{items: items}
+	hints := map[string]string{}
+	for item, v := range items {
+		hints[item] = abbreviate(v)
+	}
+	return &memKeys{items: items, hints: hints}
 }
 
 func (m *memKeys) has(item string) bool {
@@ -38,10 +43,7 @@ func (m *memKeys) has(item string) bool {
 func (m *memKeys) hint(item string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if v, ok := m.items[item]; ok {
-		return abbreviate(v)
-	}
-	return ""
+	return m.hints[item]
 }
 
 func (m *memKeys) get(_ context.Context, item string) (string, bool) {
@@ -52,7 +54,7 @@ func (m *memKeys) get(_ context.Context, item string) (string, bool) {
 	return v, ok
 }
 
-func (m *memKeys) set(item, secret string) error {
+func (m *memKeys) set(item, secret, hint string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.refuse {
@@ -60,6 +62,7 @@ func (m *memKeys) set(item, secret string) error {
 	}
 	m.writes++
 	m.items[item] = secret
+	m.hints[item] = hint
 	return nil
 }
 
@@ -67,6 +70,7 @@ func (m *memKeys) remove(item string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.items, item)
+	delete(m.hints, item)
 }
 
 // keychains puts two keychains in memory in place of the machine's, the

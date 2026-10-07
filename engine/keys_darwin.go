@@ -156,12 +156,16 @@ func (keychainKeys) has(item string) bool {
 	return found
 }
 
+// hintRoom is the most a hint is read back with: a licence's description,
+// its ID and a name of up to licence.MaxName bytes, fits with room left.
+const hintRoom = 256
+
 func (keychainKeys) hint(item string) string {
 	hint := ""
 	withNames(item, func(service, account *C.char) {
-		buf := (*C.char)(C.malloc(128))
+		buf := (*C.char)(C.malloc(hintRoom))
 		defer C.free(unsafe.Pointer(buf))
-		if C.ff_hint(service, account, buf, 128) == 0 {
+		if C.ff_hint(service, account, buf, hintRoom) == 0 {
 			hint = C.GoString(buf)
 		}
 	})
@@ -182,12 +186,12 @@ func (keychainKeys) get(_ context.Context, item string) (string, bool) {
 	return secret, ok
 }
 
-func (keychainKeys) set(item, secret string) error {
+func (keychainKeys) set(item, secret, hinted string) error {
 	var status C.int
 	withNames(item, func(service, account *C.char) {
 		value := C.CString(secret)
 		defer C.ff_forget(value, C.long(len(secret)))
-		hint := C.CString(abbreviate(secret))
+		hint := C.CString(hinted)
 		defer C.free(unsafe.Pointer(hint))
 		status = C.ff_set(service, account, value, C.long(len(secret)), hint)
 	})
@@ -224,7 +228,7 @@ func (securityKeys) get(ctx context.Context, item string) (string, bool) {
 	return strip(res.Stdout), true
 }
 
-func (securityKeys) set(string, string) error { return errNoKeychain }
+func (securityKeys) set(string, string, string) error { return errNoKeychain }
 
 func (securityKeys) remove(item string) {
 	keychain(context.Background(), "delete-generic-password", "-a", keyAccount, "-s", item)

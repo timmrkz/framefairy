@@ -35,6 +35,8 @@
     type Settings,
     type SpeechModel,
     type TrainingStatus,
+    type LicenceState,
+    onLicenceLink,
   } from "../lib/api";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
@@ -205,6 +207,82 @@
       keyRefused = said.charAt(0).toUpperCase() + said.slice(1);
     }
     await Promise.all([readModels(), check()]);
+  }
+
+  // The licence key, kept in the keychain like an API key and never read
+  // back: the Go side only says whether there is one and how it was
+  // described when it was kept. A key that came in a framefairy:// link
+  // is put in the field and waits for Unlock, because any page and any
+  // app can open such a link.
+  let licence = $state<LicenceState>({ saved: false, about: "", waiting: false });
+  let licenceKey = $state("");
+  let fromLink = $state(false);
+  let unlocking = $state(false);
+  let licenceRefused = $state("");
+  let licenceField = $state<HTMLInputElement>();
+  let licenceCard = $state<HTMLElement>();
+  let licenceShaking = $state(false);
+  let removingLicence = $state(false);
+
+  async function readLicence() {
+    try {
+      licence = await api.licence();
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  // The key a link brought, into the field, with the row in view and the
+  // keyboard on Unlock.
+  async function takeLink() {
+    let k = "";
+    try {
+      k = await api.takeLicenceLink();
+    } catch (err) {
+      problem = errorText(err);
+    }
+    if (!k) return;
+    licenceKey = k;
+    fromLink = true;
+    licenceRefused = "";
+    await readLicence();
+    licenceCard?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    licenceCard?.querySelector<HTMLElement>("button.unlock")?.focus();
+  }
+
+  // Refused the way the API key is: the field shakes and keeps the key,
+  // selected, so the next paste replaces it.
+  async function unlock() {
+    unlocking = true;
+    licenceRefused = "";
+    try {
+      licence = await api.saveLicence(licenceKey);
+      licenceKey = "";
+      fromLink = false;
+    } catch (err) {
+      const said = errorText(err);
+      licenceRefused = said.charAt(0).toUpperCase() + said.slice(1);
+      licenceShaking = false;
+      requestAnimationFrame(() => {
+        licenceShaking = true;
+        licenceField?.focus();
+        licenceField?.select();
+      });
+    }
+    unlocking = false;
+  }
+
+  // The key is in the mail it came in, so removing it here can be undone
+  // by unlocking again, but only with that mail at hand. So it asks first.
+  async function removeLicence() {
+    removingLicence = false;
+    licenceRefused = "";
+    try {
+      licence = await api.saveLicence("");
+    } catch (err) {
+      const said = errorText(err);
+      licenceRefused = said.charAt(0).toUpperCase() + said.slice(1);
+    }
   }
 
   // The one clips are found with is saved by the Go side at once, so the
@@ -507,7 +585,9 @@
   onMount(() => {
     load();
     nav.hold = hold;
+    const noLink = onLicenceLink(takeLink);
     return () => {
+      noLink();
       clearTimeout(saveTimer);
       if (nav.hold === hold) nav.hold = null;
     };
@@ -519,8 +599,10 @@
     } catch (err) {
       problem = errorText(err);
     }
-    await Promise.all([readTraining(), readModels(), check()]);
+    await Promise.all([readTraining(), readModels(), check(), readLicence()]);
     loaded = true;
+    // After the page is drawn, so the row is there to come into view.
+    await takeLink();
   }
 </script>
 
@@ -861,6 +943,80 @@
         </div>
       </div>
 
+      <!-- The licence, kept in the keychain like an API key. A key comes
+           in the mail it was bought with, and the Unlock button in that
+           mail opens this row with the key in the field. -->
+      <div class="group">
+        <div class="headrow">
+          <h2>Licence</h2>
+          <span class="ask">
+            <Info label="About the licence" side="left">
+              The key comes in the mail you bought Frame Fairy with. Unlock in that mail brings it
+              here, or paste it into the field. It is checked on this machine, without asking
+              anybody, and kept in the keychain.
+            </Info>
+          </span>
+        </div>
+        <div class="card" bind:this={licenceCard}>
+          <div class="item">
+            <span class="mark" class:ok={licence.saved && !licenceRefused} class:err={!!licenceRefused} aria-hidden="true">
+              {#if licenceRefused}<Icon name="warn" />{:else if licence.saved}<Icon name="check" />{/if}
+            </span>
+            <div class="words">
+              <span class="head">Licence key</span>
+              <span
+                class="small line"
+                class:muted={!licenceRefused}
+                class:error={!!licenceRefused}
+                title={licenceRefused || (licence.saved ? `${licence.about}. In the keychain` : undefined)}
+              >
+                {#if licenceRefused}{licenceRefused}.{:else if fromLink}From the link. Unlock takes it.{:else if licence.saved}{licence.about}.{:else}None yet.{/if}
+              </span>
+            </div>
+            <input
+              class="key"
+              class:shaking={licenceShaking}
+              onanimationend={() => (licenceShaking = false)}
+              type="password"
+              bind:this={licenceField}
+              bind:value={licenceKey}
+              oninput={() => {
+                licenceRefused = "";
+                fromLink = false;
+              }}
+              placeholder={licence.saved ? "New key" : "FF1-..."}
+              aria-label="Licence key"
+              title="It goes in the keychain and nowhere else"
+              autocomplete="off"
+              spellcheck="false"
+              onkeydown={(e) => e.key === "Enter" && licenceKey.trim() && !licenceRefused && unlock()}
+            />
+            <button
+              class="act unlock"
+              disabled={unlocking || !licenceKey.trim() || !!licenceRefused}
+              onclick={unlock}
+            >
+              {#if unlocking}<Busy />{/if}
+              {unlocking ? "Checking" : "Unlock"}
+            </button>
+            {#if licence.saved}
+              <button
+                class="quiet danger bin"
+                title="Remove the licence key from this machine"
+                aria-label="Remove the licence key"
+                aria-haspopup="dialog"
+                disabled={unlocking}
+                onclick={() => (removingLicence = true)}
+              >
+                <Icon name="trash" />
+              </button>
+            {:else}
+              <span class="bin-room" aria-hidden="true"></span>
+            {/if}
+          </div>
+        </div>
+      </div>
+
       <!-- The records of every episode, in one folder of their own. They are
            not kept with an episode, so letting go of a video leaves them
            alone, and they are thrown away here and nowhere else. -->
@@ -977,6 +1133,19 @@
       {#snippet actions()}
         <button onclick={() => (clearing = false)}>Cancel</button>
         <button class="danger" onclick={clearTraining}>Remove them</button>
+      {/snippet}
+    </Confirm>
+  {/if}
+
+  {#if removingLicence}
+    <Confirm title="Remove the licence key?" oncancel={() => (removingLicence = false)}>
+      <p>
+        The key leaves this machine's keychain. It stays valid, and Unlock in the mail it came in
+        brings it back.
+      </p>
+      {#snippet actions()}
+        <button onclick={() => (removingLicence = false)}>Cancel</button>
+        <button class="danger" onclick={removeLicence}>Remove</button>
       {/snippet}
     </Confirm>
   {/if}

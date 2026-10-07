@@ -88,6 +88,21 @@ func (w *world) buy(email string, seats int) string {
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
+// page is a page as the browser gets it.
+func (w *world) page(path string) string {
+	w.t.Helper()
+	resp, err := w.client.Get(w.base + path)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		w.t.Fatalf("%s: %d", path, resp.StatusCode)
+	}
+	return string(b)
+}
+
 // get asks the dispenser as a browser on our website would.
 func (w *world) get(path string) (int, map[string]any) {
 	w.t.Helper()
@@ -171,6 +186,14 @@ func TestASaleFromCheckoutToChargeback(t *testing.T) {
 	_, letters, _ := w.d.mail.read()
 	if len(letters) != 1 || letters[0].To != "anna@example.com" || !slices.Equal(stringsOf(letters[0].Keys), keys) {
 		t.Fatalf("letters %+v", letters)
+	}
+	// Each key in the letter opens the app with it. The template must not
+	// take the framefairy:// link for an unsafe one.
+	page := w.page("/dev")
+	for _, k := range keys {
+		if !strings.Contains(page, `href="framefairy://unlock?key=`+k+`"`) {
+			t.Fatalf("the letter on the dev page has no Unlock link for %s", k)
+		}
 	}
 
 	// A refund waits for Paddle's approval and takes nothing back until
