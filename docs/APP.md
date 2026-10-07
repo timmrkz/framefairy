@@ -313,7 +313,19 @@ still turned into the sound card's numbers on the page, `PlainSound`.
 The Go side closes a stream nobody has read from for 20 seconds, and a
 pause holds the play with its stream, so a stream that answers 404 is
 opened again from the moment after the last that came: a play paused
-longer said the sound had stopped decoding, Tim found. A file it cannot play, a codec the system cannot decode, a
+longer said the sound had stopped decoding, Tim found. A stream that
+fails anyway is dropped with the packet it failed on, and the next packet
+opens one of its own. Kept, no sound came after it, a play waits for its
+first sound, and the space bar seemed to do nothing. A stream the page
+has closed is never opened again, and the Go side counts streams of sound
+apart from streams of frames, so the seeks of a play never close the
+frames the video preview draws.
+
+A frame the page makes from what the Go side decoded carries the
+picture's colours, read from the file's `colr` box, in video range, which
+is what the Go side makes. Without them WebKit drew the picture of Tim's
+`start.mp4` as if it used the whole range, its black a grey of 17 where
+QuickTime shows 1, and every colour paler. A file it cannot play, a codec the system cannot decode, a
 fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
 sentence where the picture would be, with the reason, and nothing else in
 the workspace changes. A sound it cannot decode plays the picture without

@@ -90,7 +90,7 @@ class Stream {
         const n = Math.min(16, Math.max(1, highest - Math.max(this.position, lowest - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
-        const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
+        const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height, { ...this.owner.track.colour, fullRange: false });
         if (got.status === 0 || got.status === 404) {
           // Closed on the Go side after standing unused: what was waited
           // for goes to a new stream. A stream that never gave a frame is
@@ -316,14 +316,14 @@ class Puller {
     this.where = "worker";
   }
 
-  async pull(url: string, width: number, height: number): Promise<Pulled> {
+  async pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
     await this.ready;
     const w = this.worker;
-    if (!w) return pull(url, width, height);
+    if (!w) return pull(url, width, height, colour);
     const n = this.count++;
     return new Promise((done) => {
       this.waiting.set(n, done);
-      w.postMessage({ n, url: new URL(url, location.href).href, width, height });
+      w.postMessage({ n, url: new URL(url, location.href).href, width, height, colour });
     });
   }
 

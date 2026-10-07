@@ -73,6 +73,8 @@ type previewFrame struct {
 }
 
 type preview struct {
+	// "sound" for a stream of sound, "" for one of frames.
+	kind   string
 	frames chan previewFrame
 	stop   context.CancelFunc
 	// When it was last pulled from, as unix nanoseconds.
@@ -166,30 +168,44 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			return e.PreviewFrames(ctx, path, from, width&^1, height&^1, got)
 		}
 	}
-	id := p.start(run)
+	kind := ""
+	if r.URL.Path == "/frames/sound" {
+		kind = "sound"
+	}
+	id := p.start(kind, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
 
 // start runs ffmpeg for a stream. It decodes a frame and waits until the
 // page has pulled it before it decodes the next, so the channel holds one.
-func (p *previews) start(run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+// Streams of sound and of frames are counted apart, so that seeks of a
+// play, each with a sound stream of its own, never close the frames the
+// video preview is drawing, nor frames the sound.
+func (p *previews) start(kind string, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	ctx, stop := context.WithCancel(context.Background())
-	s := &preview{frames: make(chan previewFrame), stop: stop, done: make(chan struct{})}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{})}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
 		p.open = map[string]*preview{}
 	}
-	for len(p.open) >= previewMost {
-		oldest := ""
+	for {
+		oldest, n := "", 0
 		for k, o := range p.open {
+			if o.kind != kind {
+				continue
+			}
+			n++
 			if oldest == "" || o.pulled.get().Before(p.open[oldest].pulled.get()) {
 				oldest = k
 			}
+		}
+		if n < previewMost {
+			break
 		}
 		p.open[oldest].stop()
 		delete(p.open, oldest)

@@ -32,6 +32,12 @@ export type VideoTrack = {
   // How long a frame lasts, in seconds, the most common step between two
   // frames. A file that changes its frame rate on the way still has one.
   frame: number;
+  // The colours the file says its picture is in, from its colr box, or
+  // what a picture of its size usually is where it says nothing. A frame
+  // the page makes itself from what the Go side decoded carries them, see
+  // native.ts and pull.ts: made without, WebKit drew a picture in video
+  // range as if it used the whole range, its black a grey of 17.
+  colour: VideoColorSpaceInit;
 };
 
 export type AudioTrack = {
@@ -465,7 +471,7 @@ function videoEntry(v: View, entry: Box, samples: Samples): VideoTrack {
   const width = v.u16(entry.body + 24);
   const height = v.u16(entry.body + 26);
   const inner = { body: entry.body + 78, end: entry.end };
-  const base = { kind: "video" as const, width, height, samples, frame: commonFrame(samples) };
+  const base = { kind: "video" as const, width, height, samples, frame: commonFrame(samples), colour: colourOf(v, inner, height) };
   switch (entry.type) {
     case "avc1":
     case "avc3": {
@@ -494,6 +500,30 @@ function videoEntry(v: View, entry: Box, samples: Samples): VideoTrack {
     default:
       fail(`the picture is ${entry.type.trim()}, which the video preview cannot decode`);
   }
+}
+
+// The colours of a picture, from the colr box of its sample entry: nclx in
+// MP4, nclc in MOV, which has no range and is video range. The numbers are
+// those of ITU-T H.273. Where the box is missing or says unspecified, a
+// picture 720 lines high or more is BT.709 and a smaller one BT.601, the
+// way players guess, in video range.
+function colourOf(v: View, inner: { body: number; end: number }, height: number): VideoColorSpaceInit {
+  const guess = height >= 720 ? "bt709" : "smpte170m";
+  const out: VideoColorSpaceInit = { primaries: guess, transfer: height >= 720 ? "bt709" : "smpte170m", matrix: guess, fullRange: false };
+  const colr = child(v, inner, "colr");
+  if (!colr || colr.end - colr.body < 10) return out;
+  const kind = v.type(colr.body);
+  if (kind !== "nclx" && kind !== "nclc") return out;
+  // Only the names every browser takes: one it does not know makes the
+  // frame fail, so BT.2020 and the like keep the guess.
+  const primaries: Record<number, VideoColorPrimaries> = { 1: "bt709", 5: "bt470bg", 6: "smpte170m", 7: "smpte170m" };
+  const transfer: Record<number, VideoTransferCharacteristics> = { 1: "bt709", 6: "smpte170m", 7: "smpte170m", 13: "iec61966-2-1", 14: "bt709", 15: "bt709" };
+  const matrix: Record<number, VideoMatrixCoefficients> = { 0: "rgb", 1: "bt709", 5: "bt470bg", 6: "smpte170m" };
+  out.primaries = primaries[v.u16(colr.body + 4)] ?? out.primaries;
+  out.transfer = transfer[v.u16(colr.body + 6)] ?? out.transfer;
+  out.matrix = matrix[v.u16(colr.body + 8)] ?? out.matrix;
+  if (kind === "nclx" && colr.end - colr.body >= 11) out.fullRange = (v.u8(colr.body + 10) & 0x80) !== 0;
+  return out;
 }
 
 // The codec string of an HEVC track, from its hvcC, the way ISO/IEC

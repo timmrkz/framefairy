@@ -77,7 +77,7 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "info"}
-	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear,format=yuv420p", width, height)
+	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear:out_range=tv,format=yuv420p", width, height)
 	if gpu {
 		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
 		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,format=yuv420p", width, height)

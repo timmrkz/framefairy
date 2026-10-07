@@ -247,7 +247,7 @@ interface SoundDecoder {
 // reads a piece of a render. It answers the way a decoder does, after the
 // call that fed it, so the queue cannot tell it from one. The packets
 // themselves are not needed, only where they lie.
-class GoSound implements SoundDecoder {
+export class GoSound implements SoundDecoder {
   state = "configured";
   // Packets and flushes in the order they came. A flush ends the run of
   // the packets before it, and the packets after it are another run, read
@@ -329,10 +329,21 @@ class GoSound implements SoundDecoder {
         if (era !== this.era) return;
       }
     } catch (e) {
-      if (era === this.era) this.error(e instanceof Error ? e.message : String(e));
+      if (era !== this.era) return;
+      this.error(e instanceof Error ? e.message : String(e));
+      // The stream is dropped with the packet it failed on, and the next
+      // packet opens a stream of its own where it lies. Kept, every packet
+      // after it failed on the same stream, no sound came, and a play
+      // waiting for its first sound never started: the space bar seemed
+      // to do nothing, Tim found.
+      this.stream?.close();
+      this.stream = null;
+      if (this.waiting.length && "at" in this.waiting[0]) this.waiting.shift();
+      this.dequeue();
     } finally {
       if (era === this.era) this.running = false;
     }
+    if (era === this.era && this.waiting.length) void this.run();
   }
 }
 
@@ -354,6 +365,10 @@ export class GoSoundStream {
   // Where the Go side's stream started, and how many moments of it came.
   private from: number;
   private came = 0;
+  // Closed by the page: a read still on its way that finds it gone on
+  // the Go side ends it, it never opens it again. Opened again, every
+  // seek of a play left a stream that nobody closed.
+  private closed = false;
   constructor(
     private path: string,
     at: number,
@@ -387,7 +402,7 @@ export class GoSoundStream {
     }
     while (filled < want) {
       if (!this.have.length) {
-        if (this.ended) break;
+        if (this.ended || this.closed) break;
         await this.pull();
         continue;
       }
@@ -400,6 +415,7 @@ export class GoSoundStream {
   }
   private async pull() {
     let r = await fetch(`/frames/read?id=${await this.id}&n=16`);
+    if (this.closed) return;
     if (r.status === 404) {
       // Closed on the Go side: on again from the moment after the last
       // that came, once, and a stream that is gone straight away is
@@ -423,6 +439,7 @@ export class GoSoundStream {
     }
   }
   close() {
+    this.closed = true;
     void this.id.then((id) => fetch(`/frames/close?id=${id}`)).catch(() => {});
   }
 }
@@ -781,7 +798,8 @@ export class FrameQueue {
     if (this.native) {
       const n = this.native;
       const id = n.ids[this.slots.includes(slot) ? this.slots.indexOf(slot) : this.slots.length] ?? n.ids[0];
-      return new NativePictures(id, n.width, n.height, output, dequeue, (why) => void this.nativeFailed(why));
+      const colour = { ...this.video!.colour, fullRange: false };
+      return new NativePictures(id, n.width, n.height, colour, output, dequeue, (why) => void this.nativeFailed(why));
     }
     if (this.app) return new AppPictures(this.app, output, dequeue);
     return new WebPictures(config, output, (e) => this.pictureFailed(e), dequeue);

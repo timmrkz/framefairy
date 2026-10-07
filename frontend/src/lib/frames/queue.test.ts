@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FrameQueue, GoSoundStream, SOUND_CHUNK, soundChunks, type Shown } from "./queue";
+import { FrameQueue, GoSound, GoSoundStream, SOUND_CHUNK, soundChunks, type Shown } from "./queue";
 
 // The queue without a browser: a canvas that draws nothing and no decoders,
 // so the file is never opened and every play stays starting. That is
@@ -148,6 +148,59 @@ describe("GoSoundStream", () => {
       expect(first[0]).toBe(4800);
       expect(Array.from(second.subarray(0, 3))).toEqual([5800, 5801, 5802]);
       expect(second[999]).toBe(6799);
+    } finally {
+      globalThis.fetch = was;
+    }
+  });
+});
+
+describe("GoSound", () => {
+  test("a stream that fails is dropped, and the next packet is read from a stream of its own", async () => {
+    // The Go side stood in for: moments numbered from where a stream was
+    // opened, one channel, and the first stream fails on every read.
+    const opened: number[] = [];
+    const was = globalThis.fetch;
+    globalThis.fetch = (async (input: string) => {
+      const url = new URL(input, "http://x");
+      if (url.pathname === "/frames/sound") {
+        opened.push(Math.round(Number(url.searchParams.get("from")) * 48000));
+        return new Response(JSON.stringify({ id: String(opened.length) }));
+      }
+      if (url.pathname === "/frames/read") {
+        const id = Number(url.searchParams.get("id"));
+        if (id === 1) return new Response("broken", { status: 500 });
+        const b = new Uint8Array(8 + SOUND_CHUNK * 4);
+        const v = new DataView(b.buffer);
+        for (let i = 0; i < SOUND_CHUNK; i++) v.setFloat32(8 + i * 4, opened[id - 1] + i, true);
+        return new Response(b);
+      }
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    try {
+      const out: { timestamp: number; first: number }[] = [];
+      const errors: string[] = [];
+      const sound = new GoSound(
+        "/ep.mp4",
+        48000,
+        1,
+        (s) => {
+          const one = new Float32Array(s.numberOfFrames);
+          s.copyTo(one, { planeIndex: 0, format: "f32-planar" });
+          out.push({ timestamp: s.timestamp, first: one[0] });
+        },
+        (e) => errors.push(e),
+        () => {},
+      );
+      sound.decode(1, new Uint8Array(0), 0, 960);
+      sound.decode(2, new Uint8Array(0), 960, 960);
+      sound.decode(3, new Uint8Array(0), 1920, 960);
+      await sound.flush();
+      expect(errors).toEqual(["the sound stopped, it answered 500"]);
+      expect(opened).toEqual([0, 960]);
+      expect(out).toEqual([
+        { timestamp: 2, first: 960 },
+        { timestamp: 3, first: 1920 },
+      ]);
     } finally {
       globalThis.fetch = was;
     }
