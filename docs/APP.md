@@ -466,15 +466,54 @@ the list does, the one already chosen included, so the crosshair does not do it
 as well: a control that went to the clip with one chosen and to the playhead
 without could not be relied on for either.
 
-The video preview is as big as the room allows and keeps the shape of the
-episode, so it grows until either the height or the width runs out. The
-middle column is exactly as wide as the picture, and the settings and the
-clip list share everything left over. A wider app makes those two wider
-rather than leaving a strip of nothing beside the picture, and a taller
-app makes the picture bigger. Once the picture is as wide as it may be,
-the height left over goes to the two tracks: the clip timeline grows and the
-range picker stays exactly half of it, so nothing is left empty at the foot
-of the app.
+The two sides beside the picture are measured from the app's own edges,
+so the picture stands in the middle of the app: on the left the rail, a
+space and the settings, on the right the clips and the edge. Each side is
+a fifth of the app's width, from the width alone, so a taller or shorter
+app moves neither, a wider one widens both and a narrower one gives the
+picture the room, and the settings never go under 204, where their names
+and fields still fit whole. So the clip list is 32 pixels wider than the
+settings, the rail and a space less the edge, and on an app of 960 the
+settings are 204, the picture 416 and the clips 236. The two sides are
+rounded once together and then split, so they are equal or a pixel apart
+and the middle column only ever moves one way. The open sidebar is the
+left side, so it covers the settings column and nothing else.
+
+On the way here the sides were once what the picture left, so a shorter
+app, with a narrower picture, made them wider, unequal, and on a half
+pixel every other step, so the settings fields shook. Then they were the
+same width as each other and 280 at least, which made no room for the
+rail and squeezed the picture on a small app to 296.
+
+The video preview fills the middle column: a black viewer as wide as the
+column, with the picture in it as big as the room allows in the shape of
+the episode. Where the width holds the picture in, it is the column's
+width exactly. Where the height does, on a short app, it stands in the
+middle of the viewer with black either side, the way a video player
+shows a picture of another shape. The crop and the captions stand on the
+picture, not the viewer. Once the picture is as wide as it may be, the
+height left over goes to the two tracks: the clip timeline grows and the
+range picker stays half of it, to within a pixel, so nothing is left empty
+at the foot of the app.
+
+**Every size moves only the way the edge of the app moves.** Each size is
+a whole number of pixels, rounded down once, and what rounding leaves goes
+to the size worked out after it, never back to one before: across, the
+two side columns together first, then each half of them, then the middle
+column the rest. Down, the picture first, from the app alone, then the
+range picker a third of what is left and the clip timeline the rest. A
+part of a sum that is whole by its own arithmetic is rounded to the
+nearest pixel, because the browser's arithmetic can make 463 into
+462.99999. The clip timeline used to be rounded to an
+even number first, so the range picker could be exactly half, and the
+picture took the rest. That rest changes in steps of three pixels, so as
+the app was dragged smaller the picture shrank a pixel, another, and grew
+three, and the range picker under it and the clip list beside it went with
+it: the shaking Tim recorded. In the harness, shrinking the app a pixel at
+a time, the picture, the range picker, the clip timeline and the clip list
+moved back on 48 steps of 150, and now on none. The picture growing into
+that rest also pushed the clip list 1 to 4 pixels past the edge of the
+app.
 
 The two tracks are one episode seen from two distances, so they lie on one
 floor, `--well`, a step darker than the workspace around them and never
@@ -1038,7 +1077,8 @@ bubble scrolled by those eight pixels.
   and nothing floats at the end of a row of its own.
 - **One row under the clip up close**, so the range picker and the waveform
   stand together with nothing between them: play, loop and the crosshair
-  that goes to the playhead, as the three marks anyone knows, then the
+  that goes to the playhead, with **L** for loop the way **T** is the
+  thumbnail's, as the three marks anyone knows, then the
   title of the selected clip, why it was chosen and its numbers, and on the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
@@ -1086,7 +1126,10 @@ bubble scrolled by those eight pixels.
         it**, the left arrow from the first word of a clip landing on the
         last word of the one before it and the right arrow the other way
         round. A clip's words arrive with its captions, so the clip is
-        chosen first and the landing waits for them.
+        chosen first and the landing waits for them. **With loop on, the
+        clip comes round instead**, the way a play of it does: past its
+        last word is its first word, and before its first its last, and the
+        clip stays chosen.
       - Outside a clip there is no caption, so the words that were heard
         are the only ones there are. Where nothing has been heard yet
         shift takes a second.
@@ -1280,13 +1323,36 @@ bubble scrolled by those eight pixels.
       all. The time is not written inside its line, because an element with
       a z-index makes a stacking context and would hold its own time down
       there with it.
+    - The range picker puts a time at every step there is room for, from
+      how wide the widest time really is: a time stands 4 pixels right of
+      its line and 4 pixels clear of the next, and one that would run into
+      the end of the range picker is left out, see `lib/ruler.ts`. It was a
+      guess, 72 pixels a time, and a range picker 370 pixels wide drew one
+      time every five minutes on a six minute episode, where a time every
+      minute fits. The clip timeline keeps its sparser ruler, a time for
+      every 96 pixels: the same rule there drew a line over the waveform
+      every second, and Tim preferred it as it was.
+    - Everything on the range picker, the marks, the window, the playhead
+      and the lines, and the captions over the video preview are placed
+      by the stylesheet, in shares of the track's width and the picture's
+      height, `round(share * 100cqw, 1px)` and `calc(share * 100cqh)`, so
+      they move in the same layout pass as what they stand on while the
+      app is resized. They were placed from a width a ResizeObserver read.
     - **Two fingers move along the episode**, the way an editing timeline
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
       to the whole episode. **Both ends are walls.** A pinch that can go no
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
-      wherever the playhead goes. The crosshair in the row under the track
+      wherever the paused playhead goes. **While it plays, the view keeps
+      the playhead in sight**, the way Premiere and Resolve do by default:
+      when the playhead reaches the last twentieth of the view, the view
+      turns a page and the playhead stands a twentieth in, the same
+      distance from the other side, so nearly the whole view is ahead of
+      it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
+      the waveform holds still to be read between turns, and the view
+      turned is held, like a move by hand, until the crosshair or the clip
+      takes it back. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant

@@ -15,7 +15,7 @@
   // cuts between them, and either edge can be dragged to trim. Edges land
   // on the frame, and with shift on words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     api,
     clock,
@@ -58,6 +58,8 @@
     dimmed = false,
     onreshape,
     onwalkclip,
+    looping = false,
+    playing = false,
     captions = [],
     arriving = false,
     captionLook = null,
@@ -116,6 +118,11 @@
     // clip beside it are not here to walk on to, they arrive with its
     // captions, so the workspace is asked and it takes it from there.
     onwalkclip?: (back: boolean) => void;
+    // Whether the clip loops. Walking its words then comes round inside it
+    // rather than walking off to the clip beside it.
+    looping?: boolean;
+    // Whether the playhead is playing, so the view can keep it in sight.
+    playing?: boolean;
     // The clip's captions, on the clip's clock, as the render shows them.
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
@@ -770,9 +777,12 @@
       put(to);
       return;
     }
-    // Out of words. At the ends of a clip that means the clip beside it,
-    // because the words go on even where this clip does not.
-    if (walk === lit) onwalkclip?.(back);
+    // Out of words. With loop on, the clip comes round the way a play of
+    // it does: past its last word is its first word, and before its first
+    // its last. Without, at its ends is the clip beside it, because the
+    // words go on even where this clip does not.
+    if (walk === lit && looping) put(intoWord(back ? lit[lit.length - 1] : lit[0], step));
+    else if (walk === lit) onwalkclip?.(back);
     else if (!walk.length) put(time + (back ? -1 : 1));
   }
 
@@ -863,6 +873,33 @@
       return;
     }
     fitView();
+  });
+
+  // While it plays, the view keeps the playhead in sight, the way an
+  // editor's timeline does by default, Premiere's and Resolve's alike: when
+  // the playhead reaches the last twentieth of the view, the view turns a
+  // page and the playhead stands a twentieth in, the same distance from the
+  // other side, so nearly the whole view is still ahead of it. A quarter in
+  // was tried first and left too little to look ahead to. It turns rather
+  // than slides, so the waveform holds still to be read between turns. A
+  // view moved by hand, or one about the clip, is left where it was put
+  // only while nothing plays: a playhead nobody can see is worse than a
+  // view that moved, and after a turn the view is held, the way a move by
+  // hand holds it, until the crosshair or the clip takes it back.
+  const PAGE_EDGE = 0.05;
+  $effect(() => {
+    if (!playing || !loaded) return;
+    const t = time;
+    const shown = view.to - view.from;
+    if (t >= view.from && t < view.to - shown * PAGE_EDGE) return;
+    untrack(() => {
+      held = !!clip;
+      viewFor = clip?.key ?? "";
+      const whole = Math.max(duration, shown);
+      const from = Math.max(0, Math.min(t - shown * PAGE_EDGE, whole - shown));
+      if (Math.abs(from - view.from) < 0.001) return;
+      load(from, from + shown);
+    });
   });
 
   // A new episode's waveform arrives in seconds and its words as it is
