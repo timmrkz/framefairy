@@ -229,15 +229,6 @@ export interface CaptionsView {
   style: CaptionStyle;
 }
 
-// A part of an episode, in seconds. A searched part also says which
-// plans cover it and how many clips they hold, so it can be let go of.
-export interface WindowView {
-  from: number;
-  to: number;
-  plans?: string[];
-  clips?: number;
-}
-
 // The window as it was left on the range picker, see chosenWindow.
 export interface KeptWindow {
   from: number;
@@ -245,10 +236,9 @@ export interface KeptWindow {
   length: number;
 }
 
-// Where the model has already looked, and what is left to look at.
+// How many searches have read each part of an episode. Any window can be
+// searched, as often as anyone likes, so this only says where New goes.
 export interface CoverageView {
-  searched: WindowView[];
-  free: WindowView[];
   // The whole episode in parts, each with how many searches have read it.
   passes: { from: number; to: number; times: number }[];
 }
@@ -262,6 +252,9 @@ export interface SourceView {
   // The episode's frame rate. One step of the arrow keys on the clip
   // timeline is one frame of it.
   fps: number;
+  // Where the picture's first frame begins, in seconds into the file, and
+  // with it the grid its frames are on. Nought for most files.
+  videoStart?: number;
 }
 
 export interface ClipEntry extends ClipView {
@@ -583,7 +576,7 @@ export const api = {
     call<void>("RemoveEpisode", path, deleteWork),
   source: (path: string) => call<SourceView>("Source", path),
   clips: (path: string) => call<ClipEntry[]>("Clips", path),
-  coverage: (path: string, least: number) => call<CoverageView>("Coverage", path, least),
+  coverage: (path: string) => call<CoverageView>("Coverage", path),
   // A search asked for before the transcript covers its window is held by
   // the interface until it does. These note it with the episode, and take
   // the note away when it is called off, so an app closed in that wait
@@ -591,10 +584,6 @@ export const api = {
   // How much of the episode one search can read, and the weight of every
   // line so far, so the range picker knows how far a window may reach.
   room: (path: string) => call<RoomView>("Room", path),
-  // Gives a part of an episode back: the clips in it go and the model
-  // may read it again. It answers with how many clips went.
-  removeSearch: (path: string, from: number, to: number) =>
-    call<number>("RemoveSearch", path, from, to),
   captions: (path: string, plan: string, clip: string) => call<CaptionsView>("Captions", path, plan, clip),
   // The captions of a clip on its way, laid out as they will be once it is
   // written, or null until its job knows what it keeps.

@@ -355,7 +355,7 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	focus func() (float64, float64), tell func()) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(run, e.FFmpeg, audioFrom(source, start)...)
+	cmd := exec.CommandContext(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -428,10 +428,19 @@ const levelsLead = int(soundLead / (FrameSeconds * 1_000_000))
 // wrong, up to 4 dB off at the join, because a packet of compressed audio
 // is decoded together with the one before it. A frame is 10 ms, so two
 // decimals are exact.
-func audioFrom(source string, start int) []string {
+func audioFrom(source string, start int, picture float64) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
 	lead := min(start, levelsLead)
-	if start > 0 {
+	// ffmpeg seeks every stream of a file to the key frame of its picture,
+	// so a seek to before the picture's first frame hands back the sound
+	// from where the picture starts, and a reading resumed there was heard
+	// up to a tenth of a second out of step, see latesound_test.go. Sound from
+	// before the picture is read from the start of the file instead, which
+	// is never far, the way the render reads it, see leadOf.
+	if float64(start-lead)*FrameSeconds < picture {
+		lead = start
+	}
+	if start-lead > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(float64(start-lead)*FrameSeconds, 'f', 2, 64))
 	}
 	args = append(args, "-i", source, "-map", "0:a:0")

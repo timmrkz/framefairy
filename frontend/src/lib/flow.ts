@@ -313,6 +313,22 @@ export function insideClip(pieces: Piece[], at: number, frame: number): boolean 
   return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
 }
 
+// Which frame of the episode a moment falls in, the frame the video
+// preview draws for it, counted from the picture's first frame, start
+// seconds into the file. A file whose picture starts after its sound has
+// its frames on a grid that begins there, not at the start of the file,
+// and frames counted from the file's start put an edge or a thumbnail up
+// to half a frame from the frame the render takes, see VideoStart in
+// engine/ffmpeg.go. Frame is one frame in seconds.
+export function frameAt(t: number, frame: number, start = 0): number {
+  return Math.floor(Math.max(t - start, 0) / frame + 1e-6);
+}
+
+// The middle of frame k, counted the same way.
+export function frameMiddle(k: number, frame: number, start = 0): number {
+  return start + (k + 0.5) * frame;
+}
+
 // A caption edge being dragged, on the clip's clock.
 export interface CaptionDraft {
   index: number;

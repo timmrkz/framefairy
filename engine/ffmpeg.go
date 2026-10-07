@@ -461,6 +461,13 @@ type SourceInfo struct {
 	Variable bool
 	// Colour tags to copy to the output, as ffmpeg flag name and value.
 	Colour [][2]string
+	// Where the file starts on its own clock, which ffprobe's
+	// -read_intervals counts in, and whether that is known.
+	origin   float64
+	hasClock bool
+	// The pieces of a clip whose own frames come at uneven times in a
+	// file Probe found even, see unevenPieces.
+	unevenAt [][2]float64
 }
 
 // FPS is the frame rate as a number.
@@ -480,6 +487,44 @@ func gcd(a, b int) int {
 		a, b = b, a%b
 	}
 	return a
+}
+
+// videoStartOf is where the picture's first frame begins, from what
+// ffprobe says of the picture's stream and of the file. ffmpeg counts -ss
+// from the start of the file, the earliest of its streams, so that is
+// where the picture's start is measured from.
+func videoStartOf(stream, format map[string]any) float64 {
+	first, ok := toFloat(stream["start_time"])
+	if !ok {
+		return 0
+	}
+	if from, ok := toFloat(format["start_time"]); ok && first-from > 1e-6 {
+		return first - from
+	}
+	return 0
+}
+
+// pictureStart is SourceInfo.VideoStart on its own, for a reading of the
+// sound, which needs nothing else Probe works out and so asks ffprobe for
+// nothing else. Nought for a file with no picture or one ffprobe cannot
+// read, where a seek finds the sound as well as anything does.
+func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
+	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=start_time", "-show_entries", "format=start_time",
+		"-of", "json", path)
+	if res.Code != 0 {
+		return 0
+	}
+	var data struct {
+		Streams []map[string]any `json:"streams"`
+		Format  map[string]any   `json:"format"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(res.Stdout))
+	decoder.UseNumber()
+	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
+		return 0
+	}
+	return videoStartOf(data.Streams[0], data.Format)
 }
 
 // Probe reads the dimensions, frame rate, duration and colour tags of a file.
@@ -553,18 +598,12 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	if _, present := stream["height"]; !present || !okH {
 		return SourceInfo{}, renderErr("%s reports no video dimensions", path)
 	}
-	// ffmpeg counts -ss from the start of the file, the earliest of its
-	// streams, so that is where the picture's start is measured from.
-	videoStart := 0.0
+	videoStart := videoStartOf(stream, data.Format)
 	first, hasFirst := toFloat(stream["start_time"])
-	if hasFirst {
-		if from, ok := toFloat(data.Format["start_time"]); ok && first-from > 1e-6 {
-			videoStart = first - from
-		}
-	}
 	info := SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
-		Duration: duration, VideoStart: videoStart, Colour: colour}
-	info.Variable = hasFirst && e.uneven(ctx, path, info, first)
+		Duration: duration, VideoStart: videoStart, Colour: colour,
+		origin: first - videoStart, hasClock: hasFirst}
+	info.Variable = hasFirst && e.uneven(ctx, path, info)
 	if info.Variable {
 		// The rate ffmpeg reports for uneven frames is the finest step
 		// they keep to, 50 or more for a phone's, so a short is made at
@@ -603,36 +642,82 @@ func shortRate(average float64) int {
 const frameHair = 0.001
 
 // uneven tells whether the frames of a file come off the grid of its rate,
-// by their timestamps in four stretches of two seconds across it: a frame
-// that begins off the grid, or two frames one after the other that are
-// not one frame apart, because a frame was left out or came twice. Only
-// the index is read there, not the picture. A file it cannot read is taken
-// as even, the way it was taken before.
-func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo, first float64) bool {
-	frame := float64(info.FPSDen) / float64(info.FPSNum)
+// by their timestamps in four stretches of two seconds across it. Only the
+// index is read there, not the picture, and reading the whole of it would
+// read the whole file, gigabytes for an episode of a few hours, every time
+// a file is probed. Frames that are uneven only elsewhere are found where
+// they are cut, see unevenPieces.
+func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool {
 	for _, at := range []float64{0, 0.25, 0.5, 0.75} {
-		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
-			"-read_intervals", fixed(at*info.Duration, 3)+"%+2",
-			"-show_entries", "packet=pts_time", "-of", "csv=p=0", path)
-		if res.Code != 0 {
-			return false
+		if e.unevenIn(ctx, path, info, at*info.Duration, 2) {
+			return true
 		}
-		var begins []float64
-		for _, line := range strings.Fields(res.Stdout) {
-			if t, err := strconv.ParseFloat(strings.Trim(line, ","), 64); err == nil {
-				begins = append(begins, t)
-			}
+	}
+	return false
+}
+
+// unevenIn tells whether the frames from a moment on, for span seconds,
+// come off the grid of the rate: a frame that begins off the grid, or two
+// frames one after the other that are not one frame apart, because a
+// frame was left out or came twice. ffprobe reads from the key frame
+// before the moment, and the end is given as a moment too: a length is
+// counted from the key frame, so a read for a piece stopped short of it.
+// A file it cannot read is taken as even, the way it was taken before.
+func (e *Engine) unevenIn(ctx context.Context, path string, info SourceInfo, at, span float64) bool {
+	frame := float64(info.FPSDen) / float64(info.FPSNum)
+	first := info.origin + info.VideoStart
+	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+		"-read_intervals", fixed(info.origin+at, 3)+"%"+fixed(info.origin+at+span, 3),
+		"-show_entries", "packet=pts_time", "-of", "csv=p=0", path)
+	if res.Code != 0 {
+		return false
+	}
+	var begins []float64
+	for _, line := range strings.Fields(res.Stdout) {
+		if t, err := strconv.ParseFloat(strings.Trim(line, ","), 64); err == nil {
+			begins = append(begins, t)
 		}
-		// In the order they are shown, which B-frames change.
-		slices.Sort(begins)
-		for i, t := range begins {
-			k := (t - first) / frame
-			if math.Abs(k-math.Round(k))*frame > frameHair {
-				return true
-			}
-			if i > 0 && math.Abs(t-begins[i-1]-frame) > frameHair {
-				return true
-			}
+	}
+	// In the order they are shown, which B-frames change.
+	slices.Sort(begins)
+	for i, t := range begins {
+		k := (t - first) / frame
+		if math.Abs(k-math.Round(k))*frame > frameHair {
+			return true
+		}
+		if i > 0 && math.Abs(t-begins[i-1]-frame) > frameHair {
+			return true
+		}
+	}
+	return false
+}
+
+// unevenPieces is the episode with the pieces of a clip marked whose own
+// frames come at uneven times, in a file whose frames Probe found even
+// where it looked: a screen recorder that left out frames only somewhere
+// in the middle. Each piece reads the index of its own few seconds, from
+// the frame before it to the frame after. A marked piece is cut by the
+// frames' own times, see cutOf, and the short keeps the file's rate.
+func (e *Engine) unevenPieces(ctx context.Context, path string, s SourceInfo, segs []Segment) SourceInfo {
+	if s.Variable || !s.hasClock || s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return s
+	}
+	frame := float64(s.FPSDen) / float64(s.FPSNum)
+	s.unevenAt = nil
+	for _, seg := range segs {
+		from := max(seg.Start-frame, 0)
+		if e.unevenIn(ctx, path, s, from, seg.End+frame-from) {
+			s.unevenAt = append(s.unevenAt, [2]float64{seg.Start, seg.End})
+		}
+	}
+	return s
+}
+
+// unevenOver tells whether a piece was marked by unevenPieces.
+func (s SourceInfo) unevenOver(seg Segment) bool {
+	for _, at := range s.unevenAt {
+		if at[0] == seg.Start && at[1] == seg.End {
+			return true
 		}
 	}
 	return false

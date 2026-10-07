@@ -63,22 +63,10 @@ func entryOf(plan string, c engine.ClipView, cw, width int) ClipEntry {
 	return entry
 }
 
-// WindowView is a part of an episode, in seconds. A searched part
-// also says which plans cover it and how many clips they hold, so it can be
-// let go of again.
-type WindowView struct {
-	From  float64  `json:"from"`
-	To    float64  `json:"to"`
-	Plans []string `json:"plans,omitempty"`
-	Clips int      `json:"clips,omitempty"`
-}
-
-// CoverageView says where the model has already looked and what is left. A
-// new window may only be drawn in what is left, so the same material is
-// never put to the model twice.
+// CoverageView says how many searches have read each part of an episode.
+// It decides nothing about where a search may go: any window can be
+// searched, as often as anyone likes.
 type CoverageView struct {
-	Searched []WindowView `json:"searched"`
-	Free     []WindowView `json:"free"`
 	// Passes is the whole episode in parts, each with how many searches
 	// have read it, see engine.SearchPasses. New goes by it.
 	Passes []PassView `json:"passes"`
@@ -91,10 +79,9 @@ type PassView struct {
 	Times int     `json:"times"`
 }
 
-// Coverage gives the parts of an episode that have been searched for
-// clips and the parts that are still free, leaving out free parts
-// too short to hold a clip of least seconds.
-func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (CoverageView, error) {
+// Coverage gives the episode in parts by how many searches have read
+// each, see CoverageView.
+func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, error) {
 	if !s.store.Known(path) {
 		return CoverageView{}, errNotInLibrary
 	}
@@ -102,63 +89,11 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string, least float64) (
 	if err != nil {
 		return CoverageView{}, err
 	}
-	plans := plansOf(path)
-	looked := engine.SearchedPlans(plans, info.Duration)
-	searched := make([]engine.Window, 0, len(looked))
-	out := CoverageView{Searched: []WindowView{}, Free: []WindowView{}, Passes: []PassView{}}
-	for _, p := range engine.SearchPasses(plans, info.Duration) {
+	out := CoverageView{Passes: []PassView{}}
+	for _, p := range engine.SearchPasses(plansOf(path), info.Duration) {
 		out.Passes = append(out.Passes, PassView{From: p.Start, To: p.End, Times: p.Times})
 	}
-	for _, w := range looked {
-		searched = append(searched, w.Window)
-		out.Searched = append(out.Searched,
-			WindowView{From: w.Start, To: w.End, Plans: w.Plans, Clips: w.Clips})
-	}
-	for _, w := range engine.FreeWindows(searched, info.Duration, least) {
-		out.Free = append(out.Free, WindowView{From: w.Start, To: w.End})
-	}
 	return out, nil
-}
-
-// RemoveSearch gives a part of an episode back: the clips inside it
-// leave the list and the part is free to be searched again. It is a
-// part, not a whole search, so a part of what was searched can go while
-// the rest of it stays. A plan with nothing left of its window goes
-// altogether. Caption files are moved aside rather than deleted, and
-// rendered files stay where they are.
-//
-// It answers with how many clips went.
-func (s *FrameFairy) RemoveSearch(ctx context.Context, path string, from, to float64) (int, error) {
-	if !s.store.Known(path) {
-		return 0, errNotInLibrary
-	}
-	if to <= from {
-		return 0, nil
-	}
-	// The length is only needed to know when a plan made over the whole
-	// episode has nothing left. A file that cannot be read still lets its
-	// clips go.
-	duration := 0.0
-	if info, err := s.probe(ctx, path); err == nil {
-		duration = info.Duration
-	}
-	gone := 0
-	err := s.edit(path, func() error {
-		for _, plan := range plansOf(path) {
-			// A plan of this episode, named the way plans are named.
-			// Nothing else is touched, whatever the interface asks for.
-			if !s.store.PlanOf(path, plan.Path) {
-				continue
-			}
-			n, err := engine.RemoveRange(plan.Path, from, to, duration)
-			if err != nil {
-				return err
-			}
-			gone += n
-		}
-		return nil
-	})
-	return gone, err
 }
 
 // Captions gives the captions of one clip, on the clip's own clock and in

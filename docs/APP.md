@@ -991,8 +991,10 @@ bubble scrolled by those eight pixels.
       episode is one window and is searched whole each time. A window searched again keeps every
       clip there is: the model is told which lines are clips already and
       asked for other moments, and a search that brings none ends with
-      nothing added. New is never off for want of room, and its title
-      says whether it looks somewhere new or again.
+      nothing added. Nothing on the range picker is taken or given back:
+      the window goes anywhere and New searches it, as often as anyone
+      likes. New is never off for want of room, and its title says
+      whether it looks somewhere new or again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
       can, saying **Removed** and offering **Put it back**. The time left is
@@ -1512,9 +1514,8 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     does not turn it into Cancel. Cancel while a search runs stops all
     the work on the clips, the search and every clip on its way, and
     Continue carries all of it on.
-  - **It searched nothing**: the range picker marks nothing, and giving a
-    searched part back leaves it where it is. It goes the way every clip
-    goes, with its trash can.
+  - **It searched nothing**: it counts as no search of any part. It goes
+    the way every clip goes, with its trash can.
   - **Cut off by the app closing, or failed**, its card stays where the
     clip would have appeared, still, and a click carries it on.
 - **The thumbnail button**, in the row under the clip timeline, makes the

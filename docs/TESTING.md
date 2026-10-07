@@ -77,8 +77,12 @@ a camera switch would. Its sound is a steady tone. `shortFrames` and
 `shortSound` in `walks/bridge.mjs` read a short of it back from disk.
 With a timing its frames keep their numbers but not their times: `uneven`
 is a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
-`late` a picture that starts after its sound, by an edit list, which
-ffprobe reads as 0.233 s after it.
+`late` a picture that starts after its sound, by an edit list, on a
+clock of 1/90000 s so that ffprobe reads it as a true 0.25 s after it,
+7.49 frames at 29.97 a second. On the rate's own clock it came out a whole
+7 frames, 0.233 s, which is on the grid of the file's start, so frames
+counted from the file and from the picture were the same frames there and
+a mistake between the two could not be seen.
 
 A video filmed by two cameras, which `/pick` makes with a switch, has the
 same strip, and below it each camera looks at a chequerboard on its own
@@ -553,6 +557,12 @@ holds the moment. 114 and 121 frames are looked at, all of them the
 same, in three runs out of three. Against the render before 2.130 the
 phone's short is made at 50 frames a second and the late picture's
 holds 565 frames where its pieces last 564.
+
+The late picture's sequence also checks, after the trim and the two cuts,
+that every edge the hand put lands on one of the picture's own frames,
+counted from where ffprobe says the picture starts, and not from the
+start of the file, plan row 2.137. Against the app before 2.137 every one
+of them was 0.49 of a frame from the picture's frames.
 
 Ported to the frame queue, 2.123, the playback walk found within two
 steps that a clip played from a playhead inside a frame stopped at its

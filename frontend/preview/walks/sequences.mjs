@@ -104,6 +104,10 @@
 //                      the picture comes from the Go side, and n clicks
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
+//   ["on frames"]      every edge of the clip the hand put, all but its
+//                      end and any before the picture starts, lands on
+//                      one of the picture's own frames, counted from where
+//                      the picture starts, the frames the render cuts on
 //   ["resize"]         drags the app's height and then its width a pixel at
 //                      a time, down to the app's smallest, and on every step every part of the
 //                      workspace moves only one way the whole drag, stands
@@ -425,6 +429,9 @@ export const sequences = [
       ["cut at", 0.3],
       ["cut at", 0.7],
       ["cuts", 2],
+      // Plan row 2.137: edges counted from the start of the file stood
+      // half a frame from the picture's own, which starts 0.25 s in.
+      ["on frames"],
       ["render"],
       ["as previewed", "30000/1001", 0.5],
     ],
@@ -1245,6 +1252,32 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
         await page.locator("aside ol li[data-key] button.pick").first().click();
         await settle(page);
+        break;
+      }
+      case "on frames": {
+        // Where the picture starts, read from the file by ffprobe rather
+        // than from the app, which is what is being checked: the picture's
+        // first timestamp after the file's own start.
+        const path = await episodeOn(page);
+        const { fps } = await ask(page, "Source", path);
+        const read = (args) => Number(execFileSync("ffprobe", ["-v", "error", ...args, "-of", "csv=p=0", path]).toString().trim());
+        const videoStart = read(["-select_streams", "v:0", "-show_entries", "stream=start_time"]) - read(["-show_entries", "format=start_time"]);
+        const { segments } = await engineState(page, watch.at);
+        // Before the picture starts there is no frame to land on: a start
+        // dragged there takes the picture from its first frame.
+        const edges = segments
+          .flatMap((p) => [p.start, p.end])
+          .slice(0, -1)
+          .filter((t) => t >= videoStart - 1e-6);
+        // Edges are kept to the millisecond, a thirtieth of a frame here.
+        const off = edges
+          .map((t) => ({ t, by: Math.abs((t - videoStart) * fps - Math.round((t - videoStart) * fps)) }))
+          .filter((e) => e.by > 0.001 * fps + 1e-6);
+        if (off.length) {
+          wrong = `the picture starts at ${videoStart.toFixed(4)} s, and ${off
+            .map((e) => `${e.t.toFixed(3)} is ${e.by.toFixed(2)} of a frame from its frames`)
+            .join(", ")}`;
+        }
         break;
       }
       case "resize":

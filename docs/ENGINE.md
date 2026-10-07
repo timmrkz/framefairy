@@ -136,6 +136,13 @@ while its timestamps stay right. The samples in the pipe carry no time,
 so the part started late by that much. Cut by timestamp, it lands with
 both, and a render's sound does the same, see `soundLead`.
 
+A part that starts before a late picture's first frame is read from the
+start of the file instead, because ffmpeg seeks every stream to the key
+frame of the picture and a seek there hands back sound from where the
+picture starts, up to a tenth of a second out of step. The render reads
+that sound the same way, see `leadOf`, and
+`TestSoundResumedBeforeALatePictureIsTheSoundThere` holds it.
+
 Each part is read with 3 s of audio on either side, `hearingPad`, so every
 word in it is heard whole: audio cut inside a word is heard as another
 word. Where two parts meet, `addHeard` keeps each word once. A word belongs
@@ -545,11 +552,11 @@ moment given twice. A pass that brings nothing new writes a plan with no
 clips, so it still counts as a pass. `SearchPasses` cuts the episode into
 parts by how many searches have read them, and the app's New goes where the
 fewest have been, earliest first. A plan
-carries the window it was made over in `planned_with`, and the parts of
-it that were given back again in `planned_with.removed`, so a search is a
-window with holes in it. `RemoveRange` makes a hole: the clips inside the
-part go, and a plan with nothing
-left of its window goes altogether.
+carries the window it was made over in `planned_with`. No part of an
+episode is ever taken or given back: any window can be searched, as often
+as anyone likes, and a clip goes the way every clip goes, removed from its
+row. A plan written before this may still hold `planned_with.removed`, the
+parts once given back, which nothing reads any more.
 
 ## Captions on the frames they belong to
 
@@ -663,7 +670,12 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   `Probe` reads the timestamps in four stretches of two seconds across the
   file, `uneven`, and marks it `Variable` when a frame begins off the grid
   of the rate or two frames are not one frame apart, give or take
-  `frameHair`, a millisecond. Counted by number, a piece of such a file
+  `frameHair`, a millisecond. Reading every timestamp would read the
+  whole file, gigabytes for an episode of a few hours, at every probe, so
+  a render also reads the timestamps of each piece it cuts, from the
+  frame before it to the frame after, `unevenPieces`, and cuts a piece
+  whose own frames are uneven by their times. The short keeps the file's
+  rate then. Counted by number, a piece of such a file
   took as many frames as it should last, whatever time they cover: with
   frames left out, a short of four pieces came out 88 frames long for 86,
   its sound 74 ms longer than its picture and a piece heard 35 ms away
@@ -680,6 +692,17 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   and was right for both kinds already: on files ffmpeg made of both
   kinds, every time it read agreed with ffprobe to a microsecond. The
   sound is cut at the same moments as before.
+- **Every track starting late.** A recording cut out of a longer one, or
+  one written with its start held back, has no track that starts at zero.
+  ffmpeg counts from where the earliest track starts, `-ss` included, and
+  so does every time in the engine. The video preview counted from the
+  movie's own zero, so the two were apart by as long as the earliest
+  track was late: 0.476 s in a file ffmpeg wrote with its start held back
+  half a second. `parseMoov` in `frontend/src/lib/frames/mp4.ts` now
+  counts from where ffmpeg does. A track starts where its edit list puts
+  it and never before, so the priming cut off the front of AAC does not
+  move a plain file, and on files ffmpeg made, plain and held back, in
+  MP4 and in MOV, every time it reads agrees with ffprobe's.
 - **The rate of a short of uneven frames.** The rate ffmpeg reports for
   uneven frames is the finest step they keep to, not how many come a
   second: 50 for the phone's frames above, which average 29.75, so its
@@ -1260,8 +1283,7 @@ model's scanner uses too. The builder shapes, frames and writes it into
 `clips-hand.json`, a set that grows, `PlanOptions.Grows`, whose clips each
 take the next number under the set's lock as they are written. The set
 says it was made by hand, `planned_with.by`, and `madeOver` reads that as
-made over no part of the episode, so it marks nothing searched and giving
-a part back leaves it alone.
+made over no part of the episode, so it counts as no search of any part.
 
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
@@ -1287,8 +1309,7 @@ Everything else is in `engine/`:
                 into lines. recipe_stories.go is the stories recipe
   recipe_stories2.go the lines brief with the transcript written as stories
   compare.go    one window searched with several recipes, and the report
-  windows.go    where the model has already looked, and the passes over
-                a window searched again
+  windows.go    how many searches have read each part of an episode
   fit.go        clips well off the length asked for again, measured
   heart.go      the heart recipe, and fitting a clip around its heart
   prompts.go    prompts kept as text in prompts/, the lean transcripts, and
