@@ -148,9 +148,15 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh ffmpeg
+      # A test that fails is named on the check, see
+      # scripts/test-failures.sh, so finding it needs no log.
       - name: Go tests
         if: steps.needs.outputs.run == 'true'
-        run: make unit
+        run: |
+          make unit 2>&1 | tee unit.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
+          exit "$status"
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
@@ -198,9 +204,15 @@ jobs:
         run: |
           make frontend/node_modules/.package-lock.json
           cd frontend && npm exec -- playwright install --with-deps chromium
+      # A walk or a sequence that breaks a rule is named on the check, see
+      # scripts/test-failures.sh.
       - name: Sequences and walks
         if: steps.needs.outputs.run == 'true'
-        run: make walks
+        run: |
+          make walks 2>&1 | tee walks.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
+          exit "$status"
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
@@ -309,7 +321,79 @@ jobs:
           fi
       - name: Go tests
         if: steps.needsgo.outputs.run == 'true'
-        run: make unit
+        run: |
+          make unit 2>&1 | tee unit.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
+          exit "$status"
+
+  # The app on a Mac, opened from outside it: a link in the letter a buyer
+  # gets, handed to macOS with the app closed and with it open, with the
+  # local dispenser running beside it. See From outside the app in
+  # docs/TESTING.md. Its own job, because it is the only one that needs a
+  # keychain of its own, a dispenser and an app registered with Launch
+  # Services, and none of that belongs on the machines the other jobs use.
+  outside:
+    runs-on: macos-latest
+    # The app is opened by macOS and nothing ends it but the test. A run
+    # that hangs stops here, not at GitHub's six hours.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: needs
+        run: sh scripts/ci-needs.sh outside >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # The same ffmpeg and llama-server as the job macos, from the same
+      # caches: the app runs no other, so make stops without them.
+      - id: ffmpeg
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: The ffmpeg we ship
+        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          brew install meson ninja pkg-config nasm cmake
+          sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - id: llama
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/llama
+          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+      - name: The llama-server we ship
+        if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
+        run: |
+          brew install cmake
+          sh scripts/build-llama.sh .build/llama
+      # Unlock writes the key to the default keychain. A locked one puts a
+      # box on screen that nobody here can answer, so this one is made
+      # unlocked, never locks again and becomes the default.
+      - name: A keychain of its own
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          kc="$RUNNER_TEMP/outside.keychain-db"
+          security create-keychain -p outside "$kc"
+          security set-keychain-settings "$kc"
+          security unlock-keychain -p outside "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$kc"
+      - name: Opened from outside
+        if: steps.needs.outputs.run == 'true'
+        run: make outside
 
   # Fuzzing on macOS as well, for the two targets that are about paths: the
   # Mac's disk takes names in either case and some Unicode written in two
