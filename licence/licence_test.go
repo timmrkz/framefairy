@@ -92,6 +92,9 @@ func TestExamplesInTheSpecCheck(t *testing.T) {
 			if l.ID.String() != ex.id {
 				t.Fatalf("ID shows as %s, want %s", l.ID, ex.id)
 			}
+			if got, err := ex.key.ID(); err != nil || got != l.ID {
+				t.Fatalf("the key reads its ID as %s, %v", got, err)
+			}
 			if ex.fingerprint != "" && ex.key.Fingerprint().String() != ex.fingerprint {
 				t.Fatalf("fingerprint %s, want %s", ex.key.Fingerprint(), ex.fingerprint)
 			}

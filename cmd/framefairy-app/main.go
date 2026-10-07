@@ -294,9 +294,9 @@ type FrameFairy struct {
 	saidBy string
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
-	// linkKey is a licence key a framefairy:// link brought, waiting for
+	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
-	linkKey string
+	link *LicenceLink
 }
 
 // Updates says which build is running, which channel it follows and how far
