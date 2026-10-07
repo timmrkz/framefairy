@@ -123,6 +123,8 @@
 //                      the clip's short is the one kept, under the same
 //                      name with no number, written again since, and no
 //                      other short appeared in its folder
+//   ["by its words"]   the clip's short is named after the clip's words
+//                      alone, <slug>.mp4, with nothing of its id
 //   ["pictured"]       the short's pictures, one for each thumbnail of the
 //                      clip, lie beside it in its episode's folder, and no
 //                      picture more
@@ -427,7 +429,7 @@ export const sequences = [
     // Render went on saying Render and Show in folder never came. After
     // a restart too, because where the short went is kept on disk.
     name: "a short rendered into the folder for shorts is known as rendered",
-    steps: [["render"], ["rendered"], ["restart"], ["rendered"]],
+    steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
   },
   {
     // Plan row 2.133, found while 2.127 was fixed: a short is named after
@@ -1268,13 +1270,21 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const short = await shortOf(page, on);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
         const file = short && existsSync(short) ? statSync(short) : null;
-        kept[arg] = { ...on, name: entry?.basename, short, file };
+        kept[arg] = { ...on, name: entry?.slug, short, file };
         if (!file) {
           wrong = `the clip has no short to keep${short ? `, nothing is at ${short}` : ""}`;
           break;
         }
         kept[arg].shorts = shortsIn(dirname(short));
         kept[arg].pictures = picturesOf(short).map((p) => ({ path: p, file: statSync(p) }));
+        break;
+      }
+      case "by its words": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const short = await shortOf(page, on);
+        if (!short || !existsSync(short)) wrong = "the clip has no short in its folder";
+        else if (basename(short) !== `${entry?.slug}.mp4`) wrong = `the short is called ${basename(short)}, not ${entry?.slug}.mp4`;
         break;
       }
       case "pictured": {
@@ -1319,7 +1329,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const now = existsSync(was.short) ? statSync(was.short) : null;
         const theirs = await shortOf(page, was);
         if (on.path === was.path) wrong = `the clip on screen is of the episode kept at "${label}"`;
-        else if (entry?.basename !== was.name) wrong = `the clips are named ${was.name} and ${entry?.basename}, which never meet in one folder`;
+        else if (entry?.slug !== was.name) wrong = `the clips are named ${was.name} and ${entry?.slug}, which never meet in one folder`;
         else if (!short) wrong = "the clip on screen says it has no short";
         else if (short === was.short) wrong = `both episodes' shorts are ${short}`;
         else if (!now || now.ino !== was.file.ino || now.mtimeMs !== was.file.mtimeMs) {

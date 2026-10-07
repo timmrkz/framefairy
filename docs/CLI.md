@@ -57,15 +57,19 @@ episode.framefairy/
 └── out/               the finished clips and their thumbnails
 ```
 
+A short is named after its clip's words, without the clip's id,
+`ich-merke-dass-das-immer-schwer-ist.mp4`, or `clip.mp4` for a clip with
+no words. Where a file the clip did not write has the name, the short
+gets a number, the way Finder gives one, `… 2.mp4`.
+
 The plan notes, under `shorts`, where each clip's short was rendered,
 in `out/` or `--out`, with its size and the time it was written, so the
 app knows a clip is rendered wherever it went, and knows a short of the
 same name that another episode wrote over it is not the clip's, see
-[ENGINE.md](ENGINE.md#where-a-short-went). `--out` is the folder itself:
-two episodes rendered into one `--out` write over each other's shorts of
-the same name, as they always did. The app gives every episode a folder
-of its own in its folder for shorts instead. A plan given with `--clips`
-from outside `logs/` is left as it is.
+[ENGINE.md](ENGINE.md#where-a-short-went). `--out` is the folder itself.
+The app gives every episode a folder of its own in its folder for shorts
+instead. A plan given with `--clips` from outside `logs/` is left as it
+is, so each render of it takes a name that is free.
 
 A clip whose plan lists `thumbnails`, moments of the episode in seconds,
 gets a picture of the short at each of them, `<name>-1.jpg`, `<name>-2.jpg`

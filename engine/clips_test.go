@@ -386,3 +386,9 @@ func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestAClipWithoutWordsIsCalledClip(t *testing.T) {
+	if got := (Clip{ID: "h01"}).ShortName(); got != "clip" {
+		t.Errorf("a clip without words is called %q", got)
+	}
+}
