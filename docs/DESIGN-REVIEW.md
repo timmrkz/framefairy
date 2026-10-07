@@ -129,8 +129,8 @@ And test against the ffmpeg we ship, see the last family.
 ### The interface rebuilds Go's state: live, about 10 pull requests
 
 ROBUSTNESS 5, 8 and 12, #2, #37, #52, #56, #104, #63, the rule "what
-watches running work does not watch the job", and 2.131 and 2.132, both
-open. See the interface section below.
+watches running work does not watch the job", and 2.131, open, and 2.132,
+fixed since in #133. See the interface section below.
 
 ### Tested in Chromium, shipped in WebKit: live, about 8 pull requests
 
