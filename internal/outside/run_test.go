@@ -57,7 +57,18 @@ type state struct {
 		Line     string `json:"line"`
 		Mark     string `json:"mark"`
 	} `json:"page"`
-	Problem string `json:"problem"`
+	Searches []search `json:"searches"`
+	Problem  string   `json:"problem"`
+}
+
+// search is one search the app knows of, SearchView there.
+type search struct {
+	Episode string  `json:"episode"`
+	State   string  `json:"state"`
+	Step    string  `json:"step"`
+	From    float64 `json:"from"`
+	To      float64 `json:"to"`
+	Error   string  `json:"error"`
 }
 
 var client = &http.Client{Timeout: 10 * time.Second}
@@ -72,7 +83,7 @@ func TestSequences(t *testing.T) {
 		t.Fatal("make outside says where the app and the dispenser are")
 	}
 	run(t, lsregister, "-f", app)
-	m := &mac{dispenserProgram: disp}
+	m := &mac{dispenserProgram: disp, app: app, ffmpeg: filepath.Join(filepath.Dir(disp), "ffmpeg")}
 	t.Cleanup(func() {
 		if t.Failed() {
 			showLog(t)
@@ -93,9 +104,14 @@ func TestSequences(t *testing.T) {
 // started, and the keys the sequence bought.
 type mac struct {
 	dispenserProgram string
-	stopDispenser    func()
-	bought           int
-	keys             []string
+	// The app and the ffmpeg make outside put beside the dispenser.
+	app    string
+	ffmpeg string
+	// video is the video added last.
+	video         string
+	stopDispenser func()
+	bought        int
+	keys          []string
 }
 
 // play runs a sequence's steps in order. The first that fails ends it,
@@ -164,6 +180,32 @@ var done = map[string]func(m *mac, args []string) error{
 	},
 	"waiting": func(m *mac, a []string) error {
 		return m.check(func(s state) bool { return s.Licence.Waiting == (a[0] == "yes") })
+	},
+	"start":           (*mac).start,
+	"add video":       (*mac).addVideo,
+	"search and quit": (*mac).searchAndQuit,
+	"search ends": func(m *mac, _ []string) error {
+		return m.check(func(s state) bool {
+			for _, j := range s.Searches {
+				if j.Episode == m.video && (j.State == "running" || j.State == "queued") {
+					return false
+				}
+			}
+			return true
+		})
+	},
+	"search": func(m *mac, a []string) error {
+		from, _ := strconv.ParseFloat(a[1], 64)
+		to, _ := strconv.ParseFloat(a[2], 64)
+		return m.check(func(s state) bool {
+			var last *search
+			for i, j := range s.Searches {
+				if j.Episode == m.video {
+					last = &s.Searches[i]
+				}
+			}
+			return last != nil && last.State == a[0] && last.From == from && last.To == to
+		})
 	},
 }
 
@@ -330,6 +372,74 @@ func (m *mac) openLink(a []string) error {
 		}
 		return s.Links >= want, fmt.Sprintf("the app was handed %d links", s.Links)
 	})
+}
+
+// start starts the app the way the Dock does, and waits until it answers.
+func (m *mac) start(_ []string) error {
+	if out, err := exec.Command("open", m.app).CombinedOutput(); err != nil {
+		return fmt.Errorf("open: %v: %s", err, out)
+	}
+	return within(startWithin, func() (bool, string) {
+		_, err := ask()
+		if err != nil {
+			return false, err.Error()
+		}
+		return true, ""
+	})
+}
+
+// addVideo makes a video of a test picture and a tone, with the ffmpeg the
+// app carries, and adds it the way Add does once a file is picked.
+func (m *mac) addVideo(a []string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(home, "Movies", "outside")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	video := filepath.Join(dir, fmt.Sprintf("episode-%d.mp4", time.Now().UnixNano()))
+	out, err := exec.Command(m.ffmpeg, "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d="+a[0],
+		"-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d="+a[0],
+		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", video).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("making the video: %v: %s", err, out)
+	}
+	if err := post("/add?video=" + url.QueryEscape(video)); err != nil {
+		return err
+	}
+	m.video = video
+	return nil
+}
+
+// searchAndQuit asks for a search and quits the app in the same moment,
+// and waits until it is gone.
+func (m *mac) searchAndQuit(a []string) error {
+	q := url.Values{"video": {m.video}, "from": {a[0]}, "to": {a[1]}, "quit": {"1"}}
+	if err := post("/search?" + q.Encode()); err != nil {
+		return err
+	}
+	return within(checkWithin, func() (bool, string) {
+		_, err := ask()
+		return err != nil, "the app still answers"
+	})
+}
+
+// post asks the probe for something and says what it answered, unless
+// that was a yes.
+func post(path string) error {
+	resp, err := client.Post(probe+path, "text/plain", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("the probe answered %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
 }
 
 func (m *mac) bringForward(a []string) error {

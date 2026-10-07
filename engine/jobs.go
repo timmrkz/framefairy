@@ -429,16 +429,23 @@ func (j *job) fail(reason string) {
 // What was heard stays however the search ends, and the next search
 // carries on from there.
 func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan string, err error) {
+	// The record first, before anything that can be cut off, so a search
+	// the app closes on says it was interrupted, however early: working
+	// out the pass of a window asks ffmpeg for the episode's length, and a
+	// search cancelled there once left no record at all.
+	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, From: req.From, To: req.To,
+		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass})
+	defer j.end(&err)
+
 	// A new search is the next pass over its window, with a plan of its
 	// own beside the ones before it, and keeps every clip they have.
 	if req.Pass == 0 {
 		if req.Pass, err = p.nextPass(ctx, req); err != nil {
 			return "", err
 		}
+		j.rec.Pass = req.Pass
+		j.write()
 	}
-	j := p.startJob(JobRecord{ID: SearchID, Kind: JobSearch, From: req.From, To: req.To,
-		Count: req.Count, Min: req.Min, Max: req.Max, Replan: req.Replan, Pass: req.Pass})
-	defer j.end(&err)
 
 	end, err := p.windowEnd(ctx, req)
 	if err != nil {

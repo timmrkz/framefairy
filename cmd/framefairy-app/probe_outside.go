@@ -17,9 +17,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
+	"framefairy/engine"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -76,8 +78,21 @@ type ProbeState struct {
 	// Focused is whether the app's window is the one in front.
 	Focused bool     `json:"focused"`
 	Page    PageView `json:"page"`
+	// Searches is every search the app knows of, as the clip list reads
+	// them: running, or how one ended.
+	Searches []SearchView `json:"searches"`
 	// Problem says why the page could not be read, if it could not.
 	Problem string `json:"problem,omitempty"`
+}
+
+// SearchView is one search, the way the clip list reads it.
+type SearchView struct {
+	Episode string  `json:"episode"`
+	State   string  `json:"state"`
+	Step    string  `json:"step,omitempty"`
+	From    float64 `json:"from"`
+	To      float64 `json:"to"`
+	Error   string  `json:"error,omitempty"`
 }
 
 type probe struct {
@@ -141,13 +156,21 @@ func startProbe(svc *FrameFairy) {
 	mux.HandleFunc("GET /state", theProbe.state)
 	mux.HandleFunc("POST /click", theProbe.click)
 	mux.HandleFunc("POST /quit", theProbe.quit)
+	mux.HandleFunc("POST /add", theProbe.add)
+	mux.HandleFunc("POST /search", theProbe.search)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	log.Printf("outside probe on %s", probeAddr)
 }
 
 func (p *probe) state(w http.ResponseWriter, _ *http.Request) {
-	s := ProbeState{Licence: p.svc.Licence()}
+	s := ProbeState{Licence: p.svc.Licence(), Searches: []SearchView{}}
+	for _, j := range p.svc.jobs.list() {
+		if j.Kind == engine.JobSearch {
+			s.Searches = append(s.Searches, SearchView{Episode: j.Episode, State: j.State, Step: j.Step,
+				From: j.From, To: j.To, Error: j.Error})
+		}
+	}
 	p.mu.Lock()
 	s.Links = p.links
 	p.mu.Unlock()
@@ -261,6 +284,60 @@ func (p *probe) quit(w http.ResponseWriter, _ *http.Request) {
 	}
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		p.svc.app.Quit()
+		p.quitNow()
 	}()
+}
+
+// quitNow quits the app the way the second Cmd+Q does: everything stops,
+// and then the app goes. app.Quit alone asks ShouldQuit, which takes it for
+// a first Cmd+Q and only asks, so the app stayed open.
+func (p *probe) quitNow() {
+	l := p.svc.leave
+	l.stop()
+	l.mu.Lock()
+	l.going, l.gone = true, true
+	l.mu.Unlock()
+	p.svc.app.Quit()
+}
+
+// add adds a video to the library, the way Add does once the system's box
+// hands it over: POST /add?video=path. Its first search starts by itself.
+func (p *probe) add(w http.ResponseWriter, r *http.Request) {
+	video := r.URL.Query().Get("video")
+	added, err := p.svc.addEpisodes([]string{video})
+	if err != nil || len(added) != 1 {
+		http.Error(w, fmt.Sprintf("%s was not added: %v", video, err), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// search asks for a search of a window of a video, the way New does:
+// POST /search?video=path&from=30&to=60. With quit=1 the app quits in the
+// same moment, the way the second Cmd+Q does: everything is stopped first,
+// then the app goes. The walk searching.mjs found a search asked for then
+// was lost, see TestPathClosedTheMomentASearchIsAsked.
+func (p *probe) search(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	from, err1 := strconv.ParseFloat(q.Get("from"), 64)
+	to, err2 := strconv.ParseFloat(q.Get("to"), 64)
+	if err1 != nil || err2 != nil {
+		http.Error(w, "say the window, from and to, in seconds", http.StatusBadRequest)
+		return
+	}
+	set := p.svc.store.Settings()
+	job := p.svc.Search(q.Get("video"), engine.PlanRequest{From: from, To: to, Count: 1, Min: set.Min, Max: set.Max})
+	if q.Get("quit") == "1" {
+		// Stopped before the answer goes, so the search is cut off where
+		// it stands, in the moment it was asked for.
+		p.svc.leave.stop()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(job)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	if q.Get("quit") == "1" {
+		go p.quitNow()
+	}
 }
