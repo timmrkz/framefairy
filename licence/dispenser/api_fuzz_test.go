@@ -1,6 +1,8 @@
 package dispenser
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -64,6 +66,8 @@ func FuzzRequests(f *testing.F) {
 	f.Add("/v1/lost", `{"email":"anna@example.com"}`)
 	f.Add("/v1/orders", `{"ref":"1","seats":1,"email":"a@b.c"}`)
 	f.Add("/v1/orders/1/revoke", `{"why":"refund"}`)
+	f.Add("/v1/thanks/txn_01", `{"nonce":"`+nonceA+`"}`)
+	f.Add("/v1/thanks/txn_01", `{"nonce":"`+nonceA+`","more":1}`)
 	f.Add("/v1/lost", `{"email":`)
 	f.Add("/v1/orders", `{"seats":1e400}`)
 	w := newWeb(f, false)
@@ -83,6 +87,42 @@ func FuzzRequests(f *testing.F) {
 		w.h.ServeHTTP(rec, req)
 		if rec.Code >= 500 && rec.Code != 503 {
 			t.Fatalf("POST %s %q: %d %s", path, body, rec.Code, rec.Body)
+		}
+	})
+}
+
+// FuzzThanks reads any custom data as a sale's nonce, and sends the
+// thank-you endpoint any nonce for a sale made with nonceA and one made
+// with none. What a sale keeps of its custom data is always a hash or
+// nothing, and the keys show only for the very nonce the sale was made
+// with.
+func FuzzThanks(f *testing.F) {
+	f.Add(nonceA, nonceA)
+	f.Add(nonceB, nonceB)
+	f.Add("", "")
+	f.Add(strings.ToUpper(nonceA), nonceA)
+	f.Add(nonceA+"\x00", nonceA+" ")
+	f.Add(`","x":"`, `","x":"`)
+	w := newWeb(f, false)
+	w.stock(2)
+	w.sell("txn_a", 1, nonceA)
+	w.sell("txn_b", 1, "")
+	f.Fuzz(func(t *testing.T, custom, nonce string) {
+		h := ThanksHash(custom)
+		if (h != "") != checkNonce(custom) || (h != "" && (!tokenHash(h) || h != TokenHash(custom))) {
+			t.Fatalf("custom data %q is kept as %q", custom, h)
+		}
+		if checkOrder(Order{Source: "paddle", Ref: "txn_1", Seats: 1, At: now, Thanks: h}) != nil {
+			t.Fatalf("custom data %q would stop the sale", custom)
+		}
+		body, _ := json.Marshal(map[string]string{"nonce": nonce})
+		for _, ref := range []string{"txn_a", "txn_b"} {
+			req := httptest.NewRequest("POST", "/v1/thanks/"+ref, bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+			w.h.ServeHTTP(rec, req)
+			if (rec.Code == 200) != (ref == "txn_a" && nonce == nonceA) || rec.Code >= 500 {
+				t.Fatalf("%s with nonce %q: %d %s", ref, nonce, rec.Code, rec.Body)
+			}
 		}
 	})
 }
