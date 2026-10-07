@@ -1070,9 +1070,9 @@ export const Call = {
         licence.about = typed ? describeKey(typed) : "";
         return new Promise((resolve) => setTimeout(() => resolve(licenceNow()), 400));
       }
-      case "CopyLicence":
-        (window as any).__copied = licence.key;
-        return licence.saved && !location.search.includes("denied") ? Promise.resolve() : Promise.reject(new Error("the Mac did not hand the key over. Click the key ID to try again, and choose Allow when it asks"));
+      case "Copy":
+        (window as any).__copied = String(args[0]);
+        return location.search.includes("denied") ? Promise.reject(new Error("the clipboard did not take it")) : Promise.resolve();
       case "TakeLicenceLink": {
         const l = licence.link ?? { what: "", key: "", about: "", reason: "" };
         licence.link = null;

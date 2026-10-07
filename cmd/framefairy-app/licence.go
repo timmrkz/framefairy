@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"log"
 	"net/url"
@@ -50,7 +49,6 @@ type LicenceLink struct {
 var (
 	savedLicence = engine.SavedLicence
 	saveLicence  = engine.SaveLicence
-	keptLicence  = engine.KeptLicence
 )
 
 // Licence is the Licence row as it stands.
@@ -71,16 +69,13 @@ func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
 	return s.Licence(), nil
 }
 
-// CopyLicence puts the kept key on the clipboard, for a password manager or
-// another Mac. The Go side copies it, so the key never passes through the
-// page.
-func (s *FrameFairy) CopyLicence() error {
-	key, ok := keptLicence(context.Background())
-	if !ok {
-		return errors.New("the Mac did not hand the key over. Click the key ID to try again, and choose Allow when it asks")
-	}
-	if !s.copyText(key) {
-		return errors.New("the key could not be put on the clipboard")
+// Copy puts text on the clipboard: the key ID, which is what support asks
+// for. The key itself is never read back out of the keychain, because
+// nothing a customer does needs it: it is in the letter it came in, and
+// the lost-key page sends it again.
+func (s *FrameFairy) Copy(text string) error {
+	if !s.copyText(text) {
+		return errors.New("the clipboard did not take it")
 	}
 	return nil
 }

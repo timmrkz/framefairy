@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"crypto/ed25519"
 	"errors"
 	"fmt"
@@ -92,12 +91,6 @@ func SaveLicence(text string, testKeys bool) (string, error) {
 		return "", fmt.Errorf("the key could not be kept in the keychain: %w", err)
 	}
 	return about, nil
-}
-
-// KeptLicence reads the kept key itself, for the one thing that needs it:
-// copying it, for a password manager. The settings never show it.
-func KeptLicence(ctx context.Context) (string, bool) {
-	return keys.get(ctx, licenceItem)
 }
 
 // SavedLicence says whether a key is kept, and how it was described when

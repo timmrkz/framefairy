@@ -260,13 +260,13 @@
   let copied = $state(false);
   let copyRefused = $state("");
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-  async function copyLicence() {
+  async function copyKeyID(id: string) {
     copied = true;
     copyRefused = "";
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copied = false), 1500);
     try {
-      await api.copyLicence();
+      await api.copy(id);
     } catch (err) {
       copied = false;
       copyRefused = sentence(errorText(err));
@@ -1028,9 +1028,9 @@
                   {#if part.kept}<button
                       class="key-id kept"
                       class:copied
-                      title="Copy the licence key, for a password manager or another Mac"
-                      aria-label={copied ? "Copied" : `Copy the licence key, key ID ${part.text}`}
-                      onclick={copyLicence}
+                      title="Copy the key ID, which is what support asks for"
+                      aria-label={copied ? "Copied" : `Copy key ID ${part.text}`}
+                      onclick={() => copyKeyID(part.text)}
                       ><Busy motes={false} /><span>{part.text}</span><Icon
                         name={copied ? "check" : "copy"}
                         size={14}
@@ -1038,8 +1038,8 @@
                     >{:else if part.id}<span class="key-id">{part.text}</span>{:else}{part.text}{/if}
                 {/each}
               </span>
-              <!-- Why the key could not be copied, under the key ID, which
-                   stays where it is to be clicked again. -->
+              <!-- Why the key ID could not be copied, under it, where it
+                   stays to be clicked again. -->
               {#if copyRefused}<span class="small line whole error">{copyRefused}.</span>{/if}
             </div>
             {#if !licence.saved}
@@ -1445,7 +1445,7 @@
 
   /* A key ID, in one width, on a block of its own, the way code is set in
      a README, in the quieter grey of a line under a name rather than in
-     white. The kept key's is a button that copies the key itself, and it
+     white. The kept key's is a button that copies the key ID, and it
      wears the beam from Busy, the same beam, turned well down: nothing is
      running, it only says this is what was bought. */
   .key-id {
