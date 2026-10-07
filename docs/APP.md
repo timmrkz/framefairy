@@ -1084,7 +1084,11 @@ bubble scrolled by those eight pixels.
 - **One row under the clip up close**, so the range picker and the waveform
   stand together with nothing between them: play, loop and the crosshair
   that goes to the playhead, with **L** for loop the way **T** is the
-  thumbnail's, as the three marks anyone knows, then the
+  thumbnail's, as the three marks anyone knows. Loop switched on or off
+  while the clip plays changes nothing that plays until the clip's end:
+  the play goes on as it was. It was started again from the playhead,
+  and the picture and the sound stopped for a tenth of a second at every
+  press. Then the
   title of the selected clip, why it was chosen and its numbers, and on the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
