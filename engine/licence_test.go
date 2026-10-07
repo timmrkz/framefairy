@@ -68,7 +68,7 @@ func TestALicenceIsKeptAndDescribedWithoutReadingIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(about, "Lena Fischer") || !strings.Contains(about, "test key") || !strings.Contains(about, "0102-0304-0506-0708") {
+	if about != "Key ID 0102-0304-0506-0708, licensed to Lena Fischer" {
 		t.Fatalf("described as %q", about)
 	}
 	reads := k.reads

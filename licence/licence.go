@@ -247,6 +247,14 @@ func Check(k Key, t Trust) (Licence, error) {
 	return l, nil
 }
 
+// ID is the key ID a key says it has, read without weighing its signature.
+// It is for showing a key that was checked when it was taken in, as the
+// dispenser does with every key it holds, and never for trusting one.
+func (k Key) ID() (ID, error) {
+	l, _, _, err := read(k)
+	return l.ID, err
+}
+
 // read takes k apart without weighing its signature.
 func read(k Key) (l Licence, fields, sig []byte, err error) {
 	s := string(k)

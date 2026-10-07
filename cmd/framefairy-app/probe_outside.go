@@ -54,8 +54,11 @@ const probePage = "/__outside/page"
 
 // PageView is what the settings show, read out of the page itself.
 type PageView struct {
-	// Settings is whether the settings are on screen: the Licence field is.
+	// Settings is whether the settings are on screen: the Licence card is.
 	Settings bool `json:"settings"`
+	// Head is the name of the row, Licence key, or Licensed once a key is
+	// kept.
+	Head string `json:"head"`
 	// Key is what the Licence field holds.
 	Key string `json:"key"`
 	// Line is the words under Licence key.
@@ -215,17 +218,22 @@ func (p *probe) ask(script string) (json.RawMessage, error) {
 	}
 }
 
-// pageScript reads the Licence row, found by its field's label: the
-// settings have another field of the same kind, for the API keys.
+// pageScript reads the Licence row, found by the head of its group. Its
+// field is there only while a key is asked for, and reads as empty when
+// it is not.
 const pageScript = `() => {
-  const field = document.querySelector('input[aria-label="Licence key"]');
-  const card = field ? field.closest(".card") : null;
+  const group = [...document.querySelectorAll(".group")].find(
+    (g) => g.querySelector("h2")?.textContent.trim() === "Licence",
+  );
+  const card = group ? group.querySelector(".card") : null;
   const pick = (s) => (card ? card.querySelector(s) : null);
+  const field = pick('input[aria-label="Licence key"]');
   const line = pick(".words .line");
   const mark = pick(".mark");
   const button = pick("button.unlock");
   return {
-    settings: !!field,
+    settings: !!card,
+    head: pick(".words .head")?.textContent.trim() ?? "",
     key: field ? field.value : "",
     line: line ? line.textContent.trim() : "",
     mark: mark ? (mark.classList.contains("ok") ? "ok" : mark.classList.contains("err") ? "err" : "") : "",

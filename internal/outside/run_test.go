@@ -52,6 +52,7 @@ type state struct {
 	Focused bool `json:"focused"`
 	Page    struct {
 		Settings bool   `json:"settings"`
+		Head     string `json:"head"`
 		Key      string `json:"key"`
 		Line     string `json:"line"`
 		Mark     string `json:"mark"`
@@ -150,6 +151,9 @@ var done = map[string]func(m *mac, args []string) error{
 			f := front()
 			return strings.Contains(f, `"`+a[0]+`"`), "in front: " + f
 		})
+	},
+	"head": func(m *mac, a []string) error {
+		return m.check(func(s state) bool { return s.Page.Head == a[0] })
 	},
 	"field": func(m *mac, a []string) error {
 		want := ""

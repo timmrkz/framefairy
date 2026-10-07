@@ -50,7 +50,7 @@ func CheckLicence(text string, testKeys bool) (licence.Key, licence.Licence, err
 	switch {
 	case errors.Is(err, licence.ErrSigner):
 		if _, tested := licence.Check(k, licence.Trust{Signers: map[uint8]ed25519.PublicKey{0: testSigner}}); tested == nil {
-			return "", licence.Licence{}, errors.New("this is a test key. Only a build made from the code on this machine takes those")
+			return "", licence.Licence{}, errors.New("this is a test key, from the local dispenser. Only an app built on this Mac with make takes test keys, never one brought in through Updates")
 		}
 		return "", licence.Licence{}, errors.New("this key comes from a signer this version does not know yet. An update may")
 	case errors.Is(err, licence.ErrSignature):
@@ -64,14 +64,13 @@ func CheckLicence(text string, testKeys bool) (licence.Key, licence.Licence, err
 }
 
 // DescribeLicence is a licence in a few words, the way the settings show
-// it: its ID, whom it is for, and whether it is a test key.
+// it: its key ID, and whom it is for when the key names somebody. A test
+// key reads like any other, because only a build made on this Mac takes
+// one at all.
 func DescribeLicence(l licence.Licence) string {
-	s := "Key " + l.ID.String()
+	s := "Key ID " + l.ID.String()
 	if l.Name != "" {
 		s += ", licensed to " + l.Name
-	}
-	if l.Signer == 0 {
-		s += ", a test key"
 	}
 	return s
 }

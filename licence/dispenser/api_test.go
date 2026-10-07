@@ -247,6 +247,15 @@ func TestThankYouPage(t *testing.T) {
 	if code != 200 || !slices.Equal(keysIn(t, out), keys) {
 		t.Fatalf("after the sale: %d %v", code, out)
 	}
+	ids, _ := out["ids"].([]any)
+	if len(ids) != len(keys) {
+		t.Fatalf("the key IDs: %v", out["ids"])
+	}
+	for i, k := range keys {
+		if id, _ := k.ID(); ids[i] != id.String() {
+			t.Fatalf("key %d has the key ID %v, not %s", i+1, ids[i], id)
+		}
+	}
 	w.clock.add(ThanksWindow + time.Second)
 	if code, out := w.call("GET", "/v1/thanks/txn_01", "", nil); code != http.StatusGone || out["keys"] != nil {
 		t.Fatalf("after a day: %d %v", code, out)

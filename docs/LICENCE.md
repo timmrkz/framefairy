@@ -499,7 +499,7 @@ Built, in `licence/dispenser`, in front of the engine.
 | Endpoint | Caller | Does |
 | --- | --- | --- |
 | `POST /paddle` | Paddle, signed | `Settle` the sale the webhook names |
-| `GET /v1/thanks/{ref}` | our thank-you page | the sale's keys, for a day |
+| `GET /v1/thanks/{ref}` | our thank-you page | the sale's keys and the key ID of each, for a day |
 | `POST /v1/lost` | our lost-key page | `Resend` |
 | `POST /v1/orders`, `GET /v1/orders/{ref}`, `POST /v1/orders/{ref}/revoke` | a partner, with its token | `Assign`, `Keys`, `Revoke` |
 | `GET /v1/pool`, `POST /v1/pool` | the signer, with its token | `PoolLevel`, `Stock` |
@@ -695,20 +695,40 @@ does not answer.
 The app calls the same `licence.Check` the dispenser checks every batch
 with, offline, before every render.
 
-- **Entering it.** The Licence row in the settings takes a pasted key and
-  checks it when Unlock is pressed. A refused key shakes the field, keeps
-  what was typed and says why, like a refused API key. A good key shows
-  its ID, and the name when it has one. The trash can beside it removes
-  the key, after asking.
-- **The Unlock link.** The thank-you page and the letter carry, beside
+- **Entering it.** Most buyers never type a key: Unlock in the letter or
+  on the thank-you page does it, see below. For a key that comes as text,
+  from a partner or read off a phone, the Licence row has a field while no
+  key is kept, and checks the key when Unlock is pressed. The key shows
+  as it is, not as dots, so a person can check it is the one they meant.
+  A refused key shakes the field, keeps what was typed and says why, the
+  whole of it, like a refused API key. Once a key is kept the row says
+  Licensed, with the check mark, the key ID and the name when it has
+  one, and nothing else: no field, no button, nothing that reads as a
+  step still to take. The key itself is never shown in the app. It is
+  long and means nothing to a person, and the key ID is what names it,
+  here, on the thank-you page and to support. The trash can beside it
+  removes the key, after asking, and the field comes back.
+- **The Unlock link.** The thank-you page and the letter carry, for
   each key, an Unlock Frame Fairy button, a link
   `framefairy://unlock?key=FF1-…`. The app claims the `framefairy`
   scheme in its `Info.plist`, so macOS opens it, or brings it to the
-  front, and hands it the link. The app goes to the settings, puts the
-  key in the field and moves the keyboard to Unlock. Nothing is checked
-  or kept until Unlock is pressed, because any web page and any app on
-  the Mac can open such a link: a link that unlocked by itself would let
-  a page swap a stranger's licence for its own. The link is read
+  front, and hands it the link, and the app checks the key at once,
+  `linkOutcome` in `cmd/framefairy-app/licence.go`. A key the app takes
+  is kept at once, with nothing to press, and the settings say so,
+  "Unlocked from the link. Thank you.". A key kept before is replaced,
+  and the row names both, "Key ID B from the link, in place of key ID A".
+  Every key unlocks the same app, so the Mac is licensed all the way
+  through and nothing is lost, and the key replaced is still in its own
+  letter. It used to wait in the field for Unlock instead, because any
+  web page can open such a link, but Tim found the field and the button
+  a step that did nothing a buyer needs: the most a page can do is put
+  in a key of its own, which still unlocks the app, and which the row
+  names. The same key again changes nothing. A key the app refuses
+  changes nothing either, and the row says why, in full, with the
+  warning mark: a Mac that was licensed stays licensed, and says that
+  its key still unlocks it. Tim's first try from main looked like a key
+  that would not unlock: an app from Updates refuses test keys, and the
+  reason was cut off at "takes …". The link is read
   strictly, in `keyFromLink`: the `framefairy` scheme, the host
   `unlock`, no path, no user, no fragment, one `key` and nothing else,
   at most 1024 characters, and a key that looks like one before it is
@@ -726,7 +746,8 @@ with, offline, before every render.
 - **Test keys only where anyone could sign their own.** A build made from
   the code on this machine, which the build workflow has given neither a
   channel nor a commit, also trusts the test signer, so the keys of
-  `make dispenser` unlock it. Anyone who builds from the code could take
+  `make dispenser` unlock it. Once taken, a test key reads like any
+  other, because no other build would have taken it. Anyone who builds from the code could take
   the check out anyway, so this gives nothing away. Every build from the
   workflow, which is every build an update brings, refuses them, and says
   it is a test key. No switch in any build turns the check off.
@@ -741,8 +762,9 @@ bought it, and on its way it passes through these hands:
    and the buyer, and the buyer's mail provider, which keeps it.
 4. Anybody who can read the buyer's mailbox, on any device it is open on.
 5. The Unlock link: the browser or mail app that opens it, macOS, which
-   hands it to the app, and the app's own memory until Unlock is pressed
-   or the app quits. It is never written to a log or to a file.
+   hands it to the app, and the app's own memory until it is kept, or,
+   when it would replace a key, until Unlock is pressed or the app quits.
+   It is never written to a log or to a file.
 6. The keychain on every Mac it unlocks.
 
 None of these is a server of ours apart from the dispenser, and the app
