@@ -136,6 +136,13 @@ while its timestamps stay right. The samples in the pipe carry no time,
 so the part started late by that much. Cut by timestamp, it lands with
 both, and a render's sound does the same, see `soundLead`.
 
+A part that starts before a late picture's first frame is read from the
+start of the file instead, because ffmpeg seeks every stream to the key
+frame of the picture and a seek there hands back sound from where the
+picture starts, up to a tenth of a second out of step. The render reads
+that sound the same way, see `leadOf`, and
+`TestSoundResumedBeforeALatePictureIsTheSoundThere` holds it.
+
 Each part is read with 3 s of audio on either side, `hearingPad`, so every
 word in it is heard whole: audio cut inside a word is heard as another
 word. Where two parts meet, `addHeard` keeps each word once. A word belongs

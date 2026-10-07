@@ -362,7 +362,7 @@ func (e *Engine) transcribe(ctx context.Context, path string, window Window,
 	rec Recognizer, silenceDB *float64, save checkpoint, share hearingShare) (*Transcript, error) {
 	first := int(math.Round(window.Start / FrameSeconds))
 	window.Start = float64(first) * FrameSeconds
-	args := audioFrom(path, first)
+	args := audioFrom(path, first, e.pictureStart(ctx, path))
 	e.Log.Detail("ffmpeg %s", strings.Join(args, " "))
 	// Its own context, so stopping at the end of the window can end ffmpeg
 	// without the job being stopped.

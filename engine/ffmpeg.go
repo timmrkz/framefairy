@@ -482,6 +482,44 @@ func gcd(a, b int) int {
 	return a
 }
 
+// videoStartOf is where the picture's first frame begins, from what
+// ffprobe says of the picture's stream and of the file. ffmpeg counts -ss
+// from the start of the file, the earliest of its streams, so that is
+// where the picture's start is measured from.
+func videoStartOf(stream, format map[string]any) float64 {
+	first, ok := toFloat(stream["start_time"])
+	if !ok {
+		return 0
+	}
+	if from, ok := toFloat(format["start_time"]); ok && first-from > 1e-6 {
+		return first - from
+	}
+	return 0
+}
+
+// pictureStart is SourceInfo.VideoStart on its own, for a reading of the
+// sound, which needs nothing else Probe works out and so asks ffprobe for
+// nothing else. Nought for a file with no picture or one ffprobe cannot
+// read, where a seek finds the sound as well as anything does.
+func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
+	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=start_time", "-show_entries", "format=start_time",
+		"-of", "json", path)
+	if res.Code != 0 {
+		return 0
+	}
+	var data struct {
+		Streams []map[string]any `json:"streams"`
+		Format  map[string]any   `json:"format"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(res.Stdout))
+	decoder.UseNumber()
+	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
+		return 0
+	}
+	return videoStartOf(data.Streams[0], data.Format)
+}
+
 // Probe reads the dimensions, frame rate, duration and colour tags of a file.
 func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	res := run(ctx, "", e.FFprobe, "-v", "error",
@@ -553,15 +591,8 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	if _, present := stream["height"]; !present || !okH {
 		return SourceInfo{}, renderErr("%s reports no video dimensions", path)
 	}
-	// ffmpeg counts -ss from the start of the file, the earliest of its
-	// streams, so that is where the picture's start is measured from.
-	videoStart := 0.0
+	videoStart := videoStartOf(stream, data.Format)
 	first, hasFirst := toFloat(stream["start_time"])
-	if hasFirst {
-		if from, ok := toFloat(data.Format["start_time"]); ok && first-from > 1e-6 {
-			videoStart = first - from
-		}
-	}
 	info := SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour}
 	info.Variable = hasFirst && e.uneven(ctx, path, info, first)
