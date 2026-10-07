@@ -28,7 +28,7 @@
 //   key frame on. A piece that starts after the last one ends, inside what
 //   has already been decoded, carries the run on. Any other piece starts a
 //   new run, from the key frame before it.
-import { rankAt, type Samples } from "./mp4";
+import { edgeRank, lastRank, rankAt, type Samples } from "./mp4";
 
 export type Piece = { start: number; end: number };
 
@@ -118,8 +118,7 @@ export function keyBefore(s: Samples, rank: number): number {
 // frame itself, in decode order. A frame shown before it but decoded after
 // it is not needed, and the decoder is flushed after the last sample so the
 // frame comes out without waiting for more.
-export function stillFeed(s: Samples, at: number): { key: number; last: number; rank: number } {
-  const rank = rankAt(s, at);
+export function stillFeed(s: Samples, at: number, rank = rankAt(s, at)): { key: number; last: number; rank: number } {
   return { key: keyBefore(s, rank), last: s.order[rank], rank };
 }
 
@@ -146,10 +145,6 @@ export type Run = {
 // rank first to first + kLast - kFirst, one point a frame. Where on the
 // program its points begin and where the visit ends.
 type Span = { visit: Visit; run: number; kFirst: number; kLast: number; first: number; from: number; to: number };
-
-// The hair before a piece's end that the piece-end frame holds. A frame
-// that begins within it would be on screen for no time at all.
-const HAIR = 1e-4;
 
 // Which frames the picture needs, from a play that starts at P0 on the
 // program, worked out a visit at a time as far ahead as it is asked.
@@ -266,8 +261,12 @@ export class VideoPlan {
     const to = visit.from + length;
     if (to - from <= 1e-9 || s.count === 0) return;
     const moment = visit.start + (from - visit.from);
-    const a = rankAt(s, moment);
-    const b = Math.max(a, rankAt(s, Math.max(moment, visit.end - HAIR)));
+    // A piece played from its start starts on the frame its start edge
+    // means, and every piece ends on the frame before the one its end
+    // means, the frames the render cuts, see edgeRank in mp4.ts. A play
+    // from the playhead inside a piece starts on the frame that holds it.
+    const a = from === visit.from ? edgeRank(s, visit.start) : rankAt(s, moment);
+    const b = Math.max(a, lastRank(s, visit.start, visit.end));
     const kFirst = this.nextK;
     const kLast = kFirst + (b - a);
     this.nextK = kLast + 1;

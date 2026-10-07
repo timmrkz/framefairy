@@ -313,16 +313,46 @@ export function insideClip(pieces: Piece[], at: number, frame: number): boolean 
   return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
 }
 
-// Which frame of the episode a moment falls in, the frame the video
-// preview draws for it, counted from the picture's first frame, start
-// seconds into the file. A file whose picture starts after its sound has
-// its frames on a grid that begins there, not at the start of the file,
-// and frames counted from the file's start put an edge or a thumbnail up
-// to half a frame from the frame the render takes, see VideoStart in
-// engine/ffmpeg.go. Frame is one frame in seconds.
+// Every moment the app keeps is kept to the millisecond, so a frame's
+// start, kept, can come out up to half a millisecond before it. A moment
+// this little before a frame's start is in that frame, the same hair the
+// render gives a moment, frameHair in engine/ffmpeg.go.
+export const FRAME_HAIR = 0.001;
+
+// Which frame of the episode holds a moment, the frame the video preview
+// draws for the playhead there, counted from the picture's first frame,
+// start seconds into the file. A moment up to FRAME_HAIR before a frame's
+// start is in that frame: at 29.97 frames a second a frame's start, kept
+// to the millisecond, lies just before it for 1400 of every 3000 frames,
+// and the picture drew the frame before the one the short starts on.
+// For a moment on a frame this is the frame frameOf says an edge there
+// means, which frame.cases.json holds.
+//
+// A file whose picture starts after its sound has its frames on a grid
+// that begins there, not at the start of the file, and frames counted
+// from the file's start put an edge or a thumbnail up to half a frame
+// from the frame the render takes, see VideoStart in engine/ffmpeg.go.
+// Frame is one frame in seconds.
 export function frameAt(t: number, frame: number, start = 0): number {
-  return Math.floor(Math.max(t - start, 0) / frame + 1e-6);
+  return Math.floor((Math.max(t - start, 0) + FRAME_HAIR) / frame);
 }
+
+// Which frame an edge of a clip means: the one whose start is nearest
+// it, the frame the render starts a piece on, or the frame after the last
+// it ends one with, see frameOf in engine/render.go. Both are held to the
+// same table, frame.cases.json. An edge the hand put is on a frame, and
+// this is the frame frameAt finds for the playhead put there. An edge a
+// search left inside a frame belongs to the frame whose start is nearer.
+// Half way between two, which an edge kept to the millisecond can be at
+// 25, 30 and 60 frames a second, it is the later, give or take HALFWAY of
+// a frame, the same as the engine's.
+export function frameOf(t: number, frame: number, start = 0): number {
+  return Math.floor((t - start) / frame + 0.5 + HALFWAY);
+}
+
+// How far before the middle between two frames' starts, in frames, a
+// moment is still counted as half way, see frameOf.
+export const HALFWAY = 1e-6;
 
 // The middle of frame k, counted the same way.
 export function frameMiddle(k: number, frame: number, start = 0): number {

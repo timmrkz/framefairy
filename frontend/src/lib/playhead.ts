@@ -15,7 +15,7 @@
 // gesture knows what it is about, so it says, and nothing after it can
 // change that. See Playback in .claude/skills/interface/SKILL.md.
 
-import { frameAt, type Piece } from "./flow";
+import { frameAt, frameOf, type Piece } from "./flow";
 
 // On the clip, on the clip at its end, or on the video. The end is a place
 // of its own because the space bar starts the clip over from there, and
@@ -39,10 +39,10 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 // the clip's own, and a trim, whose playhead stands on the edge being
 // dragged and so can be a hair outside the pieces the video preview has
 // at that moment. Every other gesture, a click, a drag, a step or a seek,
-// is decided by the frame it lands in: from the frame that holds the
-// clip's first moment to the frame that holds its last, cuts included, is
-// on the clip, and any other frame is on the video. Either way, the frame
-// that holds the clip's last moment is its end, and so is the end itself.
+// is decided by the frame it lands in: from the frame the short starts on
+// to the frame it ends on, cuts included, is on the clip, and any other
+// frame is on the video. Either way, the frame the short ends on is the
+// clip's end, and so is the end itself.
 //
 // By frame and not by second, because what is on screen is a frame. A
 // clip starting at 12.37 at twenty-five frames a second begins in the
@@ -66,10 +66,9 @@ export function placeOf(
   const end = pieces[pieces.length - 1].end;
   const rate = fps > 0 ? fps : 30;
   const frame = frameAt(at, 1 / rate, videoStart);
-  const first = frameAt(start, 1 / rate, videoStart);
-  // The frame that holds the last moment before the end, which is the
-  // frame before the end's own when the end falls on a frame's start.
-  const last = Math.max(Math.ceil((end - videoStart) * rate - 1e-6) - 1, first);
+  // The frames the short starts and ends on, see frameOf.
+  const first = frameOf(start, 1 / rate, videoStart);
+  const last = Math.max(frameOf(end, 1 / rate, videoStart) - 1, first);
   if (about !== "clip" && at !== end && (frame < first || frame > last)) return onVideo;
   return { place: at >= end || frame >= last ? "end" : "clip", clip: key };
 }

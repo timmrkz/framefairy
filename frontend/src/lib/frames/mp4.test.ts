@@ -336,8 +336,10 @@ describe("rankAt", () => {
   const s = m.video!.samples;
   test("is the frame that holds the moment", () => {
     expect(rankAt(s, 0)).toBe(0);
-    expect(rankAt(s, 0.039)).toBe(0);
+    expect(rankAt(s, 0.038)).toBe(0);
     expect(rankAt(s, 0.04)).toBe(1);
+    // A frame's start kept to the millisecond, a hair before it, is in it.
+    expect(rankAt(s, 0.0396)).toBe(1);
     expect(rankAt(s, 59.53 - 57)).toBe(63);
     // A sum of seconds that comes out a hair before a frame is in it.
     expect(rankAt(s, 0.1 + 0.2 - 0.3 + 0.04 - 1e-12)).toBe(1);
@@ -374,8 +376,11 @@ describe("rankAt", () => {
     expect(begins.map((t) => t.toFixed(4))).toEqual(["0.2500", "0.2833", "0.3250", "0.3500", "0.3833", "0.7167"]);
     // Before the picture starts, its first frame.
     expect(rankAt(uneven, 0)).toBe(0);
-    expect(rankAt(uneven, 0.2833)).toBe(0);
+    expect(rankAt(uneven, 0.282)).toBe(0);
     expect(rankAt(uneven, 0.2834)).toBe(1);
+    // The second frame begins at 0.28333, which kept to the millisecond is
+    // 0.283, and that moment is the second frame's too.
+    expect(rankAt(uneven, 0.283)).toBe(1);
     // 0.33 is past where the third frame begins, though frame 2 at the
     // rate of 30 would begin at 0.3167 and frame 3 at 0.35.
     expect(rankAt(uneven, 0.33)).toBe(2);

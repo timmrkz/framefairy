@@ -154,6 +154,15 @@
 //                      the frame the video preview shows at the moment that
 //                      frame stands for, read off the canvas with the
 //                      playhead put there by a click on the clip timeline
+//   ["edges as rendered"]
+//                      the short Render wrote, read back from disk, and the
+//                      video preview agree on the clip's edges: with the
+//                      playhead put on the clip's start and on where each
+//                      cut ends by a click on it, the video preview shows
+//                      the frame the short starts that piece with, and on
+//                      the clip's end the short's last frame. At least one
+//                      edge is saved to the millisecond just before its
+//                      frame's start
 //   ["as previewed", rate, before]
 //                      the same, for an episode whose picture starts after
 //                      its sound: the clip's first piece starts before
@@ -416,6 +425,26 @@ export const sequences = [
       ["cuts", 2],
       ["render"],
       ["short", 2],
+    ],
+  },
+  {
+    // Bug 1 of docs/DESIGN-REVIEW.md: at 29.97 fps an edge saved to the
+    // millisecond lies just before its frame's start for 1400 of every
+    // 3000 frames, and the video preview drew the frame before the one the
+    // short starts on. The edges the hand puts here are on frames, and at
+    // least one of them is such an edge.
+    name: "the video preview on a clip's edges shows the frames its short starts and ends on",
+    steps: [
+      ["add", 40, "30000/1001"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["trim", "start", -20],
+      ["trim", "end", 20],
+      ["cut at", 0.3],
+      ["cut at", 0.7],
+      ["cuts", 2],
+      ["render"],
+      ["edges as rendered"],
     ],
   },
   {
@@ -716,7 +745,9 @@ const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).
 // and a frame whose time is still too short to click on is passed over,
 // but every piece is looked at where it starts and where it ends.
 // The render takes a frame that begins up to a millisecond after a moment
-// for that moment, frameHair, so the playhead goes after that too.
+// for that moment, frameHair, and so does the video preview, so the
+// playhead goes after that too and ends a millisecond and a half before
+// the next frame begins.
 async function asPreviewed(page, rate, before) {
   const on = await chosen(page);
   const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
@@ -766,7 +797,7 @@ async function asPreviewed(page, rate, before) {
     // Where the frame that holds the moment is the one on screen: from the
     // moment until the episode's next frame begins.
     const from = at + 0.0015;
-    const to = after(at) - 0.0005;
+    const to = after(at) - 0.0015;
     if (to - from < 0.002) continue;
     // Moved along with two fingers until the moment is well inside.
     for (let tries = 0; tries < 6; tries++) {
@@ -822,6 +853,80 @@ async function asPreviewed(page, rate, before) {
   if (looked < 20) problems.push(`only ${looked} frames could be looked at, the playhead missed ${missed}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
+}
+
+// What is wrong with the frames the video preview draws on the clip's
+// edges, against the short Render wrote, or null. The playhead is put on
+// each edge the way a hand puts it there, a click on the clip's start, on
+// where each cut ends and on the clip's end, and the frame the video
+// preview draws, read off the canvas, is the frame the short starts that
+// piece with, or the short's last at the clip's end. An edge is saved to
+// the millisecond, and at 29.97 fps that lies just before its frame's
+// start for 1400 of every 3000 frames, where the video preview drew the
+// frame before the one the short starts on. Bug 1 of docs/DESIGN-REVIEW.md.
+// At least one edge here has to be such an edge, or the walk is not about
+// the case.
+async function edgesAsRendered(page) {
+  const on = await chosen(page);
+  const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+  const { fps, videoStart = 0 } = await ask(page, "Source", on.path);
+  const short = await shortOf(page, on);
+  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
+  const { frames } = shortFrames(short);
+  const pieces = entry.segments;
+  // The frame an edge means, the one whose start is nearest, and each
+  // piece's frames from there, the way the render cuts them, see frameOf
+  // and cutOf in engine/render.go.
+  const frameOf = (t) => Math.round((t - videoStart) * fps);
+  const firsts = [];
+  let held = 0;
+  for (const p of pieces) {
+    const first = frameOf(p.start);
+    firsts.push(held);
+    held += Math.max(frameOf(p.end), first + 1) - first;
+  }
+  if (frames.length !== held) return `the short has ${frames.length} frames, its pieces hold ${held}`;
+  const edges = [
+    ...pieces.map((p, i) => ({
+      what: i === 0 ? "the clip's start" : `where cut ${i} ends`,
+      label: i === 0 ? "Clip start" : `Where cut ${i} ends`,
+      at: p.start,
+      want: frames[firsts[i]],
+    })),
+    { what: "the clip's end", label: "Clip end", at: pieces[pieces.length - 1].end, want: frames[frames.length - 1] },
+  ];
+  // Saved just before the start of the frame it means, by the rounding to
+  // the millisecond.
+  const before = edges.filter((e) => {
+    const begins = videoStart + frameOf(e.at) / fps;
+    return e.at < begins - 1e-9 && begins - e.at < 0.0006;
+  });
+  if (!before.length) return "no edge of the clip lies just before its frame's start, the case this is about";
+  await filmedOnScreen(page);
+  const problems = [];
+  for (const e of edges) {
+    // High on the track, where the captions' edges below are not.
+    const grip = await page.locator(`.clip-timeline [aria-label="${e.label}"]`).boundingBox();
+    if (!grip) {
+      problems.push(`there is no ${e.label} to click`);
+      continue;
+    }
+    await page.mouse.click(grip.x + grip.width / 2, high((await handles(page)).track));
+    await settle(page);
+    const placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+    if (Math.abs(placed - e.at) > 1e-6) {
+      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not ${e.at.toFixed(4)}`);
+      continue;
+    }
+    const came = await page
+      .waitForFunction((want) => window.__filmed?.() === want, e.want, { polling: 50, timeout: 3000 })
+      .then(() => true, () => false);
+    if (!came) {
+      problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
+    }
+  }
+  console.log(`      ${edges.length} edges looked at, ${before.length} saved just before their frame`);
+  return problems.length ? problems.join("\n") : null;
 }
 
 // The shorts in a folder, by name, finished ones only.
@@ -1545,6 +1650,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         wrong = await asPreviewed(page, rate, before);
         break;
       }
+      case "edges as rendered":
+        wrong = await edgesAsRendered(page);
+        break;
       case "short": {
         const on = await chosen(page);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);

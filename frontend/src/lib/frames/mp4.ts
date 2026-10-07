@@ -21,6 +21,8 @@
 // every read is checked against the box it is in and a broken file ends
 // in an error that says so, never in a read past the end.
 
+import { FRAME_HAIR, HALFWAY } from "../flow";
+
 export type VideoTrack = {
   kind: "video";
   // What VideoDecoder.configure takes, apart from the hardware hints.
@@ -801,20 +803,45 @@ export function seconds(s: Samples, ticks: number): number {
   return ticks / s.timescale;
 }
 
-// The rank of the frame that holds a moment: the last one shown at or
-// before it. Before the first frame it is the first.
-export function rankAt(s: Samples, at: number): number {
-  const ticks = at * s.timescale;
+// The rank of the last frame that begins at or before a number of ticks,
+// and the first where none does.
+function lastFrom(s: Samples, ticks: number): number {
   let lo = 0;
   let hi = s.count - 1;
   if (hi < 0) return 0;
-  // A moment a hair before a frame's own start, from a sum of seconds, is
-  // in that frame.
-  const slack = 1e-6 * s.timescale;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (s.pts[s.order[mid]] <= ticks + slack) lo = mid;
+    if (s.pts[s.order[mid]] <= ticks) lo = mid;
     else hi = mid - 1;
   }
   return lo;
+}
+
+// The rank of the frame that holds a moment, the frame the video preview
+// draws for the playhead there: the last one shown at or before it, or
+// one that begins less than FRAME_HAIR after it, which is the moment of
+// its start kept to the millisecond, see frameAt in lib/flow.ts. Before
+// the first frame it is the first.
+export function rankAt(s: Samples, at: number): number {
+  return lastFrom(s, (at + FRAME_HAIR) * s.timescale);
+}
+
+// The rank of the frame an edge of a clip means, by the frames' own
+// times: the one whose start is nearest it, see frameOf in lib/flow.ts.
+// A piece of a clip starts on this frame.
+// Half way between two, it is the later, as frameOf says.
+export function edgeRank(s: Samples, at: number): number {
+  const ticks = at * s.timescale;
+  const r = lastFrom(s, ticks);
+  if (r + 1 >= s.count) return r;
+  const from = s.pts[s.order[r]];
+  const gap = s.pts[s.order[r + 1]] - from;
+  return ticks - from >= (0.5 - HALFWAY) * gap ? r + 1 : r;
+}
+
+// The rank of the last frame of a piece from one edge to another: the
+// frame before the one its end means, and never before its first. The
+// render ends a piece the same way, see cutOf in engine/render.go.
+export function lastRank(s: Samples, start: number, end: number): number {
+  return Math.max(edgeRank(s, start), edgeRank(s, end) - 1);
 }

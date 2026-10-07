@@ -29,7 +29,7 @@
 //   arriving, and by the animation frame that draws while playing.
 import { AppFrames, AppPictures } from "./app";
 import { NativePictures, openNative } from "./native";
-import { findMoov, MP4Error, parseMoov, pcmPlanes, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
+import { findMoov, MP4Error, parseMoov, pcmPlanes, lastRank, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
   fade,
@@ -784,7 +784,11 @@ export class FrameQueue {
         const program = this.program;
         const p0 = program.place(at);
         const there = p0 < program.length ? program.locate(p0) : null;
+        const last = program.pieces[program.pieces.length - 1];
         if (there && rankAt(s, there.at) === rankAt(s, at)) this.start(at, true);
+        // At the clip's end, its last frame, the one a play of it stops
+        // on and the short ends with, see end.
+        else if (!there && program.pieces.length && at >= last.end) void this.still(at, lastRank(s, last.start, last.end));
         else void this.still(at);
       },
       () => {},
@@ -959,9 +963,9 @@ export class FrameQueue {
 
   // ---- A paused frame on its own
 
-  // The frame drawn is the one that holds the moment it is given, the
-  // playhead unless said otherwise.
-  private async still(at: number, holds = at) {
+  // The frame drawn is the one that holds the playhead, or the frame of
+  // this rank where it is given.
+  private async still(at: number, rank?: number) {
     try {
       await this.ready;
     } catch {
@@ -971,7 +975,7 @@ export class FrameQueue {
     const slot = this.slots[0];
     this.release(slot);
     const s = this.video!.samples;
-    const feed = stillFeed(s, holds);
+    const feed = stillFeed(s, at, rank);
     // Already on screen: nothing to decode.
     if (this.shown && this.shown.rank === feed.rank) {
       this.at = at;
@@ -1249,10 +1253,7 @@ export class FrameQueue {
     // 24.72. Nearly always it is decoded already, and where it is not, it
     // is decoded on its own, as a paused frame is.
     if (!last || !this.video) return;
-    // A tenth of a millisecond before the end, past the hair rankAt
-    // counts as the next frame's own start.
-    const holds = Math.max(last.start, last.end - 1e-4);
-    const want = rankAt(this.video.samples, holds);
+    const want = lastRank(this.video.samples, last.start, last.end);
     if (this.shown?.rank === want) return;
     for (const slot of this.slots) {
       const i = slot.ready.findIndex((h) => h.rank === want);
@@ -1262,7 +1263,7 @@ export class FrameQueue {
       this.report(true);
       return;
     }
-    void this.still(this.at, holds);
+    void this.still(this.at, want);
   }
 
   private slotOf(run: number): Slot | null {

@@ -428,7 +428,10 @@ export async function seekTo(page, at, fps) {
     .waitForFunction(
       (fps) => {
         const at = Number(document.querySelector(".screen").dataset.playhead);
-        return window.__pictured() === Math.floor(at * fps + 1e-6);
+        // The frame that holds the playhead, a frame that begins a
+        // millisecond or less after it included, see frameAt in
+        // lib/flow.ts.
+        return window.__pictured() === Math.floor((at + 0.001) * fps);
       },
       fps,
       { polling: 50, timeout: 5000 },

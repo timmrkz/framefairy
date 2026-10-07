@@ -197,9 +197,19 @@ type pieceCut struct {
 // the same way, frameOf and edgeRank in frontend/src/lib, and both are
 // held to frontend/src/lib/frame.cases.json. This is the one place the
 // engine decides which frame an edge is on.
+//
+// A moment half way between two starts means the later frame. At 25, 30
+// and 60 frames a second a moment kept to the millisecond can be exactly
+// there, and worked out in floating point it comes out a hair to either
+// side, by how the moment and the rate are written, so it is given
+// halfway to land on the same side every time, and in the interface too.
 func frameOf(at, start, rate float64) int64 {
-	return int64(math.Round((at - start) * rate))
+	return int64(math.Floor((at-start)*rate + 0.5 + halfway))
 }
+
+// halfway is how far before the middle between two frames' starts, in
+// frames, a moment is still counted as half way, see frameOf.
+const halfway = 1e-6
 
 // cutOf works out a piece on the frames of the episode, by their number
 // and not by a time rounded to a millisecond, which is how a render cuts.

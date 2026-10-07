@@ -78,9 +78,11 @@ describe("VideoPlan", () => {
   const plan = new VideoPlan(video, frame, program, 0);
   plan.extend(Infinity);
 
-  // Every frame of every piece, from the frame that holds its start to the
-  // frame that holds the moment just before its end, and each drawn where
-  // it begins.
+  // Every frame of every piece, from the frame its start means to the
+  // frame before the one its end means, the frames the render cuts, and
+  // each drawn where it begins. The first piece ends at 59.53, which means
+  // the frame from 59.52, so its last is 59.48. The second starts at 60.31,
+  // which means the frame from 60.32.
   const frames = (from: number, to: number) => {
     const out: string[] = [];
     for (let t = from; t <= to + 1e-9; t += frame) out.push(t.toFixed(2));
@@ -93,33 +95,34 @@ describe("VideoPlan", () => {
   };
 
   test("draws every frame of every piece and never one from inside a cut", () => {
-    expect(drawnBy(plan)).toEqual([...frames(57, 59.52), ...frames(60.28, 62.16), ...frames(63.04, 64.96)]);
+    expect(drawnBy(plan)).toEqual([...frames(57, 59.48), ...frames(60.32, 62.12), ...frames(63.04, 64.96)]);
   });
 
   test("draws each frame where it begins, carried onto the program", () => {
     // The first piece from the start of the program, a frame each 40 ms.
     expect(plan.at(0)).toBeCloseTo(0);
     expect(plan.at(1)).toBeCloseTo(0.04);
-    expect(plan.at(63)).toBeCloseTo(2.52);
-    // The second piece begins at 2.53 on the program with the frame that
-    // holds 60.31, and the frame of 60.32 begins 10 ms later.
-    expect(plan.at(64)).toBeCloseTo(2.53);
-    expect(shownAt(plan.need(64)!.rank)).toBeCloseTo(60.28);
-    expect(plan.at(65)).toBeCloseTo(2.54);
-    // The last frame of the second piece, 62.16, begins 10 ms before the
+    expect(plan.at(62)).toBeCloseTo(2.48);
+    // The second piece begins at 2.53 on the program with the frame its
+    // start means, 60.32, and the frame of 60.36 begins 50 ms later.
+    expect(plan.at(63)).toBeCloseTo(2.53);
+    expect(shownAt(plan.need(63)!.rank)).toBeCloseTo(60.32);
+    expect(plan.at(64)).toBeCloseTo(2.58);
+    // The last frame of the second piece, 62.12, begins 50 ms before the
     // cut, and the third piece's first frame follows it.
-    expect(shownAt(plan.need(111)!.rank)).toBeCloseTo(62.16);
-    expect(plan.at(111)).toBeCloseTo(2.53 + 1.85);
-    expect(plan.at(112)).toBeCloseTo(2.53 + 1.86);
+    expect(shownAt(plan.need(108)!.rank)).toBeCloseTo(62.12);
+    expect(plan.at(108)).toBeCloseTo(2.53 + 1.81);
+    expect(plan.at(109)).toBeCloseTo(2.53 + 1.86);
   });
 
   test("finds the point a position is in, and the one past the end", () => {
     expect(plan.gridAt(0)).toBe(0);
     expect(plan.gridAt(0.0399)).toBe(0);
     expect(plan.gridAt(0.04)).toBe(1);
-    expect(plan.gridAt(2.5299)).toBe(63);
-    expect(plan.gridAt(2.53)).toBe(64);
-    expect(plan.gridAt(2.5399)).toBe(64);
+    expect(plan.gridAt(2.5299)).toBe(62);
+    expect(plan.gridAt(2.53)).toBe(63);
+    expect(plan.gridAt(2.5799)).toBe(63);
+    expect(plan.gridAt(2.58)).toBe(64);
     expect(plan.gridAt(program.length - 0.001)).toBe(plan.lastK);
     expect(plan.gridAt(program.length)).toBe(plan.lastK + 1);
   });
@@ -127,30 +130,31 @@ describe("VideoPlan", () => {
   test("the edges of a piece are never passed over", () => {
     // From inside the first piece the next that must be drawn is its last
     // frame, then the second piece's first, then that one's last.
-    expect(plan.nextEdge(10)).toBe(63);
-    expect(plan.nextEdge(63)).toBe(64);
-    expect(plan.nextEdge(64)).toBe(111);
+    expect(plan.nextEdge(10)).toBe(62);
+    expect(plan.nextEdge(62)).toBe(63);
+    expect(plan.nextEdge(63)).toBe(108);
     expect(plan.nextEdge(plan.lastK)).toBe(plan.lastK + 1);
   });
 
   // A play begun inside a frame drew the frames on a grid from where it
   // began: each up to a frame late, and the last frame of a piece passed
-  // over when the piece ended less than that into it.
-  test.each([0.001, 0.013, 0.02, 0.039])("a play begun %f into a frame draws every frame where it begins", (into) => {
+  // over when the piece ended less than that into it. A millisecond before
+  // the next frame is that frame's, see rankAt, so 0.038 is the latest.
+  test.each([0.001, 0.013, 0.02, 0.038])("a play begun %f into a frame draws every frame where it begins", (into) => {
     const p0 = program.place(57.4 + into);
     const p = new VideoPlan(video, frame, program, p0);
     p.extend(Infinity);
     expect(p.at(0)).toBeCloseTo(p0);
     expect(shownAt(p.need(0)!.rank)).toBeCloseTo(57.4);
     expect(p.at(1)).toBeCloseTo(0.44);
-    expect(drawnBy(p)).toEqual([...frames(57.4, 59.52), ...frames(60.28, 62.16), ...frames(63.04, 64.96)]);
+    expect(drawnBy(p)).toEqual([...frames(57.4, 59.48), ...frames(60.32, 62.12), ...frames(63.04, 64.96)]);
   });
 
   test("a play begun at a cut starts on the next piece's first frame", () => {
     const p = new VideoPlan(video, frame, program, program.place(60));
     p.extend(Infinity);
-    expect(drawnBy(p)).toEqual([...frames(60.28, 62.16), ...frames(63.04, 64.96)]);
-    expect(p.at(1)).toBeCloseTo(2.54);
+    expect(drawnBy(p)).toEqual([...frames(60.32, 62.12), ...frames(63.04, 64.96)]);
+    expect(p.at(1)).toBeCloseTo(2.58);
   });
 
   test("a play begun at the end of the clip has nothing to draw", () => {
@@ -160,12 +164,14 @@ describe("VideoPlan", () => {
     expect(p.gridAt(program.length)).toBe(0);
   });
 
+  // A piece starting or ending half way between two frames' starts, 20.02
+  // and 20.10 here, means the later of the two, as the render does.
   test("a piece ending on a frame's start ends on the frame before", () => {
     const p = new VideoPlan(video, frame, new Program([{ start: 10, end: 10.4 }, { start: 20.02, end: 20.1 }], false), 0);
     p.extend(Infinity);
-    expect(drawnBy(p)).toEqual([...frames(10, 10.36), "20.00", "20.04", "20.08"]);
+    expect(drawnBy(p)).toEqual([...frames(10, 10.36), "20.04", "20.08"]);
     expect(p.at(10)).toBeCloseTo(0.4);
-    expect(p.at(11)).toBeCloseTo(0.42);
+    expect(p.at(11)).toBeCloseTo(0.46);
   });
 
   test("feeds each piece from the key frame before it, and carries a run on inside what it decoded", () => {
@@ -173,7 +179,7 @@ describe("VideoPlan", () => {
     // starts at 63.05 inside the group of pictures the second is in, goes on
     // from where the second stopped rather than from 60 again.
     expect(plan.runs.map((r) => [r.key, r.last])).toEqual([
-      [1400, 1488],
+      [1400, 1487],
       [1500, 1624],
     ]);
   });
@@ -256,8 +262,11 @@ describe("VideoPlan on frames at uneven times", () => {
     for (let k = 0; k <= p.lastK; k++) drawn.push(p.need(k)!.rank);
     // The first piece: the picture's first frame from the start of the
     // piece, before the picture has begun, then the frames that begin in
-    // it. The second piece starts inside the held frame.
-    expect(drawn).toEqual([0, 1, 2, 4, 5, 6]);
+    // it, up to the one before the frame its end means: 0.34 is nearer
+    // the frame from 0.35 than the one from 0.325, so the piece ends on
+    // the one from 0.325. The second piece starts inside the held frame and
+    // ends at 0.76, nearer the frame from 0.75, so on the one before it.
+    expect(drawn).toEqual([0, 1, 2, 4, 5]);
     expect(p.at(0)).toBeCloseTo(0);
     expect(p.at(1)).toBeCloseTo(begins(1) - 0.1);
     expect(p.at(2)).toBeCloseTo(begins(2) - 0.1);
@@ -265,7 +274,6 @@ describe("VideoPlan on frames at uneven times", () => {
     // and its next frame is drawn where it begins, 0.2167 s later.
     expect(p.at(3)).toBeCloseTo(0.24);
     expect(p.at(4)).toBeCloseTo(0.24 + begins(5) - 0.5);
-    expect(p.at(5)).toBeCloseTo(0.24 + begins(6) - 0.5);
   });
 });
 
