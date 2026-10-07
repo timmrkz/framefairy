@@ -506,7 +506,7 @@ the skills listed last show their name without what they are for.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on both, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is seven jobs at once rather than one after another, so
+  [docs/TESTING.md](docs/TESTING.md). It is eight jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
   to do. A push to main narrows nothing. `make changed` runs what a branch

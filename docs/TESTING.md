@@ -536,12 +536,24 @@ What it needs, and nothing else needs:
 The probe listens on 127.0.0.1:47290, for the test only. It says what the
 app has: the links it was handed, whether its window is in front, and what
 the settings show, read out of the page itself. It presses a button the
-way a click does, and it quits the app.
+way a click does, and it quits the app. Which app is in front comes from
+`lsappinfo`, which needs no permission a runner does not have. The app's
+log goes to `~/Library/Logs/FrameFairy-outside.log` as well, and the test
+shows it when a check fails.
 
-A link is handed to macOS with `open -g`, which is what a browser does
-once its own question, whether to open Frame Fairy, is answered. The `-g`
-leaves the app where it is, so the app has to bring itself forward, the
-way it has to after a click in a mail. The steps:
+The runner is made a Mac that has been set up, a speech model's
+`tokens.txt` in place and `chosen` in the settings, because a new copy of
+the app holds a link until its setup is done. The job stops after 30
+minutes, so an app that hangs does not hold a Mac for GitHub's six hours.
+
+`make outside` builds the app as `make` does, then once more with the
+probe into `.build/outside`, so `bin/` never has it, and builds the
+dispenser beside it. It refuses to run anywhere but on a Mac with `CI`
+set.
+
+A link is handed to macOS with `open`, which is what a browser or a mail
+app does once a link is clicked, and once the browser's own question,
+whether to open Frame Fairy, is answered. The steps:
 
 1. Buy two seats at the checkout and wait for the letter.
 2. With the app closed, hand it the first key's link. The app starts, is
@@ -549,7 +561,7 @@ way it has to after a click in a mail. The steps:
    says Unlock takes it.
 3. Press Unlock. The row says the key is licensed to the buyer, a test
    key, with a check mark.
-4. Put another app in front and hand over the second key's link. The app
+4. Put Calculator in front and hand over the second key's link. The app
    comes back to the front with the second key in the field.
 5. Hand over a link with more in it than one key. Nothing changes.
 
