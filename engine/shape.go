@@ -290,11 +290,12 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	return nil, -1, renderErr("there is no gesture called %s", Scrub(g.Kind, 20))
 }
 
-// onFrame puts a moment on the frame it falls on, the only place a video is
-// cut. Without a frame it is left where it is, to the millisecond.
+// onFrame puts a moment on the start of the frame it means, see frameOf,
+// the only place a video is cut. Without a frame it is left where it is,
+// to the millisecond.
 func (g Gesture) onFrame(at float64) float64 {
 	if g.Frame > 0 {
-		at = g.FrameStart + math.Round((at-g.FrameStart)/g.Frame)*g.Frame
+		at = g.FrameStart + float64(frameOf(at, g.FrameStart, 1/g.Frame))*g.Frame
 	}
 	return roundTo(at, 3)
 }

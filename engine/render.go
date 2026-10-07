@@ -188,6 +188,19 @@ type pieceCut struct {
 	fromKey bool
 }
 
+// frameOf is the frame of the episode an edge at a moment means, counted
+// from the picture's first frame, start seconds into the file, at rate
+// frames a second: the frame whose start is nearest the moment. A moment
+// is saved to the millisecond, and at 29.97 frames a second that puts it
+// just before its frame's start for 1400 of every 3000 frames. It still
+// means that frame, the one it was rounded from. The video preview counts
+// the same way, frameOf and edgeRank in frontend/src/lib, and both are
+// held to frontend/src/lib/frame.cases.json. This is the one place the
+// engine decides which frame an edge is on.
+func frameOf(at, start, rate float64) int64 {
+	return int64(math.Round((at - start) * rate))
+}
+
 // cutOf works out a piece on the frames of the episode, by their number
 // and not by a time rounded to a millisecond, which is how a render cuts.
 //
@@ -225,8 +238,8 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	}
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
 	rate := float64(num) / float64(den)
-	first := int64(math.Round((seg.Start - s.VideoStart) * rate))
-	end := max(int64(math.Round((seg.End-s.VideoStart)*rate)), first+1)
+	first := frameOf(seg.Start, s.VideoStart, rate)
+	end := max(frameOf(seg.End, s.VideoStart, rate), first+1)
 	v0 := int64(math.Round(s.VideoStart * 1_000_000))
 	// When frame k starts, in microseconds: k·den/num seconds after the
 	// picture's first frame.
@@ -323,7 +336,7 @@ func (s SourceInfo) OnFrames(clip Clip) Clip {
 		return clip
 	}
 	fps := s.FPS()
-	frame := func(t float64) float64 { return s.VideoStart + math.Round((t-s.VideoStart)*fps)/fps }
+	frame := func(t float64) float64 { return s.VideoStart + float64(frameOf(t, s.VideoStart, fps))/fps }
 	out := clip
 	out.Segments = make([]Segment, len(clip.Segments))
 	for i, seg := range clip.Segments {
