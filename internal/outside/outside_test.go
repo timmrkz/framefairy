@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -90,6 +91,7 @@ func TestTheUnlockLinkInTheLetter(t *testing.T) {
 		t.Fatalf("after the first link: %+v", s)
 	}
 	waitFront(t, "Frame Fairy")
+	done("1. Opened closed", "the app started in front, on the settings, with the first key in the field: "+s.Page.Line)
 
 	// 2. Unlock takes it.
 	click(t, "button.act.unlock")
@@ -99,6 +101,7 @@ func TestTheUnlockLinkInTheLetter(t *testing.T) {
 	if !strings.HasPrefix(s.Page.Line, "Key ") || s.Page.Key != "" {
 		t.Fatalf("after Unlock: %+v", s.Page)
 	}
+	done("2. Unlock", "the key is in the keychain, mark "+s.Page.Mark+": "+s.Page.Line)
 
 	// 3. Another app in front, and the second key's Unlock. The app comes
 	// back to the front with the second key in the field.
@@ -109,6 +112,7 @@ func TestTheUnlockLinkInTheLetter(t *testing.T) {
 		return s.Links == 2 && s.Page.Key == keys[1] && s.Page.Line == "From the link. Unlock takes it."
 	})
 	waitFront(t, "Frame Fairy")
+	done("3. Opened open", "the app came back in front of Calculator with the second key in the field: "+s.Page.Line)
 
 	// 4. A link with more in it than one key changes nothing.
 	open(t, link(keys[0])+"&more=1")
@@ -118,6 +122,16 @@ func TestTheUnlockLinkInTheLetter(t *testing.T) {
 	if s.Page.Key != keys[1] || s.Licence.Waiting {
 		t.Fatalf("a link with more in it changed the settings: %+v", s)
 	}
+	done("4. A link with more in it", "refused, and the second key is still in the field")
+}
+
+// done says a step passed in a way GitHub keeps: a notice on the check,
+// which shows on the pull request and can be read without the job's log.
+func done(step, what string) {
+	if os.Getenv("GITHUB_ACTIONS") == "" {
+		return
+	}
+	fmt.Printf("::notice title=%s::%s\n", step, strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(what))
 }
 
 // setUp makes the runner a Mac that has been set up, the way Tim's is:

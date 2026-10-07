@@ -565,5 +565,9 @@ whether to open Frame Fairy, is answered. The steps:
    comes back to the front with the second key in the field.
 5. Hand over a link with more in it than one key. Nothing changes.
 
+Each step that passes leaves a notice on the check, with what the
+settings said, so the pull request shows what was checked without
+anybody opening the job's log.
+
 What it cannot check: the browser's own question before it hands a link
 on, which belongs to the browser, the mail app, and how any of it looks.
