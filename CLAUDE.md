@@ -78,14 +78,21 @@ Start with [README.md](README.md). In short:
 - **Every piece of work becomes a pull request, always.** A branch he has to
   find himself is work he cannot see. Work with no pull request is work that
   has not been handed over.
-- **The pull request comes first, not last.** Push the first commit and open
-  the pull request straight away, without being asked and without asking,
-  and then keep pushing to it. The first commit does not have to be worth
-  looking at and does not have to work. It exists so the pull request
-  exists, because that is where Tim follows the work as it happens. Waiting
-  until there is something good to show means he watches nothing for an hour
-  and then gets everything at once. A pull request opened late is the same
+- **The pull request comes first, not last.** Open it with the first push,
+  without being asked and without asking, and then keep pushing to it,
+  because that is where Tim follows the work as it happens. Waiting until
+  there is something good to show means he watches nothing for an hour and
+  then gets everything at once. A pull request opened late is the same
   mistake as no pull request at all.
+- **Push real work early, not placeholders.** The first push carries the
+  first piece of the change, a failing test or the first working part,
+  never a plan row or a note alone. A push starts CI on shared runners, so
+  push when there is something for CI to check, and do not hold finished
+  work back on the machine either.
+- **One change, one pull request.** Never push the same commits into two
+  pull requests. Work that builds on an open pull request takes that pull
+  request's branch as its base, so its diff shows only its own change, or
+  it waits until the first is merged.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the
