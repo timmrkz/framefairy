@@ -306,6 +306,9 @@ func TestTheRunningBuildIsCurrent(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", runningVersion(), "main"})
 	c, _ := newTestUpdating(t, cs, false)
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
 	c.check()
 	if s := c.State(); s.Phase != "current" || s.Next != "" || s.Checked.IsZero() {
 		t.Errorf("%+v", s)
@@ -415,7 +418,7 @@ func TestUpdatesFromEverywhereAtOnce(t *testing.T) {
 func TestFollowRefusesWhatIsNotAChannel(t *testing.T) {
 	cs := newChannelServer(t)
 	c, _ := newTestUpdating(t, cs, false)
-	for _, bad := range []string{"../x", "pr-", "pr-0", "Main", "pr-18 "} {
+	for _, bad := range []string{"", "../x", "pr-", "pr-0", "Main", "pr-18 "} {
 		if err := c.Follow(bad); err == nil {
 			t.Errorf("followed %q", bad)
 		}
@@ -560,5 +563,63 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 	}
 	if strings.Join(ids, " ") != "main pr-21" {
 		t.Errorf("the list after Check: %v", ids)
+	}
+}
+
+// A pull request followed that has left the list is closed, and the state
+// says so in one place: the phase is gone whenever gone is set. Reading
+// the list for the page used to set gone and leave the phase as it was,
+// so after a restart a build made on the Mac showed the pull request
+// closed in the list and Not checked yet under it.
+func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	// Pull request 138 picked in a run before, as updates.json gives it
+	// back after a restart. A build made on the Mac does not look by
+	// itself, so the only read is the page asking for the channels.
+	c.mu.Lock()
+	c.state.Picked = "pr-138"
+	c.mu.Unlock()
+	c.refreshList()
+	if s := c.State(); s.Gone != "pr-138" || s.Phase != "gone" {
+		t.Errorf("after a restart the list says %q is gone and the phase is %q", s.Gone, s.Phase)
+	}
+
+	// A build that is ready, of a pull request that is then closed, is
+	// not installed on the way out while the page says it is closed.
+	was := runningApp
+	runningApp = func() string { return "/Applications/Frame Fairy.app" }
+	t.Cleanup(func() { runningApp = was })
+	var started int
+	c.install = func(string, string) error { started++; return nil }
+	_ = c.Follow("pr-20")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c.mu.Lock()
+	c.listed = time.Time{}
+	c.mu.Unlock()
+	c.refreshList()
+	s := c.State()
+	if s.Gone != "pr-20" || s.Phase != "gone" || s.Next != "" {
+		t.Errorf("closed while ready: %+v", s)
+	}
+	c.installOnQuit()
+	if started != 0 {
+		t.Error("a closed pull request's build went in on the way out")
+	}
+}
+
+// A build made on the Mac that follows nothing, asked to look, reads the
+// list and still follows nothing. It said it was the newest build of
+// main.
+func TestFollowingNothingIsNeverUpToDate(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.checkNow()
+	if s := c.State(); s.Phase != "" || s.Follows != "" || s.Gone != "" || len(s.Channels) != 1 {
+		t.Errorf("%+v", s)
 	}
 }

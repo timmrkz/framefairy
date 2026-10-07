@@ -59,6 +59,9 @@
     // now says yes, and the list stays shut: the caller shows why, the way
     // the settings shake the card a running search is using.
     refuse = undefined,
+    // What the trigger says while nothing in the list is picked. It is a
+    // state, not a row: a list never offers nothing as a choice.
+    placeholder = "",
   }: {
     // What is picked. It goes one way only, and nothing here ever writes
     // it back: what the trigger says is what the caller says is true, and
@@ -88,6 +91,7 @@
     icon?: string;
     onopenchange?: (open: boolean) => void;
     refuse?: () => boolean;
+    placeholder?: string;
   } = $props();
 
   const picked = $derived(options.find((o) => o.value === value));
@@ -95,7 +99,10 @@
   // What the trigger says. A value that is not in the list yet, which is
   // what the moment between opening an episode and its fonts arriving looks
   // like, still reads as itself rather than as nothing.
-  const shown = $derived(options.find((o) => o.value === value)?.label ?? value);
+  // With nothing picked it says the placeholder, in the colour of a unit,
+  // the way an empty field shows its own.
+  const shown = $derived(options.find((o) => o.value === value)?.label ?? (value || placeholder));
+  const unpicked = $derived(!value && !!placeholder);
 
   // The longest thing the list can ever say. The trigger keeps room for it
   // whatever is picked, so the row does not change width as it is used,
@@ -103,7 +110,7 @@
   // of the two. Measuring text is the stylesheet's work, so the longest
   // label is drawn and hidden rather than measured in JavaScript.
   const longest = $derived(
-    options.reduce((most, o) => (o.label.length > most.length ? o.label : most), ""),
+    options.reduce((most, o) => (o.label.length > most.length ? o.label : most), placeholder),
   );
 
   // Which row the list itself thinks is ticked. It is not the same thing
@@ -169,7 +176,7 @@
         {:else}
           <span class="said">
             <span class="room" aria-hidden="true">{longest}</span>
-            <span>{shown}</span>
+            <span class:unpicked>{shown}</span>
           </span>
           <span class="mark"><Icon name="pick" size={12} /></span>
         {/if}
@@ -306,6 +313,10 @@
 
   .room {
     visibility: hidden;
+  }
+
+  .unpicked {
+    color: var(--muted);
   }
 
   /* Ending the row on the right is what the settings column asks for, and

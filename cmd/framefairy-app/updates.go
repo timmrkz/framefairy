@@ -78,7 +78,8 @@ type UpdateState struct {
 	Follows string `json:"follows"`
 	// Gone is the channel followed when it is not on the list any more, a
 	// pull request merged or closed. Nothing is downloaded for it, and
-	// nothing else is either until another channel is picked.
+	// nothing else is either until another channel is picked. Whenever it
+	// is set, Phase is gone, see settle.
 	Gone string `json:"gone"`
 	// Building is the newest commit of the channel followed when its build
 	// has not come yet, so the page does not offer the build there is as
@@ -95,6 +96,21 @@ type UpdateState struct {
 	Written int64     `json:"written"`
 	Total   int64     `json:"total"`
 	Problem string    `json:"problem"`
+}
+
+// settle keeps the state saying one thing. A channel followed that has
+// left the list is gone, whatever the last check said and whatever a
+// download went on to do: the list read for the page set Gone and left the
+// phase as it was, so the page called the pull request closed in the list
+// and Not checked yet under it, and a build that was ready went in on the
+// way out while the page said its pull request was closed. Every change to
+// the state ends here, so the two can never disagree.
+func (s *UpdateState) settle() {
+	if s.Gone == "" {
+		return
+	}
+	s.Phase = "gone"
+	s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
 }
 
 // UpdateChannel is a channel as the interface lists it.
@@ -246,6 +262,7 @@ func (c *updating) State() UpdateState {
 func (c *updating) change(f func(*UpdateState)) {
 	c.mu.Lock()
 	f(&c.state)
+	c.state.settle()
 	c.lastSent = time.Now()
 	c.mu.Unlock()
 	if c.emit != nil {
@@ -274,6 +291,7 @@ func (c *updating) seen(l updates.List) {
 	} else {
 		c.state.Gone = updates.Followed(c.state.Picked, buildChannel)
 	}
+	c.state.settle()
 }
 
 // progress is told about every quarter of a megabyte, and passes it on a
@@ -319,9 +337,11 @@ func (c *updating) refreshList() {
 // Follow picks a channel and looks at once. The wait for a download of the
 // channel before is stopped and what it found forgotten, and the state
 // shown is the new channel's from this moment: a click shows at once. The
-// download itself goes on, so going back has it.
+// download itself goes on, so going back has it. Following nothing is not
+// a choice: a build made on the Mac starts out following nothing, and once
+// a channel is picked another channel is what follows it.
 func (c *updating) Follow(channel string) error {
-	if channel != "" && !updates.ValidChannel(channel) {
+	if !updates.ValidChannel(channel) {
 		return fmt.Errorf("%q is not a channel", channel)
 	}
 	if c.u == nil {
@@ -459,8 +479,11 @@ func (c *updating) checkOnce() {
 	if rel == nil {
 		mine(func(s *UpdateState) {
 			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
-			if s.Gone != "" {
-				s.Phase = "gone"
+			// Following nothing, a build made on the Mac before a channel
+			// is picked, is not being up to date with anything. A channel
+			// gone is settled by change.
+			if updates.Followed(s.Picked, buildChannel) == "" {
+				s.Phase = ""
 			}
 			s.Checked = time.Now()
 		})

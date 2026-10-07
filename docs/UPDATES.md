@@ -515,6 +515,12 @@ with its newest build, so one fetch is the whole check:
    push has replaced: nothing is kept that the list does not name. It
    used to follow main by itself, and Tim, meaning to pick another pull
    request, watched main download without having asked for it.
+   The page says closed whenever the list does, whatever the last check
+   said: the channel being gone and the line under the build are one
+   thing in the state, see `settle` in `cmd/framefairy-app/updates.go`. A
+   build made on the Mac reads the list for the page without checking, and
+   that read once marked the pull request closed in the list while the
+   line under it still said Not checked yet.
 
 **Quitting with a build ready puts it in place**, the way Chrome does:
 the next start is the new build, and nothing opens by itself in between.
@@ -540,6 +546,12 @@ about Frame Fairy go.
 A build made by `make`, and `make run` is one, follows nothing until a
 channel is picked, and looks only when it is picked or Check is clicked.
 Otherwise every `make run` would fetch a build to replace itself with.
+Following nothing is where such a build starts, not a choice: the list
+offers only channels, main and the open pull requests, and a closed one
+while it is still followed, and its trigger says **Choose a channel**
+until one is picked. Once a channel is picked, another channel is what
+follows it. A Check while nothing is followed reads the list and still
+follows nothing, and never says up to date.
 
 ## What is built
 
@@ -548,7 +560,7 @@ Otherwise every `make run` would fetch a build to replace itself with.
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the user's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so it gets no secret and no token that can write. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
 | The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to |

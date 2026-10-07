@@ -839,7 +839,7 @@ export const Call = {
       case "FollowChannel":
         updNow().picked = args[0] as string;
         updSend();
-        updFetch((args[0] as string) || "main");
+        updFetch(args[0] as string);
         return Promise.resolve(null);
       case "CheckForUpdates":
         // The channel followed, as updates.Followed has it: the one picked,
@@ -1652,7 +1652,8 @@ export const Call = {
 // until a channel is picked, and with ?updatesoff one with no update key.
 // ?prgone is pull request 18's build after the pull request was merged:
 // it is not on the list any more, and nothing downloads until another
-// channel is picked.
+// channel is picked. With ?makebuild it is a build made by make that
+// picked pull request 18 in a run before, as it reads after a restart.
 // ?listfails is pull request 18's build, picked by hand, when the channel
 // list could not be read since the app started: no channels at all, and a
 // check that failed. The pull request is still open, so it must not read
@@ -1682,12 +1683,14 @@ const updNow = () => {
       ? "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
       : "",
     channels: fails ? [] : gone ? updChannels.filter((c) => c.id !== "pr-18") : updChannels,
-    picked: fails ? "pr-18" : "",
+    picked: fails || (local && gone) ? "pr-18" : "",
     follows: local || gone || fails ? "" : "pr-18",
     gone: gone ? "pr-18" : "",
     // ?unbuilt: a push to the channel whose build has not come yet.
     building: location.search.includes("unbuilt") ? "6ceea6d1f2a3" : "",
-    phase: local ? "" : gone ? "gone" : fails ? "failed" : "current",
+    // A channel gone is the phase gone, whatever else, the way settle in
+    // updates.go keeps it.
+    phase: gone ? "gone" : local ? "" : fails ? "failed" : "current",
     next: "",
     nextName: "",
     nextCommit: "",
@@ -1709,6 +1712,17 @@ const updFetch = (channel: string) => {
     updSend();
     updTimers.push(setTimeout(() => {
       Object.assign(upd, { phase: "failed", problem: "The channel list answered 404 Not Found.", checked: new Date().toISOString() });
+      updSend();
+    }, 80));
+    return;
+  }
+  // Following nothing, a build made by make before a channel is picked,
+  // reads the list and still follows nothing, the way checkOnce does.
+  if (!channel) {
+    upd.phase = "checking";
+    updSend();
+    updTimers.push(setTimeout(() => {
+      Object.assign(upd, { phase: "", checked: new Date().toISOString() });
       updSend();
     }, 80));
     return;

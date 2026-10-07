@@ -86,8 +86,7 @@
   // by its number. The pull request's title says what it is about, which
   // is not what is being picked here. Customers will see releases the same
   // way, by their version.
-  const channelName = (id: string) =>
-    id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : id ? `Branch ${id}` : "Nothing";
+  const channelName = (id: string) => (id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : `Branch ${id}`);
   const channelOptions = $derived.by(() => {
     const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
     // A pull request that was followed and has since gone stays in the
@@ -102,12 +101,14 @@
       const label = update?.gone === kept ? `${channelName(kept)}, closed` : channelName(kept);
       listed.push({ value: kept, label });
     }
-    // A build made by make follows nothing until a channel is picked.
-    if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
+    // Nothing is not in the list. A build made on the Mac follows nothing
+    // until a channel is picked, which is a state and not a choice, so the
+    // trigger says Choose a channel, and once one is picked another channel
+    // is what follows it.
     return listed;
   });
   const following = $derived(update ? update.picked || update.follows || update.gone || "" : "");
-  const followingName = $derived(channelName(following || "main"));
+  const followingName = $derived(following ? channelName(following) : "");
 
   function when(checked: string | undefined): string {
     if (!checked) return "";
@@ -138,7 +139,7 @@
     if (u.off) return { mark: "off", head: "This build does not update itself", more: u.off };
     switch (u.phase) {
       case "checking":
-        return { mark: "look", head: "Looking for a newer build", more: `Of ${followingName}.` };
+        return { mark: "look", head: "Looking for a newer build", more: following ? `Of ${followingName}.` : "" };
       case "downloading": {
         const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
         return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
@@ -178,10 +179,16 @@
       return {
         mark: "idle",
         head: "Built on this Mac",
-        more: "It follows no channel. Pick one, and it downloads that channel's newest build.",
+        more: "It follows no channel. Choose one, and it downloads that channel's newest build.",
       };
     }
-    return { mark: "idle", head: "Not checked yet", more: "It looks when the app starts and every ten minutes." };
+    // A build made on the Mac does not look by itself when it starts, so it
+    // does not say it does.
+    return {
+      mark: "idle",
+      head: "Not checked yet",
+      more: u.channel ? "It looks when the app starts and every ten minutes." : "Built on this Mac, it looks when you click Check.",
+    };
   });
 
   const looking = $derived(update?.phase === "checking");
@@ -244,6 +251,7 @@
             onpick={follow}
             id="channel"
             label="Channel"
+            placeholder="Choose a channel"
             align="right"
             title="Where this app updates from: main, or one pull request. It looks when the app starts and every ten minutes, and downloads the newest build by itself"
             tone={update.phase === "gone" ? "warn" : undefined}
