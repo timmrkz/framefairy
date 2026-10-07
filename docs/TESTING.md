@@ -510,3 +510,48 @@ end with the frame before its last on screen, 24.40 on a clip that ends
 at 24.72. The queue draws frames on a grid of frames from where the play
 began, so the last frame never came up. A play that ends now draws the
 last frame of what played.
+
+## From outside the app
+
+The walks drive the interface from inside its page. Some of what the app
+does starts outside it: a link in a mail that opens the app, with the app
+closed or already open. `make outside` checks those on a real Mac, the
+way Tim did by hand, and CI runs it in the job `outside`, the only one
+that needs any of what it sets up.
+
+What it needs, and nothing else needs:
+
+- The app as a bundle, registered with Launch Services, so macOS knows
+  which app opens `framefairy://`. It is built with the build tag
+  `outside`, which adds a probe, see below. Every other build leaves the
+  probe out, so the app a customer gets has none of it.
+- The local dispenser, `framefairy-dispenser dev`, running beside it. The
+  test buys at its checkout and reads the keys out of the letter on its
+  dev page, the letter a buyer gets.
+- A keychain of its own, unlocked and made the default, because Unlock
+  writes the key to the keychain, and a locked one puts a box on screen
+  that nobody answers. The job makes it, and the test refuses to run
+  outside CI: on a Mac of one's own it would replace the licence there.
+
+The probe listens on 127.0.0.1:47290, for the test only. It says what the
+app has: the links it was handed, whether its window is in front, and what
+the settings show, read out of the page itself. It presses a button the
+way a click does, and it quits the app.
+
+A link is handed to macOS with `open -g`, which is what a browser does
+once its own question, whether to open Frame Fairy, is answered. The `-g`
+leaves the app where it is, so the app has to bring itself forward, the
+way it has to after a click in a mail. The steps:
+
+1. Buy two seats at the checkout and wait for the letter.
+2. With the app closed, hand it the first key's link. The app starts, is
+   in front, shows the settings with the key in the Licence field and
+   says Unlock takes it.
+3. Press Unlock. The row says the key is licensed to the buyer, a test
+   key, with a check mark.
+4. Put another app in front and hand over the second key's link. The app
+   comes back to the front with the second key in the field.
+5. Hand over a link with more in it than one key. Nothing changes.
+
+What it cannot check: the browser's own question before it hands a link
+on, which belongs to the browser, the mail app, and how any of it looks.
