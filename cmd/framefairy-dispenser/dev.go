@@ -78,7 +78,7 @@ func newDev(base, dir string, batch int, logTo io.Writer) (*dev, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := ed25519.NewKeyFromSeed(signer.TestSeed())
+	key := ed25519.NewKeyFromSeed(licence.TestSeed())
 	if d.signer, err = signer.New(0, key, record, signer.WithClock(d.clock.Now)); err != nil {
 		return nil, err
 	}

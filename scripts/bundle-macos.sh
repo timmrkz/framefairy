@@ -143,6 +143,20 @@ $ICON
 	<false/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<!-- framefairy:// links open the app. The Unlock button on the
+	     thank-you page and in the letter with the keys is one, carrying
+	     the key, see docs/LICENCE.md. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.framefairy.app.unlock</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>framefairy</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Frame Fairy opens the episodes you keep on the Desktop and writes each one's clips in a folder beside the video.</string>
 	<key>NSDocumentsFolderUsageDescription</key>

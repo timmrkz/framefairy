@@ -7,6 +7,7 @@
     onEpisodeChanged,
     onAcknowledgements,
     onShowUpdates,
+    onLicenceLink,
     onUpdates,
     type UpdateState,
     onQuit,
@@ -279,6 +280,17 @@
     return parts.join("; ");
   });
 
+  // A key from a link that waits goes to the settings, once the setup of a
+  // new copy is out of the way.
+  function showLicenceLink() {
+    api
+      .licence()
+      .then((l) => {
+        if (l.waiting && settingUp === false) nav.go({ name: "settings" });
+      })
+      .catch(() => {});
+  }
+
   onMount(() => {
     jobs.start();
     installFonts().catch(() => {});
@@ -297,7 +309,8 @@
       .then((s) => (settingUp = !s.chosen || !s.hasSpeech))
       // A machine that cannot answer is not a machine to hold in a setup
       // screen it can never leave.
-      .catch(() => (settingUp = false));
+      .catch(() => (settingUp = false))
+      .then(showLicenceLink);
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
@@ -308,6 +321,11 @@
     const noUpdates = onUpdates((u) => (update = u));
     // Check for Updates in the app menu shows the answer where it is kept.
     const noShowUpdates = onShowUpdates(() => nav.go({ name: "updates" }));
+    // A framefairy://unlock link, from the mail a licence came in, opens
+    // the settings, where its key waits in the Licence row. One that
+    // opened the app came before this page could listen, so it is asked
+    // for as well.
+    const noLicenceLink = onLicenceLink(() => nav.go({ name: "settings" }));
     // The question lasts as long as the Go side waits for the second
     // press, quitAgain in quit.go.
     let asked: ReturnType<typeof setTimeout> | undefined;
@@ -332,6 +350,7 @@
       noAcknowledgements();
       noUpdates();
       noShowUpdates();
+      noLicenceLink();
       off();
     };
   });
@@ -372,6 +391,7 @@
       ondone={() => {
         settingUp = false;
         refresh();
+        showLicenceLink();
       }}
     />
   {:else}
