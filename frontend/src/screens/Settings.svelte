@@ -35,6 +35,7 @@
     type Settings,
     type SpeechModel,
     type TrainingStatus,
+    type LicenceLink,
     type LicenceState,
     onLicenceLink,
   } from "../lib/api";
@@ -211,18 +212,38 @@
 
   // The licence key, kept in the keychain like an API key and never read
   // back: the Go side only says whether there is one and how it was
-  // described when it was kept. A key that came in a framefairy:// link
-  // is put in the field and waits for Unlock, because any page and any
-  // app can open such a link.
+  // described when it was kept. A link from the mail a key came in has
+  // already been dealt with by the Go side when it arrives here, see
+  // linkOutcome in licence.go: it unlocked a Mac with no key, or it waits
+  // for Unlock to replace the key kept, because any page and any app can
+  // open such a link. The row says which.
   let licence = $state<LicenceState>({ saved: false, about: "", waiting: false });
   let licenceKey = $state("");
-  let fromLink = $state(false);
+  let fromLink = $state<LicenceLink | null>(null);
   let unlocking = $state(false);
   let licenceRefused = $state("");
   let licenceField = $state<HTMLInputElement>();
   let licenceCard = $state<HTMLElement>();
   let licenceShaking = $state(false);
   let removingLicence = $state(false);
+  // Whether a key is asked for: none is kept, or a link brought another
+  // or one that was refused. A Mac that is licensed shows that it is and
+  // nothing to do, because an empty field and a dimmed Unlock beside
+  // "Licensed" read as a step still to take. Held while the field is in
+  // use, so it never goes from under the hand.
+  let keyAsked = $state(false);
+  const askingKey = $derived(!licence.saved || keyAsked);
+
+  // The words under Licence key: a refusal, what a link did, the key kept,
+  // or that there is none.
+  const licenceLine = $derived.by(() => {
+    if (licenceRefused) return licenceRefused + ".";
+    if (fromLink?.what === "unlocked") return `Unlocked from the link. Thank you. ${fromLink.about}.`;
+    if (fromLink?.what === "same") return `This key is already on this Mac. ${fromLink.about}.`;
+    if (fromLink?.what === "replaces") return `From the link: ${fromLink.about}. Unlock puts it in place of the key on this Mac.`;
+    if (licence.saved) return licence.about + ".";
+    return "None yet.";
+  });
 
   async function readLicence() {
     try {
@@ -232,22 +253,28 @@
     }
   }
 
-  // The key a link brought, into the field, with the row in view and the
-  // keyboard on Unlock.
+  function sentence(said: string): string {
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  }
+
+  // What a link did, with the row in view. Only a key that replaces the
+  // one kept waits in the field, with the keyboard on Unlock. A refused one
+  // is in the field too, so it can be seen and corrected.
   async function takeLink() {
-    let k = "";
+    let l: LicenceLink | null = null;
     try {
-      k = await api.takeLicenceLink();
+      l = await api.takeLicenceLink();
     } catch (err) {
       problem = errorText(err);
     }
-    if (!k) return;
-    licenceKey = k;
-    fromLink = true;
-    licenceRefused = "";
+    if (!l?.what) return;
+    licenceRefused = l.what === "refused" ? sentence(l.reason) : "";
+    licenceKey = l.what === "replaces" || l.what === "refused" ? l.key : "";
+    keyAsked = l.what === "replaces" || l.what === "refused";
+    fromLink = l.what === "refused" ? null : l;
     await readLicence();
     licenceCard?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    licenceCard?.querySelector<HTMLElement>("button.unlock")?.focus();
+    if (l.what === "replaces") licenceCard?.querySelector<HTMLElement>("button.unlock")?.focus();
   }
 
   // Refused the way the API key is: the field shakes and keeps the key,
@@ -258,10 +285,10 @@
     try {
       licence = await api.saveLicence(licenceKey);
       licenceKey = "";
-      fromLink = false;
+      keyAsked = false;
+      fromLink = null;
     } catch (err) {
-      const said = errorText(err);
-      licenceRefused = said.charAt(0).toUpperCase() + said.slice(1);
+      licenceRefused = sentence(errorText(err));
       licenceShaking = false;
       requestAnimationFrame(() => {
         licenceShaking = true;
@@ -277,11 +304,12 @@
   async function removeLicence() {
     removingLicence = false;
     licenceRefused = "";
+    keyAsked = false;
+    fromLink = null;
     try {
       licence = await api.saveLicence("");
     } catch (err) {
-      const said = errorText(err);
-      licenceRefused = said.charAt(0).toUpperCase() + said.slice(1);
+      licenceRefused = sentence(errorText(err));
     }
   }
 
@@ -963,26 +991,27 @@
               {#if licenceRefused}<Icon name="warn" />{:else if licence.saved}<Icon name="check" />{/if}
             </span>
             <div class="words">
-              <span class="head">Licence key</span>
+              <span class="head">{licence.saved ? "Licensed" : "Licence key"}</span>
               <span
-                class="small line"
+                class="small line whole"
                 class:muted={!licenceRefused}
                 class:error={!!licenceRefused}
-                title={licenceRefused || (licence.saved ? `${licence.about}. In the keychain` : undefined)}
+                title={licence.saved && !licenceRefused ? `${licence.about}. In the keychain` : undefined}
               >
-                {#if licenceRefused}{licenceRefused}.{:else if fromLink}From the link. Unlock takes it.{:else if licence.saved}{licence.about}.{:else}None yet.{/if}
+                {licenceLine}
               </span>
             </div>
+            {#if askingKey}
             <input
-              class="key"
+              class="key licence-key"
               class:shaking={licenceShaking}
               onanimationend={() => (licenceShaking = false)}
-              type="password"
+              type="text"
               bind:this={licenceField}
               bind:value={licenceKey}
               oninput={() => {
                 licenceRefused = "";
-                fromLink = false;
+                fromLink = null;
               }}
               placeholder={licence.saved ? "New key" : "FF1-..."}
               aria-label="Licence key"
@@ -999,6 +1028,7 @@
               {#if unlocking}<Busy />{/if}
               {unlocking ? "Checking" : "Unlock"}
             </button>
+            {/if}
             {#if licence.saved}
               <button
                 class="quiet danger bin"
@@ -1355,6 +1385,23 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  /* The licence row's line is read whole, and wraps. It says why a key
+     was refused or what a link did, and cut short it read as a key that
+     would not unlock for no reason: "Only a build made from the code on
+     this machine takes ...". The card grows by a line rather than hiding
+     the reason. */
+  .line.whole {
+    white-space: normal;
+  }
+
+  /* A licence key is shown as it is, not as dots: it is read off a mail,
+     not typed from memory, and a person checks it is the one they meant.
+     At one width, the way a key in short is. */
+  .licence-key {
+    width: 220px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
 
   .warn {

@@ -23,16 +23,41 @@ type LicenceState struct {
 	// when it was, read without reading the key.
 	Saved bool   `json:"saved"`
 	About string `json:"about"`
-	// Waiting says a key came in a framefairy:// link and waits to be
-	// unlocked with, without handing it over.
+	// Waiting says a link came and what became of it waits to be shown in
+	// the settings, without handing it over.
 	Waiting bool `json:"waiting"`
 }
 
+// LicenceLink is what became of a key that came in a framefairy:// link,
+// for the settings to show, handed over once.
+type LicenceLink struct {
+	// What is "unlocked" when the key was checked and kept, no key being
+	// kept before, "same" when it is the key already kept, "replaces" when
+	// another key is kept and Unlock puts this one in its place, and
+	// "refused" when this build does not take it, Reason saying why. It is
+	// empty when no link waits.
+	What string `json:"what"`
+	// Key is the key itself, for the field, when it is not kept.
+	Key string `json:"key"`
+	// About is the key in a few words, its ID and whom it is for, when it
+	// is one this build takes.
+	About  string `json:"about"`
+	Reason string `json:"reason"`
+}
+
+// The keychain, as the licence row uses it. Tests put a map in its place,
+// so they never reach the machine's own keychain, whose locked box nobody
+// answers in CI.
+var (
+	savedLicence = engine.SavedLicence
+	saveLicence  = engine.SaveLicence
+)
+
 // Licence is the Licence row as it stands.
 func (s *FrameFairy) Licence() LicenceState {
-	about, saved := engine.SavedLicence()
+	about, saved := savedLicence()
 	s.mu.Lock()
-	waiting := s.linkKey != ""
+	waiting := s.link != nil
 	s.mu.Unlock()
 	return LicenceState{Saved: saved, About: about, Waiting: waiting}
 }
@@ -40,34 +65,36 @@ func (s *FrameFairy) Licence() LicenceState {
 // SaveLicence checks a key and keeps it. An empty key takes the kept one
 // off the machine. The errors start small, to sit inside a sentence.
 func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
-	if _, err := engine.SaveLicence(key, testKeys()); err != nil {
+	if _, err := saveLicence(key, testKeys()); err != nil {
 		return s.Licence(), err
 	}
 	return s.Licence(), nil
 }
 
-// TakeLicenceLink hands over the key a link brought, once. The settings
-// put it in the field, and nothing is unlocked until Unlock is pressed:
-// any page and any app on the Mac can open a framefairy:// link.
-func (s *FrameFairy) TakeLicenceLink() string {
+// TakeLicenceLink hands over what became of the last link, once.
+func (s *FrameFairy) TakeLicenceLink() LicenceLink {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.linkKey
-	s.linkKey = ""
-	return k
+	if s.link == nil {
+		return LicenceLink{}
+	}
+	l := *s.link
+	s.link = nil
+	return l
 }
 
 // openedWith is a framefairy:// link macOS handed the app, from a browser,
 // a mail or any other app. Only an unlock link with one key in it is
-// taken, and the key waits in the settings to be unlocked with.
+// taken, see linkOutcome, and the settings show what became of it.
 func (s *FrameFairy) openedWith(raw string) {
 	k, err := keyFromLink(raw)
 	if err != nil {
 		log.Printf("a link the app does not take: %v", err)
 		return
 	}
+	l := linkOutcome(k, testKeys())
 	s.mu.Lock()
-	s.linkKey = string(k)
+	s.link = &l
 	s.mu.Unlock()
 	if s.app != nil {
 		s.app.Event.Emit("licence-link", nil)
@@ -78,12 +105,34 @@ func (s *FrameFairy) openedWith(raw string) {
 	}
 }
 
+// linkOutcome decides what a key from a link does. On a Mac with no key
+// it unlocks the app at once: the buyer clicked Unlock in the mail, and
+// there is nothing to lose. A key already kept is never replaced by a
+// link alone, because any page and any app on the Mac can open one: the
+// settings show the new key and Unlock puts it in place.
+func linkOutcome(k licence.Key, testKeys bool) LicenceLink {
+	_, l, err := engine.CheckLicence(string(k), testKeys)
+	if err != nil {
+		return LicenceLink{What: "refused", Key: string(k), Reason: err.Error()}
+	}
+	about, saved := savedLicence()
+	switch {
+	case !saved:
+		if _, err := saveLicence(string(k), testKeys); err != nil {
+			return LicenceLink{What: "refused", Key: string(k), Reason: err.Error()}
+		}
+		return LicenceLink{What: "unlocked", About: engine.DescribeLicence(l)}
+	case about == engine.DescribeLicence(l):
+		return LicenceLink{What: "same", About: about}
+	}
+	return LicenceLink{What: "replaces", Key: string(k), About: engine.DescribeLicence(l)}
+}
+
 // The longest link taken. A key is at most a little over 200 characters.
 const maxLink = 1024
 
 // keyFromLink reads framefairy://unlock?key=FF1-..., and nothing else: one
-// key, no other parameters, no path. The key is only checked when Unlock
-// is pressed, the way a pasted one is.
+// key, no other parameters, no path. linkOutcome checks the key.
 func keyFromLink(raw string) (licence.Key, error) {
 	if len(raw) > maxLink {
 		return "", errors.New("too long")

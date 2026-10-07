@@ -1051,8 +1051,11 @@ export const Call = {
         return new Promise((resolve) => setTimeout(() => resolve(null), 600));
       }
       // The licence key. ?link starts with a key from a framefairy:// link
-      // waiting, and window.__unlockLink(key) opens one while the app runs.
-      // A key that ends in "bad" is refused, after the moment it takes.
+      // having come, and window.__unlockLink(key) opens one while the app
+      // runs. A link does what linkOutcome in licence.go does: it unlocks
+      // an app with no key, and waits for Unlock to replace one. A key that
+      // ends in "bad" is refused, from a link at once and when pasted after
+      // the moment it takes.
       case "Licence":
         return Promise.resolve(licenceNow());
       case "SaveLicence": {
@@ -1062,14 +1065,15 @@ export const Call = {
             setTimeout(() => reject(new Error("this key was not signed by Frame Fairy")), 400),
           );
         }
+        licence.key = typed;
         licence.saved = !!typed;
-        licence.about = typed ? "Key 0102-0304-0506-0708, licensed to Anna Example, a test key" : "";
+        licence.about = typed ? describeKey(typed) : "";
         return new Promise((resolve) => setTimeout(() => resolve(licenceNow()), 400));
       }
       case "TakeLicenceLink": {
-        const k = licence.link;
-        licence.link = "";
-        return Promise.resolve(k);
+        const l = licence.link ?? { what: "", key: "", about: "", reason: "" };
+        licence.link = null;
+        return Promise.resolve(l);
       }
       case "ChooseCloudModel":
         (window as any).__apiModel = String(args[0]);
@@ -1732,15 +1736,34 @@ const updFetch = (channel: string) => {
   }, 500));
 };
 
+type StubLink = { what: string; key: string; about: string; reason: string };
 const licence = {
+  key: "",
   saved: false,
   about: "",
-  link: location.search.includes("link") ? "FF1-AQIDBAUGBwgJCgsMDQ4PEABBbm5h" : "",
+  link: null as StubLink | null,
 };
+// A key in a few words, the way DescribeLicence puts it, told apart by
+// its last letters.
+const describeKey = (k: string) =>
+  `Key ${k.slice(-4).toUpperCase().padStart(4, "0")}-0304-0506-0708, licensed to Anna Example, a test key`;
+// What a link does with its key, linkOutcome in licence.go.
+const linkOutcome = (k: string): StubLink => {
+  if (k.endsWith("bad")) return { what: "refused", key: k, about: "", reason: "this key was not signed by Frame Fairy" };
+  if (!licence.saved) {
+    licence.key = k;
+    licence.saved = true;
+    licence.about = describeKey(k);
+    return { what: "unlocked", key: "", about: licence.about, reason: "" };
+  }
+  if (licence.key === k) return { what: "same", key: "", about: licence.about, reason: "" };
+  return { what: "replaces", key: k, about: describeKey(k), reason: "" };
+};
+if (location.search.includes("link")) licence.link = linkOutcome("FF1-AQIDBAUGBwgJCgsMDQ4PEABBbm5h");
 const licenceNow = () => ({ saved: licence.saved, about: licence.about, waiting: !!licence.link });
 const licenceListeners = new Set<(ev: unknown) => void>();
 (window as any).__unlockLink = (key: string) => {
-  licence.link = key;
+  licence.link = linkOutcome(key);
   for (const fn of licenceListeners) fn({ data: null });
 };
 

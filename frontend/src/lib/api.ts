@@ -559,11 +559,11 @@ export const api = {
   saveAPIKey: (provider: string, key: string) => call<void>("SaveAPIKey", provider, key),
   // The Licence row in the settings, see licence.go. saveLicence checks a
   // licence key and keeps it in the keychain, and an empty one removes the
-  // kept one. takeLicenceLink hands over, once, a key a framefairy:// link
-  // brought.
+  // kept one. takeLicenceLink hands over, once, what became of the key a
+  // framefairy:// link brought.
   licence: () => call<LicenceState>("Licence"),
   saveLicence: (key: string) => call<LicenceState>("SaveLicence", key),
-  takeLicenceLink: () => call<string>("TakeLicenceLink"),
+  takeLicenceLink: () => call<LicenceLink>("TakeLicenceLink"),
   // Opens the page where the company makes keys, in the browser.
   openKeysPage: (provider: string) => call<void>("OpenKeysPage", provider),
   // Names the model in the cloud, and with it the company.
@@ -1004,15 +1004,26 @@ export function onUpdates(fn: (u: UpdateState) => void): () => void {
 }
 
 // Whether a licence key is kept, described without reading it, and
-// whether one from a link waits to be unlocked with.
+// whether what a link did waits to be shown.
 export interface LicenceState {
   saved: boolean;
   about: string;
   waiting: boolean;
 }
 
-// A framefairy://unlock link opened the app. The key waits on the Go side
-// for takeLicenceLink.
+// What became of the key a link brought, LicenceLink in licence.go:
+// "unlocked" the app with it, no key being kept before, the "same" key as
+// the one kept, another key that "replaces" the kept one once Unlock is
+// pressed, or "refused", with the reason. Empty when no link waits.
+export interface LicenceLink {
+  what: "" | "unlocked" | "same" | "replaces" | "refused";
+  key: string;
+  about: string;
+  reason: string;
+}
+
+// A framefairy://unlock link opened the app. What became of it waits on
+// the Go side for takeLicenceLink.
 export function onLicenceLink(fn: () => void): () => void {
   return Events.On("licence-link", () => fn());
 }

@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"framefairy/engine"
+	"framefairy/licence"
 )
 
 const aKey = "FF1-AQB1hJkc8BOzIgABEgDpH6mFEY4jtWIXAkzbzbWarU9VYz24xu7iX9u50d-AnveI4fmll34Ra9oefyKed91c2yA2c7zhMUUoVQjCV_4O"
@@ -53,23 +58,111 @@ func TestKeyFromLink(t *testing.T) {
 	}
 }
 
-// A link waits for the settings, which take it once, and a link the app
-// does not take leaves nothing waiting.
-func TestALinkWaitsToBeTakenOnce(t *testing.T) {
+// fakeKeychain stands in for the keychain the licence row uses, so no
+// test reaches the Mac's own.
+type fakeKeychain struct{ key, about string }
+
+func useFakeKeychain(t *testing.T) *fakeKeychain {
+	t.Helper()
+	f := &fakeKeychain{}
+	read, keep := savedLicence, saveLicence
+	t.Cleanup(func() { savedLicence, saveLicence = read, keep })
+	savedLicence = func() (string, bool) { return f.about, f.key != "" }
+	saveLicence = func(text string, test bool) (string, error) {
+		if strings.TrimSpace(text) == "" {
+			f.key, f.about = "", ""
+			return "", nil
+		}
+		_, l, err := engine.CheckLicence(text, test)
+		if err != nil {
+			return "", err
+		}
+		f.key, f.about = text, engine.DescribeLicence(l)
+		return f.about, nil
+	}
+	return f
+}
+
+// testKey is a key from the test signer, told apart by its ID.
+func testKey(t *testing.T, id byte) string {
+	t.Helper()
+	k, err := licence.Sign(licence.Licence{
+		Format: licence.Format,
+		ID:     licence.ID{id},
+		Signed: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+	}, ed25519.NewKeyFromSeed(licence.TestSeed()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(k)
+}
+
+// The buyer clicks Unlock in the mail, and a Mac with no key is unlocked
+// by the link alone: the settings only say so.
+func TestALinkUnlocksAMacWithNoKey(t *testing.T) {
+	kc := useFakeKeychain(t)
+	k := testKey(t, 1)
+	s := &FrameFairy{}
+	s.openedWith("framefairy://unlock?key=" + k)
+	if st := s.Licence(); !st.Saved || !st.Waiting {
+		t.Fatalf("after the link: %+v", st)
+	}
+	if kc.key != k {
+		t.Fatalf("kept %q", kc.key)
+	}
+	if got := s.TakeLicenceLink(); got != (LicenceLink{What: "unlocked", About: kc.about}) {
+		t.Fatalf("took %+v", got)
+	}
+	if s.Licence().Waiting || s.TakeLicenceLink() != (LicenceLink{}) {
+		t.Fatal("the link was handed over twice")
+	}
+}
+
+// Any page can open a link, so a key already kept is never replaced by a
+// link alone. The same key again changes nothing, and another waits for
+// Unlock in the settings.
+func TestALinkNeverReplacesAKeptKey(t *testing.T) {
+	kc := useFakeKeychain(t)
+	first, second := testKey(t, 1), testKey(t, 2)
+	if _, err := saveLicence(first, true); err != nil {
+		t.Fatal(err)
+	}
+	s := &FrameFairy{}
+	s.openedWith("framefairy://unlock?key=" + first)
+	if got := s.TakeLicenceLink(); got != (LicenceLink{What: "same", About: kc.about}) {
+		t.Fatalf("the same key: %+v", got)
+	}
+	s.openedWith("framefairy://unlock?key=" + second)
+	if got := s.TakeLicenceLink(); got.What != "replaces" || got.Key != second || !strings.Contains(got.About, "0200-0000-0000-0000") {
+		t.Fatalf("another key: %+v", got)
+	}
+	if kc.key != first {
+		t.Fatal("a link replaced the key kept")
+	}
+}
+
+// A key this build does not take is shown with the reason, and nothing is
+// kept. A test key in a build from the workflow is the one Tim met: the
+// reason has to be the whole of it.
+func TestALinkWithAKeyThisBuildRefuses(t *testing.T) {
+	kc := useFakeKeychain(t)
+	k := testKey(t, 1)
+	got := linkOutcome(licence.Key(k), false)
+	if got.What != "refused" || got.Key != k || !strings.Contains(got.Reason, "test key") {
+		t.Fatalf("%+v", got)
+	}
+	if kc.key != "" {
+		t.Fatal("a refused key was kept")
+	}
+}
+
+// A link the app does not take leaves nothing waiting.
+func TestALinkNotTakenLeavesNothing(t *testing.T) {
+	useFakeKeychain(t)
 	s := &FrameFairy{}
 	s.openedWith("framefairy://unlock?key=" + aKey + "&more=1")
-	if s.Licence().Waiting || s.TakeLicenceLink() != "" {
-		t.Fatal("a refused link left a key waiting")
-	}
-	s.openedWith("framefairy://unlock?key=" + aKey)
-	if !s.Licence().Waiting {
-		t.Fatal("no key waiting after a link")
-	}
-	if got := s.TakeLicenceLink(); got != aKey {
-		t.Fatalf("took %q", got)
-	}
-	if s.Licence().Waiting || s.TakeLicenceLink() != "" {
-		t.Fatal("the key was handed over twice")
+	if s.Licence().Waiting || s.TakeLicenceLink() != (LicenceLink{}) {
+		t.Fatal("a link the app does not take left something waiting")
 	}
 }
 
