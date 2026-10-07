@@ -303,7 +303,9 @@ facade the app goes around, and three files too big to hold in one's head.
 30. **Sizes worked out in JavaScript.** `RangeWindow.svelte:114` measures its
     width and places everything in pixels, to land on whole pixels.
     `Player.svelte:702` does the same for the caption scale. CSS `round()`
-    and container units would do both in the stylesheet. **Open.**
+    and container units would do both in the stylesheet. **Fixed** in #132:
+    the range picker places every mark with `round()` in container units,
+    and the captions are sized in shares of the picture's height, `cqh`.
 
 ## Small things
 
