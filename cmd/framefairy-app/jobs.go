@@ -101,6 +101,9 @@ type Job struct {
 	// byHand is a search called off with Cancel, which says so where its
 	// work was the way one cut off by the app closing does, see stopByHand.
 	byHand bool
+	// click is the press of New or Continue that asked for the job, named
+	// by the window, see stopClips.
+	click string
 }
 
 // JobUpdate is what the interface receives on the "job" event.
@@ -144,6 +147,9 @@ type queue struct {
 	// shut is set when the app quits. Nothing is queued after it.
 	shut bool
 	seq  uint64
+	// calledOff is, per episode, the press of New or Continue the last
+	// Cancel at the head of the clip list was about, see stopClips.
+	calledOff map[string]string
 }
 
 // stampLocked marks a change to a job. q.mu is held.
@@ -155,7 +161,7 @@ func (q *queue) stampLocked(j *Job) {
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	return &queue{emit: quietly(emit), store: s, notify: quietly(notify), closed: map[string]int{},
-		lanes: newLanes()}
+		lanes: newLanes(), calledOff: map[string]string{}}
 }
 
 // newIdleQueue builds the queue without setting it running, so work can be
@@ -299,6 +305,13 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		steps: steps, cancel: cancel, ctx: ctx}
 	if prepare != nil {
 		prepare(job)
+	}
+	// Cancel was pressed after the press that asked for it, and reached
+	// the Go side first. It is called off before it starts, and ends the
+	// way one called off while it ran does, see stopClips.
+	if makesClips(kind) && job.click != "" && q.calledOff[episode] == job.click {
+		job.byHand = job.Record != ""
+		cancel()
 	}
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
@@ -578,6 +591,40 @@ func (q *queue) stopByHand(id string) {
 	q.cancel(id)
 }
 
+// stopClips is Cancel at the head of the clip list: it calls off all the
+// work on the clips of an episode, the search and every clip made by hand,
+// the way stopByHand calls off one of them. It names the episode and not a
+// job, so it needs nothing from the Go side first: Cancel takes effect the
+// moment it is pressed, also before the search New asked for is in the
+// queue. click is the press of New or Continue the Cancel came after. A
+// job that press asked for and that reaches the queue later is called off
+// as it does, see addSteps. Both happen under the queue's lock, so
+// whichever of the two calls comes first, the job never starts.
+func (q *queue) stopClips(episode, click string) {
+	q.mu.Lock()
+	if click != "" {
+		q.calledOff[episode] = click
+	}
+	var stopped []Job
+	for _, j := range q.jobs {
+		if j.Episode != episode || !makesClips(j.Kind) || (j.State != JobQueued && j.State != JobRunning) ||
+			j.ctx.Err() != nil {
+			continue
+		}
+		j.byHand = j.Record != ""
+		j.cancel()
+		if j.State == JobQueued {
+			j.State = JobCancelled
+		}
+		q.stampLocked(j)
+		stopped = append(stopped, *j)
+	}
+	q.mu.Unlock()
+	for _, j := range stopped {
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
 // settle marks the searches or renders of an episode that stopped, cut
 // off or failed, as taken care of: carried on by a new job, or their note
 // taken away. A record id picks one of them, and "" all of that kind.
@@ -840,6 +887,17 @@ func (s *FrameFairy) CancelJob(id string) {
 		return
 	}
 	s.jobs.cancel(id)
+}
+
+// StopClipWork is Cancel at the head of the clip list: it stops all the
+// work on the clips of an episode, and the search the press of New or
+// Continue named click asked for, whether or not that has reached the Go
+// side yet, see stopClips.
+func (s *FrameFairy) StopClipWork(path, click string) {
+	if !s.store.Known(path) {
+		return
+	}
+	s.jobs.stopClips(path, click)
 }
 
 // ClearJobs forgets finished jobs.

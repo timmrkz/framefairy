@@ -606,9 +606,17 @@ export const api = {
     call<number[]>("Waveform", path, from, to, buckets),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
   // New: finds clips in a window, hearing the episode that far first.
-  search: (path: string, req: PlanRequest) => call<Job>("Search", path, req),
-  // Continue: carries on a search or a render that stopped.
-  continueJob: (id: string) => call<Job>("Continue", id),
+  // click names the press, so a Cancel pressed after it stops it whichever
+  // of the two reaches the Go side first, see stopClipWork.
+  search: (path: string, req: PlanRequest, click: string) => call<Job>("Search", path, req, click),
+  // Continue: carries on a search or a render that stopped. click as for
+  // search, "" where no Cancel can follow it.
+  continueJob: (id: string, click: string) => call<Job>("Continue", id, click),
+  // Cancel at the head of the clip list: stops all the work on the clips
+  // of an episode, and the search the press named click asked for, even
+  // one the Go side has not heard of yet. It needs no answer to anything
+  // first, so it takes effect the moment it is pressed.
+  stopClipWork: (path: string, click: string) => call<void>("StopClipWork", path, click),
   makeClip: (path: string, at: number, backward: boolean) => call<Job>("MakeClip", path, at, backward),
   // The words said in a part of the episode, for walking the playhead
   // from word to word.

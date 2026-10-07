@@ -241,7 +241,7 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 						return "", engine.ErrCancelled
 					})
 				}
-				s.Search(source, engine.PlanRequest{To: 10, Count: 1, Min: 5})
+				s.Search(source, engine.PlanRequest{To: 10, Count: 1, Min: 5}, "")
 				s.jobs.list()
 			}
 		}()

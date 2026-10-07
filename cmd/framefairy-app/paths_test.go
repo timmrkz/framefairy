@@ -83,7 +83,7 @@ func TestPathClosedTheMomentASearchIsAsked(t *testing.T) {
 	d.idle(ep)
 	for i := range 5 {
 		from := float64(20 * (i + 1))
-		d.svc.Search(ep, engine.PlanRequest{From: from, To: from + 60, Count: 1, Min: 5})
+		d.svc.Search(ep, engine.PlanRequest{From: from, To: from + 60, Count: 1, Min: 5}, "")
 		d.close()
 		d.reopen()
 		o := d.outcome(ep)
@@ -176,6 +176,47 @@ func TestPathCancelWhileFinding(t *testing.T) {
 	}
 	if _, done := d.heard(ep); !done {
 		t.Error("the transcript was not kept")
+	}
+}
+
+// Cancel pressed the moment after New, and reaching the Go side before
+// the search New asked for: the search is called off as it arrives, never
+// takes a turn, and says Stopped with Continue, after a restart too. Plan
+// row 2.131.
+func TestPathCancelBeforeTheSearchIsAsked(t *testing.T) {
+	d := open(t)
+	ep := d.add("ep", minutes5)
+	d.idle(ep)
+	before := len(d.clips(ep))
+	d.stop(ep, "press-1")
+	d.press(ep, window{60, 240}, "press-1")
+	d.idle(ep)
+	if o := d.outcome(ep); !o.stopped || o.window != (window{60, 240}) {
+		t.Fatalf("a search Cancel reached the Go side ahead of says %+v", o)
+	}
+	rec := engine.ReadSearch(ep)
+	if rec == nil || rec.Step != engine.StepStopped {
+		t.Fatalf("its record is %+v", rec)
+	}
+	for _, step := range rec.Steps {
+		if step.Step != engine.StepWaiting && step.Step != engine.StepStopped {
+			t.Errorf("a search called off before it was asked for went on to %s", step.Step)
+		}
+	}
+	if n := len(d.clips(ep)); n != before {
+		t.Errorf("%d clips before, %d after a search that never started", before, n)
+	}
+	d.close()
+	d.reopen()
+	if o := d.outcome(ep); !o.stopped {
+		t.Errorf("after a restart it says %+v", o)
+	}
+	// A Cancel is about the press it came after and no other: the next
+	// New runs.
+	d.press(ep, window{60, 240}, "press-2")
+	d.idle(ep)
+	if j, _ := d.svc.jobs.find(ep, engine.JobSearch); j.State != JobDone {
+		t.Errorf("New after it ended %s %s", j.State, j.Error)
 	}
 }
 
