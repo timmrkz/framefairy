@@ -181,11 +181,8 @@ type runner struct {
 	// logsDir is where the episode's records go, and outDir and
 	// captionDir where its shorts and their captions go.
 	logsDir, outDir, captionDir string
-	// shared says outDir is the episode's folder inside Options.Shorts,
-	// where a short never takes a name another file has, see shortStem.
-	shared bool
-	source SourceInfo
-	rs     RenderSettings
+	source                      SourceInfo
+	rs                          RenderSettings
 	// window is the part of the episode asked for, nil for all of it, and
 	// span is that part or the whole episode.
 	window *Window
@@ -310,13 +307,13 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	}
 
 	work := WorkDir(opts.Source)
-	outDir, shared := opts.Out, false
+	outDir := opts.Out
 	if outDir == "" && opts.Shorts != "" {
 		dir, err := SafeChild(opts.Shorts, EpisodeName(opts.Source))
 		if err != nil {
 			return nil, err
 		}
-		outDir, shared = dir, true
+		outDir = dir
 	}
 	if outDir == "" {
 		outDir = filepath.Join(work, "out")
@@ -348,7 +345,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		rs.OutW, rs.OutH = opts.Width/2, opts.Height/2
 		rs.CRF, rs.Preset = 30, "veryfast"
 		if opts.Out == "" {
-			outDir, shared = filepath.Join(work, "preview"), false
+			outDir = filepath.Join(work, "preview")
 		}
 	}
 
@@ -454,7 +451,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	}
 
 	return &runner{e: e, opts: opts, logsDir: logsDir, outDir: outDir, captionDir: captionDir,
-		shared: shared, source: source, rs: rs, window: window, span: span, planPath: planPath,
+		source: source, rs: rs, window: window, span: span, planPath: planPath,
 		experiment: experiment}, nil
 }
 
@@ -738,8 +735,9 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		started := time.Now()
 		log.Info("%s: %ss, %d segment(s), %d cues", clip.Basename(),
 			fixed(clip.Duration(), 1), len(clip.Segments), len(cues))
+		// A preview, which the plan never notes, keeps the clip's id.
 		stem := clip.Basename()
-		if r.shared {
+		if !opts.Preview {
 			stem = shortStem(outDir, plan, clip)
 		}
 		path, err := e.renderShort(ctx, clip, opts.Source, source, outDir, stem, cues, rs,
