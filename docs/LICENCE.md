@@ -706,7 +706,15 @@ with, offline, before every render.
   one, and nothing else: no field, no button, nothing that reads as a
   step still to take. The key itself is never shown in the app. It is
   long and means nothing to a person, and the key ID is what names it,
-  here, on the thank-you page and to support. The trash can beside it
+  here, on the thank-you page and to support. A key ID is set in one
+  width on a block of its own, the way code is set in a README. The kept
+  key's is a button: a click puts the key itself on the clipboard, for a
+  password manager or another Mac, and the copy mark on it turns into a
+  check for a moment. The Go side reads the key and copies it,
+  `CopyLicence`, so the key never comes into the page. A light passes
+  over that one now and then, because it is what was bought. It passes
+  once and rests for seconds, so it is not read as work running, and it
+  stands still for anyone who asks the Mac for less motion. The trash can beside it
   removes the key, after asking, and the field comes back.
 - **The Unlock link.** The thank-you page and the letter carry, for
   each key, an Unlock Frame Fairy button, a link

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/url"
@@ -49,6 +50,7 @@ type LicenceLink struct {
 var (
 	savedLicence = engine.SavedLicence
 	saveLicence  = engine.SaveLicence
+	keptLicence  = engine.KeptLicence
 )
 
 // Licence is the Licence row as it stands.
@@ -67,6 +69,28 @@ func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
 		return s.Licence(), err
 	}
 	return s.Licence(), nil
+}
+
+// CopyLicence puts the kept key on the clipboard, for a password manager or
+// another Mac. The Go side copies it, so the key never passes through the
+// page.
+func (s *FrameFairy) CopyLicence() error {
+	key, ok := keptLicence(context.Background())
+	if !ok {
+		return errors.New("the key could not be read from the keychain")
+	}
+	if !s.copyText(key) {
+		return errors.New("the key could not be put on the clipboard")
+	}
+	return nil
+}
+
+// copyText puts text on the clipboard. Tests put their own in its place.
+func (s *FrameFairy) copyText(text string) bool {
+	if s.clipboard != nil {
+		return s.clipboard(text)
+	}
+	return s.app != nil && s.app.Clipboard.SetText(text)
 }
 
 // TakeLicenceLink hands over what became of the last link, once.

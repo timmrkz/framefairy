@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"net/url"
 	"strings"
@@ -65,9 +66,10 @@ type fakeKeychain struct{ key, about string }
 func useFakeKeychain(t *testing.T) *fakeKeychain {
 	t.Helper()
 	f := &fakeKeychain{}
-	read, keep := savedLicence, saveLicence
-	t.Cleanup(func() { savedLicence, saveLicence = read, keep })
+	read, keep, kept := savedLicence, saveLicence, keptLicence
+	t.Cleanup(func() { savedLicence, saveLicence, keptLicence = read, keep, kept })
 	savedLicence = func() (string, bool) { return f.about, f.key != "" }
+	keptLicence = func(context.Context) (string, bool) { return f.key, f.key != "" }
 	saveLicence = func(text string, test bool) (string, error) {
 		if strings.TrimSpace(text) == "" {
 			f.key, f.about = "", ""
@@ -182,6 +184,24 @@ func TestALinkNotTakenLeavesNothing(t *testing.T) {
 	s.openedWith("framefairy://unlock?key=" + aKey + "&more=1")
 	if s.Licence().Waiting || s.TakeLicenceLink() != (LicenceLink{}) {
 		t.Fatal("a link the app does not take left something waiting")
+	}
+}
+
+// Copy puts the kept key itself on the clipboard, and says so when there
+// is none to copy.
+func TestCopyPutsTheKeptKeyOnTheClipboard(t *testing.T) {
+	useFakeKeychain(t)
+	var copied string
+	s := &FrameFairy{clipboard: func(text string) bool { copied = text; return true }}
+	if err := s.CopyLicence(); err == nil {
+		t.Fatal("copied a key when none is kept")
+	}
+	k := testKey(t, 1)
+	if _, err := saveLicence(k, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CopyLicence(); err != nil || copied != k {
+		t.Fatalf("copied %q, %v", copied, err)
 	}
 }
 

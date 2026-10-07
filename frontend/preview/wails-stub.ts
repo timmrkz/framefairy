@@ -1070,6 +1070,9 @@ export const Call = {
         licence.about = typed ? describeKey(typed) : "";
         return new Promise((resolve) => setTimeout(() => resolve(licenceNow()), 400));
       }
+      case "CopyLicence":
+        (window as any).__copied = licence.key;
+        return licence.saved ? Promise.resolve() : Promise.reject(new Error("the key could not be read from the keychain"));
       case "TakeLicenceLink": {
         const l = licence.link ?? { what: "", key: "", about: "", reason: "" };
         licence.link = null;
@@ -1740,9 +1743,9 @@ const licence = {
   link: null as StubLink | null,
 };
 // A key in a few words, the way DescribeLicence puts it, told apart by
-// its last letters.
+// its last two letters, in hexadecimal as a key ID is.
 const describeKey = (k: string) =>
-  `Key ID ${k.slice(-4).toUpperCase().padStart(4, "0")}-0304-0506-0708`;
+  `Key ID ${[...k.slice(-2)].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("").toUpperCase()}-0304-0506-0708`;
 // What a link does with its key, linkOutcome in licence.go.
 const linkOutcome = (k: string): StubLink => {
   if (k.endsWith("bad")) return { what: "refused", about: "", reason: "this key was not signed by Frame Fairy" };

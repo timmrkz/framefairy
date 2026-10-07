@@ -91,6 +91,11 @@
     <path d="M8 6.4v3.1M8 11.3v.2" />
   {:else if name === "check"}
     <path d="M3.2 8.4 6.5 11.7 12.8 4.9" />
+  <!-- Copy: one sheet over another, the mark the Mac and GitHub put on
+       a button that copies. -->
+  {:else if name === "copy"}
+    <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+    <path d="M10.5 3.2V3a.5.5 0 0 0-.5-.5H3a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h.2" />
   <!-- Updates: an arrow down in a circle, the mark macOS gives updates in
        the App Store and downloads in Finder and Safari. An update is
        something that arrives, so the arrow comes down. -->

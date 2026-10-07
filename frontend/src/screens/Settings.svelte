@@ -231,6 +231,7 @@
   // The words under the head: a refusal, what a link did, the key kept,
   // or that there is none.
   const licenceLine = $derived.by(() => {
+    if (copyRefused) return copyRefused + ".";
     if (licenceRefused) return licenceRefused + (licence.saved ? `. ${licence.about} on this Mac still unlocks it.` : ".");
     if (fromLink?.what === "unlocked") return `Unlocked from the link. Thank you. ${fromLink.about}.`;
     if (fromLink?.what === "same") return `This key is already on this Mac. ${fromLink.about}.`;
@@ -238,6 +239,36 @@
     if (licence.saved) return licence.about + ".";
     return "None yet.";
   });
+
+  // The line in parts, with every key ID in it picked out. The kept key's
+  // is the one a person may copy and the one that shines: it is what was
+  // bought. One it replaced is set the same way, without either.
+  const keyIDs = /([0-9A-F]{4}(?:-[0-9A-F]{4}){3})/;
+  const keptID = $derived(licence.saved ? (licence.about.match(keyIDs)?.[1] ?? "") : "");
+  const licenceParts = $derived(
+    licenceLine
+      .split(keyIDs)
+      .filter((text) => text !== "")
+      .map((text) => ({ text, id: keyIDs.test(text), kept: text === keptID })),
+  );
+
+  // Copy says it copied in the same frame as the click, and goes back to
+  // what it was a moment later. The chip keeps its width throughout.
+  let copied = $state(false);
+  let copyRefused = $state("");
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copyLicence() {
+    copied = true;
+    copyRefused = "";
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied = false), 1500);
+    try {
+      await api.copyLicence();
+    } catch (err) {
+      copied = false;
+      copyRefused = sentence(errorText(err));
+    }
+  }
 
   async function readLicence() {
     try {
@@ -986,12 +1017,20 @@
             <div class="words">
               <span class="head">{licence.saved ? "Licensed" : "Licence key"}</span>
               <span
-                class="small line whole"
-                class:muted={!licenceRefused}
-                class:error={!!licenceRefused}
-                title={licence.saved && !licenceRefused ? `${licence.about}. In the keychain` : undefined}
+                class="small line whole licence-line"
+                class:muted={!licenceRefused && !copyRefused}
+                class:error={!!licenceRefused || !!copyRefused}
               >
-                {licenceLine}
+                {#each licenceParts as part, i (i)}
+                  {#if part.kept}<button
+                      class="key-id kept"
+                      class:copied
+                      title="Copy the licence key, for a password manager or another Mac"
+                      aria-label={copied ? "Copied" : `Copy the licence key, key ID ${part.text}`}
+                      onclick={copyLicence}
+                      ><span>{part.text}</span><Icon name={copied ? "check" : "copy"} size={12} /></button
+                    >{:else if part.id}<span class="key-id">{part.text}</span>{:else}{part.text}{/if}
+                {/each}
               </span>
             </div>
             {#if !licence.saved}
@@ -1387,6 +1426,81 @@
      the reason. */
   .line.whole {
     white-space: normal;
+  }
+
+  /* The licence row's line holds key IDs set like code in a README, so
+     it is given a whole-pixel line of its own, with room for them. */
+  .licence-line {
+    line-height: 22px;
+  }
+
+  /* A key ID, in one width, on a block of its own, the way code is set in
+     a README. The kept key's is a button that copies the key itself, and a
+     light passes over it now and then: it is what was bought. That light
+     is not one of the five ways work in hand is shown, because nothing is
+     running. It passes once, rests for seconds and never pulses, so it is
+     not read as anything waiting. */
+  .key-id {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 20px;
+    margin: 1px 1px 0;
+    padding: 0 6px;
+    vertical-align: top;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--ink-2);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--size-s);
+    line-height: 18px;
+  }
+
+  button.key-id {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  }
+
+  button.key-id:hover {
+    background: var(--ink-3);
+  }
+
+  button.key-id :global(svg) {
+    color: var(--muted);
+  }
+
+  button.key-id.copied :global(svg) {
+    color: var(--ok);
+  }
+
+  button.key-id::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--accent-lit) 35%, transparent) 50%, transparent 70%);
+    transform: translateX(-100%);
+    animation: glint 7s ease-in-out 0.6s infinite;
+    pointer-events: none;
+  }
+
+  @keyframes glint {
+    0% {
+      transform: translateX(-100%);
+    }
+    20%,
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button.key-id::after {
+      animation: none;
+      display: none;
+    }
   }
 
   /* A licence key is shown as it is, not as dots: it is read off a mail,
