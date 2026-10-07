@@ -1086,9 +1086,12 @@
       pick?: string;
     }[] = [];
     for (const m of marks) {
-      if (m.key === clip?.key || m.pick === clip?.key || m.end <= view.from || m.start >= view.to) {
-        continue;
-      }
+      // The chosen clip is drawn whole, so it has no mark. With none
+      // chosen every clip has one: compared to no clip at all, a written
+      // clip, which has no card to pick, matched, and with nothing chosen
+      // the clip timeline showed no written clip, only the ones on their way.
+      const chosen = !!clip && (m.key === clip.key || m.pick === clip.key);
+      if (chosen || m.end <= view.from || m.start >= view.to) continue;
       const pieces = wholeClip
         ? [
             { start: m.start, end: Math.min(m.end, wholeClip.start) },
