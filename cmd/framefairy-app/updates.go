@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -123,14 +124,25 @@ type UpdateChannel struct {
 // updating finds, fetches and installs a newer build, through Wails'
 // updater and the channel list. See docs/UPDATES.md.
 type updating struct {
+	// u is the updater that looks. Every build is downloaded by an updater
+	// of its own, see download, and the one whose build is ready is held.
 	u   *updater.Updater
 	src *updates.Source
+	// cfg is how every updater here is set up, and fresh makes one for a
+	// download. Restart quits the app through the updater that holds the
+	// build, so in the app it is the app's.
+	cfg   updater.Config
+	fresh func() *updater.Updater
 	// own is the channel this build came from, empty for a build made on
 	// the Mac. It never changes.
 	own string
 
 	mu    sync.Mutex
 	state UpdateState
+	// held is the updater whose build is ready, nil when none is. It is
+	// replaced only once a newer build has fully arrived and passed its
+	// checks, so quitting always has the newest build that is whole.
+	held *updater.Updater
 	// again is set when a check was asked for while one ran, so the one
 	// running looks once more when it is done. Picking a channel during a
 	// download must not be lost.
@@ -163,6 +175,11 @@ type updating struct {
 	// begun, which puts the build in place by itself.
 	install     func(target, from string) error
 	relaunching bool
+	// leaving is set once quitting has started putting the build held in
+	// place. From then on, as after Relaunch, nothing removes that build,
+	// whatever arrives after it: the step that puts it in place reads it
+	// once the app is gone.
+	leaving bool
 	// looking is set once the loop that looks now and then has started,
 	// see loop. next is how long it waits between two looks.
 	looking bool
@@ -173,11 +190,14 @@ type updatesFile struct {
 	Follow string `json:"follow"`
 }
 
-func newUpdating(u *updater.Updater, st *store, busy func() bool, emit func(UpdateState)) *updating {
+func newUpdating(u *updater.Updater, quit func(), st *store, busy func() bool, emit func(UpdateState)) *updating {
 	c := &updating{
 		own:  buildChannel,
 		busy: busy,
 		emit: emit,
+		// Every build is downloaded by an updater of its own, and Relaunch
+		// quits the app through the one that holds it.
+		fresh: func() *updater.Updater { return updater.New(quitHost{quit: quit}) },
 		load: func() string {
 			var f updatesFile
 			st.load("updates.json", &f)
@@ -196,6 +216,20 @@ func newUpdating(u *updater.Updater, st *store, busy func() bool, emit func(Upda
 	}
 	c.setUp(u, updateKeyText, src, exe, runtime.GOOS)
 	return c
+}
+
+// quitHost is what an updater of one download is attached to. The app
+// shows updates through its own events, so the updater's go nowhere, and
+// its window is never asked for. Restart quits the app through it.
+type quitHost struct{ quit func() }
+
+func (quitHost) Emit(string, ...any) bool                              { return false }
+func (quitHost) OnEvent(string, func(any)) func()                      { return func() {} }
+func (quitHost) OpenWindow(updater.WindowOptions) updater.WindowHandle { return nil }
+func (h quitHost) Quit() {
+	if h.quit != nil {
+		h.quit()
+	}
 }
 
 // setUp decides whether this build can update itself at all, and if it
@@ -238,12 +272,16 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	src.Picked = c.picked
 	src.Seen = c.seen
 	src.Progress = c.progress
-	err = u.Init(updater.Config{
+	c.cfg = updater.Config{
 		CurrentVersion: c.state.Version,
 		Providers:      []updater.Provider{src},
 		PublicKey:      key,
 		Window:         updater.WindowNone,
-	})
+	}
+	if c.fresh == nil {
+		c.fresh = func() *updater.Updater { return updater.New(quitHost{}) }
+	}
+	err = u.Init(c.cfg)
 	if err != nil {
 		c.state.Off = "The updater did not start: " + err.Error()
 		return
@@ -259,6 +297,9 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 // on screen yet to hear the event. A build made on the Mac follows
 // nothing when it starts, so there is nothing to look for, and it starts
 // looking once a channel is picked, see Follow.
+//
+// The looks go on while a build is ready, so a newer commit replaces the
+// build waiting for a relaunch, see checkOnce.
 func (c *updating) start() {
 	if c.u == nil || c.own == "" {
 		return
@@ -517,6 +558,7 @@ func (c *updating) checkOnce() {
 		return
 	}
 	if rel == nil {
+		c.drop(round)
 		mine(func(s *UpdateState) {
 			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
 			s.Checked = time.Now()
@@ -524,7 +566,13 @@ func (c *updating) checkOnce() {
 		return
 	}
 	c.mu.Lock()
-	have := c.round == round && c.state.Phase == "ready" && c.state.Next == rel.Version
+	mineNow := c.round == round
+	have := mineNow && c.state.Phase == "ready" && c.state.Next == rel.Version
+	// A build of this channel is ready and a newer one has come. The one
+	// that is ready stays ready, on the page and on the way out, until the
+	// newer one is whole: Tim's rule is that the app always holds the
+	// newest build of its channel, and never none while one is on its way.
+	swap := mineNow && c.state.Phase == "ready"
 	c.mu.Unlock()
 	if have {
 		mine(func(s *UpdateState) { s.Checked = time.Now() })
@@ -532,11 +580,14 @@ func (c *updating) checkOnce() {
 	}
 	commit, _ := rel.Metadata["commit"].(string)
 	mine(func(s *UpdateState) {
-		s.Phase, s.Next, s.NextName, s.NextCommit = "downloading", rel.Version, rel.Name, commit
-		s.Written, s.Total = 0, rel.Artifact.Size
+		if !swap {
+			s.Phase, s.Next, s.NextName, s.NextCommit = "downloading", rel.Version, rel.Name, commit
+			s.Written, s.Total = 0, rel.Artifact.Size
+		}
 		s.Checked = time.Now()
 	})
-	if err := c.u.DownloadAndInstall(ctx); err != nil {
+	w, err := c.download(ctx, rel)
+	if err != nil {
 		// Let go of because another channel was picked: nothing went
 		// wrong, the download goes on into the cache, and the next check
 		// is already on its way.
@@ -544,14 +595,123 @@ func (c *updating) checkOnce() {
 			return
 		}
 		log.Printf("update download: %v", err)
+		// The newer build did not come whole, and the one that is ready
+		// still is. The next look tries again.
+		if swap {
+			return
+		}
+		c.drop(round)
 		mine(func(s *UpdateState) {
 			s.Phase = "failed"
 			s.Problem = "The download did not arrive whole. " + plainUpdateError(err)
 		})
 		return
 	}
-	log.Printf("update ready: %s, %s", rel.Version, c.u.DownloadedPath())
-	mine(func(s *UpdateState) { s.Phase = "ready" })
+	// The new build is whole and checked: it is the one held from now on,
+	// and the one it replaces is removed, in one step with the state, so
+	// the page and the way out never name two different builds. Unless
+	// that one is already being put in place by Relaunch or on the way
+	// out: then it stays where it is until it has gone in.
+	var gone *updater.Updater
+	c.change(func(s *UpdateState) {
+		if c.round != round {
+			gone = w
+			return
+		}
+		gone, c.held = c.held, w
+		if c.relaunching || c.leaving {
+			gone = nil
+		}
+		s.Phase, s.Next, s.NextName, s.NextCommit = "ready", rel.Version, rel.Name, commit
+		s.Written, s.Total = rel.Artifact.Size, rel.Artifact.Size
+	})
+	unstage(gone)
+	if gone != w {
+		log.Printf("update ready: %s, %s", rel.Version, w.DownloadedPath())
+	}
+}
+
+// download fetches, checks and unpacks a build with an updater of its own,
+// the way every build is fetched. Wails' updater throws away the build it
+// holds before it downloads another, so a build that is ready would be
+// gone for as long as a newer one downloads, and for good if that one
+// failed. With an updater per build, the one that is ready is not touched
+// until its replacement has passed every check the first one did.
+func (c *updating) download(ctx context.Context, rel *updater.Release) (*updater.Updater, error) {
+	w := c.fresh()
+	cfg := c.cfg
+	r := *rel
+	cfg.Providers = []updater.Provider{offer{src: c.src, rel: &r}}
+	if err := w.Init(cfg); err != nil {
+		return nil, err
+	}
+	if _, err := w.Check(ctx); err != nil {
+		return nil, err
+	}
+	if err := w.DownloadAndInstall(ctx); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// offer is what an updater of one build reads from: the build the check
+// found, its claim already checked, downloaded through the channel list's
+// source, cache and all.
+type offer struct {
+	src *updates.Source
+	rel *updater.Release
+}
+
+func (o offer) Name() string { return o.src.Name() }
+
+func (o offer) Check(context.Context, updater.CheckRequest) (*updater.Release, error) {
+	return o.rel, nil
+}
+
+func (o offer) Download(ctx context.Context, r *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
+	return o.src.Download(ctx, r, dst, onProgress)
+}
+
+// drop lets go of the build held, when a check of this round finds there
+// is nothing of its channel to install: it is current, gone, or failed.
+func (c *updating) drop(round int) {
+	c.mu.Lock()
+	var gone *updater.Updater
+	if c.round == round {
+		gone, c.held = c.held, nil
+	}
+	if c.relaunching || c.leaving {
+		gone = nil
+	}
+	c.mu.Unlock()
+	unstage(gone)
+}
+
+// staged is where the build that is ready was unpacked, or empty.
+func (c *updating) staged() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.held == nil {
+		return ""
+	}
+	return c.held.DownloadedPath()
+}
+
+// unstage removes what an updater unpacked and nobody will install. Only a
+// folder of Wails' own in the temporary folder, the one it unpacked into.
+func unstage(w *updater.Updater) {
+	if w == nil {
+		return
+	}
+	p := w.DownloadedPath()
+	if p == "" {
+		return
+	}
+	dir := filepath.Dir(p)
+	if !strings.HasPrefix(filepath.Base(dir), "wails-update-") || filepath.Dir(dir) != filepath.Clean(os.TempDir()) {
+		return
+	}
+	_ = os.RemoveAll(dir)
 }
 
 // Restart quits into the build that is ready. Never while work runs: the
@@ -562,7 +722,7 @@ func (c *updating) Restart() error {
 		return errors.New(c.state.Off)
 	}
 	c.mu.Lock()
-	ready := c.state.Phase == "ready"
+	ready := c.state.Phase == "ready" && c.held != nil
 	c.mu.Unlock()
 	if !ready {
 		return errors.New("no update is ready")
@@ -570,10 +730,17 @@ func (c *updating) Restart() error {
 	if c.busy != nil && c.busy() {
 		return errors.New("work is still running. Restart when it is done")
 	}
+	// The build held now is the one Relaunch puts in place, and nothing
+	// replaces it from here on.
 	c.mu.Lock()
-	c.relaunching = true
+	held := c.held
+	ready = c.state.Phase == "ready" && held != nil
+	c.relaunching = ready
 	c.mu.Unlock()
-	if err := c.u.Restart(context.Background()); err != nil {
+	if !ready {
+		return errors.New("no update is ready")
+	}
+	if err := held.Restart(context.Background()); err != nil {
 		c.mu.Lock()
 		c.relaunching = false
 		c.mu.Unlock()
@@ -602,12 +769,16 @@ func (c *updating) installOnQuit() {
 		return
 	}
 	c.mu.Lock()
-	ready := c.state.Phase == "ready" && !c.relaunching
+	ready := c.state.Phase == "ready" && !c.relaunching && c.held != nil
+	staged := ""
+	if ready {
+		staged = c.held.DownloadedPath()
+		c.leaving = true
+	}
 	c.mu.Unlock()
 	if !ready {
 		return
 	}
-	staged := c.u.DownloadedPath()
 	target := runningApp()
 	if staged == "" || target == "" {
 		return

@@ -526,7 +526,7 @@ func (b *bridge) updatesAs(from, stored string, list []string) error {
 		return errors.New(c.state.Off)
 	}
 	b.t.Cleanup(func() {
-		if p := c.u.DownloadedPath(); p != "" {
+		if p := c.staged(); p != "" {
 			_ = os.RemoveAll(filepath.Dir(p))
 		}
 	})
