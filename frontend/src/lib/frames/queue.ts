@@ -103,6 +103,9 @@ const READ_AHEAD = 4;
 const CUE_AHEAD = 1;
 // How much sound is decoded ahead of what is heard, seconds.
 const SOUND_AHEAD = 1;
+// How far ahead the sound is fed while the page's frames stop, behind
+// another window, where a timer may run only once a second, see keepOn.
+const SOUND_BEHIND = 3;
 // Sound decoded before a play starts, seconds.
 const SOUND_FIRST = 0.15;
 // How far ahead of the sound card's clock a play's first sound is put,
@@ -1367,8 +1370,50 @@ export class FrameQueue {
     return this.m0 / this.sampleRate + (heard - this.c0);
   }
 
+  // The page's frames stop while the app is behind another window, and with
+  // them the tick that feeds the sound: the sound ran out a second later
+  // and came back only with the app, whenever any of it showed. So while no
+  // frame comes, a timer ticks instead, and the sound is fed further ahead,
+  // since a timer behind another window may be held to once a second.
+  private lastFrame = 0;
+  private keeper = 0;
+  private behind = false;
+
   private loop() {
-    this.frameRequest = requestAnimationFrame((now) => this.tick(now));
+    // One frame asked for at a time: a tick from the timer asks again, and
+    // a frame left waiting from before would tick twice once it comes.
+    cancelAnimationFrame(this.frameRequest);
+    this.frameRequest = requestAnimationFrame((now) => {
+      this.lastFrame = performance.now();
+      this.behind = false;
+      this.tick(now);
+    });
+    if (!this.keeper) {
+      this.keeper = window.setInterval(() => this.keepOn(false), 250);
+      document.addEventListener("visibilitychange", this.hidden);
+    }
+  }
+
+  // The app going behind another window is said as the page going hidden,
+  // and the timer's first tick after that can come a second late, as late
+  // as the sound fed for the frames runs out. So the sound is fed further
+  // ahead the moment the page is hidden.
+  private hidden = () => {
+    if (document.hidden) this.keepOn(true);
+  };
+
+  private keepOn(now: boolean) {
+    if (this.state !== "playing" || this.closed) {
+      clearInterval(this.keeper);
+      document.removeEventListener("visibilitychange", this.hidden);
+      this.keeper = 0;
+      this.behind = false;
+      return;
+    }
+    const at = performance.now();
+    if (!now && at - this.lastFrame < 400) return;
+    this.behind = true;
+    this.tick(at);
   }
 
   private tick(now: number) {
@@ -1615,7 +1660,7 @@ export class FrameQueue {
     const s = this.sound!.samples;
     const rate = this.sampleRate;
     const heard = this.c0 === null ? this.m0 : Math.round(this.position(performance.now()) * rate);
-    const ahead = (this.c0 === null ? SOUND_FIRST * 2 : SOUND_AHEAD) * rate;
+    const ahead = (this.c0 === null ? SOUND_FIRST * 2 : this.behind ? SOUND_BEHIND : SOUND_AHEAD) * rate;
     for (;;) {
       if (!this.soundRun) {
         const next = plan.runs.find((r) => !this.soundRunDone.has(r.id));

@@ -870,7 +870,7 @@ early, in the middle of the seek.
 
 **What it taught.** Each of these cost a round of probing:
 
-- The sound is not the browser's to decode, plan row 2.152: the Go side
+- The sound is not the browser's to decode, plan row 2.153: the Go side
   decodes it with ffmpeg, `GoSound` in `queue.ts`, so the video preview
   hears what the render is made of. The Mac's own AAC decoder was the one
   part nobody could run in the cloud, and it was the last suspect when Tim
