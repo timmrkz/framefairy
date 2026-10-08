@@ -169,7 +169,7 @@ func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
 	_ = c.Follow("main")
 	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
 	c.installOnQuit()
-	if len(started) != 1 || started[0][0] != "/Applications/Frame Fairy.app" || started[0][1] != c.u.DownloadedPath() {
+	if len(started) != 1 || started[0][0] != "/Applications/Frame Fairy.app" || started[0][1] != c.staged() {
 		t.Fatalf("started %v", started)
 	}
 
