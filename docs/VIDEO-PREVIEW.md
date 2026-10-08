@@ -4,14 +4,22 @@ A spec, not yet built. It decides how the video preview gets its picture
 and its sound from here on, and what is removed on the way. Decided with
 Tim on 8 October 2026, after the history below. Plan row 2.156.
 
+Three parts of the app are named here. **The interface** is the
+TypeScript and Svelte in `frontend/`, which runs in the webview and draws
+the video preview. **The Go side** is the app's own Go program in
+`cmd/framefairy-app/`, which serves the interface. **The engine** is
+`engine/`, which the Go side and the command line share.
+
 ## In one paragraph
 
 ffmpeg decodes everything the video preview shows and plays, for every
 file on every system, the way it already decodes everything the short is
-made of. The page keeps only what nobody else can do for it: the clock,
-the cuts and drawing the frames it is handed. WebKit's decoders, the
-Mac's decoder in our own cgo, our reader of MP4 files and every rule about
-colour in the page are removed. Nothing is prepared before the first play.
+made of. A decoder for the episode is always running and waiting, so a
+jump is a request to it, not a program starting. The interface keeps only
+what nobody else can do for it: the clock, the cuts and drawing the frames
+it is handed. WebKit's decoders, the Mac's decoder in our own cgo, our
+reader of MP4 files and every rule about colour in the interface are
+removed. Nothing is prepared before the first play.
 
 ## How we got here
 
@@ -26,9 +34,9 @@ colour in the page are removed. Nothing is prepared before the first play.
   frames drawn on the sound card's clock. Cuts became seamless and exact.
   That part was right, and it stays.
 - **What went wrong** is that the queue also took over the media work.
-  The page read the file itself, `mp4.ts`, and decoded with WebKit, and
-  where WebKit failed, with the Mac's own decoder through cgo, and where
-  that failed, with ffmpeg. Every media bug since was two engines
+  The interface read the file itself, `mp4.ts`, and decoded with WebKit,
+  and where WebKit failed, with the Mac's own decoder through cgo, and
+  where that failed, with ffmpeg. Every media bug since was two engines
   disagreeing:
   - our file reader and ffmpeg counting time from different places, 2.139
   - WebKit saying it would decode HEVC with 10-bit colour, then failing, 2.141
@@ -43,74 +51,192 @@ colour in the page are removed. Nothing is prepared before the first play.
 | Way | Why not |
 | --- | --- |
 | One `<video>` | A cut is a seek, and a seek decodes from the key frame before it, so the picture holds and the sound stops at every cut |
-| Two `<video>` elements swapped at each cut | Each keeps its own picture and sound together, but the swap is made by script on the page's next frame, and no element can be told to start at an exact moment of the sound card. Every cut lands somewhere within a frame or two |
+| Two `<video>` elements swapped at each cut | Each keeps its own picture and sound together, but the swap is made by script on the interface's next frame, and no element can be told to start at an exact moment of the sound card. Every cut lands somewhere within a frame or two |
 | Media Source Extensions, the way YouTube plays | A piece can only start on a key frame, and an export has one every second or more. Exact cuts would need a copy of the episode made of key frames only |
 | A playback copy made when a video is added | Minutes of encoding per hour of episode before the first play, and gigabytes on the disk. Adding a video has to be enough |
 | WebCodecs with our own reader, as now | Two engines that disagree, see above, and a different path on each system |
-| ffmpeg's libraries inside the app, go-astiav | A crash in C takes the whole app down, where a crash of the ffmpeg program fails only its own job |
+| ffmpeg's libraries inside the app, go-astiav | A crash in C takes the whole app down, where a crash of a program of its own fails only that program |
 
 ## The rules
 
 1. **Adding a video is enough.** Nothing is copied, converted or prepared
    before the first play, and the first frame shows as soon as the file
    can be read.
-2. **One engine.** ffmpeg, the program the app ships, decodes every frame
-   the video preview shows and every sample it plays, with the graphics
-   chip where the system has one, VideoToolbox on the Mac. There is no
-   second decoder and no fallback by system or by file. A file whose
-   picture ffmpeg cannot decode cannot be rendered either, so it is
-   refused once, when it is added, with the reason.
-3. **The page never reads the episode file.** Every time the page knows,
-   where the picture starts, how long a frame is, comes from the engine's
-   probe, the same numbers the render cuts by.
-4. **The video preview shows what the short will be.** The frames of a
+2. **One engine.** ffmpeg decodes every frame the video preview shows and
+   every sample it plays, with the graphics chip where the system has
+   one, VideoToolbox on the Mac. There is no second decoder and no
+   fallback by system or by file. A file whose picture ffmpeg cannot
+   decode cannot be rendered either, so it is refused once, when it is
+   added, with the reason.
+3. **A decoder is always waiting.** While an episode is open, its decoder
+   runs with the file open, its index read and the decoder ready. A jump,
+   a click, a drag or the space bar is a request to it, answered at once,
+   never a program that has to start first. If it stops, the Go side
+   starts it again, and the video preview keeps the frame it shows until
+   then. See Speed.
+4. **The interface never reads the episode file.** Every time the
+   interface knows, where the picture starts, how long a frame is, comes
+   from the engine's probe, the same numbers the render cuts by.
+5. **The video preview shows what the short will be.** The frames of a
    clip are the frames the render takes, chosen by the same code, the
    sound is the sound the render takes, and the colours are what ffmpeg
-   makes of the file's own tags. The reference is the short as YouTube and
-   Instagram show it, not QuickTime, which lifts the shadows on the Mac.
-5. **A running play is never changed in place.** This is the rule from
+   makes of the file's own tags. How those colours are shown on the
+   screen is decided once, by Tim, after the test in Colour.
+6. **A running play is never changed in place.** This is the rule from
    #155. A play runs one program, the clip's pieces or the episode
    straight on, from the moment it starts. A gesture that changes the
    program stops the play and starts it again from where the hand put it,
    or it is off while it would matter, the way I and O are off inside a
-   clip. #152 did the same in 366 lines by splicing the new
-   program into the running play, and was closed for #155, which made the
-   case impossible in about 40.
-   The one exception is loop, 2.150, which only changes what follows the
-   clip's end. No other splice is built.
-6. **A rule before machinery.** When a case would need new machinery in
+   clip. #152 did the same in 366 lines by splicing the new program into
+   the running play, and was closed for #155, which made the case
+   impossible in about 40. The one exception is loop, 2.150, which only
+   changes what follows the clip's end. No other splice is built.
+7. **A rule before machinery.** When a case would need new machinery in
    the frame queue, the first question is whether a rule of the product
-   makes the case not happen, as in rule 5. Machinery is built only where
+   makes the case not happen, as in rule 6. Machinery is built only where
    no rule does.
 
 ## What the parts do
 
+### The episode's decoder
+
+One program per open episode, started by the Go side when the episode
+opens and stopped when it closes.
+
+- It is built on ffmpeg's own libraries, the code the ffmpeg program
+  runs, so it decodes exactly as the render does. It is a program of its
+  own, not part of the app, so a crash ends only it. Written in Go with
+  go-astiav, linked to ffmpeg's libraries as shared libraries shipped
+  beside it, so LGPL is met the way it is for ffmpeg itself.
+- It keeps the file open, its index read and two picture decoders and a
+  sound decoder ready, with the graphics chip where there is one.
+- It takes requests from the Go side: frames from a moment on at a size,
+  sound from a moment on, stop. A request for a new moment drops what the
+  last one was doing.
+- It keeps the frames around the playhead it has already decoded, so a
+  step back, a step on and a drag over them cost nothing, and while
+  paused it decodes the frames on either side of the playhead before they
+  are asked for.
+- The routes the interface reads from, `/frames/open`, `/frames/sound`,
+  `/frames/read` and `/frames/close`, stay as they are. The interface
+  cannot tell whether a frame came from it or from the ffmpeg program.
+
 ### The Go side
 
-- **Picture streams**, `engine.PreviewFrames` and `/frames/open`, as now:
-  from a moment on, scaled on the graphics chip to the size of the
-  canvas, each frame with the moment it belongs to. ffmpeg finds the key
-  frame before and decodes from it, which is its own work, not the page's.
-- **Sound streams**, `engine.PreviewSound` and `/frames/sound`, as now.
-- **The frames of a clip are the render's frames.** A stream for a piece
-  is built by the same function that cuts the piece in the render,
-  `cutOf` and `byTimes` in `engine/render.go`, so a file with uneven
-  frames shows the frames the short will have, on the short's even rate.
-  That ends 2.155 by construction.
+- Starts and stops the episode's decoder, and passes its frames and sound
+  on through the routes above.
+- **The frames of a clip are the render's frames.** A request for a piece
+  is made by the same function that cuts the piece in the render, `cutOf`
+  and `byTimes` in `engine/render.go`, so a file with uneven frames shows
+  the frames the short will have, on the short's even rate. That ends
+  2.155 by construction.
 - **Colour** is converted by ffmpeg from the file's tags, range, matrix
   and transfer, with ffmpeg's defaults where a tag is missing, and the
-  stream carries pixels ready to draw. Nothing in the page decides colour.
+  frames carry pixels ready to draw. Nothing in the interface decides
+  colour.
 
-### The page
+### The interface
 
 - **The program**, `plan.ts`: which pieces play in which order, and where
   each starts and ends, counted on the frames the engine names.
 - **The clock**, the sound card's, as now. The playhead is the sound
   heard.
 - **Two picture streams and a sound stream**, as the two decoders are
-  now: the second stream is opened at the next piece while the first
+  now: the second stream is asked for the next piece while the first
   plays, so the frame after a cut is already waiting.
 - **Drawing**: each frame onto the one canvas when the clock reaches it.
+
+## Speed
+
+A jump today costs three things: starting the ffmpeg program, opening
+the file and reading its index, and decoding from the key frame before
+the moment. The prototype of 2.141 took 145 to 337 ms from a click to the
+first frame, in the cloud with no graphics chip. The ffmpeg program is
+told where to start when it starts and cannot be sent anywhere else
+afterwards, so a waiting copy of it would save only the first of the
+three. The episode's decoder saves the first two, and with the graphics
+chip and the frames around the playhead kept, most of the third.
+
+What counts as fast enough, measured on Tim's Mac with his own files, by
+his eye and by the walks in CI:
+
+| What | Fast enough |
+| --- | --- |
+| A click on the clip timeline while paused | its frame on screen within 100 ms |
+| A drag along the clip timeline | a new frame at least every 50 ms while the hand moves, and the frame under the hand within 100 ms of it stopping |
+| The space bar | picture and sound start within 100 ms |
+| Playing at 1080p, up to 60 frames a second | no frame late, and a cut takes one frame's time, as now |
+| The machine while playing at 1080p | Frame Fairy and its decoder together under 100% in Activity Monitor, one core's worth |
+
+The numbers are a proposal for Tim to change. Main is measured the same
+way first, so each step is judged against today as well as against the
+marks.
+
+## Colour
+
+**What Tim saw** was a pale, foggy picture: black shown as a grey of 17
+where QuickTime shows 1. That was the range, video range taken for full
+range, and #141 fixed it. Black is 0 now.
+
+**What is left** is smaller and only in the dark tones. Black stays
+black and white stays white. In between, QuickTime on the Mac lifts the
+shadows of standard video: a dark grey the file stores as 26 is shown by
+the standard curve as 26 and by QuickTime as about 35. So against
+QuickTime the video preview shows a little more contrast in the shadows.
+It is not paler, and it is not the other extreme either.
+
+**Which look is right is decided by a test, not here.** In the colour
+step, the same frame of `start.mp4`, of an export in H.264 and of a phone
+file is shown side by side:
+
+- in the video preview, with the standard curve
+- in QuickTime
+- the rendered short in Safari and in Chrome on the Mac
+- the rendered short on Tim's iPhone, in Photos and as uploaded to
+  Instagram and YouTube
+
+Tim picks the look the video preview should have. If it is QuickTime's,
+the lift is one fixed curve in ffmpeg's conversion for the video
+preview, the same on every system. The short itself is never changed by
+this choice: its numbers are the file's, and each phone shows them its
+own way.
+
+## HDR
+
+**What it is.** Standard video, SDR, is made for a screen of about 100
+nits. HDR stores much brighter highlights and more colours, BT.2020, with
+a different curve, HLG or PQ. An iPhone films in HDR by default, as HEVC
+with 10-bit colour, HLG and Dolby Vision on top. A file says it is HDR in
+its tags: a transfer of `arib-std-b67` is HLG, `smpte2084` is PQ. The
+engine's probe already reads these tags.
+
+**Why it matters.** HDR numbers shown as if they were SDR look grey and
+flat, or blown out. Turning HDR into SDR is not a relabelling, it is a
+conversion, tone mapping, which squeezes the brighter highlights into
+the SDR range and gives some of them up on purpose.
+
+**What happens today.** Nothing is decided. The render copies the file's
+colour tags onto a short encoded in H.264 with 8-bit colour, so a short
+made from iPhone footage comes out as HDR-tagged video with too few bits
+for HDR, and players show it in different ways. The video preview shows
+whatever the decoder in use makes of it.
+
+**The two ways:**
+
+| | The short in SDR | The short in HDR |
+| --- | --- | --- |
+| The short | converted to BT.709 by the standard tone mapping, the same as most editors do for social video | kept HLG, encoded as HEVC with 10-bit colour, which Instagram and YouTube accept from an iPhone |
+| The video preview | shows exactly the short, rule 5 holds | the webview cannot show HDR on every system, so the video preview shows a converted picture, and rule 5 breaks for these files |
+| The captions | their colour exact | their colour has to be mapped into HDR, and looks different on an HDR screen than on an SDR one |
+| On a phone with an HDR screen | standard brightness | the bright highlights of the original |
+| What it needs | zimg in our build of ffmpeg, a permissive licence, for the conversion | zimg too, for the video preview, and the HEVC encoder for the short |
+
+**Proposed:** the short in SDR. Everything the app shows is then exactly
+what is published, on every system and every phone, and the captions are
+the colour that was chosen. It goes against the rule of no colour
+changes, but an HDR picture cannot go into an SDR short unchanged, and
+the conversion is the smallest change there is, made by the standard
+formula. Tim decides before the colour step.
 
 ## What is removed
 
@@ -120,11 +246,12 @@ colour in the page are removed. Nothing is prepared before the first play.
 | The Mac's decoder through cgo | `engine/pictures*.go`, `frontend/src/lib/frames/native.ts`, `/frames/native` and `/frames/decode` | about 600, and 148 of tests |
 | WebKit's decoders | `WebPictures`, `PlainSound` and the reader of byte ranges in `queue.ts` | about 200 |
 | The choice between decoders | `fromGoSide`, `pictureFailed`, `nativeFailed`, `replaceDecoders` in `queue.ts` | about 100 |
-| Colour in the page and the full range forced for WebKit | `queue.ts`, `app.ts`, `engine/preview.go` | a few dozen |
+| Colour in the interface and the full range forced for WebKit | `queue.ts`, `app.ts`, `engine/preview.go` | a few dozen |
 
 About 1,800 lines of code and 600 of tests, of about 6,400 in all, and
-three of the four ways a picture can reach the canvas. What stays is the program, the clock, the
-streams and the drawing.
+three of the four ways a picture can reach the canvas. The episode's
+decoder is new code in their place, a few hundred lines that do one
+thing.
 
 ## The steps
 
@@ -132,53 +259,50 @@ Each step is its own pull request, tested by Tim on his Mac before the
 next one starts.
 
 1. **Measure first, remove nothing.** Every file plays through the ffmpeg
-   streams that already exist, on every system. A change of a few lines
-   in `queue.ts`. Tim compares it with main, by updating between the two
-   from the Updates page, on `start.mp4`, an export in H.264, a file from
-   a phone and a 4K file:
-   - playing straight on and through a clip's cuts is smooth
-   - a click on the clip timeline while paused shows its frame without a
-     wait he notices
-   - the arrow keys step and a drag on the clip timeline follows the hand
-   - Activity Monitor shows Frame Fairy and ffmpeg together at a share of
-     the processor he can live with while playing
-
-   The walks measure the same on Linux in CI: frames drawn late while
-   playing, and the time from a click to its frame.
-2. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
+   program's streams that already exist, on every system. A change of a
+   few lines in `queue.ts`. Tim compares it with main, by updating
+   between the two from the Updates page, on `start.mp4`, an export in
+   H.264, a file from a phone and a 4K file, against the marks in Speed.
+   The walks measure where a jump's time goes: starting the program,
+   opening the file, decoding from the key frame.
+2. **The episode's decoder.** The waiting program of rule 3, for picture
+   and sound, behind the same routes. Measured against step 1 and the
+   marks.
+3. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
    the choice between them. Refuse at Add a file whose picture ffmpeg
    cannot decode.
-3. **Colour from ffmpeg.** The streams carry pixels converted from the
-   file's tags, and the page draws them as they come. Proved against
-   ffmpeg's own conversion of the same frame, value by value, on files
-   tagged BT.601, BT.709 and BT.2020, in video and full range, 8 and 10
-   bit, and on files with no tags.
-4. **The page stops reading the file.** The program counts on the frames
-   the engine names, the picture's start and the short's rate, and a
-   piece's stream is cut by the render's own code. `mp4.ts` is removed.
+4. **Colour and HDR.** The frames carry pixels converted by ffmpeg from
+   the file's tags, and the interface draws them as they come. Proved
+   against ffmpeg's own conversion of the same frame, value by value, on
+   files tagged BT.601, BT.709 and BT.2020, in video and full range, 8 and
+   10 bit, and on files with no tags. Then the side-by-side test, and Tim
+   picks the look. HDR as Tim decided, in the video preview and the
+   render together.
+5. **The interface stops reading the file.** The program counts on the
+   frames the engine names, the picture's start and the short's rate, and
+   a piece is asked for by the render's own code. `mp4.ts` is removed.
    Ends 2.155.
 
 ## What it costs
 
-- **More work for the machine.** Every frame is copied from ffmpeg to the
-  Go side and on to the page, where WebKit's decoder handed it over
-  inside the webview. Step 1 measures how much.
-- **A jump starts a new ffmpeg read.** A click away from what is decoded
-  starts ffmpeg, which reads the file's index and decodes from the key
-  frame before. The prototype of 2.141 measured 145 to 337 ms to the
-  first frame in the cloud, with no graphics chip. The Mac's decoder in
-  cgo was faster there, because it stays open. The streams already keep
-  the frames shown last and wait for a stream that is close rather than
-  start another, and that is where any further speed comes from. If step
-  1 shows jumps too slow, the answer is in how the Go side keeps its
-  streams, never a second engine.
-- **One difference from other apps on the Mac.** QuickTime and Safari
-  lift the shadows of BT.709, so the video preview looks a little darker
-  there than in QuickTime. It looks like the short.
+- **More work for the machine.** Every frame is copied from the decoder
+  to the Go side and on to the interface, where WebKit's decoder handed
+  it over inside the webview. At the size of the video preview that is
+  about 40 MB a second while playing, and about three times that once the
+  frames carry finished pixels in step 4. Activity Monitor and the marks
+  say whether it matters.
+- **A program of our own on ffmpeg's libraries.** The episode's decoder
+  is code we keep, and make has to build ffmpeg's libraries as shared
+  libraries as well as the program. It is still ffmpeg's decoding, only
+  kept running.
+- **Possibly a little more contrast in the shadows than QuickTime**, if
+  Tim picks the standard look in the colour test.
 
 ## What this replaces
 
-The survey of media libraries in #151 proposed a colour shader of our own
-and mediabunny in place of `mp4.ts`. With one engine neither is needed,
-and #151 was closed for this spec. The ffmpeg program stays, as it
-proposed.
+- **The playback copy of the episode**, plan row 1.5b, made for files the
+  video preview could not play. With one engine the video preview plays
+  whatever the render can read, and no copy is made.
+- **The survey of media libraries in #151**, which proposed a colour
+  shader of our own and mediabunny in place of `mp4.ts`. With one engine
+  neither is needed, and #151 was closed for this spec.
