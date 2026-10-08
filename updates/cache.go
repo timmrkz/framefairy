@@ -137,20 +137,27 @@ func (k *keeper) whole() bool {
 }
 
 // done keeps the build when the download arrived whole, and drops it when
-// it did not.
-func (k *keeper) done(whole bool) {
+// it did not. An error when it arrived whole and could not be kept, so the
+// download says so: it used to count as arrived, and the wait for it then
+// found nothing in the cache.
+func (k *keeper) done(whole bool) error {
 	if k == nil || k.f == nil {
-		return
+		return nil
 	}
 	if !whole || hex.EncodeToString(k.h.Sum(nil)) != k.sum {
 		k.drop()
-		return
+		return nil
 	}
 	err := k.f.Close()
 	k.f = nil
-	if err != nil || os.Rename(k.part, k.kept) != nil {
-		_ = os.Remove(k.part)
+	if err == nil {
+		err = os.Rename(k.part, k.kept)
 	}
+	if err != nil {
+		_ = os.Remove(k.part)
+		return fmt.Errorf("the build could not be kept in the cache: %w", err)
+	}
+	return nil
 }
 
 func (k *keeper) drop() {

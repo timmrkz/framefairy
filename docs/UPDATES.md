@@ -493,7 +493,10 @@ with its newest build, so one fetch is the whole check:
 5. **Tim picks #20**, or main. The app downloads that channel's newest
    build, sideways, and says it is ready. A pick while another channel's
    build is downloading takes over at once, and the page shows the new
-   channel from the moment of the pick. The download before goes on, out
+   channel from the moment of the pick. A pick is always looked for, also
+   one that lands just as the check before is ending: it used to leave
+   word that check had already stopped reading, and the page said
+   Checking until the next look, ten minutes later. The download before goes on, out
    of sight, to the end: every build goes into the cache first,
    `~/Library/Caches/FrameFairy/builds`, under its SHA-256, and from there
    to the updater, so a download nobody waits for any more still arrives,

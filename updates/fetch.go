@@ -67,7 +67,9 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 		if err == nil && !k.whole() {
 			err = errors.New("the build did not arrive as the channel list says it is")
 		}
-		k.done(err == nil)
+		if kerr := k.done(err == nil); err == nil {
+			err = kerr
+		}
 		s.fetchMu.Lock()
 		delete(s.fetches, sum)
 		s.fetchMu.Unlock()
