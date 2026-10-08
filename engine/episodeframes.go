@@ -24,16 +24,24 @@ type EpisodeFrames struct {
 	program string
 	path    string
 
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	in      io.WriteCloser
-	gone    chan struct{}
+	mu   sync.Mutex
+	cmd  *exec.Cmd
+	in   io.WriteCloser
+	gone chan struct{}
+	// The gone of a program Close stopped, so its streams say closed and
+	// not failed.
+	closed  chan struct{}
 	err     error
 	nextID  uint32
 	idle    []uint32
 	answers map[uint32]chan framewire.Record
 	used    time.Time
 }
+
+// ErrFramesClosed ends a stream whose decoder was closed under it, which
+// is no failure: the page asks another stream, which starts the decoder
+// again.
+var ErrFramesClosed = errors.New("the episode's decoder was closed")
 
 // NewEpisodeFrames is the episode's decoder for the episode at path, run
 // from program. Nothing starts until a stream is asked for.
@@ -93,8 +101,14 @@ func (f *EpisodeFrames) start() error {
 			if err != nil {
 				break
 			}
+			// Only to the streams of this program: after a Close a new one
+			// numbers its cursors from one again, and what this one still
+			// says belongs to none of them.
 			f.mu.Lock()
-			ch := f.answers[rec.Cursor]
+			var ch chan framewire.Record
+			if f.gone == gone {
+				ch = f.answers[rec.Cursor]
+			}
 			f.mu.Unlock()
 			if ch != nil {
 				ch <- rec
@@ -109,8 +123,30 @@ func (f *EpisodeFrames) start() error {
 	return nil
 }
 
-// send writes one request. Under the lock.
-func (f *EpisodeFrames) send(format string, args ...any) error {
+// ended is why a stream of the program whose gone this is cannot go on.
+// Under the lock.
+func (f *EpisodeFrames) ended(gone chan struct{}) error {
+	if gone == f.closed {
+		return ErrFramesClosed
+	}
+	select {
+	case <-gone:
+		return f.err
+	default:
+		return nil
+	}
+}
+
+// send writes one request to the program whose gone this is, and to no
+// other: a stream of a program that was closed, or that stopped, must not
+// ask the one that started after it. Under the lock.
+func (f *EpisodeFrames) send(gone chan struct{}, format string, args ...any) error {
+	if f.gone != gone || f.cmd == nil {
+		if why := f.ended(gone); why != nil {
+			return why
+		}
+		return ErrFramesClosed
+	}
 	_, err := fmt.Fprintf(f.in, format+"\n", args...)
 	return err
 }
@@ -141,7 +177,7 @@ func (f *EpisodeFrames) give(id uint32) {
 		f.idle = append(f.idle, id)
 		return
 	}
-	_ = f.send("close %d", id)
+	_ = f.send(f.gone, "close %d", id)
 }
 
 // Stream hands over the frames of the episode from the moment from on,
@@ -160,15 +196,22 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 	f.used = time.Now()
 	id, ch := f.take()
 	gone := f.gone
-	err := f.send("open %d %.6f %d %d", id, from, width, height)
+	err := f.send(gone, "open %d %.6f %d %d", id, from, width, height)
 	if err == nil {
-		err = f.send("next %d %d 0", id, ahead)
+		err = f.send(gone, "next %d %d 0", id, ahead)
+	}
+	if err != nil {
+		if why := f.ended(gone); why != nil {
+			err = why
+		} else {
+			err = fmt.Errorf("the episode's decoder could not be asked: %w", err)
+		}
 	}
 	f.mu.Unlock()
 	times.mark(timeStarted)
 	times.mark(timeOpened)
 	if err != nil {
-		return fmt.Errorf("the episode's decoder could not be asked: %w", err)
+		return err
 	}
 	// A batch asked for and not yet ended: the cursor is not handed on
 	// before its last record has come, or the next stream would get it.
@@ -203,10 +246,17 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 			case framewire.Done:
 				f.mu.Lock()
 				f.used = time.Now()
-				err := f.send("next %d %d 0", id, ahead)
+				err := f.send(gone, "next %d %d 0", id, ahead)
+				if err != nil {
+					if why := f.ended(gone); why != nil {
+						err = why
+					} else {
+						err = fmt.Errorf("the episode's decoder could not be asked: %w", err)
+					}
+				}
 				f.mu.Unlock()
 				if err != nil {
-					return fmt.Errorf("the episode's decoder could not be asked: %w", err)
+					return err
 				}
 			case framewire.End:
 				pending = false
@@ -222,7 +272,7 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 			return ctx.Err()
 		case <-gone:
 			f.mu.Lock()
-			err := f.err
+			err := f.ended(gone)
 			f.mu.Unlock()
 			return err
 		}
@@ -242,6 +292,7 @@ func (f *EpisodeFrames) Close() {
 	f.mu.Lock()
 	cmd, gone := f.cmd, f.gone
 	if cmd != nil {
+		f.closed = gone
 		_ = f.in.Close()
 	}
 	f.cmd = nil

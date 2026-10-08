@@ -249,8 +249,9 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, run func(ctx c
 				return ctx.Err()
 			}
 		})
-		// Stopped from here, whatever ffmpeg said as it was killed.
-		if ctx.Err() != nil {
+		// Stopped from here, whatever ffmpeg said as it was killed, or the
+		// episode's decoder closed under it: the page asks another stream.
+		if ctx.Err() != nil || errors.Is(err, engine.ErrFramesClosed) {
 			err = context.Canceled
 		}
 		s.err = err
