@@ -32,7 +32,8 @@ const STREAMS = 3;
 // A frame asked for. gone is set when the one who asked no longer wants it,
 // a decoder reset for a newer target, and a stream then neither pulls for
 // it nor opens another stream for it.
-type Waiter = { rank: number; done: (f: VideoFrame | null) => void; gone?: boolean };
+// seq numbers the asks in the order they were made.
+type Waiter = { rank: number; seq: number; done: (f: VideoFrame | null) => void; gone?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for the walks to read, see docs/VIDEO-PREVIEW.md,
@@ -53,6 +54,8 @@ class Stream {
   used = performance.now();
   private waiting: Waiter[] = [];
   private pulling = false;
+  // The newest ask it was given.
+  private newest = 0;
 
   constructor(
     private owner: AppFrames,
@@ -85,6 +88,7 @@ class Stream {
 
   want(w: Waiter) {
     this.used = performance.now();
+    this.newest = Math.max(this.newest, w.seq);
     this.waiting.push(w);
     void this.pull();
   }
@@ -166,8 +170,11 @@ class Stream {
       for (const { frame } of got.frames) frame.close();
       return;
     }
-    if (got.frames.length) this.take(got);
-    else this.end("");
+    if (got.frames.length) {
+      this.take(got);
+      const { at, frame } = got.frames[got.frames.length - 1];
+      this.owner.onPassing?.(rankOf(this.owner.track.samples, at), frame, this.newest);
+    } else this.end("");
   }
 
   private take(got: Pulled) {
@@ -220,6 +227,13 @@ export class AppFrames {
   private keptBytes = 0;
   // Why the Go side could not decode a frame, for the queue to say.
   trouble = "";
+  // Told of a frame that came for an ask withdrawn on the way, a place a
+  // drag passed, so the queue can put it up while the frame for where the
+  // hand is now is on its way. seq is the ask's. The frame stays the kept
+  // one's.
+  onPassing?: (rank: number, frame: VideoFrame, seq: number) => void;
+  // The number of the newest ask.
+  asked = 0;
   readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[] };
   readonly puller = new Puller();
 
@@ -263,8 +277,10 @@ export class AppFrames {
     return new Promise((done) => {
       const w: Waiter = {
         rank,
+        seq: ++this.asked,
         done: (f) => {
           asked?.delete(w);
+          if (f && w.gone) this.onPassing?.(rank, f, w.seq);
           done(f && !w.gone ? new VideoFrame(f, { timestamp }) : null);
         },
       };

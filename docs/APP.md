@@ -356,10 +356,11 @@ render can read them.
 
 Every file's picture is decoded by ffmpeg on the Go side, the first step
 of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156, by the episode's
-decoder where make has put `framefairy-frames` beside the app: one
-program per episode on ffmpeg's libraries, which keeps the file open and
-its decoders ready, so a jump moves a cursor that is open instead of
-starting ffmpeg. Where it is not there, the ffmpeg program's streams. The webview's
+decoder, `framefairy-frames`, which make puts beside the app and the app
+always ships: one program per episode on ffmpeg's libraries, which keeps
+the file open and its decoders ready, so a jump moves a cursor that is
+open instead of starting ffmpeg. An app without it says so the way it
+says a missing ffmpeg, and there is no second way to the frames. The webview's
 decoders and the Mac's own below are still in the code, unused, until the
 step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until
@@ -370,7 +371,15 @@ the queue's decoder is reset for the newer place, and one new stream is
 on its way at a time: while one is still coming for a place left behind,
 the newest place waits and goes as soon as it has come, so a drag over
 the clip timeline shows frames as fast as they can be made and starts no
-ffmpeg for every place it passes. A stream the Go side stops, to make
+ffmpeg for every place it passes. Every move of the hand is a seek, which
+withdraws the frame the seek before asked for, and a frame takes longer to
+come than the hand takes to move. A frame that comes for an ask withdrawn
+on the way is put up while the frame for where the hand is now is still
+coming, unless a frame asked for later is on screen already, `passing` in
+`lib/frames/queue.ts`. Thrown away, as it was, the picture stood still
+for a whole drag on a busy machine, found by Tim on an HEVC episode at
+1080p. The decoder drops the frames before the moment asked for as they
+come out of decoding, before they are scaled. A stream the Go side stops, to make
 room or after standing unused, says `X-Frames-Closed`, and what waited on
 it goes to another stream. Taken for the end of the episode, it settled
 for a frame near the one wanted, and after a drag Tim saw the wrong frame

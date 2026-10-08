@@ -21,8 +21,8 @@ import (
 	"framefairy/engine"
 )
 
-// The picture of a file the webview cannot decode, decoded on the Go side,
-// see engine.PreviewFrames. The page opens a stream at a moment, pulls its
+// The picture of the episode, decoded on the Go side by the episode's
+// decoder, see engine.EpisodeFrames. The page opens a stream at a moment, pulls its
 // frames a few at a time and closes it. ffmpeg decodes only as far as the
 // page has pulled, a frame or two ahead: WebKit takes whatever a response
 // writes without ever pushing back, so one long response would have let
@@ -175,13 +175,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		times = engine.NewPreviewTimes()
-		dec := p.decoder(path)
+		dec, err := p.decoder(path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			ctx = engine.WithPreviewTimes(ctx, times)
-			if dec != nil {
-				return dec.Stream(ctx, from, width&^1, height&^1, got)
+			if err != nil {
+				return err
 			}
-			return e.PreviewFrames(ctx, path, from, width&^1, height&^1, got)
+			return dec.Stream(engine.WithPreviewTimes(ctx, times), from, width&^1, height&^1, got)
 		}
 	}
 	kind := ""
@@ -285,13 +284,13 @@ func (p *previews) close(id string) {
 }
 
 // decoder is the episode's decoder for the episode at path, started on
-// its first stream, or nil where there is no framefairy-frames beside the
-// app. Then the ffmpeg program's streams are used, until the step of
-// docs/VIDEO-PREVIEW.md that removes them.
-func (p *previews) decoder(path string) *engine.EpisodeFrames {
+// its first stream. It ships beside the app, as ffmpeg does, and an app
+// without it says so the way it says a missing ffmpeg: there is no second
+// way to the frames.
+func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
 	program, err := engine.FindTool("FRAMEFAIRY_FRAMES", "framefairy-frames")
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -307,7 +306,7 @@ func (p *previews) decoder(path string) *engine.EpisodeFrames {
 			go p.reap()
 		}
 	}
-	return d
+	return d, nil
 }
 
 func (p *previews) reap() {

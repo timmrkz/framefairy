@@ -357,8 +357,15 @@ func (c *cursor) next(n int, skip float64) {
 		}
 		return
 	}
+	// Before the moment it was opened at, the way a seek with ffmpeg's -ss
+	// drops them, and before the skip the page asked for. They are dropped
+	// as they come out of the decoder, before they are scaled: a jump
+	// decodes up to two seconds of frames from the key frame before it,
+	// and scaling each to the size of the canvas only to throw it away
+	// kept a drag waiting.
+	drop := max(c.from, skip) - 1e-6
 	for sent := 0; sent < n; {
-		at, body, err := c.frame()
+		at, body, err := c.frame(drop)
 		if err != nil {
 			if errors.Is(err, astiav.ErrEof) {
 				c.ended = true
@@ -368,19 +375,15 @@ func (c *cursor) next(n int, skip float64) {
 			}
 			return
 		}
-		// Before the moment it was opened at, the way a seek with ffmpeg's
-		// -ss drops them, and before the skip the page asked for.
-		if at < c.from-1e-6 || at < skip-1e-6 {
-			continue
-		}
 		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: body})
 		sent++
 	}
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Done})
 }
 
-// frame is the next frame out of the chain, with where it starts.
-func (c *cursor) frame() (float64, []byte, error) {
+// frame is the next frame out of the chain that starts at drop or after,
+// with where it starts.
+func (c *cursor) frame(drop float64) (float64, []byte, error) {
 	for {
 		if c.graph != nil {
 			err := c.sink.GetFrame(c.filtered, astiav.NewBuffersinkFlags())
@@ -404,7 +407,7 @@ func (c *cursor) frame() (float64, []byte, error) {
 		err := c.v.dec.ReceiveFrame(c.decoded)
 		switch {
 		case err == nil:
-			if c.decoded.Pts() == astiav.NoPtsValue {
+			if pts := c.decoded.Pts(); pts == astiav.NoPtsValue || float64(pts)*c.v.stream.TimeBase().Float64() < drop {
 				c.decoded.Unref()
 				continue
 			}

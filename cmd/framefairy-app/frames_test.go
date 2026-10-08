@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 // drops what comes before it, and a closed stream is gone.
 func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	ffmpegtest.Need(t)
+	needDecoder(t)
 	svc, mine, _ := library(t)
 	// Ten seconds at five frames a second, a picture any ffmpeg writes.
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
@@ -101,6 +103,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 // A stream that has run to the end of the episode says so.
 func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 	ffmpegtest.Need(t)
+	needDecoder(t)
 	svc, mine, _ := library(t)
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
 		"-i", "testsrc2=s=160x90:r=5:d=1", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
@@ -135,6 +138,7 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 // frame after a drag along the clip timeline. Plan row 2.156.
 func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	ffmpegtest.Need(t)
+	needDecoder(t)
 	svc, mine, _ := library(t)
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
 		"-i", "testsrc2=s=160x90:r=5:d=10", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
@@ -256,5 +260,15 @@ func TestTheFramesRouteStreamsSound(t *testing.T) {
 		if w := 1.5 + float64(k*engine.SoundChunk)/48000; math.Abs(at-w) > 1e-9 {
 			t.Fatalf("chunk %d says %.6f, it is at %.6f", k, at, w)
 		}
+	}
+}
+
+// needDecoder fails a test of the picture where the episode's decoder is
+// not built, which make frames does and the app always ships: the frames
+// come from nothing else.
+func needDecoder(t *testing.T) {
+	t.Helper()
+	if os.Getenv("FRAMEFAIRY_FRAMES") == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
 }
