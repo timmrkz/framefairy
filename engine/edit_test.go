@@ -137,13 +137,13 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		name string
 		g    Gesture
 	}{
-		{"the start to words", Gesture{Kind: "trim", Edge: "start", From: 9.7, ToWords: true, Frame: 0.04}},
-		{"the end to words", Gesture{Kind: "trim", Edge: "end", From: 13.6, ToWords: true, Frame: 0.04}},
-		{"the start to frames", Gesture{Kind: "trim", Edge: "start", From: 10.23, Frame: 0.04}},
-		{"the end to frames", Gesture{Kind: "trim", Edge: "end", From: 12.87, Frame: 0.04}},
-		{"a cut to frames", Gesture{Kind: "cut", From: 10.51, To: 10.58, Frame: 0.04}},
-		{"a cut to words", Gesture{Kind: "cut", From: 10.7, To: 10.8, ToWords: true, Frame: 0.04}},
-		{"a cut moved", Gesture{Kind: "move", Index: 0, From: 11.0, To: 11.95, Frame: 0.04}},
+		{"the start to words", Gesture{Kind: "trim", Edge: "start", From: 9.7, ToWords: true, Frames: at25}},
+		{"the end to words", Gesture{Kind: "trim", Edge: "end", From: 13.6, ToWords: true, Frames: at25}},
+		{"the start to frames", Gesture{Kind: "trim", Edge: "start", From: 10.23, Frames: at25}},
+		{"the end to frames", Gesture{Kind: "trim", Edge: "end", From: 12.87, Frames: at25}},
+		{"a cut to frames", Gesture{Kind: "cut", From: 10.51, To: 10.58, Frames: at25}},
+		{"a cut to words", Gesture{Kind: "cut", From: 10.7, To: 10.8, ToWords: true, Frames: at25}},
+		{"a cut moved", Gesture{Kind: "move", Index: 0, From: 11.0, To: 11.95, Frames: at25}},
 		{"a cut put back", Gesture{Kind: "join", From: 11.5}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -896,11 +896,12 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	// there, and the playhead is in that half, so it is the one lit.
 	half := stops[1]
 	shaped, err := ShapeClip(path, "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
-		ToWords: true, Frame: 0.04}, tr, 0.1)
+		ToWords: true, Frames: at25}, tr, 0.1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := shaped.Pieces[0].Start; math.Abs(got-roundTo(half.Start, 3)) > 0.001 {
+	// On the frame nearest it, where every edge lands, see PieceOnFrames.
+	if got := shaped.Pieces[0].Start; got != (Gesture{Frames: at25}).onFrame(half.Start) {
 		t.Errorf("the clip starts at %v, not at the second half %+v", got, half)
 	}
 	if shaped.Playhead < half.Start || shaped.Playhead >= half.End {
@@ -1005,18 +1006,8 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 		t.Errorf("start %v, found %v", clips[0].Segments[0].Start, clips[0].Found)
 	}
 
-	// Exactly, though the edge was found between two frames: at five
-	// frames a second 13.1 is no frame's edge, and the end went back to
-	// 13.2.
-	if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 13.1, Frame: 0.2}, tr, 0.1); err != nil {
-		t.Fatal(err)
-	}
-	_, clips, _ = LoadClips(path)
-	if got := clips[0].Segments[len(clips[0].Segments)-1].End; got != 13.1 {
-		t.Errorf("the end put back with frames is at %v, want 13.1 where it was found", got)
-	}
-	// A drag that ends well away from it still lands on a frame.
-	if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frame: 0.2}, tr, 0.1); err != nil {
+	// A drag on frames lands on a frame.
+	if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frames: at5}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, _ = LoadClips(path)
@@ -1040,14 +1031,14 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	// zwei on a frame, where no word ends, so a word would move it.
 	fresh := func() string {
 		path := editablePlanPath(t)
-		if err := Reshape(path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frame: 0.04}, tr, 0.1); err != nil {
+		if err := Reshape(path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frames: at25}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		return path
 	}
 	move := func(path string, g Gesture) []Segment {
 		t.Helper()
-		g.Kind, g.Index, g.Frame = "move", 0, 0.04
+		g.Kind, g.Index, g.Frames = "move", 0, at25
 		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
@@ -1067,9 +1058,10 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 		t.Errorf("the right edge did not move: %+v", got)
 	}
 
-	// The left edge onto words with shift: the right one stays at 11.9.
+	// The left edge onto words with shift: the right one stays where it
+	// is, on the frame of 11.9, which is 11.92.
 	got = move(fresh(), Gesture{Edge: "from", From: 10.7, To: 11.9, ToWords: true})
-	if got[1].Start != 11.9 {
+	if got[1].Start != 11.92 {
 		t.Errorf("the right edge moved to %v when the left one was put on words", got[1].Start)
 	}
 	if got[0].End == 10.8 {
@@ -1098,7 +1090,7 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	// until 11.4. The clip's cut takes 11.1 to 11.9 and with it that hold.
 	segments := func(path string, g Gesture) []Segment {
 		t.Helper()
-		g.Frame, g.ToWords = 0.04, true
+		g.Frames, g.ToWords = at25, true
 		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
@@ -1108,6 +1100,9 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 		}
 		return clips[0].Segments
 	}
+	// Each edge then lands on the start of its frame, at 25 frames a
+	// second, see PieceOnFrames: 11.1 is half way between two and goes to
+	// the later, 11.12, and so does the cut's right edge at 11.9.
 	cases := []struct {
 		name string
 		g    Gesture
@@ -1116,13 +1111,13 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 		{"the left edge of a cut past where the caption goes",
 			Gesture{Kind: "move", Edge: "from", From: 11.6, To: 11.9}, 11.4},
 		{"the left edge of a cut inside the time the caption stays",
-			Gesture{Kind: "move", Edge: "from", From: 11.3, To: 11.9}, 11.1},
+			Gesture{Kind: "move", Edge: "from", From: 11.3, To: 11.9}, 11.12},
 		{"the left edge of a cut into the word",
 			Gesture{Kind: "move", Edge: "from", From: 10.9, To: 11.9}, 10.6},
 		{"the end of the clip near where the caption goes",
 			Gesture{Kind: "trim", Edge: "end", From: 11.45}, 11.4},
 		{"the end of the clip near the word",
-			Gesture{Kind: "trim", Edge: "end", From: 11.15}, 11.1},
+			Gesture{Kind: "trim", Edge: "end", From: 11.15}, 11.12},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1130,7 +1125,7 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 			if got[0].End != c.end {
 				t.Errorf("the edge landed at %v, want %v: %+v", got[0].End, c.end, got)
 			}
-			if c.g.Kind == "move" && got[1].Start != 11.9 {
+			if c.g.Kind == "move" && got[1].Start != 11.92 {
 				t.Errorf("the right edge moved to %v", got[1].Start)
 			}
 		})

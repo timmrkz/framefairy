@@ -644,8 +644,8 @@ the queue says it is, not a rounding. The rules are
 | picking a clip, from the list, a mark, the keys, a search, a clip made or put back | on the clip, at its start |
 | a click on the clip's start edge, a trim, a click on a caption | on the clip |
 | a click on the clip's end edge, the clip playing to its end | on the clip, at its end |
-| a click, a drag, a step or a seek into the frame the short ends on | on the clip, at its end |
-| the same into any frame from the one the short starts on, cuts included | on the clip |
+| a click, a drag, a step or a seek into the frame that holds the moment a frame before the clip's end | on the clip, at its end |
+| the same into any frame from the one that holds the clip's start on, cuts included | on the clip |
 | the same into any frame before or after those | on the video |
 | no clip chosen, or a clip chosen with no gesture, while the video plays | on the video |
 | pausing, a jump over a cut, a loop | where it was |
@@ -773,18 +773,22 @@ one step right landed on the start of that frame, before the clip, and
 the clip dimmed while its own first frame was on screen: the old fault,
 a comparison of seconds, in a new place. So `placeOf` takes the
 episode's frame rate and asks which frame the gesture landed in, the
-same frame `insideClip` draws the crop in. The frame the short starts
-on is on the clip, and the frame it ends on is its end. Which frames
-those are is the one rule for edges, `frameOf` in `lib/flow.ts` and
-`engine/render.go`: an edge means the frame whose start is nearest it.
-The playhead draws the frame that holds it, `frameAt`, where a moment a
-millisecond or less before a frame's start is that frame's, because
-every moment the app keeps is kept to the millisecond. For an edge on a
-frame the two agree, `frame.cases.json` holds both against the engine,
-and a clip picked, or its start clicked, cues the play of its first
-piece, which starts on the frame its start means. A trim of the end on frames, which leaves the playhead a frame
-before the end, is then at the end, and the space bar starts the clip
-over at once, as it did before.
+same frame `insideClip` draws the crop in. The frame that holds the
+clip's start is on the clip, and the frame that holds the moment a frame
+before its end is its end. There is one rule for which frame is meant,
+`frameAt` in `lib/flow.ts` and `rankAt` in `mp4.ts`: the frame that
+holds the moment, where a moment a millisecond or less before a frame's
+start is that frame's, `FRAME_HAIR`, because every moment the app keeps
+is kept to the millisecond. The engine keeps every edge on the start of
+the frame the render cuts on, `PieceOnFrames` in `engine/render.go`, so
+for an edge this is the short's frame, and `frame.cases.json` holds the
+two sides to each other. No second rule for edges is needed, and one was
+tried: a nearest frame for edges beside the frame that holds the
+playhead disagreed for about half the edges a search left between
+frames. A trim
+of the end on frames, which leaves the playhead a frame before the end,
+is then at the end, and the space bar starts the clip over at once, as
+it did before.
 
 **Why it is a state.** It was a distance: the clip played when the
 playhead was within half a frame of its start and before its end. That
@@ -907,10 +911,10 @@ early, in the middle of the seek.
   second, where a frame is long enough to see. Now the grid is the
   episode's own frames: each is drawn when the sound heard reaches where
   it begins, carried onto the program, `VideoPlan` in `plan.ts`. A visit
-  of a piece draws from the frame its start means, or the frame that
-  holds where the play began, to the frame before the one its end means,
-  the frames the render cuts, `edgeRank` and `lastRank` in `mp4.ts`, and the
-  tick never steps past either without drawing it for one animation frame,
+  of a piece draws from the frame that holds its start, or where the play
+  began, to the frame that holds the moment a frame before its end, the
+  frames the render cuts, and the tick never steps past either without
+  drawing it for one animation frame,
   `nextEdge`. A frame at a piece's edge can begin 10 ms before the cut,
   and is then due in the same animation frame as the one after the cut.
   The proof plays the clip from 57.000, 57.001, 57.013, 57.020, 57.039,

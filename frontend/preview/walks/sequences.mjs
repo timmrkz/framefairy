@@ -160,8 +160,9 @@
 //                      playhead put on the clip's start and on where each
 //                      cut ends by a click on it, the video preview shows
 //                      the frame the short starts that piece with, and on
-//                      the clip's end the short's last frame. At least one
-//                      edge is saved to the millisecond just before its
+//                      the clip's end the short's last frame. The clip's
+//                      end is where the search put it, and at least one
+//                      edge is kept to the millisecond just before its
 //                      frame's start
 //   ["as previewed", rate, before]
 //                      the same, for an episode whose picture starts after
@@ -428,18 +429,22 @@ export const sequences = [
     ],
   },
   {
-    // Bug 1 of docs/DESIGN-REVIEW.md: at 29.97 fps an edge saved to the
+    // Bug 1 of docs/DESIGN-REVIEW.md: at 29.97 fps an edge kept to the
     // millisecond lies just before its frame's start for 1400 of every
     // 3000 frames, and the video preview drew the frame before the one the
-    // short starts on. The edges the hand puts here are on frames, and at
-    // least one of them is such an edge.
+    // short starts on. And a search left its edges between frames, where
+    // the render took the frame whose start was nearer and the video
+    // preview the frame that held the edge. The clip's edges here are the
+    // search's own, its cuts are put by the hand, and at least one edge is
+    // kept just before its frame's start. The picture starts after the
+    // sound, so the frames are on a grid of their own, and the search's end
+    // lies where the two rules used to part.
     name: "the video preview on a clip's edges shows the frames its short starts and ends on",
     steps: [
-      ["add", 40, "30000/1001"],
+      ["add", 40, "30000/1001", "late"],
       ["wait for", "New"],
       ["cards", 1],
-      ["trim", "start", -20],
-      ["trim", "end", 20],
+      ["trim", "start", 20],
       ["cut at", 0.3],
       ["cut at", 0.7],
       ["cuts", 2],
@@ -860,12 +865,13 @@ async function asPreviewed(page, rate, before) {
 // each edge the way a hand puts it there, a click on the clip's start, on
 // where each cut ends and on the clip's end, and the frame the video
 // preview draws, read off the canvas, is the frame the short starts that
-// piece with, or the short's last at the clip's end. An edge is saved to
-// the millisecond, and at 29.97 fps that lies just before its frame's
-// start for 1400 of every 3000 frames, where the video preview drew the
-// frame before the one the short starts on. Bug 1 of docs/DESIGN-REVIEW.md.
-// At least one edge here has to be such an edge, or the walk is not about
-// the case.
+// piece with, or the short's last at the clip's end. Bug 1 of
+// docs/DESIGN-REVIEW.md. An edge is kept to the millisecond, and at 29.97
+// fps that lies just before its frame's start for 1400 of every 3000
+// frames, where the video preview drew the frame before the one the short
+// starts on. And a search left its edges between frames. The clip's end
+// has to be where the search put it, and at least one edge just before
+// its frame's start, or the walk is not about the case.
 async function edgesAsRendered(page) {
   const on = await chosen(page);
   const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
@@ -875,38 +881,45 @@ async function edgesAsRendered(page) {
   const { frames } = shortFrames(short);
   const pieces = entry.segments;
   // The frame an edge means, the one whose start is nearest, and each
-  // piece's frames from there, the way the render cuts them, see frameOf
-  // and cutOf in engine/render.go.
-  const frameOf = (t) => Math.round((t - videoStart) * fps);
+  // piece's frames from there, the way the render cuts them, see
+  // nearestFrame and cutOf in engine/render.go.
+  const nearest = (t) => Math.round((t - videoStart) * fps);
   const firsts = [];
   let held = 0;
   for (const p of pieces) {
-    const first = frameOf(p.start);
+    const first = nearest(p.start);
     firsts.push(held);
-    held += Math.max(frameOf(p.end), first + 1) - first;
+    held += Math.max(nearest(p.end), first + 1) - first;
   }
   if (frames.length !== held) return `the short has ${frames.length} frames, its pieces hold ${held}`;
-  const edges = [
-    ...pieces.map((p, i) => ({
-      what: i === 0 ? "the clip's start" : `where cut ${i} ends`,
-      label: i === 0 ? "Clip start" : `Where cut ${i} ends`,
-      at: p.start,
-      want: frames[firsts[i]],
-    })),
-    { what: "the clip's end", label: "Clip end", at: pieces[pieces.length - 1].end, want: frames[frames.length - 1] },
-  ];
-  // Saved just before the start of the frame it means, by the rounding to
+  // The clip's start and where each cut ends. Two pieces that meet, at a
+  // camera switch or where the picture starts, have no cut between them.
+  const edges = [{ what: "the clip's start", label: "Clip start", at: pieces[0].start, want: frames[firsts[0]] }];
+  for (let i = 1; i < pieces.length; i++) {
+    if (pieces[i].start <= pieces[i - 1].end) continue;
+    edges.push({ what: `where cut ${i} ends`, label: `Where cut ${i} ends`, at: pieces[i].start, want: frames[firsts[i]] });
+  }
+  edges.push({ what: "the clip's end", label: "Clip end", at: pieces[pieces.length - 1].end, want: frames[frames.length - 1] });
+  // Kept just before the start of the frame it means, by the rounding to
   // the millisecond.
   const before = edges.filter((e) => {
-    const begins = videoStart + frameOf(e.at) / fps;
+    const begins = videoStart + nearest(e.at) / fps;
     return e.at < begins - 1e-9 && begins - e.at < 0.0006;
   });
-  if (!before.length) return "no edge of the clip lies just before its frame's start, the case this is about";
+  if (!before.length) {
+    return `no edge of the clip, at ${edges.map((e) => e.at).join(", ")}, lies just before its frame's start, the case this is about`;
+  }
+  if (Math.abs(entry.found[1] - pieces[pieces.length - 1].end) > 1e-9) {
+    return `the clip ends at ${pieces[pieces.length - 1].end}, not at ${entry.found[1]} where the search put it, the other case this is about`;
+  }
   await filmedOnScreen(page);
   const problems = [];
   for (const e of edges) {
     // High on the track, where the captions' edges below are not.
-    const grip = await page.locator(`.clip-timeline [aria-label="${e.label}"]`).boundingBox();
+    const grip = await page
+      .locator(`.clip-timeline [aria-label="${e.label}"]`)
+      .boundingBox({ timeout: 3000 })
+      .catch(() => null);
     if (!grip) {
       problems.push(`there is no ${e.label} to click`);
       continue;
@@ -925,7 +938,7 @@ async function edgesAsRendered(page) {
       problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
     }
   }
-  console.log(`      ${edges.length} edges looked at, ${before.length} saved just before their frame`);
+  console.log(`      ${edges.length} edges looked at, ${before.length} kept just before their frame`);
   return problems.length ? problems.join("\n") : null;
 }
 

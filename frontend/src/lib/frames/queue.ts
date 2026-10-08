@@ -29,7 +29,7 @@
 //   arriving, and by the animation frame that draws while playing.
 import { AppFrames, AppPictures } from "./app";
 import { NativePictures, openNative } from "./native";
-import { findMoov, MP4Error, parseMoov, pcmPlanes, lastRank, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
+import { findMoov, MP4Error, parseMoov, pcmPlanes, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
   fade,
@@ -798,7 +798,10 @@ export class FrameQueue {
 
   // A paused playhead: the play from it is cued when its first frame is the
   // frame that holds the playhead, and the frame is decoded on its own
-  // where it is not, in a cut of the clip or past its end.
+  // where it is not, in a cut of the clip or past its end. On the clip's
+  // end itself it is the clip's last frame, the one that holds the moment
+  // a frame before the end, where a play of the clip stops and the short
+  // ends, see end.
   private settle(at: number) {
     const ticket = this.ticket;
     this.ready.then(
@@ -810,9 +813,7 @@ export class FrameQueue {
         const there = p0 < program.length ? program.locate(p0) : null;
         const last = program.pieces[program.pieces.length - 1];
         if (there && rankAt(s, there.at) === rankAt(s, at)) this.start(at, true);
-        // At the clip's end, its last frame, the one a play of it stops
-        // on and the short ends with, see end.
-        else if (!there && program.pieces.length && at >= last.end) void this.still(at, lastRank(s, last.start, last.end));
+        else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
       },
       () => {},
@@ -987,9 +988,9 @@ export class FrameQueue {
 
   // ---- A paused frame on its own
 
-  // The frame drawn is the one that holds the playhead, or the frame of
-  // this rank where it is given.
-  private async still(at: number, rank?: number) {
+  // The frame drawn is the one that holds the moment it is given, the
+  // playhead unless said otherwise.
+  private async still(at: number, holds = at) {
     try {
       await this.ready;
     } catch {
@@ -999,7 +1000,7 @@ export class FrameQueue {
     const slot = this.slots[0];
     this.release(slot);
     const s = this.video!.samples;
-    const feed = stillFeed(s, at, rank);
+    const feed = stillFeed(s, holds);
     // Already on screen: nothing to decode.
     if (this.shown && this.shown.rank === feed.rank) {
       this.at = at;
@@ -1277,7 +1278,10 @@ export class FrameQueue {
     // 24.72. Nearly always it is decoded already, and where it is not, it
     // is decoded on its own, as a paused frame is.
     if (!last || !this.video) return;
-    const want = lastRank(this.video.samples, last.start, last.end);
+    // The frame that holds the moment a frame before the end, see frameAt
+    // in lib/flow.ts.
+    const holds = Math.max(last.start, last.end - this.video.frame);
+    const want = rankAt(this.video.samples, holds);
     if (this.shown?.rank === want) return;
     for (const slot of this.slots) {
       const i = slot.ready.findIndex((h) => h.rank === want);
@@ -1287,7 +1291,7 @@ export class FrameQueue {
       this.report(true);
       return;
     }
-    void this.still(this.at, want);
+    void this.still(this.at, holds);
   }
 
   private slotOf(run: number): Slot | null {

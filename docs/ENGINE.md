@@ -592,9 +592,14 @@ was found later:
   join filled with silence. After two cuts the sound of a 24 fps episode
   was 42 ms behind its picture. Now a render cuts by frame number, `cutOf` in
   `engine/render.go`: a piece is the frames from the one its start is on
-  up to the one before its end. Which frame an edge is on is `frameOf`,
-  the frame whose start is nearest it, the only place the engine decides
-  it, and the video preview asks the same rule, both held to
+  up to the one before its end. Which frame an edge is on is
+  `nearestFrame`, the frame whose start is nearest it and of two equally
+  near the later, worked out in whole numbers with no allowance, the only
+  place the engine decides it. Every edge is put on the start of that
+  frame as it enters the plan, `PieceOnFrames`: the pieces a search or a
+  clip made by hand is made of, and the pieces a gesture leaves. So the
+  frame that holds an edge, which is what the video preview shows, is the
+  frame the render cuts on, both held to
   `frontend/src/lib/frame.cases.json`. The read starts half a frame before the first
   frame, where no rounding to the microsecond can move it past a frame,
   and runs a frame longer than the piece. The picture keeps the piece's
@@ -611,10 +616,11 @@ was found later:
 - **Drift at every cut.** A piece becomes a whole number of frames in the
   short, so a piece that was not one came out longer, and its sound with
   it, while the captions added the pieces up as they are. By the sixth
-  piece a word was heard 0.10 s after it was shown. The render now takes a
-  clip with every edge on the nearest frame of the source,
-  `SourceInfo.OnFrames`, and makes its captions from that same clip, so
-  the two add up to the same. An edge moves by half a frame at most.
+  piece a word was heard 0.10 s after it was shown. Every edge of a plan
+  is on a frame's start now, kept to the millisecond, see `PieceOnFrames`
+  above. The render takes the clip with each edge on that frame to the
+  microsecond, `SourceInfo.OnFrames`, and makes its captions from that
+  same clip, so the two add up to the same.
 
 The sound fades for 15 ms at the clip's two ends and at every cut, which
 keeps a hard cut from clicking, and nowhere else. Two pieces that meet at
@@ -713,7 +719,15 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   50 and 60, `shortRate`, which was Tim's choice: 30 for the phone's and
   for the one with frames left out, which averages about 28. Each frame of the
   short is still the frame that holds its moment. A file whose frames
-  keep to their rate keeps its own rate exactly.
+  keep to their rate keeps its own rate exactly. The edges of a plan are
+  put on the frames of the short's rate, the even grid the render counts
+  by. The video preview finds the frame that holds an edge by the file's
+  own times and ends a piece a frame of the file's most common step
+  before its end, so on uneven frames it can be a frame apart from the
+  short where a frame of the file begins within a millisecond of an edge,
+  and while it plays it shows each frame at its own time where the short
+  shows it at the next frame of its rate. That is still open, plan row
+  2.153.
 
 `TestARenderShowsTheFrameThatHoldsEachMoment` in
 `engine/frametimes_test.go` renders a clip of four pieces from four such

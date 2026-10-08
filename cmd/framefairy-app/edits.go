@@ -249,7 +249,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 	if err != nil {
 		return nil, err
 	}
-	g.FrameStart = s.frameStart(context.Background(), path)
+	g.Frames = s.frames(context.Background(), path)
 	return engine.ShapeClipView(plan, clipID, g, t, s.store.Settings().options().KeepPause,
 		s.captionOverrides(plan))
 }
@@ -266,7 +266,7 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	g.FrameStart = s.frameStart(ctx, path)
+	g.Frames = s.frames(ctx, path)
 	if err := s.editMoving(path, &playhead, func() error {
 		return engine.Reshape(plan, clipID, g, t, s.store.Settings().options().KeepPause)
 	}); err != nil {

@@ -573,7 +573,7 @@ func foundPieces(c *object) []foundPiece {
 // can still make, so it is checked before anything is written. The words are
 // taken again from the transcript, the caption file goes, because the
 // captions are built from the words, and the edit is recorded for training.
-func editPieces(planPath, clipID string, change pieceChange) error {
+func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) error {
 	err := editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
@@ -581,7 +581,7 @@ func editPieces(planPath, clipID string, change pieceChange) error {
 		}
 		before := segmentObjects(c)
 		found := foundPieces(c)
-		out, err := checkedPieces(change, before, found)
+		out, err := checkedPieces(change, before, found, frames)
 		if err != nil {
 			return err
 		}
@@ -620,11 +620,15 @@ func editPieces(planPath, clipID string, change pieceChange) error {
 	return nil
 }
 
-// checkedPieces makes a change to a clip's pieces and checks that what comes
+// checkedPieces makes a change to a clip's pieces, puts their edges on
+// the episode's frames, see PieceOnFrames, and checks that what comes
 // back is a clip a person can still watch and the render can still make.
-func checkedPieces(change pieceChange, pieces []*object, found []foundPiece) ([]*object, error) {
+func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, frames SourceInfo) ([]*object, error) {
 	out, err := change(pieces, found)
 	if err != nil {
+		return nil, err
+	}
+	if out, err = piecesOnFrames(out, frames); err != nil {
 		return nil, err
 	}
 	if len(out) == 0 {
@@ -635,6 +639,33 @@ func checkedPieces(change pieceChange, pieces []*object, found []foundPiece) ([]
 	}
 	if span := pieceSpan(out); span < MinClip {
 		return nil, renderErr("a clip needs at least one second, that would leave %s", fixed(span, 2))
+	}
+	return out, nil
+}
+
+// piecesOnFrames is a clip's pieces with their edges on the episode's
+// frames, see PieceOnFrames. A piece that moves is a copy, because the
+// one it was made from can still be the clip's own. A cut narrower than a
+// frame would close, and two pieces that meet are a camera switch, not a
+// cut, so that is refused. Without a frame rate the pieces are left as
+// they are.
+func piecesOnFrames(pieces []*object, frames SourceInfo) ([]*object, error) {
+	if frames.FPSNum <= 0 || frames.FPSDen <= 0 {
+		return pieces, nil
+	}
+	out := make([]*object, len(pieces))
+	for i, seg := range pieces {
+		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
+		out[i] = seg
+		s, e := frames.PieceOnFrames(start, end)
+		if i > 0 && start > number(pieces[i-1].values[keyEnd]) && s <= number(out[i-1].values[keyEnd]) {
+			return nil, renderErr("a cut has to take out more than that")
+		}
+		if s != start || e != end {
+			out[i] = copyObject(seg)
+			out[i].set(keyStart, s)
+			out[i].set(keyEnd, e)
+		}
 	}
 	return out, nil
 }

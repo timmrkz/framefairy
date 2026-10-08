@@ -789,7 +789,7 @@ func TestAGestureIsHeldInsideWhatTheClipCanBe(t *testing.T) {
 func TestACutOnFramesFitsThePieceItIsIn(t *testing.T) {
 	const frame = 1.0 / 25
 	two := Clip{Segments: []Segment{{Start: 10, End: 20}, {Start: 22, End: 30}}}
-	g := Gesture{Kind: "cut", Frame: frame}
+	g := Gesture{Kind: "cut", Frames: at25}
 	at := func(clip Clip, at, wide float64) (float64, float64, bool) {
 		return g.cutOnFrames(clip, at-wide/2, at+wide/2)
 	}

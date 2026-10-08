@@ -120,7 +120,7 @@
   let pixels: [number, number] = [0, 0];
   // One frame of the episode. The playhead can only ever stand on one, so
   // it is the smallest difference between two moments that means anything.
-  const frameOf = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
+  const oneFrame = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
   // A queue for each episode. The one before is closed with everything it
   // holds, its decoders and its sound card among them.
@@ -261,7 +261,7 @@
   export function seek(t: number, about?: "clip") {
     const at = Math.max(0, Math.min(t, source.duration));
     time = at;
-    placed = placeOf(pieces, clip?.key ?? "", at, 1 / frameOf, about, source.videoStart ?? 0);
+    placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
     if (!queue) return;
     if (!paused) playedClip = placed.place !== "video";
     queue.seek(at, programOf(placeFor(placed, clip?.key)));
@@ -340,7 +340,7 @@
     return {
       left: (left / source.width) * 100,
       width: (source.cropWidth / source.width) * 100,
-      inside: insideClip(clip.segments, time, frameOf),
+      inside: insideClip(clip.segments, time, oneFrame),
       // On the video, the clip's rules are not in play, and its frame says
       // so by being dimmed.
       dim: place === "video",

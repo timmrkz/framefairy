@@ -43,14 +43,14 @@ function framesInClip(frames, p) {
 
 // Paused, the picture stays where it was paused: the playhead stays, and
 // the frame on screen is the one that holds it, or where a play stopped on
-// the clip's end, the frame the short ends on, the one before the frame
-// the end means, see frameAt and frameOf in lib/flow.ts.
+// the clip's end, the frame that holds the moment a frame before it, the
+// last the short shows, see frameAt in lib/flow.ts.
 async function staysPaused(what) {
   const a = await at();
   await page.waitForTimeout(400);
   const b = await at();
   const holds = Math.floor((b.at + 0.001) / frame) * frame;
-  const endsOn = (Math.floor(b.at / frame + 0.5 + 1e-6) - 1) * frame;
+  const endsOn = Math.floor((b.at - frame + 0.001) / frame) * frame;
   const pictured = Math.abs(b.frame - holds) < 1e-6 || Math.abs(b.frame - endsOn) < 1e-6;
   if (!a.paused || !b.paused || Math.abs(a.at - b.at) > 1e-3 || !pictured) {
     watch.broke(

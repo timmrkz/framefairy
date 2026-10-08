@@ -64,7 +64,7 @@ These are live today, independent of any redesign, and small to fix.
 
 | # | Bug | Where | How it was found |
 | -: | --- | --- | --- |
-| 1 | At 29.97 fps the video preview and the short disagree by one frame at about half of all edges. An edge is saved to the millisecond, which lands just before its frame for 1455 of 3000 frames. The interface floors and draws the frame before, the render rounds and starts on the frame itself. | `engine/shape.go:289`, `frontend/src/lib/playhead.ts:73`, `frontend/src/lib/frames/mp4.ts:770`, `engine/render.go:206` | read, and the count checked by arithmetic. Not seen in the app yet. The walks cannot see it, their episode is 5 fps, where every frame starts on a whole millisecond. Fixed in #148: an edge means the frame whose start is nearest it, `frameOf` in `engine/render.go` and `lib/flow.ts`, both held to `frame.cases.json`, and the playhead counts a moment a millisecond before a frame's start as that frame's. Counted exactly it is 1400 of 3000. A walk on a 29.97 fps episode reads the frame on each edge off the video preview against the short |
+| 1 | At 29.97 fps the video preview and the short disagree by one frame at about half of all edges. An edge is saved to the millisecond, which lands just before its frame for 1455 of 3000 frames. The interface floors and draws the frame before, the render rounds and starts on the frame itself. | `engine/shape.go:289`, `frontend/src/lib/playhead.ts:73`, `frontend/src/lib/frames/mp4.ts:770`, `engine/render.go:206` | read, and the count checked by arithmetic. Not seen in the app yet. The walks cannot see it, their episode is 5 fps, where every frame starts on a whole millisecond. Fixed in #148 at the cause: every edge is put on the start of its frame as the clip enters the plan, from a search, by hand or from a gesture, `PieceOnFrames` in `engine/render.go`, so the frame that holds an edge is the frame the render cuts on. The interface keeps its one rule, the frame that holds a moment with a millisecond of allowance. Both sides are held to `frame.cases.json`. Counted exactly it is 1400 of 3000. A walk on a 29.97 fps episode reads the frame on each edge off the video preview against the short. Frames at uneven times are not covered, see plan row 2.153 |
 | 2 | Removing the language model during a search, or the speech model while something is heard, is not refused. The guards ask for job kinds `plan` and `transcribe`, which no longer exist. | `cmd/framefairy-app/setup.go:382`, `:408` | proved, the model file was deleted mid-search, and checked again by hand |
 | 3 | A work folder `episode.framefairy` that is itself a link to the home folder makes every file in it part of the library. The media route then serves `~/.ssh/id_ed25519`. A zip from an editor can carry such a link. | `cmd/framefairy-app/settings.go:272`, `main.go:228` | proved |
 | 4 | A search the Go side refuses leaves the row saying Finding clips for good, with Cancel disabled and the reason never shown. The interface throws away the job `Search` returns and waits for a running job that never comes. | `frontend/src/screens/Episode.svelte:1752`, `:1852`, `cmd/framefairy-app/jobs.go:381` | proved in the harness, and read again by hand |
@@ -102,8 +102,12 @@ rounds with the rational rate, `OnFrames` rounds with the rate as a float,
 with 1e-6 of slack and `rankAt` floors with a microsecond. The frame rate
 itself comes from two places, ffprobe and the sample durations in the
 file. Small tolerances, 1e-9, 1e-6, 0.0005 and 0.0015, paper over the
-differences. Bug 1 above was the next one, fixed in #148 by one
-function per language for which frame an edge means, held to one table.
+differences. Bug 1 above was the next one. #148 removed its cause rather
+than adding a rule: every edge is kept on the start of its frame, put
+there once as it enters the plan, so the one rule each side already had
+gives the same frame. `cutOf`, `OnFrames` and `onFrame` now go through
+one function, `nearestFrame`, worked out in whole numbers, and the
+interface's tolerances came down to one millisecond, `FRAME_HAIR`.
 
 What ends it: an edge is a frame number once the rate is known, or a tick
 of the episode's own timebase. One function in Go turns a moment into a

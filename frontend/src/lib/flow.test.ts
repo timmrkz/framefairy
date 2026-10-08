@@ -582,11 +582,8 @@ describe("frames are counted from where the picture starts", () => {
   const frame = 0.04;
   test("a moment falls in the picture's own frame", () => {
     expect(frameAt(0.25, frame, 0.25)).toBe(0);
-    expect(frameAt(0.288, frame, 0.25)).toBe(0);
+    expect(frameAt(0.289, frame, 0.25)).toBe(0);
     expect(frameAt(0.29, frame, 0.25)).toBe(1);
-    // Within the hair a moment kept to the millisecond can fall short of
-    // a frame's start by, it is that frame's.
-    expect(frameAt(0.2896, frame, 0.25)).toBe(1);
     expect(frameAt(1.0, frame, 0.25)).toBe(18);
     // Counted from the file, 1.0 is frame 25, a frame the picture has not.
     expect(frameAt(1.0, frame)).toBe(25);

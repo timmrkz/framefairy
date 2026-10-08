@@ -28,7 +28,7 @@
 //   key frame on. A piece that starts after the last one ends, inside what
 //   has already been decoded, carries the run on. Any other piece starts a
 //   new run, from the key frame before it.
-import { edgeRank, lastRank, rankAt, type Samples } from "./mp4";
+import { rankAt, type Samples } from "./mp4";
 
 export type Piece = { start: number; end: number };
 
@@ -135,7 +135,8 @@ export function keyBefore(s: Samples, rank: number): number {
 // frame itself, in decode order. A frame shown before it but decoded after
 // it is not needed, and the decoder is flushed after the last sample so the
 // frame comes out without waiting for more.
-export function stillFeed(s: Samples, at: number, rank = rankAt(s, at)): { key: number; last: number; rank: number } {
+export function stillFeed(s: Samples, at: number): { key: number; last: number; rank: number } {
+  const rank = rankAt(s, at);
   return { key: keyBefore(s, rank), last: s.order[rank], rank };
 }
 
@@ -288,12 +289,10 @@ export class VideoPlan {
     const to = visit.from + length;
     if (to - from <= 1e-9 || s.count === 0) return;
     const moment = visit.start + (from - visit.from);
-    // A piece played from its start starts on the frame its start edge
-    // means, and every piece ends on the frame before the one its end
-    // means, the frames the render cuts, see edgeRank in mp4.ts. A play
-    // from the playhead inside a piece starts on the frame that holds it.
-    const a = from === visit.from ? edgeRank(s, visit.start) : rankAt(s, moment);
-    const b = Math.max(a, lastRank(s, visit.start, visit.end));
+    // The last frame of a piece is the one that holds the moment a frame
+    // before its end, see frameAt in lib/flow.ts.
+    const a = rankAt(s, moment);
+    const b = Math.max(a, rankAt(s, Math.max(moment, visit.end - this.frame)));
     const kFirst = this.nextK;
     const kLast = kFirst + (b - a);
     this.nextK = kLast + 1;

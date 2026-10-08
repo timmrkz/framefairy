@@ -3,9 +3,7 @@ import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from
 
 // A clip of two pieces with a cut between them, at twenty-five frames a
 // second, the way the episodes are. Its start falls three quarters of a
-// frame into one: the frames start at 1677.60 and 1677.64, and the short
-// starts on the one from 1677.64, whose start is nearer, see frameOf in
-// lib/flow.ts.
+// frame into one: the frames start at 1677.60 and 1677.64.
 const fps = 25;
 const frame = 1 / fps;
 const pieces = [
@@ -23,9 +21,8 @@ describe("a gesture puts the playhead on the clip or on the video", () => {
 
   test("a click on the start edge is on the clip", () => {
     expect(placeOf(pieces, key, start, fps, "clip").place).toBe("clip");
-    // Landing there any other way is landing in the frame from 1677.60,
-    // which the short does not show.
-    expect(placeOf(pieces, key, start, fps).place).toBe("video");
+    // And landing on it any other way, since the start edge is the clip's.
+    expect(placeOf(pieces, key, start, fps).place).toBe("clip");
   });
 
   test("a click, a drag or a step inside the clip is on the clip", () => {
@@ -45,17 +42,16 @@ describe("a gesture puts the playhead on the clip or on the video", () => {
     expect(placeOf(pieces, key, 0, fps).place).toBe("video");
   });
 
-  test("the frame the short starts on is on the clip", () => {
-    // By the second 1677.64 is after the clip's start and 1677.63 is on
-    // it, but by the frame the short starts with the one from 1677.64.
-    // A step back and a step forward, a frame each, land there again.
-    const back = 1677.64 - frame;
+  test("the frame that holds the clip's first moment is on the clip", () => {
+    // The paused video on the Mac answers 1677.60 for a playhead put on
+    // the clip's start, so a step back and a step forward, a frame each,
+    // land on 1677.60. By the second that is before the clip, and the
+    // clip dimmed while its own first frame was on screen.
+    const back = 1677.6 - frame;
     expect(placeOf(pieces, key, back, fps).place).toBe("video");
     expect(placeOf(pieces, key, back + frame, fps).place).toBe("clip");
-    expect(placeOf(pieces, key, 1677.64, fps).place).toBe("clip");
-    // Its start kept to the millisecond, a hair before it, is in it.
-    expect(placeOf(pieces, key, 1677.6396, fps).place).toBe("clip");
-    expect(placeOf(pieces, key, 1677.6, fps).place).toBe("video");
+    expect(placeOf(pieces, key, 1677.6, fps).place).toBe("clip");
+    expect(placeOf(pieces, key, start - 0.001, fps).place).toBe("clip");
   });
 
   test("any frame after the frame that holds its last moment is on the video", () => {
@@ -79,13 +75,18 @@ describe("a gesture puts the playhead on the clip or on the video", () => {
     expect(placeOf(pieces, key, end - 2 * frame, fps).place).toBe("clip");
   });
 
-  test("an end that falls inside a frame has that frame for its last", () => {
-    const mid = [{ start: 10.01, end: 20.02 }];
-    expect(placeOf(mid, key, 20.0, fps).place).toBe("end");
-    expect(placeOf(mid, key, 20.03, fps).place).toBe("end");
-    expect(placeOf(mid, key, 20.04, fps).place).toBe("video");
-    expect(placeOf(mid, key, 10.0, fps).place).toBe("clip");
-    expect(placeOf(mid, key, 9.99, fps).place).toBe("video");
+  // Bug 1 of docs/DESIGN-REVIEW.md. At 29.97 frames a second frame 11
+  // begins at 0.367033 and frame 41 at 1.368033, and the engine keeps them
+  // as 0.367 and 1.368, a hair before, see frame.cases.json.
+  test("an edge kept a hair before its frame's start is that frame's", () => {
+    const ntsc = 30000 / 1001;
+    const kept = [{ start: 0.367, end: 1.368 }];
+    expect(placeOf(kept, key, 0.367, ntsc).place).toBe("clip");
+    expect(placeOf(kept, key, 0.366, ntsc).place).toBe("video");
+    // The clip's last frame is frame 40, from 1.334667, kept as 1.335.
+    expect(placeOf(kept, key, 1.335, ntsc).place).toBe("end");
+    expect(placeOf(kept, key, 1.333, ntsc).place).toBe("clip");
+    expect(placeOf(kept, key, 1.369, ntsc).place).toBe("video");
   });
 
   test("a trim of the end on frames leaves the end, so the space bar starts over", () => {
@@ -207,15 +208,14 @@ describe("a play of the clip that reaches its end", () => {
 });
 
 // Plan row 2.137: with the picture starting 0.02 s into the file, half a
-// frame at 25 a second, a clip starting at 10.01 starts on the picture's
-// frame from 10.02, the nearest, and the frame from 9.98 before it is not
-// the clip's. Counted from the file's start, the frames were at 10.00 and
-// 10.04, and the clip started on the one from 10.00.
+// frame at 25 a second, a clip starting at 10.01 begins in the picture's
+// frame from 9.98, and a step onto 9.99 is in that frame, on the clip.
+// Counted from the file's start, 9.99 was in the frame from 9.96, before
+// the clip, and the clip dimmed while its own first frame was on screen.
 describe("the frame a gesture lands in is the picture's own", () => {
   const late = [{ start: 10.01, end: 15 }];
   test("a moment in the picture's first frame of the clip is on the clip", () => {
-    expect(placeOf(late, key, 10.02, fps, undefined, 0.02).place).toBe("clip");
-    expect(placeOf(late, key, 10.0, fps, undefined, 0.02).place).toBe("video");
-    expect(placeOf(late, key, 10.0, fps).place).toBe("clip");
+    expect(placeOf(late, key, 9.99, fps, undefined, 0.02).place).toBe("clip");
+    expect(placeOf(late, key, 9.99, fps).place).toBe("video");
   });
 });

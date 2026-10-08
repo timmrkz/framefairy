@@ -54,7 +54,11 @@ a `words` list, and one that does is not read.
   `engine/shape.go` answers while the hand moves: where the edges land, on
   a frame or on the words shown, how far they may go, where the playhead
   stands and which pieces the clip is left with, and `ShapeClipView` adds
-  the captions. `Reshape` saves the same gesture through the same
+  the captions. Every edge it leaves, one put on words too, is then on the
+  start of the frame nearest it, the frame the render cuts on, and so is
+  every edge a search or a clip made by hand puts in a plan,
+  `PieceOnFrames` in `engine/render.go`. The episode's frames come from
+  the app's own probe of it, never from the interface. `Reshape` saves the same gesture through the same
   functions, so what is drawn is what is saved.
 - What a gesture puts back, a cut or an edge, comes back framed by the
   shots it shows, from the pieces the clip was found with, so a camera

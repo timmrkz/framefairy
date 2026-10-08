@@ -166,6 +166,13 @@ different lessons and counting one as the other teaches the wrong thing.
 A cut is only compared where the proposal and the final clip overlap, so a
 trimmed edge is not also counted as a pause change.
 
+The proposal is the clip as it entered the plan. A search finds its edges
+between frames and every edge is put on the start of its frame on the way
+in, `PieceOnFrames` in `engine/render.go`, before the proposal is
+recorded. So the move onto a frame is part of the proposal and never a
+shift a person made, and a clip left alone is unchanged to the
+millisecond, `TestAnEdgePutOnItsFrameIsNoTrim`.
+
 `unchanged` is what the export reads to decide whether a render is a full
 hit, so it is false whenever any of the three lists is not empty. A cut
 moved by less than the 0.05 second tolerance is the same cut, because a

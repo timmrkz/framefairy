@@ -128,7 +128,8 @@ export interface Word {
 // "trim" moves an edge of the clip, "cut" takes a part out, "move" moves the
 // edges of a cut, "join" puts a cut back, "restore" takes a part out again
 // exactly as it was. From and To are where the hand is, on the episode's
-// clock. toWords puts edges on words, and frame is one frame of the episode.
+// clock. toWords puts edges on words, and every edge lands on the start of
+// a frame, of the episode's frames as the Go side knows them.
 export interface Gesture {
   kind: "trim" | "cut" | "move" | "join" | "restore";
   edge: "start" | "end" | "both" | "from" | "to" | "";
@@ -136,7 +137,6 @@ export interface Gesture {
   from: number;
   to: number;
   toWords: boolean;
-  frame: number;
 }
 
 // What a gesture makes of a clip: its pieces, where the playhead goes while

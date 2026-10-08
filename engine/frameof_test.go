@@ -9,14 +9,19 @@ import (
 	"testing"
 )
 
-// The frame an edge means, as the render cuts on it, against the same
-// table the video preview is held to, in frontend/src/lib/frame.cases.json,
-// so the two never count a frame apart. See frameOf.
+// Where an edge is kept and which frame the render cuts it on, against
+// the same table the video preview is held to, in
+// frontend/src/lib/frame.cases.json, so the two never count a frame
+// apart. See PieceOnFrames.
 type frameCases struct {
+	// An edge at a moment, as a search or a hand puts it, the moment the
+	// plan keeps it at, on its frame's start to the millisecond, and that
+	// frame.
 	Edges []struct {
 		Rate  string  `json:"rate"`
 		Start float64 `json:"start"`
 		At    float64 `json:"at"`
+		Saved float64 `json:"saved"`
 		Frame int64   `json:"frame"`
 	} `json:"edges"`
 	// Every frame start of a stretch of frames, saved to the millisecond
@@ -61,41 +66,52 @@ func caseRate(t *testing.T, rate string) (int64, int64) {
 	return num, den
 }
 
-func TestAnEdgeMeansTheFrameWhoseStartIsNearest(t *testing.T) {
+func TestEveryEdgeIsKeptOnTheStartOfItsFrame(t *testing.T) {
 	c := readFrameCases(t)
 	for _, e := range c.Edges {
 		num, den := caseRate(t, e.Rate)
-		if got := frameOf(e.At, e.Start, float64(num)/float64(den)); got != e.Frame {
-			t.Errorf("at %s fps from %.3f, an edge at %.3f is on frame %d, want %d", e.Rate, e.Start, e.At, got, e.Frame)
+		s := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: e.Start}
+		if got, _ := s.PieceOnFrames(e.At, e.At+1); got != e.Saved {
+			t.Errorf("at %s fps from %.5f, an edge at %.3f is kept at %.3f, want %.3f", e.Rate, e.Start, e.At, got, e.Saved)
+		}
+		// Kept, it stays where it is, and the render cuts it on its frame.
+		if got, _ := s.PieceOnFrames(e.Saved, e.Saved+1); got != e.Saved {
+			t.Errorf("at %s fps from %.5f, an edge kept at %.3f moved to %.3f", e.Rate, e.Start, e.Saved, got)
+		}
+		if got, _ := s.pieceFrames(e.Saved, e.Saved+1); got != e.Frame {
+			t.Errorf("at %s fps from %.5f, an edge kept at %.3f is cut on frame %d, want %d", e.Rate, e.Start, e.Saved, got, e.Frame)
 		}
 	}
-	for _, s := range c.Stretches {
-		num, den := caseRate(t, s.Rate)
-		rate := float64(num) / float64(den)
-		startMs := int64(math.Round(s.Start * 1000))
+	for _, st := range c.Stretches {
+		num, den := caseRate(t, st.Rate)
+		s := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: st.Start}
+		startMs := int64(math.Round(st.Start * 1000))
 		below := 0
-		for k := range s.Frames {
+		for k := range st.Frames {
 			// Frame k starts k·den/num seconds after the picture does, and
-			// saved to the millisecond, rounded half up, it is this.
+			// kept to the millisecond, rounded half up, it is this.
 			ms := startMs + (2*k*den*1000+num)/(2*num)
 			if (ms-startMs)*num < k*den*1000 {
 				below++
 			}
 			at := float64(ms) / 1000
-			if got := frameOf(at, s.Start, rate); got != k {
-				t.Errorf("at %s fps, frame %d saved as %.3f is on frame %d", s.Rate, k, at, got)
+			if got, _ := s.PieceOnFrames(at, at+1); got != at {
+				t.Errorf("at %s fps, frame %d kept at %.3f moved to %.3f", st.Rate, k, at, got)
 			}
-			// The render cuts a piece starting there on that frame too.
-			clip := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: s.Start}.
-				OnFrames(Clip{Segments: []Segment{{Start: at, End: at + 1}}})
-			if want := s.Start + float64(k)/rate; math.Abs(clip.Segments[0].Start-want) > 1e-9 {
+			if got, _ := s.pieceFrames(at, at+1); got != k {
+				t.Errorf("at %s fps, frame %d kept at %.3f is cut on frame %d", st.Rate, k, at, got)
+			}
+			// The render cuts a piece starting there on that frame, to the
+			// microsecond.
+			clip := s.OnFrames(Clip{Segments: []Segment{{Start: at, End: at + 1}}})
+			if want := st.Start + float64(k)/(float64(num)/float64(den)); math.Abs(clip.Segments[0].Start-want) > 1e-9 {
 				t.Errorf("at %s fps, a piece from %.3f starts at %.6f, not on frame %d at %.6f",
-					s.Rate, at, clip.Segments[0].Start, k, want)
+					st.Rate, at, clip.Segments[0].Start, k, want)
 			}
 		}
-		if below != s.Below {
-			t.Errorf("at %s fps, %d of %d frames saved to the millisecond come before their start, the table says %d",
-				s.Rate, below, s.Frames, s.Below)
+		if below != st.Below {
+			t.Errorf("at %s fps, %d of %d frames kept to the millisecond come before their start, the table says %d",
+				st.Rate, below, st.Frames, st.Below)
 		}
 	}
 }
