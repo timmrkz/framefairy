@@ -840,7 +840,7 @@ export const Call = {
       case "FollowChannel":
         updNow().picked = args[0] as string;
         updSend();
-        updFetch((args[0] as string) || "main");
+        updFetch(args[0] as string);
         return Promise.resolve(null);
       case "CheckForUpdates":
         // The channel followed, as updates.Followed has it: the one picked,
@@ -1653,7 +1653,8 @@ export const Call = {
 
 // Updates, the way updates.go reports them. The build running is pull
 // request 18's, or with ?makebuild one made by make, which follows nothing
-// until a channel is picked, and with ?updatesoff one with no update key.
+// until a channel is picked, whatever a build before it picked, and with
+// ?updatesoff one with no update key.
 // ?prgone is pull request 18's build after the pull request was merged:
 // it is not on the list any more, and nothing downloads until another
 // channel is picked.
@@ -1676,7 +1677,7 @@ let updTimers: ReturnType<typeof setTimeout>[] = [];
 const updNow = () => {
   if (upd) return upd;
   const local = location.search.includes("makebuild");
-  const gone = location.search.includes("prgone");
+  const gone = !local && location.search.includes("prgone");
   const fails = location.search.includes("listfails");
   upd = {
     version: local ? "0.3.0-local" : "0.3.0-pr29.db33a28",
@@ -1691,7 +1692,9 @@ const updNow = () => {
     gone: gone ? "pr-18" : "",
     // ?unbuilt: a push to the channel whose build has not come yet.
     building: location.search.includes("unbuilt") ? "6ceea6d1f2a3" : "",
-    phase: local ? "" : gone ? "gone" : fails ? "failed" : "current",
+    // A channel gone is the phase gone, whatever else, the way settle in
+    // updates.go keeps it.
+    phase: gone ? "gone" : local ? "" : fails ? "failed" : "current",
     next: "",
     nextName: "",
     nextCommit: "",
@@ -1717,6 +1720,9 @@ const updFetch = (channel: string) => {
     }, 80));
     return;
   }
+  // Following nothing, a build made by make before a channel is picked,
+  // has nothing to look for, the way check in updates.go does.
+  if (!channel) return;
   const ch = upd.channels.find((c: any) => c.id === channel);
   if (!ch) {
     Object.assign(upd, { phase: "gone", gone: channel, follows: "", next: "", written: 0, total: 0 });

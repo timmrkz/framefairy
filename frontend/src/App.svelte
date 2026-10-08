@@ -314,11 +314,17 @@
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
+    // An event can arrive before the answer to the asking, and is then
+    // the newer of the two, see the Updates page.
+    let told = false;
+    const noUpdates = onUpdates((u) => {
+      told = true;
+      update = u;
+    });
     api
       .updates()
-      .then((u) => (update = u))
+      .then((u) => told || (update = u))
       .catch(() => {});
-    const noUpdates = onUpdates((u) => (update = u));
     // Check for Updates in the app menu shows the answer where it is kept.
     const noShowUpdates = onShowUpdates(() => nav.go({ name: "updates" }));
     // A framefairy://unlock link, from the mail a licence came in, opens

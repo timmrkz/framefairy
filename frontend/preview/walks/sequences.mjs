@@ -82,6 +82,13 @@
 //                      have one more
 //   ["keep", label]    remembers the clip on screen, its short and its
 //                      pictures on disk, and the shorts in its folder
+//   ["updates", how]   opens the Updates page from the sidebar on a build
+//                      as how says: from the channel how.from, or made on
+//                      the Mac without it, with how.stored picked by a
+//                      build before it, and the channels how.list on the
+//                      list, each with a newer build
+//   ["follow", name]   picks the channel of this name in the Updates
+//                      page's list, and reads the page in the next frame
 //   ["words again"]    the speech stand-in says its sentences again from
 //                      the first word, so a video added next is heard as
 //                      the bridge's episode was and its clip has the same
@@ -182,6 +189,17 @@
 //                      inside the folder the settings name for shorts, the
 //                      file is there and the app serves it, Render says
 //                      Render again and Show in folder is there
+//   ["channel", name]  the Updates page's list says this, in ten seconds
+//                      at most
+//   ["choices", names, picked]
+//                      the list offers these channels and nothing else, in
+//                      this order, with this one picked, or none with ""
+//   ["status", head, more]
+//                      the line under the build comes to say this head, in
+//                      ten seconds at most, and more somewhere after it
+//   ["no check"]       the line under the build offers no button
+//   ["at once", head]  in the frame after the pick, the list said the
+//                      channel picked and the line under it this head
 //
 // The episode is the bridge's, so the words are the sentences its speech
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
@@ -635,7 +653,68 @@ export const sequences = [
     name: "the app dragged a pixel at a time moves every part one way, the sides equal and set by the width",
     steps: [["resize"]],
   },
+  {
+    // Tim made a build with make install, and its Updates page followed
+    // pull request 143, picked by a build before it, and said it was not
+    // checked yet with a Check that would never look by itself.
+    name: "a build made on the Mac follows nothing until a channel is chosen, and then follows it",
+    steps: [
+      ["updates", { stored: "pr-143", list: "main,pr-143" }],
+      ["channel", "Choose a channel"],
+      ["choices", ["Branch main", "Pull request #143"], ""],
+      ["status", "Built on this Mac", "It stays as it is until you choose a channel to follow."],
+      ["no check"],
+      ["follow", "Branch main"],
+      ["at once", "Looking for a newer build"],
+      ["status", "A newer build is ready", "Relaunch to finish updating"],
+      ["channel", "Branch main"],
+      ["choices", ["Branch main", "Pull request #143"], "Branch main"],
+    ],
+  },
+  {
+    name: "a build from a channel lists its channels and no Nothing",
+    steps: [
+      ["updates", { from: "main", list: "main,pr-20" }],
+      ["status", "A newer build is ready"],
+      ["choices", ["Branch main", "Pull request #20"], "Branch main"],
+    ],
+  },
+  {
+    name: "a pull request followed that closed says closed in the list and in the line under it",
+    steps: [
+      ["updates", { from: "main", stored: "pr-143", list: "main" }],
+      ["status", "Pull request #143 is closed", "Nothing downloads until you choose what to follow next."],
+      ["channel", "Pull request #143, closed"],
+      ["choices", ["Branch main", "Pull request #143, closed"], "Pull request #143, closed"],
+    ],
+  },
 ];
+
+// The Updates page: what its list says, and the line under the build. It
+// is read in the page, so it can be read in the frame after a pick, see
+// "follow".
+function readUpdates() {
+  const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+  const line = document.querySelectorAll(".card.asks > .item")[1];
+  return {
+    channel: text(document.querySelector("#channel .said > span:not(.room)")),
+    head: text(line?.querySelector(".head")),
+    more: text(line?.querySelector(".words .muted")),
+    button: text(line?.querySelector("button")),
+  };
+}
+const updatesPage = (page) => page.evaluate(readUpdates);
+
+// Waits up to ten seconds for the Updates page to come to what ok says,
+// and hands back what it said last.
+async function updatesComeTo(page, ok) {
+  let now = await updatesPage(page);
+  for (let i = 0; i < 100 && !ok(now); i++) {
+    await page.waitForTimeout(100);
+    now = await updatesPage(page);
+  }
+  return now;
+}
 
 // The workspace's parts, where they stand and how big they are, as the
 // stylesheet lays them out for the app's size.
@@ -1070,6 +1149,8 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   // on screen before them.
   let named = null;
   let episodeBefore = "";
+  // The Updates page in the frame after a channel was picked.
+  let picked = null;
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -1630,6 +1711,65 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       case "words again":
         await control(url, "/speech?ms=0&from=0");
+        break;
+      case "updates": {
+        const q = new URLSearchParams({ from: arg.from ?? "", stored: arg.stored ?? "", list: arg.list ?? "" });
+        await control(url, `/updates?${q}`);
+        await fromSidebar(page, () => page.locator("aside").getByText("Updates", { exact: true }).first().click());
+        await page.locator("#channel").waitFor();
+        await settle(page);
+        break;
+      }
+      case "follow": {
+        await page.locator("#channel").click();
+        await page.getByRole("option", { name: arg, exact: true }).click();
+        const read = await page.evaluate(
+          (src) => new Promise((done) => requestAnimationFrame(() => done(new Function(`return (${src})()`)()))),
+          readUpdates.toString(),
+        );
+        picked = { name: arg, ...read };
+        break;
+      }
+      case "channel": {
+        const now = await updatesComeTo(page, (u) => u.channel === arg);
+        if (now.channel !== arg) wrong = `the list says ${now.channel || "nothing"}, not ${arg}`;
+        break;
+      }
+      case "choices": {
+        const [names, want] = arg;
+        await page.locator("#channel").click();
+        await page.getByRole("option").first().waitFor();
+        const rows = await page.evaluate(() =>
+          [...document.querySelectorAll('[role="option"]')].map((o) => ({
+            name: (o.textContent ?? "").replace(/\s+/g, " ").trim(),
+            picked: o.hasAttribute("data-selected") || o.getAttribute("aria-selected") === "true",
+          })),
+        );
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(300);
+        const got = rows.map((r) => r.name);
+        const on = rows.filter((r) => r.picked).map((r) => r.name);
+        if (JSON.stringify(got) !== JSON.stringify(names)) wrong = `the list offers ${JSON.stringify(got)}, not ${JSON.stringify(names)}`;
+        else if (JSON.stringify(on) !== JSON.stringify(want ? [want] : [])) {
+          wrong = `the list has ${on.length ? on.join(", ") : "nothing"} picked, not ${want || "nothing"}`;
+        }
+        break;
+      }
+      case "status": {
+        const [head, more] = [arg].flat();
+        const now = await updatesComeTo(page, (u) => u.head === head);
+        if (now.head !== head) wrong = `the line under the build says ${now.head || "nothing"}, not ${head}`;
+        else if (more && !now.more.includes(more)) wrong = `under ${head} it says ${JSON.stringify(now.more)}, not ${JSON.stringify(more)}`;
+        break;
+      }
+      case "no check": {
+        const now = await updatesPage(page);
+        if (now.button) wrong = `the line under the build offers ${now.button}`;
+        break;
+      }
+      case "at once":
+        if (picked?.channel !== picked?.name) wrong = `in the frame after picking ${picked?.name}, the list said ${picked?.channel || "nothing"}`;
+        else if (picked.head !== arg) wrong = `in the frame after the pick, the line under the build said ${picked.head || "nothing"}, not ${arg}`;
         break;
       case "apart": {
         const [label, number] = [arg].flat();
