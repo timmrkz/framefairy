@@ -239,6 +239,40 @@
     return "None yet.";
   });
 
+  // The line in parts, with every key ID in it picked out. The kept key's
+  // is the one a person may copy and the one that wears the beam: it is
+  // what was bought. One it replaced is set the same way, without either.
+  // A key ID is a thing shown rather than a word in a sentence, so the
+  // full stop after one that ends the line goes.
+  const keyIDs = /([0-9A-F]{4}(?:-[0-9A-F]{4}){3})/;
+  const keptID = $derived(licence.saved ? (licence.about.match(keyIDs)?.[1] ?? "") : "");
+  const licenceParts = $derived.by(() => {
+    const parts = licenceLine
+      .split(keyIDs)
+      .filter((text) => text !== "")
+      .map((text) => ({ text, id: keyIDs.test(text), kept: text === keptID }));
+    if (parts.length > 1 && parts[parts.length - 1].text === "." && parts[parts.length - 2].id) parts.pop();
+    return parts;
+  });
+
+  // Copy says it copied in the same frame as the click, and goes back to
+  // what it was a moment later. The chip keeps its width throughout.
+  let copied = $state(false);
+  let copyRefused = $state("");
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copyKeyID(id: string) {
+    copied = true;
+    copyRefused = "";
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied = false), 1500);
+    try {
+      await api.copy(id);
+    } catch (err) {
+      copied = false;
+      copyRefused = sentence(errorText(err));
+    }
+  }
+
   async function readLicence() {
     try {
       licence = await api.licence();
@@ -986,13 +1020,27 @@
             <div class="words">
               <span class="head">{licence.saved ? "Licensed" : "Licence key"}</span>
               <span
-                class="small line whole"
+                class="small line whole licence-line"
                 class:muted={!licenceRefused}
                 class:error={!!licenceRefused}
-                title={licence.saved && !licenceRefused ? `${licence.about}. In the keychain` : undefined}
               >
-                {licenceLine}
+                {#each licenceParts as part, i (i)}
+                  {#if part.kept}<button
+                      class="key-id kept"
+                      class:copied
+                      title="Copy the key ID, which is what support asks for"
+                      aria-label={copied ? "Copied" : `Copy key ID ${part.text}`}
+                      onclick={() => copyKeyID(part.text)}
+                      ><Busy motes={false} seldom /><span>{part.text}</span><Icon
+                        name={copied ? "check" : "copy"}
+                        size={14}
+                      /></button
+                    >{:else if part.id}<span class="key-id">{part.text}</span>{:else}{part.text}{/if}
+                {/each}
               </span>
+              <!-- Why the key ID could not be copied, under it, where it
+                   stays to be clicked again. -->
+              {#if copyRefused}<span class="small line whole error">{copyRefused}.</span>{/if}
             </div>
             {#if !licence.saved}
             <input
@@ -1387,6 +1435,57 @@
      the reason. */
   .line.whole {
     white-space: normal;
+  }
+
+  /* The licence row's line holds key IDs set like code in a README, so
+     it is given a whole-pixel line of its own, with room for them. */
+  .licence-line {
+    line-height: 28px;
+  }
+
+  /* A key ID, in one width, on a block of its own, the way code is set in
+     a README, in the quieter grey of a line under a name rather than in
+     white. The kept key's is a button that copies the key ID, and it
+     wears the beam from Busy, the same beam, coming by once in a while
+     and turned down: nothing is running, it only says this is what was
+     bought. */
+  .key-id {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    margin: 1px 1px 0;
+    padding: 0 9px;
+    vertical-align: top;
+    /* The edge is drawn inside, the way the clip cards draw theirs, so
+       the beam runs on the edge itself. A border lies outside what the
+       block clips its beam to, and the beam ran a pixel inside it. */
+    border: none;
+    box-shadow: inset 0 0 0 1px var(--line);
+    border-radius: 6px;
+    background: var(--ink-2);
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--size-m);
+    line-height: 26px;
+  }
+
+  button.key-id {
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--line));
+  }
+
+  button.key-id:hover {
+    background: var(--ink-3);
+    color: var(--text);
+  }
+
+  button.key-id > :global(.beam) {
+    opacity: 0.6;
+  }
+
+  button.key-id.copied > :global(svg) {
+    color: var(--ok);
   }
 
   /* A licence key is shown as it is, not as dots: it is read off a mail,
