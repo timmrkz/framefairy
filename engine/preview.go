@@ -77,10 +77,12 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "info"}
-	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear:out_range=tv,format=yuv420p", width, height)
+	// Full range, which WebKit takes every frame made from a buffer to be,
+	// whatever the frame says: a picture in video range came out pale.
+	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", width, height)
 	if gpu {
 		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
-		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,format=yuv420p", width, height)
+		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,scale=out_range=pc,format=yuv420p", width, height)
 	} else {
 		args = append(args, e.decodeFlags()...)
 	}

@@ -92,7 +92,11 @@ static OSStatus ffOpen(ffPictures *d, int hevc, const uint8_t *config, int confi
 	CFRelease(atom);
 	if (st != noErr) return st;
 
-	CFNumberRef pixel = ffNumber(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
+	// Full range, which VideoToolbox converts to from whatever the file
+	// is in. WebKit draws a frame made from a buffer as full range
+	// whatever the frame says, so a picture in video range came out pale,
+	// its black a grey of 17, see native.ts.
+	CFNumberRef pixel = ffNumber(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
 	CFNumberRef w = ffNumber(width);
 	CFNumberRef h = ffNumber(height);
 	const void *imageKey[] = {kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferWidthKey, kCVPixelBufferHeightKey};

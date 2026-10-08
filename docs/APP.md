@@ -321,11 +321,14 @@ has closed is never opened again, and the Go side counts streams of sound
 apart from streams of frames, so the seeks of a play never close the
 frames the video preview draws.
 
-A frame the page makes from what the Go side decoded carries the
-picture's colours, read from the file's `colr` box, in video range, which
-is what the Go side makes. Without them WebKit drew the picture of Tim's
-`start.mp4` as if it used the whole range, its black a grey of 17 where
-QuickTime shows 1, and every colour paler. A file it cannot play, a codec the system cannot decode, a
+A frame the page makes from what the Go side decoded is in full range,
+and says so, with the picture's colours read from the file's `colr` box.
+WebKit draws a frame made from a buffer as full range whatever the frame
+says: Tim's `start.mp4`, HEVC with 10-bit colour in video range, which
+the Go side decodes for WebKit, came out pale, its black a grey of 17
+where QuickTime shows 1. Labelled video range it stayed so. Now
+VideoToolbox is asked for full range, and ffmpeg too, `out_range=pc`, so
+what WebKit assumes is what the frame holds. A file it cannot play, a codec the system cannot decode, a
 fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
 sentence where the picture would be, with the reason, and nothing else in
 the workspace changes. A sound it cannot decode plays the picture without

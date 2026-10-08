@@ -56,7 +56,7 @@ export class NativePictures {
     private id: string,
     private width: number,
     private height: number,
-    // The picture's colours, in video range, which is what the system's
+    // The picture's colours, in full range, which is what the system's
     // decoder is asked for, see engine.Pictures.
     private colour: VideoColorSpaceInit,
     private output: (f: VideoFrame) => void,

@@ -798,7 +798,7 @@ export class FrameQueue {
     if (this.native) {
       const n = this.native;
       const id = n.ids[this.slots.includes(slot) ? this.slots.indexOf(slot) : this.slots.length] ?? n.ids[0];
-      const colour = { ...this.video!.colour, fullRange: false };
+      const colour = { ...this.video!.colour, fullRange: true };
       return new NativePictures(id, n.width, n.height, colour, output, dequeue, (why) => void this.nativeFailed(why));
     }
     if (this.app) return new AppPictures(this.app, output, dequeue);

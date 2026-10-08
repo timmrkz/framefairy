@@ -30,8 +30,8 @@ function frameOf(buffer: ArrayBuffer, width: number, height: number, at: number,
   return new VideoFrame(buffer, init);
 }
 
-// The frames are in the picture's colours and in video range, which the
-// Go side makes them in, see engine.PreviewFrames.
+// The frames are in the picture's colours and in full range, which the Go
+// side makes them in, see engine.PreviewFrames.
 export async function pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
   if (!res) return { status: 0, end: false, error: "", frames: [] };
