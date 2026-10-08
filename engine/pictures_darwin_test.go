@@ -104,3 +104,45 @@ func annexB(stream []byte) ([]byte, [][]byte) {
 	config = append(config, pps...)
 	return config, samples
 }
+
+// A picture in video range comes out of VideoToolbox in full range: its
+// black at 0 and its white at 255, not at 16 and 235. WebKit draws a frame
+// made from a buffer as full range whatever the frame says, so Tim's
+// start.mp4 came out pale, its black a grey of 17 where QuickTime shows 1.
+func TestPicturesComeOutInFullRange(t *testing.T) {
+	ffmpegtest.Need(t)
+	// Black on the left, white on the right, in video range.
+	stream, err := exec.Command("ffmpeg", "-loglevel", "error",
+		"-f", "lavfi", "-i", "color=c=black:s=160x90:r=10:d=1",
+		"-f", "lavfi", "-i", "color=c=white:s=160x90:r=10:d=1",
+		"-filter_complex", "[0][1]hstack,format=yuv420p", "-color_range", "tv",
+		"-c:v", "h264_videotoolbox", "-bf", "0", "-g", "10", "-f", "h264", "-").Output()
+	if err != nil || len(stream) == 0 {
+		t.Skipf("VideoToolbox could not encode H.264 here: %v", err)
+	}
+	config, samples := annexB(stream)
+	p, err := OpenPictures("avc1", config, 320, 90, 320, 90)
+	if errors.Is(err, ErrNoPictureDecoder) {
+		t.Skipf("no decoder here: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	var frame []byte
+	for i, s := range samples {
+		if f, err := p.Decode(s, int64(i)*100000, true); err != nil {
+			t.Fatal(err)
+		} else if f != nil {
+			frame = f
+		}
+	}
+	if frame == nil {
+		t.Fatal("no frame")
+	}
+	// The luma of the middle row, in the middle of each half.
+	black, white := frame[45*320+80], frame[45*320+240]
+	if black > 4 || white < 250 {
+		t.Errorf("black comes out at %d and white at %d, in full range they are 0 and 255", black, white)
+	}
+}

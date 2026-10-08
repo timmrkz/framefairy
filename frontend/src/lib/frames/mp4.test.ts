@@ -32,8 +32,8 @@ const stco = (offsets: number[]) => full("stco", 0, u32(offsets.length), ...offs
 const co64 = (offsets: number[]) => full("co64", 0, u32(offsets.length), ...offsets.map(u64));
 const elst = (edits: [number, number][]) => box("edts", full("elst", 0, u32(edits.length), ...edits.map(([d, t]) => [...u32(d), ...u32(t >>> 0), ...u32(0x10000)])));
 
-const avc1 = (w: number, h: number) =>
-  box("avc1", zeros(6), u16(1), zeros(16), u16(w), u16(h), zeros(50), box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe0, 0]));
+const avc1 = (w: number, h: number, ...more: number[][]) =>
+  box("avc1", zeros(6), u16(1), zeros(16), u16(w), u16(h), zeros(50), box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe0, 0]), ...more);
 const mp4aMov = () =>
   box(
     "mp4a",
@@ -173,6 +173,33 @@ describe("parseMoov", () => {
     expect(plain.audio!.samples.pts[0]).toBe(-1024);
     // A picture alone that starts late starts the episode.
     expect(parseMoov(movie(picture([[250, -1], [1000, 0]]))).video!.samples.pts[0]).toBe(0);
+  });
+
+  test("reads the picture's colours from its colr box, and guesses them by its size without one", () => {
+    const colourOf = (w: number, h: number, ...colr: number[][]) =>
+      parseMoov(movie(trak(tkhd(), "vide", 1000, avc1(w, h, ...colr), [stts([[1, 40]]), stsz([1]), stsc([[1, 1]]), stco([0])]))).video!.colour;
+    // Tim's start.mp4 says BT.709 in video range, as most files do. A
+    // frame made from what the Go side decoded without it was drawn as if
+    // in the whole range, its black a grey of 17.
+    expect(colourOf(1920, 1080, box("colr", str("nclx"), u16(1), u16(1), u16(1), [0]))).toEqual({
+      primaries: "bt709",
+      transfer: "bt709",
+      matrix: "bt709",
+      fullRange: false,
+    });
+    expect(colourOf(1920, 1080, box("colr", str("nclx"), u16(1), u16(13), u16(1), [0x80])).fullRange).toBe(true);
+    // QuickTime's nclc has no range and is video range.
+    expect(colourOf(720, 576, box("colr", str("nclc"), u16(5), u16(6), u16(6)))).toEqual({
+      primaries: "bt470bg",
+      transfer: "smpte170m",
+      matrix: "smpte170m",
+      fullRange: false,
+    });
+    // Unspecified, BT.2020 and no box at all keep the guess by size.
+    expect(colourOf(1920, 1080, box("colr", str("nclx"), u16(2), u16(2), u16(2), [0])).matrix).toBe("bt709");
+    expect(colourOf(3840, 2160, box("colr", str("nclx"), u16(9), u16(14), u16(9), [0])).matrix).toBe("bt709");
+    expect(colourOf(640, 480).matrix).toBe("smpte170m");
+    expect(colourOf(1280, 720).primaries).toBe("bt709");
   });
 
   test("reads AAC in a QuickTime sound description, with esds inside wave", () => {

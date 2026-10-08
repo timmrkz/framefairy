@@ -93,6 +93,21 @@ Start with [README.md](README.md). In short:
   pull requests. Work that builds on an open pull request takes that pull
   request's branch as its base, so its diff shows only its own change, or
   it waits until the first is merged.
+- **One session, one pull request at a time.** A session works on one
+  open pull request and opens the next only once that one is merged or
+  closed. Two at once from one session split its attention, and Tim
+  cannot tell which of them a reply is about. Reading and assessing
+  another pull request is not working on it.
+- **A report that is not about the open pull request is logged, not
+  started.** A bug Tim finds on the way, a review that points elsewhere,
+  something seen while testing: it goes into
+  [docs/GUI-PLAN.md](docs/GUI-PLAN.md) as a row of its own marked
+  `[ ]`, with what was seen, where, and who found it, pushed with the
+  next push to the open pull request and named in the reply. The work
+  on the open pull request carries on. Once it is merged, the next piece
+  of work is the oldest logged row, unless Tim puts them in another
+  order. A report that is about the open pull request is that pull
+  request's work, as before.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the
