@@ -361,7 +361,16 @@ step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until
 ffmpeg ran, until it had opened the file, until its first frame was out,
 the header `X-Frames-Times`, which `AppFrames` keeps in `stats.opens` for
-the walks. Before, a system could say it decodes a file and then fail on
+the walks. A frame asked for a place the hand has left is withdrawn when
+the queue's decoder is reset for the newer place, and one new stream is
+on its way at a time: while one is still coming for a place left behind,
+the newest place waits and goes as soon as it has come, so a drag over
+the clip timeline shows frames as fast as they can be made and starts no
+ffmpeg for every place it passes. A stream the Go side stops, to make
+room or after standing unused, says `X-Frames-Closed`, and what waited on
+it goes to another stream. Taken for the end of the episode, it settled
+for a frame near the one wanted, and after a drag Tim saw the wrong frame
+and "the app's decoder did not answer". Before, a system could say it decodes a file and then fail on
 it: WebKit says yes to HEVC with 10-bit colour and its decoder then fails
 on the first frame, "Decoder failure". For such a file, and for one the
 system said no to, the Go side decoded the picture, plan row 2.141. The queue

@@ -128,6 +128,45 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 	t.Errorf("no end after %d frames", frames)
 }
 
+// A stream the Go side stops, to make room for newer ones or because it
+// stood unused, says it was closed, not that the episode ended, so the
+// page asks another stream for what it waited on. Taken for the end, the
+// page settled for a frame near the one wanted, and Tim saw the wrong
+// frame after a drag along the clip timeline. Plan row 2.156.
+func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
+	ffmpegtest.Need(t)
+	svc, mine, _ := library(t)
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=160x90:r=5:d=10", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
+		t.Fatalf("making the episode: %s %s", err, out)
+	}
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}}.Encode(), nil))
+	var opened struct{ ID string }
+	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
+		t.Fatal(err)
+	}
+	// Held by a pull that is on its way as the stream is stopped.
+	s := openPreviews.get(opened.ID)
+	if s == nil {
+		t.Fatal("the stream is not open")
+	}
+	openPreviews.close(opened.ID)
+	<-s.done
+	read := httptest.NewRecorder()
+	writeFrames(read, httptest.NewRequest("GET", "/frames/read?id="+opened.ID, nil), s, 4, 0)
+	if read.Header().Get("X-Frames-Closed") == "" || read.Header().Get("X-Frames-Error") != "" {
+		t.Errorf("a stopped stream answered %v, want it said closed and no error", read.Header())
+	}
+	// A pull after it is gone finds nothing, which the page takes the same way.
+	late := httptest.NewRecorder()
+	handler.ServeHTTP(late, httptest.NewRequest("GET", "/frames/read?id="+opened.ID+"&n=1", nil))
+	if late.Code != http.StatusNotFound {
+		t.Errorf("a pull of a closed stream answered %d, want 404", late.Code)
+	}
+}
+
 // Where the system has no decoder of its own, opening one says so and the
 // page takes ffmpeg's streams. A batch for a decoder nobody opened is
 // refused.

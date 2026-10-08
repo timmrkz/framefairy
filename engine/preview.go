@@ -64,6 +64,8 @@ func previewTimesOf(ctx context.Context) *PreviewTimes {
 // from from on, scaled to width by height in 8-bit I420, with the moment of
 // the episode it starts at, in the order they are shown.
 //
+// Each frame comes in a buffer of its own, which got may keep.
+//
 // It runs until got says no more, the context ends or the episode does. A
 // frame is handed over as soon as ffmpeg has it and the next is decoded
 // while got works on it, so a slow reader slows ffmpeg down rather than
@@ -177,9 +179,12 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 		}
 	}()
 	size := width * height * 3 / 2
-	frame := make([]byte, size)
 	var failed error
 	for {
+		// Each frame in a buffer of its own, which got may keep, so the
+		// frame is copied once on its way through the Go side, out of the
+		// pipe, and not again.
+		frame := make([]byte, size)
 		if _, err := io.ReadFull(out, frame); err != nil {
 			if !errors.Is(err, io.EOF) {
 				failed = err

@@ -226,8 +226,14 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, run func(ctx c
 	p.mu.Unlock()
 	go func() {
 		defer close(s.done)
-		s.err = run(ctx, func(at float64, frame []byte) error {
-			f := previewFrame{at: at, data: append([]byte(nil), frame...)}
+		err := run(ctx, func(at float64, frame []byte) error {
+			// A frame is handed over in a buffer of its own, see
+			// engine.PreviewFrames, and kept as it is. Sound comes in one
+			// buffer read into again and again, so it is copied.
+			if kind == "sound" {
+				frame = append([]byte(nil), frame...)
+			}
+			f := previewFrame{at: at, data: frame}
 			select {
 			case s.frames <- f:
 				return nil
@@ -235,6 +241,11 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, run func(ctx c
 				return ctx.Err()
 			}
 		})
+		// Stopped from here, whatever ffmpeg said as it was killed.
+		if ctx.Err() != nil {
+			err = context.Canceled
+		}
+		s.err = err
 	}()
 	return id
 }
@@ -325,7 +336,11 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 			waiting = false
 		case <-s.done:
 			w.Header().Set("X-Frames-End", "1")
-			if s.err != nil && !errors.Is(s.err, context.Canceled) {
+			if errors.Is(s.err, context.Canceled) {
+				// Stopped here, to make room or after standing unused, not
+				// at the end of the episode: the page asks another stream.
+				w.Header().Set("X-Frames-Closed", "1")
+			} else if s.err != nil {
 				w.Header().Set("X-Frames-Error", engine.Scrub(s.err.Error(), 300))
 			}
 			w.WriteHeader(http.StatusOK)
