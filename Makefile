@@ -124,9 +124,9 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
-all: deps toolchain $(PROGRAMS) tools-beside
+all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
 	@sh scripts/check.sh --quiet
 
@@ -153,14 +153,14 @@ endif
 NOTOOLS ?=
 tools-beside:
 ifneq ($(NOTOOLS),1)
-	@for tool in $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server; do \
+	@for tool in $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(FRAMES); do \
 		if [ ! -x $$tool ]; then \
 			echo "$$tool is missing, and the programs run no other. Build it with make ffmpeg or make llama."; \
 			exit 1; \
 		fi; \
 	done
-	@cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(BIN)/
-	@echo "Using our own ffmpeg and llama-server"
+	@cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(FRAMES) $(BIN)/
+	@echo "Using our own ffmpeg, llama-server and episode's decoder"
 endif
 	@for licence in $(STAMPS)/ffmpeg/bin/LICENSE-ffmpeg.txt $(STAMPS)/llama/bin/LICENSE-llama.cpp; do \
 		if [ -f $$licence ]; then cp $$licence $(BIN)/; fi; \
@@ -226,7 +226,7 @@ $(BIN)/framefairy$(EXE): modules
 		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
-$(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
+$(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) frames
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
 		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy-app
@@ -286,6 +286,19 @@ ifeq ($(UNAME),Darwin)
 	@"$(BIN)/Frame Fairy.app/Contents/MacOS/framefairy-app"
 else
 	@$(BIN)/framefairy-app$(EXE)
+endif
+
+# The episode's decoder, see cmd/framefairy-frames and docs/VIDEO-PREVIEW.md:
+# a program of its own on the libraries of the ffmpeg below, built static
+# against them like ffmpeg itself, with the tag that builds it for real.
+# It is a tool beside the app like ffmpeg, summed and checked the same way.
+# Built again whenever make runs, which takes a moment when nothing changed.
+FRAMES := $(STAMPS)/frames/framefairy-frames$(EXE)
+frames: modules
+ifneq ($(NOTOOLS),1)
+	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
+		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
+		CGO_ENABLED=1 CGO_CFLAGS="-O2 -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags '$(LDFLAGS)' -o $(FRAMES) ./cmd/framefairy-frames
 endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
@@ -354,7 +367,7 @@ test: unit fuzz interface walks
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
 unit: toolchain modules
-	@PATH="$(TOOLS_FIRST)" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
+	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.

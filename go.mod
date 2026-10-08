@@ -4,6 +4,7 @@ go 1.27
 
 require (
 	github.com/abadojack/whatlanggo v1.0.1
+	github.com/asticode/go-astiav v0.43.0
 	github.com/k2-fsa/sherpa-onnx-go v1.13.8
 	github.com/speedata/hyphenation v1.0.2
 	github.com/wailsapp/wails/v3 v3.0.0-beta.23
@@ -12,6 +13,7 @@ require (
 
 require (
 	github.com/adrg/xdg v0.5.3 // indirect
+	github.com/asticode/go-astikit v0.42.0 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect

@@ -56,6 +56,9 @@ type previews struct {
 	mu     sync.Mutex
 	open   map[string]*preview
 	native map[string]*nativePreview
+	// The episode's decoder of each episode a stream was asked of, see
+	// engine.EpisodeFrames, closed once it has stood unused.
+	decoders map[string]*engine.EpisodeFrames
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
 }
@@ -172,8 +175,13 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		times = engine.NewPreviewTimes()
+		dec := p.decoder(path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			return e.PreviewFrames(engine.WithPreviewTimes(ctx, times), path, from, width&^1, height&^1, got)
+			ctx = engine.WithPreviewTimes(ctx, times)
+			if dec != nil {
+				return dec.Stream(ctx, from, width&^1, height&^1, got)
+			}
+			return e.PreviewFrames(ctx, path, from, width&^1, height&^1, got)
 		}
 	}
 	kind := ""
@@ -275,10 +283,42 @@ func (p *previews) close(id string) {
 	}
 }
 
+// decoder is the episode's decoder for the episode at path, started on
+// its first stream, or nil where there is no framefairy-frames beside the
+// app. Then the ffmpeg program's streams are used, until the step of
+// docs/VIDEO-PREVIEW.md that removes them.
+func (p *previews) decoder(path string) *engine.EpisodeFrames {
+	program, err := engine.FindTool("FRAMEFAIRY_FRAMES", "framefairy-frames")
+	if err != nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.decoders == nil {
+		p.decoders = map[string]*engine.EpisodeFrames{}
+	}
+	d := p.decoders[path]
+	if d == nil {
+		d = engine.NewEpisodeFrames(program, path)
+		p.decoders[path] = d
+		if !p.reaping {
+			p.reaping = true
+			go p.reap()
+		}
+	}
+	return d
+}
+
 func (p *previews) reap() {
 	for {
 		time.Sleep(previewIdle / 4)
 		p.mu.Lock()
+		for path, d := range p.decoders {
+			if d.Idle() > 3*previewIdle {
+				delete(p.decoders, path)
+				go d.Close()
+			}
+		}
 		for id, s := range p.open {
 			if time.Since(s.pulled.get()) > previewIdle {
 				s.stop()

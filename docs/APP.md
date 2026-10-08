@@ -355,7 +355,11 @@ it and says so at the foot of the picture. With one engine, see
 render can read them.
 
 Every file's picture is decoded by ffmpeg on the Go side, the first step
-of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156. The webview's
+of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156, by the episode's
+decoder where make has put `framefairy-frames` beside the app: one
+program per episode on ffmpeg's libraries, which keeps the file open and
+its decoders ready, so a jump moves a cursor that is open instead of
+starting ffmpeg. Where it is not there, the ffmpeg program's streams. The webview's
 decoders and the Mac's own below are still in the code, unused, until the
 step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until

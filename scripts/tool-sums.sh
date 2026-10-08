@@ -21,7 +21,7 @@ sha256() {
 
 out=""
 for pair in ffmpeg:"$STAMPS/ffmpeg/bin/ffmpeg" ffprobe:"$STAMPS/ffmpeg/bin/ffprobe" \
-	llama-server:"$STAMPS/llama/bin/llama-server"; do
+	llama-server:"$STAMPS/llama/bin/llama-server" framefairy-frames:"$STAMPS/frames/framefairy-frames"; do
 	name=${pair%%:*}
 	file=${pair#*:}
 	if [ -f "$file" ]; then

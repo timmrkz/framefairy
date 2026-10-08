@@ -107,11 +107,20 @@ opens and stopped when it closes.
 
 - It is built on ffmpeg's own libraries, the code the ffmpeg program
   runs, so it decodes exactly as the render does. It is a program of its
-  own, not part of the app, so a crash ends only it. Written in Go with
-  go-astiav, linked to ffmpeg's libraries as shared libraries shipped
-  beside it, so LGPL is met the way it is for ffmpeg itself.
-- It keeps the file open, its index read and two picture decoders and a
-  sound decoder ready, with the graphics chip where there is one.
+  own, not part of the app, so a crash ends only it. It is
+  `cmd/framefairy-frames`, written in Go with go-astiav, built by make
+  against the ffmpeg make builds and linked to its libraries statically,
+  as the ffmpeg program is. LGPL asks that a library linked into a
+  program can be replaced, so the release has to carry what relinks it,
+  or link the libraries as shared ones. That is for
+  [PACKAGING.md](PACKAGING.md) before the first release. It speaks
+  `internal/framewire` with the Go side, `engine.EpisodeFrames`.
+- It keeps cursors, each the file open with its index read and a picture
+  decoder ready, with the graphics chip where there is one. A stream the
+  Go side opens takes a cursor that a stream before it has finished with
+  and only seeks it, so a jump starts no program and reads no index. Up
+  to three are kept. Sound still comes from the ffmpeg program and moves
+  in later.
 - It takes requests from the Go side: frames from a moment on at a size,
   sound from a moment on, stop. A request for a new moment drops what the
   last one was doing.
@@ -314,7 +323,11 @@ next one starts.
    opening the file, decoding from the key frame.
 2. **The episode's decoder.** The waiting program of rule 3, for picture
    and sound, behind the same routes. Measured against step 1 and the
-   marks.
+   marks. The picture first: 20 paused clicks on the clip timeline of the
+   bridge's episode came to their frame in 29 ms at the median, H.264 and
+   HEVC with 10-bit colour alike, where the ffmpeg program took 78 and 94
+   ms and main, decoding in the webview, 30 ms. The decoder hands out the
+   first frame 4 ms after it is asked.
 3. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
    the choice between them. Refuse at Add a file whose picture ffmpeg
    cannot decode.
@@ -343,11 +356,47 @@ next one starts.
   made at the size of the video preview. Activity Monitor and the marks
   say whether it matters on smaller machines.
 - **A program of our own on ffmpeg's libraries.** The episode's decoder
-  is code we keep, and make has to build ffmpeg's libraries as shared
-  libraries as well as the program. It is still ffmpeg's decoding, only
+  is code we keep, about 450 lines. It is still ffmpeg's decoding, only
   kept running.
 - **Possibly a little more contrast in the shadows than QuickTime**, if
   Tim picks the standard look in the colour test.
+
+## What established players do
+
+Researched on 8 October 2026 in the source of Chromium, WebKit, mpv,
+ffplay, MLT and Shotcut, Olive, libopenshot and VLC, for the steps above.
+What applies here:
+
+- **Scrubbing.** Olive drops queued requests for frames the hand has left
+  but lets a decode already running finish, which is what 2.156 does
+  with one stream on its way at a time. MLT decodes forward rather than
+  seeking when the target is less than 64 frames ahead, and libopenshot
+  keeps decoded frames around the playhead, ahead in the direction of
+  travel. For the episode's decoder: decode forward inside the group of
+  frames, keep a ring of frames around the playhead, and while the hand
+  outruns the decoder show the nearest key frame first.
+- **Seeking.** mpv and MLT tell the decoder to skip frames nothing refers
+  to on the way to the target, `AVDISCARD_NONREF`, and convert or scale
+  nothing before it. ffmpeg's VideoToolbox decodes one frame at a time,
+  so a seek costs the frames from the key frame to the target.
+- **Playing evenly.** Chromium picks the frame for the display interval
+  the draw will land in, and locks a cadence, two refreshes a frame for
+  30 frames a second on 60 Hz, when that glitches less than once in 8
+  seconds. It holds about four frames and grows that after an underflow.
+  The frame queue picks the frame for the moment of the animation frame,
+  with no cadence, and jitter there turns 2-2-2 into 1-3: the likely
+  cause of the unevenness Tim sees, not yet proved.
+- **Frames into the webview.** WebKit on the Mac copies an I420 frame
+  into NV12 on the processor before it draws it on a canvas. Chromium
+  converts on the graphics chip. Frames that ffmpeg has already turned
+  into colours, uploaded to a WebGPU canvas with `writeTexture`, take one
+  upload and no conversion in the webview, on every system, which is
+  step 4.
+- **Reliability.** ffplay numbers every request and drops answers to old
+  ones. MLT draws a frame after a few dropped in a row so the picture
+  never freezes. Olive asks again after 250 ms with nothing. mpv falls
+  back to software decoding after three errors of the graphics chip,
+  still ffmpeg.
 
 ## What this replaces
 
