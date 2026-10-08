@@ -185,6 +185,21 @@ func TestALinkNotTakenLeavesNothing(t *testing.T) {
 	}
 }
 
+// Copy puts what it is given on the clipboard, and says so when the
+// clipboard does not take it.
+func TestCopyPutsTextOnTheClipboard(t *testing.T) {
+	var copied string
+	took := true
+	s := &FrameFairy{clipboard: func(text string) bool { copied = text; return took }}
+	if err := s.Copy("0102-0304-0506-0708"); err != nil || copied != "0102-0304-0506-0708" {
+		t.Fatalf("copied %q, %v", copied, err)
+	}
+	took = false
+	if err := s.Copy("0102-0304-0506-0708"); err == nil {
+		t.Fatal("a clipboard that refused was not said")
+	}
+}
+
 func TestOnlyABuildFromTheCodeTakesTestKeys(t *testing.T) {
 	ch, co := buildChannel, buildCommit
 	t.Cleanup(func() { buildChannel, buildCommit = ch, co })

@@ -39,12 +39,19 @@
   // the same way it does for work, through --lit, --wash-from and
   // --wash-to. Given spent, it starts that many seconds in, for time that
   // ran on while it was not on screen.
+  //
+  // Given seldom, the beam is not work at all but a mark on something
+  // special, the key ID that was bought: the comet alone comes round once,
+  // springing away and easing in, only ever forward, and the rim is dark
+  // for the rest of a round of nine seconds. The same beam, coming by now
+  // and then.
   let {
     fraction = -1,
     rim = true,
     motes = true,
     shuttle = false,
     still = false,
+    seldom = false,
     drain = 0,
     spent = 0,
     onend,
@@ -55,6 +62,7 @@
     motes?: boolean;
     shuttle?: boolean;
     still?: boolean;
+    seldom?: boolean;
     drain?: number;
     spent?: number;
     onend?: () => void;
@@ -158,7 +166,7 @@
   {#if drain > 0}
     <span class="fill"><i class="run" {@attach runDown}></i></span>
   {/if}
-  {#if rim && !still && drain <= 0}<span class="ring"></span>{/if}
+  {#if rim && !still && drain <= 0}<span class="ring" class:seldom></span>{/if}
   {#if motes && !still && drain <= 0}
     {#each specks as m (m.at)}
       <i
@@ -316,6 +324,42 @@
     }
     to {
       transform: translate(-50%, -50%) rotate(3turn);
+    }
+  }
+
+  /* The beam that comes by now and then: the comet alone, once round in
+     the first fifth of a round of nine seconds, and the rim rests. It
+     fades in as it sets off, springs away and eases into its arrival,
+     and fades out still going, a little past where it started. It never
+     goes back, the same rule as the beam that runs with work: a bounce
+     that backed up read as the light reversing. The curve only rises,
+     so the light only ever moves forward. */
+  .ring.seldom::after {
+    display: none;
+  }
+
+  .ring.seldom::before {
+    animation-name: once;
+    animation-duration: 9s;
+    animation-timing-function: linear;
+  }
+
+  @keyframes once {
+    0% {
+      transform: translate(-50%, -50%) rotate(0turn);
+      opacity: 0;
+      animation-timing-function: cubic-bezier(0.3, 0.75, 0.35, 1);
+    }
+    3% {
+      opacity: 1;
+    }
+    13% {
+      opacity: 1;
+    }
+    20%,
+    100% {
+      transform: translate(-50%, -50%) rotate(1.15turn);
+      opacity: 0;
     }
   }
 
@@ -479,6 +523,10 @@
     .ring::before {
       animation: none;
       background: var(--accent-hi);
+    }
+
+    .ring.seldom::before {
+      background: none;
     }
 
     .ring::after {
