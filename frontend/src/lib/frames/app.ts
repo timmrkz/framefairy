@@ -17,7 +17,7 @@
 // - A frame is decoded at the size of the canvas and no larger.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
-import { rankAt, type VideoTrack } from "./mp4";
+import { rankOf, type VideoTrack } from "./mp4";
 import { pull, type Pulled } from "./pull";
 
 // How much of the frames shown last is kept, and how far ahead a stream may
@@ -127,7 +127,7 @@ class Stream {
   private take(got: Pulled) {
     if (!this.gave && got.frames.length) this.owner.opened(performance.now() - this.asked, got.times);
     for (const { at, frame } of got.frames) {
-      const rank = rankAt(this.owner.track.samples, at + this.owner.track.frame / 2);
+      const rank = rankOf(this.owner.track.samples, at);
       this.position = Math.max(this.position, rank);
       this.gave = true;
       this.owner.keep(rank, frame);

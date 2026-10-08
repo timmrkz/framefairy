@@ -837,6 +837,20 @@ export function seconds(s: Samples, ticks: number): number {
 // The rank of the frame that holds a moment: the last one shown at or
 // before it, or one that begins up to FRAME_HAIR after it, the way frameAt
 // in lib/flow.ts counts. Before the first frame it is the first.
+// The frame whose own start is nearest a moment: which frame a decoder
+// handed over, by the moment it says the frame starts at. A decoder's
+// moment and the file's differ by a rounding, far less than the gap
+// between two frames, even where frames come at uneven times. Adding half
+// an average frame and taking the frame that holds that moment went one
+// frame too far wherever the next frame came sooner than that.
+export function rankOf(s: Samples, at: number): number {
+  const r = rankAt(s, at);
+  if (r + 1 >= s.count) return r;
+  const here = s.pts[s.order[r]] / s.timescale;
+  const next = s.pts[s.order[r + 1]] / s.timescale;
+  return Math.abs(next - at) < Math.abs(here - at) ? r + 1 : r;
+}
+
 export function rankAt(s: Samples, at: number): number {
   const ticks = (at + FRAME_HAIR) * s.timescale;
   let lo = 0;
