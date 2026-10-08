@@ -557,6 +557,8 @@ export const api = {
   licence: () => call<LicenceState>("Licence"),
   saveLicence: (key: string) => call<LicenceState>("SaveLicence", key),
   takeLicenceLink: () => call<LicenceLink>("TakeLicenceLink"),
+  // Puts text on the clipboard: the key ID, for support.
+  copy: (text: string) => call<void>("Copy", text),
   // Opens the page where the company makes keys, in the browser.
   openKeysPage: (provider: string) => call<void>("OpenKeysPage", provider),
   // Names the model in the cloud, and with it the company.
