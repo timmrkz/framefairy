@@ -1548,6 +1548,14 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   timeline too. No model is asked: the pauses are cut and the crop placed
   exactly as for a clip a search found, and after that it is an ordinary
   clip.
+  - **Only where no clip is.** With the playhead anywhere from a clip's
+    start to its end, cuts included, a clip in the list or one on its way,
+    chosen or not, playing or not, the two buttons are off and say why in
+    their title, and the keys do nothing. The clip is already there, and
+    its edges are dragged to where it should be. It also means a play is
+    never started over by I or O: a clip plays only with the playhead
+    inside it, and outside every clip the episode plays straight on,
+    which a new clip there does not change.
   - **Everything shows in the frame the key is pressed in.** The **I** or
     **O** button wears the beam for as long as its clip is on its way.
     The clip's card is in the list at once, in its place in the episode,
