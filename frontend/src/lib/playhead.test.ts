@@ -75,13 +75,18 @@ describe("a gesture puts the playhead on the clip or on the video", () => {
     expect(placeOf(pieces, key, end - 2 * frame, fps).place).toBe("clip");
   });
 
-  test("an end that falls inside a frame has that frame for its last", () => {
-    const mid = [{ start: 10.01, end: 20.02 }];
-    expect(placeOf(mid, key, 20.0, fps).place).toBe("end");
-    expect(placeOf(mid, key, 20.03, fps).place).toBe("end");
-    expect(placeOf(mid, key, 20.04, fps).place).toBe("video");
-    expect(placeOf(mid, key, 10.0, fps).place).toBe("clip");
-    expect(placeOf(mid, key, 9.99, fps).place).toBe("video");
+  // Bug 1 of docs/DESIGN-REVIEW.md. At 29.97 frames a second frame 11
+  // begins at 0.367033 and frame 41 at 1.368033, and the engine keeps them
+  // as 0.367 and 1.368, a hair before, see frame.cases.json.
+  test("an edge kept a hair before its frame's start is that frame's", () => {
+    const ntsc = 30000 / 1001;
+    const kept = [{ start: 0.367, end: 1.368 }];
+    expect(placeOf(kept, key, 0.367, ntsc).place).toBe("clip");
+    expect(placeOf(kept, key, 0.366, ntsc).place).toBe("video");
+    // The clip's last frame is frame 40, from 1.334667, kept as 1.335.
+    expect(placeOf(kept, key, 1.335, ntsc).place).toBe("end");
+    expect(placeOf(kept, key, 1.333, ntsc).place).toBe("clip");
+    expect(placeOf(kept, key, 1.369, ntsc).place).toBe("video");
   });
 
   test("a trim of the end on frames leaves the end, so the space bar starts over", () => {

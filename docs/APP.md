@@ -263,6 +263,16 @@ gap.
 
 Paused, the picture is the frame that holds the playhead, exactly, wherever
 the playhead was put: a click, a drag, a step of an arrow key or a word.
+A moment a millisecond or less before a frame's start is in that frame,
+because every moment the app keeps is kept to the millisecond. Every edge
+of a clip is on the start of a frame: the engine puts it there as the
+clip enters the plan, from a search, by hand or from a gesture,
+`PieceOnFrames` in `engine/render.go`, and the render cuts on that frame.
+So on a clip edge the frame that holds the playhead is the frame the
+short has there, and both sides are held to `lib/frame.cases.json`. A
+piece plays and ends with the frame that holds the moment a frame before
+its end, the short's last. A clip picked shows the short's first frame,
+and the playhead on the clip's end shows its last.
 The play from there is already prepared, its first frames and its first
 sound decoded, so the space bar starts it at once rather than decoding the
 same frames again. The picture moves about 80 ms after the space bar in
@@ -277,10 +287,10 @@ across the clip's edge as well. A clip's pieces changing while it plays, a cut
 made, moved or put back, or loop switched on or off, goes on from the
 playhead on what the clip is now. Choosing a new clip with I or O while a
 clip plays makes the episode what plays, straight on, and the play goes
-into it without stopping: the new program takes over a quarter of a
-second ahead of the sound heard, see `Spliced` in `lib/frames/plan.ts`.
-The picture's decoder carries on, and only the sound from there is decoded
-again. Within about a quarter of a second of a cut, the clip jumps that
+into it without stopping, see `Spliced` in `lib/frames/plan.ts`. The
+picture's decoder carries on, and only the sound is decoded again, from
+where the sound decoded already runs out, about a second ahead, so the Go
+side has time to open the new stream. Within about a quarter of a second of a cut, the clip jumps that
 cut as it was about to, and the episode goes on straight after it.
 
 The sound goes on while the app is behind another window. macOS stops the
@@ -451,13 +461,13 @@ The playhead is either on the chosen clip or on the video, and the gesture
 that put it there decides, never a clock. Picking a clip puts it
 on the clip, at its start. So does a click on the clip's start edge, a
 trim, a click on a caption, and a click, a drag or a step into any frame
-of the clip, cuts included, from the frame that holds its first moment.
-A click on the end edge, a landing in the frame that holds the clip's
-last moment, and the clip playing to its end, leave it on the clip at its
-end. Any frame before or after the clip is on the video, and so is having
-no clip chosen. It goes by frames and not by seconds because what is on
-screen is a frame: a clip that starts inside a frame shows its own first
-frame from that frame's start, which by the second is before the clip.
+of the clip, cuts included, from the frame that holds its start. A click
+on the end edge, a landing in the frame that holds the moment a frame
+before its end, and the clip playing to its end, leave it on the clip at
+its end. Any frame before or after the clip is on the video, and so is
+having no clip chosen. It goes by frames and not by seconds because what
+is on screen is a frame: a clip's start kept to the millisecond can lie a
+hair before its frame, and a step onto that frame is on the clip.
 
 On the clip, the space bar plays the clip from the playhead: its cuts are
 jumped and it stops at its end, or with loop on goes back to its start.
@@ -1199,7 +1209,8 @@ bubble scrolled by those eight pixels.
         clip landed wherever the word before the clip happened to be.
     - Drag an edge to trim. The edge lands on the frame, the same as the
       edge of a cut, and shift puts it on the nearest word instead, the way
-      the render cuts a clip the engine proposes. Shift and not alt,
+      the render cuts a clip the engine proposes, and then on the frame
+      nearest that, where the render cuts it. Shift and not alt,
       because it is the key Tim reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
@@ -1212,13 +1223,13 @@ bubble scrolled by those eight pixels.
       A clip changed before this was written keeps the edges it had at its
       first change after it. The edge's title says when it was moved by
       hand, and the double-click is a trim to the edge it was found with, so
-      Undo takes it back like any other trim. It lands there exactly, not on
-      the frame nearest: a search finds a clip on the episode's clock, so
-      its edges are seldom on a frame, and the end went back to 24.80 where
-      the clip had ended at 24.72. A trim within half a frame of where the
-      clip was found lands there, see `onFound` in `engine/shape.go`. A
-      shot the trim had taken away comes back with its own crop, from the
-      camera switch, the same as a cut put back, see
+      Undo takes it back like any other trim. It lands there exactly: a
+      search puts every edge on a frame as the clip enters the plan, so
+      where the clip was found is a frame's start, and the frame nearest
+      the hand is that one. A search used to leave its edges between
+      frames, and the end went back to 24.80 where the clip had ended at
+      24.72. A shot the trim had taken away comes back with its own crop,
+      from the camera switch, the same as a cut put back, see
       [ENGINE.md](ENGINE.md).
     - **The playhead goes with the edge.** While either edge of a clip is
       dragged, the playhead stands on it and the video preview shows that

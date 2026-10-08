@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -352,5 +353,93 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	}
 	if written != 2 || most > 2 {
 		t.Errorf("written %d, at most %d on the way and written together", written, most)
+	}
+}
+
+// A search finds its clips on the words' clock, between frames, and every
+// edge is put on the start of its frame as the clip enters the plan, see
+// PieceOnFrames. The proposal training data keeps is that clip, on frames,
+// so a clip nobody touched reads as untouched when it is rendered: the
+// move onto a frame is not a person trimming it. Trimmed edges become
+// correction pairs, see docs/TRAINING.md, and a snap counted as a trim
+// would teach the model a correction nobody made.
+func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
+	dir := ownTrainingDir(t)
+	letGo := make(chan struct{})
+	close(letGo)
+	p, path := searching(t, letGo)
+	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(path)
+	if err != nil || len(clips) == 0 {
+		t.Fatalf("clips %+v, %v", clips, err)
+	}
+	source, err := p.engine.Probe(context.Background(), p.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range clips {
+		for _, s := range c.Segments {
+			for _, edge := range []float64{s.Start, s.End} {
+				if k := source.nearestFrame(edge); source.keptAt(k) != edge {
+					t.Errorf("%s has an edge at %.3f, off the start of its frame", c.ID, edge)
+				}
+			}
+		}
+	}
+	// Where the search found the clips, from the lines each keeps, before
+	// they were put on frames: at least one of their edges was between
+	// two frames, or this shows nothing.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written PlanFile
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	heard, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := p.Base
+	lines := BuildLines(heard.Words, heard.Levels(), o.MaxPause)
+	moved := 0
+	for _, c := range written.Clips {
+		spans := SegmentsFromRanges(c.Keep, lines, o.KeepPause, o.MaxPause)
+		for _, edge := range []float64{spans[0].Start, spans[len(spans)-1].End} {
+			if math.Abs(source.frameBegins(source.nearestFrame(edge))-edge) > 0.001 {
+				moved++
+			}
+		}
+	}
+	if moved == 0 {
+		t.Fatal("every edge the search found was on a frame already, so this shows nothing")
+	}
+
+	var plan PlanRecord
+	_ = readRecords(filepath.Join(dir, "plans.jsonl"), func(line []byte) { _ = json.Unmarshal(line, &plan) })
+	for _, c := range clips {
+		var proposed [][2]float64
+		for _, cand := range plan.Candidates {
+			if cand.CID == c.ID {
+				proposed = cand.Segments
+			}
+		}
+		var kept [][2]float64
+		for _, s := range c.Segments {
+			kept = append(kept, [2]float64{s.Start, s.End})
+		}
+		if fmt.Sprint(proposed) != fmt.Sprint(kept) {
+			t.Errorf("%s was proposed as %v and entered the plan as %v", c.ID, proposed, kept)
+		}
+		if err := RecordDecision(path, c.ID, DecisionRendered, nil); err != nil {
+			t.Fatal(err)
+		}
+		d := lastDecision(t, dir)
+		if d.Changes == nil || !d.Changes.Unchanged || d.Changes.StartShift != 0 || d.Changes.EndShift != 0 {
+			t.Errorf("%s rendered as the search left it reads as changed: %+v", c.ID, d.Changes)
+		}
 	}
 }

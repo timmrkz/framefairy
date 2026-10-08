@@ -40,19 +40,20 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 // dragged and so can be a hair outside the pieces the video preview has
 // at that moment. Every other gesture, a click, a drag, a step or a seek,
 // is decided by the frame it lands in: from the frame that holds the
-// clip's first moment to the frame that holds its last, cuts included, is
-// on the clip, and any other frame is on the video. Either way, the frame
-// that holds the clip's last moment is its end, and so is the end itself.
+// clip's start to the frame that holds the moment a frame before its end,
+// cuts included, is on the clip, and any other frame is on the video.
+// Either way, that last frame is the clip's end, and so is the end itself.
+// The edges are on frames, see frameAt in lib/flow.ts, so these are the
+// frames the short starts and ends with.
 //
-// By frame and not by second, because what is on screen is a frame. A
-// clip starting at 12.37 at twenty-five frames a second begins in the
-// frame from 12.36, and a step onto 12.36 shows the clip's own first
-// frame. Decided by the second, that was before the clip, and the clip
-// dimmed while its own first frame was on screen: the video element on
-// the Mac answered a seek with where its frame began, and steps went from
-// there. And a trim of the end on frames leaves the playhead a frame
-// before the end, in the clip's last frame, which is where a play of the
-// clip stops.
+// By frame and not by second, because what is on screen is a frame. The
+// video element on the Mac answered a seek with where its frame began,
+// and steps went from there, so a step left a clip that started inside a
+// frame while that frame, the clip's own first, was on screen, and the
+// clip dimmed. A clip's start kept to the millisecond can still lie a hair
+// before its frame. And a trim of the end on frames leaves the playhead a
+// frame before the end, in the clip's last frame, which is where a play
+// of the clip stops.
 export function placeOf(
   pieces: Piece[],
   key: string,
@@ -67,9 +68,8 @@ export function placeOf(
   const rate = fps > 0 ? fps : 30;
   const frame = frameAt(at, 1 / rate, videoStart);
   const first = frameAt(start, 1 / rate, videoStart);
-  // The frame that holds the last moment before the end, which is the
-  // frame before the end's own when the end falls on a frame's start.
-  const last = Math.max(Math.ceil((end - videoStart) * rate - 1e-6) - 1, first);
+  // The frame that holds the moment a frame before the end, see frameAt.
+  const last = Math.max(frameAt(end - 1 / rate, 1 / rate, videoStart), first);
   if (about !== "clip" && at !== end && (frame < first || frame > last)) return onVideo;
   return { place: at >= end || frame >= last ? "end" : "clip", clip: key };
 }

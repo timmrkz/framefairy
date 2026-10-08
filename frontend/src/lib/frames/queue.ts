@@ -107,8 +107,8 @@ const SOUND_AHEAD = 1;
 // How far ahead the sound is fed while the page's frames stop, behind
 // another window, where a timer may run only once a second, see keepOn.
 const SOUND_BEHIND = 3;
-// How far ahead of the sound heard a program changed while it plays takes
-// over, seconds, see splice. The sound from there on is decoded again, and
+// The least a program changed while it plays takes over ahead of the sound
+// heard, seconds, see splice. The sound from there on is decoded again, and
 // it has to be read and decoded before it is heard.
 const SPLICE_LEAD = 0.25;
 // Sound decoded before a play starts, seconds.
@@ -718,6 +718,8 @@ export class FrameQueue {
   private soundFed: { ts: number; run: AudioRun; j: number; length: number }[] = [];
   // How far on the program the sound fed so far reaches, in samples.
   private soundReach = 0;
+  // How far on the program the sound decoded so far reaches, in samples.
+  private soundMade = 0;
   private soundDone = false;
   private frameRequest = 0;
   private suspendTimer = 0;
@@ -978,9 +980,10 @@ export class FrameQueue {
   // past the end of the visit already, the next visit is the one that
   // carries on, so the play still jumps the cut it was about to jump, and
   // goes on into the new program after it. The sound is decoded again from
-  // where the new program takes over, and what is scheduled after that is
-  // taken off the sound card. Says whether it could. Where it cannot, the
-  // play starts again from the playhead.
+  // where the sound decoded already runs out, or the end of the visit,
+  // whichever comes first, and what is scheduled after that is taken off
+  // the sound card. Says whether it could. Where it cannot, the play
+  // starts again from the playhead.
   private splice(): boolean {
     const plan = this.vplan;
     if (!plan || this.c0 === null || !this.movie) return false;
@@ -1001,14 +1004,20 @@ export class FrameQueue {
       // Going on from the next visit plays the rest of this one as it was,
       // so the new program has to play all of it too.
       if (w !== here.v && first.visit(here.v)!.end < now.end) return false;
-      const from = w === here.v ? lead : visit.from;
       const next = w === here.v ? first : Spliced.make(before, after, w, visit.start);
       if (!next) return false;
-      // The sound before the change is the same on both programs, so it
-      // must not have faded out for the end of the visit on either.
+      // The sound is decoded again from as late as the sound decoded
+      // already reaches, so the new stream has the most time to come: the
+      // Go side opens it with ffmpeg, which took a quarter of a second in
+      // the harness, and the sound stopped for a moment when it was asked
+      // for only that far ahead. Up to there the sound is the same on both
+      // programs, so it must not have faded out for the end of the visit on
+      // either.
       const merged = next.visit(w)!;
-      const ends = Math.min(visit.end - visit.start, merged.end - merged.start) + visit.from;
-      if (w === here.v && ends - from < FADE) continue;
+      const latest = Math.min(visit.end - visit.start, merged.end - merged.start) + visit.from - FADE;
+      const lowest = w === here.v ? lead : visit.from;
+      if (latest < lowest) continue;
+      const from = Math.max(lowest, Math.min(this.soundMade / rate, latest));
       const spliced = plan.splice(next, w, (run, keep, grows) => {
         const slot = this.slotOf(run.id);
         if (!slot?.keeper) return true;
@@ -1089,7 +1098,10 @@ export class FrameQueue {
 
   // A paused playhead: the play from it is cued when its first frame is the
   // frame that holds the playhead, and the frame is decoded on its own
-  // where it is not, in a cut of the clip or past its end.
+  // where it is not, in a cut of the clip or past its end. On the clip's
+  // end itself it is the clip's last frame, the one that holds the moment
+  // a frame before the end, where a play of the clip stops and the short
+  // ends, see end.
   private settle(at: number) {
     const ticket = this.ticket;
     this.ready.then(
@@ -1099,7 +1111,9 @@ export class FrameQueue {
         const program = this.program;
         const p0 = program.place(at);
         const there = p0 < program.length ? program.locate(p0) : null;
+        const last = program.pieces[program.pieces.length - 1];
         if (there && rankAt(s, there.at) === rankAt(s, at)) this.start(at, true);
+        else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
       },
       () => {},
@@ -1401,6 +1415,7 @@ export class FrameQueue {
           this.aplan.extend(p0 + READ_AHEAD);
           this.m0 = this.aplan.m0;
           this.soundReach = this.m0;
+          this.soundMade = this.m0;
           this.soundDone = false;
         } else {
           this.m0 = Math.round(p0 * this.sampleRate);
@@ -1607,9 +1622,9 @@ export class FrameQueue {
     // 24.72. Nearly always it is decoded already, and where it is not, it
     // is decoded on its own, as a paused frame is.
     if (!last || !this.video) return;
-    // A tenth of a millisecond before the end, past the hair rankAt
-    // counts as the next frame's own start.
-    const holds = Math.max(last.start, last.end - 1e-4);
+    // The frame that holds the moment a frame before the end, see frameAt
+    // in lib/flow.ts.
+    const holds = Math.max(last.start, last.end - this.video.frame);
     const want = rankAt(this.video.samples, holds);
     if (this.shown?.rank === want) return;
     for (const slot of this.slots) {
@@ -1887,6 +1902,7 @@ export class FrameQueue {
             }
           }
           p.length += n;
+          this.soundMade = Math.max(this.soundMade, out + n);
           at += n;
           if (p.length === CHUNK) {
             this.hand(p);

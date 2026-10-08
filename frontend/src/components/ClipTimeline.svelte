@@ -347,10 +347,6 @@
   let heldAt = 0;
   let leftAt = 0;
 
-  function gesture(g: Omit<Gesture, "frame">): Gesture {
-    return { ...g, frame };
-  }
-
   function shape(g: Gesture) {
     if (!hand) heldAt = leftAt = time;
     hand = g;
@@ -485,7 +481,7 @@
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) moved = true;
       if (!moved) return;
-      shape(gesture({ kind: "trim", edge, index: 0, from: timeAt(e.clientX), to: 0, toWords: e.shiftKey }));
+      shape({ kind: "trim", edge, index: 0, from: timeAt(e.clientX), to: 0, toWords: e.shiftKey });
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
@@ -523,16 +519,14 @@
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
       const t = timeAt(e.clientX);
-      shape(
-        gesture({
-          kind: "move",
-          edge: side,
-          index,
-          from: side === "from" ? t : was.from,
-          to: side === "to" ? t : was.to,
-          toWords: e.shiftKey,
-        }),
-      );
+      shape({
+        kind: "move",
+        edge: side,
+        index,
+        from: side === "from" ? t : was.from,
+        to: side === "to" ? t : was.to,
+        toWords: e.shiftKey,
+      });
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
@@ -568,7 +562,7 @@
   // A double-click in the clip takes a part out where it lands. Where it
   // goes exactly, and whether there is room for it, is the engine's.
   async function cutHere(at: number, wide: number) {
-    await reshape(gesture({ kind: "cut", edge: "", index: 0, from: at - wide / 2, to: at + wide / 2, toWords: false }));
+    await reshape({ kind: "cut", edge: "", index: 0, from: at - wide / 2, to: at + wide / 2, toWords: false });
   }
 
   // A double-click on an edge of the clip puts it back where the clip was
@@ -579,7 +573,7 @@
     const at = edge === "start" ? clip.found[0] : clip.found[1];
     const now = edge === "start" ? first : last;
     if (Math.abs(at - now) < frame / 2) return;
-    await reshape(gesture({ kind: "trim", edge, index: 0, from: at, to: 0, toWords: false }));
+    await reshape({ kind: "trim", edge, index: 0, from: at, to: 0, toWords: false });
   }
 
   // A double-click on a cut removes it, the way a double-click takes an
@@ -588,7 +582,7 @@
   async function removeCut(index: number) {
     const cut = cuts.find((c) => c.index === index);
     if (!cut) return;
-    await reshape(gesture({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false }));
+    await reshape({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false });
   }
 
   // A view is read with as much again either side of it, so swiping along

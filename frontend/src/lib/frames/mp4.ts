@@ -21,6 +21,8 @@
 // every read is checked against the box it is in and a broken file ends
 // in an error that says so, never in a read past the end.
 
+import { FRAME_HAIR } from "../flow";
+
 export type VideoTrack = {
   kind: "video";
   // What VideoDecoder.configure takes, apart from the hardware hints.
@@ -833,18 +835,16 @@ export function seconds(s: Samples, ticks: number): number {
 }
 
 // The rank of the frame that holds a moment: the last one shown at or
-// before it. Before the first frame it is the first.
+// before it, or one that begins up to FRAME_HAIR after it, the way frameAt
+// in lib/flow.ts counts. Before the first frame it is the first.
 export function rankAt(s: Samples, at: number): number {
-  const ticks = at * s.timescale;
+  const ticks = (at + FRAME_HAIR) * s.timescale;
   let lo = 0;
   let hi = s.count - 1;
   if (hi < 0) return 0;
-  // A moment a hair before a frame's own start, from a sum of seconds, is
-  // in that frame.
-  const slack = 1e-6 * s.timescale;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (s.pts[s.order[mid]] <= ticks + slack) lo = mid;
+    if (s.pts[s.order[mid]] <= ticks) lo = mid;
     else hi = mid - 1;
   }
   return lo;

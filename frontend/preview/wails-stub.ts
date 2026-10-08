@@ -162,12 +162,13 @@ type StubGesture = {
   from: number;
   to: number;
   toWords: boolean;
-  frame: number;
 };
 
 // The stand-in for engine/shape.go, see the Shape case.
 const gestured = (now: Piece[], g: StubGesture, at: number): { pieces: Piece[]; playhead: number } | null => {
-  const on = (t: number) => (g.frame > 0 ? Math.round(t / g.frame) * g.frame : t);
+  // The episode's frames, as the Go side puts every edge on them.
+  const frame = 1 / harnessFps;
+  const on = (t: number) => Math.round(t / frame) * frame;
   const said = words(at - 60, at + 90);
   const least = 0.05;
   if (!now.length) return null;
@@ -179,12 +180,12 @@ const gestured = (now: Piece[], g: StubGesture, at: number): { pieces: Piece[]; 
       const w = said.reduce((b, x) => (Math.abs(x.start - g.from) < Math.abs(b.start - g.from) ? x : b), said[0]);
       start = g.toWords && w ? Math.max(w.start - 0.1, said[said.indexOf(w) - 1]?.end ?? 0) : Math.max(0, on(g.from));
       start = Math.min(start, end - 1);
-      playhead = g.toWords && w ? Math.min(w.start + (g.frame || 1 / 30), (w.start + w.end) / 2) : start;
+      playhead = g.toWords && w ? Math.min(w.start + frame, (w.start + w.end) / 2) : start;
     } else {
       const w = said.reduce((b, x) => (Math.abs(x.end - g.from) < Math.abs(b.end - g.from) ? x : b), said[0]);
       end = g.toWords && w ? Math.min(w.end + 0.1, said[said.indexOf(w) + 1]?.start ?? Infinity) : on(g.from);
       end = Math.max(end, start + 1);
-      playhead = g.toWords && w ? Math.max(w.end - (g.frame || 1 / 30), (w.start + w.end) / 2) : Math.max(end - (g.frame || 1 / 30), start);
+      playhead = g.toWords && w ? Math.max(w.end - frame, (w.start + w.end) / 2) : Math.max(end - frame, start);
     }
     const kept = now.filter((p) => p.end > start && p.start < end).map((p) => ({ ...p }));
     if (!kept.length) return null;
