@@ -759,9 +759,12 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		e.Log.Detail("clip %d: %ss dropped between the %d run(s) it kept",
 			index, fixed(loose-tight, 1), len(ranges))
 	}
+	// On the episode's frames already while the clip is on its way, so
+	// its edges do not move as it lands, see PieceOnFrames.
 	tightSpans := make([]Span, len(spans))
 	for k, s := range spans {
-		tightSpans[k] = Span{s.Start, s.End}
+		start, end := b.source.PieceOnFrames(s.Start, s.End)
+		tightSpans[k] = Span{start, end}
 	}
 	b.cutDown(job.card, tightSpans)
 
@@ -798,15 +801,21 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		Reason: job.entry.Reason,
 		Keep:   ranges,
 	}
+	// Each piece on the episode's frames, the way every piece enters a
+	// plan, see PieceOnFrames: where a camera switch parts a span too. A
+	// search finds its edges on the words' clock, between frames, and
+	// this is where they are put on them, before the clip is proposed, so
+	// the proposal training data compares an edit with is on frames too,
+	// and a clip left alone reads as left alone.
 	lengths := make([]float64, len(segments))
 	for k, s := range segments {
-		seg := PlanSegment{Start: PyFloat(roundTo(s.Start, 3)), End: PyFloat(roundTo(s.End, 3)),
-			CropX: "center"}
+		start, end := b.source.PieceOnFrames(s.Start, s.End)
+		seg := PlanSegment{Start: PyFloat(start), End: PyFloat(end), CropX: "center"}
 		if s.CropX != nil {
 			seg.CropX = *s.CropX
 		}
 		clip.Segments = append(clip.Segments, seg)
-		lengths[k] = s.Duration()
+		lengths[k] = end - start
 	}
 
 	total := pysum(lengths)

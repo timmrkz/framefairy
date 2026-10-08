@@ -65,15 +65,15 @@ func (s *FrameFairy) Source(ctx context.Context, path string) (SourceView, error
 		CropWidth: cw, CropHeight: ch, FPS: info.FPS(), VideoStart: info.VideoStart}, nil
 }
 
-// frameStart is where the picture's frames begin in an episode, the origin
-// a gesture rounds its edges to frames from. Nought when the episode
-// cannot be probed, which is where it was counted from before.
-func (s *FrameFairy) frameStart(ctx context.Context, path string) float64 {
+// frames are an episode's frames, the grid a gesture puts its edges on,
+// see engine.Gesture. None when the episode cannot be probed, and the
+// edges are then left where they are put.
+func (s *FrameFairy) frames(ctx context.Context, path string) engine.SourceInfo {
 	info, err := s.probe(ctx, path)
 	if err != nil {
-		return 0
+		return engine.SourceInfo{}
 	}
-	return info.VideoStart
+	return info
 }
 
 // Waveform returns the loudest level in each of buckets pieces of a part

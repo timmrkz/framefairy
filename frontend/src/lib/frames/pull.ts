@@ -18,7 +18,7 @@ export type Pulled = {
 // Whether a VideoFrame can take a buffer over instead of copying it.
 let transfers = true;
 
-function frameOf(buffer: ArrayBuffer, width: number, height: number, at: number, colour: VideoColorSpaceInit): VideoFrame {
+function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: number, colour: VideoColorSpaceInit): VideoFrame {
   const init = { format: "I420" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6), colorSpace: colour };
   if (transfers) {
     try {
@@ -70,7 +70,7 @@ export async function pull(url: string, width: number, height: number, colour: V
       at += n;
       if (bodyHas === size) {
         const when = new DataView(head.buffer).getFloat64(0, true);
-        out.frames.push({ at: when, frame: frameOf(body!, width, height, when, colour) });
+        out.frames.push({ at: when, frame: frameFrom(body!, width, height, when, colour) });
         headHas = 0;
         body = null;
       }

@@ -188,12 +188,91 @@ type pieceCut struct {
 	fromKey bool
 }
 
+// nearestFrame is the frame of the episode an edge at a moment means,
+// counted from the picture's first frame: the frame whose start is
+// nearest it, and of two equally near the later. It is the one rule for
+// which frame an edge is on. Every edge is put on the start of its frame
+// as it enters the plan, see PieceOnFrames, and the render cuts each
+// piece on the frames its edges mean, see cutOf.
+//
+// It is worked out in whole microseconds and whole numbers, the way cutOf
+// works out where a frame starts, so a moment exactly half way between two
+// frames is half way and goes to the later one however the numbers are
+// written. That holds before the picture's first frame too, for a file
+// whose picture starts after its sound, where math.Round sends half way
+// the other way, to the earlier frame. No allowance is needed.
+func (s SourceInfo) nearestFrame(at float64) int64 {
+	num, den := int64(s.FPSNum), int64(s.FPSDen)
+	us := int64(math.Round(at*1_000_000)) - int64(math.Round(s.VideoStart*1_000_000))
+	// us·num/(den·10⁶) frames, and half a frame more, rounded down.
+	return floorDiv(2*us*num+den*1_000_000, 2*den*1_000_000)
+}
+
+// floorDiv is a over b rounded down, for b above nought, where Go's own
+// division rounds towards nought.
+func floorDiv(a, b int64) int64 {
+	q := a / b
+	if a%b != 0 && a < 0 {
+		q--
+	}
+	return q
+}
+
+// frameBegins is when frame k of the episode begins, in seconds after the
+// start of the file.
+func (s SourceInfo) frameBegins(k int64) float64 {
+	return s.VideoStart + float64(k)*float64(s.FPSDen)/float64(s.FPSNum)
+}
+
+// PieceOnFrames is a piece of a clip with both its edges on the start of
+// the frame they mean, see nearestFrame, kept to the millisecond the way
+// a plan keeps every moment. A piece holds at least one frame. A grid
+// that begins after the file does reaches before it too, where there is
+// nothing to read, so a piece starts on the first frame of the grid inside
+// the file at the earliest. Without a frame rate the piece is left where
+// it is.
+//
+// Every piece enters a plan through it: the pieces a search or a clip made
+// by hand is made of, see planBuilder.frame, and the pieces a gesture
+// leaves, see checkedPieces. So every edge in a plan lies within half a
+// millisecond of a frame's start, and the frame the video preview shows
+// for it, the one that holds it, is the frame the render cuts on. Put on
+// frames again, an edge stays where it is.
+func (s SourceInfo) PieceOnFrames(start, end float64) (float64, float64) {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return roundTo(start, 3), roundTo(end, 3)
+	}
+	first, last := s.pieceFrames(start, end)
+	return s.keptAt(first), s.keptAt(last)
+}
+
+// keptAt is when frame k begins, to the millisecond and half a millisecond
+// up, worked out in whole numbers, so that a start exactly half way
+// between two milliseconds goes up however the numbers are written.
+func (s SourceInfo) keptAt(k int64) float64 {
+	num, den := int64(s.FPSNum), int64(s.FPSDen)
+	v0 := int64(math.Round(s.VideoStart * 1_000_000))
+	// (v0 + k·den·10⁶/num) microseconds, in milliseconds.
+	return float64(floorDiv(2*(v0*num+k*den*1_000_000)+1000*num, 2000*num)) / 1000
+}
+
+// pieceFrames is the frame a piece starts on and the frame after its
+// last, see PieceOnFrames.
+func (s SourceInfo) pieceFrames(start, end float64) (int64, int64) {
+	first := s.nearestFrame(start)
+	if s.frameBegins(first) < 0 {
+		first++
+	}
+	return first, max(s.nearestFrame(end), first+1)
+}
+
 // cutOf works out a piece on the frames of the episode, by their number
 // and not by a time rounded to a millisecond, which is how a render cuts.
 //
-// The piece is the frames from the one its start is on up to the one
-// before its end, the frame that holds each moment, as the video preview
-// shows it. Its sound is the sound of exactly those frames. ffmpeg takes a
+// The piece is the frames from the one its start means up to the one
+// before the one its end means, see pieceFrames. Its edges lie on the
+// starts of those frames, see PieceOnFrames, so these are the frames that
+// hold them, as the video preview shows them. Its sound is the sound of exactly those frames. ffmpeg takes a
 // time to the microsecond, and most frames at 29.97 fps land on none, so
 // a time rounded to the millisecond fell a little after a frame as often
 // as before it. The frame at the start was then lost, the next piece's
@@ -224,9 +303,7 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 		}
 	}
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
-	rate := float64(num) / float64(den)
-	first := int64(math.Round((seg.Start - s.VideoStart) * rate))
-	end := max(int64(math.Round((seg.End-s.VideoStart)*rate)), first+1)
+	first, end := s.pieceFrames(seg.Start, seg.End)
 	v0 := int64(math.Round(s.VideoStart * 1_000_000))
 	// When frame k starts, in microseconds: k·den/num seconds after the
 	// picture's first frame.
@@ -308,32 +385,26 @@ func micros(us int64) string {
 	return fmt.Sprintf("%d.%06d", us/1_000_000, us%1_000_000)
 }
 
-// OnFrames is a clip with every edge of its pieces moved to the nearest
-// frame of the source, which is how it is rendered and how its captions
-// for the render are made.
+// OnFrames is a clip with every edge of its pieces on the start of the
+// frame it means, exactly and not to the millisecond, which is how it is
+// rendered and how its captions for the render are made. The edges of a
+// plan are on frames already, see PieceOnFrames, kept to the millisecond,
+// and this is where they are, to the microsecond.
 //
 // A piece becomes a whole number of frames in the short, so a piece that
 // was not one came out longer than its own length, and its sound with it.
 // The captions add the pieces up as they are, so at every cut they ran a
 // little more ahead of the words they show: a tenth of a second by the
-// sixth piece. On the frames, the two add up to the same. An edge moves by
-// half a frame at most, and a piece keeps at least one frame.
+// sixth piece. On the frames, the two add up to the same.
 func (s SourceInfo) OnFrames(clip Clip) Clip {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return clip
 	}
-	fps := s.FPS()
-	frame := func(t float64) float64 { return s.VideoStart + math.Round((t-s.VideoStart)*fps)/fps }
 	out := clip
 	out.Segments = make([]Segment, len(clip.Segments))
 	for i, seg := range clip.Segments {
-		seg.Start = frame(seg.Start)
-		// A grid that begins after the file does reaches before it too,
-		// where there is nothing to read.
-		if seg.Start < 0 {
-			seg.Start += 1 / fps
-		}
-		seg.End = math.Max(frame(seg.End), seg.Start+1/fps)
+		first, last := s.pieceFrames(seg.Start, seg.End)
+		seg.Start, seg.End = s.frameBegins(first), s.frameBegins(last)
 		out.Segments[i] = seg
 	}
 	return out

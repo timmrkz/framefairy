@@ -164,10 +164,6 @@ export type Run = {
 // program its points begin and where the visit ends.
 type Span = { visit: Visit; run: number; kFirst: number; kLast: number; first: number; from: number; to: number };
 
-// The hair before a piece's end that the piece-end frame holds. A frame
-// that begins within it would be on screen for no time at all.
-const HAIR = 1e-4;
-
 // Which frames the picture needs, from a play that starts at P0 on the
 // program, worked out a visit at a time as far ahead as it is asked.
 export class VideoPlan {
@@ -293,8 +289,10 @@ export class VideoPlan {
     const to = visit.from + length;
     if (to - from <= 1e-9 || s.count === 0) return;
     const moment = visit.start + (from - visit.from);
+    // The last frame of a piece is the one that holds the moment a frame
+    // before its end, see frameAt in lib/flow.ts.
     const a = rankAt(s, moment);
-    const b = Math.max(a, rankAt(s, Math.max(moment, visit.end - HAIR)));
+    const b = Math.max(a, rankAt(s, Math.max(moment, visit.end - this.frame)));
     const kFirst = this.nextK;
     const kLast = kFirst + (b - a);
     this.nextK = kLast + 1;

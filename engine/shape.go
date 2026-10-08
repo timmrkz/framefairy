@@ -34,16 +34,12 @@ type Gesture struct {
 	// ToWords puts edges on words, the way the captions show them.
 	// Otherwise they land on the frame.
 	ToWords bool `json:"toWords"`
-	// Frame is one frame of the episode in seconds. Nought leaves edges put
-	// on frames where they were put, to the millisecond.
-	Frame float64 `json:"frame"`
-	// FrameStart is where the picture's first frame begins in the file,
-	// SourceInfo.VideoStart, and with it the grid the frames are on. An
-	// edge rounded on frames counted from the file's start sat up to half
-	// a frame from the frame the render takes, for a picture that starts
-	// after its sound. The app sets it from its own probe of the episode,
-	// whatever the interface sent.
-	FrameStart float64 `json:"frameStart"`
+	// Frames are the episode's frames: their rate and where the first one
+	// begins, SourceInfo.VideoStart. The app sets them from its own probe
+	// of the episode. Every edge a gesture leaves lands on the start of a
+	// frame, see PieceOnFrames. Without a rate edges are left where they
+	// were put, to the millisecond.
+	Frames SourceInfo `json:"-"`
 }
 
 // PieceView is one kept part of a clip as a gesture leaves it.
@@ -97,7 +93,7 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 	if err != nil {
 		return Shaped{}, err
 	}
-	out, err := checkedPieces(change, segmentObjects(c), foundPieces(c))
+	out, err := checkedPieces(change, segmentObjects(c), foundPieces(c), g.Frames)
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -122,15 +118,14 @@ func Reshape(planPath, clipID string, g Gesture, t *Transcript, keepPause float6
 	if err != nil {
 		return err
 	}
-	return editPieces(planPath, clipID, change)
+	return editPieces(planPath, clipID, change, g.Frames)
 }
 
 // change is what a gesture does to a clip's pieces, with its edges where
 // they land, and where the playhead goes while it is made.
 func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) (
 	pieceChange, float64, error) {
-	if !isFinite(g.From) || !isFinite(g.To) || !isFinite(g.Frame) || g.Frame < 0 ||
-		!isFinite(g.FrameStart) || g.FrameStart < 0 {
+	if !isFinite(g.From) || !isFinite(g.To) {
 		return nil, -1, renderErr("a gesture has to say where, in numbers")
 	}
 	if len(clip.Segments) == 0 {
@@ -144,10 +139,6 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	}
 	first := clip.Segments[0].Start
 	last := clip.Segments[len(clip.Segments)-1].End
-	found := [2]float64{first, last}
-	if clip.Found != nil {
-		found = *clip.Found
-	}
 	switch g.Kind {
 	case "trim":
 		start, end := first, last
@@ -161,11 +152,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		}
 		switch g.Edge {
 		case "start":
-			start = g.onFound(g.landStart(words, g.From, keepPause), found[0])
+			start = g.landStart(words, g.From, keepPause)
 			start = math.Min(start, end-MinClip)
 			start = math.Max(start, end-MaxClipSpan)
 		case "end":
-			end = g.onFound(g.landEnd(words, goes, g.From, keepPause), found[1])
+			end = g.landEnd(words, goes, g.From, keepPause)
 			end = math.Max(end, start+MinClip)
 			end = math.Min(end, start+MaxClipSpan)
 		case "both":
@@ -234,9 +225,13 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			from, to = g.onFrame(from), g.onFrame(to)
 		}
 		// A cut lives between the two pieces it parts, and neither may be
-		// squeezed out of existence, so the edges are held inside them.
-		low := clip.Segments[i].Start + MinCut
-		high := clip.Segments[i+1].End - MinCut
+		// squeezed out of existence, so the edges are held inside them. On
+		// frames a cut and a piece are a frame at least, or putting their
+		// edges on frames closes them, at five frames a second where a frame
+		// is longer than the least a cut may be.
+		least := math.Max(MinCut, g.frame())
+		low := clip.Segments[i].Start + least
+		high := clip.Segments[i+1].End - least
 		// Moving one edge never moves the other. The other edge is where
 		// it was, not put on a word too, and the edge moved stops at it
 		// rather than pushing it along. Shift on the right edge of a cut
@@ -244,13 +239,13 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		switch g.Edge {
 		case "from":
 			to = clip.Segments[i+1].Start
-			from = math.Min(math.Max(from, low), to-MinCut)
+			from = math.Min(math.Max(from, low), to-least)
 		case "to":
 			from = clip.Segments[i].End
-			to = math.Max(math.Min(to, high), from+MinCut)
+			to = math.Max(math.Min(to, high), from+least)
 		case "":
-			from = math.Min(math.Max(from, low), high-MinCut)
-			to = math.Max(math.Min(to, high), from+MinCut)
+			from = math.Min(math.Max(from, low), high-least)
+			to = math.Max(math.Min(to, high), from+least)
 		default:
 			return nil, -1, renderErr("a cut has a from and a to edge, not %s", Scrub(g.Edge, 20))
 		}
@@ -290,26 +285,20 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	return nil, -1, renderErr("there is no gesture called %s", Scrub(g.Kind, 20))
 }
 
-// onFrame puts a moment on the frame it falls on, the only place a video is
-// cut. Without a frame it is left where it is, to the millisecond.
+// onFrame puts a moment on the start of the frame it means, the only place
+// a video is cut, see PieceOnFrames.
 func (g Gesture) onFrame(at float64) float64 {
-	if g.Frame > 0 {
-		at = g.FrameStart + math.Round((at-g.FrameStart)/g.Frame)*g.Frame
-	}
-	return roundTo(at, 3)
+	at, _ = g.Frames.PieceOnFrames(at, at)
+	return at
 }
 
-// onFound is where an edge lands that the hand put where the clip was
-// found, or within half a frame of it: there exactly. A search finds a
-// clip on the episode's own clock, not on its frames, so putting an edge
-// back, which is a trim to where it was found, landed on the frame nearest
-// and not where it had been: 24.80 where the clip had ended at 24.72. A
-// sequence found it.
-func (g Gesture) onFound(at, found float64) float64 {
-	if !g.ToWords && math.Abs(g.From-found) <= g.Frame/2 {
-		return found
+// frame is one frame of the episode in seconds, or nought where its rate
+// is not known.
+func (g Gesture) frame() float64 {
+	if g.Frames.FPSNum <= 0 || g.Frames.FPSDen <= 0 {
+		return 0
 	}
-	return at
+	return 1 / g.Frames.FPS()
 }
 
 // landStart and landEnd are where a clip's first and last edge land: on the
@@ -373,7 +362,7 @@ func runOn(clip Clip, at float64) Clip {
 // is the one lit. The edge itself stands a pause away from the word, and a
 // playhead put there lit the word only when the pause happened to be none.
 func (g Gesture) edgePlayhead(words []Cue, start, end float64) float64 {
-	frame := g.Frame
+	frame := g.frame()
 	if frame <= 0 {
 		frame = 1.0 / 30
 	}
@@ -415,8 +404,8 @@ func (g Gesture) edgePlayhead(words []Cue, start, end float64) float64 {
 // another piece takes from both.
 func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, bool) {
 	width := math.Max(to-from, MinCut)
-	if g.Frame > 0 {
-		width = math.Ceil(width/g.Frame-1e-9) * g.Frame
+	if frame := g.frame(); frame > 0 {
+		width = math.Ceil(width/frame-1e-9) * frame
 	}
 	mid := (from + to) / 2
 	a := g.onFrame(mid - width/2)

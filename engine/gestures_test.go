@@ -31,3 +31,10 @@ func MoveCut(planPath, clipID string, index int, from, to float64, t *Transcript
 func JoinCut(planPath, clipID string, at float64, t *Transcript) error {
 	return Reshape(planPath, clipID, Gesture{Kind: "join", From: at}, t, 0.1)
 }
+
+// The frames of an episode at 25 and at 5 frames a second, from the start
+// of the file, for a gesture that puts its edges on frames.
+var (
+	at25 = SourceInfo{FPSNum: 25, FPSDen: 1}
+	at5  = SourceInfo{FPSNum: 5, FPSDen: 1}
+)

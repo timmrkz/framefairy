@@ -313,15 +313,29 @@ export function insideClip(pieces: Piece[], at: number, frame: number): boolean 
   return pieces.some((p) => at >= p.start - frame && at <= p.end + frame);
 }
 
-// Which frame of the episode a moment falls in, the frame the video
-// preview draws for it, counted from the picture's first frame, start
-// seconds into the file. A file whose picture starts after its sound has
-// its frames on a grid that begins there, not at the start of the file,
-// and frames counted from the file's start put an edge or a thumbnail up
-// to half a frame from the frame the render takes, see VideoStart in
-// engine/ffmpeg.go. Frame is one frame in seconds.
+// Every moment the app keeps is kept to the millisecond, so a frame's
+// start, kept, can be up to half a millisecond before it. A moment this
+// little before a frame's start is in that frame, the same allowance the
+// render gives a moment, frameHair in engine/ffmpeg.go.
+export const FRAME_HAIR = 0.001;
+
+// Which frame of the episode holds a moment, the frame the video preview
+// draws for it, counted from the picture's first frame, start seconds into
+// the file. A moment up to FRAME_HAIR before a frame's start is in that
+// frame. Every edge of a clip is kept on the start of the frame the render
+// cuts on, see PieceOnFrames in engine/render.go, and at 29.97 frames a
+// second that start, kept, lies just before the frame for 1400 of every
+// 3000 frames, so this is the frame the short starts on for every edge.
+// frame.cases.json holds the two to each other. The last frame of a piece
+// is the one that holds the moment a frame before its end.
+//
+// A file whose picture starts after its sound has its frames on a grid
+// that begins there, not at the start of the file, and frames counted
+// from the file's start put an edge or a thumbnail up to half a frame
+// from the frame the render takes, see VideoStart in engine/ffmpeg.go.
+// Frame is one frame in seconds.
 export function frameAt(t: number, frame: number, start = 0): number {
-  return Math.floor(Math.max(t - start, 0) / frame + 1e-6);
+  return Math.floor((Math.max(t - start, 0) + FRAME_HAIR) / frame);
 }
 
 // The middle of frame k, counted the same way.

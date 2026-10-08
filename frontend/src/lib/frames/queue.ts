@@ -982,7 +982,10 @@ export class FrameQueue {
 
   // A paused playhead: the play from it is cued when its first frame is the
   // frame that holds the playhead, and the frame is decoded on its own
-  // where it is not, in a cut of the clip or past its end.
+  // where it is not, in a cut of the clip or past its end. On the clip's
+  // end itself it is the clip's last frame, the one that holds the moment
+  // a frame before the end, where a play of the clip stops and the short
+  // ends, see end.
   private settle(at: number) {
     const ticket = this.ticket;
     this.ready.then(
@@ -992,7 +995,9 @@ export class FrameQueue {
         const program = this.program;
         const p0 = program.place(at);
         const there = p0 < program.length ? program.locate(p0) : null;
+        const last = program.pieces[program.pieces.length - 1];
         if (there && rankAt(s, there.at) === rankAt(s, at)) this.start(at, true);
+        else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
       },
       () => {},
@@ -1499,9 +1504,9 @@ export class FrameQueue {
     // 24.72. Nearly always it is decoded already, and where it is not, it
     // is decoded on its own, as a paused frame is.
     if (!last || !this.video) return;
-    // A tenth of a millisecond before the end, past the hair rankAt
-    // counts as the next frame's own start.
-    const holds = Math.max(last.start, last.end - 1e-4);
+    // The frame that holds the moment a frame before the end, see frameAt
+    // in lib/flow.ts.
+    const holds = Math.max(last.start, last.end - this.video.frame);
     const want = rankAt(this.video.samples, holds);
     if (this.shown?.rank === want) return;
     for (const slot of this.slots) {
