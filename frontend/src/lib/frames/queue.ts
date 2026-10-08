@@ -224,49 +224,251 @@ type Sound = {
   close(): void;
 };
 
-// A sound decoder, the browser's or the one for plain sound, which needs
-// none. restart drops everything and waits for the first packet of a run.
+// A sound decoder, ffmpeg's on the Go side or the one for plain sound,
+// which needs none. restart drops everything and waits for the first
+// packet of a run. Each packet comes with where it lies in the track, at,
+// and how long it is, n, in samples.
 interface SoundDecoder {
   readonly state: string;
   readonly decodeQueueSize: number;
-  decode(timestamp: number, data: Uint8Array): void;
+  decode(timestamp: number, data: Uint8Array, at: number, n: number): void;
   flush(): Promise<void>;
   restart(): void;
   close(): void;
 }
 
-class WebSound implements SoundDecoder {
-  private d: AudioDecoder;
+// The sound of the episode as ffmpeg decodes it, on the Go side, see
+// /frames/sound in cmd/framefairy-app/frames.go: the same sound the render
+// and the transcript are made of, whatever decoder the webview has. The
+// Mac's own decoder of AAC had its own idea of where a file's sound
+// starts, and Tim heard picture and sound out of step in a file from
+// DaVinci Resolve, which keeps the encoder's 44 ms of silence at the
+// front of its sound and holds the picture back by as much.
+//
+// A run of packets is one stream, opened at the first packet's place,
+// and every packet after it is the next n samples of it, the way ffmpeg
+// reads a piece of a render. It answers the way a decoder does, after the
+// call that fed it, so the queue cannot tell it from one. The packets
+// themselves are not needed, only where they lie.
+export class GoSound implements SoundDecoder {
+  state = "configured";
+  // Packets and flushes in the order they came. A flush ends the run of
+  // the packets before it, and the packets after it are another run, read
+  // from a stream of their own where the first of them lies.
+  private waiting: ({ timestamp: number; at: number; n: number } | { done: () => void; fail: (e: Error) => void })[] = [];
+  private stream: GoSoundStream | null = null;
+  private running = false;
+  // Bumped by restart, so a pump that was waiting on the Go side drops
+  // what it brings back.
+  private era = 0;
   constructor(
-    private config: AudioDecoderConfig,
-    output: (s: Sound) => void,
-    error: (what: string) => void,
-    dequeue: () => void,
-  ) {
-    this.d = new AudioDecoder({ output, error: (e) => error(e.message) });
-    this.d.configure(config);
-    this.d.addEventListener("dequeue", dequeue);
-  }
-  get state() {
-    return this.d.state;
-  }
+    private path: string,
+    private rate: number,
+    private channels: number,
+    private output: (s: Sound) => void,
+    private error: (what: string) => void,
+    private dequeue: () => void,
+  ) {}
   get decodeQueueSize() {
-    return this.d.decodeQueueSize;
+    return this.waiting.filter((w) => "at" in w).length;
   }
-  decode(timestamp: number, data: Uint8Array) {
-    this.d.decode(new EncodedAudioChunk({ type: "key", timestamp, data }));
+  decode(timestamp: number, _data: Uint8Array, at: number, n: number) {
+    this.waiting.push({ timestamp, at, n });
+    void this.run();
   }
   flush() {
-    return this.d.flush();
+    return new Promise<void>((done, fail) => {
+      this.waiting.push({ done, fail });
+      void this.run();
+    });
   }
   restart() {
-    if (this.d.state !== "configured") return;
-    this.d.reset();
-    this.d.configure(this.config);
+    this.era++;
+    this.running = false;
+    const was = this.waiting;
+    this.waiting = [];
+    this.stream?.close();
+    this.stream = null;
+    for (const w of was) if ("fail" in w) w.fail(new Error("restarted"));
   }
   close() {
-    if (this.d.state !== "closed") this.d.close();
+    this.restart();
+    this.state = "closed";
   }
+  private async run() {
+    if (this.running || this.state !== "configured") return;
+    this.running = true;
+    const era = this.era;
+    try {
+      while (this.waiting.length) {
+        const p = this.waiting[0];
+        if (!("at" in p)) {
+          this.waiting.shift();
+          this.stream?.close();
+          this.stream = null;
+          p.done();
+          continue;
+        }
+        this.stream ??= new GoSoundStream(this.path, p.at, this.rate, this.channels);
+        const got = await this.stream.take(p.n);
+        if (era !== this.era) return;
+        this.waiting.shift();
+        if (got.length) {
+          const frames = got.length / this.channels;
+          const channels = this.channels;
+          this.output({
+            timestamp: p.timestamp,
+            numberOfFrames: frames,
+            numberOfChannels: channels,
+            sampleRate: this.rate,
+            copyTo: (dst, o) => {
+              const n = Math.min(frames, dst.length);
+              for (let i = 0; i < n; i++) dst[i] = got[i * channels + o.planeIndex];
+            },
+            close() {},
+          });
+        }
+        this.dequeue();
+        if (era !== this.era) return;
+      }
+    } catch (e) {
+      if (era !== this.era) return;
+      this.error(e instanceof Error ? e.message : String(e));
+      // The stream is dropped with the packet it failed on, and the next
+      // packet opens a stream of its own where it lies. Kept, every packet
+      // after it failed on the same stream, no sound came, and a play
+      // waiting for its first sound never started: the space bar seemed
+      // to do nothing, Tim found.
+      this.stream?.close();
+      this.stream = null;
+      if (this.waiting.length && "at" in this.waiting[0]) this.waiting.shift();
+      this.dequeue();
+    } finally {
+      if (era === this.era) this.running = false;
+    }
+    if (era === this.era && this.waiting.length) void this.run();
+  }
+}
+
+// One stream of sound from the Go side, from a place in the track on, in
+// samples. Sound before the track's start, the priming of AAC that the
+// edit list puts before zero, is silence, as it is to ffmpeg.
+//
+// The Go side closes a stream nobody has read from for 20 seconds, and
+// the least read when too many are open, see previewIdle in
+// cmd/framefairy-app/frames.go, and then answers 404. A pause holds the
+// play and its stream, so a play paused for longer found it gone, and the
+// video preview said the sound had stopped decoding, Tim found. A stream
+// that is gone is opened again where it got to.
+export class GoSoundStream {
+  private id: Promise<string>;
+  private have = new Float32Array(0);
+  private silence: number;
+  private ended = false;
+  // Where the Go side's stream started, and how many moments of it came.
+  private from: number;
+  private came = 0;
+  // Closed by the page: a read still on its way that finds it gone on
+  // the Go side ends it, it never opens it again. Opened again, every
+  // seek of a play left a stream that nobody closed.
+  private closed = false;
+  constructor(
+    private path: string,
+    at: number,
+    private rate: number,
+    private channels: number,
+  ) {
+    this.silence = Math.max(0, -at) * channels;
+    this.from = Math.max(0, at);
+    this.id = this.open(this.from);
+  }
+  private open(at: number): Promise<string> {
+    const q = new URLSearchParams({ path: this.path, from: (at / this.rate).toFixed(9), rate: String(this.rate), ch: String(this.channels) });
+    const id = fetch(`/frames/sound?${q}`).then(async (r) => {
+      if (!r.ok) throw new Error(`the sound could not be read, it answered ${r.status}`);
+      const j = (await r.json()) as { id?: string };
+      if (!j.id) throw new Error("the sound could not be read");
+      return j.id;
+    });
+    id.catch(() => {});
+    return id;
+  }
+  // The next n moments, all channels side by side, or fewer at the end.
+  async take(n: number): Promise<Float32Array> {
+    const want = n * this.channels;
+    const out = new Float32Array(want);
+    let filled = 0;
+    if (this.silence) {
+      const z = Math.min(this.silence, want);
+      this.silence -= z;
+      filled = z;
+    }
+    while (filled < want) {
+      if (!this.have.length) {
+        if (this.ended || this.closed) break;
+        await this.pull();
+        continue;
+      }
+      const k = Math.min(this.have.length, want - filled);
+      out.set(this.have.subarray(0, k), filled);
+      this.have = this.have.subarray(k);
+      filled += k;
+    }
+    return out.subarray(0, filled);
+  }
+  private async pull() {
+    let r = await fetch(`/frames/read?id=${await this.id}&n=16`);
+    if (this.closed) return;
+    if (r.status === 404) {
+      // Closed on the Go side: on again from the moment after the last
+      // that came, once, and a stream that is gone straight away is
+      // a fault.
+      this.id = this.open(this.from + this.came);
+      r = await fetch(`/frames/read?id=${await this.id}&n=16`);
+    }
+    if (!r.ok) throw new Error(`the sound stopped, it answered ${r.status}`);
+    const got = soundChunks(new Uint8Array(await r.arrayBuffer()), this.channels);
+    this.came += got.length / this.channels;
+    if (got.length) {
+      const joined = new Float32Array(this.have.length + got.length);
+      joined.set(this.have);
+      joined.set(got, this.have.length);
+      this.have = joined;
+    }
+    if (r.headers.get("X-Frames-End")) {
+      const why = r.headers.get("X-Frames-Error");
+      if (why) throw new Error(why);
+      this.ended = true;
+    }
+  }
+  close() {
+    this.closed = true;
+    void this.id.then((id) => fetch(`/frames/close?id=${id}`)).catch(() => {});
+  }
+}
+
+const NOTHING = new Uint8Array(0);
+
+// engine.SoundChunk, how many moments of sound the Go side sends at a time.
+export const SOUND_CHUNK = 1024;
+
+// The samples in what the Go side sent for a pull of a sound stream: each
+// chunk the moment it starts at, 8 bytes, then SOUND_CHUNK moments of
+// float samples, the channels side by side, little endian, and the last
+// chunk of a stream maybe shorter. The moments are not needed, a stream
+// being one run read straight on.
+export function soundChunks(body: Uint8Array, channels: number): Float32Array {
+  const whole = 8 + SOUND_CHUNK * channels * 4;
+  let count = 0;
+  for (let off = 0; off + 8 < body.length; off += whole) count += Math.floor((Math.min(off + whole, body.length) - off - 8) / 4);
+  const out = new Float32Array(count);
+  const v = new DataView(body.buffer, body.byteOffset, body.byteLength);
+  let k = 0;
+  for (let off = 0; off + 8 < body.length; off += whole) {
+    const end = Math.min(off + whole, body.length);
+    for (let b = off + 8; b + 4 <= end; b += 4) out[k++] = v.getFloat32(b, true);
+  }
+  return out;
 }
 
 // Plain sound, as it lies in the file, turned into the sound card's
@@ -573,30 +775,8 @@ export class FrameQueue {
       this.soundDecoder = new PlainSound(a, output, dequeue);
       return;
     }
-    // The pre-skip of Opus is cut by the edit list already, see editShift
-    // in mp4.ts, and a run starts ahead of what it plays anyway. Told it
-    // as well, the decoder would cut it a second time from the first
-    // packet after every start, so it is told there is none.
-    let description = a.description;
-    if (a.codec === "opus" && description && description.length >= 12) {
-      description = description.slice();
-      description[10] = 0;
-      description[11] = 0;
-    }
-    const config: AudioDecoderConfig = {
-      codec: a.codec,
-      description,
-      sampleRate: a.decoderRate,
-      numberOfChannels: a.channels,
-    };
-    const ok =
-      typeof AudioDecoder !== "undefined" &&
-      (await AudioDecoder.isConfigSupported(config).catch(() => ({ supported: false }))).supported;
-    if (!ok) {
-      this.fault(`The app cannot decode the sound of this episode, ${a.codec}, so it plays without sound.`);
-      return;
-    }
-    this.soundDecoder = new WebSound(config, output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
+    const path = new URL(this.reader.url, location.href).searchParams.get("path") ?? "";
+    this.soundDecoder = new GoSound(path, a.sampleRate, Math.min(a.channels, 8), output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
   }
 
   private makeSlot(config: VideoDecoderConfig): Slot {
@@ -621,7 +801,8 @@ export class FrameQueue {
     if (this.native) {
       const n = this.native;
       const id = n.ids[this.slots.includes(slot) ? this.slots.indexOf(slot) : this.slots.length] ?? n.ids[0];
-      return new NativePictures(id, n.width, n.height, output, dequeue, (why) => void this.nativeFailed(why));
+      const colour = { ...this.video!.colour, fullRange: true };
+      return new NativePictures(id, n.width, n.height, colour, output, dequeue, (why) => void this.nativeFailed(why));
     }
     if (this.app) return new AppPictures(this.app, output, dequeue);
     return new WebPictures(config, output, (e) => this.pictureFailed(e), dequeue);
@@ -1503,7 +1684,9 @@ export class FrameQueue {
       }
       if (this.soundReach - heard >= ahead || dec.decodeQueueSize >= 8) return;
       const j = this.soundNext;
-      const data = this.reader.get(s.offset[j], s.size[j]);
+      // Only plain sound is read from the file here. The Go side reads and
+      // decodes the rest itself.
+      const data = dec instanceof GoSound ? NOTHING : this.reader.get(s.offset[j], s.size[j]);
       if (!(data instanceof Uint8Array)) {
         const ticket = this.ticket;
         void data.then(() => {
@@ -1516,7 +1699,7 @@ export class FrameQueue {
       this.soundNext++;
       const p = plan.packet(j);
       for (const sl of plan.slices(run, j, p.n)) this.soundReach = Math.max(this.soundReach, sl.out + (sl.to - sl.from));
-      dec.decode(ts, data);
+      dec.decode(ts, data, p.at, p.n);
     }
   }
 

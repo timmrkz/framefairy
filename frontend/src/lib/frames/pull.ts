@@ -18,8 +18,8 @@ export type Pulled = {
 // Whether a VideoFrame can take a buffer over instead of copying it.
 let transfers = true;
 
-function frameOf(buffer: ArrayBuffer, width: number, height: number, at: number): VideoFrame {
-  const init = { format: "I420" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6) };
+function frameOf(buffer: ArrayBuffer, width: number, height: number, at: number, colour: VideoColorSpaceInit): VideoFrame {
+  const init = { format: "I420" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6), colorSpace: colour };
   if (transfers) {
     try {
       return new VideoFrame(buffer, { ...init, transfer: [buffer] } as VideoFrameBufferInit);
@@ -30,7 +30,9 @@ function frameOf(buffer: ArrayBuffer, width: number, height: number, at: number)
   return new VideoFrame(buffer, init);
 }
 
-export async function pull(url: string, width: number, height: number): Promise<Pulled> {
+// The frames are in the picture's colours and in full range, which the Go
+// side makes them in, see engine.PreviewFrames.
+export async function pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
   if (!res) return { status: 0, end: false, error: "", frames: [] };
   const out: Pulled = {
@@ -68,7 +70,7 @@ export async function pull(url: string, width: number, height: number): Promise<
       at += n;
       if (bodyHas === size) {
         const when = new DataView(head.buffer).getFloat64(0, true);
-        out.frames.push({ at: when, frame: frameOf(body!, width, height, when) });
+        out.frames.push({ at: when, frame: frameOf(body!, width, height, when, colour) });
         headHas = 0;
         body = null;
       }
