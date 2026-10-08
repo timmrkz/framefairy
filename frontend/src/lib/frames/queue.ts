@@ -749,10 +749,11 @@ export class FrameQueue {
       codedHeight: v.height,
       optimizeForLatency: true,
     };
-    const support = await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
-    if (this.closed) throw new Error("closed");
+    // Every file's picture comes from ffmpeg on the Go side, the first step
+    // of docs/VIDEO-PREVIEW.md, measured before the webview's decoders and
+    // the Mac's own are removed.
     this.videoConfig = config;
-    if (!support.supported) await this.fromGoSide();
+    this.app = this.fromApp();
     // A sound card at the episode's own rate, so the sound is resampled
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"framefairy/engine"
@@ -82,6 +84,10 @@ type preview struct {
 	// Closed when ffmpeg has stopped, with why in err.
 	done chan struct{}
 	err  error
+	// Where a stream of frames' time went before its first frame, told
+	// once, with the first pull that has a frame. Nil for sound.
+	times *engine.PreviewTimes
+	told  atomic.Bool
 }
 
 type atomicTime struct {
@@ -147,6 +153,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
+	var times *engine.PreviewTimes
 	if r.URL.Path == "/frames/sound" {
 		rate, _ := strconv.Atoi(q.Get("rate"))
 		channels, _ := strconv.Atoi(q.Get("ch"))
@@ -164,15 +171,16 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a preview needs a width and a height", http.StatusBadRequest)
 			return
 		}
+		times = engine.NewPreviewTimes()
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			return e.PreviewFrames(ctx, path, from, width&^1, height&^1, got)
+			return e.PreviewFrames(engine.WithPreviewTimes(ctx, times), path, from, width&^1, height&^1, got)
 		}
 	}
 	kind := ""
 	if r.URL.Path == "/frames/sound" {
 		kind = "sound"
 	}
-	id := p.start(kind, run)
+	id := p.start(kind, times, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
@@ -182,12 +190,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 // Streams of sound and of frames are counted apart, so that seeks of a
 // play, each with a sound stream of its own, never close the frames the
 // video preview is drawing, nor frames the sound.
-func (p *previews) start(kind string, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+func (p *previews) start(kind string, times *engine.PreviewTimes, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	ctx, stop := context.WithCancel(context.Background())
-	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{})}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
@@ -303,6 +311,13 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 		case f := <-s.frames:
 			if f.at < skip {
 				continue
+			}
+			// The first frame of a stream says where its time went, in
+			// milliseconds from when it was asked for: until ffmpeg ran,
+			// until the file was open, until the first frame was out.
+			if s.times != nil && !s.told.Swap(true) {
+				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d",
+					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load()))
 			}
 			if !put(f) {
 				return

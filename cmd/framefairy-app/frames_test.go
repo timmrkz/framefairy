@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	}
 	defer get("/frames/close", url.Values{"id": {opened.ID}})
 	size := 8 + 64*36*3/2
+	var told []string
 	read := func(q url.Values) []float64 {
 		t.Helper()
 		q.Set("id", opened.ID)
@@ -46,6 +48,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("read answered %d", rec.Code)
 		}
+		told = append(told, rec.Header().Get("X-Frames-Times"))
 		body := rec.Body.Bytes()
 		if len(body) == 0 && rec.Header().Get("X-Frames-End") != "" {
 			t.Fatalf("the stream ended with no frame: %s", rec.Header().Get("X-Frames-Error"))
@@ -69,6 +72,18 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	for i := 1; i < len(all); i++ {
 		if math.Abs(all[i]-all[i-1]-0.2) > 1e-6 {
 			t.Fatalf("frames at %v, not one every 0.2 s", all)
+		}
+	}
+	// The first pull says where the stream's time went before its first
+	// frame, in milliseconds, and no pull after it says it again.
+	var started, opened2, first int
+	if n, _ := fmt.Sscanf(told[0], "%d,%d,%d", &started, &opened2, &first); n != 3 ||
+		started <= 0 || opened2 < started || first < opened2 {
+		t.Errorf("the first pull told %q as the stream's times, want ffmpeg started, the file open and the first frame, in order", told[0])
+	}
+	for _, again := range told[1:] {
+		if again != "" {
+			t.Errorf("a later pull told the times again, %q", again)
 		}
 	}
 	// Further on in the same stream, with what comes before dropped.

@@ -31,6 +31,12 @@ const STREAMS = 3;
 
 type Waiter = { rank: number; done: (f: VideoFrame | null) => void };
 
+// Where the time of a stream's first frame went, in milliseconds from when
+// it was asked for, for the walks to read, see docs/VIDEO-PREVIEW.md,
+// Speed: ms until the interface had it, and on the Go side until ffmpeg
+// ran, until it had opened the file, until its first frame was out.
+export type Opened = { ms: number; started: number; opened: number; first: number };
+
 class Stream {
   id: Promise<string | null>;
   // The rank of the last frame read, and the first this stream can give.
@@ -39,6 +45,8 @@ class Stream {
   ended = false;
   // Whether it has given a frame yet.
   private gave = false;
+  // When it was asked for, to count how long its first frame took.
+  private asked = performance.now();
   used = performance.now();
   private waiting: Waiter[] = [];
   private pulling = false;
@@ -117,6 +125,7 @@ class Stream {
   }
 
   private take(got: Pulled) {
+    if (!this.gave && got.frames.length) this.owner.opened(performance.now() - this.asked, got.times);
     for (const { at, frame } of got.frames) {
       const rank = rankAt(this.owner.track.samples, at + this.owner.track.frame / 2);
       this.position = Math.max(this.position, rank);
@@ -160,7 +169,7 @@ export class AppFrames {
   private keptBytes = 0;
   // Why the Go side could not decode a frame, for the queue to say.
   trouble = "";
-  readonly stats = { streams: 0, continued: 0, kept: 0 };
+  readonly stats = { streams: 0, continued: 0, kept: 0, opens: [] as Opened[] };
   readonly puller = new Puller();
 
   constructor(
@@ -169,6 +178,14 @@ export class AppFrames {
     private size: () => { width: number; height: number },
     private onTrouble: (why: string) => void,
   ) {}
+
+  // A stream gave its first frame: how long that took here, from asking to
+  // having it, and on the Go side, see Opened.
+  opened(ms: number, times: string) {
+    const [started, open, first] = times.split(",").map(Number);
+    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0 });
+    if (this.stats.opens.length > 64) this.stats.opens.shift();
+  }
 
   ptsOf(rank: number): number {
     const s = this.track.samples;
@@ -309,7 +326,7 @@ class Puller {
     w.onerror = () => {
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", frames: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", times: "", frames: [] });
       this.waiting.clear();
     };
     this.worker = w;

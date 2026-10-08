@@ -354,10 +354,17 @@ it and says so at the foot of the picture. With one engine, see
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), such files will play as far as the
 render can read them.
 
-A system can also say it decodes a file and then fail on it: WebKit says
-yes to HEVC with 10-bit colour and its decoder then fails on the first
-frame, "Decoder failure". For such a file, and for one the system says no
-to, the Go side decodes the picture instead, plan row 2.141. The queue
+Every file's picture is decoded by ffmpeg on the Go side, the first step
+of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156. The webview's
+decoders and the Mac's own below are still in the code, unused, until the
+step that removes them. Each stream of frames says, with its first frame,
+where its time went, in milliseconds from when it was asked for: until
+ffmpeg ran, until it had opened the file, until its first frame was out,
+the header `X-Frames-Times`, which `AppFrames` keeps in `stats.opens` for
+the walks. Before, a system could say it decodes a file and then fail on
+it: WebKit says yes to HEVC with 10-bit colour and its decoder then fails
+on the first frame, "Decoder failure". For such a file, and for one the
+system said no to, the Go side decoded the picture, plan row 2.141. The queue
 asks its picture decoder the same things either way: `AppPictures` in
 `lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
 `GoSound` and `PlainSound` stand in for the sound decoder, so drawing, the clock, cuts
@@ -369,7 +376,7 @@ and its first frames too late, and 72 frames of a play of three seconds
 were dropped as late until it did.
 
 Where the system has a decoder of its own for the picture, VideoToolbox on
-the Mac for H.264 and HEVC, the queue uses it, `NativePictures` in
+the Mac for H.264 and HEVC, the queue used it until 2.156, `NativePictures` in
 `lib/frames/native.ts` and `engine.Pictures`: the page reads the file as
 it does for its own decoder and sends the samples, a batch for whatever it
 fed in a moment, to `POST /frames/decode`, and the decoder, one for each
