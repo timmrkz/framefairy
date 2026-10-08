@@ -1173,14 +1173,12 @@
   const making = $derived.by((): ClipEntry | null => {
     const a = onTheWay.find((x) => x.key === selected);
     if (!a) return null;
-    // Its pieces, once its pauses are cut, which is before its crop is
-    // placed.
-    if (a.pieces?.length) {
-      return {
-        key: a.key,
-        segments: a.pieces.map(([start, end]) => ({ start, end })),
-      } as unknown as ClipEntry;
-    }
+    return { key: a.key, segments: wayPieces(a) } as unknown as ClipEntry;
+  });
+  // What a clip on its way covers: its pieces, once its pauses are cut,
+  // which is before its crop is placed, and until then its frame.
+  function wayPieces(a: Arriving): { start: number; end: number }[] {
+    if (a.pieces?.length) return a.pieces.map(([start, end]) => ({ start, end }));
     let from = a.start;
     let to = a.end;
     if (to - from < 0.5) {
@@ -1188,7 +1186,20 @@
       from = job?.backward ? Math.max(0, a.start - min) : a.start;
       to = job?.backward ? a.start : Math.min(duration, a.start + min);
     }
-    return { key: a.key, segments: [{ start: from, end: to }] } as unknown as ClipEntry;
+    return [{ start: from, end: to }];
+  }
+  // Whether the playhead stands in a clip, from its start to its end, cuts
+  // included: a clip in the list or one on its way, chosen or not, playing
+  // or not. I and O make no clip there. The clip is already there, and its
+  // edges are dragged to where it should be. So a play of a clip never
+  // has its clip changed under it by I or O.
+  const inClip = $derived.by(() => {
+    const t = time;
+    const covers = (pieces: { start: number; end: number }[]) =>
+      pieces.length > 0 &&
+      t >= Math.min(...pieces.map((p) => p.start)) &&
+      t <= Math.max(...pieces.map((p) => p.end));
+    return clips.some((c) => !c.rejected && covers(c.segments)) || onTheWay.some((a) => covers(wayPieces(a)));
   });
   // The clip on its way that was just asked for is followed until it is
   // written: brought into view once its card has slid open, and again
@@ -1220,6 +1231,7 @@
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
     if (keysElsewhere()) return;
+    if (inClip) return;
     event.preventDefault();
     void makeClip(out);
   }
@@ -2728,25 +2740,30 @@
           </button>
         {/if}
         <!-- In and Out, the way every editor marks a clip, with the keys of
-             the same letters. Each makes a clip at the playhead. -->
+             the same letters. Each makes a clip at the playhead, and only
+             where no clip is: inside one, its edges are dragged instead. -->
         <button
           class="glyph letter"
-          disabled={duration <= 0}
+          disabled={duration <= 0 || inClip}
           onclick={() => makeClip(false)}
           aria-label="Start a clip at the playhead"
           title={makingIn
-            ? "Making a clip. Press again for another one here"
-            : "Start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+            ? "Making a clip"
+            : inClip
+              ? "The playhead is in a clip. Drag its edges to change it"
+              : "Start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
           >{#if makingIn}<Busy />{/if}I</button
         >
         <button
           class="glyph letter"
-          disabled={duration <= 0}
+          disabled={duration <= 0 || inClip}
           onclick={() => makeClip(true)}
           aria-label="End a clip at the playhead"
           title={makingOut
-            ? "Making a clip. Press again for another one here"
-            : "End a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+            ? "Making a clip"
+            : inClip
+              ? "The playhead is in a clip. Drag its edges to change it"
+              : "End a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
           >{#if makingOut}<Busy />{/if}O</button
         >
         <!-- One job, whatever is chosen: go to the playhead. Going back to
