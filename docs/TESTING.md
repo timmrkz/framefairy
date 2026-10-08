@@ -126,6 +126,7 @@ each with a POST:
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/hold?call=Search&ms=N` | the next call of that name waits N milliseconds before it reaches the Go side, the way a busy machine delivers it late, so a walk can press something while the Go side has not heard of the call yet |
+| `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, and the app is opened again on them. So a video a walk adds is heard with the same words, however many walks came before it |
 
@@ -381,6 +382,17 @@ showing what the crop frame showed on its shot and the sound straight on
 where two shots meet. Every step is also checked against the walk's
 rules, so a sequence asks for its own result and gets the rest for
 nothing.
+
+For the Updates page: `updates` opens it on a build from a channel or
+made on the Mac, with a channel an earlier build picked and the channels
+on the list, through `/updates`, and `follow` picks a channel. Then
+`channel`, what the list says, `choices`, the channels it offers and the
+one picked, `status`, the line under the build, `no check`, no button on
+that line, and `at once`, the list and that line in the frame after a
+pick. `a build made on the Mac follows nothing until a channel is chosen,
+and then follows it` is Tim's test of #147 with `make install`. Against
+the head of #147 it fails at the first `channel`: the list says Pull
+request #143, the pick of a build before it.
 
 Each sequence starts from the bridge's episode as it was first searched,
 in a page of its own.

@@ -78,7 +78,8 @@ type UpdateState struct {
 	Follows string `json:"follows"`
 	// Gone is the channel followed when it is not on the list any more, a
 	// pull request merged or closed. Nothing is downloaded for it, and
-	// nothing else is either until another channel is picked.
+	// nothing else is either until another channel is picked. Whenever it
+	// is set, Phase is gone, see settle.
 	Gone string `json:"gone"`
 	// Building is the newest commit of the channel followed when its build
 	// has not come yet, so the page does not offer the build there is as
@@ -97,6 +98,21 @@ type UpdateState struct {
 	Problem string    `json:"problem"`
 }
 
+// settle keeps the state saying one thing. A channel followed that has
+// left the list is gone, whatever the last check said and whatever a
+// download went on to do: the list read for the page set Gone and left the
+// phase as it was, so the page called the pull request closed in the list
+// and Not checked yet under it, and a build that was ready went in on the
+// way out while the page said its pull request was closed. Every change to
+// the state ends here, so the two can never disagree.
+func (s *UpdateState) settle() {
+	if s.Gone == "" {
+		return
+	}
+	s.Phase = "gone"
+	s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
+}
+
 // UpdateChannel is a channel as the interface lists it.
 type UpdateChannel struct {
 	ID      string `json:"id"`
@@ -109,6 +125,9 @@ type UpdateChannel struct {
 type updating struct {
 	u   *updater.Updater
 	src *updates.Source
+	// own is the channel this build came from, empty for a build made on
+	// the Mac. It never changes.
+	own string
 
 	mu    sync.Mutex
 	state UpdateState
@@ -144,6 +163,10 @@ type updating struct {
 	// begun, which puts the build in place by itself.
 	install     func(target, from string) error
 	relaunching bool
+	// looking is set once the loop that looks now and then has started,
+	// see loop. next is how long it waits between two looks.
+	looking bool
+	next    func(UpdateState) time.Duration
 }
 
 type updatesFile struct {
@@ -152,6 +175,7 @@ type updatesFile struct {
 
 func newUpdating(u *updater.Updater, st *store, busy func() bool, emit func(UpdateState)) *updating {
 	c := &updating{
+		own:  buildChannel,
 		busy: busy,
 		emit: emit,
 		load: func() string {
@@ -176,12 +200,24 @@ func newUpdating(u *updater.Updater, st *store, busy func() bool, emit func(Upda
 
 // setUp decides whether this build can update itself at all, and if it
 // can, hands Wails' updater the source and the key.
+//
+// A build made on the Mac starts out following nothing, whatever
+// updates.json says. It is a build somebody made on purpose, not one that
+// came from a channel, so the channel an earlier build followed is not
+// carried over to it: Tim made one and found it following the pull request
+// an earlier build had picked. updates.json stays as it is, for the builds
+// from a channel that read it.
 func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source, exe, goos string) {
 	c.state = UpdateState{
 		Version: runningVersion(),
 		Commit:  buildCommit,
-		Channel: buildChannel,
-		Picked:  c.load(),
+		Channel: c.own,
+	}
+	if c.own != "" {
+		c.state.Picked = c.load()
+	}
+	if c.next == nil {
+		c.next = nextCheck
 	}
 	key, err := updates.PublicKey(keyText)
 	switch {
@@ -197,7 +233,7 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	if c.state.Off != "" {
 		return
 	}
-	src.Own = buildChannel
+	src.Own = c.own
 	src.Key = key
 	src.Picked = c.picked
 	src.Seen = c.seen
@@ -220,19 +256,34 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 // wanted: it used to wait five seconds first, and a person who opened the
 // app to try a change sat on the Updates page waiting for it to start.
 // The first answer reaches the interface when it asks, since nothing is
-// on screen yet to hear the event. A build made by make only looks when
-// asked: it is somebody working on the app, and it would otherwise fetch a
-// build to replace itself with every time it started.
+// on screen yet to hear the event. A build made on the Mac follows
+// nothing when it starts, so there is nothing to look for, and it starts
+// looking once a channel is picked, see Follow.
 func (c *updating) start() {
-	if c.u == nil || buildChannel == "" {
+	if c.u == nil || c.own == "" {
 		return
+	}
+	c.loop()
+}
+
+// loop starts looking at once and then now and then, the first time it is
+// called. It says whether it started, so a pick that starts it does not
+// look a second time.
+func (c *updating) loop() bool {
+	c.mu.Lock()
+	started := c.looking
+	c.looking = true
+	c.mu.Unlock()
+	if started {
+		return false
 	}
 	go func() {
 		for {
 			c.check()
-			time.Sleep(nextCheck(c.State()))
+			time.Sleep(c.next(c.State()))
 		}
 	}()
+	return true
 }
 
 func (c *updating) State() UpdateState {
@@ -246,6 +297,7 @@ func (c *updating) State() UpdateState {
 func (c *updating) change(f func(*UpdateState)) {
 	c.mu.Lock()
 	f(&c.state)
+	c.state.settle()
 	c.lastSent = time.Now()
 	c.mu.Unlock()
 	if c.emit != nil {
@@ -268,12 +320,13 @@ func (c *updating) seen(l updates.List) {
 	defer c.mu.Unlock()
 	c.state.Channels = chans
 	c.state.Follows, c.state.Gone, c.state.Building = "", "", ""
-	if b, ok := l.Follow(c.state.Picked, buildChannel); ok {
+	if b, ok := l.Follow(c.state.Picked, c.own); ok {
 		c.state.Follows = b.Channel
 		c.state.Building = b.Newest
 	} else {
-		c.state.Gone = updates.Followed(c.state.Picked, buildChannel)
+		c.state.Gone = updates.Followed(c.state.Picked, c.own)
 	}
+	c.state.settle()
 }
 
 // progress is told about every quarter of a megabyte, and passes it on a
@@ -319,9 +372,13 @@ func (c *updating) refreshList() {
 // Follow picks a channel and looks at once. The wait for a download of the
 // channel before is stopped and what it found forgotten, and the state
 // shown is the new channel's from this moment: a click shows at once. The
-// download itself goes on, so going back has it.
+// download itself goes on, so going back has it. Following nothing is not
+// a choice: a build made on the Mac starts out following nothing, and once
+// a channel is picked another channel is what follows it. The first pick
+// on such a build follows the channel fully, the way a build from a
+// channel does: it looks at once, and then every ten minutes.
 func (c *updating) Follow(channel string) error {
-	if channel != "" && !updates.ValidChannel(channel) {
+	if !updates.ValidChannel(channel) {
 		return fmt.Errorf("%q is not a channel", channel)
 	}
 	if c.u == nil {
@@ -344,13 +401,15 @@ func (c *updating) Follow(channel string) error {
 		s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
 		s.Follows, s.Gone = "", ""
 		for _, ch := range s.Channels {
-			if ch.ID == updates.Followed(channel, buildChannel) {
+			if ch.ID == updates.Followed(channel, c.own) {
 				s.Follows = ch.ID
 			}
 		}
 	})
 	c.picking.Unlock()
-	go c.check()
+	if !c.loop() {
+		go c.check()
+	}
 	return nil
 }
 
@@ -395,9 +454,10 @@ func (c *updating) checkNow() {
 
 // check looks for the followed channel's build, and downloads it when it
 // is not the one running. One at a time: a check asked for while one runs
-// is done when that one ends.
+// is done when that one ends. A build following nothing has nothing to
+// look for.
 func (c *updating) check() {
-	if c.u == nil {
+	if c.u == nil || updates.Followed(c.picked(), c.own) == "" {
 		return
 	}
 	if !c.run.TryLock() {
@@ -459,9 +519,6 @@ func (c *updating) checkOnce() {
 	if rel == nil {
 		mine(func(s *UpdateState) {
 			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
-			if s.Gone != "" {
-				s.Phase = "gone"
-			}
 			s.Checked = time.Now()
 		})
 		return

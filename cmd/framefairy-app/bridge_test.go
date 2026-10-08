@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -41,7 +42,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wailsapp/wails/v3/pkg/updater"
+
 	"framefairy/engine"
+	"framefairy/updates"
 )
 
 // bus is what the Go side tells the interface, Wails's app.Event.Emit, for
@@ -145,7 +149,7 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		kind := method.Type()
-		if outside[name] {
+		if outside[name] && !(walkedUpdates[name] && svc().updates != nil) {
 			// Answered as having nothing to say, in the shape the
 			// interface expects.
 			var answer any
@@ -221,6 +225,11 @@ var outside = map[string]bool{
 	"OpenKeysPage": true, "SaveAPIKey": true, "OpenCommit": true,
 	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true,
 }
+
+// walkedUpdates are the calls of the Updates page a walk can have answered
+// by the app's own updating, once it has asked for one, see /updates.
+// Until then they are outside like the rest. Relaunch is outside always.
+var walkedUpdates = map[string]bool{"Updates": true, "FollowChannel": true, "CheckForUpdates": true}
 
 // standInsSetup is the setup as the bridge's machine has it: the real
 // answer, with the two stand-in models counted as there, since they are
@@ -333,6 +342,14 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
 		b.mu.Unlock()
 		answer(w, nil, nil)
+	})
+	mux.HandleFunc("/updates", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var list []string
+		if l := q.Get("list"); l != "" {
+			list = strings.Split(l, ",")
+		}
+		answer(w, nil, b.updatesAs(q.Get("from"), q.Get("stored"), list))
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
@@ -466,6 +483,56 @@ type bridge struct {
 	// holds is how long the next call of a name waits before it reaches
 	// the service, the way a busy machine delivers it late, see /hold.
 	holds map[string]time.Duration
+	// channels serves the channel list and the builds the Updates page is
+	// walked with, see /updates.
+	channels *channelServer
+}
+
+// updatesAs gives the app updates the way a walk asks for them: a build
+// from the channel from, or one made on the Mac when from is empty, with
+// stored in updates.json, picked by a run before, and these channels on
+// the list. It is the app's own updating and Wails' updater, reading a
+// channel list served on this machine, the one the Go tests of updates
+// use, so nothing reaches the network. Every channel has a build newer
+// than the one running, which downloads in a moment. The app opened again
+// has none, the way the bridge started.
+func (b *bridge) updatesAs(from, stored string, list []string) error {
+	for _, ch := range append([]string{from, stored}, list...) {
+		if ch != "" && !updates.ValidChannel(ch) {
+			return fmt.Errorf("%q is not a channel", ch)
+		}
+	}
+	b.mu.Lock()
+	if b.channels == nil {
+		b.channels = newChannelServer(b.t)
+	}
+	cs := b.channels
+	b.mu.Unlock()
+	var builds [][3]string
+	for _, ch := range list {
+		builds = append(builds, [3]string{ch, "0.3.0-" + strings.ReplaceAll(ch, "-", "") + ".1", ch})
+	}
+	cs.publish(b.t, builds...)
+	c := &updating{
+		own:  from,
+		busy: b.d.svc.jobs.busy,
+		emit: func(s UpdateState) { b.d.bus.send("updates", s) },
+		load: func() string { return stored },
+		save: func(string) error { return nil },
+	}
+	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: cs.srv.Client(), Cache: b.t.TempDir()}
+	c.setUp(updater.New(quietHost{}), cs.publicKey(), src, inApp, "darwin")
+	if c.state.Off != "" {
+		return errors.New(c.state.Off)
+	}
+	b.t.Cleanup(func() {
+		if p := c.u.DownloadedPath(); p != "" {
+			_ = os.RemoveAll(filepath.Dir(p))
+		}
+	})
+	c.start()
+	b.d.svc.updates = c
+	return nil
 }
 
 // held is how long a call of this name waits before it reaches the

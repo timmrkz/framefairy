@@ -3,7 +3,9 @@
   // one, in one card: the build and the channel it follows on top, and
   // under it one line that says where things stand, with the one thing to
   // do about it at its end. A newer build downloads by itself, so that
-  // thing is Relaunch once it is here, and Check the rest of the time.
+  // thing is Relaunch once it is here, and Check the rest of the time a
+  // channel is followed. A build made on the Mac follows nothing until a
+  // channel is chosen, and with nothing to look for there is no Check.
   // Relaunch is Chrome's word for it: a newer version downloads by itself,
   // the mark on Updates says it is here, and one click relaunches into it.
   // Reached from Updates at the foot of the sidebar and from Check for
@@ -62,12 +64,21 @@
     }
   }
 
+  // A pick shows at once too: the channel in the list and looking under
+  // it, before the Go side has said a word. Should it say no, what it
+  // says is true is asked for again.
   async function follow(channel: string) {
+    if (!update) return;
     problem = "";
+    heard({ ...update, picked: channel, gone: "", building: "", next: "", phase: "checking" });
     try {
       await api.followChannel(channel);
     } catch (e) {
       problem = errorText(e);
+      api
+        .updates()
+        .then(heard)
+        .catch(() => {});
     }
   }
 
@@ -86,8 +97,12 @@
   // by its number. The pull request's title says what it is about, which
   // is not what is being picked here. Customers will see releases the same
   // way, by their version.
-  const channelName = (id: string) =>
-    id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : id ? `Branch ${id}` : "Nothing";
+  const channelName = (id: string) => (id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : `Branch ${id}`);
+  // The channel followed, as updates.Followed has it: the one picked, or
+  // the one a build from a channel came from. Empty for a build made on
+  // the Mac until a channel is chosen.
+  const following = $derived(update ? update.picked || update.follows || update.gone || update.channel || "" : "");
+  const followingName = $derived(following ? channelName(following) : "");
   const channelOptions = $derived.by(() => {
     const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
     // A pull request that was followed and has since gone stays in the
@@ -97,17 +112,17 @@
     // read yet, because the check did not get through, the channel is
     // missing from an empty list, and an open pull request was called
     // closed.
-    const kept = update?.picked || update?.gone || "";
+    const kept = following;
     if (kept && !listed.some((o) => o.value === kept)) {
       const label = update?.gone === kept ? `${channelName(kept)}, closed` : channelName(kept);
       listed.push({ value: kept, label });
     }
-    // A build made by make follows nothing until a channel is picked.
-    if (update && !update.channel) listed.unshift({ value: "", label: "Nothing" });
+    // Nothing is not in the list. A build made on the Mac follows nothing
+    // until a channel is picked, which is a state and not a choice, so the
+    // trigger says Choose a channel, and once one is picked another channel
+    // is what follows it.
     return listed;
   });
-  const following = $derived(update ? update.picked || update.follows || update.gone || "" : "");
-  const followingName = $derived(channelName(following || "main"));
 
   function when(checked: string | undefined): string {
     if (!checked) return "";
@@ -138,7 +153,7 @@
     if (u.off) return { mark: "off", head: "This build does not update itself", more: u.off };
     switch (u.phase) {
       case "checking":
-        return { mark: "look", head: "Looking for a newer build", more: `Of ${followingName}.` };
+        return { mark: "look", head: "Looking for a newer build", more: following ? `Of ${followingName}.` : "" };
       case "downloading": {
         const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
         return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
@@ -174,13 +189,18 @@
           more: "Nothing downloads until you choose what to follow next.",
         };
     }
-    if (!u.channel && !u.picked) {
+    // A build made on the Mac follows nothing until a channel is chosen,
+    // whatever an earlier build picked. Choosing one follows it fully, so
+    // looking is the next thing this line says.
+    if (!following) {
       return {
         mark: "idle",
         head: "Built on this Mac",
-        more: "It follows no channel. Pick one, and it downloads that channel's newest build.",
+        more: "It stays as it is until you choose a channel to follow.",
       };
     }
+    // A build from a channel, in the moment before its first look has
+    // answered.
     return { mark: "idle", head: "Not checked yet", more: "It looks when the app starts and every ten minutes." };
   });
 
@@ -188,10 +208,18 @@
   const downloading = $derived(update?.phase === "downloading");
 
   onMount(() => {
-    const noUpdates = onUpdates(heard);
+    // Asking also reads the channel list, and what that read found is
+    // sent as an event, which can arrive before the answer to the asking
+    // does. The answer is then the older of the two, and it emptied the
+    // list again, so it only counts while no event has come.
+    let told = false;
+    const noUpdates = onUpdates((u) => {
+      told = true;
+      heard(u);
+    });
     api
       .updates()
-      .then(heard)
+      .then((u) => told || heard(u))
       .catch(() => {});
     const tick = setInterval(() => (now = Date.now()), 15_000);
     return () => {
@@ -233,9 +261,11 @@
           <span class="ask">
             <Info label="How updates work" side="right">
               The list says where this app updates from: main, or one pull request. Every push to
-              it makes a new build. The app looks when it starts and every ten minutes, every twenty
-              seconds while a newer commit is being built, and downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on the way out. The
-              commit under the version opens on GitHub.
+              it makes a new build. The app looks when it starts, when you choose a channel and every
+              ten minutes, every twenty seconds while a newer commit is being built, and downloads the
+              newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead,
+              it goes in on the way out. A build made on this Mac follows nothing until you choose a
+              channel. The commit under the version opens on GitHub.
             </Info>
           </span>
           <Pick
@@ -244,8 +274,9 @@
             onpick={follow}
             id="channel"
             label="Channel"
+            placeholder="Choose a channel"
             align="right"
-            title="Where this app updates from: main, or one pull request. It looks when the app starts and every ten minutes, and downloads the newest build by itself"
+            title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
             tone={update.phase === "gone" ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />
@@ -279,7 +310,7 @@
             title="Quits and comes back as the new build. Waits while work runs"
             >{#if restarting}<Busy />{/if}{restarting ? "Relaunching" : "Relaunch"}</button
           >
-        {:else if !update.off}
+        {:else if !update.off && following}
           <button
             class="act"
             onclick={check}
