@@ -297,6 +297,8 @@ type FrameFairy struct {
 	// link is what became of the last framefairy:// link, waiting for
 	// the settings, see licence.go.
 	link *LicenceLink
+	// clipboard stands in for the system's in tests, see copyText.
+	clipboard func(string) bool
 }
 
 // Updates says which build is running, which channel it follows and how far

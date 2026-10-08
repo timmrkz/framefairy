@@ -579,7 +579,7 @@ func TestEveryEndpointWithTheDatabaseDown(t *testing.T) {
 		method, path, token string
 		body                any
 	}{
-		{"GET", "/v1/thanks/txn_a", "", nil},
+		{"POST", "/v1/thanks/txn_a", "", map[string]string{"nonce": nonceA}},
 		{"POST", "/v1/lost", "", map[string]string{"email": "anna@example.com"}},
 		{"POST", "/v1/orders", bundleToken, map[string]any{"ref": "1001", "seats": 1, "email": "max@example.com"}},
 		{"GET", "/v1/orders/1001", bundleToken, nil},

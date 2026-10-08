@@ -3,6 +3,7 @@ package dispenser
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"maps"
@@ -96,6 +97,10 @@ type Order struct {
 	Seats  int
 	Email  string // where the keys go. Used to send, never stored
 	At     time.Time
+	// Thanks is the hash of the nonce the checkout page made, see
+	// ThanksHash, which the thank-you page must show to see the keys.
+	// Paddle sales only, and "" when the checkout passed none.
+	Thanks string
 }
 
 // Assign hands one key from the pool to every seat of the order. An order
@@ -156,7 +161,7 @@ func (e *Engine) assign(ctx context.Context, o Order) (keys []licence.Key, fresh
 			if err := tx.SetState(k.Fingerprint, Sold); err != nil {
 				return err
 			}
-			if err := tx.AddSeat(Seat{Source: o.Source, Ref: o.Ref, Seat: seat, Key: k.Fingerprint, At: now}); err != nil {
+			if err := tx.AddSeat(Seat{Source: o.Source, Ref: o.Ref, Seat: seat, Key: k.Fingerprint, At: now, Thanks: o.Thanks}); err != nil {
 				return err
 			}
 			if err := write(tx, Line{At: now, Event: EventAssign, Fingerprint: k.Fingerprint, Source: o.Source, Ref: o.Ref, Seat: seat}); err != nil {
@@ -194,19 +199,26 @@ func (e *Engine) Keys(ctx context.Context, source, ref string) ([]licence.Key, e
 	return keys, err
 }
 
-// keysAt is Keys, and when the sale's keys were first assigned.
-func (e *Engine) keysAt(ctx context.Context, source, ref string) ([]licence.Key, time.Time, error) {
-	if err := checkSale(source, ref); err != nil {
+// thanksKeys are the keys of a Paddle sale for the thank-you page, and
+// when they were first assigned, but only for the nonce the sale's
+// checkout page made. A sale that is not there yet, a sale whose checkout
+// passed no nonce and a nonce that is not the sale's all answer
+// ErrNotFound, so the page cannot tell them apart. The nonce is compared
+// before any key is read.
+func (e *Engine) thanksKeys(ctx context.Context, ref, nonce string) ([]licence.Key, time.Time, error) {
+	if err := checkSale("paddle", ref); err != nil {
 		return nil, time.Time{}, err
 	}
+	want := []byte(ThanksHash(nonce))
 	var keys []licence.Key
 	var at time.Time
 	err := e.store.View(ctx, func(tx Tx) error {
-		seats, err := tx.Seats(source, ref)
+		keys, at = nil, time.Time{}
+		seats, err := tx.Seats("paddle", ref)
 		if err != nil {
 			return err
 		}
-		if len(seats) == 0 {
+		if len(seats) == 0 || seats[0].Thanks == "" || subtle.ConstantTimeCompare([]byte(seats[0].Thanks), want) != 1 {
 			return ErrNotFound
 		}
 		at = seats[0].At
@@ -354,6 +366,9 @@ func checkOrder(o Order) error {
 		if err := checkEmail(o.Email); err != nil {
 			return err
 		}
+	}
+	if o.Thanks != "" && (o.Source != "paddle" || !tokenHash(o.Thanks)) {
+		return fmt.Errorf("%w: the hash of the thank-you nonce", ErrInvalid)
 	}
 	return nil
 }

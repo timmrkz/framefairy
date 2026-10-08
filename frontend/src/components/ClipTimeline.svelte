@@ -864,6 +864,10 @@
     // A view moved by hand stays where it was put, wherever the playhead
     // goes. The crosshair, a double-click or another clip lets go of it.
     if (held) return;
+    // While it plays, the page turn below keeps the playhead in sight, and
+    // nothing else moves the view. This one got there first, at a tenth from
+    // the edge, and put the playhead a quarter in rather than a twentieth.
+    if (playing && loaded && viewFor === "") return;
     const shown = view.to - view.from;
     const middle = time > view.from + shown * 0.15 && time < view.from + shown * 0.85;
     const whole = Math.max(duration, loose);
@@ -1082,9 +1086,12 @@
       pick?: string;
     }[] = [];
     for (const m of marks) {
-      if (m.key === clip?.key || m.pick === clip?.key || m.end <= view.from || m.start >= view.to) {
-        continue;
-      }
+      // The chosen clip is drawn whole, so it has no mark. With none
+      // chosen every clip has one: compared to no clip at all, a written
+      // clip, which has no card to pick, matched, and with nothing chosen
+      // the clip timeline showed no written clip, only the ones on their way.
+      const chosen = !!clip && (m.key === clip.key || m.pick === clip.key);
+      if (chosen || m.end <= view.from || m.start >= view.to) continue;
       const pieces = wholeClip
         ? [
             { start: m.start, end: Math.min(m.end, wholeClip.start) },

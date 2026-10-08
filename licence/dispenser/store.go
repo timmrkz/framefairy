@@ -55,6 +55,10 @@ type Seat struct {
 	Seat   int    // from 1
 	Key    licence.Fingerprint
 	At     time.Time
+	// Thanks is the hash of the nonce the sale's checkout page made, the
+	// same on every seat of a sale. "" when there was none, and then the
+	// thank-you page never shows the keys.
+	Thanks string
 }
 
 // Mail is a letter waiting to be sent. It holds no address: the address is
