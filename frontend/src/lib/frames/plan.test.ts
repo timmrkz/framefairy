@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Samples } from "./mp4";
-import { AudioPlan, fade, FADE, heardAt, Keeper, Program, spans, stillFeed, VideoPlan } from "./plan";
+import { AudioPlan, fade, FADE, heardAt, Keeper, Program, Spliced, spans, stillFeed, VideoPlan } from "./plan";
 
 // A track the way a file holds one, without the file: n samples of `step`
 // ticks, key frames every `gop`, and, for a picture with B-frames, the
@@ -386,6 +386,95 @@ describe("AudioPlan", () => {
     close.extend(Infinity);
     expect(close.runs).toHaveLength(1);
     expect(close.runs[0].stretches).toHaveLength(2);
+  });
+});
+
+// I or O while a clip plays chooses the new clip, and what plays becomes
+// the episode, straight on from where the play is. Started over for it,
+// the play stood the picture and the sound still for a tenth of a second.
+describe("a program changed while it plays", () => {
+  const before = new Program(clip, false);
+  const episode = new Program([{ start: 0, end: 600 }], false);
+
+  test("goes on from the visit it is in to the end of the new program's piece", () => {
+    const s = Spliced.make(before, episode, 0, 59)!;
+    expect(s.visit(0)).toEqual({ v: 0, piece: 0, from: 0, start: 57, end: 600 });
+    expect(s.visit(1)).toBeNull();
+    // Straight on through what was the cut: 2.53 on the clock is 59.53, not
+    // the 60.31 the clip jumped to.
+    expect(s.locate(2.53)!.at).toBeCloseTo(59.53);
+    expect(s.locate(4)!.at).toBeCloseTo(61);
+    expect(s.locate(543)).toBeNull();
+    expect(s.pieces).toBe(episode.pieces);
+  });
+
+  test("from the next visit, jumps the cut first and goes straight on after it", () => {
+    const s = Spliced.make(before, episode, 1, 60.31)!;
+    expect(s.visit(0)).toEqual(before.visit(0));
+    expect(s.visit(1)!.from).toBeCloseTo(2.53);
+    expect(s.visit(1)!.end).toBe(600);
+    expect(s.locate(2.53 + 1.86)!.at).toBeCloseTo(62.17);
+    expect(s.locate(2.53 + 3)!.at).toBeCloseTo(63.31);
+  });
+
+  test("into a clip, the clip's visits follow on the old clock", () => {
+    const s = Spliced.make(episode, before, 0, 58)!;
+    expect(s.visit(0)).toEqual({ v: 0, piece: 0, from: 0, start: 0, end: 59.53 });
+    expect(s.visit(1)!.from).toBeCloseTo(59.53);
+    expect(s.visit(1)!.start).toBe(60.31);
+    expect(s.locate(59.6)!.at).toBeCloseTo(60.38);
+    expect(s.toAfter(59.53)).toBeCloseTo(2.53);
+    // A moment the new program does not play cannot be gone on from.
+    expect(Spliced.make(episode, before, 0, 60)).toBeNull();
+  });
+
+  test("the picture draws on from the frame it is at, without starting a run over", () => {
+    const plan = new VideoPlan(video, frame, before, 1);
+    plan.extend(5);
+    const runs = plan.runs.length;
+    const was = plan.need(10)!;
+    const asked: { keep: number; grows: boolean }[] = [];
+    const s = Spliced.make(before, episode, 0, 59)!;
+    expect(plan.splice(s, 0, (run, keep, grows) => (asked.push({ keep, grows }), run.id === 0))).toBe(true);
+    // Everything up to the old end of the visit is drawn as it was, by the
+    // same run, so the decoder carries on.
+    expect(asked).toEqual([{ keep: 63 - 25, grows: true }]);
+    expect(plan.need(10)).toEqual(was);
+    expect(runs).toBeGreaterThan(1);
+    expect(plan.runs.length).toBe(1);
+    plan.extend(10);
+    // And on through what was the cut, a frame every 40 ms.
+    const shown: string[] = [];
+    for (let k = 36; k <= 42; k++) shown.push(shownAt(plan.need(k)!.rank).toFixed(2));
+    expect(shown).toEqual(["59.44", "59.48", "59.52", "59.56", "59.60", "59.64", "59.68"]);
+    expect(plan.need(42)!.run).toBe(0);
+    expect(plan.at(42)).toBeCloseTo(2.68);
+    // To the end of the episode, its last frame the last one drawn.
+    expect(plan.finished).toBe(true);
+    expect(shownAt(plan.need(plan.lastK)!.rank)).toBeCloseTo(599.96);
+  });
+
+  test("a decoder that went past what it was to draw leaves the plan as it was", () => {
+    const plan = new VideoPlan(video, frame, before, 1);
+    plan.extend(5);
+    const runs = plan.runs.map((r) => ({ ...r }));
+    expect(plan.splice(Spliced.make(before, episode, 0, 59)!, 0, () => false)).toBe(false);
+    expect(plan.program).toBe(before);
+    expect(plan.runs).toEqual(runs);
+  });
+
+  test("the sound goes on into the new program without a fade where it takes over", () => {
+    const opus = track(30001, 48000, 960, 1, { shift: -312 });
+    const s = Spliced.make(before, episode, 0, 59)!;
+    const at = 2 * 48000;
+    const plan = new AudioPlan(opus, 48000, s, at / 48000);
+    plan.extend(10);
+    const [st] = plan.runs[0].stretches;
+    expect([st.from, st.out]).toEqual([59 * 48000, at]);
+    expect(fade(at, st.pieceOut, st.pieceEnd, 48000)).toBe(1);
+    // Straight on: no stretch after it and no cut at 59.53.
+    expect(plan.runs.flatMap((r) => r.stretches)).toHaveLength(1);
+    expect(st.to).toBe(600 * 48000);
   });
 });
 

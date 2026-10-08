@@ -275,7 +275,13 @@ click while it plays puts the playhead where it landed in that frame and
 goes on from there, the clip's or the episode's by where that is, a click
 across the clip's edge as well. A clip's pieces changing while it plays, a cut
 made, moved or put back, or loop switched on or off, goes on from the
-playhead on what the clip is now.
+playhead on what the clip is now. Choosing a new clip with I or O while a
+clip plays makes the episode what plays, straight on, and the play goes
+into it without stopping: the new program takes over a quarter of a
+second ahead of the sound heard, see `Spliced` in `lib/frames/plan.ts`.
+The picture's decoder carries on, and only the sound from there is decoded
+again. Within about a quarter of a second of a cut, the clip jumps that
+cut as it was about to, and the episode goes on straight after it.
 
 The sound goes on while the app is behind another window. macOS stops the
 page's animation frames there, and the frames are what fed the sound, a

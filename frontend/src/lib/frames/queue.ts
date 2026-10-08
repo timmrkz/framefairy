@@ -37,6 +37,7 @@ import {
   heardAt,
   Keeper,
   Program,
+  Spliced,
   spans,
   stillFeed,
   VideoPlan,
@@ -106,6 +107,10 @@ const SOUND_AHEAD = 1;
 // How far ahead the sound is fed while the page's frames stop, behind
 // another window, where a timer may run only once a second, see keepOn.
 const SOUND_BEHIND = 3;
+// How far ahead of the sound heard a program changed while it plays takes
+// over, seconds, see splice. The sound from there on is decoded again, and
+// it has to be read and decoded before it is heard.
+const SPLICE_LEAD = 0.25;
 // Sound decoded before a play starts, seconds.
 const SOUND_FIRST = 0.15;
 // How far ahead of the sound card's clock a play's first sound is put,
@@ -410,6 +415,9 @@ type Slot = {
   // The rank of the first frame its run draws, so the frames before it are
   // not counted as coming.
   firstRank: number;
+  // Fed a frame shown after the last one its run draws, which the Go
+  // side's decoders drop, so the run cannot be made longer, see splice.
+  past: boolean;
 };
 
 // Paused with nothing prepared, paused with a cue, starting a play until
@@ -493,7 +501,9 @@ export class FrameQueue {
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
   private m0 = 0;
-  private sources = new Set<AudioBufferSourceNode>();
+  // What is scheduled on the sound card, and where on the program each
+  // stretch begins and how long it is, in samples.
+  private sources = new Map<AudioBufferSourceNode, { out: number; length: number }>();
   private pending: Chunk | null = null;
   private unscheduled: Chunk[] = [];
   private soundRun: AudioRun | null = null;
@@ -609,6 +619,7 @@ export class FrameQueue {
       coming: 0,
       ready: [],
       flushing: false,
+      past: false,
       firstRank: 0,
     };
     slot.decoder = this.pictures(slot, config);
@@ -733,6 +744,7 @@ export class FrameQueue {
   setProgram(pieces: Piece[] | null, loop: boolean) {
     if (this.relooped(pieces, loop)) return;
     if (!this.want(pieces, loop)) return;
+    if (this.state === "playing" && this.splice()) return;
     if (this.state === "playing" || this.state === "starting") this.start(this.at);
     else if (this.state === "cued" || this.vplan) this.seek(this.at);
   }
@@ -748,8 +760,10 @@ export class FrameQueue {
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
     if (this.vplan && this.built) {
+      // The plan may play a program spliced into this one, on its own clock.
+      const course = this.vplan.program;
       if (loop) this.built.loopOn();
-      else this.built.loopOff(this.reached);
+      else this.built.loopOff(course instanceof Spliced ? course.toAfter(this.reached) : this.reached);
       if (!this.vplan.relooped() || (this.aplan && !this.aplan.relooped())) return false;
     } else {
       // Not worked out yet: the play starting builds it from what is wanted.
@@ -770,6 +784,99 @@ export class FrameQueue {
     this.wanted = { pieces: copy, loop };
     this.built = null;
     return true;
+  }
+
+  // A new program while the play plays: the play goes on into it, rather
+  // than starting over from the playhead, which stood the picture and the
+  // sound still for a tenth of a second. Choosing a new clip with I or O
+  // while a clip plays did it: what plays becomes the episode, straight on.
+  //
+  // The new program takes over SPLICE_LEAD ahead of the sound heard, see
+  // Spliced. The picture's decoder carries on with the visit the play is
+  // in, now as long as the new program has it. Where that decoder has gone
+  // past the end of the visit already, the next visit is the one that
+  // carries on, so the play still jumps the cut it was about to jump, and
+  // goes on into the new program after it. The sound is decoded again from
+  // where the new program takes over, and what is scheduled after that is
+  // taken off the sound card. Says whether it could. Where it cannot, the
+  // play starts again from the playhead.
+  private splice(): boolean {
+    const plan = this.vplan;
+    if (!plan || this.c0 === null || !this.movie) return false;
+    const before = plan.program;
+    const after = this.program;
+    const rate = this.sampleRate;
+    const heard = this.position(performance.now());
+    const lead = Math.round((heard + SPLICE_LEAD) * rate) / rate;
+    const here = before.locate(lead);
+    const now = here && before.visit(here.v);
+    // The new program has to play what is heard from where it takes over.
+    // A cut made over it starts the play again.
+    const first = now && Spliced.make(before, after, here.v, here.at);
+    if (!here || !now || !first) return false;
+    for (const w of [here.v, here.v + 1]) {
+      const visit = w === here.v ? now : before.visit(w);
+      if (!visit) return false;
+      // Going on from the next visit plays the rest of this one as it was,
+      // so the new program has to play all of it too.
+      if (w !== here.v && first.visit(here.v)!.end < now.end) return false;
+      const from = w === here.v ? lead : visit.from;
+      const next = w === here.v ? first : Spliced.make(before, after, w, visit.start);
+      if (!next) return false;
+      // The sound before the change is the same on both programs, so it
+      // must not have faded out for the end of the visit on either.
+      const merged = next.visit(w)!;
+      const ends = Math.min(visit.end - visit.start, merged.end - merged.start) + visit.from;
+      if (w === here.v && ends - from < FADE) continue;
+      const spliced = plan.splice(next, w, (run, keep, grows) => {
+        const slot = this.slotOf(run.id);
+        if (!slot?.keeper) return true;
+        if (slot.keeper.at > keep) return false;
+        return !grows || (!slot.flushing && !slot.past);
+      });
+      if (!spliced) continue;
+      // The decoders of runs that are no longer in the plan let go.
+      for (const slot of this.slots) {
+        if (slot.run && slot.run.id >= 0 && plan.runs[slot.run.id] !== slot.run) this.release(slot);
+      }
+      plan.extend(heard + READ_AHEAD);
+      if (this.aplan && this.sound && this.soundDecoder) {
+        const at = Math.round(from * rate);
+        this.cutSound(at);
+        this.soundDecoder.restart();
+        this.soundFed = [];
+        this.soundRunDone.clear();
+        this.soundRun = null;
+        this.soundNext = 0;
+        this.aplan = new AudioPlan(this.sound.samples, this.sound.sampleRate, next, at / rate);
+        this.aplan.extend(heard + READ_AHEAD);
+        this.soundReach = at;
+        this.soundDone = false;
+      }
+      this.readAhead();
+      this.pump();
+      this.pumpSound();
+      return true;
+    }
+    return false;
+  }
+
+  // Takes the sound from sample m of the program on off the sound card,
+  // and out of the stretch still being put together.
+  private cutSound(m: number) {
+    const rate = this.sampleRate;
+    for (const [src, c] of this.sources) {
+      if (c.out + c.length <= m) continue;
+      try {
+        src.stop(c.out >= m ? 0 : this.c0! + (m - this.m0) / rate);
+      } catch {}
+      if (c.out >= m) {
+        src.disconnect();
+        this.sources.delete(src);
+      }
+    }
+    if (this.pending && this.pending.out >= m) this.pending = null;
+    else if (this.pending) this.pending.length = Math.min(this.pending.length, m - this.pending.out);
   }
 
   // The playhead to a moment of the episode, and with a program, what play
@@ -1046,7 +1153,7 @@ export class FrameQueue {
     this.ticket++;
     cancelAnimationFrame(this.frameRequest);
     clearTimeout(this.suspendTimer);
-    for (const src of this.sources) {
+    for (const src of this.sources.keys()) {
       try {
         src.stop();
       } catch {}
@@ -1077,6 +1184,7 @@ export class FrameQueue {
     const idle = slot.flushing && slot.fed.size === 0;
     slot.fed.clear();
     slot.flushing = false;
+    slot.past = false;
     if (slot.decoder.state === "configured" && !idle) slot.decoder.reset();
   }
 
@@ -1277,7 +1385,7 @@ export class FrameQueue {
         }
       }
     }
-    const there = this.program.locate(pos);
+    const there = plan.program.locate(pos);
     if (there) this.at = there.at;
     this.emit({
       at: this.at,
@@ -1300,7 +1408,7 @@ export class FrameQueue {
 
   private end() {
     const plan = this.vplan!;
-    const last = this.program.pieces[this.program.pieces.length - 1];
+    const last = plan.program.pieces[plan.program.pieces.length - 1];
     this.state = "ended";
     this.at = last ? last.end : this.at;
     this.k = plan.lastK;
@@ -1419,6 +1527,7 @@ export class FrameQueue {
       slot.fed.set(ts, rank);
       const wanted = rank >= slot.firstRank && rank <= run.lastRank;
       if (wanted) slot.coming++;
+      else if (rank > run.lastRank) slot.past = true;
       slot.decoder.decode(ts, s.key[i] === 1, data, rank, wanted, slot.firstRank);
       slot.next++;
     }
@@ -1636,6 +1745,6 @@ export class FrameQueue {
       this.sources.delete(src);
       src.disconnect();
     };
-    this.sources.add(src);
+    this.sources.set(src, { out: c.out, length: c.length });
   }
 }

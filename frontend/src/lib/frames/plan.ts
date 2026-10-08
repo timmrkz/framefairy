@@ -122,6 +122,80 @@ export class Program {
   }
 }
 
+// What a plan plays: the visits one after the other, and where a position
+// is. A Program, or a Spliced one where the program changed while it played.
+export interface Course {
+  readonly pieces: Piece[];
+  visit(v: number): Visit | null;
+  locate(pos: number): { v: number; at: number } | null;
+}
+
+// A program changed while it plays, with the play going on into the new
+// one rather than starting over. The old one plays up to visit w, and visit
+// w goes on to the end of the new one's piece that holds a moment of it, m.
+// From there the new program's visits follow, each where the old program's
+// clock puts it, so a position means what it meant and the play goes on
+// where it is. Choosing a new clip while a clip plays makes the episode
+// what plays, straight on: the visit the play is in then goes on to the
+// end of the episode, and the cut after it is no longer jumped.
+export class Spliced implements Course {
+  private readonly merged: Visit;
+  // The new program's visit that holds m, and how far its clock is behind
+  // the old one's.
+  private readonly into: number;
+  private readonly shift: number;
+
+  private constructor(
+    readonly before: Course,
+    readonly after: Program,
+    readonly w: number,
+    was: Visit,
+    into: Visit,
+    m: number,
+  ) {
+    this.merged = { v: w, piece: was.piece, from: was.from, start: was.start, end: into.end };
+    this.into = into.v;
+    this.shift = was.from + (m - was.start) - (into.from + (m - into.start));
+  }
+
+  // Null where the new program does not play m, so it cannot be gone on
+  // into from there.
+  static make(before: Course, after: Program, w: number, m: number): Spliced | null {
+    const was = before.visit(w);
+    if (!was || m < was.start || m >= was.end) return null;
+    const there = after.locate(after.place(m));
+    if (!there || Math.abs(there.at - m) > 1e-9) return null;
+    const into = after.visit(there.v);
+    if (!into || into.end <= m) return null;
+    return new Spliced(before, after, w, was, into, m);
+  }
+
+  get pieces(): Piece[] {
+    return this.after.pieces;
+  }
+
+  visit(v: number): Visit | null {
+    if (v < this.w) return this.before.visit(v);
+    if (v === this.w) return this.merged;
+    const b = this.after.visit(this.into + (v - this.w));
+    return b && { ...b, v, from: b.from + this.shift };
+  }
+
+  locate(pos: number): { v: number; at: number } | null {
+    const m = this.merged;
+    if (pos < m.from) return this.before.locate(pos);
+    if (pos < m.from + (m.end - m.start)) return { v: this.w, at: m.start + (pos - m.from) };
+    const l = this.after.locate(pos - this.shift);
+    return l && { v: this.w + (l.v - this.into), at: l.at };
+  }
+
+  // A position on this clock on the new program's own, for a loop switched
+  // on the new program while this plays.
+  toAfter(pos: number): number {
+    return pos - this.shift;
+  }
+}
+
 // The key frame decoding has to start from for the frame shown rank-th:
 // the last one, in decode order, before that frame, that is not shown
 // after it.
@@ -161,8 +235,18 @@ export type Run = {
 
 // One visit on the grid: its points kFirst to kLast draw the frames of
 // rank first to first + kLast - kFirst, one point a frame. Where on the
-// program its points begin and where the visit ends.
-type Span = { visit: Visit; run: number; kFirst: number; kLast: number; first: number; from: number; to: number };
+// program its points begin and where the visit ends, and the last sample
+// its frames need, in decode order.
+type Span = {
+  visit: Visit;
+  run: number;
+  kFirst: number;
+  kLast: number;
+  first: number;
+  from: number;
+  to: number;
+  last: number;
+};
 
 // The hair before a piece's end that the piece-end frame holds. A frame
 // that begins within it would be on screen for no time at all.
@@ -181,12 +265,57 @@ export class VideoPlan {
     readonly samples: Samples,
     // How long a frame lasts, for how far ahead a decoder starts.
     readonly frame: number,
-    readonly program: Program,
+    public program: Course,
     readonly p0: number,
   ) {
     const first = program.locate(p0);
     this.nextVisit = first ? first.v : 0;
     if (!first) this.done = true;
+  }
+
+  // The program changed while this plays, from visit w on, see Spliced.
+  // What was worked out before visit w holds. Visit w's span is made as
+  // long as the new visit w, so the decoder drawing it carries on, and
+  // what came after it is worked out again. Before anything changes,
+  // holds is asked whether the decoder of visit w's run can carry on: the
+  // last grid point drawn as it was, and whether there are frames to come
+  // after the ones it was going to draw. Says whether it was spliced.
+  splice(next: Course, w: number, holds: (run: Run, keep: number, grows: boolean) => boolean): boolean {
+    const i = this.spans.findIndex((sp) => sp.visit.v >= w);
+    const span = i >= 0 ? this.spans[i] : null;
+    if (span && span.visit.v !== w) return false;
+    if (!span) {
+      // Nothing from visit w on is worked out yet.
+      this.program = next;
+      this.nextVisit = Math.min(this.nextVisit, w);
+      this.done = false;
+      return true;
+    }
+    const visit = next.visit(w);
+    if (!visit) return false;
+    const s = this.samples;
+    const moment = visit.start + (span.from - visit.from);
+    const b = Math.max(span.first, rankAt(s, Math.max(moment, visit.end - HAIR)));
+    const was = span.first + (span.kLast - span.kFirst);
+    const run = this.runs[span.run];
+    if (!holds(run, span.kFirst + (Math.min(b, was) - span.first), b > was)) return false;
+    this.program = next;
+    this.spans.length = i + 1;
+    this.runs.length = span.run + 1;
+    span.visit = visit;
+    span.to = visit.from + (visit.end - visit.start);
+    span.kLast = span.kFirst + (b - span.first);
+    let last = s.order[span.first];
+    for (let r = span.first; r <= b; r++) if (s.order[r] > last) last = s.order[r];
+    span.last = last;
+    run.kLast = span.kLast;
+    run.lastRank = b;
+    run.last = last;
+    for (const sp of this.spans) if (sp.run === run.id) run.last = Math.max(run.last, sp.last);
+    this.nextK = span.kLast + 1;
+    this.nextVisit = w + 1;
+    this.done = false;
+    return true;
   }
 
   // Where a frame of the episode begins, in seconds.
@@ -301,7 +430,7 @@ export class VideoPlan {
     const key = keyBefore(s, a);
     let last = s.order[a];
     for (let r = a; r <= b; r++) if (s.order[r] > last) last = s.order[r];
-    const span: Span = { visit, run: 0, kFirst, kLast, first: a, from, to };
+    const span: Span = { visit, run: 0, kFirst, kLast, first: a, from, to, last };
     const run = this.runs[this.runs.length - 1];
     if (run && run.key <= key && key <= run.last + 1 && a >= run.lastRank) {
       run.last = Math.max(run.last, last);
@@ -367,6 +496,12 @@ export class Keeper {
     this.k = run.kFirst;
   }
 
+  // The grid point it waits for a frame for. A frame shown after that
+  // point's frame has not been offered yet.
+  get at(): number {
+    return this.k;
+  }
+
   // Whether the frame of this rank is drawn by this run.
   offer(rank: number): boolean {
     // A decoder that is a whole piece late is behind what the plan still
@@ -424,7 +559,7 @@ export class AudioPlan {
   constructor(
     readonly samples: Samples,
     rate: number,
-    readonly program: Program,
+    readonly program: Course,
     readonly p0: number,
     // How much before a run's first sample is fed, in seconds. Opus asks
     // for 80 ms, and AAC for one frame, so both get 100.
