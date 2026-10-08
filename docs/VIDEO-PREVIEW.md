@@ -116,7 +116,12 @@ opens and stopped when it closes.
   [PACKAGING.md](PACKAGING.md) before the first release. It speaks
   `internal/framewire` with the Go side, `engine.EpisodeFrames`.
 - It keeps cursors, each the file open with its index read and a picture
-  decoder ready, with the graphics chip where there is one. A stream the
+  decoder ready, with the graphics chip where there is one. The chip only
+  decodes: the frame is brought out as it is, and one chain on the
+  processor scales it to the size of the canvas, the same chain on every
+  system and for every file. Scaling on the chip as well was a second
+  chain with a fallback, and the chip on Tim's Mac refused it for an HEVC
+  file with 10-bit colour. A stream the
   Go side opens takes a cursor that a stream before it has finished with
   and only seeks it, so a jump starts no program and reads no index. Up
   to three are kept. Sound still comes from the ffmpeg program and moves

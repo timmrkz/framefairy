@@ -88,12 +88,9 @@ func withSaid(err error) error {
 type decoder struct {
 	path     string
 	hardware *astiav.HardwareDeviceContext
-	// Set once scaling on the graphics chip has failed or given nothing,
-	// so every cursor scales on the processor from then on.
-	noChipScale atomic.Bool
-	mu          sync.Mutex
-	out         *bufio.Writer
-	cursors     map[uint32]*cursor
+	mu       sync.Mutex
+	out      *bufio.Writer
+	cursors  map[uint32]*cursor
 }
 
 // answer writes a record and hands it on at once, under the lock, so the
@@ -200,7 +197,9 @@ func (v *video) close() {
 }
 
 // openDecoder opens a decoder for the picture, on the graphics chip where
-// the system has one and it takes the file.
+// the system has one and it takes the file. Where it does not, ffmpeg
+// decodes on the processor by itself, and either way the frame comes out
+// the same, see cursor.frame.
 func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 	codec := astiav.FindDecoder(v.stream.CodecParameters().CodecID())
 	if codec == nil {
@@ -243,23 +242,22 @@ type cursor struct {
 	id   uint32
 	work chan func()
 
-	v        *video
-	pkt      *astiav.Packet
-	decoded  *astiav.Frame
+	v       *video
+	pkt     *astiav.Packet
+	decoded *astiav.Frame
+	// A frame decoded on the graphics chip, brought out to memory.
+	brought  *astiav.Frame
 	filtered *astiav.Frame
 	// The chain that makes a decoded frame the size of the canvas, 8-bit
 	// and in full range, the same as engine.PreviewFrames asks of ffmpeg.
-	graph    *astiav.FilterGraph
-	src      *astiav.BuffersrcFilterContext
-	sink     *astiav.BuffersinkFilterContext
-	graphGPU bool
-	width    int
-	height   int
-	from     float64
-	sentEOF  bool
-	graphEOF bool
-	// Frames into the chain since it was built, and frames out of it.
-	fed, got  int
+	graph     *astiav.FilterGraph
+	src       *astiav.BuffersrcFilterContext
+	sink      *astiav.BuffersinkFilterContext
+	width     int
+	height    int
+	from      float64
+	sentEOF   bool
+	graphEOF  bool
 	ended     bool
 	failedWhy string
 }
@@ -273,7 +271,7 @@ func (c *cursor) run() {
 
 func (c *cursor) free() {
 	c.freeGraph()
-	for _, f := range []*astiav.Frame{c.decoded, c.filtered} {
+	for _, f := range []*astiav.Frame{c.decoded, c.brought, c.filtered} {
 		if f != nil {
 			f.Free()
 		}
@@ -319,6 +317,7 @@ func (c *cursor) open(from float64, w, h int) {
 		c.v = v
 		c.pkt = astiav.AllocPacket()
 		c.decoded = astiav.AllocFrame()
+		c.brought = astiav.AllocFrame()
 		c.filtered = astiav.AllocFrame()
 	}
 	if err := c.seek(from); err != nil {
@@ -345,16 +344,6 @@ func (c *cursor) seek(from float64) error {
 	flushDecoder(c.v.dec)
 	c.sentEOF, c.graphEOF = false, false
 	return nil
-}
-
-// offChip stops scaling on the graphics chip, for this cursor and every
-// other, and starts again from where the cursor was opened, so no frame
-// the chip swallowed is missed.
-func (c *cursor) offChip(why string) error {
-	fmt.Fprintln(os.Stderr, "scaling on the graphics chip "+why+", scaling on the processor from now on")
-	c.d.noChipScale.Store(true)
-	c.freeGraph()
-	return c.seek(c.from)
 }
 
 // next answers up to n frames from where the cursor is, none that starts
@@ -396,7 +385,6 @@ func (c *cursor) frame() (float64, []byte, error) {
 		if c.graph != nil {
 			err := c.sink.GetFrame(c.filtered, astiav.NewBuffersinkFlags())
 			if err == nil {
-				c.got++
 				at := float64(c.filtered.Pts()) * c.sink.TimeBase().Float64()
 				body, berr := c.filtered.Data().Bytes(1)
 				c.filtered.Unref()
@@ -409,12 +397,6 @@ func (c *cursor) frame() (float64, []byte, error) {
 				return 0, nil, astiav.ErrEof
 			}
 			if !errors.Is(err, astiav.ErrEagain) {
-				if c.graphGPU {
-					if err := c.offChip(fmt.Sprintf("failed, %v", withSaid(err))); err != nil {
-						return 0, nil, err
-					}
-					continue
-				}
 				return 0, nil, withSaid(fmt.Errorf("the picture could not be scaled: %w", err))
 			}
 		}
@@ -426,6 +408,9 @@ func (c *cursor) frame() (float64, []byte, error) {
 				c.decoded.Unref()
 				continue
 			}
+			if err := c.bringOut(); err != nil {
+				return 0, nil, err
+			}
 			if c.graph == nil {
 				if err := c.makeGraph(); err != nil {
 					c.decoded.Unref()
@@ -434,24 +419,9 @@ func (c *cursor) frame() (float64, []byte, error) {
 			}
 			if err := c.src.AddFrame(c.decoded, astiav.NewBuffersrcFlags()); err != nil {
 				c.decoded.Unref()
-				if c.graphGPU {
-					if err := c.offChip(fmt.Sprintf("failed, %v", withSaid(err))); err != nil {
-						return 0, nil, err
-					}
-					continue
-				}
 				return 0, nil, withSaid(fmt.Errorf("the picture could not be scaled: %w", err))
 			}
 			c.decoded.Unref()
-			c.fed++
-			// On a Mac whose graphics chip is a virtual one the chip's
-			// scaler takes frames and gives none back, without an error,
-			// the way the ffmpeg program found it, see engine.PreviewFrames.
-			if c.graphGPU && c.got == 0 && c.fed >= 8 {
-				if err := c.offChip("gave no frame for eight"); err != nil {
-					return 0, nil, err
-				}
-			}
 		case errors.Is(err, astiav.ErrEof):
 			if c.graph == nil {
 				return 0, nil, astiav.ErrEof
@@ -500,37 +470,35 @@ func (c *cursor) feed() error {
 	}
 }
 
-// makeGraph builds the chain for the frames the decoder makes: on the
-// graphics chip where they are there, scaled, made 8-bit and brought out,
-// and on the processor otherwise. The same chains as engine.PreviewFrames.
-func (c *cursor) makeGraph() error {
-	c.fed, c.got, c.graphGPU = 0, 0, false
-	cpu := fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height)
+// bringOut brings a frame the graphics chip decoded out to memory as it
+// is, NV12 or P010, with its moment and its colour, so the chain after it
+// is the same for every frame on every system. The chip only decodes.
+// Scaling there too, scale_vt, was a second chain beside this one, with a
+// fallback for a chip that would not take it, which Tim's Mac did not for
+// start.mp4, HEVC with 10-bit colour, and a virtual Mac does not at all.
+// Under one engine there is one chain. Plan row 2.156.
+func (c *cursor) bringOut() error {
 	if c.decoded.PixelFormat() != astiav.PixelFormatVideotoolbox {
-		return c.tryGraph(cpu, false)
-	}
-	if c.d.noChipScale.Load() {
-		return c.tryGraph("hwdownload,format=nv12|p010le,"+cpu, true)
-	}
-	// On the graphics chip first. Where its scaler will not take the
-	// frames, they are brought out as they are and scaled on the
-	// processor, the way the ffmpeg program falls back too.
-	gpuErr := c.tryGraph(fmt.Sprintf("scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,scale=out_range=pc,format=yuv420p", c.width, c.height), true)
-	if gpuErr == nil {
-		c.graphGPU = true
 		return nil
 	}
-	fmt.Fprintln(os.Stderr, "scaling on the graphics chip failed, scaling on the processor:", gpuErr)
-	c.d.noChipScale.Store(true)
-	if err := c.tryGraph("hwdownload,format=nv12|p010le,"+cpu, true); err != nil {
-		return fmt.Errorf("%w, and on the graphics chip %v", err, gpuErr)
+	err := c.decoded.TransferHardwareData(c.brought)
+	if err == nil {
+		err = copyFrameProps(c.brought, c.decoded)
 	}
+	c.decoded.Unref()
+	if err != nil {
+		c.brought.Unref()
+		return withSaid(fmt.Errorf("the picture could not be brought off the graphics chip: %w", err))
+	}
+	c.decoded, c.brought = c.brought, c.decoded
 	return nil
 }
 
-// tryGraph builds one chain, hardware says the frames come from the
-// graphics chip.
-func (c *cursor) tryGraph(chain string, hardware bool) error {
+// makeGraph builds the chain for the frames the decoder makes: scaled to
+// the size of the canvas, 8-bit and in full range, the same as
+// engine.PreviewFrames asks of the ffmpeg program on the processor.
+func (c *cursor) makeGraph() error {
+	chain := fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height)
 	lastSaid.Store("")
 	g := astiav.AllocFilterGraph()
 	if g == nil {
@@ -550,9 +518,6 @@ func (c *cursor) tryGraph(chain string, hardware bool) error {
 	}
 	p := astiav.AllocBuffersrcFilterContextParameters()
 	defer p.Free()
-	if hardware {
-		p.SetHardwareFramesContext(c.decoded.HardwareFramesContext())
-	}
 	p.SetWidth(c.decoded.Width())
 	p.SetHeight(c.decoded.Height())
 	p.SetPixelFormat(c.decoded.PixelFormat())
@@ -580,13 +545,6 @@ func (c *cursor) tryGraph(chain string, hardware bool) error {
 	inputs.SetNext(nil)
 	if err := g.Parse(chain, inputs, outputs); err != nil {
 		return fail("its chain", err)
-	}
-	if hardware {
-		for _, f := range g.Filters() {
-			if f.Filter().Flags().Has(astiav.FilterFlagHardwareDevice) {
-				f.SetHardwareDeviceContext(c.d.hardware)
-			}
-		}
 	}
 	if err := g.Configure(); err != nil {
 		return fail("its chain", err)
