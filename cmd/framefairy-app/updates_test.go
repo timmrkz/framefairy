@@ -133,13 +133,23 @@ func (cs *channelServer) publicKey() string {
 
 // An updating as the app makes it, reading from the server above, and
 // what it has sent so far. The states are sent from the updating's own
-// goroutines, so they are read through sent, under the same lock.
+// goroutines, so they are read through sent, under the same lock. It is a
+// build made on the Mac, with nothing in updates.json.
 func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func() []UpdateState) {
+	t.Helper()
+	return testUpdating(t, cs, busy, "", "")
+}
+
+// testUpdating is newTestUpdating for a build from the channel own, or
+// made on the Mac when own is empty, with stored in updates.json, picked
+// by a run before.
+func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string) (*updating, func() []UpdateState) {
 	t.Helper()
 	var mu sync.Mutex
 	var sent []UpdateState
-	picked := ""
+	picked := stored
 	c := &updating{
+		own:  own,
 		busy: func() bool { return busy },
 		emit: func(s UpdateState) {
 			mu.Lock()
@@ -306,6 +316,9 @@ func TestTheRunningBuildIsCurrent(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", runningVersion(), "main"})
 	c, _ := newTestUpdating(t, cs, false)
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
 	c.check()
 	if s := c.State(); s.Phase != "current" || s.Next != "" || s.Checked.IsZero() {
 		t.Errorf("%+v", s)
@@ -320,6 +333,9 @@ func TestTheRunningBuildIsCurrent(t *testing.T) {
 func TestAFailedCheckSaysWhy(t *testing.T) {
 	cs := newChannelServer(t)
 	c, _ := newTestUpdating(t, cs, false)
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
 	c.check()
 	s := c.State()
 	if s.Phase != "failed" || !strings.HasPrefix(s.Problem, "The channel list is not readable") || s.Checked.IsZero() {
@@ -415,7 +431,7 @@ func TestUpdatesFromEverywhereAtOnce(t *testing.T) {
 func TestFollowRefusesWhatIsNotAChannel(t *testing.T) {
 	cs := newChannelServer(t)
 	c, _ := newTestUpdating(t, cs, false)
-	for _, bad := range []string{"../x", "pr-", "pr-0", "Main", "pr-18 "} {
+	for _, bad := range []string{"", "../x", "pr-", "pr-0", "Main", "pr-18 "} {
 		if err := c.Follow(bad); err == nil {
 			t.Errorf("followed %q", bad)
 		}
@@ -664,17 +680,14 @@ func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 	}
 }
 
-// A build made on the Mac looks regularly from the moment a channel is
-// picked in it, as a build from a channel does from the start, and goes on
-// looking while a build is ready. It only looked when a channel was picked
-// or Check clicked, so once a build was ready it never heard of a newer
-// one.
-func TestAPickedChannelIsLookedAtRegularly(t *testing.T) {
+// The regular looks go on while a build is ready, and the newer build
+// they find takes its place without anybody clicking anything.
+func TestARegularLookReplacesTheBuildReady(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
-	c.every = func(UpdateState) time.Duration { return 20 * time.Millisecond }
+	c.next = func(UpdateState) time.Duration { return 20 * time.Millisecond }
 	_ = c.Follow("main")
 	waitFor(t, c, "ready with main.5", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
@@ -704,4 +717,118 @@ func TestABuildBeingPutInPlaceStays(t *testing.T) {
 		t.Errorf("the build going in place was removed: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(first)) })
+}
+
+// A pull request followed that has left the list is closed, and the state
+// says so in one place: the phase is gone whenever gone is set. Reading
+// the list for the page used to set gone and leave the phase as it was,
+// so after a restart a build made on the Mac showed the pull request
+// closed in the list and Not checked yet under it.
+func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	// Pull request 138 picked in a run before, as updates.json gives it
+	// back to a build from a channel after a restart. Nothing has started
+	// it looking, so the only read is the page asking for the channels.
+	c, _ := testUpdating(t, cs, false, "main", "pr-138")
+	cleanStaged(t, c)
+	c.refreshList()
+	if s := c.State(); s.Gone != "pr-138" || s.Phase != "gone" {
+		t.Errorf("after a restart the list says %q is gone and the phase is %q", s.Gone, s.Phase)
+	}
+
+	// A build that is ready, of a pull request that is then closed, is
+	// not installed on the way out while the page says it is closed.
+	was := runningApp
+	runningApp = func() string { return "/Applications/Frame Fairy.app" }
+	t.Cleanup(func() { runningApp = was })
+	var started int
+	c.install = func(string, string) error { started++; return nil }
+	_ = c.Follow("pr-20")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c.mu.Lock()
+	c.listed = time.Time{}
+	c.mu.Unlock()
+	c.refreshList()
+	s := c.State()
+	if s.Gone != "pr-20" || s.Phase != "gone" || s.Next != "" {
+		t.Errorf("closed while ready: %+v", s)
+	}
+	c.installOnQuit()
+	if started != 0 {
+		t.Error("a closed pull request's build went in on the way out")
+	}
+}
+
+// A build made on the Mac that follows nothing, asked to look from the app
+// menu, reads the list and still follows nothing. It said it was the
+// newest build of main.
+func TestFollowingNothingIsNeverUpToDate(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.checkNow()
+	if s := c.State(); s.Phase != "" || s.Follows != "" || s.Gone != "" || len(s.Channels) != 1 {
+		t.Errorf("%+v", s)
+	}
+}
+
+// A build made on the Mac starts out following nothing, whatever an
+// earlier build picked: Tim made one with make install and found it
+// following pull request 143, picked by a build before it, and offering
+// a Check that would never look by itself. It does not look when it
+// starts, and Check from the app menu has nothing to look for. Picking a
+// channel follows it fully: it looks at once, the newest build downloads,
+// and it goes on looking after that.
+func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-143", "0.3.0-pr143.2", "pr"})
+	c, _ := testUpdating(t, cs, false, "", "pr-143")
+	cleanStaged(t, c)
+	c.next = func(UpdateState) time.Duration { return 20 * time.Millisecond }
+	c.start()
+	c.check()
+	time.Sleep(200 * time.Millisecond)
+	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Phase != "" || cs.hits.Load() != 0 {
+		t.Errorf("started as %+v, the list read %d times", s, cs.hits.Load())
+	}
+	// The page lists the channels, and still nothing is followed.
+	c.refreshList()
+	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Gone != "" || s.Phase != "" || len(s.Channels) != 2 {
+		t.Errorf("with the list read: %+v", s)
+	}
+
+	if err := c.Follow("main"); err != nil {
+		t.Fatal(err)
+	}
+	s := waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	if s.Picked != "main" || s.Follows != "main" {
+		t.Errorf("ready as %+v", s)
+	}
+	read := cs.hits.Load()
+	deadline := time.Now().Add(10 * time.Second)
+	for cs.hits.Load() < read+3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("after the pick it looked %d times more, and stopped", cs.hits.Load()-read)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A build from a channel goes on following what was picked in a run
+// before, and looks for it as it starts.
+func TestABuildFromAChannelFollowsWhatWasPicked(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := testUpdating(t, cs, false, "main", "pr-20")
+	cleanStaged(t, c)
+	if s := c.State(); s.Picked != "pr-20" || s.Channel != "main" {
+		t.Errorf("started as %+v", s)
+	}
+	c.start()
+	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Next != "0.3.0-pr20.9" || s.Follows != "pr-20" {
+		t.Errorf("%+v", s)
+	}
 }
