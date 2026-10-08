@@ -81,7 +81,9 @@ removed. Nothing is prepared before the first play.
    clip are the frames the render takes, chosen by the same code, the
    sound is the sound the render takes, and the colours are what ffmpeg
    makes of the file's own tags. How those colours are shown on the
-   screen is decided once, by Tim, after the test in Colour.
+   screen is decided once, by Tim, after the test in Colour. An HDR
+   episode makes an HDR short, and the video preview shows its HDR as far
+   as the webview lets a canvas show it, see HDR.
 6. **A running play is never changed in place.** This is the rule from
    #155. A play runs one program, the clip's pieces or the episode
    straight on, from the moment it starts. A gesture that changes the
@@ -210,33 +212,78 @@ with 10-bit colour, HLG and Dolby Vision on top. A file says it is HDR in
 its tags: a transfer of `arib-std-b67` is HLG, `smpte2084` is PQ. The
 engine's probe already reads these tags.
 
-**Why it matters.** HDR numbers shown as if they were SDR look grey and
-flat, or blown out. Turning HDR into SDR is not a relabelling, it is a
-conversion, tone mapping, which squeezes the brighter highlights into
-the SDR range and gives some of them up on purpose.
-
 **What happens today.** Nothing is decided. The render copies the file's
 colour tags onto a short encoded in H.264 with 8-bit colour, so a short
 made from iPhone footage comes out as HDR-tagged video with too few bits
 for HDR, and players show it in different ways. The video preview shows
 whatever the decoder in use makes of it.
 
-**The two ways:**
+### The short: HDR in, HDR out
 
-| | The short in SDR | The short in HDR |
-| --- | --- | --- |
-| The short | converted to BT.709 by the standard tone mapping, the same as most editors do for social video | kept HLG, encoded as HEVC with 10-bit colour, which Instagram and YouTube accept from an iPhone |
-| The video preview | shows exactly the short, rule 5 holds | the webview cannot show HDR on every system, so the video preview shows a converted picture, and rule 5 breaks for these files |
-| The captions | their colour exact | their colour has to be mapped into HDR, and looks different on an HDR screen than on an SDR one |
-| On a phone with an HDR screen | standard brightness | the bright highlights of the original |
-| What it needs | zimg in our build of ffmpeg, a permissive licence, for the conversion | zimg too, for the video preview, and the HEVC encoder for the short |
+Decided by Tim. A short keeps the quality of its episode, and an HDR
+episode makes an HDR short. That is the rule of no colour changes.
 
-**Proposed:** the short in SDR. Everything the app shows is then exactly
-what is published, on every system and every phone, and the captions are
-the colour that was chosen. It goes against the rule of no colour
-changes, but an HDR picture cannot go into an SDR short unchanged, and
-the conversion is the smallest change there is, made by the standard
-formula. Tim decides before the colour step.
+- The short is HEVC with 10-bit colour and the episode's own transfer,
+  primaries and matrix, HLG stays HLG and PQ stays PQ. Instagram and
+  YouTube take HDR from an iPhone in this form.
+- The captions are drawn at the reference white for graphics in HDR,
+  BT.2408, 203 nits, so the caption colour looks on an HDR screen the way
+  it was chosen, and not glaring.
+- What the encoder for 10-bit HEVC is on Windows and Linux, where our
+  ffmpeg has no x265 because x265 is GPL, is a question for
+  [PACKAGING.md](PACKAGING.md). On the Mac it is VideoToolbox.
+- An SDR episode makes an SDR short, as now.
+
+### The video preview: HDR as far as the screen is given to us
+
+Everything up to the screen can carry HDR, and nothing in our own code
+stops it:
+
+- **ffmpeg** decodes the whole picture, every bit of it.
+- **The frames** are only bytes on their way from the decoder to the
+  interface. They can be 10-bit, or half floats, as easily as 8-bit. It
+  costs more bytes, see What it costs, not a limit.
+- **The screen**, an XDR display or an HDR monitor, can show brighter
+  than white, and the Mac, Windows and Linux all have ways to ask for it.
+
+The one link we do not own is the last: a canvas in the webview. The
+interface can only put pixels on screen through what the webview offers,
+and the webview decides whether a canvas may be brighter than white.
+WebKit makes that surface for its own `<video>` and for HDR images, and
+not yet for a canvas, as far as can be found:
+
+- **A 2D canvas** ends at white everywhere. HDR for it is a proposal.
+- **A WebGPU canvas** has an extended mode for exactly this,
+  `toneMapping: "extended"` with half floats, where 1.0 is white and
+  brighter values are brighter light. Chrome shipped it, so the webview on
+  Windows has it. On the Mac, Safari took the setting and still showed
+  normal brightness in August 2025, and WebKit has since marked the work
+  as done. Whether the webview on Tim's macOS shows it is not known.
+  Linux's webview has nothing of the kind yet.
+
+So the video preview draws on a WebGPU canvas, for every file, and asks
+for the extended mode:
+
+- ffmpeg converts each frame to half floats in which 1.0 is the reference
+  white of BT.2408 and the highlights go above it, and the interface
+  hands them to the canvas as they come. The colour is still ffmpeg's.
+  The conversion of HLG and PQ needs zimg in our build of ffmpeg, which
+  has a permissive licence.
+- Where the webview gives the extended mode and the screen is HDR, the
+  video preview shows the HDR short as it is.
+- Where it does not, the system squeezes everything above white, and the
+  video preview shows the HDR short as an SDR screen would show it.
+  Nothing in our code changes for that. It improves by itself the day a
+  webview gives more.
+- The first thing the colour step does is a test on Tim's Mac: one frame
+  of an iPhone file on the extended canvas, its sky or a lamp beside the
+  white of the interface. If it shines brighter, WebKit gives us HDR
+  today.
+
+A layer of our own beside the webview, drawn with Metal on the Mac, would
+show HDR whatever WebKit does. It is the one way left if the test fails
+and HDR in the video preview matters enough, and it would be a path for
+the Mac alone, against rule 2. It is not planned.
 
 ## What is removed
 
@@ -276,8 +323,9 @@ next one starts.
    against ffmpeg's own conversion of the same frame, value by value, on
    files tagged BT.601, BT.709 and BT.2020, in video and full range, 8 and
    10 bit, and on files with no tags. Then the side-by-side test, and Tim
-   picks the look. HDR as Tim decided, in the video preview and the
-   render together.
+   picks the look. HDR in both: the test of the extended canvas on Tim's
+   Mac first, then the video preview on the WebGPU canvas and the HDR
+   short with its captions at the reference white.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.
@@ -288,9 +336,12 @@ next one starts.
 - **More work for the machine.** Every frame is copied from the decoder
   to the Go side and on to the interface, where WebKit's decoder handed
   it over inside the webview. At the size of the video preview that is
-  about 40 MB a second while playing, and about three times that once the
-  frames carry finished pixels in step 4. Activity Monitor and the marks
-  say whether it matters.
+  about 40 MB a second while playing. Finished pixels in half floats, for
+  HDR in step 4, are about 220 MB a second at 1280 by 720 and 30 frames a
+  second. Copying memory runs at several GB a second, so this is not a
+  limit on an M2 Max, and a 4K episode costs no more, because frames are
+  made at the size of the video preview. Activity Monitor and the marks
+  say whether it matters on smaller machines.
 - **A program of our own on ffmpeg's libraries.** The episode's decoder
   is code we keep, and make has to build ffmpeg's libraries as shared
   libraries as well as the program. It is still ffmpeg's decoding, only
