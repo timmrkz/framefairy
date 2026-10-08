@@ -552,6 +552,49 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	}
 }
 
+// A channel picked as the check before ends is looked for. A check asked
+// for while another ran only left word for that one to look again, and
+// the one running could already have read that there was nothing more,
+// so the pick waited in Checking until the next look, ten minutes later.
+// The test holds the first check where it has decided it is done, picks
+// another channel there, and only then lets it return.
+func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	// Nothing looks again by itself while the test runs.
+	c.next = func(UpdateState) time.Duration { return time.Hour }
+	decided, goOn := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	c.ended = func() {
+		once.Do(func() {
+			close(decided)
+			<-goOn
+		})
+	}
+	let := sync.OnceFunc(func() { close(goOn) })
+	t.Cleanup(let)
+	_ = c.Follow("main")
+	<-decided
+	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
+		t.Fatalf("the first check ended with %+v", s)
+	}
+	_ = c.Follow("pr-20")
+	// The pick has been heard: it ran a check of its own, or it left word
+	// for the one held.
+	waitFor(t, c, "the pick heard", func(s UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.again || s.Phase == "ready"
+	})
+	let()
+	waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	})
+}
+
 // Check reads the channel list at once, even while a download is waited
 // for, so a channel made a moment ago is on the list. It waited for the
 // check already running.
