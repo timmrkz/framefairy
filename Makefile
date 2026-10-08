@@ -90,7 +90,13 @@ export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 LDFLAGS := -extldflags=-mmacosx-version-min=$(MACOS_MIN)
+# The episode's decoder links ffmpeg's static libraries, and pkg-config
+# names some of them more than once, each library listing what it needs.
+# Apple's linker uses each once and warns about the rest, and the build
+# must print no warning.
+FRAMES_LDFLAGS := -extldflags '-mmacosx-version-min=$(MACOS_MIN) -Wl,-no_warn_duplicate_libraries'
 endif
+FRAMES_LDFLAGS ?= $(LDFLAGS)
 
 # The speech library is native code, so Go's C support must be on. Go never
 # downloads another toolchain behind your back, unless GOTOOLCHAIN is set
@@ -298,7 +304,7 @@ frames: modules
 ifneq ($(NOTOOLS),1)
 	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
-		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags '$(LDFLAGS)' -o $(FRAMES) ./cmd/framefairy-frames
+		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
