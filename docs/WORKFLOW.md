@@ -117,7 +117,12 @@ make run
 ```
 
 Several sessions can run at once, each on its own branch. Keep them to
-separate areas of the code, so the pull requests don't conflict.
+separate areas of the code, so the pull requests don't conflict. Each
+session works on one pull request at a time, and opens the next only
+once that one is merged or closed. Something you report that is not
+about its open pull request is logged as a row marked `[ ]` in
+[GUI-PLAN.md](GUI-PLAN.md) and taken up in turn, the oldest first unless
+you reorder them. See CLAUDE.md.
 
 ## CI
 
