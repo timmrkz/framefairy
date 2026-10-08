@@ -23,7 +23,7 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
-		t.Skip("FRAMEFAIRY_FRAMES names no framefairy-frames built with ffmpeg's libraries")
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
 	path := filepath.Join(t.TempDir(), "episode.mp4")
 	// Ten seconds at 25 frames a second with a key frame every two seconds,
@@ -108,7 +108,7 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
-		t.Skip("FRAMEFAIRY_FRAMES names no framefairy-frames built with ffmpeg's libraries")
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
 	path := filepath.Join(t.TempDir(), "episode.mp4")
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",

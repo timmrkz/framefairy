@@ -147,7 +147,24 @@ jobs:
       - name: System packages
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
-        run: sh scripts/ci-packages.sh ffmpeg
+        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
+      # The episode's decoder, which the tests and the walks play through,
+      # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
+      # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
+      # changes. The tests still take the system's ffmpeg from the PATH,
+      # because ours has no H.264 encoder on Linux, see TOOLS_FIRST.
+      - id: ffmpeg
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: The ffmpeg we ship
+        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: The episode's decoder
+        if: steps.needs.outputs.run == 'true'
+        run: make frames
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
       - name: Go tests
@@ -196,7 +213,24 @@ jobs:
       - name: System packages
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
-        run: sh scripts/ci-packages.sh ffmpeg
+        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
+      # The episode's decoder, which the tests and the walks play through,
+      # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
+      # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
+      # changes. The tests still take the system's ffmpeg from the PATH,
+      # because ours has no H.264 encoder on Linux, see TOOLS_FIRST.
+      - id: ffmpeg
+        if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: The ffmpeg we ship
+        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: The episode's decoder
+        if: steps.needs.outputs.run == 'true'
+        run: make frames
       # The version of Chromium the pinned Playwright was made for, with the
       # libraries it needs.
       - name: Chromium
@@ -309,6 +343,12 @@ jobs:
         run: |
           .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
           echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
+      # The episode's decoder is built against that ffmpeg's libraries,
+      # which pkg-config finds. A runner whose ffmpeg came from the cache
+      # installed nothing above.
+      - name: pkg-config, for the episode's decoder
+        if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
+        run: command -v pkg-config >/dev/null || brew install pkg-config
       - name: Build without warnings
         if: steps.needs.outputs.run == 'true'
         run: |
@@ -322,6 +362,7 @@ jobs:
       - name: Go tests
         if: steps.needsgo.outputs.run == 'true'
         run: |
+          make frames
           make unit 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
@@ -368,6 +409,9 @@ jobs:
         run: |
           brew install meson ninja pkg-config nasm cmake
           sh scripts/build-ffmpeg.sh .build/ffmpeg
+      - name: pkg-config, for the episode's decoder
+        if: steps.needs.outputs.run == 'true'
+        run: command -v pkg-config >/dev/null || brew install pkg-config
       - id: llama
         if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -298,7 +298,7 @@ frames: modules
 ifneq ($(NOTOOLS),1)
 	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
-		CGO_ENABLED=1 CGO_CFLAGS="-O2 -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags '$(LDFLAGS)' -o $(FRAMES) ./cmd/framefairy-frames
+		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags '$(LDFLAGS)' -o $(FRAMES) ./cmd/framefairy-frames
 endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
@@ -355,7 +355,7 @@ motion: frontend/node_modules/.package-lock.json
 # file, and only that. See scripts/changed.sh for what each kind of file
 # runs. CI still runs everything.
 changed:
-	@TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
 test: unit fuzz interface walks
 
@@ -388,7 +388,7 @@ STEPS ?=
 WALKERS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running
