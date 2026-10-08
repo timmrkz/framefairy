@@ -735,7 +735,23 @@ with, offline, before every render.
   one, and nothing else: no field, no button, nothing that reads as a
   step still to take. The key itself is never shown in the app. It is
   long and means nothing to a person, and the key ID is what names it,
-  here, on the thank-you page and to support. The trash can beside it
+  here, on the thank-you page and to support. A key ID is set in one
+  width on a block of its own, the way code is set in a README, in the
+  grey of a line under a name. The kept key's is a button: a click puts
+  the key ID on the clipboard, for a mail to support, and the copy mark
+  on it turns into a check for a moment. The key itself is never read
+  back out of the keychain. Nothing a customer does needs it: there is no
+  activation and no machine to move a licence from, so a new Mac takes
+  the same Unlock in the same letter, and the lost-key page sends the
+  letter again. Reading it would also have the keychain ask for the
+  Mac's password, from every build it does not know yet. That block wears
+  the beam from `Busy.svelte`, the same beam, turned down and given
+  `seldom`: the comet comes round once every nine seconds, springing
+  away and easing in, only ever forward, and fading out still going,
+  and the rim rests between, because it is what
+  was bought and nothing is running. Running all the time it was too
+  busy. It is what was bought: a first try with a light of its own looked like
+  nothing else in the app, and Tim saw it. The trash can beside it
   removes the key, after asking, and the field comes back.
 - **The Unlock link.** The thank-you page and the letter carry, for
   each key, an Unlock Frame Fairy button, a link

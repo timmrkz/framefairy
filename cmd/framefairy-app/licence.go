@@ -69,6 +69,25 @@ func (s *FrameFairy) SaveLicence(key string) (LicenceState, error) {
 	return s.Licence(), nil
 }
 
+// Copy puts text on the clipboard: the key ID, which is what support asks
+// for. The key itself is never read back out of the keychain, because
+// nothing a customer does needs it: it is in the letter it came in, and
+// the lost-key page sends it again.
+func (s *FrameFairy) Copy(text string) error {
+	if !s.copyText(text) {
+		return errors.New("the clipboard did not take it")
+	}
+	return nil
+}
+
+// copyText puts text on the clipboard. Tests put their own in its place.
+func (s *FrameFairy) copyText(text string) bool {
+	if s.clipboard != nil {
+		return s.clipboard(text)
+	}
+	return s.app != nil && s.app.Clipboard.SetText(text)
+}
+
 // TakeLicenceLink hands over what became of the last link, once.
 func (s *FrameFairy) TakeLicenceLink() LicenceLink {
 	s.mu.Lock()
