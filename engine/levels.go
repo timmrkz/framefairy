@@ -416,38 +416,45 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 const levelsLead = int(soundLead / (FrameSeconds * 1_000_000))
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
-// from frame start on, for the loudness and for the transcription alike.
+// from frame start on, for the loudness and for the transcription alike,
+// see soundFrom.
+func audioFrom(source string, start int, picture float64) []string {
+	return soundFrom(source, float64(start)*FrameSeconds, picture, SampleRate, 1)
+}
+
+// soundFrom is how ffmpeg reads the episode's sound from a moment on, in
+// seconds, as float samples at rate in so many channels, for the
+// transcription, the loudness and the video preview alike.
 //
 // The seek goes before the input, so ffmpeg seeks rather than decodes its
 // way there. Where the first sample lands is not left to the seek: ffmpeg
 // 8.1 kept the part of the first packet after the seek point, 9.0 drops
 // that packet whole, up to 64 ms of 16 kHz AAC, and the samples carry no
 // time of their own on the way out. Their timestamps stay right in both,
-// so the seek goes levelsLead early and atrim cuts at the timestamp of
-// start, to the sample. That early part is also where the decoder is
+// so the seek goes soundLead early and atrim cuts at the timestamp of
+// from, to the sample. That early part is also where the decoder is
 // wrong, up to 4 dB off at the join, because a packet of compressed audio
-// is decoded together with the one before it. A frame is 10 ms, so two
-// decimals are exact.
-func audioFrom(source string, start int, picture float64) []string {
+// is decoded together with the one before it.
+func soundFrom(source string, from, picture float64, rate, channels int) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
-	lead := min(start, levelsLead)
+	lead := min(from, float64(soundLead)/1_000_000)
 	// ffmpeg seeks every stream of a file to the key frame of its picture,
 	// so a seek to before the picture's first frame hands back the sound
 	// from where the picture starts, and a reading resumed there was heard
 	// up to a tenth of a second out of step, see latesound_test.go. Sound from
 	// before the picture is read from the start of the file instead, which
 	// is never far, the way the render reads it, see leadOf.
-	if float64(start-lead)*FrameSeconds < picture {
-		lead = start
+	if from-lead < picture {
+		lead = from
 	}
-	if start-lead > 0 {
-		args = append(args, "-ss", strconv.FormatFloat(float64(start-lead)*FrameSeconds, 'f', 2, 64))
+	if from-lead > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(from-lead, 'f', 6, 64))
 	}
 	args = append(args, "-i", source, "-map", "0:a:0")
 	if lead > 0 {
-		args = append(args, "-af", "atrim=start="+strconv.FormatFloat(float64(lead)*FrameSeconds, 'f', 2, 64))
+		args = append(args, "-af", "atrim=start="+strconv.FormatFloat(lead, 'f', 6, 64))
 	}
-	return append(args, "-ac", "1", "-ar", itoa(SampleRate), "-f", "f32le", "-")
+	return append(args, "-ac", itoa(channels), "-ar", itoa(rate), "-f", "f32le", "-")
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and

@@ -2,8 +2,8 @@
 // come back with it, handed over rather than copied.
 import { pull } from "./pull";
 
-self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number; height: number }>) => {
-  const { n, url, width, height } = e.data;
+self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number; height: number; colour: VideoColorSpaceInit }>) => {
+  const { n, url, width, height, colour } = e.data;
   if (n < 0) {
     // The page asks once whether a frame can come back from here, and
     // whether the Go side can be reached from here at all.
@@ -19,6 +19,6 @@ self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number;
     self.postMessage({ n, frame }, { transfer: [frame] });
     return;
   }
-  const got = await pull(new URL(url, self.location.href).href, width, height);
+  const got = await pull(new URL(url, self.location.href).href, width, height, colour);
   self.postMessage({ n, got }, { transfer: got.frames.map((f) => f.frame) });
 };

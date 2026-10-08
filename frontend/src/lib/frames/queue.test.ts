@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FrameQueue, type Shown } from "./queue";
+import { FrameQueue, GoSound, GoSoundStream, SOUND_CHUNK, soundChunks, type Shown } from "./queue";
 
 // The queue without a browser: a canvas that draws nothing and no decoders,
 // so the file is never opened and every play stays starting. That is
@@ -96,5 +96,135 @@ describe("the loop switched while playing", () => {
     said.length = 0;
     q.setProgram([clip[0]], true);
     expect(said.map((s) => s.at)).toEqual([58.2]);
+  });
+});
+
+describe("soundChunks", () => {
+  // What the Go side sends for a pull of a sound stream: chunks of
+  // SOUND_CHUNK moments, each after the moment it starts at, the last of a
+  // stream shorter.
+  const chunk = (at: number, values: number[]) => {
+    const b = new Uint8Array(8 + values.length * 4);
+    const v = new DataView(b.buffer);
+    v.setFloat64(0, at, true);
+    values.forEach((x, i) => v.setFloat32(8 + i * 4, x, true));
+    return b;
+  };
+  const join = (...parts: Uint8Array[]) => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+  test("takes the samples of whole chunks and of a short last one, without the moments", () => {
+    const first = Array.from({ length: SOUND_CHUNK * 2 }, (_, i) => i / 4096);
+    const last = [0.5, -0.5, 0.25, -0.25];
+    const got = soundChunks(join(chunk(1, first), chunk(1 + SOUND_CHUNK / 48000, last)), 2);
+    expect(got.length).toBe(first.length + last.length);
+    expect(Array.from(got.subarray(0, 3))).toEqual(first.slice(0, 3).map((x) => Math.fround(x)));
+    expect(Array.from(got.subarray(first.length))).toEqual(last);
+  });
+  test("an answer with no chunk holds no samples", () => {
+    expect(soundChunks(new Uint8Array(0), 2).length).toBe(0);
+  });
+});
+
+describe("GoSoundStream", () => {
+  // The Go side stood in for: a stream of moments numbered from where it
+  // was opened, one chunk a read, in one channel, so a moment says where
+  // it is. It closes the stream after the first read, the way it closes
+  // one nobody has read from for 20 seconds.
+  test("a stream the Go side closed is opened again where it got to, with nothing lost or twice", async () => {
+    const opened: number[] = [];
+    const streams = new Map<string, { at: number; reads: number }>();
+    const was = globalThis.fetch;
+    globalThis.fetch = (async (input: string) => {
+      const url = new URL(input, "http://x");
+      if (url.pathname === "/frames/sound") {
+        const at = Math.round(Number(url.searchParams.get("from")) * 48000);
+        opened.push(at);
+        const id = String(opened.length);
+        streams.set(id, { at, reads: 0 });
+        return new Response(JSON.stringify({ id }));
+      }
+      const s = streams.get(url.searchParams.get("id") ?? "");
+      if (url.pathname === "/frames/read") {
+        if (!s || s.reads === 1) return new Response("gone", { status: 404 });
+        s.reads++;
+        const b = new Uint8Array(8 + SOUND_CHUNK * 4);
+        const v = new DataView(b.buffer);
+        for (let i = 0; i < SOUND_CHUNK; i++) v.setFloat32(8 + i * 4, s.at + i, true);
+        s.at += SOUND_CHUNK;
+        return new Response(b);
+      }
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    try {
+      const stream = new GoSoundStream("/ep.mp4", 4800, 48000, 1);
+      const first = await stream.take(1000);
+      const second = await stream.take(1000);
+      expect(opened).toEqual([4800, 4800 + SOUND_CHUNK]);
+      expect(first[0]).toBe(4800);
+      expect(Array.from(second.subarray(0, 3))).toEqual([5800, 5801, 5802]);
+      expect(second[999]).toBe(6799);
+    } finally {
+      globalThis.fetch = was;
+    }
+  });
+});
+
+describe("GoSound", () => {
+  test("a stream that fails is dropped, and the next packet is read from a stream of its own", async () => {
+    // The Go side stood in for: moments numbered from where a stream was
+    // opened, one channel, and the first stream fails on every read.
+    const opened: number[] = [];
+    const was = globalThis.fetch;
+    globalThis.fetch = (async (input: string) => {
+      const url = new URL(input, "http://x");
+      if (url.pathname === "/frames/sound") {
+        opened.push(Math.round(Number(url.searchParams.get("from")) * 48000));
+        return new Response(JSON.stringify({ id: String(opened.length) }));
+      }
+      if (url.pathname === "/frames/read") {
+        const id = Number(url.searchParams.get("id"));
+        if (id === 1) return new Response("broken", { status: 500 });
+        const b = new Uint8Array(8 + SOUND_CHUNK * 4);
+        const v = new DataView(b.buffer);
+        for (let i = 0; i < SOUND_CHUNK; i++) v.setFloat32(8 + i * 4, opened[id - 1] + i, true);
+        return new Response(b);
+      }
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    try {
+      const out: { timestamp: number; first: number }[] = [];
+      const errors: string[] = [];
+      const sound = new GoSound(
+        "/ep.mp4",
+        48000,
+        1,
+        (s) => {
+          const one = new Float32Array(s.numberOfFrames);
+          s.copyTo(one, { planeIndex: 0, format: "f32-planar" });
+          out.push({ timestamp: s.timestamp, first: one[0] });
+        },
+        (e) => errors.push(e),
+        () => {},
+      );
+      sound.decode(1, new Uint8Array(0), 0, 960);
+      sound.decode(2, new Uint8Array(0), 960, 960);
+      sound.decode(3, new Uint8Array(0), 1920, 960);
+      await sound.flush();
+      expect(errors).toEqual(["the sound stopped, it answered 500"]);
+      expect(opened).toEqual([0, 960]);
+      expect(out).toEqual([
+        { timestamp: 2, first: 960 },
+        { timestamp: 3, first: 1920 },
+      ]);
+    } finally {
+      globalThis.fetch = was;
+    }
   });
 });

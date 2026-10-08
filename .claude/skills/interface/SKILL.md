@@ -870,11 +870,20 @@ early, in the middle of the seek.
 
 **What it taught.** Each of these cost a round of probing:
 
-- Chromium stamps decoded sound with times of its own, counting on from
-  the first packet after a start. Sound is matched to its packet by
-  order, not by stamp.
-- Opus told its pre-skip cuts it again from the first packet after every
-  start, on top of the edit list. The decoder is told there is none.
+- The sound is not the browser's to decode, plan row 2.153: the Go side
+  decodes it with ffmpeg, `GoSound` in `queue.ts`, so the video preview
+  hears what the render is made of. The Mac's own AAC decoder was the one
+  part nobody could run in the cloud, and it was the last suspect when Tim
+  heard a file from DaVinci Resolve out of step. The harness has no Go
+  side, so `open.mjs`'s server stands in for `/frames/sound`, ffmpeg run
+  the same way. While the browser decoded it: Chromium stamped decoded
+  sound with times of its own, so sound is matched to its packet by
+  order, not by stamp, and Opus told its pre-skip cut it a second time.
+- A flush of the sound ends a run where it was asked, between the packets
+  fed before it and after it, not once everything fed is out. The queue
+  feeds the next run's packets straight after the flush, and a decoder
+  that read them on from the run before played the sound before the
+  second cut on after it, 139 percent off, where the fixed one is 0.00.
 - An AudioWorklet in Chromium now and then hands two render quanta the
   same `currentFrame`. The recorder labels a quantum by the last one plus
   128 when that happens, or the check fails on a sound that is right.
