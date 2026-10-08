@@ -4,8 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -234,5 +237,28 @@ func TestWithoutACacheAWaitLetGoOfStopsTheDownload(t *testing.T) {
 	}
 	if err := u.DownloadAndInstall(ctx); err == nil {
 		t.Fatal("the download was not cut off")
+	}
+}
+
+// A build that arrived whole but could not be kept says so. Its cache
+// folder went while it downloaded, and the download used to count as
+// arrived, so the wait for it found nothing and said the build went from
+// the cache as it arrived.
+func TestABuildThatCannotBeKeptSaysSo(t *testing.T) {
+	data := []byte("a build")
+	sum := sha256.Sum256(data)
+	src := &Source{Cache: filepath.Join(t.TempDir(), "builds")}
+	k := src.keep(hex.EncodeToString(sum[:]))
+	if k == nil {
+		t.Fatal("no keeper")
+	}
+	if err := k.write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(src.Cache); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.done(true); err == nil || !strings.Contains(err.Error(), "could not be kept") {
+		t.Errorf("done: %v", err)
 	}
 }

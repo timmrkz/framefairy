@@ -143,15 +143,19 @@ type updating struct {
 	// replaced only once a newer build has fully arrived and passed its
 	// checks, so quitting always has the newest build that is whole.
 	held *updater.Updater
-	// again is set when a check was asked for while one ran, so the one
-	// running looks once more when it is done. Picking a channel during a
-	// download must not be lost.
+	// checking is set while a check runs. again is set when a check was
+	// asked for while one ran, so the one running looks once more when it
+	// is done. Picking a channel during a download must not be lost. Both
+	// are only ever read and written together, see check.
+	checking bool
 	again    bool
+	// ended is told when a check has decided it is done, before it has
+	// returned. Nil but in the tests, which hold a check there.
+	ended    func()
 	lastSent time.Time
 	// listed is when the channel list was last read for the settings.
 	listed time.Time
 
-	run sync.Mutex
 	// picking keeps two picks from writing updates.json at once.
 	picking sync.Mutex
 	// round counts picks. A check belongs to the pick it started under, and
@@ -497,24 +501,36 @@ func (c *updating) checkNow() {
 // is not the one running. One at a time: a check asked for while one runs
 // is done when that one ends. A build following nothing has nothing to
 // look for.
+//
+// Whether a check runs, and whether it looks once more, are both decided
+// under c.mu, so a check asked for is never lost. They were a lock tried
+// on one side and a flag read on the other, and a check that had read
+// there was nothing more still held the lock for a moment: a pick that
+// landed then only left word nobody read, and stayed in Checking until
+// the next look, ten minutes later.
 func (c *updating) check() {
 	if c.u == nil || updates.Followed(c.picked(), c.own) == "" {
 		return
 	}
-	if !c.run.TryLock() {
-		c.mu.Lock()
+	c.mu.Lock()
+	if c.checking {
 		c.again = true
 		c.mu.Unlock()
 		return
 	}
-	defer c.run.Unlock()
+	c.checking = true
+	c.mu.Unlock()
 	for {
 		c.checkOnce()
 		c.mu.Lock()
 		again := c.again
 		c.again = false
+		c.checking = again
 		c.mu.Unlock()
 		if !again {
+			if c.ended != nil {
+				c.ended()
+			}
 			return
 		}
 	}
