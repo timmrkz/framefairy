@@ -350,8 +350,9 @@ what WebKit assumes is what the frame holds. A file it cannot play, a codec the 
 fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
 sentence where the picture would be, with the reason, and nothing else in
 the workspace changes. A sound it cannot decode plays the picture without
-it and says so at the foot of the picture. The playback copy of the
-episode for such files is plan row 1.5b.
+it and says so at the foot of the picture. With one engine, see
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), such files will play as far as the
+render can read them.
 
 A system can also say it decodes a file and then fail on it: WebKit says
 yes to HEVC with 10-bit colour and its decoder then fails on the first

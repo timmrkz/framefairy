@@ -542,7 +542,8 @@ The batch plan with statuses is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md).
 Next up, roughly in this order:
 
 - Tim's feedback from testing the current workspace
-- the playback copy of the episode
+- the video preview on one engine, ffmpeg, see
+  [docs/VIDEO-PREVIEW.md](docs/VIDEO-PREVIEW.md)
 - `framefairy-train import` and `eval`, and loading a trained adapter
 - packaging, macOS first: the speech library carried in the bundle, an LGPL
   ffmpeg encoding through the system, signing and notarisation, the choice
