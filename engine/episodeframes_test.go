@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -161,5 +162,91 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 	case <-done:
 	case <-time.After(60 * time.Second):
 		t.Fatal("streams still running after a minute")
+	}
+}
+
+// The files people bring, H.264 and HEVC with 10-bit colour, come through
+// the episode's decoder from wherever they are opened, with the frames the
+// ffmpeg program hands over. On a Mac they are decoded on the graphics
+// chip and scaled there, or on the processor where the chip's scaler will
+// not, which a virtual Mac in CI is. The first build of the decoder failed
+// on every such file on Tim's Mac the moment an episode opened, "the
+// picture could not be scaled, its chain: Invalid argument", and the
+// tests had only an MPEG-4 file, which no Mac decodes on its chip. Plan
+// row 2.156.
+func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
+	type kind struct {
+		name string
+		args []string
+	}
+	var kinds []kind
+	switch {
+	case has("h264_videotoolbox"):
+		kinds = append(kinds, kind{"H.264", []string{"-c:v", "h264_videotoolbox", "-b:v", "2M", "-g", "50"}})
+	case has("libx264"):
+		kinds = append(kinds, kind{"H.264", []string{"-c:v", "libx264", "-preset", "ultrafast", "-g", "50"}})
+	default:
+		ffmpegtest.Unusable(t, "this ffmpeg has no H.264 encoder to make an episode with")
+	}
+	switch {
+	case has("hevc_videotoolbox"):
+		kinds = append(kinds, kind{"HEVC 10-bit", []string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-pix_fmt", "p010le", "-b:v", "2M", "-g", "50", "-tag:v", "hvc1"}})
+	case has("libx265"):
+		kinds = append(kinds, kind{"HEVC 10-bit", []string{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "keyint=50:log-level=error", "-tag:v", "hvc1"}})
+	}
+	e := NewEngine(NewLog(nil, false, false))
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	for _, k := range kinds {
+		path := filepath.Join(t.TempDir(), "episode.mp4")
+		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=6"}, k.args...)
+		if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+			if k.name == "H.264" {
+				ffmpegtest.Unusable(t, "ffmpeg could not make an %s episode: %s %s", k.name, err, out)
+			}
+			// A virtual Mac may have no HEVC encoder that takes 10 bits.
+			t.Logf("no %s episode here: %s", k.name, out)
+			continue
+		}
+		dec := NewEpisodeFrames(program, path)
+		for _, from := range []float64{0, 2.3, 4.97} {
+			var got, want []float64
+			var gotData, wantData [][]byte
+			collect := func(ats *[]float64, data *[][]byte) func(float64, []byte) error {
+				return func(at float64, frame []byte) error {
+					*ats = append(*ats, at)
+					*data = append(*data, frame)
+					if len(*ats) == 6 {
+						return errStop
+					}
+					return nil
+				}
+			}
+			if err := dec.Stream(context.Background(), from, 160, 90, collect(&got, &gotData)); err != nil && !errors.Is(err, errStop) {
+				t.Fatalf("%s from %.2f: %v", k.name, from, err)
+			}
+			if err := e.PreviewFrames(context.Background(), path, from, 160, 90, collect(&want, &wantData)); err != nil && !errors.Is(err, errStop) {
+				t.Fatalf("%s from %.2f, the ffmpeg program: %v", k.name, from, err)
+			}
+			if len(got) == 0 || len(got) != len(want) {
+				t.Fatalf("%s from %.2f: the decoder gave %d frames, the ffmpeg program %d", k.name, from, len(got), len(want))
+			}
+			for i := range want {
+				if math.Abs(got[i]-want[i]) > 1e-6 {
+					t.Fatalf("%s from %.2f: frame %d at %.4f, the ffmpeg program's at %.4f", k.name, from, i, got[i], want[i])
+				}
+				// The chip's scaler and the processor's round differently.
+				if d := meanDiff(gotData[i], wantData[i]); d > 6 {
+					t.Fatalf("%s from %.2f: frame %d differs from the ffmpeg program's by %.2f on average", k.name, from, i, d)
+				}
+			}
+		}
+		dec.Close()
 	}
 }
