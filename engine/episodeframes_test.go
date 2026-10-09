@@ -483,8 +483,21 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	}
 	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
 	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
-	if !has("libx264") {
-		ffmpegtest.Unusable(t, "this ffmpeg has no libx264 to make the files with")
+	// Our own ffmpeg on the Mac has no x264 or x265, which are GPL, and
+	// makes the files with the Mac's encoders instead. Whether those keep
+	// every tag as it is asked is theirs to say, so the tags are only
+	// held to coming out apart where x264 and x265 made the files.
+	h264 := []string{"-c:v", "libx264", "-preset", "ultrafast"}
+	hevc := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"}
+	software := true
+	switch {
+	case has("libx264"):
+	case has("h264_videotoolbox"):
+		h264 = []string{"-c:v", "h264_videotoolbox", "-b:v", "2M"}
+		hevc = []string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-b:v", "2M"}
+		software = false
+	default:
+		ffmpegtest.Unusable(t, "this ffmpeg has no H.264 encoder to make the files with")
 	}
 	type file struct {
 		name string
@@ -493,7 +506,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	tags := func(space, primaries, transfer, rng string) []string {
 		return []string{"-colorspace", space, "-color_primaries", primaries, "-color_trc", transfer, "-color_range", rng}
 	}
-	x264 := []string{"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"}
+	x264 := append(append([]string{}, h264...), "-pix_fmt", "yuv420p")
 	files := []file{
 		{"BT.601 video range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "tv")...)},
 		{"BT.601 full range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "pc")...)},
@@ -501,8 +514,12 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		{"BT.709 full range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "pc")...)},
 		{"no tags", x264},
 	}
-	if has("libx265") {
-		x265 := []string{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error", "-tag:v", "hvc1"}
+	if has("libx265") || !software && has("hevc_videotoolbox") {
+		tenBits := "yuv420p10le"
+		if !software {
+			tenBits = "p010le"
+		}
+		x265 := append(append([]string{}, hevc...), "-pix_fmt", tenBits, "-tag:v", "hvc1")
 		files = append(files,
 			file{"BT.709 video range, 10 bits", append(append([]string{}, x265...), tags("bt709", "bt709", "bt709", "tv")...)},
 			file{"BT.2020 video range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "tv")...)},
@@ -518,6 +535,11 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		// tells two files' colours apart is what the tags say.
 		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=1"}, f.args...)
 		if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+			if strings.Contains(f.name, "10 bits") {
+				// A virtual Mac may have no HEVC encoder that takes 10 bits.
+				t.Logf("no file %s here: %s", f.name, out)
+				continue
+			}
 			ffmpegtest.Unusable(t, "ffmpeg could not make the file %s: %s %s", f.name, err, out)
 		}
 		dec := NewEpisodeFrames(program, path)
@@ -560,7 +582,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	}
 	differ := func(a, b string) {
 		t.Helper()
-		if got[a] == nil || got[b] == nil {
+		if !software || got[a] == nil || got[b] == nil {
 			return
 		}
 		if d := meanDiff(got[a], got[b]); d < 1 {
