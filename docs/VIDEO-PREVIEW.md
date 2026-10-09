@@ -95,7 +95,14 @@ removed. Nothing is prepared before the first play.
    clip. #152 did the same in 366 lines by splicing the new program into
    the running play, and was closed for #155, which made the case
    impossible in about 40. The one exception is loop, 2.150, which only
-   changes what follows the clip's end. No other splice is built.
+   changes what follows the clip's end. No other splice is built. Only
+   the space bar and a click on the clip timeline change a play. An edge
+   of the clip or of a cut, dragged or clicked while it plays, moves no
+   playhead and changes nothing that plays: the edit is saved and drawn
+   at once, and the queue keeps the new pieces for the next play, seek
+   or click. An undo while it plays moves no playhead either. Tim heard
+   the play stutter with the hand on a cut's edge, because every step of
+   the drag started the play again from the playhead.
 7. **A rule before machinery.** When a case would need new machinery in
    the frame queue, the first question is whether a rule of the product
    makes the case not happen, as in rule 6. Machinery is built only where

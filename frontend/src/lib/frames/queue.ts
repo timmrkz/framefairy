@@ -515,6 +515,7 @@ export class FrameQueue {
   private wanted: { pieces: Piece[] | null; loop: boolean } = { pieces: null, loop: false };
   private wantedKey = "";
   private built: Program | null = null;
+  private asked: [Piece[] | null, boolean] | null = null;
 
   private state: State = "paused";
   // Where the playhead is, in the episode.
@@ -684,9 +685,28 @@ export class FrameQueue {
   // again.
   setProgram(pieces: Piece[] | null, loop: boolean) {
     if (this.relooped(pieces, loop)) return;
+    // A running play is never changed in place, rule 6 of
+    // docs/VIDEO-PREVIEW.md: it plays the program it started with, and the
+    // program asked for now is what the next play plays, the space bar's
+    // or a click's on the clip timeline. A clip edge or a cut dragged
+    // while the clip played started the play over at every step, and the
+    // picture, the sound and the playhead stuttered with the hand.
+    if (this.state === "playing" || this.state === "starting") {
+      const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
+      this.asked = JSON.stringify([copy, loop]) === this.wantedKey ? null : [pieces, loop];
+      return;
+    }
+    this.asked = null;
     if (!this.want(pieces, loop)) return;
-    if (this.state === "playing" || this.state === "starting") this.start(this.at);
-    else if (this.state === "cued" || this.vplan) this.seek(this.at);
+    if (this.state === "cued" || this.vplan) this.seek(this.at);
+  }
+
+  // The program asked for while a play ran, for the next play, see
+  // setProgram. Taken as the program, it says whether it is another.
+  private takePending(): boolean {
+    const p = this.asked;
+    this.asked = null;
+    return p ? this.want(...p) : false;
   }
 
   // Only the loop switched, with the same pieces, while a play starts or
@@ -736,7 +756,9 @@ export class FrameQueue {
   // click was lost.
   seek(at: number, program?: [Piece[] | null, boolean]) {
     if (this.closed) return;
-    const changed = program ? this.want(...program) : false;
+    // A seek is a gesture of its own, so it plays what is asked for now.
+    if (program) this.asked = null;
+    const changed = program ? this.want(...program) : this.takePending();
     // A play starting from this very moment on this program is the play
     // asked for. A click seeks as the hand goes down and again as it comes
     // up, and starting over would throw away what was decoded between.
@@ -780,9 +802,12 @@ export class FrameQueue {
     // The sound card starts on the gesture that asked for it, or a browser
     // keeps it silent.
     void this.audio?.resume();
+    // What was asked for while the last play ran is what this one plays,
+    // so a play paused or cued on the program before starts again.
+    const changed = this.takePending();
     // Paused in the middle of a play: the play is all still there, the
     // sound card was only held.
-    if (this.vplan && this.c0 !== null && this.state === "paused") {
+    if (!changed && this.vplan && this.c0 !== null && this.state === "paused") {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
       this.ramp(1);
@@ -791,7 +816,7 @@ export class FrameQueue {
       return;
     }
     // Cued: everything is there but the clock.
-    if (this.state === "cued") {
+    if (!changed && this.state === "cued") {
       this.state = "starting";
       this.report();
       this.maybeBegin();

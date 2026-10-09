@@ -283,9 +283,14 @@ on every animation frame, so it moves smoothly, jumps a cut with the sound
 and stands in the frame on screen. It never goes back while playing. A
 click while it plays puts the playhead where it landed in that frame and
 goes on from there, the clip's or the episode's by where that is, a click
-across the clip's edge as well. A clip's pieces changing while it plays, a cut
-made, moved or put back, or loop switched on or off, goes on from the
-playhead on what the clip is now.
+across the clip's edge as well. Only the space bar and a click on the
+clip timeline change a play. A clip's pieces changing while it plays, a
+cut made, moved or put back, an edge trimmed or a step undone, moves no
+playhead and changes nothing that plays: the play goes on with the pieces
+it started with, and the next play, or a click, plays the clip as it is
+now. A drag on a cut's edge used to start the play again on every step,
+which stuttered. Loop switched on or off changes only what follows the
+clip's end.
 
 The sound goes on while the app is behind another window. macOS stops the
 page's animation frames there, and the frames are what fed the sound, a
@@ -1289,6 +1294,8 @@ bubble scrolled by those eight pixels.
       word, and the playhead used to go to the clip's start after a trim,
       so the word was lit only when the pause happened to be none, which
       looked random. After letting go the playhead stays where it was.
+      While the clip plays the playhead does not go with the edge, it
+      plays on, see the playhead above.
     - **Shift stops at the words that light up.** An edge dragged with
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two
@@ -1320,7 +1327,8 @@ bubble scrolled by those eight pixels.
       the saved clip's captions come back, which are the same, so nothing
       jumps.
     - Click an edge to put the playhead exactly on it, which is how a clip
-      is started over.
+      is started over. While it plays, a click on an edge does nothing to
+      the play.
     - **Nothing on the playhead but the playhead.** It carried a magnifier
       that opened a pill of the words around it, which was where a word was
       corrected. Words are corrected in the caption box over the picture
@@ -1752,7 +1760,9 @@ editor.
   cut on the clip timeline takes the playhead along, so the hand moved
   both, and taking the edge back puts the playhead back where it stood
   when the hand took hold. Redo puts it where the drag left it. Moving the
-  playhead alone is still no step.
+  playhead alone is still no step. A drag made while the clip played moved
+  no playhead, so its step has none to put back, and an undo while the
+  clip plays leaves the playhead playing.
 - **A field keeps its own undo.** While a word in the caption box or a
   number beside the clip is being typed in, Cmd-Z takes back the typing,
   the way it does in any text field. Once it is saved, the key goes to the

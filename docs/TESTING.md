@@ -123,6 +123,7 @@ each with a POST:
 | Path | What it does |
 | --- | --- |
 | `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times and with `&timing=late` its picture starts a quarter of a second after its sound, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own |
+| `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
 | `/hold?call=Search&ms=N` | the next call of that name waits N milliseconds before it reaches the Go side, the way a busy machine delivers it late, so a walk can press something while the Go side has not heard of the call yet |
