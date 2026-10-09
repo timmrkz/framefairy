@@ -136,6 +136,70 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	}
 }
 
+// A cursor that played to the end of the episode is handed to the next
+// stream like any other, and that stream gets its frames: a drag to the
+// end of the range picker and back left every cursor at the end, and the
+// video preview black until the app was started again.
+func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join(t.TempDir(), "episode.mp4")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", path).CombinedOutput(); err != nil {
+		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+	}
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	if err := dec.Ready(); err != nil {
+		t.Fatal(err)
+	}
+	// All kept, so each stream takes the cursor kept last, which is the
+	// one the stream before it ended on.
+	kept := func(round int) {
+		until := time.Now().Add(10 * time.Second)
+		for {
+			dec.mu.Lock()
+			n := len(dec.idle[pictureCursor])
+			dec.mu.Unlock()
+			if n == cursorsKept[pictureCursor] {
+				return
+			}
+			if time.Now().After(until) {
+				t.Fatalf("round %d: %d cursors kept, want %d", round, n, cursorsKept[pictureCursor])
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	kept(-1)
+	for round := range 3 {
+		ended := 0
+		if err := dec.Stream(context.Background(), 3.7, 160, 90, func(float64, []byte) error { ended++; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if ended == 0 {
+			t.Fatalf("round %d: the stream to the end gave no frame", round)
+		}
+		kept(round)
+		var got []float64
+		err := dec.Stream(context.Background(), 1, 160, 90, func(at float64, _ []byte) error {
+			got = append(got, at)
+			if len(got) == 5 {
+				return errStop
+			}
+			return nil
+		})
+		if !errors.Is(err, errStop) {
+			t.Fatalf("round %d: the stream after the end gave %d frames and %v, want 5", round, len(got), err)
+		}
+		if math.Abs(got[0]-1) > 1e-6 {
+			t.Fatalf("round %d: the stream after the end started at %.3f, want 1", round, got[0])
+		}
+	}
+}
+
 var errStop = errors.New("enough")
 
 func meanDiff(a, b []byte) float64 {

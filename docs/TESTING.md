@@ -327,10 +327,10 @@ down and the engine's jobs beside it.
 
 ### `sequences.mjs`: the cases found by hand
 
-    BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
+    BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [pattern of the names]
 
-Through make, `ONLY` is the part of a name, and `WALKS=0` leaves the
-other walks out: `ONLY="drag across" make walks WALKS=0`.
+Through make, `ONLY` is a pattern of the names, and `WALKS=0` leaves the
+other walks out: `ONLY="drag across|opens on its clip" make walks WALKS=0`.
 
 A sequence is a named list of steps and of what has to come of them,
 written as data at the top of the file, so a case found by hand is kept

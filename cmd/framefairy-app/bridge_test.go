@@ -923,6 +923,10 @@ func TestWalks(t *testing.T) {
 	}
 	runs := []walkRun{{script: "sequences.mjs"}}
 	walksWanted := envNumber("WALKS", 3)
+	// WALKS=0 walks the sequences alone.
+	if os.Getenv("WALKS") == "0" {
+		walksWanted = 0
+	}
 	// Each walk takes its own number of steps unless STEPS says.
 	var steps []string
 	if n := envNumber("STEPS", 0); n > 0 {

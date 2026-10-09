@@ -2,11 +2,12 @@
 // by hand, kept so they stay fixed. Every step is also checked against the
 // rules every walk is, see rules.mjs. See docs/TESTING.md.
 //
-//   BRIDGE_URL=http://127.0.0.1:8123/ node sequences.mjs [part of a name]
+//   BRIDGE_URL=http://127.0.0.1:8123/ node sequences.mjs [pattern of the names]
 //
-// or through make, where ONLY is the part of a name:
+// or through make, where ONLY is a pattern of the names, and WALKS=0
+// leaves the other walks out:
 //
-//   ONLY="drag across" make walks WALKS=0
+//   ONLY="drag across|opens on its clip" make walks WALKS=0
 //
 // A step is a list, its name first:
 //
@@ -1254,7 +1255,7 @@ const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 const only = process.argv[2] ?? process.env.ONLY ?? "";
 let failures = 0;
 
-for (const seq of sequences.filter((q) => q.name.includes(only))) {
+for (const seq of sequences.filter((q) => new RegExp(only).test(q.name))) {
   const { browser, page, errors } = await open(url);
   const at = await chosen(page);
   const watch = new Watch(page, at, errors);
