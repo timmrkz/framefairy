@@ -360,13 +360,23 @@ decoder, `framefairy-frames`, which make puts beside the app and the app
 always ships: one program per episode on ffmpeg's libraries, which keeps
 the file open and its decoders ready, so a jump moves a cursor that is
 open instead of starting ffmpeg. An app without it says so the way it
-says a missing ffmpeg, and there is no second way to the frames. The webview's
+says a missing ffmpeg, and there is no second way to the frames. The frame
+queue holds the decoder of its episode from the moment the episode opens
+in the video preview, `/frames/hold`, until it closes, `/frames/release`:
+the decoder starts at once and opens its cursors on the file before any
+frame is asked for, and a held decoder is never closed for standing
+unused, so a click after an hour paused is as quick as the first. One
+nobody holds is closed after a minute unused. The webview's
 decoders and the Mac's own below are still in the code, unused, until the
 step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until
-ffmpeg ran, until it had opened the file, until its first frame was out,
-the header `X-Frames-Times`, which `AppFrames` keeps in `stats.opens` for
-the walks. A frame asked for a place the hand has left is withdrawn when
+the decoder had the request, at once where it ran and after starting it
+where it did not, until it was at the place asked for, which it says
+itself, and until the first frame was out, then 1 where reaching the
+place meant opening the file and 0 where a cursor that had it was moved.
+That is the header `X-Frames-Times`, which `AppFrames` keeps in
+`stats.opens`, for a probe to tell where the time of a jump went, see
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), Speed. A frame asked for a place the hand has left is withdrawn when
 the queue's decoder is reset for the newer place, and one new stream is
 on its way at a time: while one is still coming for a place left behind,
 the newest place waits and goes as soon as it has come, so a drag over

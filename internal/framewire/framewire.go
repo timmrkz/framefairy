@@ -12,8 +12,9 @@
 //
 // Every answer is a record of a header and a body. A next is answered by
 // up to n frame records and then one record that ends the batch, or one
-// that says the episode has ended or what failed. An open and a close are
-// not answered.
+// that says the episode has ended or what failed. An open is answered
+// once the cursor is at its place, or with what failed. A close is not
+// answered.
 package framewire
 
 import (
@@ -35,6 +36,10 @@ const (
 	End
 	// The cursor failed, the body says why.
 	Failed
+	// An open is done: the cursor is at its place. The body is "file" when
+	// the open had to open the file and a decoder first, and empty when it
+	// moved a cursor that had them.
+	Opened
 )
 
 // HeaderSize is the size of a record's header: the cursor, 4 bytes, what
@@ -81,7 +86,7 @@ func Read(r io.Reader) (Record, error) {
 	if size > MaxBody {
 		return Record{}, fmt.Errorf("a record of %d bytes is larger than any frame", size)
 	}
-	if rec.Kind > Failed {
+	if rec.Kind > Opened {
 		return Record{}, errors.New("a record of a kind nobody writes")
 	}
 	rec.Body = make([]byte, size)

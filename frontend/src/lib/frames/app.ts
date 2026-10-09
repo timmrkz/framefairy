@@ -36,10 +36,11 @@ const STREAMS = 3;
 type Waiter = { rank: number; seq: number; done: (f: VideoFrame | null) => void; gone?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
-// it was asked for, for the walks to read, see docs/VIDEO-PREVIEW.md,
-// Speed: ms until the interface had it, and on the Go side until ffmpeg
-// ran, until it had opened the file, until its first frame was out.
-export type Opened = { ms: number; started: number; opened: number; first: number };
+// it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
+// ms until the interface had it, and on the Go side until the decoder had
+// the request, until it was at the place, until the first frame was out,
+// and whether that meant opening the file or only moving a cursor.
+export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean };
 
 class Stream {
   id: Promise<string | null>;
@@ -237,12 +238,18 @@ export class AppFrames {
   readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[] };
   readonly puller = new Puller();
 
+  // The episode's decoder on the Go side is held for as long as these
+  // frames are open: started now, with the file open and decoders ready,
+  // and never closed for standing unused while the episode is open, so a
+  // click after a long pause is as quick as the first.
   constructor(
     readonly path: string,
     readonly track: VideoTrack,
     private size: () => { width: number; height: number },
     private onTrouble: (why: string) => void,
-  ) {}
+  ) {
+    void fetch(`/frames/hold?${new URLSearchParams({ path })}`).catch(() => {});
+  }
 
   // The newest place asked for while a stream was on its way to a place
   // left behind, see route.
@@ -259,8 +266,8 @@ export class AppFrames {
   // A stream gave its first frame: how long that took here, from asking to
   // having it, and on the Go side, see Opened.
   opened(ms: number, times: string) {
-    const [started, open, first] = times.split(",").map(Number);
-    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0 });
+    const [started, open, first, file] = times.split(",").map(Number);
+    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1 });
     if (this.stats.opens.length > 64) this.stats.opens.shift();
   }
 
@@ -362,7 +369,9 @@ export class AppFrames {
   }
 
   close() {
+    if (this.closed) return;
     this.closed = true;
+    void fetch(`/frames/release?${new URLSearchParams({ path: this.path })}`).catch(() => {});
     for (const w of this.parked) w.done(null);
     this.parked = [];
     this.puller.close();

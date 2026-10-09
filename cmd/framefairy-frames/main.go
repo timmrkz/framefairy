@@ -258,7 +258,6 @@ type cursor struct {
 	from      float64
 	sentEOF   bool
 	graphEOF  bool
-	ended     bool
 	failedWhy string
 }
 
@@ -302,7 +301,9 @@ func (c *cursor) fail(why string) {
 // only seeks.
 func (c *cursor) open(from float64, w, h int) {
 	c.failedWhy = ""
+	opened := ""
 	if c.v == nil {
+		opened = "file"
 		v, err := openVideo(c.d.path)
 		if err == nil {
 			err = v.openDecoder(c.d.hardware)
@@ -330,7 +331,8 @@ func (c *cursor) open(from float64, w, h int) {
 		c.freeGraph()
 	}
 	c.width, c.height, c.from = w, h, from
-	c.sentEOF, c.graphEOF, c.ended = false, false, false
+	c.sentEOF, c.graphEOF = false, false
+	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: []byte(opened)})
 }
 
 // seek goes to the key frame before from, with what the decoder held
@@ -368,7 +370,6 @@ func (c *cursor) next(n int, skip float64) {
 		at, body, err := c.frame(drop)
 		if err != nil {
 			if errors.Is(err, astiav.ErrEof) {
-				c.ended = true
 				c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
 			} else {
 				c.fail(err.Error())

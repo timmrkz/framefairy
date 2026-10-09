@@ -14,9 +14,9 @@ import (
 )
 
 // EpisodeFrames is the episode's decoder as the Go side sees it: one
-// framefairy-frames for one episode, started on the first stream asked of
-// it and kept while streams are asked, with the file open and decoders
-// ready. A stream takes a cursor of it, and a cursor a stream has finished
+// framefairy-frames for one episode, started when the episode opens in the
+// video preview, see Ready, and kept while it is open, with the file open
+// and decoders ready. A stream takes a cursor of it, and a cursor a stream has finished
 // with is kept for the next, so a jump moves a decoder that is already
 // open instead of starting a program and reading the file's index again.
 // See docs/VIDEO-PREVIEW.md, The episode's decoder.
@@ -57,6 +57,51 @@ const cursorsKept = 3
 // makes the next frames while the page takes the ones before.
 const ahead = 4
 
+// Ready starts the decoder if it does not run, with its cursors opened on
+// the file, so the first frame asked for only moves one. The app calls it
+// as an episode opens in the video preview.
+func (f *EpisodeFrames) Ready() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.used = time.Now()
+	return f.start()
+}
+
+// warm opens the cursors a decoder keeps, each on the file with a decoder
+// of its own, and hands each to the streams once its open is done. Under
+// the lock, from start.
+func (f *EpisodeFrames) warm(gone chan struct{}) {
+	for range cursorsKept {
+		f.nextID++
+		id := f.nextID
+		ch := make(chan framewire.Record, 1)
+		f.answers[id] = ch
+		if f.send(gone, "open %d 0 2 2", id) != nil {
+			delete(f.answers, id)
+			return
+		}
+		go func() {
+			var rec framewire.Record
+			select {
+			case rec = <-ch:
+			case <-gone:
+				return
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if f.gone != gone {
+				return
+			}
+			delete(f.answers, id)
+			if rec.Kind == framewire.Opened && len(f.idle) < cursorsKept {
+				f.idle = append(f.idle, id)
+			} else {
+				_ = f.send(gone, "close %d", id)
+			}
+		}()
+	}
+}
+
 // start runs the program if it does not run. Under the lock.
 func (f *EpisodeFrames) start() error {
 	if f.cmd != nil {
@@ -88,6 +133,7 @@ func (f *EpisodeFrames) start() error {
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = nil, map[uint32]chan framewire.Record{}, 0
 	gone := f.gone
+	f.warm(gone)
 	go func() {
 		lines := bufio.NewScanner(errs)
 		for lines.Scan() {
@@ -162,18 +208,18 @@ func (f *EpisodeFrames) take() (uint32, chan framewire.Record) {
 		f.nextID++
 		id = f.nextID
 	}
-	// Room for a batch and the record that ends it, so the reader never
-	// waits on a stream that has stopped reading.
-	ch := make(chan framewire.Record, ahead+2)
+	// Room for the open's answer, a batch and the record that ends it, so
+	// the reader never waits on a stream that has stopped reading.
+	ch := make(chan framewire.Record, ahead+3)
 	f.answers[id] = ch
 	return id, ch
 }
 
 // give keeps a cursor for the next stream, or closes it when enough are
-// kept. Under the lock.
-func (f *EpisodeFrames) give(id uint32) {
+// kept or it failed. Under the lock.
+func (f *EpisodeFrames) give(id uint32, failed bool) {
 	delete(f.answers, id)
-	if len(f.idle) < cursorsKept {
+	if !failed && len(f.idle) < cursorsKept {
 		f.idle = append(f.idle, id)
 		return
 	}
@@ -208,27 +254,30 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 		}
 	}
 	f.mu.Unlock()
+	// The decoder runs and has the request: at once where it ran already,
+	// after starting it where it did not.
 	times.mark(timeStarted)
-	times.mark(timeOpened)
 	if err != nil {
 		return err
 	}
 	// A batch asked for and not yet ended: the cursor is not handed on
-	// before its last record has come, or the next stream would get it.
-	pending := true
+	// before its last record has come, or the next stream would get it. A
+	// cursor that failed is closed rather than handed on, since what it
+	// still says about its failure would reach the next stream.
+	pending, failed := true, false
 	finish := func() {
 		go func() {
 			for pending {
 				select {
 				case rec := <-ch:
-					pending = rec.Kind == framewire.Frame
+					pending = rec.Kind == framewire.Frame || rec.Kind == framewire.Opened
 				case <-gone:
 					return
 				}
 			}
 			f.mu.Lock()
 			if f.gone == gone {
-				f.give(id)
+				f.give(id, failed)
 			}
 			f.mu.Unlock()
 		}()
@@ -237,6 +286,12 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 		select {
 		case rec := <-ch:
 			switch rec.Kind {
+			case framewire.Opened:
+				// The cursor is at from: a file opened, or a cursor moved.
+				if times != nil && string(rec.Body) == "file" {
+					times.File.Store(true)
+				}
+				times.mark(timeOpened)
 			case framewire.Frame:
 				times.mark(timeFirst)
 				if err := got(rec.At, rec.Body); err != nil {
@@ -263,7 +318,7 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 				finish()
 				return nil
 			case framewire.Failed:
-				pending = false
+				pending, failed = false, true
 				finish()
 				return errors.New(string(rec.Body))
 			}

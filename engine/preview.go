@@ -16,14 +16,23 @@ import (
 )
 
 // PreviewTimes is where the time of a stream of frames goes, counted from
-// the moment it was asked for: until ffmpeg runs, until it has opened the
-// file and read its index, and until its first frame is out. Each is in
-// milliseconds and 0 until it has happened. A jump in the video preview
-// costs all three, and knowing which one is large decides what makes it
-// quicker, see docs/VIDEO-PREVIEW.md, Speed.
+// the moment it was asked for: until the decoder has the request, until it
+// is at the place asked for, and until the first frame is out. Each is in
+// milliseconds and 0 until it has happened. File says whether getting to
+// the place meant opening the file and a decoder, or only moving a cursor
+// that had them. A jump in the video preview costs all of it, and knowing
+// which part is large decides what makes it quicker, see
+// docs/VIDEO-PREVIEW.md, Speed.
+//
+// For the episode's decoder, EpisodeFrames, the decoder has the request at
+// once where it runs and after starting it where it did not, and is at the
+// place when it says the open is done. For the ffmpeg program,
+// PreviewFrames, it is when ffmpeg runs and when it has opened the file,
+// which it always does.
 type PreviewTimes struct {
 	asked                  time.Time
 	Started, Opened, First atomic.Int64
+	File                   atomic.Bool
 }
 
 // NewPreviewTimes starts counting now.
@@ -166,6 +175,9 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 			if !ok {
 				// ffmpeg says what it read once the file is open.
 				if strings.HasPrefix(line, "Input #0") {
+					if times != nil {
+						times.File.Store(true)
+					}
 					times.mark(timeOpened)
 				}
 				said.add(line)

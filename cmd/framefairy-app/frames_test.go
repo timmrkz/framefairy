@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
@@ -78,10 +79,11 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	}
 	// The first pull says where the stream's time went before its first
 	// frame, in milliseconds, and no pull after it says it again.
-	var started, opened2, first int
-	if n, _ := fmt.Sscanf(told[0], "%d,%d,%d", &started, &opened2, &first); n != 3 ||
-		started <= 0 || opened2 < started || first < opened2 {
-		t.Errorf("the first pull told %q as the stream's times, want ffmpeg started, the file open and the first frame, in order", told[0])
+	// The first stream of a decoder nobody held opens the file.
+	var started, opened2, first, file int
+	if n, _ := fmt.Sscanf(told[0], "%d,%d,%d,%d", &started, &opened2, &first, &file); n != 4 ||
+		started <= 0 || opened2 < started || first < opened2 || file != 1 {
+		t.Errorf("the first pull told %q as the stream's times, want the request had, the place reached and the first frame, in order, and the file opened", told[0])
 	}
 	for _, again := range told[1:] {
 		if again != "" {
@@ -270,5 +272,54 @@ func needDecoder(t *testing.T) {
 	t.Helper()
 	if os.Getenv("FRAMEFAIRY_FRAMES") == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+}
+
+// An episode open in the video preview holds its decoder, which is never
+// closed for standing unused while it is held: a click after a long pause
+// finds it as ready as the first. Let go, it is closed once it has stood
+// unused. Plan row 2.156.
+func TestTheFramesRouteKeepsTheDecoderOfAnOpenEpisode(t *testing.T) {
+	ffmpegtest.Need(t)
+	needDecoder(t)
+	svc, mine, _ := library(t)
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=160x90:r=5:d=4", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
+		t.Fatalf("making the episode: %s %s", err, out)
+	}
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	get := func(route string) int {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", route+"?"+url.Values{"path": {mine}}.Encode(), nil))
+		return rec.Code
+	}
+	if code := get("/frames/hold"); code != http.StatusNoContent {
+		t.Fatalf("hold answered %d", code)
+	}
+	has := func() bool {
+		openPreviews.mu.Lock()
+		defer openPreviews.mu.Unlock()
+		return openPreviews.decoders[mine] != nil
+	}
+	if !has() {
+		t.Fatal("a hold started no decoder")
+	}
+	// Reaped as if everything had stood unused for ever.
+	openPreviews.reapOnce(-time.Hour)
+	if !has() {
+		t.Fatal("the decoder of an episode held open was closed for standing unused")
+	}
+	if code := get("/frames/release"); code != http.StatusNoContent {
+		t.Fatalf("release answered %d", code)
+	}
+	openPreviews.reapOnce(-time.Hour)
+	if has() {
+		t.Error("the decoder of an episode let go of was kept")
+	}
+	// Only an episode of the library is held.
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/hold?"+url.Values{"path": {"/etc/passwd"}}.Encode(), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a hold of a file outside the library answered %d, want 404", rec.Code)
 	}
 }

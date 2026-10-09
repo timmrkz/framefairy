@@ -17,7 +17,8 @@ import (
 
 // The episode's decoder hands over the frames the ffmpeg program hands
 // over, from any moment, with the same moments and the same pictures, and
-// a second stream moves a cursor that is open rather than opening one.
+// a stream after the first moves a cursor that is open rather than opening
+// the file again.
 // It needs framefairy-frames built against ffmpeg's libraries, which make
 // does, named by FRAMEFAIRY_FRAMES, and skips without it.
 func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
@@ -56,13 +57,20 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 		}
 		return out
 	}
-	for _, from := range []float64{0, 2.1, 7.39, 3.98} {
+	for i, from := range []float64{0, 2.1, 7.39, 3.98} {
 		want := collect(func(got func(float64, []byte) error) error {
 			return e.PreviewFrames(context.Background(), path, from, 160, 90, got)
 		})
+		times := NewPreviewTimes()
 		got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(context.Background(), from, 160, 90, got)
+			return dec.Stream(WithPreviewTimes(context.Background(), times), from, 160, 90, got)
 		})
+		if times.File.Load() != (i == 0) {
+			t.Errorf("stream %d from %.2f opened the file: %v, want only the first to", i, from, times.File.Load())
+		}
+		if s, o, f := times.Started.Load(), times.Opened.Load(), times.First.Load(); s <= 0 || o < s || f < o {
+			t.Errorf("stream %d told its times as %d, %d, %d, want the request, the place and the first frame in order", i, s, o, f)
+		}
 		if len(got) != len(want) {
 			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", from, len(got), len(want))
 		}
@@ -75,11 +83,53 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The decoder of an episode open in the video preview is started before
+// any frame is asked for, with its cursors on the file, so the first frame
+// asked for only moves one. Plan row 2.156.
+func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join(t.TempDir(), "episode.mp4")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", path).CombinedOutput(); err != nil {
+		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+	}
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	if err := dec.Ready(); err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(10 * time.Second)
+	for {
+		dec.mu.Lock()
+		kept := len(dec.idle)
+		dec.mu.Unlock()
+		if kept == cursorsKept {
+			break
+		}
+		if time.Now().After(until) {
+			t.Fatalf("%d cursors open after ten seconds, want %d", kept, cursorsKept)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	times := NewPreviewTimes()
+	err := dec.Stream(WithPreviewTimes(context.Background(), times), 1.5, 160, 90, func(float64, []byte) error { return errStop })
+	if !errors.Is(err, errStop) {
+		t.Fatal(err)
+	}
+	if times.File.Load() {
+		t.Error("the first frame asked for opened the file, want a cursor opened before moved")
+	}
 	dec.mu.Lock()
 	opened := dec.nextID
 	dec.mu.Unlock()
-	if opened != 1 {
-		t.Errorf("four streams one after another opened %d cursors, want one moved each time", opened)
+	if opened != cursorsKept {
+		t.Errorf("%d cursors were opened, want the %d opened before the first frame and no more", opened, cursorsKept)
 	}
 }
 

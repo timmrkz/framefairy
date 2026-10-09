@@ -57,8 +57,12 @@ type previews struct {
 	open   map[string]*preview
 	native map[string]*nativePreview
 	// The episode's decoder of each episode a stream was asked of, see
-	// engine.EpisodeFrames, closed once it has stood unused.
+	// engine.EpisodeFrames. One whose episode is open in the video preview
+	// is held, by how many times, and is never closed for standing unused:
+	// a click after an hour paused finds it as ready as the first. One
+	// nobody holds is closed once it has stood unused.
 	decoders map[string]*engine.EpisodeFrames
+	held     map[string]int
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
 }
@@ -130,6 +134,22 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 	case "/frames/close":
 		p.close(q.Get("id"))
 		w.WriteHeader(http.StatusNoContent)
+	case "/frames/hold", "/frames/release":
+		path := q.Get("path")
+		if !episodeFile(st, path) {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/frames/release" {
+			p.release(path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if err := p.hold(path); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case "/frames/native":
 		p.serveNative(w, r)
 	case "/frames/decode":
@@ -142,11 +162,7 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	path := q.Get("path")
-	if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
-		http.NotFound(w, r)
-		return
-	}
-	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+	if !episodeFile(st, path) {
 		http.NotFound(w, r)
 		return
 	}
@@ -283,8 +299,47 @@ func (p *previews) close(id string) {
 	}
 }
 
-// decoder is the episode's decoder for the episode at path, started on
-// its first stream. It ships beside the app, as ffmpeg does, and an app
+// episodeFile says whether path is an episode of the library, a file.
+func episodeFile(st *store, path string) bool {
+	if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// hold starts the episode's decoder of the episode at path, with its
+// cursors opened, as the episode opens in the video preview, and keeps it
+// until release. The frame queue holds it for as long as it has the
+// episode, see AppFrames in lib/frames/app.ts.
+func (p *previews) hold(path string) error {
+	d, err := p.decoder(path)
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	if p.held == nil {
+		p.held = map[string]int{}
+	}
+	p.held[path]++
+	p.mu.Unlock()
+	return d.Ready()
+}
+
+// release lets go of a hold. The decoder is then closed once it has stood
+// unused, see reap.
+func (p *previews) release(path string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.held[path] > 1 {
+		p.held[path]--
+	} else {
+		delete(p.held, path)
+	}
+}
+
+// decoder is the episode's decoder for the episode at path, started by a
+// hold or on its first stream. It ships beside the app, as ffmpeg does, and an app
 // without it says so the way it says a missing ffmpeg: there is no second
 // way to the frames.
 func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
@@ -312,26 +367,32 @@ func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
 func (p *previews) reap() {
 	for {
 		time.Sleep(previewIdle / 4)
-		p.mu.Lock()
-		for path, d := range p.decoders {
-			if d.Idle() > 3*previewIdle {
-				delete(p.decoders, path)
-				go d.Close()
-			}
+		p.reapOnce(previewIdle)
+	}
+}
+
+// reapOnce closes the streams nobody has pulled for idle, and the decoders
+// nobody holds that have stood unused for three times that.
+func (p *previews) reapOnce(idle time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for path, d := range p.decoders {
+		if p.held[path] == 0 && d.Idle() > 3*idle {
+			delete(p.decoders, path)
+			go d.Close()
 		}
-		for id, s := range p.open {
-			if time.Since(s.pulled.get()) > previewIdle {
-				s.stop()
-				delete(p.open, id)
-			}
+	}
+	for id, s := range p.open {
+		if time.Since(s.pulled.get()) > idle {
+			s.stop()
+			delete(p.open, id)
 		}
-		for id, n := range p.native {
-			if time.Since(n.used.get()) > previewIdle {
-				n.pictures.Close()
-				delete(p.native, id)
-			}
+	}
+	for id, n := range p.native {
+		if time.Since(n.used.get()) > idle {
+			n.pictures.Close()
+			delete(p.native, id)
 		}
-		p.mu.Unlock()
 	}
 }
 
@@ -364,11 +425,17 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 				continue
 			}
 			// The first frame of a stream says where its time went, in
-			// milliseconds from when it was asked for: until ffmpeg ran,
-			// until the file was open, until the first frame was out.
+			// milliseconds from when it was asked for: until the decoder
+			// had the request, until it was at the place, until the first
+			// frame was out, and then 1 where that meant opening the file
+			// and 0 where a cursor was moved, see engine.PreviewTimes.
 			if s.times != nil && !s.told.Swap(true) {
-				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d",
-					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load()))
+				file := 0
+				if s.times.File.Load() {
+					file = 1
+				}
+				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d,%d",
+					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load(), file))
 			}
 			if !put(f) {
 				return
