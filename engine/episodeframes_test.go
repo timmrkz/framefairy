@@ -468,3 +468,47 @@ func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 		dec.Close()
 	}
 }
+
+// A cursor that read to the end of the episode hands over frames again
+// from anywhere else. The chain it told the episode had ended was kept,
+// because open asked whether it was told only after the seek had
+// forgotten, so every stream after it on that cursor ended at once and
+// the video preview stayed black. Plan row 2.166.
+func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join(t.TempDir(), "episode.mp4")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-g", "25", path).CombinedOutput(); err != nil {
+		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+	}
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	count := func(from float64, most int) int {
+		n := 0
+		err := dec.Stream(context.Background(), from, 160, 90, func(float64, []byte) error {
+			n++
+			if n == most {
+				return errStop
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatalf("from %.2f: %v", from, err)
+		}
+		return n
+	}
+	// The cursor a stream gives back is the next one taken, so each stream
+	// after one that read to the end runs on the cursor that did.
+	for round := range 3 {
+		if n := count(3.5, 0); n == 0 {
+			t.Fatalf("round %d: the stream to the end gave no frames", round)
+		}
+		if n := count(1, 10); n != 10 {
+			t.Fatalf("round %d: after the end, a stream from 1 s gave %d frames, want 10", round, n)
+		}
+	}
+}
