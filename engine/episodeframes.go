@@ -134,7 +134,11 @@ func (f *EpisodeFrames) start() error {
 	f.idle, f.answers, f.nextID = nil, map[uint32]chan framewire.Record{}, 0
 	gone := f.gone
 	f.warm(gone)
+	// What the decoder says on its error stream, read to its end before
+	// it is waited for, as exec asks, and before what it said is read.
+	saidAll := make(chan struct{})
 	go func() {
+		defer close(saidAll)
 		lines := bufio.NewScanner(errs)
 		for lines.Scan() {
 			said.add(lines.Text())
@@ -160,6 +164,7 @@ func (f *EpisodeFrames) start() error {
 				ch <- rec
 			}
 		}
+		<-saidAll
 		werr := cmd.Wait()
 		f.mu.Lock()
 		f.err = fmt.Errorf("the episode's decoder stopped: %v %s", werr, said.String())
