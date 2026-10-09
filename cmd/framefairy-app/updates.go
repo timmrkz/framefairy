@@ -188,6 +188,14 @@ type updating struct {
 	// see loop. next is how long it waits between two looks.
 	looking bool
 	next    func(UpdateState) time.Duration
+	// life ends with shutDown, and every check runs under it. halted is
+	// set then, under c.mu, so no check and no loop starts after it, and
+	// running counts the checks and the loop that are still going, which
+	// shutDown waits for.
+	life    context.Context
+	end     context.CancelFunc
+	halted  bool
+	running sync.WaitGroup
 }
 
 type updatesFile struct {
@@ -246,6 +254,7 @@ func (h quitHost) Quit() {
 // an earlier build had picked. updates.json stays as it is, for the builds
 // from a channel that read it.
 func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source, exe, goos string) {
+	c.life, c.end = context.WithCancel(context.Background())
 	c.state = UpdateState{
 		Version: runningVersion(),
 		Commit:  buildCommit,
@@ -316,19 +325,46 @@ func (c *updating) start() {
 // look a second time.
 func (c *updating) loop() bool {
 	c.mu.Lock()
-	started := c.looking
+	started := c.looking || c.halted
 	c.looking = true
+	if !started {
+		c.running.Add(1)
+	}
 	c.mu.Unlock()
 	if started {
 		return false
 	}
 	go func() {
+		defer c.running.Done()
 		for {
 			c.check()
-			time.Sleep(c.next(c.State()))
+			select {
+			case <-c.life.Done():
+				return
+			case <-time.After(c.next(c.State())):
+			}
 		}
 	}()
 	return true
+}
+
+// shutDown stops looking: the loop ends at its next wait, the check in
+// hand is let go of the way a pick lets go of one, and no check starts
+// after. It returns once they have all ended. The download a check waited
+// for goes on into the cache, see updates/fetch.go.
+//
+// The app's looks end with the app. This is for whatever holds an
+// updating for a while and then lets it go, the tests above all: a loop
+// left looking every twenty milliseconds after its test went on reading
+// whichever later test's server was given the same port.
+func (c *updating) shutDown() {
+	c.mu.Lock()
+	c.halted = true
+	c.mu.Unlock()
+	if c.end != nil {
+		c.end()
+	}
+	c.running.Wait()
 }
 
 func (c *updating) State() UpdateState {
@@ -513,17 +549,23 @@ func (c *updating) check() {
 		return
 	}
 	c.mu.Lock()
+	if c.halted {
+		c.mu.Unlock()
+		return
+	}
 	if c.checking {
 		c.again = true
 		c.mu.Unlock()
 		return
 	}
 	c.checking = true
+	c.running.Add(1)
 	c.mu.Unlock()
+	defer c.running.Done()
 	for {
 		c.checkOnce()
 		c.mu.Lock()
-		again := c.again
+		again := c.again && !c.halted
 		c.again = false
 		c.checking = again
 		c.mu.Unlock()
@@ -537,7 +579,7 @@ func (c *updating) check() {
 }
 
 func (c *updating) checkOnce() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(c.life, 30*time.Minute)
 	c.mu.Lock()
 	round := c.round
 	c.stop = cancel
