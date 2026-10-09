@@ -319,6 +319,11 @@ tools-archive:
 # llama-server are built from and the interface's packages, so it builds
 # everything first. The tests and the interface build say when it is due:
 # a module, a package or a pinned version that changed without it.
+#
+# The interface build's own check is off while it runs: after a package
+# update, the very build it does first stopped on the notices it was
+# there to write, and "Run make notices" could never be done.
+notices: export FRAMEFAIRY_WRITING_NOTICES := 1
 notices: all
 	@$(GO) run ./notices/gen
 	@printf 'ok  \tnotices\n'
