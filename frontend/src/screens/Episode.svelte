@@ -2249,6 +2249,7 @@
     onmark={select}
     playhead={time}
     onseek={seekTo}
+    onhold={(held) => player?.hold(held)}
     dimmed={!onClip}
     locked={busy}
     onmove={moveWindow}
@@ -2697,6 +2698,7 @@
         {lit}
         bind:numbers
         onseek={(t, about) => player?.seek(t, about)}
+        onhold={(held) => player?.hold(held)}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}

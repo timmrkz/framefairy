@@ -281,9 +281,14 @@ frame's own time on screen, since the picture waits for the sound to be
 heard. While it plays, the playhead is the sound being heard,
 on every animation frame, so it moves smoothly, jumps a cut with the sound
 and stands in the frame on screen. It never goes back while playing. A
-click while it plays puts the playhead where it landed in that frame and
-goes on from there, the clip's or the episode's by where that is, a click
-across the clip's edge as well. Only the space bar and a click on the
+press while it plays, on the clip timeline or the range picker, holds the
+play under the hand, like a nail, for as long as the button is down: the
+playhead goes to the press and stays there, follows the hand once it
+moves, and the play goes on from where the hand lets go, the clip's or
+the episode's by where that is, across the clip's edge as well. The
+button says Pause the whole time, and only the sound is held, the way a
+pause holds it. Before, the play went on from the press at once and ran
+away from the hand before a drag could start. Only the space bar and a click on the
 clip timeline change a play. A clip's pieces changing while it plays, a
 cut made, moved or put back, an edge trimmed or a step undone, moves no
 playhead and changes nothing that plays: the play goes on with the pieces

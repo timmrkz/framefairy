@@ -4,8 +4,9 @@ A spec, being built. It decides how the video preview gets its picture
 and its sound from here on, and what is removed on the way. Decided with
 Tim on 8 October 2026, after the history below. Plan row 2.156. Steps 1
 and 2 are built, every file's picture through ffmpeg and the episode's
-decoder for it, in one pull request, #157, as Tim asked. What is not
-built yet says so where it is described.
+decoder for it, in one pull request, #157, as Tim asked. Step 3, one
+engine, is built in #162 and tried on Tim's Mac. Step 4 is next. What is
+not built yet says so where it is described.
 
 Three parts of the app are named here. **The interface** is the
 TypeScript and Svelte in `frontend/`, which runs in the webview and draws
@@ -357,7 +358,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
 3. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
    the choice between them. Refuse at Add a file whose picture ffmpeg
    cannot decode. The sound through the episode's decoder as well. Built
-   in #162.
+   in #162 and tried on Tim's Mac.
 4. **Colour and HDR.** The frames carry pixels converted by ffmpeg from
    the file's tags, and the interface draws them as they come. Proved
    against ffmpeg's own conversion of the same frame, value by value, on

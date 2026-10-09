@@ -36,6 +36,7 @@
     onmark,
     playhead = -1,
     onseek,
+    onhold,
     dimmed = false,
     locked = false,
     onmove,
@@ -69,6 +70,9 @@
     onmark?: (key: string) => void;
     playhead?: number;
     onseek?: (time: number) => void;
+    // The hand has taken hold of the playhead, or let go of it, so a play
+    // can wait under the hand, see hold in Player.svelte.
+    onhold?: (held: boolean) => void;
     // Whether the playhead is on the video rather than on the chosen clip,
     // so the chosen clip's mark is drawn dimmed, as its frame is.
     dimmed?: boolean;
@@ -157,7 +161,15 @@
     // put here.
     const focused = document.activeElement as HTMLElement | null;
     if (focused && focused !== document.body) focused.blur();
-    scrubPlayhead(event, timeAt, (t) => onseek?.(t), (held) => (scrubbing = held));
+    scrubPlayhead(
+      event,
+      timeAt,
+      (t) => onseek?.(t),
+      (held) => {
+        scrubbing = held;
+        onhold?.(held);
+      },
+    );
   }
 
   // An edge dragged lands on a round step, so a window is something that
