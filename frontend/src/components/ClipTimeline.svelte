@@ -58,6 +58,7 @@
     frameStart = 0,
     lit = [],
     onseek,
+    onhold,
     dimmed = false,
     onreshape,
     onwalkclip,
@@ -111,6 +112,9 @@
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, see placeOf in lib/playhead.ts.
     onseek: (t: number, about?: "clip") => void;
+    // The hand has taken hold of the playhead, or let go of it, so a play
+    // can wait under the hand, see hold in Player.svelte.
+    onhold?: (held: boolean) => void;
     // Whether the playhead is on the video rather than on the clip, so
     // everything drawn for the clip is dimmed as one: its rules are not in
     // play.
@@ -286,7 +290,10 @@
       doubled(event.clientX);
       return;
     }
-    scrubPlayhead(event, timeAt, onseek, (held) => (scrubbing = held));
+    scrubPlayhead(event, timeAt, onseek, (held) => {
+      scrubbing = held;
+      onhold?.(held);
+    });
   }
 
   // A double-click is told from the two presses rather than from the

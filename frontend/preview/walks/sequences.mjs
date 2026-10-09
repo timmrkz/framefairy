@@ -26,6 +26,13 @@
 //                      playhead and the frame on screen on every animation
 //                      frame from before the hand takes hold to after it
 //                      lets go
+//   ["press while playing", px]
+//                      plays the clip if it does not play, presses the
+//                      clip timeline halfway along the clip and holds the
+//                      button down still, then moves the hand by px and
+//                      holds it still again, then lets go, reading the
+//                      playhead, the frame on screen and the play button on
+//                      every animation frame
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -119,6 +126,11 @@
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
 //                      drawn was older than the one before it
+//   ["nailed"]         since "press while playing", the playhead stood
+//                      still under the hand while it held still, on the
+//                      press and again where the hand moved to, the button
+//                      said Pause the whole time, and the play went on
+//                      from where the hand let go
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -658,6 +670,14 @@ export const sequences = [
       ["drag while playing", "end", -60],
       ["played through"],
     ],
+  },
+  {
+    // Tim pressed the clip timeline while the clip played, to get a drag
+    // ready, and the play ran on from the press at once, away from the
+    // hand. A press holds the play under the hand, like a nail, until the
+    // hand lets go, and the play goes on from there. Plan row 2.158.
+    name: "a press on the clip timeline while it plays holds the playhead under the hand",
+    steps: [["press while playing", -60], ["nailed"]],
   },
   {
     // Tim saw the episode's first frames flicker in the video preview as an
@@ -1307,6 +1327,48 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await settle(page);
         break;
       }
+      case "press while playing": {
+        await preview(page, 0.2);
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(700);
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__hand = {};
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            const playing = !!document.querySelector('button[aria-label="Pause"]');
+            window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1, playing]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        await page.waitForTimeout(300);
+        const g = await handles(page);
+        const x = (g.start.x + g.start.w + g.end.x) / 2;
+        const y = high(g.track);
+        const hand = (what) => page.evaluate((w) => (window.__hand[w] = performance.now()), what);
+        await page.mouse.move(x, y);
+        await hand("down");
+        await page.mouse.down();
+        await page.waitForTimeout(700);
+        await hand("moves");
+        for (let i = 1; i <= 10; i++) {
+          await page.mouse.move(x + (arg * i) / 10, y);
+          await page.waitForTimeout(30);
+        }
+        await hand("still");
+        await page.waitForTimeout(700);
+        await hand("up");
+        await page.mouse.up();
+        await page.waitForTimeout(700);
+        await page.evaluate(() => (window.__playWatch = false));
+        await settle(page);
+        break;
+      }
       case "reset": {
         const g = await handles(page);
         await page.mouse.dblclick(middle(g[arg]), high(g.track));
@@ -1791,6 +1853,54 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         if (!wrong && played.length < 30) wrong = `only ${played.length} animation frames were read`;
         if (!wrong && longest > 150) wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge`;
+        break;
+      }
+      case "nailed": {
+        const { played, hand } = await page.evaluate(() => ({ played: window.__played ?? [], hand: window.__hand ?? {} }));
+        // A seek lands within a few frames of the hand, so each still
+        // stretch is read from 200 ms after it starts.
+        const during = (from, to) => played.filter(([t]) => t >= from && t < to);
+        const stood = (from, to, what) => {
+          const got = during(from + 200, to);
+          if (got.length < 10) return `only ${got.length} animation frames were read ${what}`;
+          const ats = new Set(got.map(([, at]) => at));
+          if (ats.size > 1) {
+            const all = got.map(([, at]) => at);
+            return `the playhead moved from ${Math.min(...all).toFixed(3)} to ${Math.max(...all).toFixed(3)} ${what}`;
+          }
+          const frames = new Set(got.map(([, , n]) => n));
+          if (frames.size > 1) return `${frames.size} different frames were drawn ${what}`;
+          return got[0][1];
+        };
+        const first = stood(hand.down, hand.moves, "while the hand held still on the press");
+        if (typeof first === "string") {
+          wrong = first;
+          break;
+        }
+        const second = stood(hand.still, hand.up, "while the hand held still where it moved to");
+        if (typeof second === "string") {
+          wrong = second;
+          break;
+        }
+        if (!(second < first)) {
+          wrong = `the playhead did not follow the hand, it stood at ${first.toFixed(3)} and then at ${second.toFixed(3)}`;
+          break;
+        }
+        if (during(hand.down, hand.up).some(([, , , playing]) => !playing)) {
+          wrong = "the button said Play while the hand held the playhead";
+          break;
+        }
+        const after = during(hand.up + 300, Infinity);
+        if (after.length < 10) {
+          wrong = `only ${after.length} animation frames were read after the hand let go`;
+          break;
+        }
+        const ats = after.map(([, at]) => at);
+        if (!after.every(([, , , playing]) => playing)) wrong = "the play did not go on after the hand let go";
+        else if (ats[ats.length - 1] <= ats[0]) wrong = "the playhead stood still after the hand let go";
+        else if (ats[0] < second - 1e-6 || ats[0] > second + 1) {
+          wrong = `the play went on from ${ats[0].toFixed(3)}, not from ${second.toFixed(3)} where the hand let go`;
+        }
         break;
       }
       case "box": {

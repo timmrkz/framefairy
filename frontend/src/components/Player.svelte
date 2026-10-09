@@ -298,8 +298,33 @@
     sought = queue;
   }
 
+  // A press on the clip timeline or the range picker while it plays holds
+  // the play under the hand, like a nail, for as long as the button is
+  // down: the playhead goes to the press and stays there, follows the hand
+  // once it moves, and the play goes on from where the hand lets go. The
+  // play stays a play the whole time, the button says Pause, and only the
+  // sound is held, the way a pause holds it. Before, the play went on from
+  // the press at once and ran away from the hand before a drag could start.
+  // Found by Tim while testing 2.156, plan row 2.158.
+  let nailed = false;
+
+  export function hold(held: boolean) {
+    if (!queue) return;
+    if (held) {
+      if (paused || nailed) return;
+      nailed = true;
+      queue.pause();
+      return;
+    }
+    if (!nailed) return;
+    nailed = false;
+    // The space bar may have paused it under the hand.
+    if (!paused) queue.play();
+  }
+
   export function toggle() {
     if (!queue || failed) return;
+    nailed = false;
     if (paused) play();
     else {
       queue.pause();
