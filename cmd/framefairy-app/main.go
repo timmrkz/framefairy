@@ -288,10 +288,9 @@ type FrameFairy struct {
 	leave  *leaving
 	mu     sync.Mutex
 	probed map[string]engine.SourceInfo
-	// The transcript of the episode being worked on, kept while the files
-	// it was read from stay as they were.
-	said   *engine.Transcript
-	saidBy string
+	// The transcripts of the episodes worked on last, each kept while the
+	// files it was read from stay as they were, see transcript.
+	said keptReads[*engine.Transcript]
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
 	// link is what became of the last framefairy:// link, waiting for

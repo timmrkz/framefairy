@@ -79,8 +79,13 @@
     centre,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
     drawn = $bindable(false),
+    waiting = false,
   }: {
     path: string;
+    // The workspace is still opening and does not yet know the clip it
+    // opens on. Nothing is read until it does: the minute around the start
+    // of the episode was read first and then thrown away for the clip.
+    waiting?: boolean;
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
     duration: number;
@@ -616,6 +621,10 @@
   // as long as the reading takes, which looks like the waveform jumping
   // about. A reading that comes back after a newer one is dropped.
   let latest = 0;
+  // What the reading on its way was asked for. The same view asked for
+  // again before it is back is that reading: an episode opening asked for
+  // the clip's view twice over, and each read the words and the waveform.
+  let reading = "";
 
   async function load(from: number, to: number) {
     view = { from, to };
@@ -639,6 +648,9 @@
       from: Math.max(outer.from, middle - spoken / 2),
       to: Math.min(outer.to, middle + spoken / 2),
     };
+    const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}|${buckets}`;
+    if (ask === reading) return;
+    reading = ask;
     const mine = ++latest;
     try {
       const [w, p] = await Promise.all([
@@ -654,6 +666,8 @@
       words = [];
       peaks = [];
       data = outer;
+    } finally {
+      if (mine === latest) reading = "";
     }
     drawn = true;
   }
@@ -861,6 +875,7 @@
   // timeline saying where you are in the episode. A view moved by hand is
   // left alone until the clip changes or the playhead leaves it.
   $effect(() => {
+    if (waiting) return;
     if (clip && clip.segments.length) {
       if (viewFor !== clip.key) {
         fitView();

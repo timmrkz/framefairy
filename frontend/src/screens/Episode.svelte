@@ -67,6 +67,7 @@
   import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
   import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
+  import { readAhead } from "../lib/frames/queue";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -2295,6 +2296,7 @@
     installFonts()
       .then((list) => (fonts = list))
       .catch(() => {});
+    readAhead(mediaURL(path), path);
     readSettings();
     openEpisode();
   });
@@ -2762,6 +2764,7 @@
       <ClipTimeline
         bind:this={timeline}
         {path}
+        waiting={!opened}
         clip={current ?? making}
         {duration}
         heard={saved}

@@ -603,6 +603,23 @@ Only a picture is the video preview being ready: the sound stopping before
 the first frame once counted, and a workspace built as the app started
 went to sleep with nothing on its canvas.
 
+An episode that is not kept is built the moment it is picked, and the
+parts of that are started together rather than one after another. The
+file's index and the episode's decoder are asked for as the workspace
+starts to build, `readAhead` in `lib/frames/queue.ts`, rather than once
+the workspace knows what the episode is, and the frame queue takes the
+index read ahead. The clip timeline asks for its words and its waveform
+once the episode has answered, and never twice for the same view. The
+Go side keeps the transcripts of the last four episodes read, `keptReads`
+in `words.go`, and reads one once however many calls ask for it at the
+same moment: a workspace opening asked for the same transcript up to
+seven times, and each read it from the file. The longest window the range
+picker may draw is worked out without a search from every line, which
+took forty milliseconds of an hour's transcript in the frame the
+workspace opened in, `anywhere` in `lib/room.ts`. An hour's episode not
+kept is on screen in 200 ms in the walks' browser, from 240, and what is
+left is the workspace itself being laid out and the file's index read.
+
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
 the view by hand, and the view stays where it was put. **The playhead is

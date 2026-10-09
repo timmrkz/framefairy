@@ -122,12 +122,18 @@ export class Reach {
   // Where nothing is heard every second weighs the same, so the edges of
   // what is heard say it all. A window cut short by the end of the
   // episode does not count, because the end is not the model's limit.
+  //
+  // A start whose window of the shortest length so far still fits can
+  // only find a longer one, so it is passed over with one sum rather than
+  // a search. Searching every start was forty milliseconds of an hour's
+  // transcript, in the frame a workspace opened in.
   anywhere(): number {
     if (!this.known || this.fits(0, this.duration)) return this.duration;
     let shortest = this.duration;
     const starts = [0, ...this.heard.flat(), ...this.lines.map((l) => Math.max(l.start, l.end - 0.001))];
     for (const start of starts) {
       if (start >= this.duration) continue;
+      if (this.fits(start, Math.min(start + shortest, this.duration))) continue;
       const end = this.longestFrom(start);
       if (end >= this.duration) continue;
       shortest = Math.min(shortest, end - start);

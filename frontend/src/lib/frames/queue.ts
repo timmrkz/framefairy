@@ -155,6 +155,16 @@ class Reader {
 
   async open(): Promise<Movie> {
     if (this.known) return this.known;
+    const early = ahead.get(this.url);
+    if (early) {
+      ahead.delete(this.url);
+      const movie = await early.catch(() => null);
+      if (movie) return movie;
+    }
+    return this.read0();
+  }
+
+  private async read0(): Promise<Movie> {
     const first = await this.read(0, 1 << 16);
     if (!this.size) this.size = first.length;
     const moov = await findMoov(
@@ -164,6 +174,37 @@ class Reader {
     return parseMoov(moov);
   }
 
+}
+
+// The indexes read ahead, by the episode's address, until a queue takes
+// its own. See readAhead.
+const ahead = new Map<string, Promise<Movie>>();
+
+// Starts what a video preview needs before anything else, the moment a
+// workspace starts to open, rather than once the workspace has asked the
+// Go side what the episode is: the file's index, read in up to three reads
+// one after another, and the episode's decoder on the Go side, ffmpeg
+// started with the file open. Both were the last links of a chain, and the
+// first frame waited for each in turn. The decoder is held only until it
+// is up: the queue holds it for itself, and one nobody holds stands for
+// twenty seconds before it is closed.
+export function readAhead(url: string, path: string) {
+  if (!ahead.has(url)) {
+    const movie = new Reader(url).open();
+    movie.catch(() => ahead.delete(url));
+    ahead.set(url, movie);
+    // Never more than a few waiting: an index is megabytes for a long
+    // episode.
+    for (const old of ahead.keys()) {
+      if (ahead.size <= 4) break;
+      ahead.delete(old);
+    }
+  }
+  const q = new URLSearchParams({ path });
+  // Released only once held, so a hold that failed takes nobody else's.
+  void fetch(`/frames/hold?${q}`)
+    .then((res) => (res.ok ? fetch(`/frames/release?${q}`) : null))
+    .catch(() => {});
 }
 
 // Sound out of a decoder, the part of AudioData the queue reads.
