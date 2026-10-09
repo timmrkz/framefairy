@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -732,7 +733,19 @@ func (q *queue) runJob(job *Job) {
 		q.update(job, func(j *Job) {})
 	}
 
-	log := engine.NewLog(io.Discard, false, false)
+	// What the job says as it goes is kept in a file in the episode's work
+	// folder, detail lines too, for when something went wrong. Work that
+	// belongs to no episode, a model being installed, keeps none, and
+	// neither does one whose episode is gone, which would only make it a
+	// work folder again.
+	var out io.Writer = io.Discard
+	if _, err := os.Stat(job.Episode); job.Episode != "" && err == nil {
+		if f, err := engine.OpenJobLog(job.Episode, job.Kind, time.Now()); err == nil {
+			defer f.Close()
+			out = f
+		}
+	}
+	log := engine.NewLog(out, false, true)
 	log.SetSink(func(ev engine.Event) {
 		// Detail lines are for bug reports, not for the interface.
 		if ev.Kind == engine.EventDetail {
