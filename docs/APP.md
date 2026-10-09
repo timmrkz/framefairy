@@ -548,7 +548,9 @@ windows and the window, none of which the video preview needs. Those
 were asked first, one after another, with the video preview waiting. The
 walk `an episode opens on its clip, with no frame of its start on the
 way` reads every frame drawn from the click on, and where the playhead
-stood as each of those three was asked.
+stood as the window was asked, which only the opening asks. The coverage
+and the room are read again whenever work elsewhere ends, so they cannot
+say what came first.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving

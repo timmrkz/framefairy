@@ -103,7 +103,7 @@
 //                      since "episode watched", the video preview drew the
 //                      first frame of the chosen clip and no other, and the
 //                      playhead was on the clip before the workspace asked
-//                      for the coverage, the room and the window
+//                      for the window
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -1672,10 +1672,13 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           wrong = `the episode opened on its clip at frame ${first} and the video preview drew frames ${drawn.join(", ")} on the way`;
         }
         // Where the playhead opens comes before anything else the
-        // workspace reads as it opens: what it reads that the video
-        // preview does not need is asked with the playhead on the clip.
+        // workspace reads as it opens: the window, which it reads last and
+        // only as it opens, is asked with the playhead on the clip. The
+        // coverage and the room are read again whenever work elsewhere
+        // ends, a search of the episode added before, so they say nothing
+        // about the order the workspace opens in.
         const asked = await page.evaluate(() => window.__asked ?? []);
-        const after = ["Coverage", "Room", "ChosenWindow"];
+        const after = ["ChosenWindow"];
         const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
         if (!wrong && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
         else if (!wrong && early.length) {
