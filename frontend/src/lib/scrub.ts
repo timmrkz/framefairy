@@ -16,7 +16,9 @@ export function scrub(
   timeAt: (clientX: number) => number,
   seek: (t: number) => void,
   // Told true when the drag starts and false when it ends, for what looks
-  // different while the hand holds the playhead.
+  // different while the hand holds the playhead, and for a play that waits
+  // under the hand. False comes after the last seek, so a play that goes
+  // on as the hand lets go goes on from where it was let go.
   holding?: (held: boolean) => void,
 ): void {
   const target = event.currentTarget as HTMLElement;
@@ -49,8 +51,8 @@ export function scrub(
     target.removeEventListener("pointercancel", up);
     cancelAnimationFrame(queued);
     queued = 0;
-    holding?.(false);
     if (wanted !== sent) send(wanted);
+    holding?.(false);
   };
   target.addEventListener("pointermove", move);
   target.addEventListener("pointerup", up);
