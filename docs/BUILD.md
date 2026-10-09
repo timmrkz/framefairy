@@ -231,6 +231,18 @@ When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 so the pull request says which test failed without anybody opening the
 log.
 
+The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
+package that runs over ten minutes by itself, and the tests take about
+five, so the limit only ever ends a run that even go test could not end.
+After them, whichever way they ended, `scripts/leftovers.sh` looks for
+what they left running, ffmpeg, ffprobe, the episode's decoder,
+llama-server, a test binary or go itself. It prints each one with its
+parent, how long it ran and how it was started, names it on the check,
+stops it and fails the job, because a test that leaves a program running
+has a bug even when it passed. Before, a job once waited half an hour on
+two ffmpeg programs a failed test left behind, and the log never said
+whose they were.
+
 `scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
 whatever changed, because a mistake in them is silent: CI would go green
 having run less than it should. Run it by hand with
