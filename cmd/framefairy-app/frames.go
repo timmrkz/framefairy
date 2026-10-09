@@ -35,27 +35,18 @@ import (
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
 //
-// The sound of every episode comes the same way, decoded by ffmpeg, see
-// engine.PreviewSound: a stream of it is read like a stream of frames,
-// each frame engine.SoundChunk moments of it.
-//
-// Where the system has its own decoder for the picture, VideoToolbox on
-// the Mac, the page uses that instead, see engine.Pictures: it reads the
-// file itself and sends the samples, and the decoder stays open, so a jump
-// starts no program and reads nothing again. Only where there is none, or
-// for a picture it will not take, is ffmpeg run.
-//
-//	POST /frames/native?codec=<hvc1>&cw=&ch=&w=&h=  the avcC or hvcC box  {"id": "..."}
-//	POST /frames/decode?id=<id>  samples, see serveDecode
+// The sound of every episode comes the same way, from the episode's
+// decoder, see engine.EpisodeFrames.Sound, read by the rule the render and
+// the transcription read it by: a stream of it is read like a stream of
+// frames, each frame engine.SoundChunk moments of it.
 //
 // openPreviews are the streams of the app, one set however many times the
 // handler is made.
 var openPreviews = &previews{}
 
 type previews struct {
-	mu     sync.Mutex
-	open   map[string]*preview
-	native map[string]*nativePreview
+	mu   sync.Mutex
+	open map[string]*preview
 	// The episode's decoder of each episode a stream was asked of, see
 	// engine.EpisodeFrames. One whose episode is open in the video preview
 	// is held, by how many times, and is never closed for standing unused:
@@ -150,10 +141,6 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	case "/frames/native":
-		p.serveNative(w, r)
-	case "/frames/decode":
-		p.serveDecode(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -180,8 +167,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a sound stream needs a rate and a number of channels", http.StatusBadRequest)
 			return
 		}
+		dec, err := p.decoder(path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			return e.PreviewSound(ctx, path, from, rate, channels, got)
+			if err != nil {
+				return err
+			}
+			return dec.Sound(ctx, e, from, rate, channels, got)
 		}
 	} else {
 		width, _ := strconv.Atoi(q.Get("w"))
@@ -288,14 +279,9 @@ func (p *previews) close(id string) {
 	p.mu.Lock()
 	s := p.open[id]
 	delete(p.open, id)
-	n := p.native[id]
-	delete(p.native, id)
 	p.mu.Unlock()
 	if s != nil {
 		s.stop()
-	}
-	if n != nil {
-		n.pictures.Close()
 	}
 }
 
@@ -388,12 +374,6 @@ func (p *previews) reapOnce(idle time.Duration) {
 			delete(p.open, id)
 		}
 	}
-	for id, n := range p.native {
-		if time.Since(n.used.get()) > idle {
-			n.pictures.Close()
-			delete(p.native, id)
-		}
-	}
 }
 
 // writeFrames answers a pull: the next frame once ffmpeg has it, and up to
@@ -473,121 +453,4 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 			return
 		}
 	}
-}
-
-// A decoder of the system's own, open for the page.
-type nativePreview struct {
-	pictures engine.Pictures
-	used     atomicTime
-}
-
-// The largest batch of samples a page sends at once, far more than the
-// queue ever feeds in a moment.
-const decodeMost = 64 << 20
-
-func (p *previews) serveNative(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "a decoder is opened with POST", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	num := func(k string) int {
-		n, _ := strconv.Atoi(q.Get(k))
-		return n
-	}
-	cw, ch, width, height := num("cw"), num("ch"), num("w")&^1, num("h")&^1
-	if cw < 2 || ch < 2 || cw > 16384 || ch > 16384 || width < 2 || height < 2 || width > 7680 || height > 4320 {
-		http.Error(w, "a decoder needs the picture's size and a size to make", http.StatusBadRequest)
-		return
-	}
-	config, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	pictures, err := engine.OpenPictures(q.Get("codec"), config, cw, ch, width, height)
-	if err != nil {
-		http.Error(w, engine.Scrub(err.Error(), 300), http.StatusNotImplemented)
-		return
-	}
-	var raw [16]byte
-	_, _ = rand.Read(raw[:])
-	id := hex.EncodeToString(raw[:])
-	n := &nativePreview{pictures: pictures}
-	n.used.set(time.Now())
-	p.mu.Lock()
-	if p.native == nil {
-		p.native = map[string]*nativePreview{}
-	}
-	for len(p.native) >= previewMost {
-		oldest := ""
-		for k, o := range p.native {
-			if oldest == "" || o.used.get().Before(p.native[oldest].used.get()) {
-				oldest = k
-			}
-		}
-		p.native[oldest].pictures.Close()
-		delete(p.native, oldest)
-	}
-	p.native[id] = n
-	if !p.reaping {
-		p.reaping = true
-		go p.reap()
-	}
-	p.mu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
-}
-
-// serveDecode decodes a batch of samples in the order sent. Each sample is
-// its timestamp, 8 bytes, a float64 in little endian that only the page
-// reads, a byte whose second bit says to keep its frame, its length in 4
-// bytes and its bytes. The answer is every frame kept, its timestamp then
-// the frame in 8-bit NV12, see engine.Pictures.
-func (p *previews) serveDecode(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "samples are sent with POST", http.StatusMethodNotAllowed)
-		return
-	}
-	p.mu.Lock()
-	n := p.native[r.URL.Query().Get("id")]
-	p.mu.Unlock()
-	if n == nil {
-		http.NotFound(w, r)
-		return
-	}
-	n.used.set(time.Now())
-	body, err := io.ReadAll(io.LimitReader(r.Body, decodeMost+1))
-	if err != nil || len(body) > decodeMost {
-		http.Error(w, "the samples could not be read", http.StatusBadRequest)
-		return
-	}
-	var out []byte
-	for at := 0; at < len(body); {
-		if at+13 > len(body) {
-			http.Error(w, "a sample is cut short", http.StatusBadRequest)
-			return
-		}
-		ts := math.Float64frombits(binary.LittleEndian.Uint64(body[at:]))
-		keep := body[at+8]&2 != 0
-		size := int(binary.LittleEndian.Uint32(body[at+9:]))
-		at += 13
-		if size < 0 || at+size > len(body) {
-			http.Error(w, "a sample is cut short", http.StatusBadRequest)
-			return
-		}
-		frame, err := n.pictures.Decode(body[at:at+size], int64(ts), keep)
-		at += size
-		if err != nil {
-			http.Error(w, engine.Scrub(err.Error(), 300), http.StatusInternalServerError)
-			return
-		}
-		if frame != nil {
-			out = binary.LittleEndian.AppendUint64(out, math.Float64bits(ts))
-			out = append(out, frame...)
-		}
-	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(out)
 }

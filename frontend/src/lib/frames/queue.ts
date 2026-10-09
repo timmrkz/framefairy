@@ -1,9 +1,10 @@
-// The frame queue: the episode played from its own file onto one canvas,
-// with the browser's decoders and the sound card's clock, so a clip plays
-// through its cuts the way the render does. Everything this file decides
-// is decided in plan.ts, with tests. This is only the glue to the browser:
-// reading the file, feeding VideoDecoder and AudioDecoder, drawing, and
-// scheduling the sound.
+// The frame queue: the episode played onto one canvas with the sound
+// card's clock, so a clip plays through its cuts the way the render does.
+// Every frame and every sample comes from ffmpeg on the Go side, the
+// episode's decoder, see docs/VIDEO-PREVIEW.md. The browser decodes
+// nothing. Everything this file decides is decided in plan.ts, with tests.
+// This is only the glue: the file's index, asking the Go side for frames
+// and sound, drawing, and scheduling the sound.
 //
 // How it runs, in short:
 //
@@ -25,11 +26,11 @@
 //   cut never waits for a decoder.
 // - Frames are closed the moment they are replaced or not needed, and each
 //   decoder holds at most a few, so memory stays flat over any length.
-// - Nothing polls. Work is started by the decoders' own events, by a read
-//   arriving, and by the animation frame that draws while playing.
+// - Nothing polls. Work is started by the decoders' own events, by frames
+//   and sound arriving, and by the animation frame that draws while
+//   playing.
 import { AppFrames, AppPictures } from "./app";
-import { NativePictures, openNative } from "./native";
-import { findMoov, MP4Error, parseMoov, pcmPlanes, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
+import { findMoov, MP4Error, parseMoov, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
   fade,
@@ -37,7 +38,6 @@ import {
   heardAt,
   Keeper,
   Program,
-  spans,
   stillFeed,
   VideoPlan,
   type AudioRun,
@@ -96,11 +96,8 @@ export type Stats = {
 const DEPTH = 4;
 // How far ahead of the playhead the next piece's decoder starts, seconds.
 const NEXT_AHEAD = 2;
-// How far ahead the plan is worked out and the file is read, seconds.
+// How far ahead the plan is worked out, seconds.
 const READ_AHEAD = 4;
-// How far a cue reads ahead, seconds. A drag on the clip timeline makes a
-// cue at every step, and only the last one is played.
-const CUE_AHEAD = 1;
 // How much sound is decoded ahead of what is heard, seconds.
 const SOUND_AHEAD = 1;
 // How far ahead the sound is fed while the page's frames stop, behind
@@ -119,8 +116,6 @@ const SOUND_FIRST = 0.15;
 const START_LEAD = 0.025;
 // Samples in one stretch of sound handed to the sound card.
 const CHUNK = 4096;
-// Bytes of the file kept read, at most.
-const CACHE = 64 << 20;
 
 // A unique timestamp for every sample fed, in the order the samples of
 // its run are shown, so a decoder that orders its output by timestamp
@@ -129,15 +124,13 @@ function stamp(run: number, seconds: number): number {
   return run * 1e11 + 1e10 + Math.round(seconds * 1e6);
 }
 
-type Span = { from: number; to: number; data: Uint8Array | null; ready: Promise<void>; used: number };
-
-// The episode file, read in ranges and kept for a while.
+// The episode file, of which only the index is read here: which frames
+// and which packets of sound there are, and when. The Go side decodes
+// both, see docs/VIDEO-PREVIEW.md. Step 5 there takes this away too.
 class Reader {
   size = 0;
   reads = 0;
   bytes = 0;
-  private spans: Span[] = [];
-  private kept = 0;
 
   constructor(readonly url: string) {}
 
@@ -167,51 +160,6 @@ class Reader {
     return parseMoov(moov);
   }
 
-  // Starts reading whatever of these ranges is not read or on its way.
-  want(ranges: { from: number; to: number }[]) {
-    for (const r of spans(ranges, this.spans)) {
-      const span: Span = { from: r.from, to: r.to, data: null, ready: Promise.resolve(), used: performance.now() };
-      span.ready = this.read(r.from, r.to).then(
-        (data) => {
-          span.data = data;
-          this.kept += data.length;
-          this.trim();
-        },
-        () => {
-          this.spans = this.spans.filter((s) => s !== span);
-        },
-      );
-      this.spans.push(span);
-    }
-  }
-
-  // The bytes of a sample if they are in hand, or the promise of them.
-  get(offset: number, size: number): Uint8Array | Promise<void> {
-    const span = this.spans.find((s) => s.from <= offset && offset + size <= s.to);
-    if (!span) {
-      this.want([{ from: offset, to: offset + size }]);
-      return this.spans[this.spans.length - 1].ready;
-    }
-    span.used = performance.now();
-    if (!span.data) return span.ready;
-    return span.data.subarray(offset - span.from, offset - span.from + size);
-  }
-
-  // Lets go of what was used longest ago once too much is kept.
-  private trim() {
-    if (this.kept <= CACHE) return;
-    const done = this.spans.filter((s) => s.data).sort((a, b) => a.used - b.used);
-    for (const s of done) {
-      if (this.kept <= CACHE) break;
-      this.kept -= s.data!.length;
-      this.spans = this.spans.filter((x) => x !== s);
-    }
-  }
-
-  forget() {
-    this.spans = [];
-    this.kept = 0;
-  }
 }
 
 // Sound out of a decoder, the part of AudioData the queue reads.
@@ -471,78 +419,9 @@ export function soundChunks(body: Uint8Array, channels: number): Float32Array {
   return out;
 }
 
-// Plain sound, as it lies in the file, turned into the sound card's
-// numbers. It answers the way a decoder does, after the call that fed it,
-// so the queue cannot tell the two apart.
-class PlainSound implements SoundDecoder {
-  state = "configured";
-  private waiting: { timestamp: number; data: Uint8Array }[] = [];
-  private flushes: { done: () => void; fail: (e: Error) => void }[] = [];
-  private due = false;
-  constructor(
-    private track: AudioTrack,
-    private output: (s: Sound) => void,
-    private dequeue: () => void,
-  ) {}
-  get decodeQueueSize() {
-    return this.waiting.length;
-  }
-  decode(timestamp: number, data: Uint8Array) {
-    this.waiting.push({ timestamp, data });
-    this.kick();
-  }
-  flush() {
-    return new Promise<void>((done, fail) => {
-      this.flushes.push({ done, fail });
-      this.kick();
-    });
-  }
-  restart() {
-    this.waiting = [];
-    const was = this.flushes;
-    this.flushes = [];
-    for (const f of was) f.fail(new Error("restarted"));
-  }
-  close() {
-    this.restart();
-    this.state = "closed";
-  }
-  private kick() {
-    if (this.due) return;
-    this.due = true;
-    setTimeout(() => this.run(), 0);
-  }
-  private run() {
-    this.due = false;
-    const pcm = this.track.pcm!;
-    const channels = this.track.channels;
-    while (this.waiting.length && this.state === "configured") {
-      const p = this.waiting.shift()!;
-      const n = Math.floor(p.data.length / (pcm.bytes * channels));
-      const planes = Array.from({ length: channels }, () => new Float32Array(n));
-      pcmPlanes(p.data, pcm, channels, planes);
-      this.output({
-        timestamp: p.timestamp,
-        numberOfFrames: n,
-        numberOfChannels: channels,
-        sampleRate: this.track.sampleRate,
-        copyTo: (dst, o) => dst.set(planes[o.planeIndex].subarray(0, Math.min(n, dst.length))),
-        close() {},
-      });
-    }
-    if (this.state !== "configured") return;
-    this.dequeue();
-    if (!this.waiting.length) {
-      const was = this.flushes;
-      this.flushes = [];
-      for (const f of was) f.done();
-    }
-  }
-}
-
-// A picture decoder: the browser's, or AppPictures, whose frames the Go
-// side decodes for a file the browser cannot. A chunk is fed with its rank
-// and whether it will be drawn, which only the Go side's needs.
+// A picture decoder, AppPictures, whose frames the Go side decodes. It
+// answers the calls of a VideoDecoder, so the queue feeds it the way it fed
+// the browser's. A chunk is fed with its rank and whether it will be drawn.
 interface Pictures {
   readonly state: string;
   readonly decodeQueueSize: number;
@@ -552,40 +431,6 @@ interface Pictures {
   // Drops everything, ready for a key frame.
   reset(): void;
   close(): void;
-}
-
-class WebPictures implements Pictures {
-  private d: VideoDecoder;
-  constructor(
-    private config: VideoDecoderConfig,
-    output: (f: VideoFrame) => void,
-    error: (e: DOMException) => void,
-    dequeue: () => void,
-  ) {
-    this.d = new VideoDecoder({ output, error });
-    this.d.configure(config);
-    this.d.addEventListener("dequeue", dequeue);
-  }
-  get state() {
-    return this.d.state;
-  }
-  get decodeQueueSize() {
-    return this.d.decodeQueueSize;
-  }
-  decode(timestamp: number, key: boolean, data: Uint8Array) {
-    this.d.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data }));
-  }
-  flush() {
-    return this.d.flush();
-  }
-  reset() {
-    if (this.d.state !== "configured") return;
-    this.d.reset();
-    this.d.configure(this.config);
-  }
-  close() {
-    if (this.d.state !== "closed") this.d.close();
-  }
 }
 
 // Nothing, for a chunk whose bytes the Go side reads for itself.
@@ -658,14 +503,9 @@ export class FrameQueue {
   private sound: AudioTrack | null = null;
   private slots: Slot[] = [];
   private soundDecoder: SoundDecoder | null = null;
-  private videoConfig: VideoDecoderConfig | null = null;
-  // The Go side's frames, for a file the browser says it cannot decode or
-  // fails on, or null while the browser decodes: from the system's own
-  // decoder, one open for each of the two picture decoders, or else from
-  // ffmpeg's streams.
+  // The Go side's frames, from the episode's decoder: every frame drawn,
+  // whatever the file. Null only until the file's index is read.
   private app: AppFrames | null = null;
-  private native: { ids: string[]; width: number; height: number } | null = null;
-  private changing = false;
   private closed = false;
   private trouble = "";
 
@@ -675,6 +515,7 @@ export class FrameQueue {
   private wanted: { pieces: Piece[] | null; loop: boolean } = { pieces: null, loop: false };
   private wantedKey = "";
   private built: Program | null = null;
+  private asked: [Piece[] | null, boolean] | null = null;
 
   private state: State = "paused";
   // Where the playhead is, in the episode.
@@ -738,25 +579,17 @@ export class FrameQueue {
   }
 
   private async open() {
-    if (typeof VideoDecoder === "undefined") throw new MP4Error("the app cannot decode video on this system");
+    if (typeof VideoFrame === "undefined") throw new MP4Error("the app cannot draw video on this system");
     const movie = await this.reader.open();
+    this.stats.reads = this.reader.reads;
+    this.stats.bytesRead = this.reader.bytes;
     if (this.closed) throw new Error("closed");
     this.movie = movie;
     this.video = movie.video ?? null;
     this.sound = movie.audio ?? null;
     if (!this.video) throw new MP4Error("the episode has no picture the video preview can decode");
-    const v = this.video;
-    const config: VideoDecoderConfig = {
-      codec: v.codec,
-      description: v.description,
-      codedWidth: v.width,
-      codedHeight: v.height,
-      optimizeForLatency: true,
-    };
-    // Every file's picture comes from ffmpeg on the Go side, the first step
-    // of docs/VIDEO-PREVIEW.md, measured before the webview's decoders and
-    // the Mac's own are removed.
-    this.videoConfig = config;
+    // Every file's picture comes from ffmpeg on the Go side, the episode's
+    // decoder. The webview decodes nothing, see docs/VIDEO-PREVIEW.md.
     this.app = this.fromApp();
     // A sound card at the episode's own rate, so the sound is resampled
     // once, on its way out, rather than stretch by stretch. It starts held,
@@ -768,23 +601,21 @@ export class FrameQueue {
     }
     this.out = this.audio.createGain();
     this.out.connect(this.audio.destination);
-    for (let i = 0; i < 2; i++) this.slots.push(this.makeSlot(config));
+    for (let i = 0; i < 2; i++) this.slots.push(this.makeSlot());
     if (this.sound) await this.openSound(this.sound);
     if (this.closed) throw new Error("closed");
   }
 
+  // The sound, decoded by ffmpeg on the Go side whatever it is, plain
+  // sound in a MOV too.
   private async openSound(a: AudioTrack) {
     const output = (d: Sound) => this.soundOut(d);
     const dequeue = () => this.pumpSound();
-    if (a.pcm) {
-      this.soundDecoder = new PlainSound(a, output, dequeue);
-      return;
-    }
     const path = new URL(this.reader.url, location.href).searchParams.get("path") ?? "";
     this.soundDecoder = new GoSound(path, a.sampleRate, Math.min(a.channels, 8), output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
   }
 
-  private makeSlot(config: VideoDecoderConfig): Slot {
+  private makeSlot(): Slot {
     const slot: Slot = {
       decoder: null as unknown as Pictures,
       run: null,
@@ -796,21 +627,12 @@ export class FrameQueue {
       flushing: false,
       firstRank: 0,
     };
-    slot.decoder = this.pictures(slot, config);
+    slot.decoder = new AppPictures(
+      this.app!,
+      (f) => this.frameOut(slot, f),
+      () => this.pump(),
+    );
     return slot;
-  }
-
-  private pictures(slot: Slot, config: VideoDecoderConfig): Pictures {
-    const output = (f: VideoFrame) => this.frameOut(slot, f);
-    const dequeue = () => this.pump();
-    if (this.native) {
-      const n = this.native;
-      const id = n.ids[this.slots.includes(slot) ? this.slots.indexOf(slot) : this.slots.length] ?? n.ids[0];
-      const colour = { ...this.video!.colour, fullRange: true };
-      return new NativePictures(id, n.width, n.height, colour, output, dequeue, (why) => void this.nativeFailed(why));
-    }
-    if (this.app) return new AppPictures(this.app, output, dequeue);
-    return new WebPictures(config, output, (e) => this.pictureFailed(e), dequeue);
   }
 
   // The Go side's frames for this episode, decoded at the size of the
@@ -840,62 +662,6 @@ export class FrameQueue {
     return { width: even(v.width * scale), height: even(v.height * scale) };
   }
 
-  // The Go side decodes the picture from now on: the system's own decoder
-  // where it takes the file, ffmpeg's streams where it does not.
-  private async fromGoSide() {
-    const v = this.video!;
-    const size = this.previewSize();
-    const coded = { width: v.width, height: v.height };
-    const ids = await Promise.all([0, 1].map(() => openNative(v.codec, v.description, coded, size)));
-    if (ids.every((id) => id)) this.native = { ids: ids as string[], ...size };
-    else {
-      for (const id of ids) if (id) void fetch(`/frames/close?id=${id}`).catch(() => {});
-      this.app = this.fromApp();
-    }
-  }
-
-  // The system's own decoder failed on a frame, or would not scale it:
-  // ffmpeg's streams take over.
-  private async nativeFailed(why: string) {
-    if (this.closed || !this.native) return;
-    console.warn("frame queue: the system's decoder failed, ffmpeg decodes the picture:", why);
-    this.native = null;
-    this.app = this.fromApp();
-    this.replaceDecoders();
-  }
-
-  // The browser's decoder failed on a frame, which WebKit does with HEVC
-  // in 10-bit colour after saying it would take it. The Go side decodes the
-  // picture from then on, and whatever was under way starts again on it.
-  private pictureFailed(e: DOMException) {
-    // Both decoders fail on the same file, and the second one's error
-    // comes after the change is made.
-    if (this.closed || this.app || this.native || this.changing) return;
-    console.warn("frame queue: the browser's decoder failed, the app decodes the picture:", e.message);
-    this.changing = true;
-    this.stopPlay();
-    void this.fromGoSide().then(() => {
-      this.changing = false;
-      if (!this.closed) this.replaceDecoders();
-    });
-  }
-
-  // Every picture decoder made again for the way the picture is decoded
-  // now, and whatever was under way started again on them.
-  private replaceDecoders() {
-    const was = this.state;
-    this.stopPlay();
-    for (const slot of this.slots) {
-      slot.decoder.close();
-      slot.decoder = this.pictures(slot, this.videoConfig!);
-    }
-    if (was === "playing" || was === "starting") this.start(this.at);
-    else {
-      this.state = "paused";
-      this.settle(this.at);
-    }
-  }
-
   // The sound card's rate is the episode's, where the browser allows it.
   get sampleRate(): number {
     return this.sound?.sampleRate ?? this.audio.sampleRate;
@@ -919,9 +685,28 @@ export class FrameQueue {
   // again.
   setProgram(pieces: Piece[] | null, loop: boolean) {
     if (this.relooped(pieces, loop)) return;
+    // A running play is never changed in place, rule 6 of
+    // docs/VIDEO-PREVIEW.md: it plays the program it started with, and the
+    // program asked for now is what the next play plays, the space bar's
+    // or a click's on the clip timeline. A clip edge or a cut dragged
+    // while the clip played started the play over at every step, and the
+    // picture, the sound and the playhead stuttered with the hand.
+    if (this.state === "playing" || this.state === "starting") {
+      const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
+      this.asked = JSON.stringify([copy, loop]) === this.wantedKey ? null : [pieces, loop];
+      return;
+    }
+    this.asked = null;
     if (!this.want(pieces, loop)) return;
-    if (this.state === "playing" || this.state === "starting") this.start(this.at);
-    else if (this.state === "cued" || this.vplan) this.seek(this.at);
+    if (this.state === "cued" || this.vplan) this.seek(this.at);
+  }
+
+  // The program asked for while a play ran, for the next play, see
+  // setProgram. Taken as the program, it says whether it is another.
+  private takePending(): boolean {
+    const p = this.asked;
+    this.asked = null;
+    return p ? this.want(...p) : false;
   }
 
   // Only the loop switched, with the same pieces, while a play starts or
@@ -971,7 +756,9 @@ export class FrameQueue {
   // click was lost.
   seek(at: number, program?: [Piece[] | null, boolean]) {
     if (this.closed) return;
-    const changed = program ? this.want(...program) : false;
+    // A seek is a gesture of its own, so it plays what is asked for now.
+    if (program) this.asked = null;
+    const changed = program ? this.want(...program) : this.takePending();
     // A play starting from this very moment on this program is the play
     // asked for. A click seeks as the hand goes down and again as it comes
     // up, and starting over would throw away what was decoded between.
@@ -1015,9 +802,12 @@ export class FrameQueue {
     // The sound card starts on the gesture that asked for it, or a browser
     // keeps it silent.
     void this.audio?.resume();
+    // What was asked for while the last play ran is what this one plays,
+    // so a play paused or cued on the program before starts again.
+    const changed = this.takePending();
     // Paused in the middle of a play: the play is all still there, the
     // sound card was only held.
-    if (this.vplan && this.c0 !== null && this.state === "paused") {
+    if (!changed && this.vplan && this.c0 !== null && this.state === "paused") {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
       this.ramp(1);
@@ -1026,7 +816,7 @@ export class FrameQueue {
       return;
     }
     // Cued: everything is there but the clock.
-    if (this.state === "cued") {
+    if (!changed && this.state === "cued") {
       this.state = "starting";
       this.report();
       this.maybeBegin();
@@ -1091,7 +881,6 @@ export class FrameQueue {
     this.shown = null;
     this.soundDecoder?.close();
     if (this.audio && this.audio.state !== "closed") void this.audio.close();
-    this.reader.forget();
     this.listeners.clear();
   }
 
@@ -1220,22 +1009,13 @@ export class FrameQueue {
       this.report();
       return;
     }
-    const want: { from: number; to: number }[] = [];
-    for (let i = feed.key; i <= feed.last; i++) want.push({ from: s.offset[i], to: s.offset[i] + s.size[i] });
-    if (!this.app) this.reader.want(want);
     slot.run = { id: -1 - ticket, key: feed.key, last: feed.last, kFirst: 0, kLast: 0, lastRank: feed.rank };
     slot.firstRank = feed.rank;
     for (let i = feed.key; i <= feed.last; i++) {
-      let data = this.app ? NO_DATA : this.reader.get(s.offset[i], s.size[i]);
-      while (!(data instanceof Uint8Array)) {
-        await data;
-        if (ticket !== this.ticket) return;
-        data = this.reader.get(s.offset[i], s.size[i]);
-      }
       if (ticket !== this.ticket || slot.decoder.state !== "configured") return;
       const ts = stamp(0, s.pts[i] / s.timescale);
       slot.fed.set(ts, s.rank[i]);
-      slot.decoder.decode(ts, s.key[i] === 1, data, s.rank[i], s.rank[i] === feed.rank, feed.rank);
+      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, s.rank[i], s.rank[i] === feed.rank, feed.rank);
     }
     try {
       await slot.decoder.flush();
@@ -1333,7 +1113,6 @@ export class FrameQueue {
           this.soundDone = true;
         }
         this.k = 0;
-        this.readAhead();
         this.pump();
         this.pumpSound();
       },
@@ -1508,7 +1287,6 @@ export class FrameQueue {
     for (const s of this.slots) if (s.run && s.run.id >= 0 && s.run.kLast < k) this.release(s);
     plan.forget(k);
     this.aplan?.forget(Math.round(pos * this.sampleRate));
-    this.readAhead();
     this.pump();
     this.pumpSound();
     this.loop();
@@ -1554,44 +1332,6 @@ export class FrameQueue {
     return this.slots.find((s) => s.run?.id === run) ?? null;
   }
 
-  // Reads what the next seconds of feeding will need, picture and sound
-  // together, so a request brings both from the part of the file they
-  // share.
-  private readAhead() {
-    const want: { from: number; to: number }[] = [];
-    const v = this.video!.samples;
-    const ahead = this.state === "cued" ? CUE_AHEAD : READ_AHEAD;
-    if (this.vplan && !this.app) {
-      const frames = Math.ceil(ahead / this.video!.frame);
-      let budget = frames * 2;
-      for (const run of this.vplan.runs) {
-        if (run.kLast < this.k) continue;
-        const slot = this.slotOf(run.id);
-        const from = slot ? slot.next : run.key;
-        for (let i = from; i <= run.last && budget > 0; i++, budget--) {
-          want.push({ from: v.offset[i], to: v.offset[i] + v.size[i] });
-        }
-      }
-    }
-    if (this.aplan && this.sound) {
-      const a = this.sound.samples;
-      // Packets of 20 ms, the shortest any codec here has, so a budget is
-      // never short. Plain sound is read by the chunk.
-      let budget = Math.ceil(ahead / 0.02);
-      for (const run of this.aplan.runs) {
-        if (budget <= 0) break;
-        if (this.soundRun && run.id < this.soundRun.id) continue;
-        const from = this.soundRun === run ? this.soundNext : run.first;
-        for (let j = from; j <= run.last && budget > 0; j++, budget--) {
-          want.push({ from: a.offset[j], to: a.offset[j] + a.size[j] });
-        }
-      }
-    }
-    if (want.length) this.reader.want(want);
-    this.stats.reads = this.reader.reads;
-    this.stats.bytesRead = this.reader.bytes;
-  }
-
   // ---- Feeding the picture
 
   private pump() {
@@ -1622,20 +1362,12 @@ export class FrameQueue {
       const hungry = busy === 0 && slot.ready.length === 0;
       if (busy >= 3 || (slot.ready.length + slot.coming >= DEPTH && !hungry)) return;
       const i = slot.next;
-      const data = this.app ? NO_DATA : this.reader.get(s.offset[i], s.size[i]);
-      if (!(data instanceof Uint8Array)) {
-        const ticket = this.ticket;
-        void data.then(() => {
-          if (ticket === this.ticket) this.pump();
-        });
-        return;
-      }
       const ts = stamp(run.id, s.pts[i] / s.timescale);
       const rank = s.rank[i];
       slot.fed.set(ts, rank);
       const wanted = rank >= slot.firstRank && rank <= run.lastRank;
       if (wanted) slot.coming++;
-      slot.decoder.decode(ts, s.key[i] === 1, data, rank, wanted, slot.firstRank);
+      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, rank, wanted, slot.firstRank);
       slot.next++;
     }
     // Everything fed. Once no later piece can carry the run on, the decoder
@@ -1719,22 +1451,12 @@ export class FrameQueue {
       }
       if (this.soundReach - heard >= ahead || dec.decodeQueueSize >= 8) return;
       const j = this.soundNext;
-      // Only plain sound is read from the file here. The Go side reads and
-      // decodes the rest itself.
-      const data = dec instanceof GoSound ? NOTHING : this.reader.get(s.offset[j], s.size[j]);
-      if (!(data instanceof Uint8Array)) {
-        const ticket = this.ticket;
-        void data.then(() => {
-          if (ticket === this.ticket) this.pumpSound();
-        });
-        return;
-      }
       const ts = stamp(run.id, s.pts[j] / s.timescale);
       this.soundFed.push({ ts, run, j, length: (s.duration[j] / s.timescale) * 1e6 });
       this.soundNext++;
       const p = plan.packet(j);
       for (const sl of plan.slices(run, j, p.n)) this.soundReach = Math.max(this.soundReach, sl.out + (sl.to - sl.from));
-      dec.decode(ts, data, p.at, p.n);
+      dec.decode(ts, NOTHING, p.at, p.n);
     }
   }
 

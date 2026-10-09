@@ -180,19 +180,37 @@ func (d *decoder) request(f []string) {
 			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("an open the decoder cannot take")})
 			return
 		}
-		c := d.cursors[id]
+		c := d.cursor(id, false)
 		if c == nil {
-			c = &cursor{d: d, id: id, work: make(chan func(), 4)}
-			d.cursors[id] = c
-			go c.run()
+			return
 		}
 		c.work <- func() { c.open(max(0, from), w, h) }
+	case f[0] == "sound" && len(f) == 6:
+		seek, err1 := strconv.ParseFloat(f[2], 64)
+		from, err2 := strconv.ParseFloat(f[3], 64)
+		rate, err3 := strconv.Atoi(f[4])
+		channels, err4 := strconv.Atoi(f[5])
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || math.IsNaN(seek) || math.IsInf(seek, 0) ||
+			math.IsNaN(from) || math.IsInf(from, 0) || seek < 0 || from < seek ||
+			rate < 8000 || rate > 192000 || channels < 1 || channels > 8 {
+			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("a sound the decoder cannot take")})
+			return
+		}
+		c := d.cursor(id, true)
+		if c == nil {
+			return
+		}
+		c.work <- func() { c.openSound(seek, from, rate, channels) }
 	case f[0] == "next" && len(f) == 4:
 		n, err1 := strconv.Atoi(f[2])
 		skip, err2 := strconv.ParseFloat(f[3], 64)
 		c := d.cursors[id]
 		if c == nil || err1 != nil || err2 != nil || n < 1 || math.IsNaN(skip) {
 			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("a next for no open cursor")})
+			return
+		}
+		if c.sound {
+			c.work <- func() { c.nextSound(min(n, 16)) }
 			return
 		}
 		c.work <- func() { c.next(min(n, 16), skip) }
@@ -204,6 +222,23 @@ func (d *decoder) request(f []string) {
 	}
 }
 
+// cursor is the cursor of this number, made where there is none, of
+// picture or of sound. A number is one kind for as long as it is open, and
+// an open of the other kind fails.
+func (d *decoder) cursor(id uint32, sound bool) *cursor {
+	c := d.cursors[id]
+	if c == nil {
+		c = &cursor{d: d, id: id, sound: sound, work: make(chan func(), 4)}
+		d.cursors[id] = c
+		go c.run()
+	}
+	if c.sound != sound {
+		d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("a cursor of picture asked for sound, or of sound for picture")})
+		return nil
+	}
+	return c
+}
+
 func (d *decoder) closeAll() {
 	for id, c := range d.cursors {
 		delete(d.cursors, id)
@@ -211,8 +246,9 @@ func (d *decoder) closeAll() {
 	}
 }
 
-// video is the episode's picture opened for reading: the file, its first
-// picture stream and a decoder for it.
+// video is the episode opened for reading: the file, its first picture
+// stream, or its first sound stream for a cursor of sound, and a decoder
+// for it.
 type video struct {
 	fc     *astiav.FormatContext
 	stream *astiav.Stream
@@ -220,6 +256,10 @@ type video struct {
 }
 
 func openVideo(path string) (*video, error) {
+	return openMedia(path, astiav.MediaTypeVideo)
+}
+
+func openMedia(path string, kind astiav.MediaType) (*video, error) {
 	fc := astiav.AllocFormatContext()
 	if fc == nil {
 		return nil, errors.New("no memory to open the episode")
@@ -234,13 +274,16 @@ func openVideo(path string) (*video, error) {
 		return nil, fmt.Errorf("the episode cannot be read: %w", err)
 	}
 	for _, s := range fc.Streams() {
-		if s.CodecParameters().MediaType() == astiav.MediaTypeVideo {
+		if s.CodecParameters().MediaType() == kind {
 			v.stream = s
 			break
 		}
 	}
 	if v.stream == nil {
 		v.close()
+		if kind == astiav.MediaTypeAudio {
+			return nil, errors.New("the episode has no sound")
+		}
 		return nil, errors.New("the episode has no picture")
 	}
 	return v, nil
@@ -301,9 +344,10 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 // cursor is one place in the episode with a decoder of its own. Its work,
 // an open or a next, runs on its own goroutine, one after another.
 type cursor struct {
-	d    *decoder
-	id   uint32
-	work chan func()
+	d     *decoder
+	id    uint32
+	sound bool
+	work  chan func()
 
 	v       *video
 	pkt     *astiav.Packet
@@ -327,6 +371,16 @@ type cursor struct {
 	said      string
 	keys      []string
 	graphKeys []string
+	// Sound: the rate and channels asked for, the moment its samples
+	// start, decoded samples not yet handed over, how many chunks were,
+	// and whether the episode's sound has ended.
+	rate, channels int
+	soundFrom      float64
+	// Whether it has moved from where the file was opened.
+	read       bool
+	pcm        []byte
+	chunks     int
+	soundEnded bool
 }
 
 func (c *cursor) run() {
@@ -578,35 +632,50 @@ func (c *cursor) bringOut() error {
 // the size of the canvas, 8-bit and in full range, the same as
 // engine.PreviewFrames asks of the ffmpeg program on the processor.
 func (c *cursor) makeGraph() error {
-	chain := fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height)
+	return c.buildGraph(fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height))
+}
+
+// buildGraph builds a chain from the decoded frame's kind to chain's end,
+// for a picture or for sound.
+func (c *cursor) buildGraph(chain string) error {
+	what, source, sinkName := "the picture could not be scaled", "buffer", "buffersink"
+	if c.sound {
+		what, source, sinkName = "the sound could not be converted", "abuffer", "abuffersink"
+	}
 	g := astiav.AllocFilterGraph()
 	if g == nil {
-		return errors.New("no memory to scale the picture")
+		return errors.New(what + ", no memory")
 	}
 	c.own(&c.graphKeys, g)
-	fail := func(what string, err error) error {
-		err = c.withSaid(fmt.Errorf("the picture could not be scaled, %s: %w", what, err))
+	fail := func(part string, err error) error {
+		err = c.withSaid(fmt.Errorf("%s, %s: %w", what, part, err))
 		c.disown(&c.graphKeys)
 		g.Free()
 		return err
 	}
-	src, err := g.NewBuffersrcFilterContext(astiav.FindFilterByName("buffer"), "in")
+	src, err := g.NewBuffersrcFilterContext(astiav.FindFilterByName(source), "in")
 	if err != nil {
 		return fail("its source", err)
 	}
-	sink, err := g.NewBuffersinkFilterContext(astiav.FindFilterByName("buffersink"), "out")
+	sink, err := g.NewBuffersinkFilterContext(astiav.FindFilterByName(sinkName), "out")
 	if err != nil {
 		return fail("its sink", err)
 	}
 	p := astiav.AllocBuffersrcFilterContextParameters()
 	defer p.Free()
-	p.SetWidth(c.decoded.Width())
-	p.SetHeight(c.decoded.Height())
-	p.SetPixelFormat(c.decoded.PixelFormat())
-	p.SetSampleAspectRatio(c.decoded.SampleAspectRatio())
 	p.SetTimeBase(c.v.stream.TimeBase())
-	p.SetColorRange(c.decoded.ColorRange())
-	p.SetColorSpace(c.decoded.ColorSpace())
+	if c.sound {
+		p.SetSampleRate(c.decoded.SampleRate())
+		p.SetSampleFormat(c.decoded.SampleFormat())
+		p.SetChannelLayout(c.decoded.ChannelLayout())
+	} else {
+		p.SetWidth(c.decoded.Width())
+		p.SetHeight(c.decoded.Height())
+		p.SetPixelFormat(c.decoded.PixelFormat())
+		p.SetSampleAspectRatio(c.decoded.SampleAspectRatio())
+		p.SetColorRange(c.decoded.ColorRange())
+		p.SetColorSpace(c.decoded.ColorSpace())
+	}
 	if err := src.SetParameters(p); err != nil {
 		return fail("its source", err)
 	}

@@ -19,6 +19,13 @@
 //   ["join", n]        double-clicks on the clip timeline's nth cut, from 1,
 //                      which puts the part back
 //   ["trim", edge, px] drags the clip's "start" or "end" edge by px
+//   ["drag while playing", edge, px]
+//                      plays the clip if it does not play, and drags its
+//                      "end" edge, or the first edge of its first "cut", by
+//                      px in twenty steps while it plays, reading the
+//                      playhead and the frame on screen on every animation
+//                      frame from before the hand takes hold to after it
+//                      lets go
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -40,6 +47,8 @@
 //                      "uneven", or its picture starting after its sound,
 //                      "late"
 //   ["render"]         presses Render and waits until the short is written
+//   ["add sound alone"] adds a file of sound with no picture, named like a
+//                      video, with Add
 //   ["add cameras", seconds, switch]
 //                      adds one filmed by two cameras that switch so many
 //                      seconds in, each looking at its own subject
@@ -73,10 +82,9 @@
 //                      presses the bin of the "language" model on this
 //                      machine, under Downloaded models, or of the
 //                      "speech" model
-//   ["decoder fails"]  makes the browser's picture decoder fail on its first
-//                      frame, after saying it takes the file, the way
-//                      WebKit's does with HEVC in 10-bit colour, and opens
-//                      the episode again
+//   ["no browser decoder"]
+//                      takes the browser's picture and sound decoders away,
+//                      every one, and opens the episode again
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -104,6 +112,13 @@
 //                      first frame of the chosen clip and no other, and the
 //                      playhead was on the clip before the workspace asked
 //                      for the window
+//   ["left out", name] Add left out the file whose name starts so, says why
+//                      where the app says what went wrong, and the library
+//                      does not hold it
+//   ["played through"] since "drag while playing", the play went on as if
+//                      no hand were there: the playhead never went back nor
+//                      stood still for longer than 150 ms, and no frame
+//                      drawn was older than the one before it
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -622,6 +637,29 @@ export const sequences = [
     ],
   },
   {
+    // Step 3 of docs/VIDEO-PREVIEW.md: Add asks the episode's decoder for a
+    // file's first frame, and leaves out a file with no picture, with the
+    // reason, where before it was taken and the video preview failed on it.
+    name: "a file with sound and no picture is left out by Add, with the reason",
+    steps: [["add sound alone"], ["left out", "nur-ton-"]],
+  },
+  {
+    // Tim saw the play stutter, the playhead with it, as he dragged the
+    // edge of a cut while the clip played. Only the space bar and a click
+    // on the clip timeline change a play: an edge dragged while it plays
+    // is saved and drawn, and the play goes on as it was.
+    name: "an edge dragged while the clip plays changes nothing that plays",
+    steps: [
+      ["cut at", 0.6],
+      ["cuts", 1],
+      ["drag while playing", "cut", 40],
+      ["played through"],
+      ["press", "Space"],
+      ["drag while playing", "end", -60],
+      ["played through"],
+    ],
+  },
+  {
     // Tim saw the episode's first frames flicker in the video preview as an
     // episode opened, and then the playhead jump to its clip. An episode
     // with a clip opens on the clip, and nothing before the clip is drawn
@@ -662,10 +700,12 @@ export const sequences = [
     ],
   },
   {
-    // Tim's start.mp4, HEVC in 10-bit colour: WebKit said it would decode
-    // it and then failed on the first frame, "Decoder failure".
-    name: "a picture the browser's decoder fails on comes from the Go side",
-    steps: [["decoder fails"], ["from the app", 4]],
+    // One engine: every frame comes from ffmpeg on the Go side, so a
+    // webview with no decoder of its own plays the episode the same. Tim's
+    // start.mp4, HEVC in 10-bit colour, was where it began: WebKit said it
+    // would decode it and then failed on the first frame.
+    name: "the picture comes from the Go side with no decoder in the browser",
+    steps: [["no browser decoder"], ["from the app", 4]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -1230,6 +1270,43 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await watch.step("trim", s);
         break;
       }
+      case "drag while playing": {
+        const [edge, px] = arg;
+        await preview(page, 0.2);
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(700);
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        await page.waitForTimeout(300);
+        const g = await handles(page);
+        const box = edge === "cut" ? g.cutEdges[0] : g[edge];
+        if (!box) {
+          wrong = `there is no ${edge} edge to drag`;
+          break;
+        }
+        await page.mouse.move(middle(box), box.y + box.h / 2);
+        await page.mouse.down();
+        for (let i = 1; i <= 20; i++) {
+          await page.mouse.move(middle(box) + (px * i) / 20, box.y + box.h / 2);
+          await page.waitForTimeout(40);
+        }
+        await page.mouse.up();
+        await page.waitForTimeout(500);
+        await page.evaluate(() => (window.__playWatch = false));
+        await settle(page);
+        break;
+      }
       case "reset": {
         const g = await handles(page);
         await page.mouse.dblclick(middle(g[arg]), high(g.track));
@@ -1356,6 +1433,13 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
+        break;
+      }
+      case "add sound alone": {
+        await control(url, "/pick-sound");
+        await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+        await page.waitForTimeout(1500);
+        await settle(page);
         break;
       }
       case "add cameras": {
@@ -1553,19 +1637,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (JSON.stringify(now) === JSON.stringify(named)) wrong = `the settings still name ${JSON.stringify(now)}`;
         break;
       }
-      case "decoder fails": {
+      case "no browser decoder": {
         await page.addInitScript(() => {
-          const Real = window.VideoDecoder;
-          window.VideoDecoder = class extends Real {
-            constructor(init) {
-              super(init);
-              this.failWith = init.error;
-            }
-            decode() {
-              setTimeout(() => this.failWith(new DOMException("Decoder failure", "EncodingError")), 0);
-            }
-          };
-          window.VideoDecoder.isConfigSupported = async (config) => ({ supported: true, config });
+          for (const name of ["VideoDecoder", "AudioDecoder", "EncodedVideoChunk", "EncodedAudioChunk"]) {
+            Object.defineProperty(window, name, {
+              get() {
+                throw new Error(`${name} is not to be used: the Go side decodes`);
+              },
+            });
+          }
         });
         const name = (await episodeOn(page)).split("/").pop();
         await page.reload();
@@ -1684,6 +1764,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (!wrong && early.length) {
           wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
         }
+        break;
+      }
+      case "left out": {
+        const said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        const library = await ask(page, "Library");
+        if (!said.includes(`the picture of ${arg}`) || !said.includes("cannot be decoded")) {
+          wrong = `the app says "${said.trim()}", not why ${arg} was left out`;
+        } else if (library.some((e) => e.name.startsWith(arg))) {
+          wrong = `${arg} is in the library`;
+        }
+        break;
+      }
+      case "played through": {
+        const played = await page.evaluate(() => window.__played ?? []);
+        let still = 0;
+        let longest = 0;
+        for (let i = 1; i < played.length && !wrong; i++) {
+          const [t, at, n] = played[i];
+          const [t0, at0, n0] = played[i - 1];
+          if (at < at0 - 1e-6) wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while the hand was on the edge`;
+          else if (n >= 0 && n0 >= 0 && n < n0) wrong = `frame ${n} was drawn after frame ${n0} while the hand was on the edge`;
+          if (at === at0) still += t - t0;
+          else still = 0;
+          longest = Math.max(longest, still);
+        }
+        if (!wrong && played.length < 30) wrong = `only ${played.length} animation frames were read`;
+        if (!wrong && longest > 150) wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge`;
         break;
       }
       case "box": {

@@ -95,7 +95,14 @@ removed. Nothing is prepared before the first play.
    clip. #152 did the same in 366 lines by splicing the new program into
    the running play, and was closed for #155, which made the case
    impossible in about 40. The one exception is loop, 2.150, which only
-   changes what follows the clip's end. No other splice is built.
+   changes what follows the clip's end. No other splice is built. Only
+   the space bar and a click on the clip timeline change a play. An edge
+   of the clip or of a cut, dragged or clicked while it plays, moves no
+   playhead and changes nothing that plays: the edit is saved and drawn
+   at once, and the queue keeps the new pieces for the next play, seek
+   or click. An undo while it plays moves no playhead either. Tim heard
+   the play stutter with the hand on a cut's edge, because every step of
+   the drag started the play again from the playhead.
 7. **A rule before machinery.** When a case would need new machinery in
    the frame queue, the first question is whether a rule of the product
    makes the case not happen, as in rule 6. Machinery is built only where
@@ -133,12 +140,13 @@ closed for standing unused.
   Go side opens takes a cursor that a stream before it has finished with
   and only seeks it, so a jump starts no program and reads no index. Up
   to three are kept, and they are opened on the file as the decoder
-  starts, before any frame is asked for. Sound still comes from the
-  ffmpeg program and moves in with step 3.
+  starts, before any frame is asked for. Cursors of sound, two kept, read
+  the sound by the same rule the ffmpeg program reads it by for the render
+  and the transcript, and give the same samples, step 3.
 - It takes requests from the Go side: frames from a moment on at a size,
-  and stop, see `internal/framewire`. Sound from a moment on is not built
-  yet, step 3. A request for a new moment drops what the last one was
-  doing.
+  sound from a moment on at a rate in so many channels, and stop, see
+  `internal/framewire`. A request for a new moment drops what the last one
+  was doing.
 - Not built yet: keeping the frames around the playhead it has already
   decoded, so a step back, a step on and a drag over them cost nothing,
   and while paused decoding the frames on either side of the playhead
@@ -316,9 +324,9 @@ the Mac alone, against rule 2. It is not planned.
 | What | Where | Lines today |
 | --- | --- | ---: |
 | Our reader of MP4 and MOV | `frontend/src/lib/frames/mp4.ts` and its tests | 851 and 457 |
-| The Mac's decoder through cgo | `engine/pictures*.go`, `frontend/src/lib/frames/native.ts`, `/frames/native` and `/frames/decode` | about 600, and 148 of tests |
-| WebKit's decoders | `WebPictures`, `PlainSound` and the reader of byte ranges in `queue.ts` | about 200 |
-| The choice between decoders | `fromGoSide`, `pictureFailed`, `nativeFailed`, `replaceDecoders` in `queue.ts` | about 100 |
+| The Mac's decoder through cgo | `engine/pictures*.go`, `frontend/src/lib/frames/native.ts`, `/frames/native` and `/frames/decode` | about 600, and 148 of tests, removed in step 3 |
+| WebKit's decoders | `WebPictures`, `PlainSound` and the reader of byte ranges in `queue.ts` | about 200, removed in step 3 |
+| The choice between decoders | `fromGoSide`, `pictureFailed`, `nativeFailed`, `replaceDecoders` in `queue.ts` | about 100, removed in step 3 |
 | Colour in the interface and the full range forced for WebKit | `queue.ts`, `app.ts`, `engine/preview.go` | a few dozen |
 
 About 1,800 lines of code and 600 of tests, of about 6,400 in all, and
@@ -348,7 +356,8 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    first frame 4 ms after it is asked.
 3. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
    the choice between them. Refuse at Add a file whose picture ffmpeg
-   cannot decode.
+   cannot decode. The sound through the episode's decoder as well. Built
+   in #162.
 4. **Colour and HDR.** The frames carry pixels converted by ffmpeg from
    the file's tags, and the interface draws them as they come. Proved
    against ffmpeg's own conversion of the same frame, value by value, on

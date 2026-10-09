@@ -173,26 +173,18 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	}
 }
 
-// Where the system has no decoder of its own, opening one says so and the
-// page takes ffmpeg's streams. A batch for a decoder nobody opened is
-// refused.
-func TestTheFramesRouteSaysWhenThereIsNoSystemDecoder(t *testing.T) {
+// There is one way to the frames, the episode's decoder: the routes of
+// the Mac's own decoder, which the page fed with the file's samples, are
+// gone with it. Plan row 2.156, step 3 of docs/VIDEO-PREVIEW.md.
+func TestTheFramesRouteHasNoSecondDecoder(t *testing.T) {
 	svc, _, _ := library(t)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("POST", "/frames/native?codec=vp09&cw=320&ch=180&w=160&h=90", strings.NewReader("config")))
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("a decoder for VP9 was answered with %d: %q", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("POST", "/frames/decode?id=nobody", strings.NewReader("")))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("samples for no decoder were answered with %d", rec.Code)
-	}
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", nil))
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("a decoder opened with GET was answered with %d", rec.Code)
+	for _, route := range []string{"/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", "/frames/decode?id=nobody"} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("POST", route, strings.NewReader("config")))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d, want 404", route, rec.Code)
+		}
 	}
 }
 
@@ -201,6 +193,7 @@ func TestTheFramesRouteSaysWhenThereIsNoSystemDecoder(t *testing.T) {
 // decodes it, to its end.
 func TestTheFramesRouteStreamsSound(t *testing.T) {
 	ffmpegtest.Need(t)
+	needDecoder(t)
 	svc, mine, _ := library(t)
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc2=s=160x90:r=5:d=4",
@@ -246,11 +239,14 @@ func TestTheFramesRouteStreamsSound(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = want[int(1.5*48000)*8:]
-	if len(heard) != len(want) {
+	// To the end of the sound the file says it has, as the ffmpeg the app
+	// ships reads it. An older ffmpeg, the system's in CI on Linux, keeps
+	// the samples the AAC encoder padded its last packet with, up to 1024.
+	if extra := len(want) - len(heard); extra < 0 || extra > 1024*8 {
 		t.Fatalf("the stream held %d moments, the sound from 1.5 s has %d", len(heard)/8, len(want)/8)
 	}
 	worst := 0.0
-	for i := 0; i+4 <= len(want)-48000/10*8; i += 4 {
+	for i := 0; i+4 <= len(heard)-48000/10*8; i += 4 {
 		a := math.Float32frombits(binary.LittleEndian.Uint32(heard[i:]))
 		b := math.Float32frombits(binary.LittleEndian.Uint32(want[i:]))
 		worst = math.Max(worst, math.Abs(float64(a-b)))

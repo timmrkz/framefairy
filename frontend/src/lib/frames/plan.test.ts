@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Samples } from "./mp4";
-import { AudioPlan, fade, FADE, heardAt, Keeper, Program, spans, stillFeed, VideoPlan } from "./plan";
+import { AudioPlan, fade, FADE, heardAt, Keeper, Program, stillFeed, VideoPlan } from "./plan";
 
 // A track the way a file holds one, without the file: n samples of `step`
 // ticks, key frames every `gop`, and, for a picture with B-frames, the
@@ -402,29 +402,6 @@ describe("fade", () => {
     expect(fade(f, 0, 48000, r)).toBe(1);
     expect(fade(24000, 0, 48000, r)).toBe(1);
     expect(fade(47999, 0, 48000, r)).toBeCloseTo(0.5 / f);
-  });
-});
-
-describe("spans", () => {
-  test("reads what lies close together in one request and nothing twice", () => {
-    const got = spans(
-      [
-        { from: 0, to: 100 },
-        { from: 150, to: 200 },
-        { from: 10_000_000, to: 10_000_100 },
-        { from: 500, to: 600 },
-      ],
-      [{ from: 450, to: 700 }],
-      1000,
-    );
-    expect(got).toEqual([
-      { from: 0, to: 200 },
-      { from: 10_000_000, to: 10_000_100 },
-    ]);
-  });
-  test("never reads more than the most in one", () => {
-    const wants = Array.from({ length: 100 }, (_, i) => ({ from: i * 100, to: i * 100 + 100 }));
-    for (const s of spans(wants, [], 1000, 2500)) expect(s.to - s.from).toBeLessThanOrEqual(2500);
   });
 });
 

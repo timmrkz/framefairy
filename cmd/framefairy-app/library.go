@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
 	"framefairy/engine"
 )
@@ -68,7 +71,25 @@ func (s *FrameFairy) AddEpisodes() ([]string, error) {
 // further. An episode that has been searched before waits for a search to
 // be asked for.
 func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
-	added, err := s.store.AddEpisodes(videos)
+	// A file whose picture ffmpeg cannot decode is left out with the
+	// reason, the way a file that clashes is: the video preview would have
+	// nothing to show, and the render nothing to cut.
+	var take, refused []string
+	for _, v := range videos {
+		if why := undecodable(v); why != "" {
+			refused = append(refused, fmt.Sprintf("the picture of %s cannot be decoded, %s", filepath.Base(v), why))
+			continue
+		}
+		take = append(take, v)
+	}
+	added, err := s.store.AddEpisodes(take)
+	if len(refused) > 0 {
+		why := strings.Join(refused, ", ") + ", so it was left out"
+		if err != nil {
+			why = err.Error() + ". And " + why
+		}
+		err = errors.New(why)
+	}
 	for _, v := range added {
 		s.jobs.openEpisode(v)
 		s.levels.start(v)
@@ -76,6 +97,39 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	}
 	return added, err
 }
+
+// undecodable says why the picture of a video cannot be decoded, or ""
+// where it can: the episode's decoder is asked for its first frame. That
+// decoder is the one the video preview reads from when the episode opens,
+// so asking costs no start of it later.
+func undecodable(video string) string {
+	abs, err := filepath.Abs(video)
+	if err != nil {
+		return err.Error()
+	}
+	dec, err := openPreviews.decoder(abs)
+	if err != nil {
+		return strings.TrimSuffix(err.Error(), ".")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	frames := 0
+	err = dec.Stream(ctx, 0, 64, 36, func(float64, []byte) error {
+		frames++
+		return errFirstFrame
+	})
+	switch {
+	case frames > 0:
+		return ""
+	case err == nil:
+		return "it holds no frame"
+	default:
+		return strings.TrimSuffix(err.Error(), ".")
+	}
+}
+
+// errFirstFrame ends the stream undecodable asks for once a frame came.
+var errFirstFrame = errors.New("a frame came")
 
 // RemoveEpisode takes an episode out of the library. With deleteWork, it
 // also deletes everything made for it, so adding it again starts from

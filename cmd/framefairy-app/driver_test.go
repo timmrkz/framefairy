@@ -48,10 +48,12 @@ type desk struct {
 	bus *bus
 }
 
-// open starts the app over a new, empty library.
+// open starts the app over a new, empty library. Adding a video asks the
+// episode's decoder for its first frame, so the desk needs it.
 func open(t *testing.T) *desk {
 	t.Helper()
 	ffmpegtest.Need(t)
+	needDecoder(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))

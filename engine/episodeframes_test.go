@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -107,13 +109,13 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	until := time.Now().Add(10 * time.Second)
 	for {
 		dec.mu.Lock()
-		kept := len(dec.idle)
+		kept := len(dec.idle[pictureCursor])
 		dec.mu.Unlock()
-		if kept == cursorsKept {
+		if kept == cursorsKept[pictureCursor] {
 			break
 		}
 		if time.Now().After(until) {
-			t.Fatalf("%d cursors open after ten seconds, want %d", kept, cursorsKept)
+			t.Fatalf("%d cursors open after ten seconds, want %d", kept, cursorsKept[pictureCursor])
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -128,8 +130,9 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	dec.mu.Lock()
 	opened := dec.nextID
 	dec.mu.Unlock()
-	if opened != cursorsKept {
-		t.Errorf("%d cursors were opened, want the %d opened before the first frame and no more", opened, cursorsKept)
+	// The cursors of picture and the one of sound.
+	if want := uint32(cursorsKept[pictureCursor] + 1); opened != want {
+		t.Errorf("%d cursors were opened, want the %d opened before the first frame and no more", opened, want)
 	}
 }
 
@@ -378,6 +381,88 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 			}
 			if len(got) != 6 {
 				t.Fatalf("%s from %.2f: %d frames, want 6", name, from, len(got))
+			}
+		}
+		dec.Close()
+	}
+}
+
+// The episode's decoder hears what the ffmpeg program hears for the render
+// and the transcript, sample by sample: from the start, from a moment, from
+// before the picture starts in a file whose picture starts late, and from
+// further on, at the episode's rate and at another, in one channel and in
+// two. Read by the same rule, soundSeek, cut at the same sample. Plan row
+// 2.156, step 3 of docs/VIDEO-PREVIEW.md.
+func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	dir := t.TempDir()
+	mux := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("ffmpeg", append([]string{"-loglevel", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
+			ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+		}
+	}
+	// Tones whose pitch climbs, so a sample out of place is a sample that
+	// differs. No noise: AAC carries noise as a band to make noise in, and
+	// a decoder makes it up afresh, differently from wherever it started.
+	picture, sound := filepath.Join(dir, "picture.mp4"), filepath.Join(dir, "sound.m4a")
+	mux("-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=8", "-c:v", "mpeg4", "-g", "25", picture)
+	mux("-f", "lavfi", "-i", "aevalsrc=0.4*sin(2*PI*(200+60*t)*t)+0.1*sin(2*PI*(1500+300*t)*t)|0.3*sin(2*PI*330*t):s=48000:d=8",
+		"-c:a", "aac", "-b:a", "192k", sound)
+	plain, late := filepath.Join(dir, "plain.mp4"), filepath.Join(dir, "late.mp4")
+	mux("-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", plain)
+	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", late)
+	e := NewEngine(NewLog(nil, false, false))
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	collect := func(run func(got func(float64, []byte) error) error) ([]float64, []byte) {
+		var ats []float64
+		var all []byte
+		err := run(func(at float64, chunk []byte) error {
+			ats = append(ats, at)
+			all = append(all, chunk...)
+			if len(ats) == 24 {
+				return errStop
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatal(err)
+		}
+		return ats, all
+	}
+	for _, path := range []string{plain, late} {
+		dec := NewEpisodeFrames(program, path)
+		for _, from := range []float64{0, 0.1, 0.25, 1.337, 4.02} {
+			for _, form := range [][2]int{{48000, 2}, {44100, 1}} {
+				rate, channels := form[0], form[1]
+				name := fmt.Sprintf("%s from %.3f at %d Hz in %d", filepath.Base(path), from, rate, channels)
+				wantAt, want := collect(func(got func(float64, []byte) error) error {
+					return e.PreviewSound(context.Background(), path, from, rate, channels, got)
+				})
+				gotAt, got := collect(func(got func(float64, []byte) error) error {
+					return dec.Sound(context.Background(), e, from, rate, channels, got)
+				})
+				if len(gotAt) != len(wantAt) || len(got) != len(want) {
+					t.Fatalf("%s: %d chunks of %d bytes, the ffmpeg program %d of %d", name, len(gotAt), len(got), len(wantAt), len(want))
+				}
+				for i := range wantAt {
+					if math.Abs(gotAt[i]-wantAt[i]) > 1e-9 {
+						t.Fatalf("%s: chunk %d at %.6f, the ffmpeg program's at %.6f", name, i, gotAt[i], wantAt[i])
+					}
+				}
+				worst := 0.0
+				for i := 0; i+4 <= len(want); i += 4 {
+					a := math.Float32frombits(binary.LittleEndian.Uint32(got[i:]))
+					b := math.Float32frombits(binary.LittleEndian.Uint32(want[i:]))
+					worst = max(worst, math.Abs(float64(a-b)))
+				}
+				if worst > 1e-4 {
+					t.Errorf("%s: a sample differs from the ffmpeg program's by %.6f", name, worst)
+				}
 			}
 		}
 		dec.Close()

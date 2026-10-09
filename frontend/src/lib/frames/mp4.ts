@@ -37,7 +37,7 @@ export type VideoTrack = {
   // The colours the file says its picture is in, from its colr box, or
   // what a picture of its size usually is where it says nothing. A frame
   // the page makes itself from what the Go side decoded carries them, see
-  // native.ts and pull.ts. Those frames are in full range: WebKit drew
+  // pull.ts. Those frames are in full range: WebKit drew
   // one in video range as if it used the whole range whatever it said,
   // its black a grey of 17, so the Go side makes them full range.
   colour: VideoColorSpaceInit;
