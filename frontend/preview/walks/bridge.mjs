@@ -2,7 +2,28 @@
 // its clip chosen, a way to wait until the app has settled, and the
 // engine's own answer to compare the screen with. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { chromium } from "playwright";
+
+// The Chromium the pinned Playwright was made for, which CI installs. A
+// machine that has only another one walks on that rather than not at all:
+// a cloud session keeps the Chromium of the Playwright it came with in
+// PLAYWRIGHT_BROWSERS_PATH, and after Playwright went from 1.56 to 1.63
+// every walk there stopped on a browser that was not installed.
+function browserPath() {
+  if (existsSync(chromium.executablePath())) return undefined;
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (!root || !existsSync(root)) return undefined;
+  const builds = readdirSync(root)
+    .filter((d) => /^chromium-\d+$/.test(d))
+    .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+  for (const dir of builds) {
+    const exe = join(root, dir, "chrome-linux", "chrome");
+    if (existsSync(exe)) return exe;
+  }
+  return undefined;
+}
 
 // A random number generator that a seed decides, so a walk that breaks a
 // rule can be walked again step for step. mulberry32.
@@ -34,7 +55,7 @@ export async function open(url) {
   // The episode the way the bridge found it, whatever the walk before did.
   const reset = await fetch(new URL("/reset", url), { method: "POST" });
   if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: browserPath() });
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
