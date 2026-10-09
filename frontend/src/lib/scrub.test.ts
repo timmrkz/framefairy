@@ -26,9 +26,19 @@ function press(x: number) {
     removeEventListener() {},
   };
   const sent: number[] = [];
-  scrub({ currentTarget: target, clientX: x, pointerId: 1 } as unknown as PointerEvent, (cx) => cx / 10, (t) => sent.push(t));
+  // What the drag said, seeks and holds in the order they came.
+  const told: string[] = [];
+  scrub(
+    { currentTarget: target, clientX: x, pointerId: 1 } as unknown as PointerEvent,
+    (cx) => cx / 10,
+    (t) => {
+      sent.push(t);
+      told.push(`seek ${t}`);
+    },
+    (held) => told.push(held ? "hold" : "let go"),
+  );
   const frame = () => frames.splice(0).forEach((f) => f());
-  return { on, sent, frame };
+  return { on, sent, told, frame };
 }
 
 describe("scrub", () => {
@@ -56,5 +66,16 @@ describe("scrub", () => {
     on.pointermove({ clientX: 530 });
     on.pointerup({ clientX: 530 });
     expect(sent).toEqual([50, 52, 53]);
+  });
+
+  // A play held under the hand goes on as the hand lets go, so the last
+  // seek has to be in before it is told so, or the play went on from the
+  // moment before and then jumped to where the hand was let go.
+  test("the hand lets go after the last seek", () => {
+    const { on, told, frame } = press(500);
+    frame();
+    on.pointermove({ clientX: 530 });
+    on.pointerup({ clientX: 530 });
+    expect(told).toEqual(["hold", "seek 50", "seek 53", "let go"]);
   });
 });
