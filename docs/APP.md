@@ -393,7 +393,11 @@ in the video preview, `/frames/hold`, until it closes, `/frames/release`:
 the decoder starts at once and opens its cursors on the file before any
 frame is asked for, and a held decoder is never closed for standing
 unused, so a click after an hour paused is as quick as the first. One
-nobody holds is closed after a minute unused. The webview's
+nobody holds is closed after a minute unused, and at once when more than
+two stand unheld, the one used longest ago first, `decodersSpare` in
+`frames.go`: every workspace kept holds its decoder while it is awake, and
+the ten built as the app starts left ten programs running for a minute.
+The webview's
 decoders and the Mac's own below are still in the code, unused, until the
 step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until
@@ -592,11 +596,15 @@ and how far its clip list was scrolled. Its video preview lets go of
 everything costly, `sleeping` in `Player.svelte`:
 the frame queue is closed, with its decoder on the Go side, the frames it
 kept and its sound card, and only the file's index and the frame on the
-canvas stay. Waking, a new queue starts from that index, so nothing is
-read from the file, in the task after the frame that shows the workspace
-again, so starting a sound card and a decoder does not hold that frame
-back, and the workspace reads the episode and the settings
-again behind what it already shows. Asleep, it reads nothing by itself. A
+canvas stay. Waking, a new queue starts from that index, in the task
+after the frame that shows the workspace again, so starting a sound card
+and a decoder does not hold that frame back. Nothing is read from the
+file then but its length and when it was written, and the index is read
+again if either changed, an episode exported again under its name.
+Nothing of the file is taken from the webview's cache, which took a file
+written long ago as unchanged for minutes. The workspace reads the
+episode and the settings again behind what it already shows. Asleep, it
+reads nothing by itself. An
 eleventh episode opened lets go of the one opened longest ago. Asleep,
 a workspace is its page, its canvases and the file's index, about 10 MB,
 so ten is about 100 MB. As the app starts, it opens on the episode that

@@ -131,6 +131,9 @@ class Reader {
   size = 0;
   reads = 0;
   bytes = 0;
+  // The file as the server last described it, its length and when it was
+  // written, see fileStamps.
+  stamp = "";
 
   constructor(
     readonly url: string,
@@ -139,10 +142,14 @@ class Reader {
 
   async read(from: number, to: number): Promise<Uint8Array> {
     this.reads++;
-    const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` } });
+    // Never from the webview's cache: a file written long ago is taken as
+    // unchanged for a while, and one written over since would be read as
+    // it was.
+    const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` }, cache: "no-store" });
     if (res.status !== 206 && res.status !== 200) throw new MP4Error(`the episode file could not be read, it answered ${res.status}`);
     const total = /\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
     if (total) this.size = Number(total[1]);
+    this.stamp = `${total?.[1] ?? res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}`;
     let body = new Uint8Array(await res.arrayBuffer());
     // A server that sends the whole file has sent what was asked too.
     if (res.status === 200) {
@@ -154,7 +161,7 @@ class Reader {
   }
 
   async open(): Promise<Movie> {
-    if (this.known) return this.known;
+    if (this.known && (await this.same(this.known))) return this.known;
     const early = ahead.get(this.url);
     if (early) {
       ahead.delete(this.url);
@@ -171,10 +178,27 @@ class Reader {
       async (from, to) => (to <= first.length ? first.subarray(from, to) : this.read(from, to)),
       this.size,
     );
-    return parseMoov(moov);
+    const movie = parseMoov(moov);
+    fileStamps.set(movie, this.stamp);
+    return movie;
+  }
+
+  // Whether the file is still the one the index was read from. A workspace
+  // keeps the index while it sleeps, and an episode written over in the
+  // meantime, exported again under its name, would be read by the old one.
+  private async same(movie: Movie): Promise<boolean> {
+    try {
+      const res = await fetch(this.url, { method: "HEAD", cache: "no-store" });
+      return res.ok && `${res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}` === fileStamps.get(movie);
+    } catch {
+      return false;
+    }
   }
 
 }
+
+// The file each index was read from, its length and when it was written.
+const fileStamps = new WeakMap<Movie, string>();
 
 // The indexes read ahead, by the episode's address, until a queue takes
 // its own. See readAhead.

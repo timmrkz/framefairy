@@ -594,10 +594,6 @@
             </button>
           </span>
         </li>
-      {:else}
-        <li class="empty muted">
-          Add an episode with the plus below to start. Any mp4, mov, m4v or mkv works.
-        </li>
       {/each}
     </ul>
     <div class="foot">
@@ -978,11 +974,9 @@
      and what it has wait for the room, and so do the two marks, which need
      a pointer on the row anyway. The row keeps its height, so the lamp is
      in the same place shut and open and nothing moves as the sidebar
-     goes over. An episode nobody has added yet has nothing to show on the
-     rail at all. */
+     goes over. */
   aside:not(.open) .episode .name,
-  aside:not(.open) .tools,
-  aside:not(.open) li.empty {
+  aside:not(.open) .tools {
     display: none;
   }
 
@@ -1147,10 +1141,6 @@
 
   .small {
     font-size: var(--size-s);
-  }
-
-  .empty {
-    padding: 8px;
   }
 
   .foot {
